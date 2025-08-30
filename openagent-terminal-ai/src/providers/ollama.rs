@@ -54,10 +54,13 @@ struct OllamaResponse {
 
 #[derive(Deserialize)]
 struct OllamaGenerateResponse {
+    #[allow(dead_code)]
     model: String,
     response: String,
+    #[allow(dead_code)]
     done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[allow(dead_code)]
     context: Option<Vec<i64>>,
 }
 

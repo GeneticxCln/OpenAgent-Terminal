@@ -62,6 +62,8 @@ pub mod cursor;
 pub mod hint;
 pub mod window;
 pub mod blocks;
+#[cfg(feature = "ai")]
+pub mod ai_panel;
 
 mod bell;
 mod damage;

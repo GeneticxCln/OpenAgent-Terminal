@@ -37,6 +37,8 @@ mod daemon;
 mod display;
 mod event;
 mod input;
+#[cfg(feature = "ai")]
+mod ai_runtime;
 #[cfg(unix)]
 mod ipc;
 mod logging;
