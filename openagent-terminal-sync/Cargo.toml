@@ -1,0 +1,21 @@
+[package]
+name = "openagent-terminal-sync"
+version = "0.1.0"
+authors = ["OpenAgent Terminal Contributors"]
+license = "Apache-2.0"
+description = "Optional sync interfaces for OpenAgent Terminal (privacy-first, opt-in)"
+repository = "https://github.com/GeneticxCln/openagent-terminal"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Example: add HTTP client or crypto backends here later
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+

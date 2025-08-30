@@ -145,6 +145,24 @@ pub trait ActionContext<T: EventListener> {
     fn copy_to_clipboard(&mut self, _text: String) {}
     fn spawn_shell_command_in_cwd(&mut self, _cmd: String, _cwd: String) {}
     fn prompt_and_export_block_output(&mut self, _text: String) {}
+
+    // Command palette API
+    fn open_command_palette(&mut self) {}
+    fn palette_active(&self) -> bool { false }
+    fn palette_input(&mut self, _c: char) {}
+    fn palette_backspace(&mut self) {}
+    fn palette_move_selection(&mut self, _delta: isize) {}
+    fn palette_confirm(&mut self) {}
+    fn palette_cancel(&mut self) {}
+    fn run_workflow_by_name(&mut self, _name: &str) {}
+
+    // AI panel (feature=ai)
+    fn open_ai_panel(&mut self) {}
+    fn close_ai_panel(&mut self) {}
+    fn ai_active(&self) -> bool { false }
+    fn ai_input(&mut self, _c: char) {}
+    fn ai_backspace(&mut self) {}
+    fn ai_propose(&mut self) {}
 }
 
 impl Action {
@@ -403,6 +421,9 @@ impl<T: EventListener> Execute<T> for Action {
             Action::Search(SearchAction::SearchHistoryPrevious) => ctx.search_history_previous(),
             Action::Search(SearchAction::SearchHistoryNext) => ctx.search_history_next(),
             Action::Mouse(MouseAction::ExpandSelection) => ctx.expand_selection(),
+            Action::OpenCommandPalette => ctx.open_command_palette(),
+            Action::RunWorkflow(name) => ctx.run_workflow_by_name(name),
+            Action::ToggleAiPanel => ctx.open_ai_panel(),
             Action::SearchForward => ctx.start_search(Direction::Right),
             Action::SearchBackward => ctx.start_search(Direction::Left),
             Action::Copy => ctx.copy_selection(ClipboardType::Clipboard),

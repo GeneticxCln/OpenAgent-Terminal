@@ -219,6 +219,12 @@ impl Window {
         self.window.window_handle().unwrap().as_raw()
     }
 
+    /// Access the underlying winit Window for integrations requiring it (e.g., wgpu).
+    #[inline]
+    pub fn winit_window(&self) -> &WinitWindow {
+        &self.window
+    }
+
     #[inline]
     pub fn request_inner_size(&self, size: PhysicalSize<u32>) {
         let _ = self.window.request_inner_size(size);

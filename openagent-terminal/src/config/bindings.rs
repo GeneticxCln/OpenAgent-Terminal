@@ -268,6 +268,16 @@ pub enum Action {
     /// Export current command block output to a file.
     ExportBlockOutput,
 
+    /// Open the command palette.
+    OpenCommandPalette,
+
+    /// Execute a named workflow from the config.
+    #[config(skip)]
+    RunWorkflow(String),
+
+    /// Toggle the AI side panel (scratch buffer) [feature: ai].
+    ToggleAiPanel,
+
     /// No action.
     None,
 }
@@ -444,6 +454,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         KeyBinding;
         // Block folding and navigation.
         "f",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::ToggleFoldBlock;
+        // Toggle AI panel (scratch buffer) if built with feature `ai`.
+        ".",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;
         Copy; Action::Copy;
@@ -561,6 +573,9 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 fn common_keybindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
+        // Command Palette
+        "p",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::OpenCommandPalette;
+        // Clipboard
         "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI;                       Action::Paste;
         "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI, +BindingMode::SEARCH; Action::Paste;
         "f",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::SearchForward;
@@ -587,6 +602,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
         Enter, ModifiersState::ALT; Action::ToggleFullscreen;
+        // Command Palette on Windows
+        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::OpenCommandPalette;
     );
     bindings.extend(common_keybindings());
     bindings
@@ -597,6 +614,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
         Insert, ModifiersState::SHIFT, ~BindingMode::VI, ~BindingMode::SEARCH; Action::Esc("\x1b[2;2~".into());
+        // Command Palette on macOS
+        "p",    ModifiersState::SUPER, ~BindingMode::SEARCH;                    Action::OpenCommandPalette;
         // Tabbing api.
         "t",    ModifiersState::SUPER;                                         Action::CreateNewTab;
         "]",    ModifiersState::SUPER | ModifiersState::SHIFT;                 Action::SelectNextTab;
@@ -965,7 +984,7 @@ impl<'a> Deserialize<'a> for RawBinding {
     where
         D: Deserializer<'a>,
     {
-        const FIELDS: &[&str] = &["key", "mods", "mode", "action", "chars", "mouse", "command"];
+const FIELDS: &[&str] = &["key", "mods", "mode", "action", "chars", "mouse", "command", "workflow"];
 
         enum Field {
             Key,
@@ -975,6 +994,7 @@ impl<'a> Deserialize<'a> for RawBinding {
             Chars,
             Mouse,
             Command,
+            Workflow,
         }
 
         impl<'a> Deserialize<'a> for Field {
@@ -1003,6 +1023,7 @@ impl<'a> Deserialize<'a> for RawBinding {
                             "chars" => Ok(Field::Chars),
                             "mouse" => Ok(Field::Mouse),
                             "command" => Ok(Field::Command),
+                            "workflow" => Ok(Field::Workflow),
                             _ => Err(E::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1032,6 +1053,7 @@ impl<'a> Deserialize<'a> for RawBinding {
                 let mut not_mode: Option<BindingMode> = None;
                 let mut mouse: Option<MouseButton> = None;
                 let mut command: Option<Program> = None;
+                let mut workflow: Option<String> = None;
 
                 use de::Error;
 
@@ -1134,6 +1156,12 @@ impl<'a> Deserialize<'a> for RawBinding {
 
                             command = Some(map.next_value::<Program>()?);
                         },
+                        Field::Workflow => {
+                            if workflow.is_some() {
+                                return Err(<V::Error as Error>::duplicate_field("workflow"));
+                            }
+                            workflow = Some(map.next_value::<String>()?);
+                        },
                     }
                 }
 
@@ -1141,11 +1169,11 @@ impl<'a> Deserialize<'a> for RawBinding {
                 let not_mode = not_mode.unwrap_or_else(BindingMode::empty);
                 let mods = mods.unwrap_or_default();
 
-                let action = match (action, chars, command) {
-                    (Some(action @ Action::ViMotion(_)), None, None)
-                    | (Some(action @ Action::Vi(_)), None, None) => action,
-                    (Some(action @ Action::Search(_)), None, None) => action,
-                    (Some(action @ Action::Mouse(_)), None, None) => {
+                let action = match (action, chars, command, workflow) {
+                    (Some(action @ Action::ViMotion(_)), None, None, _)
+                    | (Some(action @ Action::Vi(_)), None, None, _) => action,
+                    (Some(action @ Action::Search(_)), None, None, _) => action,
+                    (Some(action @ Action::Mouse(_)), None, None, _) => {
                         if mouse.is_none() {
                             return Err(V::Error::custom(format!(
                                 "action `{action}` is only available for mouse bindings",
@@ -1153,9 +1181,10 @@ impl<'a> Deserialize<'a> for RawBinding {
                         }
                         action
                     },
-                    (Some(action), None, None) => action,
-                    (None, Some(chars), None) => Action::Esc(chars),
-                    (None, None, Some(cmd)) => Action::Command(cmd),
+                    (Some(action), None, None, _) => action,
+                    (None, Some(chars), None, _) => Action::Esc(chars),
+                    (None, None, Some(cmd), _) => Action::Command(cmd),
+                    (None, None, None, Some(name)) => Action::RunWorkflow(name),
                     _ => {
                         return Err(V::Error::custom(
                             "must specify exactly one of chars, action or command",

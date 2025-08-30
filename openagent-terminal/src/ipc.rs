@@ -85,6 +85,30 @@ pub fn spawn_ipc_socket(
                     let event = Event::new(EventType::IpcGetConfig(Arc::new(stream)), window_id);
                     let _ = event_proxy.send_event(event);
                 },
+                #[cfg(feature = "sync")]
+                SocketMessage::SyncStatus(cmd) => {
+                    let event = Event::new(
+                        EventType::IpcSync(crate::event::IpcSyncType::Status(cmd.scope), Arc::new(stream)),
+                        None,
+                    );
+                    let _ = event_proxy.send_event(event);
+                },
+                #[cfg(feature = "sync")]
+                SocketMessage::SyncPush(cmd) => {
+                    let event = Event::new(
+                        EventType::IpcSync(crate::event::IpcSyncType::Push(cmd.scope), Arc::new(stream)),
+                        None,
+                    );
+                    let _ = event_proxy.send_event(event);
+                },
+                #[cfg(feature = "sync")]
+                SocketMessage::SyncPull(cmd) => {
+                    let event = Event::new(
+                        EventType::IpcSync(crate::event::IpcSyncType::Pull(cmd.scope), Arc::new(stream)),
+                        None,
+                    );
+                    let _ = event_proxy.send_event(event);
+                },
             }
         }
     });
@@ -129,6 +153,24 @@ fn handle_reply(stream: &UnixStream, message: &SocketMessage) -> IoResult<()> {
         (SocketMessage::GetConfig(..), SocketReply::GetConfig(config)) => {
             println!("{config}");
             Ok(())
+        },
+        #[cfg(feature = "sync")]
+        (SocketMessage::SyncStatus(..), SocketReply::SyncStatus(status)) => {
+            println!("{status}");
+            Ok(())
+        },
+        #[cfg(feature = "sync")]
+        (SocketMessage::SyncPush(..) | SocketMessage::SyncPull(..), SocketReply::SyncResult(result)) => {
+            match result {
+                Ok(msg) => {
+                    println!("{msg}");
+                    Ok(())
+                },
+                Err(err) => {
+                    eprintln!("Sync error: {err}");
+                    Err(IoError::other(err.clone()))
+                },
+            }
         },
         // Ignore requests without reply.
         _ => Ok(()),
@@ -238,4 +280,8 @@ fn socket_prefix() -> String {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketReply {
     GetConfig(String),
+    #[cfg(feature = "sync")]
+    SyncStatus(String),
+    #[cfg(feature = "sync")]
+    SyncResult(Result<String, String>),
 }

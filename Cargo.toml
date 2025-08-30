@@ -4,6 +4,8 @@ members = [
     "openagent-terminal-core",
     "openagent-terminal-config",
     "openagent-terminal-config-derive",
+    "openagent-terminal-sync",
+    "openagent-terminal-ai",
 ]
 resolver = "2"
 

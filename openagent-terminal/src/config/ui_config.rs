@@ -45,6 +45,10 @@ pub struct UiConfig {
     /// Miscellaneous configuration options.
     pub general: General,
 
+    /// User-defined workflows (local-only) for reusable commands.
+    #[serde(default)]
+    pub workflows: Vec<Workflow>,
+
     /// Extra environment variables.
     pub env: HashMap<String, String>,
 
@@ -660,6 +664,40 @@ impl SerdeReplace for Program {
 
         Ok(())
     }
+}
+
+/// Minimal workflow definition for reusable commands with parameters.
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct Workflow {
+    /// Unique workflow name used for display and bindings.
+    pub name: String,
+    /// Short description shown in the command palette.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Command template string. Supports simple {param} placeholders.
+    pub command: String,
+    /// Optional parameter definitions.
+    #[serde(default)]
+    pub params: Vec<WorkflowParam>,
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct WorkflowParam {
+    /// Parameter name referenced by {name} in the template.
+    pub name: String,
+    /// Optional default value to pre-fill.
+    #[serde(default)]
+    pub default: Option<String>,
+}
+
+impl Default for Workflow {
+    fn default() -> Self {
+        Self { name: String::new(), description: None, command: String::new(), params: Vec::new() }
+    }
+}
+
+impl Default for WorkflowParam {
+    fn default() -> Self { Self { name: String::new(), default: None } }
 }
 
 pub(crate) struct StringVisitor;

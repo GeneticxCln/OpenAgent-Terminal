@@ -263,6 +263,18 @@ pub enum SocketMessage {
 
     /// Read runtime OpenAgent Terminal configuration.
     GetConfig(IpcGetConfig),
+
+    /// Get sync status.
+    #[cfg(feature = "sync")]
+    SyncStatus(IpcSyncCommand),
+
+    /// Push local settings/history to sync storage.
+    #[cfg(feature = "sync")]
+    SyncPush(IpcSyncCommand),
+
+    /// Pull settings/history from sync storage.
+    #[cfg(feature = "sync")]
+    SyncPull(IpcSyncCommand),
 }
 
 /// Migrate the configuration file.
@@ -350,6 +362,23 @@ pub struct IpcGetConfig {
     /// Use `-1` to get the global config.
 #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
     pub window_id: Option<i128>,
+}
+
+/// Parameters to sync IPC subcommands.
+#[cfg(all(unix, feature = "sync"))]
+#[derive(Args, Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct IpcSyncCommand {
+    /// Sync scope (settings or history).
+    #[clap(short, long, value_enum)]
+    pub scope: Option<SyncScopeArg>,
+}
+
+/// Sync scope argument for CLI.
+#[cfg(all(unix, feature = "sync"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+pub enum SyncScopeArg {
+    Settings,
+    History,
 }
 
 /// Parsed CLI config overrides.

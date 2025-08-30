@@ -45,6 +45,32 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Command Palette handling takes precedence.
+        if self.ctx.palette_active() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => { self.ctx.palette_confirm(); return; },
+                Key::Named(NamedKey::Escape) => { self.ctx.palette_cancel(); return; },
+                Key::Named(NamedKey::ArrowUp) => { self.ctx.palette_move_selection(-1); return; },
+                Key::Named(NamedKey::ArrowDown) => { self.ctx.palette_move_selection(1); return; },
+                Key::Named(NamedKey::Backspace) => { self.ctx.palette_backspace(); return; },
+                _ => {},
+            }
+            for ch in text.chars() { self.ctx.palette_input(ch); }
+            return;
+        }
+
+        // AI panel input handling (if active). Never auto-run; only edit/propose.
+        if self.ctx.ai_active() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => { self.ctx.ai_propose(); return; },
+                Key::Named(NamedKey::Escape) => { self.ctx.close_ai_panel(); return; },
+                Key::Named(NamedKey::Backspace) => { self.ctx.ai_backspace(); return; },
+                _ => {},
+            }
+            for ch in text.chars() { self.ctx.ai_input(ch); }
+            return;
+        }
+
         // First key after inline search is captured.
         let inline_state = self.ctx.inline_search_state();
         if inline_state.char_pending {

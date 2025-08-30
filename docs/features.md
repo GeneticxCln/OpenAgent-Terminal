@@ -82,3 +82,12 @@ that.
 OpenAgent Terminal supports running multiple terminal emulators from the same OpenAgent Terminal
 instance. New windows can be created either by using the `CreateNewWindow`
 keybinding action, or by executing the `openagent-terminal msg create-window` subcommand.
+
+## Optional: Sync and AI (privacy-first)
+
+OpenAgent Terminal provides scaffolding for two optional, opt-in features:
+
+- Settings/History Sync: disabled by default. See docs/sync.md.
+- AI integration interface: disabled by default. See docs/ai.md.
+
+Both features can be disabled at build-time and runtime, default to zero telemetry, and require secrets via environment variables only.

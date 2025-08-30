@@ -23,6 +23,8 @@ pub mod serde_utils;
 pub mod terminal;
 pub mod ui_config;
 pub mod window;
+pub mod ai;
+pub mod sync;
 
 mod bindings;
 mod mouse;

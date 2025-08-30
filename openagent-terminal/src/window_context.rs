@@ -82,12 +82,57 @@ impl WindowContext {
         let mut identity = config.window.identity.clone();
         options.window_identity.override_identity_config(&mut identity);
 
+        // Optional WGPU path (experimental): prefer WGPU if requested.
+        if config.debug.prefer_wgpu {
+            #[cfg(feature = "wgpu")]
+            {
+                log::info!(
+                    "prefer_wgpu is enabled; WGPU backend is not yet implemented — falling back to OpenGL"
+                );
+            }
+            #[cfg(not(feature = "wgpu"))]
+            {
+                log::info!(
+                    "prefer_wgpu is enabled but the 'wgpu' feature is not built; using OpenGL"
+                );
+            }
+        }
+
         // Windows has different order of GL platform initialization compared to any other platform;
         // it requires the window first.
         #[cfg(windows)]
-        let window = Window::new(event_loop, &config, &identity, &mut options)?;
+        let mut window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
         #[cfg(windows)]
-        let raw_window_handle = Some(window.raw_window_handle());
+        let mut raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
+
+        // On Windows, prefer WGPU if requested (feature-gated); we can probe here before GL display setup.
+        #[cfg(all(feature = "wgpu", windows))]
+        if config.debug.prefer_wgpu {
+            if let Some(ref win_ref) = window_opt {
+                match pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
+                    win_ref.winit_window(),
+                    win_ref.inner_size(),
+                    config.debug.renderer,
+                )) {
+                    Ok(_) => {
+                        // Move the window into the WGPU display creation.
+                        let window_for_wgpu = window_opt.take().unwrap();
+                        match Display::new_wgpu(window_for_wgpu, &config, false) {
+                            Ok(display) => return Self::new(display, config, options, proxy),
+                            Err(err) => {
+                                log::info!(
+                                    "WGPU initialization failed after successful probe, falling back to OpenGL: {err}"
+                                );
+                                // Recreate the window for OpenGL fallback since it was moved.
+                                window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
+                                raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
+                            },
+                        }
+                    },
+                    Err(err) => log::info!("WGPU probe failed, using OpenGL: {:?}", err),
+                }
+            }
+        }
 
         #[cfg(not(windows))]
         let raw_window_handle = None;
@@ -100,19 +145,58 @@ impl WindowContext {
         let gl_config = renderer::platform::pick_gl_config(&gl_display, raw_window_handle)?;
 
         #[cfg(not(windows))]
-        let window = Window::new(
-            event_loop,
-            &config,
-            &identity,
-            &mut options,
-            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-            gl_config.x11_visual(),
-        )?;
+        let mut window_opt = Some(
+            Window::new(
+                event_loop,
+                &config,
+                &identity,
+                &mut options,
+                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                gl_config.x11_visual(),
+            )?,
+        );
+
+        // Prefer WGPU if enabled and feature is built. We probe initialization first and then build the Display.
+        #[cfg(feature = "wgpu")]
+        if config.debug.prefer_wgpu {
+            if let Some(ref win_ref) = window_opt {
+                let wgpu_probe = pollster::block_on(
+                    crate::renderer::wgpu::WgpuRenderer::new(
+                        win_ref.winit_window(),
+                        win_ref.inner_size(),
+                        config.debug.renderer,
+                    ),
+                );
+                if wgpu_probe.is_ok() {
+                    let window_for_wgpu = window_opt.take().unwrap();
+                    match Display::new_wgpu(window_for_wgpu, &config, false) {
+                        Ok(display) => return Self::new(display, config, options, proxy),
+                        Err(err) => {
+                            log::info!(
+                                "WGPU initialization failed after successful probe, falling back to OpenGL: {err}"
+                            );
+                            // Recreate the window for OpenGL fallback since it was moved into the WGPU attempt.
+                            window_opt = Some(
+                                Window::new(
+                                    event_loop,
+                                    &config,
+                                    &identity,
+                                    &mut options,
+                                    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                                    gl_config.x11_visual(),
+                                )?,
+                            );
+                        },
+                    }
+                }
+            }
+        }
 
         // Create context.
         let gl_context =
             renderer::platform::create_gl_context(&gl_display, &gl_config, raw_window_handle)?;
 
+        let window = window_opt.take().expect("window should be available for GL path");
         let display = Display::new(window, gl_context, &config, false)?;
 
         Self::new(display, config, options, proxy)
@@ -266,6 +350,7 @@ impl WindowContext {
 
         self.display.update_config(&self.config);
         self.terminal.lock().set_options(self.config.term_options());
+
 
         // Reload cursor if its thickness has changed.
         if (old_config.cursor.thickness() - self.config.cursor.thickness()).abs() > f32::EPSILON {

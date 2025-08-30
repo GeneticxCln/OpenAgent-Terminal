@@ -1,0 +1,15 @@
+[package]
+name = "openagent-terminal-ai"
+version = "0.1.0"
+authors = ["OpenAgent Terminal Contributors"]
+license = "Apache-2.0"
+description = "Optional AI interfaces for OpenAgent Terminal (privacy-first, opt-in)"
+repository = "https://github.com/GeneticxCln/openagent-terminal"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+

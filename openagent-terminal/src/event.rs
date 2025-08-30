@@ -340,6 +340,91 @@ impl ApplicationHandler<Event> for Processor {
                     ipc::send_reply(&mut stream, SocketReply::GetConfig(config_json));
                 }
             },
+            // Process sync IPC commands.
+            #[cfg(all(unix, feature = "sync"))]
+            (EventType::IpcSync(sync_type, stream), _) => {
+                use openagent_terminal_sync::{LocalFsProvider, SyncProvider, SyncScope};
+                
+                // Create sync provider based on config.
+                // For now, always use LocalFsProvider.
+                let sync_config = openagent_terminal_sync::SyncConfig {
+                    provider: "local_fs".to_string(),
+                    data_dir: None,
+                    endpoint_env: None,
+                    encryption_key_env: None,
+                };
+                
+                let provider = match LocalFsProvider::new(&sync_config) {
+                    Ok(provider) => provider,
+                    Err(err) => {
+                        if let Ok(mut stream) = stream.try_clone() {
+                            let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to create sync provider: {:?}", err)));
+                            ipc::send_reply(&mut stream, reply);
+                        }
+                        return;
+                    },
+                };
+                
+                // Convert scope argument to sync scope.
+                let scope = sync_type.scope().map(|s| match s {
+                    crate::cli::SyncScopeArg::Settings => SyncScope::Settings,
+                    crate::cli::SyncScopeArg::History => SyncScope::History,
+                });
+                
+                // Execute sync operation.
+                let result = match sync_type {
+                    IpcSyncType::Status(_) => {
+                        match provider.status() {
+                            Ok(status) => {
+                                let status_json = serde_json::to_string_pretty(&status).unwrap_or_else(|_| "Error serializing status".to_string());
+                                if let Ok(mut stream) = stream.try_clone() {
+                                    ipc::send_reply(&mut stream, ipc::SocketReply::SyncStatus(status_json));
+                                }
+                            },
+                            Err(err) => {
+                                if let Ok(mut stream) = stream.try_clone() {
+                                    let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to get sync status: {:?}", err)));
+                                    ipc::send_reply(&mut stream, reply);
+                                }
+                            },
+                        }
+                    },
+                    IpcSyncType::Push(scope_arg) => {
+                        let scope = scope.unwrap_or(SyncScope::Settings);
+                        match provider.push(scope) {
+                            Ok(()) => {
+                                if let Ok(mut stream) = stream.try_clone() {
+                                    let reply = ipc::SocketReply::SyncResult(Ok(format!("Successfully pushed {:?}", scope)));
+                                    ipc::send_reply(&mut stream, reply);
+                                }
+                            },
+                            Err(err) => {
+                                if let Ok(mut stream) = stream.try_clone() {
+                                    let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to push: {:?}", err)));
+                                    ipc::send_reply(&mut stream, reply);
+                                }
+                            },
+                        }
+                    },
+                    IpcSyncType::Pull(scope_arg) => {
+                        let scope = scope.unwrap_or(SyncScope::Settings);
+                        match provider.pull(scope) {
+                            Ok(()) => {
+                                if let Ok(mut stream) = stream.try_clone() {
+                                    let reply = ipc::SocketReply::SyncResult(Ok(format!("Successfully pulled {:?}", scope)));
+                                    ipc::send_reply(&mut stream, reply);
+                                }
+                            },
+                            Err(err) => {
+                                if let Ok(mut stream) = stream.try_clone() {
+                                    let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to pull: {:?}", err)));
+                                    ipc::send_reply(&mut stream, reply);
+                                }
+                            },
+                        }
+                    },
+                };
+            },
             (EventType::ConfigReload(path), _) => {
                 // Clear config logs from message bar for all terminals.
                 for window_context in self.windows.values_mut() {
@@ -547,10 +632,31 @@ pub enum EventType {
     IpcConfig(IpcConfig),
     #[cfg(unix)]
     IpcGetConfig(Arc<UnixStream>),
+    #[cfg(all(unix, feature = "sync"))]
+    IpcSync(IpcSyncType, Arc<UnixStream>),
     BlinkCursor,
     BlinkCursorTimeout,
     SearchNext,
     Frame,
+}
+
+/// Sync IPC event types.
+#[cfg(all(unix, feature = "sync"))]
+#[derive(Debug, Clone)]
+pub enum IpcSyncType {
+    Status(Option<crate::cli::SyncScopeArg>),
+    Push(Option<crate::cli::SyncScopeArg>),
+    Pull(Option<crate::cli::SyncScopeArg>),
+}
+
+#[cfg(all(unix, feature = "sync"))]
+impl IpcSyncType {
+    /// Get the scope argument from the sync type.
+    pub fn scope(&self) -> Option<crate::cli::SyncScopeArg> {
+        match self {
+            IpcSyncType::Status(scope) | IpcSyncType::Push(scope) | IpcSyncType::Pull(scope) => *scope,
+        }
+    }
 }
 
 impl From<TerminalEvent> for EventType {
@@ -1533,6 +1639,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         );
         let _ = self.event_proxy.send_event(Event::new(EventType::Message(message), None));
     }
+
+    // Command palette has been removed; placeholder methods were deleted.
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
@@ -1978,6 +2086,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 },
                 #[cfg(unix)]
                 EventType::IpcConfig(_) | EventType::IpcGetConfig(..) => (),
+                #[cfg(all(unix, feature = "sync"))]
+                EventType::IpcSync(..) => (),
                 EventType::Message(_)
                 | EventType::ConfigReload(_)
                 | EventType::CreateWindow(_)

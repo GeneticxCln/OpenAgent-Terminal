@@ -196,6 +196,18 @@ impl LoadGlyph for LoaderApi<'_> {
     }
 }
 
+/// Execute a closure with a temporary LoaderApi that does not rely on any GL state.
+///
+/// This is useful for backends that don't have a GL text renderer (e.g. the WGPU
+/// path for now) but still need to preload the glyph cache using the same API.
+pub fn with_dummy_loader<T, F: FnOnce(LoaderApi<'_>) -> T>(func: F) -> T {
+    // Use local temporaries for the loader internals; they live for the duration of the call.
+    let mut active_tex: GLuint = 0;
+    let mut atlas: Vec<Atlas> = Vec::new();
+    let mut current_atlas: usize = 0;
+    func(LoaderApi { active_tex: &mut active_tex, atlas: &mut atlas, current_atlas: &mut current_atlas })
+}
+
 fn update_projection(u_projection: GLint, size: &SizeInfo) {
     let width = size.width();
     let height = size.height();

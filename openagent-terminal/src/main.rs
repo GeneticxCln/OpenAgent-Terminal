@@ -27,6 +27,9 @@ use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
 
 use openagent_terminal_core::tty;
 
+// Re-export SerdeReplace at crate root so config derive macros can refer to `crate::SerdeReplace`.
+pub use openagent_terminal_config::SerdeReplace;
+
 mod cli;
 mod clipboard;
 mod config;

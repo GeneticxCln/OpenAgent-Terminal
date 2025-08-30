@@ -23,7 +23,7 @@ use winit::keyboard::ModifiersState;
 use winit::raw_window_handle::RawWindowHandle;
 use winit::window::CursorIcon;
 
-use crossfont::{Rasterize, Rasterizer, Size as FontSize};
+use crossfont::{Rasterize, Rasterizer, Size as FontSize, Metrics};
 use unicode_width::UnicodeWidthChar;
 
 use openagent_terminal_core::event::{EventListener, OnResize, WindowSize};
@@ -43,7 +43,7 @@ use crate::config::window::Dimensions;
 use crate::config::window::StartupMode;
 use crate::display::bell::VisualBell;
 use crate::display::color::{List, Rgb};
-use crate::display::content::{RenderableContent, RenderableCursor};
+use crate::display::content::{RenderableContent, RenderableCursor, RenderableCell};
 use crate::display::cursor::IntoRects;
 use crate::display::damage::{DamageTracker, damage_y_to_viewport_y};
 use crate::display::hint::{HintMatch, HintState};
@@ -52,7 +52,7 @@ use crate::display::window::Window;
 use crate::event::{Event, EventType, Mouse, SearchState};
 use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
-use crate::renderer::{self, GlyphCache, Renderer, platform};
+use crate::renderer::{self, GlyphCache, Renderer, platform, LoaderApi};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
 
@@ -388,18 +388,27 @@ pub struct Display {
     // Mouse point position when highlighting hints.
     hint_mouse_point: Option<Point>,
 
-    renderer: ManuallyDrop<Renderer>,
+    backend: Backend,
     renderer_preference: Option<RendererPreference>,
-
-    surface: ManuallyDrop<Surface<WindowSurface>>,
-
-    context: ManuallyDrop<PossiblyCurrentContext>,
 
     glyph_cache: GlyphCache,
     meter: Meter,
 
     /// Command block tracking state.
     pub blocks: blocks::Blocks,
+
+}
+
+enum Backend {
+    Gl {
+        surface: ManuallyDrop<Surface<WindowSurface>>,
+        context: ManuallyDrop<PossiblyCurrentContext>,
+        renderer: ManuallyDrop<Renderer>,
+    },
+    #[cfg(feature = "wgpu")]
+    Wgpu {
+        renderer: crate::renderer::wgpu::WgpuRenderer,
+    },
 }
 
 impl Display {
@@ -439,11 +448,11 @@ impl Display {
         let context = gl_context.make_current(&surface)?;
 
         // Create renderer.
-        let mut renderer = Renderer::new(&context, config.debug.renderer)?;
+        let mut gl_renderer = Renderer::new(&context, config.debug.renderer)?;
 
         // Load font common glyphs to accelerate rendering.
         debug!("Filling glyph cache with common glyphs");
-        renderer.with_loader(|mut api| {
+        gl_renderer.with_loader(|mut api| {
             glyph_cache.reset_glyph_cache(&mut api);
         });
 
@@ -466,11 +475,11 @@ impl Display {
         info!("Width: {}, Height: {}", size_info.width(), size_info.height());
 
         // Update OpenGL projection.
-        renderer.resize(&size_info);
+        gl_renderer.resize(&size_info);
 
         // Clear screen.
         let background_color = config.colors.primary.background;
-        renderer.clear(background_color, config.window_opacity());
+        gl_renderer.clear(background_color, config.window_opacity());
 
         // Disable shadows for transparent windows on macOS.
         #[cfg(target_os = "macos")]
@@ -482,7 +491,7 @@ impl Display {
         // actually draw something into it and commit those changes.
         if !is_wayland {
             surface.swap_buffers(&context).expect("failed to swap buffers.");
-            renderer.finish();
+            gl_renderer.finish();
         }
 
         // Set resize increments for the newly created window.
@@ -521,12 +530,164 @@ impl Display {
         let mut blocks = blocks::Blocks::new();
         blocks.enabled = config.debug.blocks;
 
+
         Ok(Self {
-            context: ManuallyDrop::new(context),
+            backend: Backend::Gl {
+                renderer: ManuallyDrop::new(gl_renderer),
+                context: ManuallyDrop::new(context),
+                surface: ManuallyDrop::new(surface),
+            },
             visual_bell: VisualBell::from(&config.bell),
-            renderer: ManuallyDrop::new(renderer),
             renderer_preference: config.debug.renderer,
-            surface: ManuallyDrop::new(surface),
+            colors: List::from(&config.colors),
+            frame_timer: FrameTimer::new(),
+            raw_window_handle,
+            damage_tracker,
+            glyph_cache,
+            hint_state,
+            size_info,
+            font_size,
+            window,
+            pending_renderer_update: Default::default(),
+            vi_highlighted_hint_age: Default::default(),
+            highlighted_hint_age: Default::default(),
+            vi_highlighted_hint: Default::default(),
+            highlighted_hint: Default::default(),
+            hint_mouse_point: Default::default(),
+            pending_update: Default::default(),
+            cursor_hidden: Default::default(),
+            meter: Default::default(),
+            ime: Default::default(),
+            blocks,
+        })
+    }
+
+    #[cfg(feature = "wgpu")]
+    pub fn new_wgpu(
+        window: Window,
+        config: &UiConfig,
+        _tabbed: bool,
+    ) -> Result<Display, Error> {
+        let raw_window_handle = window.raw_window_handle();
+
+        let scale_factor = window.scale_factor as f32;
+        let rasterizer = Rasterizer::new()?;
+
+        let font_size = config.font.size().scale(scale_factor);
+        debug!("Loading \"{}\" font", &config.font.normal().family);
+        let font = config.font.clone().with_size(font_size);
+        let mut glyph_cache = GlyphCache::new(rasterizer, &font)?;
+
+        let metrics = glyph_cache.font_metrics();
+        let (cell_width, cell_height) = compute_cell_size(config, &metrics);
+
+        // Resize the window to account for the user configured size.
+        if let Some(dimensions) = config.window.dimensions() {
+            let size = window_size(config, dimensions, cell_width, cell_height, scale_factor);
+            window.request_inner_size(size);
+        }
+
+        // WGPU renderer init.
+        let mut wgpu_renderer = pollster::block_on(
+            crate::renderer::wgpu::WgpuRenderer::new(
+                window.winit_window(),
+                window.inner_size(),
+                config.debug.renderer,
+                config.debug.srgb_swapchain,
+                config.debug.subpixel_text,
+                config.debug.zero_evicted_atlas_layer,
+                config.debug.atlas_eviction_policy,
+            ),
+        )
+        .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
+
+        // Load font common glyphs to accelerate rendering.
+        debug!("Filling glyph cache with common glyphs (wgpu)");
+        {
+            // For WGPU we don't have a GL-based atlas yet; preload the cache with a no-op loader.
+            struct NoopLoader;
+            impl crate::renderer::LoadGlyph for NoopLoader {
+                fn load_glyph(&mut self, _rasterized: &crossfont::RasterizedGlyph) -> crate::renderer::Glyph {
+                    crate::renderer::Glyph {
+                        tex_id: 0,
+                        multicolor: false,
+                        top: 0,
+                        left: 0,
+                        width: 0,
+                        height: 0,
+                        uv_bot: 0.0,
+                        uv_left: 0.0,
+                        uv_width: 0.0,
+                        uv_height: 0.0,
+                    }
+                }
+                fn clear(&mut self) {}
+            }
+            let mut loader = NoopLoader;
+            glyph_cache.reset_glyph_cache(&mut loader);
+        }
+
+        let padding = config.window.padding(window.scale_factor as f32);
+        let viewport_size = window.inner_size();
+
+        // Create new size with at least one column and row.
+        let size_info = SizeInfo::new(
+            viewport_size.width as f32,
+            viewport_size.height as f32,
+            cell_width,
+            cell_height,
+            padding.0,
+            padding.1,
+            config.window.dynamic_padding && config.window.dimensions().is_none(),
+        );
+
+        info!("Cell size: {cell_width} x {cell_height}");
+        info!("Padding: {} x {}", size_info.padding_x(), size_info.padding_y());
+        info!("Width: {}, Height: {}", size_info.width(), size_info.height());
+
+        // Clear screen.
+        let background_color = config.colors.primary.background;
+        wgpu_renderer.clear(background_color, config.window_opacity());
+
+        // Disable shadows for transparent windows on macOS.
+        #[cfg(target_os = "macos")]
+        window.set_has_shadow(config.window_opacity() >= 1.0);
+
+        // Set resize increments for the newly created window.
+        if config.window.resize_increments {
+            window.set_resize_increments(PhysicalSize::new(cell_width, cell_height));
+        }
+
+        window.set_visible(true);
+
+        #[cfg(target_os = "macos")]
+        window.focus_window();
+
+        let is_wayland = matches!(raw_window_handle, RawWindowHandle::Wayland(_));
+        #[allow(clippy::single_match)]
+        #[cfg(not(windows))]
+        if !_tabbed {
+            match config.window.startup_mode {
+                #[cfg(target_os = "macos")]
+                StartupMode::SimpleFullscreen => window.set_simple_fullscreen(true),
+                StartupMode::Maximized if !is_wayland => window.set_maximized(true),
+                _ => (),
+            }
+        }
+
+        let hint_state = HintState::new(config.hints.alphabet());
+        let mut damage_tracker = DamageTracker::new(size_info.screen_lines(), size_info.columns());
+        damage_tracker.debug = config.debug.highlight_damage;
+
+        // Initialize command blocks manager.
+        let mut blocks = blocks::Blocks::new();
+        blocks.enabled = config.debug.blocks;
+
+
+        Ok(Self {
+            backend: Backend::Wgpu { renderer: wgpu_renderer },
+            visual_bell: VisualBell::from(&config.bell),
+            renderer_preference: config.debug.renderer,
             colors: List::from(&config.colors),
             frame_timer: FrameTimer::new(),
             raw_window_handle,
@@ -552,81 +713,97 @@ impl Display {
 
     #[inline]
     pub fn gl_context(&self) -> &PossiblyCurrentContext {
-        &self.context
+        match &self.backend {
+            Backend::Gl { context, .. } => context,
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => panic!("GL context not available on WGPU backend"),
+        }
     }
 
     pub fn make_not_current(&mut self) {
-        if self.context.is_current() {
-            self.context.make_not_current_in_place().expect("failed to disable context");
+        if let Backend::Gl { context, .. } = &mut self.backend {
+            if context.is_current() {
+                context.make_not_current_in_place().expect("failed to disable context");
+            }
         }
     }
 
     pub fn make_current(&mut self) {
-        let is_current = self.context.is_current();
-
-        // Attempt to make the context current if it's not.
-        let context_loss = if is_current {
-            self.renderer.was_context_reset()
-        } else {
-            match self.context.make_current(&self.surface) {
-                Err(err) if err.error_kind() == ErrorKind::ContextLost => {
-                    info!("Context lost for window {:?}", self.window.id());
-                    true
-                },
-                _ => false,
-            }
+        let (_is_current, context_loss) = match &mut self.backend {
+            Backend::Gl { context, renderer, surface } => {
+                let is_current = context.is_current();
+                let context_loss = if is_current {
+                    renderer.was_context_reset()
+                } else {
+                    match context.make_current(surface) {
+                        Err(err) if err.error_kind() == ErrorKind::ContextLost => {
+                            info!("Context lost for window {:?}", self.window.id());
+                            true
+                        },
+                        _ => false,
+                    }
+                };
+                (is_current, context_loss)
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => (true, false),
         };
 
         if !context_loss {
             return;
         }
 
-        let gl_display = self.context.display();
-        let gl_config = self.context.config();
-        let raw_window_handle = Some(self.window.raw_window_handle());
-        let context = platform::create_gl_context(&gl_display, &gl_config, raw_window_handle)
-            .expect("failed to recreate context.");
+        // GL context recreation path only.
+        if let Backend::Gl { context, surface, renderer } = &mut self.backend {
+            let gl_display = context.display();
+            let gl_config = context.config();
+            let raw_window_handle = Some(self.window.raw_window_handle());
+            let new_context = platform::create_gl_context(&gl_display, &gl_config, raw_window_handle)
+                .expect("failed to recreate context.");
 
-        // Drop the old context and renderer.
-        unsafe {
-            ManuallyDrop::drop(&mut self.renderer);
-            ManuallyDrop::drop(&mut self.context);
+            // Drop the old context and renderer.
+            unsafe {
+                ManuallyDrop::drop(renderer);
+                ManuallyDrop::drop(context);
+            }
+
+            // Activate new context.
+            let new_context = new_context.treat_as_possibly_current();
+            *context = ManuallyDrop::new(new_context);
+            context.make_current(surface).expect("failed to reativate context after reset.");
+
+            // Recreate renderer.
+            let new_renderer = Renderer::new(context, self.renderer_preference)
+                .expect("failed to recreate renderer after reset");
+            *renderer = ManuallyDrop::new(new_renderer);
+
+            // Resize the renderer.
+            renderer.resize(&self.size_info);
+
+            self.reset_glyph_cache();
+            self.damage_tracker.frame().mark_fully_damaged();
+
+            debug!("Recovered window {:?} from gpu reset", self.window.id());
         }
-
-        // Activate new context.
-        let context = context.treat_as_possibly_current();
-        self.context = ManuallyDrop::new(context);
-        self.context.make_current(&self.surface).expect("failed to reativate context after reset.");
-
-        // Recreate renderer.
-        let renderer = Renderer::new(&self.context, self.renderer_preference)
-            .expect("failed to recreate renderer after reset");
-        self.renderer = ManuallyDrop::new(renderer);
-
-        // Resize the renderer.
-        self.renderer.resize(&self.size_info);
-
-        self.reset_glyph_cache();
-        self.damage_tracker.frame().mark_fully_damaged();
-
-        debug!("Recovered window {:?} from gpu reset", self.window.id());
     }
 
     fn swap_buffers(&self) {
         #[allow(clippy::single_match)]
-        let res = match (self.surface.deref(), &self.context.deref()) {
-            #[cfg(not(any(target_os = "macos", windows)))]
-            (Surface::Egl(surface), PossiblyCurrentContext::Egl(context))
-                if matches!(self.raw_window_handle, RawWindowHandle::Wayland(_))
-                    && !self.damage_tracker.debug =>
-            {
-                let damage = self.damage_tracker.shape_frame_damage(self.size_info.into());
-                surface.swap_buffers_with_damage(context, &damage)
-            },
-            (surface, context) => surface.swap_buffers(context),
-        };
-        if let Err(err) = res {
-            debug!("error calling swap_buffers: {err}");
+        if let Backend::Gl { surface, context, .. } = &self.backend {
+            let res = match (surface.deref(), &context.deref()) {
+                #[cfg(not(any(target_os = "macos", windows)))]
+                (Surface::Egl(surface), PossiblyCurrentContext::Egl(context))
+                    if matches!(self.raw_window_handle, RawWindowHandle::Wayland(_))
+                        && !self.damage_tracker.debug =>
+                {
+                    let damage = self.damage_tracker.shape_frame_damage(self.size_info.into());
+                    surface.swap_buffers_with_damage(context, &damage)
+                },
+                (surface, context) => surface.swap_buffers(context),
+            };
+            if let Err(err) = res {
+                debug!("error calling swap_buffers: {err}");
+            }
         }
     }
 
@@ -646,10 +823,38 @@ impl Display {
 
     /// Reset glyph cache.
     fn reset_glyph_cache(&mut self) {
-        let cache = &mut self.glyph_cache;
-        self.renderer.with_loader(|mut api| {
-            cache.reset_glyph_cache(&mut api);
-        });
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => {
+                let cache = &mut self.glyph_cache;
+                renderer.with_loader(|mut api| {
+                    cache.reset_glyph_cache(&mut api);
+                });
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer: _ } => {
+                // For WGPU we don't have a GL-based atlas yet; preload the cache with a no-op loader.
+                struct NoopLoader;
+                impl crate::renderer::LoadGlyph for NoopLoader {
+                    fn load_glyph(&mut self, _rasterized: &crossfont::RasterizedGlyph) -> crate::renderer::Glyph {
+                        crate::renderer::Glyph {
+                            tex_id: 0,
+                            multicolor: false,
+                            top: 0,
+                            left: 0,
+                            width: 0,
+                            height: 0,
+                            uv_bot: 0.0,
+                            uv_left: 0.0,
+                            uv_width: 0.0,
+                            uv_height: 0.0,
+                        }
+                    }
+                    fn clear(&mut self) {}
+                }
+                let mut loader = NoopLoader;
+                self.glyph_cache.reset_glyph_cache(&mut loader);
+            },
+        }
     }
 
     // XXX: this function must not call to any `OpenGL` related tasks. Renderer updates are
@@ -750,26 +955,43 @@ impl Display {
     //
     /// Update the state of the renderer.
     pub fn process_renderer_update(&mut self) {
-        let renderer_update = match self.pending_renderer_update.take() {
-            Some(renderer_update) => renderer_update,
-            _ => return,
-        };
+        // Merge any pending renderer update with runtime signals (like WGPU atlas eviction).
+        let mut renderer_update = self.pending_renderer_update.take().unwrap_or_default();
+        #[cfg(feature = "wgpu")]
+        if let Backend::Wgpu { renderer } = &mut self.backend {
+            if renderer.take_atlas_evicted() {
+                // Clear CPU glyph cache; then evict a single page in the WGPU renderer.
+                renderer_update.clear_font_cache = true;
+                if !renderer.evict_one_page() {
+                    // Fallback to full reset if no pending eviction was set.
+                    renderer.reset_atlas();
+                }
+            }
+        }
 
         // Resize renderer.
         if renderer_update.resize {
-            let width = NonZeroU32::new(self.size_info.width() as u32).unwrap();
-            let height = NonZeroU32::new(self.size_info.height() as u32).unwrap();
-            self.surface.resize(&self.context, width, height);
+            match &mut self.backend {
+                Backend::Gl { surface, context, .. } => {
+                    let width = NonZeroU32::new(self.size_info.width() as u32).unwrap();
+                    let height = NonZeroU32::new(self.size_info.height() as u32).unwrap();
+                    surface.resize(context, width, height);
+                },
+                #[cfg(feature = "wgpu")]
+                Backend::Wgpu { renderer } => {
+                    renderer.resize(&self.size_info);
+                },
+            }
         }
 
-        // Ensure we're modifying the correct OpenGL context.
+        // Ensure we're modifying the correct backend.
         self.make_current();
 
         if renderer_update.clear_font_cache {
             self.reset_glyph_cache();
         }
 
-        self.renderer.resize(&self.size_info);
+        self.renderer_resize();
 
         info!("Padding: {} x {}", self.size_info.padding_x(), self.size_info.padding_y());
         info!("Width: {}, Height: {}", self.size_info.width(), self.size_info.height());
@@ -843,7 +1065,7 @@ impl Display {
         // Make sure this window's OpenGL context is active.
         self.make_current();
 
-        self.renderer.clear(background_color, config.window_opacity());
+        self.renderer_clear(background_color, config.window_opacity());
         let mut lines = RenderLines::new();
 
         // Optimize loop hint comparator.
@@ -856,9 +1078,8 @@ impl Display {
 
             // Ensure macOS hasn't reset our viewport.
             #[cfg(target_os = "macos")]
-            self.renderer.set_viewport(&size_info);
+            self.renderer_set_viewport(&size_info);
 
-            let glyph_cache = &mut self.glyph_cache;
             let highlighted_hint = &self.highlighted_hint;
             let vi_highlighted_hint = &self.vi_highlighted_hint;
             let damage_tracker = &mut self.damage_tracker;
@@ -894,7 +1115,17 @@ impl Display {
 
                     cell
                 });
-            self.renderer.draw_cells(&size_info, glyph_cache, cells);
+            // Drop sampler guard before borrowing `self` mutably again for drawing.
+            drop(_sampler);
+            match &mut self.backend {
+                Backend::Gl { renderer, .. } => {
+                    renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
+                },
+                #[cfg(feature = "wgpu")]
+                Backend::Wgpu { renderer } => {
+                    renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
+                },
+            }
         }
 
         let mut rects = lines.rects(&metrics, &size_info);
@@ -931,6 +1162,7 @@ impl Display {
             );
             rects.push(visual_bell_rect);
         }
+
 
         // Handle IME positioning and search bar rendering.
         let ime_position = match search_state.regex() {
@@ -984,6 +1216,7 @@ impl Display {
             }
         }
 
+
         if let Some(message) = message_buffer.message() {
             let search_offset = usize::from(search_state.regex().is_some());
             let text = message.text(&size_info);
@@ -1010,25 +1243,40 @@ impl Display {
             self.damage_tracker.frame().add_viewport_rect(&size_info, x, y as i32, width, height);
 
             // Draw rectangles.
-            self.renderer.draw_rects(&size_info, &metrics, rects);
+            self.renderer_draw_rects(&size_info, &metrics, rects);
 
             // Relay messages to the user.
-            let glyph_cache = &mut self.glyph_cache;
             let fg = config.colors.primary.background;
-            for (i, message_text) in text.iter().enumerate() {
-                let point = Point::new(start_line + i, Column(0));
-                self.renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    message_text.chars(),
-                    &size_info,
-                    glyph_cache,
-                );
-            }
+                for (i, message_text) in text.iter().enumerate() {
+                    let point = Point::new(start_line + i, Column(0));
+                    let size_info_copy = size_info;
+                    match &mut self.backend {
+                        Backend::Gl { renderer, .. } => {
+                            renderer.draw_string(
+                                point,
+                                fg,
+                                bg,
+                                message_text.chars(),
+                                &size_info_copy,
+                                &mut self.glyph_cache,
+                            );
+                        },
+                        #[cfg(feature = "wgpu")]
+                        Backend::Wgpu { renderer } => {
+                            renderer.draw_string(
+                                point,
+                                fg,
+                                bg,
+                                message_text.chars(),
+                                &size_info_copy,
+                                &mut self.glyph_cache,
+                            );
+                        },
+                    }
+                }
         } else {
             // Draw rectangles.
-            self.renderer.draw_rects(&size_info, &metrics, rects);
+            self.renderer_draw_rects(&size_info, &metrics, rects);
         }
 
         self.draw_render_timer(config);
@@ -1052,7 +1300,18 @@ impl Display {
                     self.damage_tracker.next_frame().damage_line(damage);
 
                     let point = Point::new(line, Column(0));
-                    self.renderer.draw_string(point, fg, bg, label.chars(), &self.size_info, &mut self.glyph_cache);
+                    {
+                        let size_info_copy = self.size_info;
+                        match &mut self.backend {
+                            Backend::Gl { renderer, .. } => {
+                                renderer.draw_string(point, fg, bg, label.chars(), &size_info_copy, &mut self.glyph_cache);
+                            },
+                            #[cfg(feature = "wgpu")]
+                            Backend::Wgpu { renderer } => {
+                                renderer.draw_string(point, fg, bg, label.chars(), &size_info_copy, &mut self.glyph_cache);
+                            },
+                        }
+                    }
                     continue;
                 }
 
@@ -1063,7 +1322,18 @@ impl Display {
                     self.damage_tracker.next_frame().damage_line(damage);
 
                     let point = Point::new(line, Column(0));
-                    self.renderer.draw_string(point, fg, bg, header.chars(), &self.size_info, &mut self.glyph_cache);
+                    {
+                        let size_info_copy = self.size_info;
+                        match &mut self.backend {
+                            Backend::Gl { renderer, .. } => {
+                                renderer.draw_string(point, fg, bg, header.chars(), &size_info_copy, &mut self.glyph_cache);
+                            },
+                            #[cfg(feature = "wgpu")]
+                            Backend::Wgpu { renderer } => {
+                                renderer.draw_string(point, fg, bg, header.chars(), &size_info_copy, &mut self.glyph_cache);
+                            },
+                        }
+                    }
                 }
             }
         }
@@ -1076,17 +1346,20 @@ impl Display {
             let damage = self.damage_tracker.shape_frame_damage(self.size_info.into());
             let mut rects = Vec::with_capacity(damage.len());
             self.highlight_damage(&mut rects);
-            self.renderer.draw_rects(&self.size_info, &metrics, rects);
+            let size_info_copy = self.size_info;
+            self.renderer_draw_rects(&size_info_copy, &metrics, rects);
         }
 
         // Clearing debug highlights from the previous frame requires full redraw.
-        self.swap_buffers();
-
-        if matches!(self.raw_window_handle, RawWindowHandle::Xcb(_) | RawWindowHandle::Xlib(_)) {
-            // On X11 `swap_buffers` does not block for vsync. However the next OpenGl command
-// will block to synchronize (this is `glClear` in OpenAgent Terminal), which causes a
-            // permanent one frame delay.
-            self.renderer.finish();
+        // Present for GL only; WGPU presents within clear/draw paths for now.
+        if matches!(self.backend, Backend::Gl { .. }) {
+            self.swap_buffers();
+            if matches!(self.raw_window_handle, RawWindowHandle::Xcb(_) | RawWindowHandle::Xlib(_)) {
+                // On X11 `swap_buffers` does not block for vsync. However the next OpenGl command
+                // will block to synchronize (this is `glClear` in OpenAgent Terminal), which causes a
+                // permanent one frame delay.
+                self.renderer_finish();
+            }
         }
 
         // XXX: Request the new frame after swapping buffers, so the
@@ -1180,6 +1453,84 @@ impl Display {
     }
 
     #[inline(never)]
+    // Backend helpers for renderer dispatch.
+    fn renderer_clear(&self, color: Rgb, alpha: f32) {
+        match &self.backend {
+            Backend::Gl { renderer, .. } => renderer.clear(color, alpha),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.clear(color, alpha),
+        }
+    }
+
+    fn renderer_resize(&mut self) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.resize(&self.size_info),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.resize(&self.size_info),
+        }
+    }
+
+    fn renderer_draw_rects(&mut self, size_info: &SizeInfo, metrics: &Metrics, rects: Vec<RenderRect>) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.draw_rects(size_info, metrics, rects),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.draw_rects(size_info, metrics, rects),
+        }
+    }
+
+    fn renderer_draw_cells<I: Iterator<Item = RenderableCell>>(
+        &mut self,
+        size_info: &SizeInfo,
+        glyph_cache: &mut GlyphCache,
+        cells: I,
+    ) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.draw_cells(size_info, glyph_cache, cells),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.draw_cells(size_info, glyph_cache, cells),
+        }
+    }
+
+    fn renderer_draw_string(
+        &mut self,
+        point: Point<usize>,
+        fg: Rgb,
+        bg: Rgb,
+        string_chars: impl Iterator<Item = char>,
+        size_info: &SizeInfo,
+        glyph_cache: &mut GlyphCache,
+    ) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.draw_string(point, fg, bg, string_chars, size_info, glyph_cache),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.draw_string(point, fg, bg, string_chars, size_info, glyph_cache),
+        }
+    }
+
+    fn renderer_finish(&self) {
+        match &self.backend {
+            Backend::Gl { renderer, .. } => renderer.finish(),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer: _ } => (),
+        }
+    }
+
+    fn renderer_set_viewport(&self, size: &SizeInfo) {
+        match &self.backend {
+            Backend::Gl { renderer, .. } => renderer.set_viewport(size),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => (),
+        }
+    }
+
+    fn renderer_with_loader<F: FnOnce(LoaderApi<'_>) -> T, T>(&mut self, func: F) -> T {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.with_loader(func),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.with_loader(func),
+        }
+    }
+
     fn draw_ime_preview(
         &mut self,
         point: Point<usize>,
@@ -1221,17 +1572,35 @@ impl Display {
         let start = Point::new(point.line, Column(start));
         let end = Point::new(point.line, Column(end - 1));
 
-        let glyph_cache = &mut self.glyph_cache;
-        let metrics = glyph_cache.font_metrics();
+        let metrics = self.glyph_cache.font_metrics();
 
-        self.renderer.draw_string(
-            start,
-            fg,
-            bg,
-            visible_text.chars(),
-            &self.size_info,
-            glyph_cache,
-        );
+        // Draw preedit text using the active backend without borrowing Display twice.
+        {
+            let size_info_copy = self.size_info;
+            match &mut self.backend {
+                Backend::Gl { renderer, .. } => {
+                    renderer.draw_string(
+                        start,
+                        fg,
+                        bg,
+                        visible_text.chars(),
+                        &size_info_copy,
+                        &mut self.glyph_cache,
+                    );
+                },
+                #[cfg(feature = "wgpu")]
+                Backend::Wgpu { renderer } => {
+                    renderer.draw_string(
+                        start,
+                        fg,
+                        bg,
+                        visible_text.chars(),
+                        &size_info_copy,
+                        &mut self.glyph_cache,
+                    );
+                },
+            }
+        }
 
         // Damage preedit inside the terminal viewport.
         if point.line < self.size_info.screen_lines() {
@@ -1353,7 +1722,19 @@ impl Display {
             // Damage the uri preview for the next frame as well.
             self.damage_tracker.next_frame().damage_line(damage);
 
-            self.renderer.draw_string(point, fg, bg, uri, &self.size_info, &mut self.glyph_cache);
+            {
+                let size_info_copy = self.size_info;
+                let uri_string: String = uri.collect();
+                match &mut self.backend {
+                    Backend::Gl { renderer, .. } => {
+                        renderer.draw_string(point, fg, bg, uri_string.chars(), &size_info_copy, &mut self.glyph_cache);
+                    },
+                    #[cfg(feature = "wgpu")]
+                    Backend::Wgpu { renderer } => {
+                        renderer.draw_string(point, fg, bg, uri_string.chars(), &size_info_copy, &mut self.glyph_cache);
+                    },
+                }
+            }
         }
     }
 
@@ -1369,15 +1750,20 @@ impl Display {
         let fg = config.colors.footer_bar_foreground();
         let bg = config.colors.footer_bar_background();
 
-        self.renderer.draw_string(
-            point,
-            fg,
-            bg,
-            text.chars(),
-            &self.size_info,
-            &mut self.glyph_cache,
-        );
+        {
+            let size_info_copy = self.size_info;
+            match &mut self.backend {
+                Backend::Gl { renderer, .. } => {
+                    renderer.draw_string(point, fg, bg, text.chars(), &size_info_copy, &mut self.glyph_cache);
+                },
+                #[cfg(feature = "wgpu")]
+                Backend::Wgpu { renderer } => {
+                    renderer.draw_string(point, fg, bg, text.chars(), &size_info_copy, &mut self.glyph_cache);
+                },
+            }
+        }
     }
+
 
     /// Draw render timer.
     #[inline(never)]
@@ -1396,8 +1782,18 @@ impl Display {
         self.damage_tracker.frame().damage_line(damage);
         self.damage_tracker.next_frame().damage_line(damage);
 
-        let glyph_cache = &mut self.glyph_cache;
-        self.renderer.draw_string(point, fg, bg, timing.chars(), &self.size_info, glyph_cache);
+        {
+            let size_info_copy = self.size_info;
+            match &mut self.backend {
+                Backend::Gl { renderer, .. } => {
+                    renderer.draw_string(point, fg, bg, timing.chars(), &size_info_copy, &mut self.glyph_cache);
+                },
+                #[cfg(feature = "wgpu")]
+                Backend::Wgpu { renderer } => {
+                    renderer.draw_string(point, fg, bg, timing.chars(), &size_info_copy, &mut self.glyph_cache);
+                },
+            }
+        }
     }
 
     /// Draw an indicator for the position of a line in history.
@@ -1425,8 +1821,18 @@ impl Display {
 
         // Do not render anything if it would obscure the vi mode cursor.
         if obstructed_column.is_none_or(|obstructed_column| obstructed_column < column) {
-            let glyph_cache = &mut self.glyph_cache;
-            self.renderer.draw_string(point, fg, bg, text.chars(), &self.size_info, glyph_cache);
+            {
+                let size_info_copy = self.size_info;
+                match &mut self.backend {
+                    Backend::Gl { renderer, .. } => {
+                        renderer.draw_string(point, fg, bg, text.chars(), &size_info_copy, &mut self.glyph_cache);
+                    },
+                    #[cfg(feature = "wgpu")]
+                    Backend::Wgpu { renderer } => {
+                        renderer.draw_string(point, fg, bg, text.chars(), &size_info_copy, &mut self.glyph_cache);
+                    },
+                }
+            }
         }
     }
 
@@ -1516,11 +1922,20 @@ impl Drop for Display {
     fn drop(&mut self) {
         // Switch OpenGL context before dropping, otherwise objects (like programs) from other
         // contexts might be deleted when dropping renderer.
+        // Ensure the correct context is current before dropping GL resources.
         self.make_current();
-        unsafe {
-            ManuallyDrop::drop(&mut self.renderer);
-            ManuallyDrop::drop(&mut self.context);
-            ManuallyDrop::drop(&mut self.surface);
+        match &mut self.backend {
+            Backend::Gl { renderer, context, surface } => {
+                unsafe {
+                    ManuallyDrop::drop(renderer);
+                    ManuallyDrop::drop(context);
+                    ManuallyDrop::drop(surface);
+                }
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => {
+                // WGPU resources drop automatically.
+            },
         }
     }
 }
