@@ -1,0 +1,149 @@
+use crate::{AiProvider, AiProposal, AiRequest};
+use serde::{Deserialize, Serialize};
+use log::{debug, error, info};
+
+pub struct OpenAiProvider {
+    api_key: String,
+    endpoint: String,
+    model: String,
+    client: reqwest::blocking::Client,
+}
+
+impl OpenAiProvider {
+    pub fn new(api_key: String, endpoint: String, model: String) -> Result<Self, String> {
+        if api_key.is_empty() {
+            return Err("OpenAI API key is required".to_string());
+        }
+        
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+        
+        Ok(Self { api_key, endpoint, model, client })
+    }
+    
+    pub fn from_env() -> Result<Self, String> {
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())?;
+        let endpoint = std::env::var("OPENAI_API_BASE")
+            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+        let model = std::env::var("OPENAI_MODEL")
+            .unwrap_or_else(|_| "gpt-3.5-turbo".to_string());
+        
+        info!("Initializing OpenAI provider with model: {}", model);
+        Self::new(api_key, endpoint, model)
+    }
+}
+
+#[derive(Serialize)]
+struct ChatCompletionRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    temperature: f32,
+    max_tokens: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ChatMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct ChatCompletionResponse {
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    message: ChatMessage,
+}
+
+impl AiProvider for OpenAiProvider {
+    fn name(&self) -> &'static str {
+        "openai"
+    }
+    
+    fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
+        // Build the prompt
+        let mut system_prompt = String::from(
+            "You are a helpful terminal command assistant. \
+             Provide only the necessary shell commands with brief comment explanations. \
+             Format your response as a list of commands, one per line. \
+             Start each explanation line with #."
+        );
+        
+        if let Some(shell) = &req.shell_kind {
+            system_prompt.push_str(&format!(" The user is using {} shell.", shell));
+        }
+        
+        if let Some(dir) = &req.working_directory {
+            system_prompt.push_str(&format!(" Current directory: {}", dir));
+        }
+        
+        let messages = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: system_prompt,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: req.scratch_text.clone(),
+            },
+        ];
+        
+        let request_body = ChatCompletionRequest {
+            model: self.model.clone(),
+            messages,
+            temperature: 0.7,
+            max_tokens: 500,
+        };
+        
+        debug!("Sending request to OpenAI API");
+        
+        let url = format!("{}/chat/completions", self.endpoint);
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .map_err(|e| format!("Failed to send request: {}", e))?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+            error!("OpenAI API error {}: {}", status, error_text);
+            return Err(format!("API error {}: {}", status, error_text));
+        }
+        
+        let completion: ChatCompletionResponse = response.json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        
+        if let Some(choice) = completion.choices.first() {
+            let content = &choice.message.content;
+            let commands: Vec<String> = content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.to_string())
+                .collect();
+            
+            if commands.is_empty() {
+                Ok(vec![AiProposal {
+                    title: format!("Response for: {}", req.scratch_text),
+                    description: Some("No specific commands suggested".to_string()),
+                    proposed_commands: vec!["# No commands generated".to_string()],
+                }])
+            } else {
+                Ok(vec![AiProposal {
+                    title: format!("OpenAI suggestion for: {}", req.scratch_text),
+                    description: Some(format!("Generated by {}", self.model)),
+                    proposed_commands: commands,
+                }])
+            }
+        } else {
+            Err("No response from OpenAI".to_string())
+        }
+    }
+}
