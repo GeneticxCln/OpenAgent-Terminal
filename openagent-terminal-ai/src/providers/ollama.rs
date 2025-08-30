@@ -48,11 +48,6 @@ struct OllamaRequest {
 }
 
 #[derive(Deserialize)]
-struct OllamaResponse {
-    response: String,
-}
-
-#[derive(Deserialize)]
 struct OllamaGenerateResponse {
     #[allow(dead_code)]
     model: String,
