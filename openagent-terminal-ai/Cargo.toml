@@ -10,6 +10,12 @@ rust-version.workspace = true
 
 [features]
 default = []
+ollama = ["serde", "serde_json", "reqwest", "tokio"]
 
 [dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+tokio = { version = "1", features = ["rt", "macros"], optional = true }
+log = "0.4"
 

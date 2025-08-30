@@ -1,0 +1,85 @@
+# OpenAgent Terminal Configuration Example
+# Place this file at ~/.config/openagent-terminal/openagent-terminal.toml
+
+# General settings
+[general]
+live_config_reload = true
+working_directory = "~"
+
+# Window settings
+[window]
+opacity = 0.95
+padding = { x = 10, y = 10 }
+decorations = "full"
+
+# Font configuration
+[font]
+size = 11.0
+
+[font.normal]
+family = "JetBrains Mono"
+style = "Regular"
+
+# Color scheme
+[colors.primary]
+background = '#1e1e2e'
+foreground = '#cdd6f4'
+
+# AI Assistant Configuration (optional, disabled by default)
+[ai]
+enabled = true
+provider = "ollama"
+endpoint_env = "OLLAMA_ENDPOINT"
+model_env = "OLLAMA_MODEL"
+scratch_autosave = true
+propose_max_commands = 10
+never_auto_run = true
+inline_suggestions = false
+trigger_key = "Ctrl+Shift+A"
+
+# Ollama specific settings
+[ai.ollama]
+endpoint = "http://localhost:11434"
+model = "codellama"
+timeout = 30
+
+# Sync Configuration (optional, disabled by default)
+[sync]
+enabled = false
+provider = "null"
+
+# Terminal settings
+[terminal]
+[terminal.shell]
+program = "/bin/bash"
+
+# Scrolling
+[scrolling]
+history = 10000
+multiplier = 3
+
+# Cursor
+[cursor]
+style = { shape = "Block", blinking = "On" }
+vi_mode_style = { shape = "Beam", blinking = "Off" }
+
+# Selection
+[selection]
+save_to_clipboard = true
+
+# Mouse
+[mouse]
+hide_when_typing = true
+
+# Debug (optional)
+[debug]
+render_timer = false
+persistent_logging = false
+log_level = "Info"
+
+# Keybindings can be customized here
+# The default Ctrl+Shift+. will toggle the AI panel
+[[keyboard.bindings]]
+key = "a"
+mods = "Control|Shift"
+action = "ToggleAiPanel"

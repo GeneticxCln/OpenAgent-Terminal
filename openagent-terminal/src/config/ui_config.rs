@@ -34,6 +34,8 @@ use crate::config::scrolling::Scrolling;
 use crate::config::selection::Selection;
 use crate::config::terminal::Terminal;
 use crate::config::window::WindowConfig;
+use crate::config::ai::AiConfig;
+use crate::config::sync::SyncConfig;
 
 /// Regex used for the default URL hint.
 #[rustfmt::skip]
@@ -89,6 +91,16 @@ pub struct UiConfig {
 
     /// Config for the alacritty_terminal itself.
     pub terminal: Terminal,
+
+    /// AI assistant configuration.
+    #[cfg(feature = "ai")]
+    #[serde(default)]
+    pub ai: AiConfig,
+
+    /// Sync configuration.
+    #[cfg(feature = "sync")]
+    #[serde(default)]
+    pub sync: SyncConfig,
 
     /// Keyboard configuration.
     keyboard: Keyboard,

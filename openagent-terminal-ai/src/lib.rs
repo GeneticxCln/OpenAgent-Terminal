@@ -38,3 +38,16 @@ impl AiProvider for NullProvider {
     fn name(&self) -> &'static str { "null" }
 }
 
+#[cfg(feature = "ollama")]
+pub mod providers;
+
+/// Factory function for creating providers
+pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, String> {
+    match name {
+        "null" => Ok(Box::new(NullProvider)),
+        #[cfg(feature = "ollama")]
+        "ollama" => Ok(Box::new(providers::OllamaProvider::from_env()?)),
+        _ => Err(format!("Unknown provider: {}", name)),
+    }
+}
+

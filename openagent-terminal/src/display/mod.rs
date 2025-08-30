@@ -722,6 +722,7 @@ impl Display {
     }
 
     pub fn make_not_current(&mut self) {
+        #[allow(irrefutable_let_patterns)]
         if let Backend::Gl { context, .. } = &mut self.backend {
             if context.is_current() {
                 context.make_not_current_in_place().expect("failed to disable context");
@@ -755,6 +756,7 @@ impl Display {
         }
 
         // GL context recreation path only.
+        #[allow(irrefutable_let_patterns)]
         if let Backend::Gl { context, surface, renderer } = &mut self.backend {
             let gl_display = context.display();
             let gl_config = context.config();
@@ -789,7 +791,7 @@ impl Display {
     }
 
     fn swap_buffers(&self) {
-        #[allow(clippy::single_match)]
+        #[allow(clippy::single_match, irrefutable_let_patterns)]
         if let Backend::Gl { surface, context, .. } = &self.backend {
             let res = match (surface.deref(), &context.deref()) {
                 #[cfg(not(any(target_os = "macos", windows)))]
