@@ -47,6 +47,10 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, String> {
         "null" => Ok(Box::new(NullProvider)),
         #[cfg(feature = "ollama")]
         "ollama" => Ok(Box::new(providers::OllamaProvider::from_env()?)),
+        #[cfg(feature = "ollama")]
+        "openai" => Ok(Box::new(providers::OpenAiProvider::from_env()?)),
+        #[cfg(feature = "ollama")]
+        "anthropic" => Ok(Box::new(providers::AnthropicProvider::from_env()?)),
         _ => Err(format!("Unknown provider: {}", name)),
     }
 }
