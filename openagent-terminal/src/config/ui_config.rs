@@ -35,6 +35,7 @@ use crate::config::selection::Selection;
 use crate::config::terminal::Terminal;
 use crate::config::window::WindowConfig;
 use crate::config::ai::AiConfig;
+#[cfg(feature = "sync")]
 use crate::config::sync::SyncConfig;
 
 /// Regex used for the default URL hint.
