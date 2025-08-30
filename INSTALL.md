@@ -1,12 +1,50 @@
-# Cargo Installation
+# OpenAgent Terminal Installation Guide
 
-If you're just interested in the OpenAgent Terminal binary and you don't need the
-[terminfo file](#terminfo), [desktop entry](#desktop-entry),
-[manual page](#manual-page) or [shell completions](#shell-completions), you can
-install it directly through cargo:
+## Quick Install
+
+### From Pre-built Binaries (Recommended)
+
+Download the latest release for your platform from the [releases page](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
+
+#### Linux
+```bash
+# Download (replace VERSION and ARCH with actual values)
+wget https://github.com/GeneticxCln/OpenAgent-Terminal/releases/download/vVERSION/openagent-terminal-vVERSION-ARCH-unknown-linux-gnu.tar.gz
+
+# Extract
+tar -xzf openagent-terminal-*.tar.gz
+
+# Install
+sudo cp openagent-terminal /usr/local/bin/
+sudo cp openagent-terminal.desktop /usr/share/applications/
+sudo cp openagent-terminal.png /usr/share/icons/
+```
+
+#### macOS
+```bash
+# Download (replace VERSION and ARCH with actual values)
+curl -LO https://github.com/GeneticxCln/OpenAgent-Terminal/releases/download/vVERSION/openagent-terminal-vVERSION-ARCH-apple-darwin.tar.gz
+
+# Extract
+tar -xzf openagent-terminal-*.tar.gz
+
+# Install
+cp -r "OpenAgent Terminal.app" /Applications/
+```
+
+#### Windows
+Download and run the installer from the [releases page](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
+
+### From Cargo
+
+If you have Rust installed, you can install OpenAgent Terminal directly through cargo:
 
 ```sh
-cargo install openagent-terminal
+# Install with AI features (Ollama support)
+cargo install openagent-terminal --features "ai ollama"
+
+# Or install with all AI providers
+cargo install openagent-terminal --features "ai ollama openai anthropic"
 ```
 
 Note that you will still need to install the dependencies for your OS of choice.
@@ -47,7 +85,71 @@ Please refer to the [Dependencies](#dependencies) section.
         2. [Bash](#bash)
         3. [Fish](#fish)
 
-## Prerequisites
+## AI Setup
+
+OpenAgent Terminal includes AI assistance features. To use them, you need to set up at least one AI provider:
+
+### Ollama (Recommended - Local & Private)
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start the Ollama service
+ollama serve
+
+# Pull a model (codellama is recommended for code assistance)
+ollama pull codellama
+
+# Or use other models
+ollama pull llama2       # General purpose
+ollama pull mistral      # Fast and efficient
+ollama pull deepseek-coder  # Specialized for code
+```
+
+### OpenAI (Cloud)
+
+```bash
+# Set your API key
+export OPENAI_API_KEY="your-api-key-here"
+
+# Optional: Set a specific model
+export OPENAI_MODEL="gpt-4"  # or "gpt-3.5-turbo"
+```
+
+### Anthropic (Cloud)
+
+```bash
+# Set your API key
+export ANTHROPIC_API_KEY="your-api-key-here"
+
+# Optional: Set a specific model
+export ANTHROPIC_MODEL="claude-3-opus-20240229"  # or "claude-3-sonnet-20240229"
+```
+
+## Configuration
+
+Create your configuration file:
+
+```bash
+# Linux/macOS
+mkdir -p ~/.config/openagent-terminal
+cp example_config.toml ~/.config/openagent-terminal/openagent-terminal.toml
+
+# Windows
+mkdir %APPDATA%\openagent-terminal
+copy example_config.toml %APPDATA%\openagent-terminal\openagent-terminal.toml
+```
+
+Edit the configuration to enable AI:
+
+```toml
+[ai]
+enabled = true
+provider = "ollama"  # or "openai", "anthropic"
+```
+
+## Prerequisites for Building from Source
 
 ### Clone the source code
 
