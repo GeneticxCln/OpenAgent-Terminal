@@ -142,7 +142,7 @@ Send IPC socket messages (see *openagent-terminal-msg*(1)).
 
 # BUGS
 
-Found a bug? Please report it at _https://github.com/GeneticxCln/openagent-terminal/issues_.
+Found a bug? Please report it at _https://github.com/GeneticxCln/OpenAgent-Terminal/issues_.
 
 # MAINTAINERS
 

@@ -77,6 +77,7 @@ impl<'de, T: Deserialize<'de>> SerdeReplace for HashMap<String, T> {
 mod tests {
     use super::*;
 
+    #[allow(unused_imports)]
     use crate as openagent_terminal_config;
     use openagent_terminal_config_derive::ConfigDeserialize;
 

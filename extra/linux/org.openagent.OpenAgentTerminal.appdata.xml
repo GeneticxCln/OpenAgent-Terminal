@@ -34,13 +34,13 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/GeneticxCln/openagent-terminal/master/extra/logo/openagent-terminal.png</image>
+      <image>https://raw.githubusercontent.com/GeneticxCln/OpenAgent-Terminal/main/extra/logo/openagent-terminal.png</image>
       <caption>OpenAgent Terminal with default theme showing neovim</caption>
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://github.com/GeneticxCln/openagent-terminal</url>
-  <url type="bugtracker">https://github.com/GeneticxCln/openagent-terminal/issues</url>
+  <url type="homepage">https://github.com/GeneticxCln/OpenAgent-Terminal</url>
+  <url type="bugtracker">https://github.com/GeneticxCln/OpenAgent-Terminal/issues</url>
 
 <launchable type="desktop-id">openagent-terminal.desktop</launchable>
 

@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(unix)]
         Some(Subcommands::Msg(options)) => msg(options)?,
         Some(Subcommands::Migrate(options)) => migrate::migrate(options),
-        None => alacritty(options)?,
+        None => run_openagent_terminal(options)?,
     }
 
     Ok(())
@@ -131,7 +131,7 @@ impl Drop for TemporaryFiles {
 ///
 /// Creates a window, the terminal state, PTY, I/O event loop, input processor,
 /// config change monitor, and runs the main display loop.
-fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
+fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Setup winit event loop.
     let window_event_loop = EventLoop::<Event>::with_user_event().build()?;
 

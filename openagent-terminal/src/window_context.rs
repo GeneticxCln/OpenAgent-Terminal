@@ -231,7 +231,7 @@ impl WindowContext {
             event_proxy.send_event(TerminalEvent::CursorBlinkingChange.into());
         }
 
-        // Create context for the Alacritty window.
+        // Create context for the OpenAgent Terminal window.
         Ok(WindowContext {
             preserve_title,
             terminal,

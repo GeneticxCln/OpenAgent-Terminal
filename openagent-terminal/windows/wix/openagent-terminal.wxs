@@ -7,44 +7,44 @@
       <MediaTemplate EmbedCab="yes" />
       <ui:WixUI Id="WixUI_Minimal" />
       <Feature Id="ProductFeature" Title="ConsoleApp" Level="1">
-         <ComponentRef Id="AlacrittyExe" />
-         <ComponentRef Id="AlacrittyShortcut" />
+         <ComponentRef Id="OpenAgentTerminalExe" />
+         <ComponentRef Id="OpenAgentTerminalShortcut" />
          <ComponentRef Id="ModifyPathEnv" />
          <ComponentRef Id="ContextMenu" />
       </Feature>
       <!-- Application binaries -->
-      <DirectoryRef Id="AlacrittyProgramFiles">
-         <Component Id="AlacrittyExe">
-<File Id="AlacrittyExeFile" Source=".\\target\\release\\openagent-terminal.exe" Name="openagent-terminal.exe" KeyPath="yes" />
+      <DirectoryRef Id="OpenAgentTerminalProgramFiles">
+         <Component Id="OpenAgentTerminalExe">
+<File Id="OpenAgentTerminalExeFile" Source=".\\target\\release\\openagent-terminal.exe" Name="openagent-terminal.exe" KeyPath="yes" />
          </Component>
       </DirectoryRef>
-      <DirectoryRef Id="AlacrittyProgramMenu">
+      <DirectoryRef Id="OpenAgentTerminalProgramMenu">
          <!-- Application shortcut -->
-         <Component Id="AlacrittyShortcut" Guid="aa36e61a-23cd-4383-b744-2f78e912f0dc">
-<Shortcut Id="AlacrittyShortcutFile" Name="OpenAgent Terminal" Description="A cross-platform, GPU-accelerated terminal emulator" Target="[AlacrittyProgramFiles]openagent-terminal.exe" />
-            <RemoveFolder Id="AlacrittyProgramMenu" On="uninstall" />
+         <Component Id="OpenAgentTerminalShortcut" Guid="aa36e61a-23cd-4383-b744-2f78e912f0dc">
+<Shortcut Id="OpenAgentTerminalShortcutFile" Name="OpenAgent Terminal" Description="A cross-platform, GPU-accelerated terminal emulator" Target="[OpenAgentTerminalProgramFiles]openagent-terminal.exe" />
+            <RemoveFolder Id="OpenAgentTerminalProgramMenu" On="uninstall" />
 <RegistryValue Root="HKCU" Key="Software\\Microsoft\\OpenAgent Terminal" Name="installed" Type="integer" Value="1" KeyPath="yes" />
          </Component>
       </DirectoryRef>
-      <DirectoryRef Id="AlacrittyProgramFiles">
+      <DirectoryRef Id="OpenAgentTerminalProgramFiles">
          <!-- Add to PATH -->
          <Component Id="ModifyPathEnv" Guid="edf0b679-9eb6-46f7-a5d1-5160f30acb34" KeyPath="yes">
-            <Environment Id="PathEnv" Value="[AlacrittyProgramFiles]" Name="PATH" Permanent="no" Part="first" Action="set" System="yes" />
+            <Environment Id="PathEnv" Value="[OpenAgentTerminalProgramFiles]" Name="PATH" Permanent="no" Part="first" Action="set" System="yes" />
          </Component>
       </DirectoryRef>
       <StandardDirectory Id="ProgramFiles64Folder">
-<Directory Id="AlacrittyProgramFiles" Name="OpenAgent Terminal" />
+<Directory Id="OpenAgentTerminalProgramFiles" Name="OpenAgent Terminal" />
       </StandardDirectory>
       <StandardDirectory Id="ProgramMenuFolder">
-<Directory Id="AlacrittyProgramMenu" Name="OpenAgent Terminal" />
+<Directory Id="OpenAgentTerminalProgramMenu" Name="OpenAgent Terminal" />
       </StandardDirectory>
       <!-- Add context menu -->
       <Component Id="ContextMenu" Guid="449f9121-f7b9-41fe-82da-52349ea8ff91" Directory="TARGETDIR">
 <RegistryKey Root="HKCU" Key="Software\Classes\Directory\Background\shell\Open OpenAgent Terminal here\command">
-<RegistryValue Type="string" Value='[AlacrittyProgramFiles]openagent-terminal.exe --working-directory "%v"' KeyPath="yes" />
+<RegistryValue Type="string" Value='[OpenAgentTerminalProgramFiles]openagent-terminal.exe --working-directory "%v"' KeyPath="yes" />
          </RegistryKey>
 <RegistryKey Root="HKCU" Key="Software\Classes\Directory\Background\shell\Open OpenAgent Terminal here">
-<RegistryValue Type="string" Name="Icon" Value="[AlacrittyProgramFiles]openagent-terminal.exe" />
+<RegistryValue Type="string" Name="Icon" Value="[OpenAgentTerminalProgramFiles]openagent-terminal.exe" />
          </RegistryKey>
       </Component>
    </Package>

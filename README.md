@@ -1,18 +1,18 @@
 <p align="center">
-    <img width="400" alt="OpenAgent Terminal Logo" src="./extra/logo/openagent-terminal.png" style="max-width: 100%; height: auto;">
+    <img width="400" alt="OpenAgent Terminal Logo" src="../extra/logo/openagent-terminal.png" style="max-width: 100%; height: auto;">
 </p>
 
 <h1 align="center">OpenAgent Terminal - A fast, cross-platform, OpenGL terminal emulator</h1>
 
 <p align="center">
-  <a href="https://github.com/GeneticxCln/openagent-terminal/actions/workflows/ci.yml">
-    <img alt="CI" src="https://github.com/GeneticxCln/openagent-terminal/actions/workflows/ci.yml/badge.svg?branch=master">
+  <a href="https://github.com/GeneticxCln/OpenAgent-Terminal/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/GeneticxCln/OpenAgent-Terminal/actions/workflows/ci.yml/badge.svg?branch=main">
   </a>
-  <a href="https://github.com/GeneticxCln/openagent-terminal/releases">
-    <img alt="Latest release" src="https://img.shields.io/github/v/release/GeneticxCln/openagent-terminal?include_prereleases&sort=semver">
+  <a href="https://github.com/GeneticxCln/OpenAgent-Terminal/releases">
+    <img alt="Latest release" src="https://img.shields.io/github/v/release/GeneticxCln/OpenAgent-Terminal?include_prereleases&sort=semver">
   </a>
-  <a href="https://github.com/GeneticxCln/openagent-terminal/blob/master/LICENSE-APACHE">
-    <img alt="License" src="https://img.shields.io/github/license/GeneticxCln/openagent-terminal">
+  <a href="https://github.com/GeneticxCln/OpenAgent-Terminal/blob/main/LICENSE-APACHE">
+    <img alt="License" src="https://img.shields.io/github/license/GeneticxCln/OpenAgent-Terminal">
   </a>
 </p>
 
@@ -21,23 +21,23 @@
 OpenAgent Terminal is a modern terminal emulator that comes with sensible defaults, but
 allows for extensive [configuration](#configuration). By integrating with other
 applications, rather than reimplementing their functionality, it manages to
-provide a flexible set of [features](./docs/features.md) with high performance.
+provide a flexible set of [features](../docs/features.md) with high performance.
 The supported platforms currently consist of BSD, Linux, macOS and Windows.
 
 The software is considered to be at a **beta** level of readiness; there are
 a few missing features and bugs to be fixed, but it is already used by many as
 a daily driver.
 
-Precompiled binaries are available from the [GitHub releases page](https://github.com/GeneticxCln/openagent-terminal/releases).
+Precompiled binaries are available from the [GitHub releases page](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
 
 
 ## Features
 
-You can find an overview over the features available in OpenAgent Terminal [here]
+You can find an overview over the features available in OpenAgent Terminal here: [docs/features.md](../docs/features.md)
 
 ## Further information
 
-- Releases: https://github.com/GeneticxCln/openagent-terminal/releases
+- Releases: https://github.com/GeneticxCln/OpenAgent-Terminal/releases
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 
@@ -47,10 +47,10 @@ OpenAgent Terminal can be installed by using various package managers on Linux, 
 macOS and Windows.
 
 Prebuilt binaries for macOS and Windows can also be downloaded from the
-[GitHub releases page](https://github.com/GeneticxCln/openagent-terminal/releases).
+[GitHub releases page](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
 
 For everyone else, the detailed instructions to install OpenAgent Terminal can be found
-[here](INSTALL.md).
+[here](../INSTALL.md).
 
 ### Requirements
 
@@ -112,4 +112,5 @@ niceties like a GUI config editor.
 
 OpenAgent Terminal is released under the [Apache License, Version 2.0].
 
-[Apache License, Version 2.0]: https://github.com/GeneticxCln/openagent-terminal/blob/master/LICENSE-APACHE
+[Apache License, Version 2.0]: https://github.com/GeneticxCln/OpenAgent-Terminal/blob/main/LICENSE-APACHE
+

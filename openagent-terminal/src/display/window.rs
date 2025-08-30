@@ -47,9 +47,9 @@ use crate::display::SizeInfo;
 
 /// Window icon for `_NET_WM_ICON` property.
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-const WINDOW_ICON: &[u8] = include_bytes!("../../extra/logo/compat/alacritty-term.png");
+const WINDOW_ICON: &[u8] = include_bytes!("../../../extra/logo/compat/openagent-terminal-term.png");
 
-/// This should match the definition of IDI_ICON from `alacritty.rc`.
+/// This should match the definition of IDI_ICON from the Windows resource file.
 #[cfg(windows)]
 const IDI_ICON: u16 = 0x101;
 
@@ -98,7 +98,7 @@ impl From<crossfont::Error> for Error {
 
 /// A window which can be used for displaying the terminal.
 ///
-/// Wraps the underlying windowing library to provide a stable API in Alacritty.
+/// Wraps the underlying windowing library to provide a stable API in OpenAgent Terminal.
 pub struct Window {
     /// Flag tracking that we have a frame we can draw.
     pub has_frame: bool,

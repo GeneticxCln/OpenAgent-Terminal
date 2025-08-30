@@ -54,8 +54,8 @@ Please refer to the [Dependencies](#dependencies) section.
 Before compiling OpenAgent Terminal, you'll have to first clone the source code:
 
 ```sh
-git clone https://github.com/GeneticxCln/openagent-terminal.git
-cd openagent-terminal
+git clone https://github.com/GeneticxCln/OpenAgent-Terminal.git
+cd OpenAgent-Terminal
 ```
 
 ### Install the Rust compiler with `rustup`
@@ -227,7 +227,7 @@ guix environment openagent-terminal
 
 #### Alpine Linux
 
-On Alpine Linux, you need a few extra libraries to build Alacritty. Here's an
+On Alpine Linux, you need a few extra libraries to build OpenAgent Terminal. Here's an
 `apk` command that should install all of them. If something is still found to
 be missing, please open an issue.
 

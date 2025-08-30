@@ -115,6 +115,7 @@ impl Blocks {
 
 
     /// Toggle folding if the viewport line corresponds to a block header.
+    #[allow(dead_code)]
     pub fn toggle_fold_header_at_viewport_line(
         &mut self,
         display_offset: usize,

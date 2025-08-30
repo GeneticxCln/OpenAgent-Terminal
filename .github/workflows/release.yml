@@ -70,6 +70,9 @@ mv ./target/release/osx/OpenAgentTerminal.dmg ./openagent-terminal-${GITHUB_REF#
             libxcb-xfixes0-dev libxkbcommon-dev python3 scdoc
       - name: Test
         run: cargo test --release
+      - name: Regenerate shell completions
+        run: |
+          REBUILD_COMPLETIONS=1 cargo test --release -p openagent-terminal --test-threads 1 || true
       - name: Generate manpages
         run: |
           scdoc < extra/man/openagent-terminal.1.scd | gzip -c > "./openagent-terminal.1.gz"

@@ -42,9 +42,9 @@ This section documents the *[general]* table of the configuration file.
 
 	Example:
 		import = [++
-	_"~/.config/alacritty/base16-dark.toml"_,++
-	_"~/.config/alacritty/keybindings.toml"_,++
-	_"alacritty-theme/themes/gruvbox_dark.toml"_,++
+	_"~/.config/openagent-terminal/base16-dark.toml"_,++
+	_"~/.config/openagent-terminal/keybindings.toml"_,++
+	_"openagent-terminal-theme/themes/gruvbox_dark.toml"_,++
 ]
 
 *working_directory* = _"<string>"_ | _"None"_
@@ -1067,7 +1067,7 @@ Keep the log file after quitting OpenAgent Terminal.
 
 # BUGS
 
-Found a bug? Please report it at _https://github.com/GeneticxCln/openagent-terminal/issues_.
+Found a bug? Please report it at _https://github.com/GeneticxCln/OpenAgent-Terminal/issues_.
 
 # MAINTAINERS
 

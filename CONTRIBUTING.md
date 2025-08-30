@@ -17,29 +17,29 @@ Table of Contents:
 ## Feature Requests
 
 Feature requests should be reported in the
-[OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/openagent-terminal/issues). To reduce the number of
+[OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/OpenAgent-Terminal/issues). To reduce the number of
 duplicates, please make sure to check the existing
-[enhancement](https://github.com/GeneticxCln/openagent-terminal/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3Aenhancement)
+[enhancement](https://github.com/GeneticxCln/OpenAgent-Terminal/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3Aenhancement)
 and
-[missing feature](https://github.com/GeneticxCln/openagent-terminal/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22B+-+missing+feature%22)
+[missing feature](https://github.com/GeneticxCln/OpenAgent-Terminal/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22B+-+missing+feature%22)
 issues.
 
 ## Bug Reports
 
 Bug reports should be reported in the
-[OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/openagent-terminal/issues).
+[OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/OpenAgent-Terminal/issues).
 
 If a bug was not present in a previous version of OpenAgent Terminal, providing the exact commit which
 introduced the regression helps out a lot.
 
 ## Patches / Pull Requests
 
-All patches have to be sent on GitHub as [pull requests](https://github.com/GeneticxCln/openagent-terminal/pulls).
+All patches have to be sent on GitHub as [pull requests](https://github.com/GeneticxCln/OpenAgent-Terminal/pulls).
 
 If you are looking for a place to start contributing to OpenAgent Terminal, take a look at the
-[help wanted](https://github.com/GeneticxCln/openagent-terminal/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
+[help wanted](https://github.com/GeneticxCln/OpenAgent-Terminal/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
 and
-[easy](https://github.com/GeneticxCln/openagent-terminal/issues?q=is%3Aopen+is%3Aissue+label%3A%22D+-+easy%22)
+[easy](https://github.com/GeneticxCln/OpenAgent-Terminal/issues?q=is%3Aopen+is%3Aissue+label%3A%22D+-+easy%22)
 issues.
 
 You can find the minimum supported Rust version in OpenAgent Terminal's manifest file
@@ -160,5 +160,5 @@ the last release yet.
 # Contact
 
 If there are any outstanding questions about contributing to OpenAgent Terminal, they can be asked on the
-[OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/openagent-terminal/issues).
+[OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/OpenAgent-Terminal/issues).
 

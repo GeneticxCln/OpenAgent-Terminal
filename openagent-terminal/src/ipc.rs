@@ -20,7 +20,9 @@ use crate::cli::{Options, SocketMessage};
 use crate::event::{Event, EventType};
 
 /// Environment variable name for the IPC socket path.
-const ALACRITTY_SOCKET_ENV: &str = "ALACRITTY_SOCKET";
+const OPENAGENT_TERMINAL_SOCKET_ENV: &str = "OPENAGENT_TERMINAL_SOCKET";
+/// Backward-compatibility: old env var read as a fallback for a few releases.
+const ALACRITTY_SOCKET_ENV_OLD: &str = "ALACRITTY_SOCKET";
 
 /// Create an IPC socket.
 pub fn spawn_ipc_socket(
@@ -37,9 +39,9 @@ pub fn spawn_ipc_socket(
 
     let listener = UnixListener::bind(&socket_path)?;
 
-    unsafe { env::set_var(ALACRITTY_SOCKET_ENV, socket_path.as_os_str()) };
+    unsafe { env::set_var(OPENAGENT_TERMINAL_SOCKET_ENV, socket_path.as_os_str()) };
     if options.daemon {
-        println!("ALACRITTY_SOCKET={}; export ALACRITTY_SOCKET", socket_path.display());
+        println!("OPENAGENT_TERMINAL_SOCKET={}; export OPENAGENT_TERMINAL_SOCKET", socket_path.display());
     }
 
     // Spawn a thread to listen on the IPC socket.
@@ -151,7 +153,7 @@ fn send_reply_fallible(stream: &mut UnixStream, message: SocketReply) -> IoResul
 /// Directory for the IPC socket file.
 #[cfg(not(target_os = "macos"))]
 fn socket_dir() -> PathBuf {
-    xdg::BaseDirectories::with_prefix("alacritty")
+    xdg::BaseDirectories::with_prefix("openagent-terminal")
         .get_runtime_directory()
         .map(ToOwned::to_owned)
         .ok()
@@ -176,8 +178,10 @@ fn find_socket(socket_path: Option<PathBuf>) -> IoResult<UnixStream> {
         });
     }
 
-    // Handle environment variable.
-    if let Ok(path) = env::var(ALACRITTY_SOCKET_ENV) {
+    // Handle environment variable (new name first, then legacy fallback).
+    if let Ok(path) = env::var(OPENAGENT_TERMINAL_SOCKET_ENV)
+        .or_else(|_| env::var(ALACRITTY_SOCKET_ENV_OLD))
+    {
         let socket_path = PathBuf::from(path);
         if let Ok(socket) = UnixStream::connect(socket_path) {
             return Ok(socket);
@@ -221,13 +225,13 @@ fn find_socket(socket_path: Option<PathBuf>) -> IoResult<UnixStream> {
 #[cfg(not(target_os = "macos"))]
 fn socket_prefix() -> String {
     let display = env::var("WAYLAND_DISPLAY").or_else(|_| env::var("DISPLAY")).unwrap_or_default();
-    format!("Alacritty-{}", display.replace('/', "-"))
+    format!("OpenAgentTerminal-{}", display.replace('/', "-"))
 }
 
 /// File prefix matching all available sockets.
 #[cfg(target_os = "macos")]
 fn socket_prefix() -> String {
-    String::from("Alacritty")
+    String::from("OpenAgentTerminal")
 }
 
 /// IPC socket replies.

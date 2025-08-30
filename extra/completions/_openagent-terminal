@@ -16,7 +16,7 @@ _openagent-terminal() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
 '--embed=[X11 window ID to embed OpenAgent Terminal within (decimal or hexadecimal with "0x" prefix)]:EMBED:_default' \
-'--config-file=[Specify alternative configuration file \[default\: \$XDG_CONFIG_HOME/alacritty/alacritty.toml\]]:CONFIG_FILE:_files' \
+'--config-file=[Specify alternative configuration file [default: $XDG_CONFIG_HOME/openagent-terminal/openagent-terminal.toml]]:CONFIG_FILE:_files' \
 '--socket=[Path for IPC socket creation]:SOCKET:_files' \
 '--working-directory=[Start the shell in the specified working directory]:WORKING_DIRECTORY:_files' \
 '*-e+[Command and args to execute (must be last argument)]:COMMAND:_default' \
@@ -37,10 +37,10 @@ _openagent-terminal() {
 '-V[Print version]' \
 '--version[Print version]' \
 ":: :_openagent-terminal_commands" \
-"*::: :->alacritty" \
+"*::: :->openagent-terminal" \
 && ret=0
     case $state in
-    (alacritty)
+    (openagent-terminal)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:openagent-terminal-command-$line[1]:"

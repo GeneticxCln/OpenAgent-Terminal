@@ -163,22 +163,22 @@ pub enum Action {
     /// Clear the display buffer(s) to remove history.
     ClearHistory,
 
-    /// Hide the Alacritty window.
+    /// Hide the OpenAgent Terminal window.
     Hide,
 
-    /// Hide all windows other than Alacritty on macOS.
+    /// Hide all windows other than OpenAgent Terminal on macOS.
     HideOtherApplications,
 
-    /// Minimize the Alacritty window.
+    /// Minimize the OpenAgent Terminal window.
     Minimize,
 
-    /// Quit Alacritty.
+    /// Quit OpenAgent Terminal.
     Quit,
 
     /// Clear warning and error notices.
     ClearLogNotice,
 
-    /// Spawn a new instance of Alacritty.
+    /// Spawn a new instance of OpenAgent Terminal.
     SpawnNewInstance,
 
     /// Select next tab.
@@ -217,7 +217,7 @@ pub enum Action {
     /// Select the last tab.
     SelectLastTab,
 
-    /// Create a new Alacritty window.
+    /// Create a new OpenAgent Terminal window.
     CreateNewWindow,
 
     /// Create new window in a tab.
