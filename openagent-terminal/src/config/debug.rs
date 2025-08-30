@@ -80,6 +80,9 @@ pub struct Debug {
     /// WGPU atlas eviction policy.
     pub atlas_eviction_policy: AtlasEvictionPolicy,
 
+    /// Periodic atlas stats reporting interval in frames (0 disables reporting).
+    pub atlas_report_interval_frames: u32,
+
     /// Record ref test.
     #[config(skip)]
     #[serde(skip_serializing)]
@@ -103,6 +106,7 @@ impl Default for Debug {
             srgb_swapchain: Default::default(),
             zero_evicted_atlas_layer: false,
             atlas_eviction_policy: Default::default(),
+            atlas_report_interval_frames: 0,
         }
     }
 }

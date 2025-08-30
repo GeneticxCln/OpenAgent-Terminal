@@ -597,6 +597,7 @@ impl Display {
                 config.debug.subpixel_text,
                 config.debug.zero_evicted_atlas_layer,
                 config.debug.atlas_eviction_policy,
+                config.debug.atlas_report_interval_frames,
             ),
         )
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
@@ -995,6 +996,19 @@ impl Display {
 
         info!("Padding: {} x {}", self.size_info.padding_x(), self.size_info.padding_y());
         info!("Width: {}, Height: {}", self.size_info.width(), self.size_info.height());
+    }
+
+    /// Dump atlas stats to the debug log. No-op on GL backend.
+    pub fn dump_atlas_stats(&mut self) {
+        match &mut self.backend {
+            Backend::Gl { .. } => {
+                debug!("DumpAtlasStats: not supported on GL backend");
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.dump_atlas_stats();
+            },
+        }
     }
 
     /// Draw the screen.

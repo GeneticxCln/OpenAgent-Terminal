@@ -178,6 +178,9 @@ pub enum Action {
     /// Clear warning and error notices.
     ClearLogNotice,
 
+    /// Dump WGPU atlas stats to the debug log (no-op on GL backend).
+    DumpAtlasStats,
+
     /// Spawn a new instance of OpenAgent Terminal.
     SpawnNewInstance,
 
@@ -580,6 +583,8 @@ fn common_keybindings() -> Vec<KeyBinding> {
         "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI, +BindingMode::SEARCH; Action::Paste;
         "f",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::SearchForward;
         "b",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::SearchBackward;
+        // Debug: dump WGPU atlas stats
+        "d",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::DumpAtlasStats;
         Insert, ModifiersState::SHIFT,                           ~BindingMode::VI;                       Action::PasteSelection;
         "c",    ModifiersState::CONTROL | ModifiersState::SHIFT;                                         Action::Copy;
         "c",    ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI, ~BindingMode::SEARCH; Action::ClearSelection;
@@ -616,6 +621,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         Insert, ModifiersState::SHIFT, ~BindingMode::VI, ~BindingMode::SEARCH; Action::Esc("\x1b[2;2~".into());
         // Command Palette on macOS
         "p",    ModifiersState::SUPER, ~BindingMode::SEARCH;                    Action::OpenCommandPalette;
+        // Debug: dump WGPU atlas stats
+        "d",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::DumpAtlasStats;
         // Tabbing api.
         "t",    ModifiersState::SUPER;                                         Action::CreateNewTab;
         "]",    ModifiersState::SUPER | ModifiersState::SHIFT;                 Action::SelectNextTab;

@@ -508,7 +508,10 @@ impl<T: EventListener> Execute<T> for Action {
                 ctx.mark_dirty();
             },
             Action::ClearHistory => ctx.terminal_mut().clear_screen(ClearMode::Saved),
-            Action::ClearLogNotice => ctx.pop_message(),
+            Action::ClearLogNotice => (),
+            Action::DumpAtlasStats => {
+                ctx.display().dump_atlas_stats();
+            },
             #[cfg(not(target_os = "macos"))]
             Action::CreateNewWindow => ctx.create_new_window(),
             Action::SpawnNewInstance => ctx.spawn_new_instance(),

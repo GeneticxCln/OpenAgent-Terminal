@@ -139,6 +139,9 @@ pub struct WgpuRenderer {
     atlas_inserts: u64,
     atlas_insert_misses: u64,
     atlas_evictions_count: u64,
+    // Reporting
+    report_interval_frames: u32,
+    frame_counter: u64,
     // Frame state
     pending_clear: Cell<Option<[f64; 4]>>,
     pending_text: Vec<TextVertex>,
@@ -257,6 +260,7 @@ impl WgpuRenderer {
         subpixel_pref: SubpixelPreference,
         zero_evicted_layer: bool,
         policy: AtlasEvictionPolicy,
+        report_interval_frames: u32,
     ) -> Result<Self, Error> {
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -477,6 +481,9 @@ impl WgpuRenderer {
             multiview: None,
         });
 
+        // Prepare zero scratch buffer for optional layer clearing.
+        let zero_scratch = vec![0u8; (ATLAS_SIZE as usize) * (ATLAS_SIZE as usize) * 4];
+
         let mut renderer = Self {
             instance,
             device,
@@ -498,11 +505,23 @@ impl WgpuRenderer {
             text_bind_group,
             is_srgb_surface,
             subpixel_enabled,
-            zero_evicted_layer: false, // set by caller via new() params below
-            policy: AtlasEvictionPolicy::LruMinOccupancy, // set by caller via new()        };
+            zero_evicted_layer: false, // set below
+            policy: AtlasEvictionPolicy::LruMinOccupancy, // set below
+            zero_scratch,
+            atlas_inserts: 0,
+            atlas_insert_misses: 0,
+            atlas_evictions_count: 0,
+            report_interval_frames: 0,
+            frame_counter: 0,
+            pending_clear: Cell::new(None),
+            pending_text: Vec::new(),
+            pending_bg: Vec::new(),
+            atlas_evicted: Cell::new(false),
+        };
         // Apply constructor preferences that depend on caller config.
         renderer.zero_evicted_layer = zero_evicted_layer;
         renderer.policy = policy;
+        renderer.report_interval_frames = report_interval_frames;
 
         Ok(renderer)
     }
@@ -664,6 +683,14 @@ impl WgpuRenderer {
 
         self.queue.submit([encoder.finish()]);
         frame.present();
+
+        // Periodic atlas reporting.
+        if self.report_interval_frames > 0 {
+            self.frame_counter = self.frame_counter.wrapping_add(1);
+            if (self.frame_counter as u32) % self.report_interval_frames == 0 {
+                self.dump_atlas_stats();
+            }
+        }
     }
 
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(
@@ -855,6 +882,40 @@ impl WgpuRenderer {
 
     pub fn was_context_reset(&self) -> bool { false }
     pub fn set_viewport(&self, _size: &SizeInfo) {}
+
+    pub fn dump_atlas_stats(&self) {
+        let mut lines = Vec::new();
+        let mut total_used = 0u64;
+        let mut total_capacity = 0u64;
+        for (i, page) in self.atlas_pages.iter().enumerate() {
+            let cap = (page.width as u64) * (page.height as u64);
+            let used = page.used_area.min(cap);
+            total_used += used;
+            total_capacity += cap;
+            let pct = if cap > 0 { (used as f64 / cap as f64) * 100.0 } else { 0.0 };
+            let ts = self.page_meta[i].last_use;
+            lines.push(format!(
+                "layer={} used={} / {} ({:.1}%), last_use={}",
+                i, used, cap, pct, ts
+            ));
+        }
+        let total_pct = if total_capacity > 0 {
+            (total_used as f64 / total_capacity as f64) * 100.0
+        } else {
+            0.0
+        };
+        debug!(
+            "WGPU atlas stats: policy={:?} inserts={} misses={} evictions={} total_used={} / {} ({:.1}%)\n{}",
+            self.policy,
+            self.atlas_inserts,
+            self.atlas_insert_misses,
+            self.atlas_evictions_count,
+            total_used,
+            total_capacity,
+            total_pct,
+            lines.join("\n")
+        );
+    }
 }
 
 fn build_text_vertices(size_info: &SizeInfo, cell: &RenderableCell, glyph: &Glyph, subpixel: bool) -> [TextVertex; 6] {
