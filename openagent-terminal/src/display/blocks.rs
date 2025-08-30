@@ -11,6 +11,7 @@ pub struct CommandBlock {
     pub cwd: Option<String>,
     pub exit: Option<i32>,
     pub ended_at: Option<Instant>,
+    pub started_at: Instant,
     pub folded: bool,
 }
 
@@ -49,6 +50,7 @@ impl Blocks {
                     cwd: None,
                     exit: None,
                     ended_at: None,
+                    started_at: Instant::now(),
                     folded: false,
                 };
                 self.blocks.push(block);
@@ -158,6 +160,62 @@ impl Blocks {
             .rev()
             .find(|b| b.start_total_line < display_offset)
             .map(|b| b.start_total_line)
+    }
+
+    /// Return block header to draw at a viewport line if it is the first visible line
+    /// of an unfolded block; returns None otherwise.
+    pub fn header_at_viewport_line(
+        &self,
+        display_offset: usize,
+        viewport_line: usize,
+    ) -> Option<String> {
+        let total_line = display_offset + viewport_line;
+        for block in &self.blocks {
+            if !block.folded && total_line == block.start_total_line {
+                // Only show header for blocks that have a command and are long enough
+                if block.cmd.is_some() && block.end_total_line.is_some_and(|end| end > block.start_total_line) {
+                    let cmd = block.cmd.as_ref().unwrap();
+                    let status = block.exit.map(|c| if c == 0 { "✓" } else { "✗" }).unwrap_or("…");
+                    
+                    // Calculate elapsed time
+                    let elapsed = if let Some(ended_at) = block.ended_at {
+                        ended_at.duration_since(block.started_at)
+                    } else {
+                        Instant::now().duration_since(block.started_at)
+                    };
+                    
+                    let time_str = if elapsed.as_secs() < 60 {
+                        format!("{:.1}s", elapsed.as_secs_f32())
+                    } else if elapsed.as_secs() < 3600 {
+                        format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                    } else {
+                        format!("{}h{}m", elapsed.as_secs() / 3600, (elapsed.as_secs() % 3600) / 60)
+                    };
+                    
+                    // Format working directory (show last component if too long)
+                    let cwd_str = if let Some(ref cwd) = block.cwd {
+                        if cwd.len() > 40 {
+                            format!("…{}", &cwd[cwd.len() - 37..])
+                        } else {
+                            cwd.clone()
+                        }
+                    } else {
+                        String::from("~")
+                    };
+                    
+                    return Some(format!("▶ {} [{}] {} ({})", cmd, status, time_str, cwd_str));
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if the viewport line is a block header line (but not folded).
+    pub fn is_viewport_line_header(&self, display_offset: usize, viewport_line: usize) -> bool {
+        let total_line = display_offset + viewport_line;
+        self.blocks
+            .iter()
+            .any(|b| !b.folded && total_line == b.start_total_line && b.cmd.is_some())
     }
 }
 

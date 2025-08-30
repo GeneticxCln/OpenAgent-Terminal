@@ -1502,6 +1502,37 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn scheduler_mut(&mut self) -> &mut Scheduler {
         self.scheduler
     }
+
+    fn copy_to_clipboard(&mut self, text: String) {
+        self.clipboard.store(ClipboardType::Clipboard, text);
+    }
+
+    fn spawn_shell_command_in_cwd(&mut self, cmd: String, cwd: String) {
+        // Use the shell to run the command in the specified working directory
+        let shell_cmd = if cfg!(windows) {
+            format!("cd /d {} && {}", cwd, cmd)
+        } else {
+            format!("cd {} && {}", cwd, cmd)
+        };
+        
+        let shell = if cfg!(windows) { "cmd" } else { "sh" };
+        let shell_args = if cfg!(windows) { vec!["/c", &shell_cmd] } else { vec!["-c", &shell_cmd] };
+        
+        self.spawn_daemon(shell, &shell_args);
+    }
+
+    fn prompt_and_export_block_output(&mut self, text: String) {
+        // For now, we'll just copy to clipboard and show a message
+        // In a full implementation, this would prompt the user for a file path
+        self.copy_to_clipboard(text.clone());
+        
+        // Add a message to inform the user
+        let message = Message::new(
+            format!("Block output copied to clipboard ({} chars)", text.len()),
+            crate::message_bar::MessageType::Warning
+        );
+        let _ = self.event_proxy.send_event(Event::new(EventType::Message(message), None));
+    }
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {

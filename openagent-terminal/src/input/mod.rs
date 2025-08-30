@@ -142,6 +142,9 @@ pub trait ActionContext<T: EventListener> {
         S: AsRef<OsStr>,
     {
     }
+    fn copy_to_clipboard(&mut self, _text: String) {}
+    fn spawn_shell_command_in_cwd(&mut self, _cmd: String, _cwd: String) {}
+    fn prompt_and_export_block_output(&mut self, _text: String) {}
 }
 
 impl Action {
@@ -561,6 +564,34 @@ impl<T: EventListener> Execute<T> for Action {
                     if let Some(new_offset) = target {
                         let delta = new_offset as i32 - display_offset as i32;
                         ctx.scroll(Scroll::Delta(delta));
+                    }
+                }
+            },
+            Action::CopyBlockOutput => {
+                if ctx.display().blocks.enabled {
+                    if let Some(text) = ctx.terminal().extract_current_block_output() {
+                        ctx.copy_to_clipboard(text);
+                    }
+                }
+            },
+            Action::CopyBlockCommand => {
+                if ctx.display().blocks.enabled {
+                    if let Some(cmd) = ctx.terminal().current_block_command() {
+                        ctx.copy_to_clipboard(cmd);
+                    }
+                }
+            },
+            Action::RerunBlockCommand => {
+                if ctx.display().blocks.enabled {
+                    if let Some((cmd, cwd)) = ctx.terminal().current_block_cmd_and_cwd() {
+                        ctx.spawn_shell_command_in_cwd(cmd, cwd);
+                    }
+                }
+            },
+            Action::ExportBlockOutput => {
+                if ctx.display().blocks.enabled {
+                    if let Some(text) = ctx.terminal().extract_current_block_output() {
+                        ctx.prompt_and_export_block_output(text);
                     }
                 }
             },

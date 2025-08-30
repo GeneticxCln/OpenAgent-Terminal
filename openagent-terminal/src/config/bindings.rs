@@ -247,14 +247,26 @@ pub enum Action {
     /// Start a backward buffer search.
     SearchBackward,
 
-    /// Toggle folding of the current command block (experimental).
+    /// Toggle folding of the current command block.
     ToggleFoldBlock,
 
-    /// Jump to next command block header (experimental).
+    /// Jump to next command block header.
     NextBlock,
 
-    /// Jump to previous command block header (experimental).
+    /// Jump to previous command block header.
     PreviousBlock,
+
+    /// Copy the output of the current command block.
+    CopyBlockOutput,
+
+    /// Copy the command of the current command block.
+    CopyBlockCommand,
+
+    /// Rerun the current command block in its working directory.
+    RerunBlockCommand,
+
+    /// Export current command block output to a file.
+    ExportBlockOutput,
 
     /// No action.
     None,
@@ -430,7 +442,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 pub fn default_key_bindings() -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
-        // Experimental: block folding and navigation.
+        // Block folding and navigation.
         "f",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::ToggleFoldBlock;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;

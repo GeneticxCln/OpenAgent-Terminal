@@ -25,8 +25,8 @@ pub struct Debug {
     /// Use EGL as display API if the current platform allows it.
     pub prefer_egl: bool,
 
-    /// Experimental: enable basic command block overlays/folding UI.
-    pub experimental_blocks: bool,
+    /// Enable command block overlays/folding UI.
+    pub blocks: bool,
 
     /// Record ref test.
     #[config(skip)]
@@ -45,7 +45,7 @@ impl Default for Debug {
             ref_test: Default::default(),
             renderer: Default::default(),
             prefer_egl: Default::default(),
-            experimental_blocks: Default::default(),
+            blocks: true,
         }
     }
 }

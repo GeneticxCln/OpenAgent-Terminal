@@ -517,9 +517,9 @@ impl Display {
             info!("Failed to disable vsync: {err}");
         }
 
-        // Initialize command blocks manager, honoring experimental config flag.
+        // Initialize command blocks manager.
         let mut blocks = blocks::Blocks::new();
-        blocks.enabled = config.debug.experimental_blocks;
+        blocks.enabled = config.debug.blocks;
 
         Ok(Self {
             context: ManuallyDrop::new(context),
@@ -1039,20 +1039,31 @@ impl Display {
             self.draw_hyperlink_preview(config, cursor_point, display_offset);
         }
 
-        // Draw overlays for folded command blocks.
+        // Draw overlays for command blocks (headers and folded regions).
         if self.blocks.enabled {
             let num_lines = self.size_info.screen_lines();
             let fg = config.colors.footer_bar_foreground();
             let bg = config.colors.footer_bar_background();
             for line in 0..num_lines {
+                // Folded overlay.
                 if let Some(label) = self.blocks.folded_label_at_viewport_line(display_offset, line) {
-                    // Damage the line for current and next frame.
                     let damage = LineDamageBounds::new(line, 0, self.size_info.columns());
                     self.damage_tracker.frame().damage_line(damage);
                     self.damage_tracker.next_frame().damage_line(damage);
 
                     let point = Point::new(line, Column(0));
                     self.renderer.draw_string(point, fg, bg, label.chars(), &self.size_info, &mut self.glyph_cache);
+                    continue;
+                }
+
+                // Unfolded block header overlay.
+                if let Some(header) = self.blocks.header_at_viewport_line(display_offset, line) {
+                    let damage = LineDamageBounds::new(line, 0, self.size_info.columns());
+                    self.damage_tracker.frame().damage_line(damage);
+                    self.damage_tracker.next_frame().damage_line(damage);
+
+                    let point = Point::new(line, Column(0));
+                    self.renderer.draw_string(point, fg, bg, header.chars(), &self.size_info, &mut self.glyph_cache);
                 }
             }
         }
@@ -1093,8 +1104,8 @@ impl Display {
         self.visual_bell.update_config(&config.bell);
         self.colors = List::from(&config.colors);
 
-        // Honor experimental flag on reload without disabling if it was already enabled by events.
-        if config.debug.experimental_blocks {
+        // Honor blocks flag on reload without disabling if it was already enabled by events.
+        if config.debug.blocks {
             self.blocks.enabled = true;
         }
     }

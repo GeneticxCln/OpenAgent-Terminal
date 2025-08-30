@@ -930,6 +930,30 @@ impl<T> Term<T> {
         &self.config.semantic_escape_chars
     }
 
+    /// Extract output from the current command block, if any.
+    pub fn extract_current_block_output(&self) -> Option<String> {
+        // This method would need access to the blocks manager which is in the display layer.
+        // For now, return None as this needs to be implemented at a higher level
+        // where both terminal and blocks are accessible.
+        None
+    }
+
+    /// Get the command from the current command block, if any.
+    pub fn current_block_command(&self) -> Option<String> {
+        // This method would need access to the blocks manager which is in the display layer.
+        // For now, return None as this needs to be implemented at a higher level
+        // where both terminal and blocks are accessible.
+        None
+    }
+
+    /// Get both command and working directory from the current command block, if any.
+    pub fn current_block_cmd_and_cwd(&self) -> Option<(String, String)> {
+        // This method would need access to the blocks manager which is in the display layer.
+        // For now, return None as this needs to be implemented at a higher level
+        // where both terminal and blocks are accessible.
+        None
+    }
+
     #[cfg(test)]
     pub(crate) fn set_semantic_escape_chars(&mut self, semantic_escape_chars: &str) {
         self.config.semantic_escape_chars = semantic_escape_chars.into();
