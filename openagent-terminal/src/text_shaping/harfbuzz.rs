@@ -221,16 +221,23 @@ impl HarfBuzzShaper {
         let runs = self.split_into_font_runs(text, primary_font);
         
         for run in runs {
-            let font_name = if run.needs_emoji && self.config.emoji_font.is_some() {
-                self.config.emoji_font.as_ref().unwrap()
+            // Choose font name without borrowing self during the call to shape_text.
+            let font_name_owned: String = if run.needs_emoji && self.config.emoji_font.is_some() {
+                self.config
+                    .emoji_font
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| primary_font.to_string())
             } else if run.needs_fallback {
-                self.find_fallback_font(&run.text, primary_font)
+                self
+                    .find_fallback_font(&run.text, primary_font)
                     .unwrap_or(primary_font)
+                    .to_string()
             } else {
-                primary_font
+                primary_font.to_string()
             };
             
-            let shaped = self.shape_text(&run.text, font_name, font_size)?;
+            let shaped = self.shape_text(&run.text, &font_name_owned, font_size)?;
             
             // Adjust positions and add to result
             for mut glyph in shaped.glyphs {

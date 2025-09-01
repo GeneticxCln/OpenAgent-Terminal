@@ -363,7 +363,7 @@ pub struct Display {
     pub(crate) ai_panel_anim_duration_ms: u32,
     #[cfg(feature = "ai")]
     /// Hovered AI header control (for hover tooltips and cursor), if any.
-    pub(crate) ai_hover_control: Option<super::ai_panel::AiHeaderControl>,
+    pub(crate) ai_hover_control: Option<ai_panel::AiHeaderControl>,
 
     /// Hint highlighted by the mouse.
     pub highlighted_hint: Option<HintMatch>,

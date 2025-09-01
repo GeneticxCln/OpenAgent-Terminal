@@ -123,6 +123,10 @@ pub struct Window {
 }
 
 impl Window {
+    /// Expose a reference to the inner winit Window for integrations that need it.
+    pub fn inner(&self) -> &WinitWindow {
+        &self.window
+    }
     /// Create a new window.
     ///
     /// This creates a window and fully initializes a window.

@@ -69,40 +69,40 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     // Stop/cancel streaming
                     Key::Character(c) if (c.eq_ignore_ascii_case("c")) => {
                         // Ctrl+C maps here reliably across platforms
-                        self.ctx.event_proxy.send_event(crate::event::EventType::AiStop);
+                        self.ctx.send_user_event(crate::event::EventType::AiStop);
                         return;
                     },
                     // Regenerate
                     Key::Character(c) if (c.eq_ignore_ascii_case("r")) => {
-                        self.ctx.event_proxy.send_event(crate::event::EventType::AiRegenerate);
+                        self.ctx.send_user_event(crate::event::EventType::AiRegenerate);
                         return;
                     },
                     // Insert to prompt
                     Key::Character(c) if (c.eq_ignore_ascii_case("i")) => {
-                        if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
                             if let Some(text) = runtime.insert_to_prompt() {
-                                self.ctx.event_proxy.send_event(crate::event::EventType::AiInsertToPrompt(text));
+                                self.ctx.send_user_event(crate::event::EventType::AiInsertToPrompt(text));
                             }
                         }
                         return;
                     },
                     // Apply as command (Safe-run: dry-run by default)
                     Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
-                        if let Some(runtime) = &self.ctx.ai_runtime {
+                        if let Some(runtime) = self.ctx.ai_runtime_ref() {
                             if let Some((cmd, dry_run)) = runtime.apply_command(true) {
-                                self.ctx.event_proxy.send_event(crate::event::EventType::AiApplyAsCommand { command: cmd, dry_run });
+                                self.ctx.send_user_event(crate::event::EventType::AiApplyAsCommand { command: cmd, dry_run });
                             }
                         }
                         return;
                     },
                     // Copy as code (Ctrl+Shift+C)
                     Key::Character(c) if (c.eq_ignore_ascii_case("c") && mods.shift_key()) => {
-                        self.ctx.event_proxy.send_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Code });
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Code });
                         return;
                     },
                     // Copy all (Ctrl+Shift+A)
                     Key::Character(c) if (c.eq_ignore_ascii_case("a") && mods.shift_key()) => {
-                        self.ctx.event_proxy.send_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Text });
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Text });
                         return;
                     },
                     _ => {},

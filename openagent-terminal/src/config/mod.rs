@@ -26,6 +26,8 @@ pub mod ui_config;
 pub mod window;
 pub mod workspace;
 pub mod sync;
+#[cfg(feature = "ai")]
+pub mod ai;
 
 mod bindings;
 mod mouse;

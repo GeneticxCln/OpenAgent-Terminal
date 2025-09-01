@@ -81,6 +81,23 @@ pub struct InitializedComponents {
     pub runtime: Arc<Runtime>,
 }
 
+impl std::fmt::Debug for InitializedComponents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("InitializedComponents");
+        #[cfg(feature = "wgpu")]
+        { let _ = ds.field("wgpu_renderer", &self.wgpu_renderer.as_ref().map(|_| "Some")); }
+        #[cfg(feature = "harfbuzz")]
+        { let _ = ds.field("text_shaper", &self.text_shaper.as_ref().map(|_| "Some")); }
+        #[cfg(feature = "blocks")]
+        { let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some")); }
+        #[cfg(feature = "workflow")]
+        { let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some")); }
+        #[cfg(feature = "plugins")]
+        { let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some")); }
+        ds.field("runtime", &"<runtime>").finish()
+    }
+}
+
 /// Initialize all components
 pub async fn initialize_components(
     config: ComponentConfig,

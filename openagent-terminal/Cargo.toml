@@ -137,7 +137,7 @@ windows-sys = { version = "0.59", features = [
 embed-resource = "3.0.2"
 
 [features]
-default = ["wayland", "x11"]
+default = ["wayland", "x11", "blocks"]
 # Optional non-OpenGL rendering backend. Use with `--features wgpu`.
 wgpu = ["dep:wgpu", "dep:pollster"]
 
