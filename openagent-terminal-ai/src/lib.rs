@@ -3,7 +3,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod error;
 pub mod privacy;
+pub mod streaming;
 
 /// A request to the AI provider, typically from a scratch buffer.
 #[derive(Debug, Clone)]
@@ -54,20 +56,44 @@ impl AiProvider for NullProvider {
     fn name(&self) -> &'static str { "null" }
 }
 
-#[cfg(feature = "ollama")]
+#[cfg(any(feature = "ai-ollama", feature = "ai-openai", feature = "ai-anthropic"))]
 pub mod providers;
 
 /// Factory function for creating providers
-pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, String> {
+pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError> {
+    use error::{AiError, AiResult};
+    
     match name {
         "null" => Ok(Box::new(NullProvider)),
-        #[cfg(feature = "ollama")]
-        "ollama" => Ok(Box::new(providers::OllamaProvider::from_env()?)),
-        #[cfg(feature = "ollama")]
-        "openai" => Ok(Box::new(providers::OpenAiProvider::from_env()?)),
-        #[cfg(feature = "ollama")]
-        "anthropic" => Ok(Box::new(providers::AnthropicProvider::from_env()?)),
-        _ => Err(format!("Unknown provider: {}", name)),
+        #[cfg(feature = "ai-ollama")]
+        "ollama" => providers::OllamaProvider::from_env()
+            .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            .map_err(|e| AiError::Configuration {
+                setting: "Ollama".to_string(),
+                message: e,
+                suggestion: Some("Check OLLAMA_ENDPOINT and OLLAMA_MODEL environment variables".to_string()),
+            }),
+        #[cfg(feature = "ai-openai")]
+        "openai" => providers::OpenAiProvider::from_env()
+            .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            .map_err(|e| AiError::Configuration {
+                setting: "OpenAI".to_string(),
+                message: e,
+                suggestion: Some("Check OPENAI_API_KEY and OPENAI_MODEL environment variables".to_string()),
+            }),
+        #[cfg(feature = "ai-anthropic")]
+        "anthropic" => providers::AnthropicProvider::from_env()
+            .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            .map_err(|e| AiError::Configuration {
+                setting: "Anthropic".to_string(),
+                message: e,
+                suggestion: Some("Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL environment variables".to_string()),
+            }),
+        _ => Err(AiError::Configuration {
+            setting: "provider".to_string(),
+            message: format!("Unknown provider: {}", name),
+            suggestion: Some("Available providers: null, ollama, openai, anthropic".to_string()),
+        }),
     }
 }
 
