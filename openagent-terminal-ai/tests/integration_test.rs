@@ -18,7 +18,7 @@ mod tests {
         assert_eq!(proposals.len(), 0);
     }
 
-    #[cfg(feature = "ollama")]
+    #[cfg(feature = "ai-ollama")]
     #[test]
     fn test_ollama_provider() {
         let provider = create_provider("ollama").expect("Failed to create ollama provider");
@@ -45,7 +45,7 @@ mod tests {
         let result = create_provider("unknown");
         assert!(result.is_err());
         if let Err(err) = result {
-            assert!(err.contains("Unknown provider"));
+            assert!(err.to_string().contains("Unknown provider"));
         }
     }
 }

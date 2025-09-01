@@ -87,7 +87,7 @@ impl LocalFsProvider {
             }
         }
         
-        if content.contains("\"pending\":true") {
+        if content.contains("\"pending\": true") || content.contains("\"pending\":true") {
             status.pending = true;
         }
         

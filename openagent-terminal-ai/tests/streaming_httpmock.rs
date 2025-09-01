@@ -1,3 +1,4 @@
+#![cfg(any(feature = "ai-openai", feature = "ai-anthropic"))]
 #[cfg(test)]
 mod tests {
     use httpmock::prelude::*;
@@ -18,8 +19,8 @@ mod tests {
     fn openai_streaming_success() {
         let server = MockServer::start();
         let body = concat!(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"echo \\" }]}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{\"content\":\"ls\" }]}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"echo \"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ls\"}}]}\n\n",
             "data: [DONE]\n\n"
         );
         let _m = server.mock(|when, then| {
@@ -45,7 +46,7 @@ mod tests {
         let server = MockServer::start();
         let body = concat!(
             "event: content_block_delta\n",
-            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"echo \\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"echo \"}}\n\n",
             "event: content_block_delta\n",
             "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ls\"}}\n\n",
             "data: [DONE]\n\n"

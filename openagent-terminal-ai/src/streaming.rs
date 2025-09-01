@@ -172,12 +172,13 @@ impl RetryConfig {
         let base_delay = self.initial_delay.as_millis() as f64 * self.multiplier.powi(attempt as i32);
         let capped_delay = base_delay.min(self.max_delay.as_millis() as f64);
         
-        // Add jitter
+        // Add jitter, then clamp to [0, max_delay]
         let jitter_range = capped_delay * self.jitter;
         let jitter = rand::thread_rng().gen_range(-jitter_range..=jitter_range);
-        let final_delay = (capped_delay + jitter).max(0.0) as u64;
+        let jittered = (capped_delay + jitter).max(0.0);
+        let clamped = jittered.min(self.max_delay.as_millis() as f64) as u64;
         
-        Duration::from_millis(final_delay)
+        Duration::from_millis(clamped)
     }
     
     /// Check if we should retry based on attempt count

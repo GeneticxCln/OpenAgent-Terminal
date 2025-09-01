@@ -1,3 +1,4 @@
+#![cfg(feature = "ai-openai")]
 #[cfg(test)]
 mod openai_provider_tests {
     use httpmock::prelude::*;
