@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod tests {
     use httpmock::prelude::*;
-    use openagent_terminal_ai::{AiRequest, AiProvider};
-    use openagent_terminal_ai::providers::{OpenAiProvider, AnthropicProvider};
+    use openagent_terminal_ai::providers::{AnthropicProvider, OpenAiProvider};
+    use openagent_terminal_ai::{AiProvider, AiRequest};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     fn base_req() -> AiRequest {
@@ -24,17 +24,18 @@ mod tests {
             "data: [DONE]\n\n"
         );
         let _m = server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(body);
+            when.method(POST).path("/chat/completions");
+            then.status(200).header("content-type", "text/event-stream").body(body);
         });
 
-        let provider = OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string()).unwrap();
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
-        let mut on_chunk = |c: &str| { collected.push_str(c); };
+        let mut on_chunk = |c: &str| {
+            collected.push_str(c);
+        };
         let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
         assert!(ok);
         assert!(collected.contains("echo "));
@@ -52,17 +53,21 @@ mod tests {
             "data: [DONE]\n\n"
         );
         let _m = server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(body);
+            when.method(POST).path("/messages");
+            then.status(200).header("content-type", "text/event-stream").body(body);
         });
 
-        let provider = AnthropicProvider::new("test_key".to_string(), server.base_url(), "claude-3".to_string()).unwrap();
+        let provider = AnthropicProvider::new(
+            "test_key".to_string(),
+            server.base_url(),
+            "claude-3".to_string(),
+        )
+        .unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
-        let mut on_chunk = |c: &str| { collected.push_str(c); };
+        let mut on_chunk = |c: &str| {
+            collected.push_str(c);
+        };
         let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
         assert!(ok);
         assert!(collected.contains("echo "));
@@ -73,25 +78,24 @@ mod tests {
     fn openai_streaming_abort_no_done() {
         let server = MockServer::start();
         let body = concat!(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\" }]}]}\n\n"
-            // No [DONE]
+            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\" }]}]}\n\n" // No [DONE]
         );
         let _m = server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(body);
+            when.method(POST).path("/chat/completions");
+            then.status(200).header("content-type", "text/event-stream").body(body);
         });
 
-        let provider = OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string()).unwrap();
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
-        let mut on_chunk = |c: &str| { collected.push_str(c); };
+        let mut on_chunk = |c: &str| {
+            collected.push_str(c);
+        };
         // Should still return Ok(true) after stream ends
         let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
         assert!(ok);
         assert!(collected.contains("partial"));
     }
 }
-

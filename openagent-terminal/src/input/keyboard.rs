@@ -48,14 +48,31 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Command Palette handling takes precedence.
         if self.ctx.palette_active() {
             match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Enter) => { self.ctx.palette_confirm(); return; },
-                Key::Named(NamedKey::Escape) => { self.ctx.palette_cancel(); return; },
-                Key::Named(NamedKey::ArrowUp) => { self.ctx.palette_move_selection(-1); return; },
-                Key::Named(NamedKey::ArrowDown) => { self.ctx.palette_move_selection(1); return; },
-                Key::Named(NamedKey::Backspace) => { self.ctx.palette_backspace(); return; },
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.palette_confirm();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.palette_cancel();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.palette_move_selection(-1);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.palette_move_selection(1);
+                    return;
+                },
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.palette_backspace();
+                    return;
+                },
                 _ => {},
             }
-            for ch in text.chars() { self.ctx.palette_input(ch); }
+            for ch in text.chars() {
+                self.ctx.palette_input(ch);
+            }
             return;
         }
 
@@ -81,7 +98,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if (c.eq_ignore_ascii_case("i")) => {
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
                             if let Some(text) = runtime.insert_to_prompt() {
-                                self.ctx.send_user_event(crate::event::EventType::AiInsertToPrompt(text));
+                                self.ctx.send_user_event(
+                                    crate::event::EventType::AiInsertToPrompt(text),
+                                );
                             }
                         }
                         return;
@@ -90,19 +109,28 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
                         if let Some(runtime) = self.ctx.ai_runtime_ref() {
                             if let Some((cmd, dry_run)) = runtime.apply_command(true) {
-                                self.ctx.send_user_event(crate::event::EventType::AiApplyAsCommand { command: cmd, dry_run });
+                                self.ctx.send_user_event(
+                                    crate::event::EventType::AiApplyAsCommand {
+                                        command: cmd,
+                                        dry_run,
+                                    },
+                                );
                             }
                         }
                         return;
                     },
                     // Copy as code (Ctrl+Shift+C)
                     Key::Character(c) if (c.eq_ignore_ascii_case("c") && mods.shift_key()) => {
-                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Code });
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput {
+                            format: crate::event::AiCopyFormat::Code,
+                        });
                         return;
                     },
                     // Copy all (Ctrl+Shift+A)
                     Key::Character(c) if (c.eq_ignore_ascii_case("a") && mods.shift_key()) => {
-                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Text });
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput {
+                            format: crate::event::AiCopyFormat::Text,
+                        });
                         return;
                     },
                     _ => {},
@@ -110,12 +138,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
 
             match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Enter) => { self.ctx.ai_propose(); return; },
-                Key::Named(NamedKey::Escape) => { self.ctx.close_ai_panel(); return; },
-                Key::Named(NamedKey::Backspace) => { self.ctx.ai_backspace(); return; },
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.ai_propose();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.close_ai_panel();
+                    return;
+                },
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.ai_backspace();
+                    return;
+                },
                 _ => {},
             }
-            for ch in text.chars() { self.ctx.ai_input(ch); }
+            for ch in text.chars() {
+                self.ctx.ai_input(ch);
+            }
             return;
         }
 
@@ -550,7 +589,7 @@ impl SequenceBuilder {
         };
 
         let (base, terminator) = match named {
-// F3 in kitty protocol diverges from OpenAgent Terminal's terminfo.
+            // F3 in kitty protocol diverges from OpenAgent Terminal's terminfo.
             NamedKey::F3 => ("13", SequenceTerminator::Normal('~')),
             NamedKey::F13 => ("57376", SequenceTerminator::Kitty),
             NamedKey::F14 => ("57377", SequenceTerminator::Kitty),

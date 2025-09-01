@@ -39,15 +39,16 @@ use openagent_terminal_core::event_loop::Notifier;
 use openagent_terminal_core::grid::{BidirectionalIterator, Dimensions, Scroll};
 use openagent_terminal_core::index::{Boundary, Column, Direction, Line, Point, Side};
 use openagent_terminal_core::selection::{Selection, SelectionType};
+use openagent_terminal_core::term::cell::Flags;
 use openagent_terminal_core::term::search::{Match, RegexSearch};
 use openagent_terminal_core::term::{self, ClipboardType, Term, TermMode};
-use openagent_terminal_core::term::cell::Flags;
 use openagent_terminal_core::vte::ansi::NamedColor;
 
 #[cfg(unix)]
 use crate::cli::{IpcConfig, ParsedOptions};
 use crate::cli::{Options as CliOptions, WindowOptions};
 use crate::clipboard::Clipboard;
+use crate::components_init::{ComponentConfig, InitializedComponents};
 use crate::config::ui_config::{HintAction, HintInternalAction};
 use crate::config::{self, UiConfig};
 #[cfg(not(windows))]
@@ -64,7 +65,6 @@ use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::window_context::WindowContext;
-use crate::components_init::{InitializedComponents, ComponentConfig};
 
 /// Duration after the last user input until an unlimited search is performed.
 pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
@@ -166,7 +166,7 @@ impl Processor {
         self.gl_config = Some(window_context.display.gl_context().config());
         let window_id = window_context.id();
         self.windows.insert(window_id, window_context);
-        
+
         // If components are already initialized, set them on the new window
         if let Some(components) = &self.components {
             if let Some(window_context) = self.windows.get_mut(&window_id) {
@@ -203,14 +203,14 @@ impl Processor {
 
         let window_id = window_context.id();
         self.windows.insert(window_id, window_context);
-        
+
         // If components are already initialized, set them on the new window
         if let Some(components) = &self.components {
             if let Some(window_context) = self.windows.get_mut(&window_id) {
                 window_context.set_components(components.clone());
             }
         }
-        
+
         Ok(())
     }
 
@@ -233,17 +233,17 @@ impl Processor {
         };
 
         info!("Initializing terminal components...");
-        match crate::components_init::initialize_components(config, window).await {
+        match crate::components_init::initialize_components(&config, window).await {
             Ok(components) => {
                 self.components = Some(Arc::new(components));
                 info!("✓ All components initialized successfully");
                 Ok(())
-            }
+            },
             Err(e) => {
                 warn!("Component initialization failed: {}", e);
                 warn!("Continuing with basic functionality...");
                 Ok(()) // Don't fail completely, just continue without enhanced features
-            }
+            },
         }
     }
 
@@ -299,38 +299,39 @@ impl ApplicationHandler<Event> for Processor {
                 event_loop.exit();
                 return;
             }
-            
+
             // Initialize components after the first window is created
-            if let Some(window_context) = self.windows.values().next() {
-                let window = window_context.display.window.inner();
-                let proxy = self.proxy.clone();
-                
+            if let Some(_window_context) = self.windows.values().next() {
                 // Spawn component initialization in the background (optional)
                 #[cfg(feature = "background-components")]
-                tokio::spawn(async move {
-                    let config = ComponentConfig {
-                        enable_wgpu: cfg!(feature = "wgpu"),
-                        enable_harfbuzz: cfg!(feature = "harfbuzz"),
-                        enable_blocks: cfg!(feature = "blocks"),
-                        enable_workflows: cfg!(feature = "workflow"),
-                        enable_plugins: cfg!(feature = "plugins"),
-                        ..Default::default()
-                    };
-                    
-                    match crate::components_init::initialize_components(config, window).await {
-                        Ok(components) => {
-                            info!("✓ Components initialized in background");
-                            // Send event to notify components are ready
-                            let _ = proxy.send_event(Event::new(
-                                EventType::ComponentsInitialized(Arc::new(components)),
-                                None
-                            ));
+                {
+                    let window = window_context.display.window.inner();
+                    let proxy = self.proxy.clone();
+                    tokio::spawn(async move {
+                        let config = ComponentConfig {
+                            enable_wgpu: cfg!(feature = "wgpu"),
+                            enable_harfbuzz: cfg!(feature = "harfbuzz"),
+                            enable_blocks: cfg!(feature = "blocks"),
+                            enable_workflows: cfg!(feature = "workflow"),
+                            enable_plugins: cfg!(feature = "plugins"),
+                            ..Default::default()
+                        };
+
+                        match crate::components_init::initialize_components(&config, window).await {
+                            Ok(components) => {
+                                info!("✓ Components initialized in background");
+                                // Send event to notify components are ready
+                                let _ = proxy.send_event(Event::new(
+                                    EventType::ComponentsInitialized(Arc::new(components)),
+                                    None,
+                                ));
+                            },
+                            Err(e) => {
+                                warn!("Background component initialization failed: {}", e);
+                            },
                         }
-                        Err(e) => {
-                            warn!("Background component initialization failed: {}", e);
-                        }
-                    }
-                });
+                    });
+                }
             }
         }
 
@@ -435,7 +436,7 @@ impl ApplicationHandler<Event> for Processor {
             #[cfg(all(unix, feature = "sync"))]
             (EventType::IpcSync(sync_type, stream), _) => {
                 use openagent_terminal_sync::{LocalFsProvider, SyncProvider, SyncScope};
-                
+
                 // Create sync provider based on config.
                 // For now, always use LocalFsProvider.
                 let sync_config = openagent_terminal_sync::SyncConfig {
@@ -444,54 +445,68 @@ impl ApplicationHandler<Event> for Processor {
                     endpoint_env: None,
                     encryption_key_env: None,
                 };
-                
+
                 let provider = match LocalFsProvider::new(&sync_config) {
                     Ok(provider) => provider,
                     Err(err) => {
                         if let Ok(mut stream) = stream.try_clone() {
-                            let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to create sync provider: {:?}", err)));
+                            let reply = ipc::SocketReply::SyncResult(Err(format!(
+                                "Failed to create sync provider: {:?}",
+                                err
+                            )));
                             ipc::send_reply(&mut stream, reply);
                         }
                         return;
                     },
                 };
-                
+
                 // Convert scope argument to sync scope.
                 let scope = sync_type.scope().map(|s| match s {
                     crate::cli::SyncScopeArg::Settings => SyncScope::Settings,
                     crate::cli::SyncScopeArg::History => SyncScope::History,
                 });
-                
+
                 // Execute sync operation.
                 let result = match sync_type {
-                    IpcSyncType::Status(_) => {
-                        match provider.status() {
-                            Ok(status) => {
-                                let status_json = serde_json::to_string_pretty(&status).unwrap_or_else(|_| "Error serializing status".to_string());
-                                if let Ok(mut stream) = stream.try_clone() {
-                                    ipc::send_reply(&mut stream, ipc::SocketReply::SyncStatus(status_json));
-                                }
-                            },
-                            Err(err) => {
-                                if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to get sync status: {:?}", err)));
-                                    ipc::send_reply(&mut stream, reply);
-                                }
-                            },
-                        }
+                    IpcSyncType::Status(_) => match provider.status() {
+                        Ok(status) => {
+                            let status_json = serde_json::to_string_pretty(&status)
+                                .unwrap_or_else(|_| "Error serializing status".to_string());
+                            if let Ok(mut stream) = stream.try_clone() {
+                                ipc::send_reply(
+                                    &mut stream,
+                                    ipc::SocketReply::SyncStatus(status_json),
+                                );
+                            }
+                        },
+                        Err(err) => {
+                            if let Ok(mut stream) = stream.try_clone() {
+                                let reply = ipc::SocketReply::SyncResult(Err(format!(
+                                    "Failed to get sync status: {:?}",
+                                    err
+                                )));
+                                ipc::send_reply(&mut stream, reply);
+                            }
+                        },
                     },
                     IpcSyncType::Push(scope_arg) => {
                         let scope = scope.unwrap_or(SyncScope::Settings);
                         match provider.push(scope) {
                             Ok(()) => {
                                 if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Ok(format!("Successfully pushed {:?}", scope)));
+                                    let reply = ipc::SocketReply::SyncResult(Ok(format!(
+                                        "Successfully pushed {:?}",
+                                        scope
+                                    )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
                             },
                             Err(err) => {
                                 if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to push: {:?}", err)));
+                                    let reply = ipc::SocketReply::SyncResult(Err(format!(
+                                        "Failed to push: {:?}",
+                                        err
+                                    )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
                             },
@@ -502,13 +517,19 @@ impl ApplicationHandler<Event> for Processor {
                         match provider.pull(scope) {
                             Ok(()) => {
                                 if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Ok(format!("Successfully pulled {:?}", scope)));
+                                    let reply = ipc::SocketReply::SyncResult(Ok(format!(
+                                        "Successfully pulled {:?}",
+                                        scope
+                                    )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
                             },
                             Err(err) => {
                                 if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Err(format!("Failed to pull: {:?}", err)));
+                                    let reply = ipc::SocketReply::SyncResult(Err(format!(
+                                        "Failed to pull: {:?}",
+                                        err
+                                    )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
                             },
@@ -549,7 +570,7 @@ impl ApplicationHandler<Event> for Processor {
             (EventType::ComponentsInitialized(components), _) => {
                 info!("Components initialized, updating window contexts...");
                 self.components = Some(components.clone());
-                
+
                 // Update all existing windows with the initialized components
                 for window_context in self.windows.values_mut() {
                     window_context.set_components(components.clone());
@@ -763,9 +784,14 @@ pub enum EventType {
     #[cfg(feature = "ai")]
     AiInsertToPrompt(String),
     #[cfg(feature = "ai")]
-    AiApplyAsCommand { command: String, dry_run: bool },
+    AiApplyAsCommand {
+        command: String,
+        dry_run: bool,
+    },
     #[cfg(feature = "ai")]
-    AiCopyOutput { format: AiCopyFormat },
+    AiCopyOutput {
+        format: AiCopyFormat,
+    },
     ComponentsInitialized(Arc<InitializedComponents>),
 }
 
@@ -783,7 +809,9 @@ impl IpcSyncType {
     /// Get the scope argument from the sync type.
     pub fn scope(&self) -> Option<crate::cli::SyncScopeArg> {
         match self {
-            IpcSyncType::Status(scope) | IpcSyncType::Push(scope) | IpcSyncType::Pull(scope) => *scope,
+            IpcSyncType::Status(scope) | IpcSyncType::Push(scope) | IpcSyncType::Pull(scope) => {
+                *scope
+            },
         }
     }
 }
@@ -986,7 +1014,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn selection_is_empty(&self) -> bool {
-        self.terminal.selection.as_ref().is_none_or(Selection::is_empty)
+        self.terminal.selection.as_ref().map_or(true, Selection::is_empty)
     }
 
     fn clear_selection(&mut self) {
@@ -1017,7 +1045,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         // Auto-unfold if selection point entered a folded region.
         if self.display.blocks.enabled {
             let display_offset = self.terminal.grid().display_offset();
-            if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+            if let Some(view) =
+                openagent_terminal_core::term::point_to_viewport(display_offset, point)
+            {
                 let total_line = display_offset + view.line;
                 let changed = self.display.blocks.ensure_unfold_at_total_line(total_line);
                 if changed {
@@ -1120,7 +1150,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
         let mut args: Vec<String> = Vec::new();
 
-// Reuse the arguments passed to OpenAgent Terminal for the new instance.
+        // Reuse the arguments passed to OpenAgent Terminal for the new instance.
         #[allow(clippy::while_let_on_iterator)]
         while let Some(arg) = env_args.next() {
             // New instances shouldn't inherit command.
@@ -1205,7 +1235,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[inline]
     fn start_search(&mut self, direction: Direction) {
         // Only create new history entry if the previous regex wasn't empty.
-        if self.search_state.history.front().is_none_or(|regex| !regex.is_empty()) {
+        if self.search_state.history.front().map_or(true, |regex| !regex.is_empty()) {
             self.search_state.history.push_front(String::new());
             self.search_state.history.truncate(MAX_SEARCH_HISTORY_SIZE);
         }
@@ -1766,10 +1796,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else {
             format!("cd {} && {}", cwd, cmd)
         };
-        
+
         let shell = if cfg!(windows) { "cmd" } else { "sh" };
-        let shell_args = if cfg!(windows) { vec!["/c", &shell_cmd] } else { vec!["-c", &shell_cmd] };
-        
+        let shell_args =
+            if cfg!(windows) { vec!["/c", &shell_cmd] } else { vec!["-c", &shell_cmd] };
+
         self.spawn_daemon(shell, &shell_args);
     }
 
@@ -1777,11 +1808,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         // For now, we'll just copy to clipboard and show a message
         // In a full implementation, this would prompt the user for a file path
         self.copy_to_clipboard(text.clone());
-        
+
         // Add a message to inform the user
         let message = Message::new(
             format!("Block output copied to clipboard ({} chars)", text.len()),
-            crate::message_bar::MessageType::Warning
+            crate::message_bar::MessageType::Warning,
         );
         let _ = self.event_proxy.send_event(Event::new(EventType::Message(message), None));
     }
@@ -1849,7 +1880,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             // Precompute values requiring only &self to avoid borrow conflicts.
             let display_offset = self.terminal.grid().display_offset();
             let grid_point = self.mouse.point(&self.size_info(), display_offset);
-            let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+            let vpoint = match openagent_terminal_core::term::point_to_viewport(
+                display_offset,
+                grid_point,
+            ) {
                 Some(p) => p,
                 None => return false,
             };
@@ -1867,10 +1901,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             };
 
             // Hit header row
-            if vpoint.line != geom.header_line { return false; }
+            if vpoint.line != geom.header_line {
+                return false;
+            }
             // If column within controls region
             let col = vpoint.column.0;
-            if col < geom.controls_col_start || col > geom.controls_col_end { return false; }
+            if col < geom.controls_col_start || col > geom.controls_col_end {
+                return false;
+            }
 
             // Controls are laid out as: [⏹][space][⟳][space][✖]
             let stop_col = geom.controls_col_start;
@@ -1887,11 +1925,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 *self.dirty = true;
                 return true;
             } else if (col == regen_col || col == regen_col + 1) && regen_enabled {
-                let _ = self.event_proxy.send_event(Event::new(EventType::AiRegenerate, self.display.window.id()));
+                let _ = self
+                    .event_proxy
+                    .send_event(Event::new(EventType::AiRegenerate, self.display.window.id()));
                 *self.dirty = true;
                 return true;
             } else if (col == stop_col || col == stop_col + 1) && stop_enabled {
-                let _ = self.event_proxy.send_event(Event::new(EventType::AiStop, self.display.window.id()));
+                let _ = self
+                    .event_proxy
+                    .send_event(Event::new(EventType::AiStop, self.display.window.id()));
                 *self.dirty = true;
                 return true;
             }
@@ -1912,10 +1954,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             // Precompute mapping requiring only &self to avoid borrow conflicts
             let display_offset = self.terminal.grid().display_offset();
             let grid_point = self.mouse.point(&self.size_info(), display_offset);
-            let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+            let vpoint = match openagent_terminal_core::term::point_to_viewport(
+                display_offset,
+                grid_point,
+            ) {
                 Some(p) => p,
                 None => {
-                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    if self.display.ai_hover_control.take().is_some() {
+                        *self.dirty = true;
+                    }
                     return false;
                 },
             };
@@ -1923,7 +1970,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let runtime = match &mut self.ai_runtime {
                 Some(rt) => rt,
                 None => {
-                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    if self.display.ai_hover_control.take().is_some() {
+                        *self.dirty = true;
+                    }
                     return false;
                 },
             };
@@ -1931,7 +1980,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
                 Some(g) => g,
                 None => {
-                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    if self.display.ai_hover_control.take().is_some() {
+                        *self.dirty = true;
+                    }
                     return false;
                 },
             };
@@ -1970,18 +2021,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 // Damage header and the actions/tooltip line beneath it
                 let header = geom.header_line;
                 let actions_line = header.saturating_add(1);
-                self.display.damage_tracker.frame().damage_line(openagent_terminal_core::term::LineDamageBounds::new(header, 0, cols));
+                self.display.damage_tracker.frame().damage_line(
+                    openagent_terminal_core::term::LineDamageBounds::new(header, 0, cols),
+                );
                 if actions_line <= self.display.size_info.screen_lines().saturating_sub(1) {
-                    self.display.damage_tracker.frame().damage_line(openagent_terminal_core::term::LineDamageBounds::new(actions_line, 0, cols));
+                    self.display.damage_tracker.frame().damage_line(
+                        openagent_terminal_core::term::LineDamageBounds::new(actions_line, 0, cols),
+                    );
                 }
             }
 
             hovered.is_some()
         }
         #[cfg(not(feature = "ai"))]
-        { false }
+        {
+            false
+        }
     }
-
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
@@ -2389,7 +2445,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             if self
                                 .ctx
                                 .prev_bell_cmd
-                                .is_none_or(|i| i.elapsed() >= BELL_CMD_COOLDOWN)
+                                .as_ref()
+                                .map_or(true, |i| i.elapsed() >= BELL_CMD_COOLDOWN)
                             {
                                 self.ctx.spawn_daemon(bell_command.program(), bell_command.args());
 
@@ -2439,8 +2496,16 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let prev = runtime.ui.streaming_text.len();
                         let new = chunk.len();
-                        if matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose")) {
-                            log::debug!("ai_event_chunk_append prev={} add={} total={}", prev, new, prev + new);
+                        if matches!(
+                            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
+                            Some("verbose")
+                        ) {
+                            log::debug!(
+                                "ai_event_chunk_append prev={} add={} total={}",
+                                prev,
+                                new,
+                                prev + new
+                            );
                         }
                         runtime.ui.streaming_text.push_str(&chunk);
                         *self.ctx.dirty = true;
@@ -2449,8 +2514,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 #[cfg(feature = "ai")]
                 EventType::AiStreamFinished => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        if matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("summary") | Some("verbose")) {
-                            log::info!("ai_event_stream_finished total_len={}", runtime.ui.streaming_text.len());
+                        if matches!(
+                            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
+                            Some("summary") | Some("verbose")
+                        ) {
+                            log::info!(
+                                "ai_event_stream_finished total_len={}",
+                                runtime.ui.streaming_text.len()
+                            );
                         }
                         runtime.ui.streaming_active = false;
                         runtime.ui.is_loading = false;
@@ -2470,7 +2541,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 #[cfg(feature = "ai")]
                 EventType::AiProposals(props) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        if matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("summary") | Some("verbose")) {
+                        if matches!(
+                            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
+                            Some("summary") | Some("verbose")
+                        ) {
                             log::info!("ai_event_blocking_proposals proposals={}", props.len());
                         }
                         runtime.ui.streaming_active = false;

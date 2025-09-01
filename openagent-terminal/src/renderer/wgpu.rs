@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
+use log::debug;
 use std::borrow::Cow;
 use std::cell::Cell;
-use log::debug;
 
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
@@ -11,14 +11,16 @@ use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
 
 use openagent_terminal_core::index::Point;
 
-use crate::config::debug::{RendererPreference, SrgbPreference, SubpixelPreference, AtlasEvictionPolicy};
-use crate::display::SizeInfo;
+use crate::config::debug::{
+    AtlasEvictionPolicy, RendererPreference, SrgbPreference, SubpixelPreference,
+};
 use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
+use crate::display::SizeInfo;
 
 use super::rects::RenderRect;
 use super::ui::UiRoundedRect;
-use super::{Glyph, GlyphCache, LoaderApi, LoadGlyph};
+use super::{Glyph, GlyphCache, LoadGlyph, LoaderApi};
 
 const RECT_SHADER_WGSL: &str = r#"
 struct VsOut {
@@ -198,7 +200,9 @@ pub struct WgpuRenderer {
 }
 
 impl From<String> for Error {
-    fn from(s: String) -> Self { Self::Init(s) }
+    fn from(s: String) -> Self {
+        Self::Init(s)
+    }
 }
 
 #[repr(C)]
@@ -259,7 +263,14 @@ struct WgpuAtlas {
 
 impl WgpuAtlas {
     fn new(size: u32) -> Self {
-        Self { width: size, height: size, row_extent: 0, row_baseline: 0, row_tallest: 0, used_area: 0 }
+        Self {
+            width: size,
+            height: size,
+            row_extent: 0,
+            row_baseline: 0,
+            row_tallest: 0,
+            used_area: 0,
+        }
     }
 
     fn clear(&mut self) {
@@ -462,7 +473,11 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         const ATLAS_SIZE: u32 = 2048;
         let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("text-atlas"),
-            size: wgpu::Extent3d { width: ATLAS_SIZE, height: ATLAS_SIZE, depth_or_array_layers: NUM_ATLAS_PAGES },
+            size: wgpu::Extent3d {
+                width: ATLAS_SIZE,
+                height: ATLAS_SIZE,
+                depth_or_array_layers: NUM_ATLAS_PAGES,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -495,7 +510,12 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         let proj = projection_from_size(size);
         let proj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("text-proj-buffer"),
-            contents: bytemuck::bytes_of(&[proj.offset_x, proj.offset_y, proj.scale_x, proj.scale_y]),
+            contents: bytemuck::bytes_of(&[
+                proj.offset_x,
+                proj.offset_y,
+                proj.scale_x,
+                proj.scale_y,
+            ]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let text_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -534,8 +554,14 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             layout: &text_bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: proj_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&atlas_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&atlas_sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
             ],
         });
 
@@ -601,7 +627,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             text_bind_group,
             is_srgb_surface,
             subpixel_enabled,
-            zero_evicted_layer: false, // set below
+            zero_evicted_layer: false,                    // set below
             policy: AtlasEvictionPolicy::LruMinOccupancy, // set below
             zero_scratch,
             atlas_inserts: 0,
@@ -649,7 +675,12 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         // No-op for wgpu; presentation happens in draw paths.
     }
 
-    pub fn draw_rects(&mut self, size_info: &SizeInfo, _metrics: &Metrics, rects_in: Vec<RenderRect>) {
+    pub fn draw_rects(
+        &mut self,
+        size_info: &SizeInfo,
+        _metrics: &Metrics,
+        rects_in: Vec<RenderRect>,
+    ) {
         // Acquire frame.
         // Create a fresh surface for the current frame and (re)configure it.
         let window_ref = unsafe { &*self.window_ptr };
@@ -678,9 +709,10 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 }
             },
         };
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor { label: Some("frame-view"), ..Default::default() });
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("frame-view"),
+            ..Default::default()
+        });
 
         // Build vertices for all rects in NDC coordinates, including staged backgrounds.
         let half_w = size_info.width() / 2.0;
@@ -707,9 +739,9 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             vertices.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
         }
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rects-encoder") });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rects-encoder"),
+        });
 
         // Clear color from pending state if present.
         let clear = if let Some(c) = self.pending_clear.get() {
@@ -734,7 +766,10 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear),
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -763,13 +798,11 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
 
         // Draw staged text after rects, if any.
         if !self.pending_text.is_empty() {
-            let text_vbuf = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("text-vertex-buffer"),
-                    contents: bytemuck::cast_slice(&self.pending_text),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
+            let text_vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("text-vertex-buffer"),
+                contents: bytemuck::cast_slice(&self.pending_text),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -777,7 +810,10 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
-                        ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
                     })],
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
@@ -810,11 +846,40 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         let y = -rect.y / half_h + 1.0;
         let w = rect.width / half_w;
         let h = rect.height / half_h;
-        let color = [rect.color.r as f32 / 255.0, rect.color.g as f32 / 255.0, rect.color.b as f32 / 255.0, rect.alpha];
-let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
-        let v1 = UiVertex { pos: [x, y - h], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
-        let v2 = UiVertex { pos: [x + w, y], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
-        let v3 = UiVertex { pos: [x + w, y - h], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
+        let color = [
+            rect.color.r as f32 / 255.0,
+            rect.color.g as f32 / 255.0,
+            rect.color.b as f32 / 255.0,
+            rect.alpha,
+        ];
+        let v0 = UiVertex {
+            pos: [x, y],
+            origin: [rect.x, rect.y],
+            size: [rect.width, rect.height],
+            radius: rect.radius,
+            color,
+        };
+        let v1 = UiVertex {
+            pos: [x, y - h],
+            origin: [rect.x, rect.y],
+            size: [rect.width, rect.height],
+            radius: rect.radius,
+            color,
+        };
+        let v2 = UiVertex {
+            pos: [x + w, y],
+            origin: [rect.x, rect.y],
+            size: [rect.width, rect.height],
+            radius: rect.radius,
+            color,
+        };
+        let v3 = UiVertex {
+            pos: [x + w, y - h],
+            origin: [rect.x, rect.y],
+            size: [rect.width, rect.height],
+            radius: rect.radius,
+            color,
+        };
         self.pending_ui.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
     }
 
@@ -850,29 +915,41 @@ let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, re
             }
 
             // Select font based on style flags.
-            let font_key = match cell.flags & openagent_terminal_core::term::cell::Flags::BOLD_ITALIC {
-                openagent_terminal_core::term::cell::Flags::BOLD_ITALIC => glyph_cache.bold_italic_key,
-                openagent_terminal_core::term::cell::Flags::ITALIC => glyph_cache.italic_key,
-                openagent_terminal_core::term::cell::Flags::BOLD => glyph_cache.bold_key,
-                _ => glyph_cache.font_key,
-            };
+            let font_key =
+                match cell.flags & openagent_terminal_core::term::cell::Flags::BOLD_ITALIC {
+                    openagent_terminal_core::term::cell::Flags::BOLD_ITALIC => {
+                        glyph_cache.bold_italic_key
+                    },
+                    openagent_terminal_core::term::cell::Flags::ITALIC => glyph_cache.italic_key,
+                    openagent_terminal_core::term::cell::Flags::BOLD => glyph_cache.bold_key,
+                    _ => glyph_cache.font_key,
+                };
 
             // Primary glyph.
-            let glyph_key = GlyphKey { font_key, size: glyph_cache.font_size, character: cell.character };
+            let glyph_key =
+                GlyphKey { font_key, size: glyph_cache.font_size, character: cell.character };
             let g = glyph_cache.get(glyph_key, &mut loader, true);
-            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, self.subpixel_enabled));
+            staged.extend_from_slice(&build_text_vertices(
+                size_info,
+                &cell,
+                &g,
+                self.subpixel_enabled,
+            ));
 
             // Zero-width characters.
-            if let Some(zw) = cell
-                .extra
-                .as_mut()
-                .and_then(|extra| extra.zerowidth.take().filter(|_| !hidden))
+            if let Some(zw) =
+                cell.extra.as_mut().and_then(|extra| extra.zerowidth.take().filter(|_| !hidden))
             {
                 let mut key = glyph_key;
                 for ch in zw {
                     key.character = ch;
                     let gzw = glyph_cache.get(key, &mut loader, false);
-                    staged.extend_from_slice(&build_text_vertices(size_info, &cell, &gzw, self.subpixel_enabled));
+                    staged.extend_from_slice(&build_text_vertices(
+                        size_info,
+                        &cell,
+                        &gzw,
+                        self.subpixel_enabled,
+                    ));
                 }
             }
         }
@@ -896,7 +973,11 @@ let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, re
         let mut staged: Vec<TextVertex> = Vec::new();
         let mut staged_bg: Vec<RenderRect> = Vec::new();
         for ch in string_chars {
-            let glyph_key = GlyphKey { font_key: glyph_cache.font_key, size: glyph_cache.font_size, character: ch };
+            let glyph_key = GlyphKey {
+                font_key: glyph_cache.font_key,
+                size: glyph_cache.font_size,
+                character: ch,
+            };
             let mut cell = RenderableCell {
                 point: Point::new(point.line, openagent_terminal_core::index::Column(col)),
                 character: ch,
@@ -919,7 +1000,12 @@ let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, re
                 1.0,
             ));
             let g = glyph_cache.get(glyph_key, &mut loader, true);
-            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, self.subpixel_enabled));
+            staged.extend_from_slice(&build_text_vertices(
+                size_info,
+                &cell,
+                &g,
+                self.subpixel_enabled,
+            ));
             col += 1;
         }
         self.pending_text.extend(staged);
@@ -936,13 +1022,19 @@ let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, re
 
     pub fn take_atlas_evicted(&self) -> bool {
         let ev = self.atlas_evicted.get();
-        if ev { self.atlas_evicted.set(false); }
+        if ev {
+            self.atlas_evicted.set(false);
+        }
         ev
     }
 
     pub fn reset_atlas(&mut self) {
-        for page in &mut self.atlas_pages { page.clear(); }
-        for meta in &mut self.page_meta { meta.last_use = 0; }
+        for page in &mut self.atlas_pages {
+            page.clear();
+        }
+        for meta in &mut self.page_meta {
+            meta.last_use = 0;
+        }
         self.current_page = 0;
         self.pending_eviction = None;
         // Optionally we could zero the atlas texture, but new uploads will overwrite as needed.
@@ -1005,7 +1097,9 @@ let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, re
         false
     }
 
-    pub fn was_context_reset(&self) -> bool { false }
+    pub fn was_context_reset(&self) -> bool {
+        false
+    }
     pub fn set_viewport(&self, _size: &SizeInfo) {}
 
     pub fn dump_atlas_stats(&self) {
@@ -1043,10 +1137,16 @@ let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, re
     }
 }
 
-fn build_text_vertices(size_info: &SizeInfo, cell: &RenderableCell, glyph: &Glyph, subpixel: bool) -> [TextVertex; 6] {
+fn build_text_vertices(
+    size_info: &SizeInfo,
+    cell: &RenderableCell,
+    glyph: &Glyph,
+    subpixel: bool,
+) -> [TextVertex; 6] {
     let cell_x = cell.point.column.0 as f32 * size_info.cell_width() + size_info.padding_x();
     let gx = cell_x + glyph.left as f32;
-    let gy = (cell.point.line + 1) as f32 * size_info.cell_height() + size_info.padding_y() - glyph.top as f32;
+    let gy = (cell.point.line + 1) as f32 * size_info.cell_height() + size_info.padding_y()
+        - glyph.top as f32;
 
     let x0 = gx;
     let y0 = gy - glyph.height as f32;
@@ -1061,7 +1161,9 @@ fn build_text_vertices(size_info: &SizeInfo, cell: &RenderableCell, glyph: &Glyp
     let color = [cell.fg.r, cell.fg.g, cell.fg.b, 255];
     let mut flags = if glyph.multicolor { 1u32 } else { 0u32 };
     // Enable subpixel path only if configured.
-    if subpixel { flags |= 2u32; }
+    if subpixel {
+        flags |= 2u32;
+    }
 
     let layer = if glyph.tex_id > 0 { glyph.tex_id - 1 } else { 0 };
 
@@ -1109,7 +1211,9 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
             None => {
                 // Select a victim page based on policy.
                 let victim_idx: u32 = match self.renderer.policy {
-                    AtlasEvictionPolicy::RoundRobin => (self.renderer.current_page + 1) % NUM_ATLAS_PAGES,
+                    AtlasEvictionPolicy::RoundRobin => {
+                        (self.renderer.current_page + 1) % NUM_ATLAS_PAGES
+                    },
                     AtlasEvictionPolicy::LruMinOccupancy => {
                         let mut best_i: u32 = 0;
                         let mut best_key = (u64::MAX, u64::MAX);
@@ -1123,12 +1227,13 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
                             }
                         }
                         best_i
-                    }
+                    },
                 };
                 // Request eviction of the victim page on the next frame.
                 self.renderer.pending_eviction.get_or_insert(victim_idx);
                 self.renderer.atlas_evicted.set(true);
-                self.renderer.atlas_insert_misses = self.renderer.atlas_insert_misses.wrapping_add(1);
+                self.renderer.atlas_insert_misses =
+                    self.renderer.atlas_insert_misses.wrapping_add(1);
                 return Glyph {
                     tex_id: 0,
                     multicolor: false,
@@ -1148,7 +1253,8 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
         let (rgba, multicolor) = match &rasterized.buffer {
             BitmapBuffer::Rgba(buf) => (buf.clone(), true),
             BitmapBuffer::Rgb(buf) => {
-                let mut out = Vec::with_capacity((rasterized.width * rasterized.height * 4) as usize);
+                let mut out =
+                    Vec::with_capacity((rasterized.width * rasterized.height * 4) as usize);
                 for chunk in buf.chunks_exact(3) {
                     // Use red channel as alpha; set RGB to 0.
                     let a = chunk[0];
@@ -1159,7 +1265,11 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
         };
 
         // Upload the glyph into the atlas texture.
-        let extent = wgpu::Extent3d { width: rasterized.width as u32, height: rasterized.height as u32, depth_or_array_layers: 1 };
+        let extent = wgpu::Extent3d {
+            width: rasterized.width as u32,
+            height: rasterized.height as u32,
+            depth_or_array_layers: 1,
+        };
         self.renderer.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &self.renderer.atlas_texture,

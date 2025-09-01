@@ -3,4 +3,4 @@
 pub mod harfbuzz;
 
 #[cfg(feature = "harfbuzz")]
-pub use harfbuzz::{HarfBuzzShaper, ShapingConfig, ShapedText, ShapedGlyph, TextDirection};
+pub use harfbuzz::{HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection};

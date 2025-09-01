@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use toml::Value;
 
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};

@@ -31,7 +31,9 @@ pub trait AiProvider: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Generate proposals; implementations must never attempt to run commands.
-    fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> { Ok(Vec::new()) }
+    fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> {
+        Ok(Vec::new())
+    }
 
     /// Optional: Stream partial text chunks while generating a response.
     /// Returns Ok(true) if streaming was performed, Ok(false) if not supported.
@@ -53,7 +55,9 @@ pub trait AiProvider: Send + Sync {
 pub struct NullProvider;
 
 impl AiProvider for NullProvider {
-    fn name(&self) -> &'static str { "null" }
+    fn name(&self) -> &'static str {
+        "null"
+    }
 }
 
 #[cfg(any(feature = "ai-ollama", feature = "ai-openai", feature = "ai-anthropic"))]
@@ -61,8 +65,8 @@ pub mod providers;
 
 /// Factory function for creating providers
 pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError> {
-    use error::{AiError, AiResult};
-    
+    use error::AiError;
+
     match name {
         "null" => Ok(Box::new(NullProvider)),
         #[cfg(feature = "ai-ollama")]
@@ -71,7 +75,9 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
             .map_err(|e| AiError::Configuration {
                 setting: "Ollama".to_string(),
                 message: e,
-                suggestion: Some("Check OLLAMA_ENDPOINT and OLLAMA_MODEL environment variables".to_string()),
+                suggestion: Some(
+                    "Check OLLAMA_ENDPOINT and OLLAMA_MODEL environment variables".to_string(),
+                ),
             }),
         #[cfg(feature = "ai-openai")]
         "openai" => providers::OpenAiProvider::from_env()
@@ -79,7 +85,9 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
             .map_err(|e| AiError::Configuration {
                 setting: "OpenAI".to_string(),
                 message: e,
-                suggestion: Some("Check OPENAI_API_KEY and OPENAI_MODEL environment variables".to_string()),
+                suggestion: Some(
+                    "Check OPENAI_API_KEY and OPENAI_MODEL environment variables".to_string(),
+                ),
             }),
         #[cfg(feature = "ai-anthropic")]
         "anthropic" => providers::AnthropicProvider::from_env()
@@ -87,7 +95,9 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
             .map_err(|e| AiError::Configuration {
                 setting: "Anthropic".to_string(),
                 message: e,
-                suggestion: Some("Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL environment variables".to_string()),
+                suggestion: Some(
+                    "Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL environment variables".to_string(),
+                ),
             }),
         _ => Err(AiError::Configuration {
             setting: "provider".to_string(),
@@ -96,4 +106,3 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
         }),
     }
 }
-

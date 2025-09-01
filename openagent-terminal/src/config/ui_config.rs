@@ -14,11 +14,12 @@ use winit::keyboard::{Key, ModifiersState};
 
 use openagent_terminal_config::SerdeReplace;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
-use openagent_terminal_core::term::Config as TermConfig;
 use openagent_terminal_core::term::search::RegexSearch;
+use openagent_terminal_core::term::Config as TermConfig;
 use openagent_terminal_core::tty::{Options as PtyOptions, Shell};
 
-use crate::config::LOG_TARGET_CONFIG;
+#[cfg(feature = "ai")]
+use crate::config::ai::AiConfig;
 use crate::config::bell::BellConfig;
 use crate::config::bindings::{
     self, Action, Binding, BindingKey, KeyBinding, KeyLocation, ModeWrapper, ModsWrapper,
@@ -32,14 +33,13 @@ use crate::config::general::General;
 use crate::config::mouse::Mouse;
 use crate::config::scrolling::Scrolling;
 use crate::config::selection::Selection;
-use crate::config::terminal::Terminal;
-use crate::config::window::WindowConfig;
-use crate::config::workspace::WorkspaceConfig;
-#[cfg(feature = "ai")]
-use crate::config::ai::AiConfig;
 #[cfg(feature = "sync")]
 use crate::config::sync::SyncConfig;
-use crate::config::theme::{ThemeConfig, ResolvedTheme};
+use crate::config::terminal::Terminal;
+use crate::config::theme::{ResolvedTheme, ThemeConfig};
+use crate::config::window::WindowConfig;
+use crate::config::workspace::WorkspaceConfig;
+use crate::config::LOG_TARGET_CONFIG;
 
 /// Regex used for the default URL hint.
 #[rustfmt::skip]
@@ -731,7 +731,9 @@ impl Default for Workflow {
 }
 
 impl Default for WorkflowParam {
-    fn default() -> Self { Self { name: String::new(), default: None } }
+    fn default() -> Self {
+        Self { name: String::new(), default: None }
+    }
 }
 
 pub(crate) struct StringVisitor;
@@ -754,7 +756,7 @@ impl serde::de::Visitor<'_> for StringVisitor {
 mod tests {
     use super::*;
 
-use openagent_terminal_core::term::test::mock_term;
+    use openagent_terminal_core::term::test::mock_term;
 
     use crate::display::hint::visible_regex_match_iter;
 

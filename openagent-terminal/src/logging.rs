@@ -6,7 +6,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, LineWriter, Stdout, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
@@ -82,7 +82,7 @@ pub struct Logger {
     start: Instant,
     // Optional AI debug logfile (env-controlled)
     ai_log_enabled: bool,
-    ai_logfile: Option<Mutex<OnDemandLogFile>>, 
+    ai_logfile: Option<Mutex<OnDemandLogFile>>,
 }
 
 impl Logger {
@@ -94,15 +94,16 @@ impl Logger {
         let ai_enabled = env::var("OPENAGENT_AI_DEBUG_LOG")
             .map(|v| v == "1" || v.to_lowercase() == "true")
             .unwrap_or(false);
-        let ai_path = env::var("OPENAGENT_AI_DEBUG_LOG_PATH").ok().map(PathBuf::from).or_else(|| {
-            if ai_enabled {
-                let mut p = env::temp_dir();
-                p.push(format!("openagent_ai_debug_{}.log", process::id()));
-                Some(p)
-            } else {
-                None
-            }
-        });
+        let ai_path =
+            env::var("OPENAGENT_AI_DEBUG_LOG_PATH").ok().map(PathBuf::from).or_else(|| {
+                if ai_enabled {
+                    let mut p = env::temp_dir();
+                    p.push(format!("openagent_ai_debug_{}.log", process::id()));
+                    Some(p)
+                } else {
+                    None
+                }
+            });
         let ai_logfile = ai_path.map(|p| Mutex::new(OnDemandLogFile::with_path(p)));
 
         Logger {
@@ -194,7 +195,9 @@ impl log::Log for Logger {
                     if let Ok(mut ai_file) = ai_file_mutex.lock() {
                         let mut redacted = redact_sensitive_text(&message);
                         // Ensure it ends with newline.
-                        if !redacted.ends_with('\n') { redacted.push('\n'); }
+                        if !redacted.ends_with('\n') {
+                            redacted.push('\n');
+                        }
                         let _ = ai_file.write_all(redacted.as_bytes());
                     }
                 }
@@ -311,9 +314,15 @@ fn redact_sensitive_text(input: &str) -> String {
         (r#"(?i)(password)\s*[:=]\s*[^\s,\"']+"#, "$1=[REDACTED]"),
         (r#"(?i)\bbearer\s+[^\s]+"#, "Bearer [REDACTED]"),
         // JSON-like fields
-        (r#"(?i)("(?:api[_-]?key|token|secret|password|authorization)")\s*:\s*"[^"]*""#, r#"$1: "[REDACTED]""#),
+        (
+            r#"(?i)("(?:api[_-]?key|token|secret|password|authorization)")\s*:\s*"[^"]*""#,
+            r#"$1: "[REDACTED]""#,
+        ),
         // CLI flags with secrets
-        (r#"(?i)--(password|token|key|secret|auth|api[_-]?key)\s*=?\s*([\"']?)([^\s\"']+)\2"#, "--$1=[REDACTED]"),
+        (
+            r#"(?i)--(password|token|key|secret|auth|api[_-]?key)\s*=?\s*([\"']?)([^\s\"']+)\2"#,
+            "--$1=[REDACTED]",
+        ),
         (r#"(?i)-(p|P)\s+([^\s]+)"#, "-$1 [REDACTED]"),
         // JWT tokens
         (r#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[REDACTED_JWT]"),
@@ -325,16 +334,31 @@ fn redact_sensitive_text(input: &str) -> String {
         // GitHub tokens
         (r#"\bgh[pousr]_[A-Za-z0-9]{36}\b"#, "[REDACTED_GITHUB_TOKEN]"),
         // GCP service account keys
-        (r#"\"private_key\"\s*:\s*\"-----BEGIN [^\"]+-----[\s\S]+?-----END [^\"]+-----\""#, r#""private_key": "[REDACTED_PRIVATE_KEY]""#),
-        (r#"\"client_email\"\s*:\s*\"[^@]+@[^.]+\.iam\.gserviceaccount\.com\""#, r#""client_email": "[REDACTED_SERVICE_ACCOUNT]""#),
+        (
+            r#"\"private_key\"\s*:\s*\"-----BEGIN [^\"]+-----[\s\S]+?-----END [^\"]+-----\""#,
+            r#""private_key": "[REDACTED_PRIVATE_KEY]""#,
+        ),
+        (
+            r#"\"client_email\"\s*:\s*\"[^@]+@[^.]+\.iam\.gserviceaccount\.com\""#,
+            r#""client_email": "[REDACTED_SERVICE_ACCOUNT]""#,
+        ),
         // SSH private keys
-        (r#"-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]+?-----END (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"#, "[REDACTED_SSH_PRIVATE_KEY]"),
+        (
+            r#"-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]+?-----END (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"#,
+            "[REDACTED_SSH_PRIVATE_KEY]",
+        ),
         // DB connection strings
-        (r#"(mongodb|postgres|postgresql|mysql|redis|amqp)://[^:]+:([^@]+)@"#, "$1://[USER]:[REDACTED]@"),
+        (
+            r#"(mongodb|postgres|postgresql|mysql|redis|amqp)://[^:]+:([^@]+)@"#,
+            "$1://[USER]:[REDACTED]@",
+        ),
         // Slack tokens
         (r#"xox[baprs]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24,}"#, "[REDACTED_SLACK_TOKEN]"),
         // Generic UUID-like sensitive IDs
-        (r#"(?i)(session[_-]?id|csrf[_-]?token)\s*[:=]\s*([\"']?)([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})\2"#, "$1: [REDACTED_UUID]"),
+        (
+            r#"(?i)(session[_-]?id|csrf[_-]?token)\s*[:=]\s*([\"']?)([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})\2"#,
+            "$1: [REDACTED_UUID]",
+        ),
     ];
 
     let mut out = input.to_string();

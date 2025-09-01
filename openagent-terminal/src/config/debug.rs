@@ -13,7 +13,9 @@ pub enum AtlasEvictionPolicy {
 }
 
 impl Default for AtlasEvictionPolicy {
-    fn default() -> Self { Self::LruMinOccupancy }
+    fn default() -> Self {
+        Self::LruMinOccupancy
+    }
 }
 
 /// Preference for enabling subpixel text rendering.
@@ -25,7 +27,9 @@ pub enum SubpixelPreference {
 }
 
 impl Default for SubpixelPreference {
-    fn default() -> Self { Self::Auto }
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 /// Preference for using an sRGB swapchain/surface when available.
@@ -37,7 +41,9 @@ pub enum SrgbPreference {
 }
 
 impl Default for SrgbPreference {
-    fn default() -> Self { Self::Auto }
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 /// Render timer color style.
@@ -49,7 +55,11 @@ pub enum RenderTimerStyle {
     Warning,
 }
 
-impl Default for RenderTimerStyle { fn default() -> Self { Self::LowContrast } }
+impl Default for RenderTimerStyle {
+    fn default() -> Self {
+        Self::LowContrast
+    }
+}
 
 /// Debugging options.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

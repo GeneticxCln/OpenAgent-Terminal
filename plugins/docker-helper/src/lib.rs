@@ -1,10 +1,10 @@
 // Docker Helper Plugin - Provides Docker completions, context, and utilities
 
 use plugin_api::*;
+use regex::Regex;
+use serde_json::json;
 use std::collections::HashMap;
 use std::process::Command;
-use serde_json::json;
-use regex::Regex;
 
 pub struct DockerHelperPlugin {
     config: Option<PluginConfig>,
@@ -32,6 +32,12 @@ struct DockerContainer {
     ports: String,
 }
 
+impl Default for DockerHelperPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DockerHelperPlugin {
     pub fn new() -> Self {
         Self {
@@ -43,30 +49,34 @@ impl DockerHelperPlugin {
             last_cache_update: std::time::Instant::now() - std::time::Duration::from_secs(60),
         }
     }
-    
+
     fn run_docker_command(&self, args: &[&str]) -> Result<String, PluginError> {
         let output = Command::new(&self.docker_binary)
             .args(args)
             .output()
             .map_err(|e| PluginError::CommandError(format!("Failed to run docker: {}", e)))?;
-        
+
         if !output.status.success() {
             return Err(PluginError::CommandError(
-                String::from_utf8_lossy(&output.stderr).to_string()
+                String::from_utf8_lossy(&output.stderr).to_string(),
             ));
         }
-        
+
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
-    
+
     fn update_cache(&mut self) {
         // Update cache every 10 seconds
         if self.last_cache_update.elapsed() < std::time::Duration::from_secs(10) {
             return;
         }
-        
+
         // Cache images
-        if let Ok(output) = self.run_docker_command(&["images", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Size}}"]) {
+        if let Ok(output) = self.run_docker_command(&[
+            "images",
+            "--format",
+            "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Size}}",
+        ]) {
             self.cached_images.clear();
             for line in output.lines() {
                 let parts: Vec<&str> = line.split('|').collect();
@@ -80,9 +90,14 @@ impl DockerHelperPlugin {
                 }
             }
         }
-        
+
         // Cache containers
-        if let Ok(output) = self.run_docker_command(&["ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}"]) {
+        if let Ok(output) = self.run_docker_command(&[
+            "ps",
+            "-a",
+            "--format",
+            "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}",
+        ]) {
             self.cached_containers.clear();
             for line in output.lines() {
                 let parts: Vec<&str> = line.split('|').collect();
@@ -97,18 +112,18 @@ impl DockerHelperPlugin {
                 }
             }
         }
-        
+
         self.last_cache_update = std::time::Instant::now();
     }
-    
+
     fn get_docker_stats(&self) -> Result<Vec<HashMap<String, String>>, PluginError> {
         let output = self.run_docker_command(&[
-            "stats", 
-            "--no-stream", 
-            "--format", 
-            "{{.Container}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}"
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{.Container}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}",
         ])?;
-        
+
         let mut stats = Vec::new();
         for line in output.lines() {
             let parts: Vec<&str> = line.split('|').collect();
@@ -123,10 +138,10 @@ impl DockerHelperPlugin {
                 stats.push(stat);
             }
         }
-        
+
         Ok(stats)
     }
-    
+
     fn get_docker_networks(&self) -> Vec<String> {
         if let Ok(output) = self.run_docker_command(&["network", "ls", "--format", "{{.Name}}"]) {
             output.lines().map(|s| s.to_string()).collect()
@@ -134,7 +149,7 @@ impl DockerHelperPlugin {
             Vec::new()
         }
     }
-    
+
     fn get_docker_volumes(&self) -> Vec<String> {
         if let Ok(output) = self.run_docker_command(&["volume", "ls", "--format", "{{.Name}}"]) {
             output.lines().map(|s| s.to_string()).collect()
@@ -168,43 +183,43 @@ impl Plugin for DockerHelperPlugin {
             }
         }
     }
-    
+
     fn init(&mut self, config: PluginConfig) -> Result<(), PluginError> {
         self.config = Some(config.clone());
-        
+
         // Check for custom binary paths
         if let Some(docker_path) = config.settings.get("docker_binary") {
             if let Some(path) = docker_path.as_str() {
                 self.docker_binary = path.to_string();
             }
         }
-        
+
         if let Some(compose_path) = config.settings.get("compose_binary") {
             if let Some(path) = compose_path.as_str() {
                 self.compose_binary = path.to_string();
             }
         }
-        
+
         // Verify Docker is available
         Command::new(&self.docker_binary)
             .arg("--version")
             .output()
             .map_err(|e| PluginError::InitError(format!("Docker not found: {}", e)))?;
-        
+
         // Initial cache update
         self.update_cache();
-        
+
         Ok(())
     }
-    
+
     fn provide_completions(&self, context: CompletionContext) -> Vec<Completion> {
         let mut completions = Vec::new();
         let parts: Vec<&str> = context.input.split_whitespace().collect();
-        
+
         if parts.is_empty() {
             return completions;
         }
-        
+
         if parts[0] == "docker" {
             if parts.len() == 1 {
                 // Docker subcommands
@@ -226,7 +241,7 @@ impl Plugin for DockerHelperPlugin {
                     ("volume", "Manage volumes", "💾"),
                     ("compose", "Docker Compose operations", "📚"),
                 ];
-                
+
                 for (cmd, desc, icon) in subcommands {
                     completions.push(Completion {
                         value: format!("docker {}", cmd),
@@ -252,7 +267,7 @@ impl Plugin for DockerHelperPlugin {
                             ("python:3", "Python runtime"),
                             ("mysql:latest", "MySQL database"),
                         ];
-                        
+
                         for (image, desc) in popular_images {
                             completions.push(Completion {
                                 value: format!("{} {}", context.input, image),
@@ -263,7 +278,7 @@ impl Plugin for DockerHelperPlugin {
                                 icon: Some("📦".to_string()),
                             });
                         }
-                        
+
                         // Also suggest local images
                         for image in &self.cached_images {
                             let display = format!("{}:{}", image.repository, image.tag);
@@ -276,22 +291,28 @@ impl Plugin for DockerHelperPlugin {
                                 icon: Some("💾".to_string()),
                             });
                         }
-                    }
-                    
+                    },
+
                     "exec" | "stop" | "start" | "rm" | "logs" | "inspect" => {
                         // Suggest container names/IDs
                         for container in &self.cached_containers {
                             completions.push(Completion {
                                 value: format!("{} {}", context.input, container.name),
                                 display: container.name.clone(),
-                                description: Some(format!("{} ({})", container.image, container.status)),
+                                description: Some(format!(
+                                    "{} ({})",
+                                    container.image, container.status
+                                )),
                                 kind: CompletionKind::Argument,
                                 score: 0.9,
-                                icon: Some(if container.status.contains("Up") { "🟢" } else { "🔴" }.to_string()),
+                                icon: Some(
+                                    if container.status.contains("Up") { "🟢" } else { "🔴" }
+                                        .to_string(),
+                                ),
                             });
                         }
-                    }
-                    
+                    },
+
                     "rmi" => {
                         // Suggest image names/IDs
                         for image in &self.cached_images {
@@ -305,8 +326,8 @@ impl Plugin for DockerHelperPlugin {
                                 icon: Some("📦".to_string()),
                             });
                         }
-                    }
-                    
+                    },
+
                     "network" => {
                         if parts.len() == 2 {
                             let network_cmds = vec![
@@ -317,7 +338,7 @@ impl Plugin for DockerHelperPlugin {
                                 ("connect", "Connect container to network"),
                                 ("disconnect", "Disconnect container from network"),
                             ];
-                            
+
                             for (cmd, desc) in network_cmds {
                                 completions.push(Completion {
                                     value: format!("docker network {}", cmd),
@@ -329,86 +350,97 @@ impl Plugin for DockerHelperPlugin {
                                 });
                             }
                         }
-                    }
-                    
-                    _ => {}
+                    },
+
+                    _ => {},
                 }
             }
         }
-        
+
         completions
     }
-    
+
     fn collect_context(&self, request: ContextRequest) -> Option<Context> {
         let mut context_data = HashMap::new();
-        
+
         // Docker version
         if let Ok(version) = self.run_docker_command(&["version", "--format", "{{json .}}"]) {
             context_data.insert("docker_version", json!(version));
         }
-        
+
         // Container information
         if request.purpose.contains("containers") || request.purpose.contains("all") {
-            let containers: Vec<_> = self.cached_containers.iter().map(|c| {
-                let mut container = HashMap::new();
-                container.insert("id", c.id.clone());
-                container.insert("name", c.name.clone());
-                container.insert("image", c.image.clone());
-                container.insert("status", c.status.clone());
-                container.insert("ports", c.ports.clone());
-                container
-            }).collect();
-            
+            let containers: Vec<_> = self
+                .cached_containers
+                .iter()
+                .map(|c| {
+                    let mut container = HashMap::new();
+                    container.insert("id", c.id.clone());
+                    container.insert("name", c.name.clone());
+                    container.insert("image", c.image.clone());
+                    container.insert("status", c.status.clone());
+                    container.insert("ports", c.ports.clone());
+                    container
+                })
+                .collect();
+
             context_data.insert("containers", json!(containers));
         }
-        
+
         // Image information
         if request.purpose.contains("images") || request.purpose.contains("all") {
-            let images: Vec<_> = self.cached_images.iter().map(|i| {
-                let mut image = HashMap::new();
-                image.insert("repository", i.repository.clone());
-                image.insert("tag", i.tag.clone());
-                image.insert("id", i.id.clone());
-                image.insert("size", i.size.clone());
-                image
-            }).collect();
-            
+            let images: Vec<_> = self
+                .cached_images
+                .iter()
+                .map(|i| {
+                    let mut image = HashMap::new();
+                    image.insert("repository", i.repository.clone());
+                    image.insert("tag", i.tag.clone());
+                    image.insert("id", i.id.clone());
+                    image.insert("size", i.size.clone());
+                    image
+                })
+                .collect();
+
             context_data.insert("images", json!(images));
         }
-        
+
         // Network information
         if request.purpose.contains("networks") || request.purpose.contains("all") {
             let networks = self.get_docker_networks();
             context_data.insert("networks", json!(networks));
         }
-        
+
         // Volume information
         if request.purpose.contains("volumes") || request.purpose.contains("all") {
             let volumes = self.get_docker_volumes();
             context_data.insert("volumes", json!(volumes));
         }
-        
+
         // Stats if requested
         if request.purpose.contains("stats") {
             if let Ok(stats) = self.get_docker_stats() {
                 context_data.insert("container_stats", json!(stats));
             }
         }
-        
+
         let content = serde_json::to_string_pretty(&context_data).ok()?;
         let size = content.len();
-        
+
         if size > request.max_size_bytes {
             return None;
         }
-        
+
         Some(Context {
             name: "Docker Environment Context".to_string(),
             content,
             metadata: {
                 let mut meta = HashMap::new();
                 meta.insert("plugin".to_string(), "docker-helper".to_string());
-                meta.insert("container_count".to_string(), self.cached_containers.len().to_string());
+                meta.insert(
+                    "container_count".to_string(),
+                    self.cached_containers.len().to_string(),
+                );
                 meta.insert("image_count".to_string(), self.cached_images.len().to_string());
                 meta
             },
@@ -416,51 +448,52 @@ impl Plugin for DockerHelperPlugin {
             size_bytes: size,
         })
     }
-    
+
     fn execute_command(&self, cmd: &str, _args: &[String]) -> Result<CommandOutput, PluginError> {
         let start = std::time::Instant::now();
-        
+
         match cmd {
             "docker-status" => {
                 let mut output = String::new();
                 output.push_str("🐳 Docker Status\n");
-                output.push_str("=" .repeat(40).as_str());
+                output.push_str("=".repeat(40).as_str());
                 output.push_str("\n\n");
-                
+
                 // Docker version
-                if let Ok(version) = self.run_docker_command(&["version", "--format", "Server: {{.Server.Version}}"]) {
+                if let Ok(version) =
+                    self.run_docker_command(&["version", "--format", "Server: {{.Server.Version}}"])
+                {
                     output.push_str(&format!("📌 Docker Version: {}\n\n", version));
                 }
-                
+
                 // Running containers
-                let running: Vec<_> = self.cached_containers
-                    .iter()
-                    .filter(|c| c.status.contains("Up"))
-                    .collect();
-                
+                let running: Vec<_> =
+                    self.cached_containers.iter().filter(|c| c.status.contains("Up")).collect();
+
                 output.push_str(&format!("🟢 Running Containers: {}\n", running.len()));
                 for container in running.iter().take(5) {
-                    output.push_str(&format!("  • {} ({}) - {}\n", 
-                        container.name, 
-                        container.image,
-                        container.ports
+                    output.push_str(&format!(
+                        "  • {} ({}) - {}\n",
+                        container.name, container.image, container.ports
                     ));
                 }
-                
+
                 // Stopped containers
                 let stopped = self.cached_containers.len() - running.len();
                 output.push_str(&format!("\n🔴 Stopped Containers: {}\n", stopped));
-                
+
                 // Images
                 output.push_str(&format!("\n📦 Images: {}\n", self.cached_images.len()));
-                let total_size: f64 = self.cached_images.iter()
+                let total_size: f64 = self
+                    .cached_images
+                    .iter()
                     .filter_map(|i| {
                         // Parse size string (e.g., "123MB", "1.2GB")
                         let re = Regex::new(r"(\d+\.?\d*)(MB|GB|KB)").ok()?;
                         let caps = re.captures(&i.size)?;
                         let value: f64 = caps[1].parse().ok()?;
                         let unit = &caps[2];
-                        
+
                         Some(match unit {
                             "KB" => value / 1024.0,
                             "MB" => value,
@@ -469,40 +502,41 @@ impl Plugin for DockerHelperPlugin {
                         })
                     })
                     .sum();
-                
+
                 output.push_str(&format!("  Total size: ~{:.1} MB\n", total_size));
-                
+
                 // Networks and volumes
                 let networks = self.get_docker_networks();
                 let volumes = self.get_docker_volumes();
                 output.push_str(&format!("\n🌐 Networks: {}\n", networks.len()));
                 output.push_str(&format!("💾 Volumes: {}\n", volumes.len()));
-                
+
                 Ok(CommandOutput {
                     stdout: output,
                     stderr: String::new(),
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            }
-            
+            },
+
             "docker-stats" => {
                 match self.get_docker_stats() {
                     Ok(stats) => {
                         let mut output = String::new();
                         output.push_str("📊 Docker Container Statistics\n");
-                        output.push_str("=" .repeat(60).as_str());
+                        output.push_str("=".repeat(60).as_str());
                         output.push_str("\n\n");
-                        
+
                         if stats.is_empty() {
                             output.push_str("No running containers\n");
                         } else {
                             output.push_str("Container         CPU      Memory         Net I/O        Block I/O\n");
-                            output.push_str("-" .repeat(60).as_str());
-                            output.push_str("\n");
-                            
+                            output.push_str("-".repeat(60).as_str());
+                            output.push('\n');
+
                             for stat in stats {
-                                output.push_str(&format!("{:<15} {:>7} {:>14} {:>13} {:>13}\n",
+                                output.push_str(&format!(
+                                    "{:<15} {:>7} {:>14} {:>13} {:>13}\n",
                                     stat.get("name").unwrap_or(&String::new()),
                                     stat.get("cpu_percent").unwrap_or(&String::new()),
                                     stat.get("memory_usage").unwrap_or(&String::new()),
@@ -511,61 +545,61 @@ impl Plugin for DockerHelperPlugin {
                                 ));
                             }
                         }
-                        
+
                         Ok(CommandOutput {
                             stdout: output,
                             stderr: String::new(),
                             exit_code: 0,
                             execution_time_ms: start.elapsed().as_millis() as u64,
                         })
-                    }
+                    },
                     Err(e) => Ok(CommandOutput {
                         stdout: String::new(),
                         stderr: format!("Failed to get stats: {}", e),
                         exit_code: 1,
                         execution_time_ms: start.elapsed().as_millis() as u64,
-                    })
+                    }),
                 }
-            }
-            
+            },
+
             "docker-cleanup" => {
                 let mut output = String::new();
                 output.push_str("🧹 Docker Cleanup\n");
-                output.push_str("=" .repeat(40).as_str());
+                output.push_str("=".repeat(40).as_str());
                 output.push_str("\n\n");
-                
+
                 // Remove stopped containers
                 if let Ok(result) = self.run_docker_command(&["container", "prune", "-f"]) {
                     output.push_str(&format!("✅ Removed stopped containers:\n{}\n\n", result));
                 }
-                
+
                 // Remove unused images
                 if let Ok(result) = self.run_docker_command(&["image", "prune", "-f"]) {
                     output.push_str(&format!("✅ Removed unused images:\n{}\n\n", result));
                 }
-                
+
                 // Remove unused volumes
                 if let Ok(result) = self.run_docker_command(&["volume", "prune", "-f"]) {
                     output.push_str(&format!("✅ Removed unused volumes:\n{}\n\n", result));
                 }
-                
+
                 // Remove unused networks
                 if let Ok(result) = self.run_docker_command(&["network", "prune", "-f"]) {
                     output.push_str(&format!("✅ Removed unused networks:\n{}\n", result));
                 }
-                
+
                 Ok(CommandOutput {
                     stdout: output,
                     stderr: String::new(),
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            }
-            
-            _ => Err(PluginError::CommandError(format!("Unknown command: {}", cmd)))
+            },
+
+            _ => Err(PluginError::CommandError(format!("Unknown command: {}", cmd))),
         }
     }
-    
+
     fn handle_hook(&mut self, hook: HookEvent) -> Result<HookResponse, PluginError> {
         match hook.hook_type {
             HookType::PreCommand => {
@@ -575,21 +609,21 @@ impl Plugin for DockerHelperPlugin {
                         self.update_cache();
                     }
                 }
-                
+
                 Ok(HookResponse {
                     modified_command: None,
                     prevent_execution: false,
                     messages: vec![],
                 })
-            }
+            },
             _ => Ok(HookResponse {
                 modified_command: None,
                 prevent_execution: false,
                 messages: vec![],
-            })
+            }),
         }
     }
-    
+
     fn cleanup(&mut self) -> Result<(), PluginError> {
         self.cached_images.clear();
         self.cached_containers.clear();

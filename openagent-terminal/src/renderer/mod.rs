@@ -1,24 +1,24 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use std::{fmt, ptr};
 
 use ahash::RandomState;
 use crossfont::Metrics;
 use glutin::context::{ContextApi, GlContext, PossiblyCurrentContext};
 use glutin::display::{GetGlDisplay, GlDisplay};
-use log::{LevelFilter, debug, info};
+use log::{debug, info, LevelFilter};
 use unicode_width::UnicodeWidthChar;
 
-use openagent_terminal_core::term::cell::Flags;
 use openagent_terminal_core::index::Point;
+use openagent_terminal_core::term::cell::Flags;
 
 use crate::config::debug::RendererPreference;
-use crate::display::SizeInfo;
 use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
+use crate::display::SizeInfo;
 use crate::gl;
 use crate::renderer::rects::{RectRenderer, RenderRect};
 use crate::renderer::shader::ShaderError;
@@ -159,7 +159,7 @@ impl Renderer {
             None => (shader_version.as_ref() >= "3.3" && !is_gles_context, true),
         };
 
-let (text_renderer, rect_renderer, ui_renderer) = if use_glsl3 {
+        let (text_renderer, rect_renderer, ui_renderer) = if use_glsl3 {
             let text_renderer = TextRendererProvider::Glsl3(Glsl3Renderer::new()?);
             let rect_renderer = RectRenderer::new(ShaderVersion::Glsl3)?;
             let ui_renderer = ui::UiGlRenderer::new(ShaderVersion::Glsl3)?;
@@ -182,7 +182,7 @@ let (text_renderer, rect_renderer, ui_renderer) = if use_glsl3 {
             }
         }
 
-Ok(Self { text_renderer, rect_renderer, ui_renderer, pending_ui: Vec::new(), robustness })
+        Ok(Self { text_renderer, rect_renderer, ui_renderer, pending_ui: Vec::new(), robustness })
     }
 
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(
@@ -251,7 +251,7 @@ Ok(Self { text_renderer, rect_renderer, ui_renderer, pending_ui: Vec::new(), rob
     }
 
     /// Draw all rectangles simultaneously to prevent excessive program swaps.
-pub fn draw_rects(&mut self, size_info: &SizeInfo, metrics: &Metrics, rects: Vec<RenderRect>) {
+    pub fn draw_rects(&mut self, size_info: &SizeInfo, metrics: &Metrics, rects: Vec<RenderRect>) {
         if rects.is_empty() && self.pending_ui.is_empty() {
             return;
         }

@@ -4,7 +4,7 @@
 //! WebAssembly plugins with enforced permissions and resource limits.
 
 use anyhow::Result as AnyResult;
-use plugin_api::{PluginMetadata, PluginPermissions};
+use plugin_api::{CommandOutput, PluginError as ApiPluginError, PluginMetadata, PluginPermissions};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -24,19 +24,19 @@ const CPU_FAR_TICKS: u64 = 1_000_000_000;
 pub enum PluginError {
     #[error("Plugin not found: {0}")]
     NotFound(String),
-    
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
-    
+
     #[error("Resource limit exceeded: {0}")]
     ResourceLimitExceeded(String),
-    
+
     #[error("Invalid plugin format: {0}")]
     InvalidFormat(String),
-    
+
     #[error("Plugin initialization failed: {0}")]
     InitializationFailed(String),
-    
+
     #[error("Runtime error: {0}")]
     RuntimeError(String),
 }
@@ -76,17 +76,96 @@ struct ResourceTracker {
     api_calls: u64,
 }
 
+/// Host interface for plugins to interact with the terminal
+pub trait PluginHost: Send + Sync {
+    /// Log a message from the plugin
+    fn log(&self, level: LogLevel, message: &str);
+
+    /// Read a file (subject to permissions)
+    fn read_file(&self, path: &str) -> Result<Vec<u8>, ApiPluginError>;
+
+    /// Write a file (subject to permissions)
+    fn write_file(&self, path: &str, data: &[u8]) -> Result<(), ApiPluginError>;
+
+    /// Execute a command (subject to permissions)
+    fn execute_command(&self, command: &str) -> Result<CommandOutput, ApiPluginError>;
+
+    /// Get terminal state
+    fn get_terminal_state(&self) -> TerminalState;
+
+    /// Show a notification
+    fn show_notification(&self, notification: Notification) -> Result<(), ApiPluginError>;
+
+    /// Store data persistently
+    fn store_data(&self, key: &str, value: &[u8]) -> Result<(), ApiPluginError>;
+
+    /// Retrieve stored data
+    fn retrieve_data(&self, key: &str) -> Result<Option<Vec<u8>>, ApiPluginError>;
+
+    /// Register a command
+    fn register_command(&self, command: CommandDefinition) -> Result<(), ApiPluginError>;
+
+    /// Subscribe to events
+    fn subscribe_events(&self, events: Vec<String>) -> Result<(), ApiPluginError>;
+}
+
+/// Log levels for plugin logging
+#[derive(Debug, Clone, Copy)]
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warning,
+    Error,
+}
+
+/// Terminal state information
+#[derive(Debug, Clone)]
+pub struct TerminalState {
+    pub current_dir: String,
+    pub environment: HashMap<String, String>,
+    pub shell: String,
+    pub terminal_size: (u16, u16),
+    pub is_interactive: bool,
+    pub command_history: Vec<String>,
+}
+
+/// Notification to display to the user
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub title: String,
+    pub body: String,
+    pub icon: Option<String>,
+}
+
+/// Command definition for registration
+#[derive(Debug, Clone)]
+pub struct CommandDefinition {
+    pub name: String,
+    pub description: String,
+    pub usage: String,
+    pub aliases: Vec<String>,
+}
+
 /// Plugin manager for loading and managing plugins
 pub struct PluginManager {
     engine: Engine,
     plugins: Arc<RwLock<HashMap<String, Arc<LoadedPlugin>>>>,
     plugin_dir: PathBuf,
+    host: Option<Arc<dyn PluginHost>>,
     enforce_permissions: bool,
 }
 
 impl PluginManager {
-    /// Create a new plugin manager
-    pub fn new(plugin_dir: impl AsRef<Path>, enforce_permissions: bool) -> AnyResult<Self> {
+    /// Create a new plugin manager with optional host
+    pub fn new(plugin_dir: impl AsRef<Path>) -> AnyResult<Self> {
+        Self::with_host(plugin_dir, None)
+    }
+
+    /// Create a new plugin manager with a host interface
+    pub fn with_host(
+        plugin_dir: impl AsRef<Path>,
+        host: Option<Arc<dyn PluginHost>>,
+    ) -> AnyResult<Self> {
         // Configure the WASM engine
         let mut config = Config::new();
         config.wasm_threads(false); // Disable threads for security
@@ -107,15 +186,21 @@ impl PluginManager {
                 ticker_engine.increment_epoch();
             }
         });
-        
+
         Ok(Self {
             engine,
             plugins: Arc::new(RwLock::new(HashMap::new())),
             plugin_dir: plugin_dir.as_ref().to_path_buf(),
-            enforce_permissions,
+            host,
+            enforce_permissions: true,
         })
     }
-    
+
+    /// Set the plugin host
+    pub fn set_host(&mut self, host: Arc<dyn PluginHost>) {
+        self.host = Some(host);
+    }
+
     /// Load a plugin from a WASM file
     pub async fn load_plugin(&self, path: impl AsRef<Path>) -> Result<String, PluginError> {
         let path = path.as_ref();
@@ -123,26 +208,26 @@ impl PluginManager {
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| PluginError::InvalidFormat("Invalid plugin filename".into()))?;
-        
+
         info!("Loading plugin: {} from {:?}", plugin_name, path);
-        
+
         // Load the WASM module
         let module = Module::from_file(&self.engine, path)
             .map_err(|e| PluginError::InvalidFormat(e.to_string()))?;
-        
+
         // Create plugin context with permissions
         let permissions = self.read_plugin_permissions(path)?;
         let mut store = self
             .create_plugin_store(permissions.clone())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
-        
+
         // Instantiate the module
         let instance = Instance::new(&mut store, &module, &[])
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
-        
+
         // Get exported functions
         let exports = self.get_plugin_exports(&instance, &mut store)?;
-        
+
         // Initialize the plugin
         if let Some(init) = exports.init {
             // Set a small epoch deadline to cap CPU time for initialization.
@@ -152,44 +237,40 @@ impl PluginManager {
             let result = init
                 .call(&mut store, ())
                 .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
-            
+
             // Reset the deadline far in the future between calls to avoid immediate traps.
             store.set_epoch_deadline(CPU_FAR_TICKS);
 
             if result != 0 {
-                return Err(PluginError::InitializationFailed(
-                    format!("Plugin init returned error code: {}", result)
-                ));
+                return Err(PluginError::InitializationFailed(format!(
+                    "Plugin init returned error code: {}",
+                    result
+                )));
             }
         }
-        
+
         // Get metadata
         let metadata = self.get_plugin_metadata(&exports, &mut store)?;
-        
+
         // Validate permissions match metadata
         if self.enforce_permissions {
             self.validate_permissions(&metadata.permissions, &permissions)?;
         }
-        
-        let loaded_plugin = Arc::new(LoadedPlugin {
-            metadata,
-            instance,
-            store,
-            exports,
-        });
-        
+
+        let loaded_plugin = Arc::new(LoadedPlugin { metadata, instance, store, exports });
+
         // Store the plugin
         let mut plugins = self.plugins.write().await;
         plugins.insert(plugin_name.to_string(), loaded_plugin);
-        
+
         info!("Successfully loaded plugin: {}", plugin_name);
         Ok(plugin_name.to_string())
     }
-    
+
     /// Unload a plugin
     pub async fn unload_plugin(&self, name: &str) -> Result<(), PluginError> {
         let mut plugins = self.plugins.write().await;
-        
+
         if let Some(plugin) = plugins.remove(name) {
             // Call cleanup if available
             if let Some(cleanup) = plugin.exports.cleanup {
@@ -218,46 +299,49 @@ impl PluginManager {
             Err(PluginError::NotFound(name.to_string()))
         }
     }
-    
+
     /// List all loaded plugins
     pub async fn list_plugins(&self) -> Vec<PluginMetadata> {
         let plugins = self.plugins.read().await;
         plugins.values().map(|p| p.metadata.clone()).collect()
     }
-    
+
     /// Discover plugins in the plugin directory
     pub async fn discover_plugins(&self) -> Result<Vec<PathBuf>> {
         let mut discovered = Vec::new();
-        
+
         if !self.plugin_dir.exists() {
             warn!("Plugin directory does not exist: {:?}", self.plugin_dir);
             return Ok(discovered);
         }
-        
+
         let entries = std::fs::read_dir(&self.plugin_dir)?;
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
                 discovered.push(path);
             }
         }
-        
+
         debug!("Discovered {} plugins", discovered.len());
         Ok(discovered)
     }
-    
+
     /// Create a plugin store with WASI context
-    fn create_plugin_store(&self, permissions: PluginPermissions) -> std::result::Result<Store<PluginContext>, PluginError> {
+    fn create_plugin_store(
+        &self,
+        permissions: PluginPermissions,
+    ) -> std::result::Result<Store<PluginContext>, PluginError> {
         let mut wasi_builder = WasiCtxBuilder::new();
-        
+
         // Configure WASI based on permissions
         if permissions.network {
             // Network access would be configured here if WASI supported it
             debug!("Network access requested but not yet implemented in WASI");
         }
-        
+
         // Add allowed environment variables
         for var in &permissions.environment_variables {
             if let Ok(value) = std::env::var(var) {
@@ -265,7 +349,7 @@ impl PluginManager {
                 let _ = wasi_builder.env(var, &value);
             }
         }
-        
+
         // Add file system access
         for pattern in &permissions.read_files {
             // In a real implementation, we'd parse glob patterns
@@ -274,23 +358,20 @@ impl PluginManager {
                 let _ = wasi_builder.preopened_dir(dir, pattern);
             }
         }
-        
+
         let wasi = wasi_builder.build();
-        
-        let context = PluginContext {
-            wasi,
-            permissions,
-            resource_tracker: ResourceTracker::default(),
-        };
-        
+
+        let context =
+            PluginContext { wasi, permissions, resource_tracker: ResourceTracker::default() };
+
         let mut store = Store::new(&self.engine, context);
-        
+
         // Set resource limits
         store.limiter(|ctx| &mut ctx.resource_tracker as &mut dyn ResourceLimiter);
-        
+
         Ok(store)
     }
-    
+
     /// Get exported functions from a plugin
     fn get_plugin_exports(
         &self,
@@ -304,7 +385,7 @@ impl PluginManager {
             cleanup: instance.get_typed_func(&mut *store, "plugin_cleanup").ok(),
         })
     }
-    
+
     /// Get plugin metadata
     fn get_plugin_metadata(
         &self,
@@ -313,7 +394,7 @@ impl PluginManager {
     ) -> Result<PluginMetadata, PluginError> {
         // This is simplified - in reality we'd need to handle memory passing
         // between WASM and host for complex data structures
-        
+
         // For now, return a default metadata
         Ok(PluginMetadata {
             name: "unknown".to_string(),
@@ -326,25 +407,25 @@ impl PluginManager {
             permissions: Default::default(),
         })
     }
-    
+
     /// Read plugin permissions from manifest
     fn read_plugin_permissions(&self, path: &Path) -> Result<PluginPermissions, PluginError> {
         // Look for a manifest file next to the WASM file
         let manifest_path = path.with_extension("toml");
-        
+
         if manifest_path.exists() {
             let content = std::fs::read_to_string(&manifest_path)
                 .map_err(|e| PluginError::InvalidFormat(e.to_string()))?;
-            
+
             // Parse TOML manifest
             // This is simplified - would need proper TOML parsing
             debug!("Reading permissions from {:?}", manifest_path);
         }
-        
+
         // Return default permissions for now
         Ok(PluginPermissions::default())
     }
-    
+
     /// Validate that requested permissions match allowed permissions
     fn validate_permissions(
         &self,
@@ -352,26 +433,23 @@ impl PluginManager {
         allowed: &PluginPermissions,
     ) -> Result<(), PluginError> {
         if requested.network && !allowed.network {
-            return Err(PluginError::PermissionDenied(
-                "Network access not allowed".into()
-            ));
+            return Err(PluginError::PermissionDenied("Network access not allowed".into()));
         }
-        
+
         if requested.execute_commands && !allowed.execute_commands {
-            return Err(PluginError::PermissionDenied(
-                "Command execution not allowed".into()
-            ));
+            return Err(PluginError::PermissionDenied("Command execution not allowed".into()));
         }
-        
+
         // Check file access patterns
         for pattern in &requested.write_files {
             if !allowed.write_files.iter().any(|p| p == pattern) {
-                return Err(PluginError::PermissionDenied(
-                    format!("Write access to {} not allowed", pattern)
-                ));
+                return Err(PluginError::PermissionDenied(format!(
+                    "Write access to {} not allowed",
+                    pattern
+                )));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -385,15 +463,15 @@ impl ResourceLimiter for ResourceTracker {
         _maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
         const MAX_MEMORY: usize = 50 * 1024 * 1024; // 50MB default limit
-        
+
         if desired > MAX_MEMORY {
             return Ok(false);
         }
-        
+
         self.memory_used = desired;
         Ok(true)
     }
-    
+
     fn table_growing(
         &mut self,
         _current: u32,
@@ -405,33 +483,32 @@ impl ResourceLimiter for ResourceTracker {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    
+
     #[tokio::test]
     async fn test_plugin_manager_creation() {
         let temp_dir = TempDir::new().unwrap();
-        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
-        
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 0);
     }
-    
+
     #[tokio::test]
     async fn test_plugin_discovery() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create some dummy WASM files
         std::fs::write(temp_dir.path().join("plugin1.wasm"), b"fake").unwrap();
         std::fs::write(temp_dir.path().join("plugin2.wasm"), b"fake").unwrap();
         std::fs::write(temp_dir.path().join("not_plugin.txt"), b"fake").unwrap();
-        
-        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
         let discovered = manager.discover_plugins().await.unwrap();
-        
+
         assert_eq!(discovered.len(), 2);
     }
 
@@ -451,7 +528,7 @@ mod tests {
         let wasm_bytes = build_cleanup_only_wasm();
         std::fs::write(&wasm_path, wasm_bytes).unwrap();
 
-        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
         let name = manager.load_plugin(&wasm_path).await.expect("load_plugin should succeed");
 
         // Ensure it's listed
@@ -500,7 +577,7 @@ mod tests {
         let wasm_path = temp_dir.path().join("spin_init.wasm");
         std::fs::write(&wasm_path, build_init_spin_wasm()).unwrap();
 
-        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
         let res = manager.load_plugin(&wasm_path).await;
         assert!(res.is_err(), "Expected initialization to time out or fail");
 
@@ -515,7 +592,7 @@ mod tests {
         let wasm_path = temp_dir.path().join("spin_cleanup.wasm");
         std::fs::write(&wasm_path, build_cleanup_spin_wasm()).unwrap();
 
-        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
         let name = manager.load_plugin(&wasm_path).await.expect("load_plugin should succeed");
 
         // Ensure it's listed

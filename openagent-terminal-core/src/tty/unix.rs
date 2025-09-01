@@ -14,7 +14,7 @@ use std::process::{Child, Command};
 use std::sync::Arc;
 use std::{env, ptr};
 
-use libc::{F_GETFL, F_SETFL, O_NONBLOCK, TIOCSCTTY, c_int, fcntl};
+use libc::{c_int, fcntl, F_GETFL, F_SETFL, O_NONBLOCK, TIOCSCTTY};
 use log::error;
 use polling::{Event, PollMode, Poller};
 use rustix_openpty::openpty;
@@ -22,7 +22,7 @@ use rustix_openpty::rustix::termios::Winsize;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use rustix_openpty::rustix::termios::{self, InputModes, OptionalActions};
 use signal_hook::low_level::{pipe as signal_pipe, unregister as unregister_signal};
-use signal_hook::{SigId, consts as sigconsts};
+use signal_hook::{consts as sigconsts, SigId};
 
 use crate::event::{OnResize, WindowSize};
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Options};

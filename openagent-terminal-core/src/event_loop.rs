@@ -6,8 +6,8 @@ use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
@@ -150,7 +150,7 @@ where
                 writer.write_all(&buf[..unprocessed]).unwrap();
             }
 
-// Parse the incoming bytes.
+            // Parse the incoming bytes.
             // Before feeding into the parser, filter and handle OSC 133 sequences.
             let filtered = self.filter_and_send_osc133(state, &buf[..unprocessed]);
             state.parser.advance(&mut **terminal, &filtered);
@@ -243,11 +243,12 @@ where
                             term_pos = Some(j);
                             break;
                         }
-                        if combined[j] == ESC {
-                            if j + 1 < combined.len() && combined[j + 1] == BACKSLASH {
-                                term_pos = Some(j);
-                                break;
-                            }
+                        if combined[j] == ESC
+                            && j + 1 < combined.len()
+                            && combined[j + 1] == BACKSLASH
+                        {
+                            term_pos = Some(j);
+                            break;
                         }
                         j += 1;
                     }
@@ -289,12 +290,13 @@ where
         //  B;cmd=<raw>
         //  C;exit=<n>;cwd=<path>
         //  D
-        if payload.is_empty() { return; }
+        if payload.is_empty() {
+            return;
+        }
         match payload[0] as char {
             'A' => {
-                self.event_proxy.send_event(event::Event::CommandBlock(
-                    event::CommandBlockEvent::PromptStart,
-                ));
+                self.event_proxy
+                    .send_event(event::Event::CommandBlock(event::CommandBlockEvent::PromptStart));
             },
             'B' => {
                 // Parse optional cmd
@@ -302,10 +304,14 @@ where
                 if payload.len() > 1 {
                     // Strip leading ';'
                     let mut s = &payload[1..];
-                    if s.first() == Some(&b';') { s = &s[1..]; }
+                    if s.first() == Some(&b';') {
+                        s = &s[1..];
+                    }
                     if let Some(rest) = s.strip_prefix(b"cmd=") {
                         // Take rest as UTF-8 if valid
-                        if let Ok(cmd_str) = String::from_utf8(rest.to_vec()) { cmd_val = Some(cmd_str); }
+                        if let Ok(cmd_str) = String::from_utf8(rest.to_vec()) {
+                            cmd_val = Some(cmd_str);
+                        }
                     }
                 }
                 self.event_proxy.send_event(event::Event::CommandBlock(
@@ -320,10 +326,14 @@ where
                 for part in parts.by_ref() {
                     if part.starts_with(b"exit=") {
                         if let Ok(s) = std::str::from_utf8(&part[5..]) {
-                            if let Ok(n) = s.parse::<i32>() { exit = Some(n); }
+                            if let Ok(n) = s.parse::<i32>() {
+                                exit = Some(n);
+                            }
                         }
                     } else if part.starts_with(b"cwd=") {
-                        if let Ok(s) = String::from_utf8(part[4..].to_vec()) { cwd = Some(s); }
+                        if let Ok(s) = String::from_utf8(part[4..].to_vec()) {
+                            cwd = Some(s);
+                        }
                     }
                 }
                 self.event_proxy.send_event(event::Event::CommandBlock(
@@ -331,9 +341,8 @@ where
                 ));
             },
             'D' => {
-                self.event_proxy.send_event(event::Event::CommandBlock(
-                    event::CommandBlockEvent::PromptEnd,
-                ));
+                self.event_proxy
+                    .send_event(event::Event::CommandBlock(event::CommandBlockEvent::PromptEnd));
             },
             _ => (),
         }
@@ -355,8 +364,11 @@ where
 
             let mut events = Events::with_capacity(NonZeroUsize::new(1024).unwrap());
 
-                let mut pipe = if self.ref_test {
-                Some(File::create("./openagent-terminal.recording").expect("create openagent-terminal recording"))
+            let mut pipe = if self.ref_test {
+                Some(
+                    File::create("./openagent-terminal.recording")
+                        .expect("create openagent-terminal recording"),
+                )
             } else {
                 None
             };
@@ -549,7 +561,6 @@ impl State {
             self.goto_next();
         }
     }
-
 
     #[inline]
     fn goto_next(&mut self) {

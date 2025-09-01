@@ -1,11 +1,11 @@
 // Block storage implementation using SQLite
 
 use super::{Block, BlockId, ExecutionStatus};
+use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
+use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use std::path::Path;
 use std::sync::Arc;
-use chrono::{DateTime, Utc};
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
-use anyhow::{Context, Result};
 use tracing::{debug, info};
 
 /// Block storage using SQLite
@@ -17,22 +17,22 @@ impl BlockStorage {
     /// Create new block storage
     pub async fn new(data_dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(data_dir)?;
-        
+
         let db_path = data_dir.join("blocks.db");
         let db_url = format!("sqlite:{}", db_path.display());
-        
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect(&db_url)
             .await
             .context("Failed to connect to database")?;
-        
+
         // Create tables
         Self::initialize_schema(&pool).await?;
-        
+
         Ok(Self { pool })
     }
-    
+
     /// Initialize database schema
     async fn initialize_schema(pool: &SqlitePool) -> Result<()> {
         sqlx::query(
@@ -60,11 +60,11 @@ impl BlockStorage {
             CREATE INDEX IF NOT EXISTS idx_blocks_starred ON blocks(starred);
             CREATE INDEX IF NOT EXISTS idx_blocks_parent_id ON blocks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_blocks_status ON blocks(status);
-            "#
+            "#,
         )
         .execute(pool)
         .await?;
-        
+
         // Create full-text search table
         sqlx::query(
             r#"
@@ -91,22 +91,22 @@ impl BlockStorage {
             CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN
                 DELETE FROM blocks_fts WHERE id = old.id;
             END;
-            "#
+            "#,
         )
         .execute(pool)
         .await?;
-        
+
         info!("Block storage initialized");
         Ok(())
     }
-    
+
     /// Insert a new block
     pub async fn insert(&self, block: &Arc<Block>) -> Result<()> {
         let environment_json = serde_json::to_string(&block.environment)?;
         let tags_json = serde_json::to_string(&block.tags)?;
         let children_json = serde_json::to_string(&block.children)?;
         let metadata_json = serde_json::to_string(&block.metadata)?;
-        
+
         sqlx::query(
             r#"
             INSERT INTO blocks (
@@ -114,7 +114,7 @@ impl BlockStorage {
                 created_at, modified_at, tags, starred, parent_id,
                 children, metadata, status, exit_code, duration_ms
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#
+            "#,
         )
         .bind(block.id.to_string())
         .bind(&block.command)
@@ -134,18 +134,18 @@ impl BlockStorage {
         .bind(block.duration_ms.map(|d| d as i64))
         .execute(&self.pool)
         .await?;
-        
+
         debug!("Inserted block {}", block.id.to_string());
         Ok(())
     }
-    
+
     /// Update an existing block
     pub async fn update(&self, block: &Block) -> Result<()> {
         let environment_json = serde_json::to_string(&block.environment)?;
         let tags_json = serde_json::to_string(&block.tags)?;
         let children_json = serde_json::to_string(&block.children)?;
         let metadata_json = serde_json::to_string(&block.metadata)?;
-        
+
         sqlx::query(
             r#"
             UPDATE blocks SET
@@ -154,7 +154,7 @@ impl BlockStorage {
                 parent_id = ?, children = ?, metadata = ?, status = ?,
                 exit_code = ?, duration_ms = ?
             WHERE id = ?
-            "#
+            "#,
         )
         .bind(&block.command)
         .bind(&block.output)
@@ -173,32 +173,32 @@ impl BlockStorage {
         .bind(block.id.to_string())
         .execute(&self.pool)
         .await?;
-        
+
         debug!("Updated block {}", block.id.to_string());
         Ok(())
     }
-    
+
     /// Get a block by ID
     pub async fn get(&self, id: BlockId) -> Result<Arc<Block>> {
         let row = sqlx::query_as::<_, BlockRow>(
             r#"
             SELECT * FROM blocks WHERE id = ?
-            "#
+            "#,
         )
         .bind(id.to_string())
         .fetch_one(&self.pool)
         .await?;
-        
+
         Ok(Arc::new(row.into_block()?))
     }
-    
+
     /// Get all blocks
     pub async fn get_all_blocks(&self) -> Result<Vec<Block>> {
         let rows = sqlx::query_as::<_, BlockRow>(
             r#"
             SELECT * FROM blocks
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;
@@ -212,46 +212,42 @@ impl BlockStorage {
             r#"
             SELECT * FROM blocks WHERE starred = 1
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;
-        
-        rows.into_iter()
-            .map(|row| row.into_block().map(Arc::new))
-            .collect()
+
+        rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
     }
-    
+
     /// Get blocks by tag
     pub async fn get_by_tag(&self, tag: &str) -> Result<Vec<Arc<Block>>> {
         let pattern = format!("%\"{}\" %", tag);
-        
+
         let rows = sqlx::query_as::<_, BlockRow>(
             r#"
             SELECT * FROM blocks WHERE tags LIKE ?
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(pattern)
         .fetch_all(&self.pool)
         .await?;
-        
-        rows.into_iter()
-            .map(|row| row.into_block().map(Arc::new))
-            .collect()
+
+        rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
     }
-    
+
     /// Delete blocks before a certain date
     pub async fn delete_before(&self, cutoff: DateTime<Utc>) -> Result<usize> {
         let result = sqlx::query(
             r#"
             DELETE FROM blocks WHERE created_at < ?
-            "#
+            "#,
         )
         .bind(cutoff.to_rfc3339())
         .execute(&self.pool)
         .await?;
-        
+
         Ok(result.rows_affected() as usize)
     }
 }
@@ -281,7 +277,7 @@ impl BlockRow {
     fn into_block(self) -> Result<Block> {
         use super::ShellType;
         use std::path::PathBuf;
-        
+
         Ok(Block {
             id: BlockId::from_string(&self.id)?,
             command: self.command,

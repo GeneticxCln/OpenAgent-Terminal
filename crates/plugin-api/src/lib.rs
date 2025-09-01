@@ -68,22 +68,22 @@ pub enum HookType {
 pub trait Plugin: Send + Sync {
     /// Return plugin metadata
     fn metadata(&self) -> PluginMetadata;
-    
+
     /// Initialize the plugin with configuration
     fn init(&mut self, config: PluginConfig) -> Result<(), PluginError>;
-    
+
     /// Provide completions for the given input
     fn provide_completions(&self, context: CompletionContext) -> Vec<Completion>;
-    
+
     /// Collect context for AI or other systems
     fn collect_context(&self, request: ContextRequest) -> Option<Context>;
-    
+
     /// Execute a custom command provided by this plugin
     fn execute_command(&self, cmd: &str, args: &[String]) -> Result<CommandOutput, PluginError>;
-    
+
     /// Handle a hook event
     fn handle_hook(&mut self, hook: HookEvent) -> Result<HookResponse, PluginError>;
-    
+
     /// Cleanup when plugin is being unloaded
     fn cleanup(&mut self) -> Result<(), PluginError>;
 }
@@ -199,30 +199,39 @@ pub struct HookResponse {
     pub messages: Vec<String>,
 }
 
-/// Plugin errors
+/// Plugin error types
 #[derive(Debug, thiserror::Error)]
 pub enum PluginError {
-    #[error("Initialization failed: {0}")]
-    InitError(String),
-    
-    #[error("Command execution failed: {0}")]
-    CommandError(String),
-    
+    #[error("Internal error: {0}")]
+    Internal(String),
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
-    
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Command failed: {0}")]
+    CommandFailed(String),
+
+    #[error("Initialization failed: {0}")]
+    InitError(String),
+
     #[error("Timeout exceeded")]
     Timeout,
-    
+
     #[error("Resource limit exceeded: {0}")]
     ResourceLimit(String),
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
-    
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -272,7 +281,7 @@ macro_rules! register_plugin {
         pub extern "C" fn create_plugin() -> Box<dyn Plugin> {
             Box::new(<$plugin_type>::new())
         }
-        
+
         #[no_mangle]
         pub extern "C" fn plugin_api_version() -> &'static str {
             "1.0.0"

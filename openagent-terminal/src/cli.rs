@@ -4,17 +4,17 @@ use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use openagent_terminal_config::SerdeReplace;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
-use log::{LevelFilter, error};
+use log::{error, LevelFilter};
+use openagent_terminal_config::SerdeReplace;
 use serde::{Deserialize, Serialize};
 use toml::Value;
 
 use openagent_terminal_core::tty::Options as PtyOptions;
 
-use crate::config::UiConfig;
 use crate::config::ui_config::Program;
 use crate::config::window::{Class, Identity};
+use crate::config::UiConfig;
 use crate::logging::LOG_TARGET_IPC_CONFIG;
 
 /// CLI options for the main OpenAgent Terminal executable.
@@ -41,18 +41,18 @@ pub struct Options {
     #[clap(long)]
     pub embed: Option<String>,
 
-/// Specify alternative configuration file [default:
-/// $XDG_CONFIG_HOME/openagent-terminal/openagent-terminal.toml].
+    /// Specify alternative configuration file [default:
+    /// $XDG_CONFIG_HOME/openagent-terminal/openagent-terminal.toml].
     #[cfg(not(any(target_os = "macos", windows)))]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
 
-/// Specify alternative configuration file [default: %APPDATA%\\openagent-terminal\\openagent-terminal.toml].
+    /// Specify alternative configuration file [default: %APPDATA%\\openagent-terminal\\openagent-terminal.toml].
     #[cfg(windows)]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
 
-/// Specify alternative configuration file [default: $HOME/.config/openagent-terminal/openagent-terminal.toml].
+    /// Specify alternative configuration file [default: $HOME/.config/openagent-terminal/openagent-terminal.toml].
     #[cfg(target_os = "macos")]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
@@ -363,7 +363,7 @@ pub struct IpcConfig {
     /// Window ID for the new config.
     ///
     /// Use `-1` to apply this change to all windows.
-#[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
+    #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
     pub window_id: Option<i128>,
 
     /// Clear all runtime configuration changes.
@@ -378,7 +378,7 @@ pub struct IpcGetConfig {
     /// Window ID for the config request.
     ///
     /// Use `-1` to get the global config.
-#[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
+    #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
     pub window_id: Option<i128>,
 }
 
@@ -474,7 +474,6 @@ impl DerefMut for ParsedOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[cfg(target_os = "linux")]
     use clap::CommandFactory;

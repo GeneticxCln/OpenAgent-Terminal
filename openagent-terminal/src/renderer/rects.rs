@@ -8,13 +8,13 @@ use log::info;
 use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::cell::Flags;
 
-use crate::display::SizeInfo;
-use openagent_terminal_core::grid::Dimensions;
 use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
+use crate::display::SizeInfo;
 use crate::gl::types::*;
 use crate::renderer::shader::{ShaderError, ShaderProgram, ShaderVersion};
 use crate::{gl, renderer};
+use openagent_terminal_core::grid::Dimensions;
 
 #[derive(Debug, Copy, Clone)]
 pub struct RenderRect {

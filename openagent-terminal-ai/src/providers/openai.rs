@@ -1,9 +1,9 @@
-use crate::{AiProvider, AiProposal, AiRequest};
 use crate::privacy::{sanitize_request, AiPrivacyOptions};
+use crate::{AiProposal, AiProvider, AiRequest};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
 use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
+use tracing::{debug, error, info};
 
 pub struct OpenAiProvider {
     api_key: String,
@@ -17,25 +17,24 @@ impl OpenAiProvider {
         if api_key.is_empty() {
             return Err("OpenAI API key is required".to_string());
         }
-        
+
         let client = reqwest::blocking::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(20))
             .user_agent("openagent-terminal-ai/0.1")
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-        
+
         Ok(Self { api_key, endpoint, model, client })
     }
-    
+
     pub fn from_env() -> Result<Self, String> {
         let api_key = std::env::var("OPENAI_API_KEY")
             .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())?;
         let endpoint = std::env::var("OPENAI_API_BASE")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-        let model = std::env::var("OPENAI_MODEL")
-            .unwrap_or_else(|_| "gpt-3.5-turbo".to_string());
-        
+        let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string());
+
         info!("Initializing OpenAI provider with model: {}", model);
         Self::new(api_key, endpoint, model)
     }
@@ -89,10 +88,7 @@ struct StreamDelta {
 fn ai_log_verbose() -> bool {
     static FLAG: OnceLock<bool> = OnceLock::new();
     *FLAG.get_or_init(|| {
-        matches!(
-            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
-            Some("verbose")
-        )
+        matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose"))
     })
 }
 fn ai_log_summary() -> bool {
@@ -109,37 +105,33 @@ impl AiProvider for OpenAiProvider {
     fn name(&self) -> &'static str {
         "openai"
     }
-    
+
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
-if ai_log_summary() { info!("openai_propose_start model={} endpoint={}", self.model, self.endpoint); }
+        if ai_log_summary() {
+            info!("openai_propose_start model={} endpoint={}", self.model, self.endpoint);
+        }
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
             "You are a helpful terminal command assistant. \
              Provide only the necessary shell commands with brief comment explanations. \
              Format your response as a list of commands, one per line. \
-             Start each explanation line with #."
+             Start each explanation line with #.",
         );
-        
+
         if let Some(shell) = &req.shell_kind {
             system_prompt.push_str(&format!(" The user is using {} shell.", shell));
         }
-        
+
         if let Some(dir) = &req.working_directory {
             system_prompt.push_str(&format!(" Current directory: {}", dir));
         }
-        
+
         let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_prompt,
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: req.scratch_text.clone(),
-            },
+            ChatMessage { role: "system".to_string(), content: system_prompt },
+            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
         ];
-        
+
         let request_body = ChatCompletionRequest {
             model: self.model.clone(),
             messages,
@@ -147,29 +139,32 @@ if ai_log_summary() { info!("openai_propose_start model={} endpoint={}", self.mo
             max_tokens: 500,
             stream: false,
         };
-        
+
         debug!("Sending request to OpenAI API");
-        
+
         let url = format!("{}/chat/completions", self.endpoint);
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .map_err(|e| format!("Failed to send request: {}", e))?;
-if ai_log_summary() { debug!("openai_propose_response_status status={}", response.status()); }
-        
+        if ai_log_summary() {
+            debug!("openai_propose_response_status status={}", response.status());
+        }
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
             error!("OpenAI API error {}: {}", status, error_text);
             return Err(format!("API error {}: {}", status, error_text));
         }
-        
-        let completion: ChatCompletionResponse = response.json()
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        
+
+        let completion: ChatCompletionResponse =
+            response.json().map_err(|e| format!("Failed to parse response: {}", e))?;
+
         if let Some(choice) = completion.choices.first() {
             let content = &choice.message.content;
             let commands: Vec<String> = content
@@ -177,16 +172,20 @@ if ai_log_summary() { debug!("openai_propose_response_status status={}", respons
                 .filter(|line| !line.trim().is_empty())
                 .map(|line| line.to_string())
                 .collect();
-            
+
             if commands.is_empty() {
-if ai_log_summary() { info!("openai_propose_complete commands=0"); }
+                if ai_log_summary() {
+                    info!("openai_propose_complete commands=0");
+                }
                 Ok(vec![AiProposal {
                     title: format!("Response for: {}", req.scratch_text),
                     description: Some("No specific commands suggested".to_string()),
                     proposed_commands: vec!["# No commands generated".to_string()],
                 }])
             } else {
-if ai_log_summary() { info!("openai_propose_complete commands={}", commands.len()); }
+                if ai_log_summary() {
+                    info!("openai_propose_complete commands={}", commands.len());
+                }
                 Ok(vec![AiProposal {
                     title: format!("OpenAI suggestion for: {}", req.scratch_text),
                     description: Some(format!("Generated by {}", self.model)),
@@ -203,7 +202,9 @@ if ai_log_summary() { info!("openai_propose_complete commands={}", commands.len(
         on_chunk: &mut dyn FnMut(&str),
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
-if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.model, self.endpoint); }
+        if ai_log_summary() {
+            info!("openai_stream_start model={} endpoint={}", self.model, self.endpoint);
+        }
         use crate::streaming::{RetryConfig, RetryStrategy};
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
@@ -211,7 +212,7 @@ if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.mod
             "You are a helpful terminal command assistant. \
              Provide only the necessary shell commands with brief comment explanations. \
              Format your response as a list of commands, one per line. \
-             Start each explanation line with #."
+             Start each explanation line with #.",
         );
 
         if let Some(shell) = &req.shell_kind {
@@ -235,11 +236,15 @@ if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.mod
         };
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let retry = RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
+        let retry =
+            RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
         loop {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) { return Err("Cancelled".to_string()); }
-            let send_result = self.client
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled".to_string());
+            }
+            let send_result = self
+                .client
                 .post(&url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
@@ -252,14 +257,20 @@ if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.mod
                     let msg = format!("Failed to send request: {}", e);
                     if retry.should_retry(attempt, &msg, cancel) {
                         let delay = retry.delay_for_attempt(attempt, &msg);
-                        if ai_log_summary() { info!("openai_stream_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                        if ai_log_summary() {
+                            info!(
+                                "openai_stream_retry attempt={} delay_ms={}",
+                                attempt + 1,
+                                delay.as_millis()
+                            );
+                        }
                         std::thread::sleep(delay);
                         attempt += 1;
                         continue;
                     } else {
                         return Err(msg);
                     }
-                }
+                },
             };
 
             if !response.status().is_success() {
@@ -269,7 +280,13 @@ if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.mod
                 error!("OpenAI API error {}: {}", status, error_text);
                 if retry.should_retry(attempt, &msg, cancel) {
                     let delay = retry.delay_for_attempt(attempt, &msg);
-                    if ai_log_summary() { info!("openai_stream_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                    if ai_log_summary() {
+                        info!(
+                            "openai_stream_retry_http attempt={} delay_ms={}",
+                            attempt + 1,
+                            delay.as_millis()
+                        );
+                    }
                     std::thread::sleep(delay);
                     attempt += 1;
                     continue;
@@ -281,29 +298,42 @@ if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.mod
             // Stream SSE lines
             let reader = BufReader::new(response);
             for line in reader.lines() {
-if cancel.load(std::sync::atomic::Ordering::Relaxed) { if ai_log_summary() { info!("openai_stream_cancelled"); } break; }
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    if ai_log_summary() {
+                        info!("openai_stream_cancelled");
+                    }
+                    break;
+                }
                 let line = line.map_err(|e| format!("Stream read error: {}", e))?;
                 let trimmed = line.trim();
-                if trimmed.is_empty() { continue; }
+                if trimmed.is_empty() {
+                    continue;
+                }
                 if let Some(rest) = trimmed.strip_prefix("data: ") {
-                    if rest.trim() == "[DONE]" { break; }
+                    if rest.trim() == "[DONE]" {
+                        break;
+                    }
                     match serde_json::from_str::<ChatCompletionChunk>(rest) {
                         Ok(chunk) => {
                             for choice in chunk.choices.into_iter() {
                                 if let Some(c) = choice.delta.content {
-if ai_log_verbose() { debug!("openai_stream_chunk len={}", c.len()); }
+                                    if ai_log_verbose() {
+                                        debug!("openai_stream_chunk len={}", c.len());
+                                    }
                                     on_chunk(&c);
                                 }
                             }
-                        }
+                        },
                         Err(e) => {
                             debug!("Skipping non-JSON or unexpected SSE data from OpenAI: {}", e);
-                        }
+                        },
                     }
                 }
             }
 
-if ai_log_summary() { info!("openai_stream_finished"); }
+            if ai_log_summary() {
+                info!("openai_stream_finished");
+            }
             return Ok(true);
         }
     }

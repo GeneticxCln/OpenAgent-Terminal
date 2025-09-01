@@ -4,7 +4,9 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
-use openagent_terminal_core::vte::ansi::{CursorShape as VteCursorShape, CursorStyle as VteCursorStyle};
+use openagent_terminal_core::vte::ansi::{
+    CursorShape as VteCursorShape, CursorStyle as VteCursorStyle,
+};
 
 use crate::config::ui_config::Percentage;
 

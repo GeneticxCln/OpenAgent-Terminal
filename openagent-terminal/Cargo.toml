@@ -102,6 +102,7 @@ gl_generator = "0.14.0"
 
 [dev-dependencies]
 clap_complete = "4.2.3"
+image = "0.24"
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"
@@ -138,6 +139,8 @@ embed-resource = "3.0.2"
 
 [features]
 default = ["wayland", "x11", "blocks"]
+# Optional background component initialization in a separate task
+background-components = []
 # Optional non-OpenGL rendering backend. Use with `--features wgpu`.
 wgpu = ["dep:wgpu", "dep:pollster"]
 

@@ -41,7 +41,10 @@ pub fn spawn_ipc_socket(
 
     unsafe { env::set_var(OPENAGENT_TERMINAL_SOCKET_ENV, socket_path.as_os_str()) };
     if options.daemon {
-        println!("OPENAGENT_TERMINAL_SOCKET={}; export OPENAGENT_TERMINAL_SOCKET", socket_path.display());
+        println!(
+            "OPENAGENT_TERMINAL_SOCKET={}; export OPENAGENT_TERMINAL_SOCKET",
+            socket_path.display()
+        );
     }
 
     // Spawn a thread to listen on the IPC socket.
@@ -88,7 +91,10 @@ pub fn spawn_ipc_socket(
                 #[cfg(feature = "sync")]
                 SocketMessage::SyncStatus(cmd) => {
                     let event = Event::new(
-                        EventType::IpcSync(crate::event::IpcSyncType::Status(cmd.scope), Arc::new(stream)),
+                        EventType::IpcSync(
+                            crate::event::IpcSyncType::Status(cmd.scope),
+                            Arc::new(stream),
+                        ),
                         None,
                     );
                     let _ = event_proxy.send_event(event);
@@ -96,7 +102,10 @@ pub fn spawn_ipc_socket(
                 #[cfg(feature = "sync")]
                 SocketMessage::SyncPush(cmd) => {
                     let event = Event::new(
-                        EventType::IpcSync(crate::event::IpcSyncType::Push(cmd.scope), Arc::new(stream)),
+                        EventType::IpcSync(
+                            crate::event::IpcSyncType::Push(cmd.scope),
+                            Arc::new(stream),
+                        ),
                         None,
                     );
                     let _ = event_proxy.send_event(event);
@@ -104,7 +113,10 @@ pub fn spawn_ipc_socket(
                 #[cfg(feature = "sync")]
                 SocketMessage::SyncPull(cmd) => {
                     let event = Event::new(
-                        EventType::IpcSync(crate::event::IpcSyncType::Pull(cmd.scope), Arc::new(stream)),
+                        EventType::IpcSync(
+                            crate::event::IpcSyncType::Pull(cmd.scope),
+                            Arc::new(stream),
+                        ),
                         None,
                     );
                     let _ = event_proxy.send_event(event);
@@ -160,17 +172,18 @@ fn handle_reply(stream: &UnixStream, message: &SocketMessage) -> IoResult<()> {
             Ok(())
         },
         #[cfg(feature = "sync")]
-        (SocketMessage::SyncPush(..) | SocketMessage::SyncPull(..), SocketReply::SyncResult(result)) => {
-            match result {
-                Ok(msg) => {
-                    println!("{msg}");
-                    Ok(())
-                },
-                Err(err) => {
-                    eprintln!("Sync error: {err}");
-                    Err(IoError::other(err.clone()))
-                },
-            }
+        (
+            SocketMessage::SyncPush(..) | SocketMessage::SyncPull(..),
+            SocketReply::SyncResult(result),
+        ) => match result {
+            Ok(msg) => {
+                println!("{msg}");
+                Ok(())
+            },
+            Err(err) => {
+                eprintln!("Sync error: {err}");
+                Err(IoError::other(err.clone()))
+            },
         },
         // Ignore requests without reply.
         _ => Ok(()),
@@ -221,8 +234,8 @@ fn find_socket(socket_path: Option<PathBuf>) -> IoResult<UnixStream> {
     }
 
     // Handle environment variable (new name first, then legacy fallback).
-    if let Ok(path) = env::var(OPENAGENT_TERMINAL_SOCKET_ENV)
-        .or_else(|_| env::var(ALACRITTY_SOCKET_ENV_OLD))
+    if let Ok(path) =
+        env::var(OPENAGENT_TERMINAL_SOCKET_ENV).or_else(|_| env::var(ALACRITTY_SOCKET_ENV_OLD))
     {
         let socket_path = PathBuf::from(path);
         if let Ok(socket) = UnixStream::connect(socket_path) {
@@ -230,11 +243,11 @@ fn find_socket(socket_path: Option<PathBuf>) -> IoResult<UnixStream> {
         }
     }
 
-// Search for socket files.
+    // Search for socket files.
     for entry in fs::read_dir(socket_dir())?.filter_map(|entry| entry.ok()) {
         let path = entry.path();
 
-// Skip files that aren't OpenAgent Terminal sockets.
+        // Skip files that aren't OpenAgent Terminal sockets.
         let socket_prefix = socket_prefix();
         if path
             .file_name()

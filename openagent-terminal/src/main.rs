@@ -20,7 +20,7 @@ use std::{env, fs};
 
 use log::info;
 #[cfg(windows)]
-use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole};
+use windows_sys::Win32::System::Console::{AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS};
 use winit::event_loop::EventLoop;
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
@@ -30,6 +30,8 @@ use openagent_terminal_core::tty;
 // Re-export SerdeReplace at crate root so config derive macros can refer to `crate::SerdeReplace`.
 pub use openagent_terminal_config::SerdeReplace;
 
+#[cfg(feature = "ai")]
+mod ai_runtime;
 mod cli;
 mod clipboard;
 mod config;
@@ -37,8 +39,6 @@ mod daemon;
 mod display;
 mod event;
 mod input;
-#[cfg(feature = "ai")]
-mod ai_runtime;
 #[cfg(unix)]
 mod ipc;
 mod logging;
@@ -54,9 +54,9 @@ mod string;
 mod window_context;
 
 // New component modules
+mod blocks_v2;
 mod components_init;
 mod text_shaping;
-mod blocks_v2;
 mod workspace;
 
 mod gl {
@@ -69,8 +69,8 @@ use crate::cli::MessageOptions;
 #[cfg(not(any(target_os = "macos", windows)))]
 use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
-use crate::config::UiConfig;
 use crate::config::monitor::ConfigMonitor;
+use crate::config::UiConfig;
 use crate::event::{Event, Processor};
 #[cfg(target_os = "macos")]
 use crate::macos::locale;
@@ -216,10 +216,10 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
 
     // Event processor.
     let mut processor = Processor::new(config, options, &window_event_loop);
-    
+
     // Initialize components in the background
     // This will be done asynchronously during the first window creation
-    
+
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);
 
