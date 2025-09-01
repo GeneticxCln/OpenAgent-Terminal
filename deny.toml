@@ -1,0 +1,62 @@
+# cargo-deny configuration for the OpenAgent Terminal workspace
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Fail the build on known vulnerabilities, unsound, unmaintained, and yanked crates.
+vulnerability = "deny"
+unsound = "deny"
+unmaintained = "deny"
+yanked = "deny"
+# If any advisories must be temporarily ignored, add entries here with notes and expiry dates.
+ignore = [
+]
+
+[bans]
+# Warn on multiple versions of the same crate; escalate to deny later once cleaned up.
+multiple-versions = "warn"
+# Disallow wildcard dependency versions like version = "*".
+wildcards = "deny"
+# Highlight all duplicates and conflicts in reports.
+highlight = "all"
+# Explicitly deny specific crates if needed (e.g., known problematic packages).
+deny = [
+]
+# Allow listed duplicates (crate name and optional version requirement) if unavoidable.
+skip = [
+]
+
+[licenses]
+# Deny crates without a license.
+unlicensed = "deny"
+# Permit common, permissive licenses. Adjust to your policy as needed.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+]
+# Flag copyleft licenses (GPL, AGPL, LGPL) as warnings by default; change to "deny" if you prefer.
+copyleft = "warn"
+# How confident we must be about license detection before acting (0.0 - 1.0).
+confidence-threshold = 0.8
+# Add crate/version-specific license exceptions here if necessary.
+exceptions = [
+]
+
+[sources]
+# Only allow crates from crates.io, forbid unknown registries and git sources by default.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index",
+]
+# If you need to allow git dependencies, list them explicitly here.
+allow-git = [
+]
+

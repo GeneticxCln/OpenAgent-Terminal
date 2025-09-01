@@ -1061,6 +1061,37 @@ Keep the log file after quitting OpenAgent Terminal.
 
 	Default: _false_
 
+# TROUBLESHOOTING
+
+Wayland vs X11
+
+On Linux/BSD, the window backend is auto-detected. To force one for debugging:
+
+	_WINIT_UNIX_BACKEND=wayland openagent-terminal_
+	_WINIT_UNIX_BACKEND=x11 openagent-terminal_
+
+GPU drivers
+
+Minimum requirement is OpenGL ES 2.0. Verify driver setup:
+
+	_glxinfo -B_
+	_vulkaninfo_
+
+wgpu vs OpenGL
+
+OpenAgent Terminal uses OpenGL by default. When built with the optional wgpu backend, select a backend with:
+
+	_WGPU_BACKEND=vk openagent-terminal_   # Vulkan
+	_WGPU_BACKEND=gl openagent-terminal_   # OpenGL
+
+If you see 'No adapters found' or 'device lost', try switching backend or updating drivers.
+
+Hybrid/discrete GPUs
+
+To run on the discrete GPU on Linux:
+
+	_DRI_PRIME=1 openagent-terminal_
+
 # SEE ALSO
 
 *openagent-terminal*(1), *openagent-terminal-msg*(1), *openagent-terminal-bindings*(5)

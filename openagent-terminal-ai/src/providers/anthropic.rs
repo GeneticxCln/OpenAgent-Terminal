@@ -1,4 +1,5 @@
 use crate::{AiProvider, AiProposal, AiRequest};
+use crate::privacy::{sanitize_request, AiPrivacyOptions};
 use serde::{Deserialize, Serialize};
 use log::{debug, error, info};
 
@@ -16,7 +17,9 @@ impl AnthropicProvider {
         }
         
         let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(20))
+            .user_agent("openagent-terminal-ai/0.1")
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
         
@@ -67,7 +70,8 @@ impl AiProvider for AnthropicProvider {
     }
     
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
-        // Build the system prompt
+        // Build the system prompt (sanitized)
+        let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
             "You are a helpful terminal command assistant. \
              Provide only the necessary shell commands with brief comment explanations. \
@@ -149,5 +153,8 @@ impl AiProvider for AnthropicProvider {
         } else {
             Err("No response from Anthropic".to_string())
         }
+    }
+    fn propose_stream(&self, _req: AiRequest, _on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
+        Ok(false)
     }
 }

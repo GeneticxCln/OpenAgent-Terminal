@@ -3,6 +3,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod privacy;
+
 /// A request to the AI provider, typically from a scratch buffer.
 #[derive(Debug, Clone)]
 pub struct AiRequest {
@@ -28,6 +30,14 @@ pub trait AiProvider: Send + Sync {
 
     /// Generate proposals; implementations must never attempt to run commands.
     fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> { Ok(Vec::new()) }
+
+    /// Optional: Stream partial text chunks while generating a response.
+    /// Returns Ok(true) if streaming was performed, Ok(false) if not supported.
+    /// Implementations should call `on_chunk` with incremental text (not commands),
+    /// and finish by returning Ok(true). Errors should abort streaming with Err.
+    fn propose_stream(&self, _req: AiRequest, _on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
+        Ok(false)
+    }
 }
 
 /// A no-op provider that returns no proposals.

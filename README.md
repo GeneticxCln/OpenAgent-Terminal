@@ -160,7 +160,7 @@ Prebuilt binaries for macOS and Windows can also be downloaded from the
 [GitHub releases page](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
 
 For everyone else, the detailed instructions to install OpenAgent Terminal can be found
-[here](../INSTALL.md).
+[here](INSTALL.md).
 
 ### Requirements
 
@@ -183,7 +183,33 @@ following locations:
 
 On Windows, the config file will be looked for in:
 
-* `%APPDATA%\\openagent-terminal\\openagent-terminal.toml`
+* %APPDATA%\\openagent-terminal\\openagent-terminal.toml
+
+## Troubleshooting
+
+- Wayland vs X11 (Linux)
+  - The window backend is auto-detected. To force one:
+    - Wayland: `WINIT_UNIX_BACKEND=wayland`
+    - X11: `WINIT_UNIX_BACKEND=x11`
+  - If you experience a blank window, input focus issues, or decoration glitches (especially on NVIDIA + Wayland), try forcing the other backend.
+
+- GPU drivers
+  - Minimum requirement for the default renderer is OpenGL ES 2.0 (GL/GLES via your driver).
+  - Ensure drivers are installed and up to date:
+    - AMD/Intel: mesa (OpenGL), mesa-vulkan-drivers (for Vulkan)
+    - NVIDIA: proprietary driver + nvidia-utils + Vulkan loader (libvulkan)
+  - Diagnostics: `glxinfo -B` (OpenGL) and `vulkaninfo` (Vulkan) should succeed.
+
+- wgpu vs OpenGL backends
+  - Default build uses OpenGL. An optional wgpu renderer is available via the feature flag.
+    - Build with wgpu: `cargo build -p openagent-terminal --features wgpu`
+  - If using wgpu, you can force a specific backend:
+    - Vulkan: `WGPU_BACKEND=vk`
+    - OpenGL: `WGPU_BACKEND=gl` (useful when Vulkan is unavailable or unstable)
+  - If you see errors like "No adapters found" or "device lost", try switching backend or updating drivers.
+
+- Hybrid/discrete GPUs (Linux)
+  - To run on the discrete GPU: `DRI_PRIME=1 openagent-terminal`
 
 ## Contributing
 
