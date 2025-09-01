@@ -7,31 +7,94 @@ env:
 
 jobs:
   build:
+    name: Build and test
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
-
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        feature-set: [default, core-no-default, wgpu, ai-ollama, sync]
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-      - name: Stable
-        run: cargo test
-      - name: Stable (no default features)
-        run: cargo test -p openagent-terminal-core --no-default-features
-      - name: Oldstable
+
+      - name: Install Rust toolchain (1.79.0) with components
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format (rustfmt)
+        run: cargo fmt --all -- --check
+
+      - name: Determine feature arguments
+        id: features
+        shell: bash
         run: |
-          rustup default $(cat Cargo.toml | grep "rust-version" | sed 's/.*"\(.*\)".*/\1/')
-          cargo test
-      - name: Clippy
-        run: |
-          rustup component add clippy
-          cargo clippy --all-targets
+          set -euo pipefail
+          case "${{ matrix['feature-set'] }}" in
+            default)
+              echo "args=" >> $GITHUB_OUTPUT
+              ;;
+            core-no-default)
+              echo "args=-p openagent-terminal-core --no-default-features" >> $GITHUB_OUTPUT
+              ;;
+            wgpu)
+              echo "args=-p openagent-terminal -F wgpu" >> $GITHUB_OUTPUT
+              ;;
+            ai-ollama)
+              echo "args=-p openagent-terminal -F ai -F openagent-terminal-ai/ollama" >> $GITHUB_OUTPUT
+              ;;
+            sync)
+              echo "args=-p openagent-terminal -F sync" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Unknown feature-set" >&2; exit 1
+              ;;
+          esac
+
+      - name: Clippy (treat warnings as errors)
+        run: cargo clippy --all-targets ${{ steps.features.outputs.args }} -- -D warnings
+
+      - name: Test
+        run: cargo test ${{ steps.features.outputs.args }}
+
   check-macos-x86_64:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+
       - name: Install target
-        run: rustup update && rustup target add x86_64-apple-darwin
+        run: rustup target add x86_64-apple-darwin
+
       - name: Build
         run: cargo build --target=x86_64-apple-darwin
+
+  security:
+    name: Security checks (cargo-deny, cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: cargo-deny (advisories, bans, sources, licenses)
+        run: cargo deny check advisories bans sources licenses
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo-audit
+        run: cargo audit -D warnings

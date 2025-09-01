@@ -2,21 +2,29 @@
 
 ## Immediate Fixes (Day 1)
 
-### 1. Fix Cargo.toml Version Issues
+The previous instructions for manually changing Rust edition/toolchain with sed are obsolete and conflict with the current workspace configuration.
 
+Single source of truth (do not override per-crate):
+- rust-toolchain.toml → channel = 1.79.0 (with clippy, rustfmt)
+- workspace Cargo.toml → [workspace.package] edition = "2021", rust-version = "1.79.0"
+
+Notes:
+- rustup/cargo automatically pick up rust-toolchain.toml; no manual edits are required.
+- Member crates inherit edition/rust-version via `edition.workspace = true` and `rust-version.workspace = true`.
+
+Verify your environment:
 ```bash
-# Run this script to fix all Cargo.toml files
-#!/bin/bash
+rustc --version   # should be 1.79.0
+cargo --version   # should use the 1.79.0 toolchain
+```
 
-# Fix workspace Cargo.toml
-sed -i 's/edition = "2024"/edition = "2021"/' Cargo.toml
-sed -i 's/rust-version = "1.85.0"/rust-version = "1.74.0"/' Cargo.toml
-
-# Fix all member Cargo.toml files
-find . -name "Cargo.toml" -exec sed -i 's/edition.workspace = true/edition = "2021"/' {} \;
-
-# Verify changes
-cargo check
+If rustup failed to select the toolchain, ensure it is installed:
+```bash
+rustup toolchain install 1.79.0
+```
+(Advanced) You can force it locally if necessary:
+```bash
+rustup override set 1.79.0
 ```
 
 ### 2. Fix Compiler Warnings
@@ -138,7 +146,7 @@ ollama = ["reqwest", "tokio"]
 ## Week 1 Implementation Plan
 
 ### Day 1-2: Foundation Fixes
-- [ ] Fix Cargo.toml versions
+- [ ] Confirm toolchain (1.79.0) and edition (2021) via rust-toolchain.toml and workspace Cargo.toml
 - [ ] Resolve compiler warnings
 - [ ] Update README.md with correct information
 - [ ] Create ATTRIBUTION.md
@@ -310,6 +318,34 @@ cargo build --release --features "ai"
 perf record --call-graph=dwarf ./target/release/openagent-terminal
 perf report
 ```
+
+---
+
+## Troubleshooting
+
+- Wayland vs X11 (Linux)
+  - The window backend is auto-detected. To force one:
+    - Wayland: `WINIT_UNIX_BACKEND=wayland`
+    - X11: `WINIT_UNIX_BACKEND=x11`
+  - If you experience a blank window, input focus issues, or decoration glitches (especially on NVIDIA + Wayland), try forcing the other backend.
+
+- GPU drivers
+  - Minimum requirement for the default renderer is OpenGL ES 2.0 (GL/GLES via your driver).
+  - Ensure drivers are installed and up to date:
+    - AMD/Intel: mesa (OpenGL), mesa-vulkan-drivers (for Vulkan)
+    - NVIDIA: proprietary driver + nvidia-utils + Vulkan loader (libvulkan)
+  - Diagnostics: `glxinfo -B` (OpenGL) and `vulkaninfo` (Vulkan) should succeed.
+
+- wgpu vs OpenGL backends
+  - Default build uses OpenGL. An optional wgpu renderer is available via the feature flag.
+    - Build with wgpu: `cargo build -p openagent-terminal --features wgpu`
+  - If using wgpu, you can force a specific backend:
+    - Vulkan: `WGPU_BACKEND=vk`
+    - OpenGL: `WGPU_BACKEND=gl` (useful when Vulkan is unavailable or unstable)
+  - If you see errors like "No adapters found" or "device lost", try switching backend or updating drivers.
+
+- Hybrid/discrete GPUs (Linux)
+  - To run on the discrete GPU: `DRI_PRIME=1 openagent-terminal`
 
 ---
 

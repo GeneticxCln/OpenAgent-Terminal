@@ -1,6 +1,8 @@
 use crate::{AiProvider, AiProposal, AiRequest};
+use crate::privacy::{sanitize_request, AiPrivacyOptions};
 use serde::{Deserialize, Serialize};
 use log::{debug, error, info};
+use std::io::{BufRead, BufReader};
 
 pub struct OllamaProvider {
     endpoint: String,
@@ -9,9 +11,52 @@ pub struct OllamaProvider {
 }
 
 impl OllamaProvider {
+    /// Stream tokens from Ollama and invoke on_chunk for each text fragment.
+    fn stream_generate(&self, prompt: String, mut on_chunk: &mut dyn FnMut(&str)) -> Result<(), String> {
+        let url = format!("{}/api/generate", self.endpoint);
+        let req_body = OllamaRequest {
+            model: self.model.clone(),
+            prompt,
+            stream: true,
+        };
+
+        let response = self.client
+            .post(&url)
+            .json(&req_body)
+            .send()
+            .map_err(|e| format!("Failed to send request: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("API error: {}", response.status()));
+        }
+
+        // Parse line-delimited JSON events
+        let reader = BufReader::new(response);
+        for line in reader.lines() {
+            let line = line.map_err(|e| format!("Stream read error: {}", e))?;
+            if line.trim().is_empty() { continue; }
+            match serde_json::from_str::<OllamaGenerateResponse>(&line) {
+                Ok(ev) => {
+                    if !ev.response.is_empty() {
+                        on_chunk(&ev.response);
+                    }
+                    if ev.done { break; }
+                }
+                Err(e) => {
+                    debug!("Skipping non-JSON stream line: {} (err: {})", line, e);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl OllamaProvider {
     pub fn new(endpoint: String, model: String) -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(20))
+            .user_agent("openagent-terminal-ai/0.1")
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
         
@@ -37,6 +82,32 @@ impl OllamaProvider {
                 false
             }
         }
+    }
+
+    fn stream_propose(&self, req: AiRequest, on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
+        if !self.check_availability() {
+            return Ok(false);
+        }
+        let opts = AiPrivacyOptions::from_env();
+        let req = sanitize_request(&req, opts);
+        let mut prompt = String::new();
+        prompt.push_str("You are a helpful terminal command assistant. ");
+        prompt.push_str("Provide only the necessary shell commands with brief comment explanations. ");
+        prompt.push_str("Do not include any other text or formatting. ");
+        if let Some(shell) = &req.shell_kind {
+            prompt.push_str(&format!("Shell: {}. ", shell));
+        }
+        if let Some(dir) = &req.working_directory {
+            prompt.push_str(&format!("Working directory: {}. ", dir));
+        }
+        for (key, value) in &req.context {
+            prompt.push_str(&format!("{}: {}. ", key, value));
+        }
+        prompt.push_str(&format!("\nUser request: {}\n", req.scratch_text));
+        prompt.push_str("\nProvide the commands:");
+
+        self.stream_generate(prompt, on_chunk)?;
+        Ok(true)
     }
 }
 
@@ -79,6 +150,8 @@ impl AiProvider for OllamaProvider {
         }
         
         // Build a context-aware prompt
+        let opts = AiPrivacyOptions::from_env();
+        let req = sanitize_request(&req, opts);
         let mut prompt = String::new();
         prompt.push_str("You are a helpful terminal command assistant. ");
         prompt.push_str("Provide only the necessary shell commands with brief comment explanations. ");
@@ -153,5 +226,9 @@ impl AiProvider for OllamaProvider {
                 Err(format!("Connection error: {}", e))
             }
         }
+    }
+
+    fn propose_stream(&self, req: AiRequest, on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
+        self.stream_propose(req, on_chunk)
     }
 }

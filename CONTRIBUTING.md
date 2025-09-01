@@ -49,6 +49,15 @@ build with the MSRV and bumping it should be avoided if possible.
 Since `openagent-terminal-core`'s version always tracks the next release, make sure that the version is
 bumped according to semver when necessary.
 
+### Local pre-submit checklist
+
+Before opening a pull request, please run these checks locally to catch issues early:
+
+- Format: `cargo fmt --all -- --check`
+- Lints: `cargo clippy --all-targets -D warnings`
+- Tests: `cargo test`
+- Unused deps: `cargo udeps` (install once via `cargo install cargo-udeps`; if required on your platform, use `cargo +nightly udeps`)
+
 ### Testing
 
 To make sure no regressions were introduced, all tests should be run before sending a pull request.

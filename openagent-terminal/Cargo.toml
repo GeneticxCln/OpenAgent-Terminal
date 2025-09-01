@@ -3,10 +3,10 @@ name = "openagent-terminal"
 version = "0.16.0-dev"
 authors = ["Christian Duerr <contact@christianduerr.com>", "Joe Wilm <joe@jwilm.com>"]
 license = "Apache-2.0"
-description = "A fast, cross-platform, OpenGL terminal emulator"
+description = "AI-enhanced, cross-platform terminal emulator with built-in command assistance; fast GPU rendering (OpenGL), privacy-first, optional local/cloud AI providers."
 readme = "README.md"
-homepage = "https://alacritty.org"
-repository = "https://github.com/GeneticxCln/openagent-terminal"
+homepage = "https://github.com/GeneticxCln/OpenAgent-Terminal"
+repository.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
@@ -127,3 +127,7 @@ nightly = []
 ai = ["dep:openagent-terminal-ai"]
 # Optional sync feature for settings/history sync
 sync = ["dep:openagent-terminal-sync"]
+
+# Umbrella features for AI backends (one-flag builds)
+# Example: cargo build -p openagent-terminal --features ai-ollama
+ai-ollama = ["ai", "openagent-terminal-ai/ollama"]
