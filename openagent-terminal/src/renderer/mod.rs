@@ -31,6 +31,8 @@ mod text;
 pub mod ui;
 #[cfg(feature = "wgpu")]
 pub mod wgpu;
+#[cfg(feature = "wgpu")]
+pub mod wgpu_backend;
 
 pub use text::{GlyphCache, LoaderApi};
 // pub use text::glyph_cache::{Glyph, LoadGlyph}; // TODO: Remove if truly unused

@@ -27,7 +27,10 @@ pub struct Options {
 
     /// AI logging verbosity: off | summary | verbose (overrides config.ai.log_verbosity)
     #[clap(long = "ai-log-verbosity", value_enum)]
+    #[cfg(feature = "ai")]
     pub ai_log_verbosity: Option<crate::config::ai::AiLogVerbosity>,
+    #[cfg(not(feature = "ai"))]
+    pub ai_log_verbosity: Option<()>,
 
     /// Generates ref test.
     #[clap(long, conflicts_with("daemon"))]

@@ -49,7 +49,7 @@ winit = { version = "0.30.9", default-features = false, features = ["rwh_06"] }
 
 # Text shaping and fonts (core requirement)
 swash = "0.1"
-harfbuzz-rs = "2.0"
+harfbuzz_rs = "2.0"
 fontdb = "0.16"
 ttf-parser = "0.20"
 unicode-bidi = "0.3"

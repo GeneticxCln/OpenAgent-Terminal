@@ -66,6 +66,7 @@ pub mod blocks;
 pub mod animation;
 #[cfg(feature = "ai")]
 pub mod ai_panel;
+pub mod tab_bar;
 
 mod bell;
 mod damage;
