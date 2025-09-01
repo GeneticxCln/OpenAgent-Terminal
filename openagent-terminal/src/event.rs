@@ -620,6 +620,15 @@ impl From<Event> for WinitEvent<Event> {
     }
 }
 
+/// AI copy output formats.
+#[cfg(feature = "ai")]
+#[derive(Debug, Clone)]
+pub enum AiCopyFormat {
+    Text,
+    Code,
+    Markdown,
+}
+
 /// OpenAgent Terminal events.
 #[derive(Debug, Clone)]
 pub enum EventType {
@@ -646,6 +655,16 @@ pub enum EventType {
     AiStreamError(String),
     #[cfg(feature = "ai")]
     AiProposals(Vec<openagent_terminal_ai::AiProposal>),
+    #[cfg(feature = "ai")]
+    AiRegenerate,
+    #[cfg(feature = "ai")]
+    AiStop,
+    #[cfg(feature = "ai")]
+    AiInsertToPrompt(String),
+    #[cfg(feature = "ai")]
+    AiApplyAsCommand { command: String, dry_run: bool },
+    #[cfg(feature = "ai")]
+    AiCopyOutput { format: AiCopyFormat },
 }
 
 /// Sync IPC event types.

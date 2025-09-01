@@ -321,5 +321,109 @@ impl AiRuntime {
         self.ui.proposals.get(self.ui.selected_proposal)
             .map(|p| p.proposed_commands.join("\n"))
     }
+    
+    /// Regenerate the last proposal
+    pub fn regenerate(&mut self, event_proxy: EventLoopProxy<Event>, window_id: WindowId) {
+        // Clear current proposals and streaming state
+        self.ui.proposals.clear();
+        self.ui.selected_proposal = 0;
+        self.ui.error_message = None;
+        self.ui.streaming_text.clear();
+        
+        // Restart the proposal stream with the same scratch text
+        let working_directory = None; // TODO: Get from context
+        let shell_kind = None; // TODO: Get from context
+        self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
+    }
+    
+    /// Insert selected proposal text to the prompt
+    pub fn insert_to_prompt(&mut self) -> Option<String> {
+        if self.ui.streaming_active && !self.ui.streaming_text.is_empty() {
+            // Use streaming text if available
+            Some(self.ui.streaming_text.clone())
+        } else {
+            // Use selected proposal
+            self.ui.proposals.get(self.ui.selected_proposal)
+                .map(|p| {
+                    let mut result = String::new();
+                    if let Some(desc) = &p.description {
+                        result.push_str(desc);
+                        result.push_str("\n\n");
+                    }
+                    result.push_str(&p.proposed_commands.join("\n"));
+                    result
+                })
+        }
+    }
+    
+    /// Apply command with safe-run (dry-run by default)
+    pub fn apply_command(&self, dry_run: bool) -> Option<(String, bool)> {
+        self.ui.proposals.get(self.ui.selected_proposal)
+            .and_then(|p| p.proposed_commands.first())
+            .map(|cmd| {
+                let safe_cmd = if dry_run {
+                    // Prepend echo for dry-run mode
+                    format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd)
+                } else {
+                    cmd.clone()
+                };
+                (safe_cmd, dry_run)
+            })
+    }
+    
+    /// Copy output in the specified format
+    pub fn copy_output(&self, format: crate::event::AiCopyFormat) -> Option<String> {
+        use crate::event::AiCopyFormat;
+        
+        let content = if self.ui.streaming_active && !self.ui.streaming_text.is_empty() {
+            self.ui.streaming_text.clone()
+        } else if let Some(proposal) = self.ui.proposals.get(self.ui.selected_proposal) {
+            let mut result = String::new();
+            if let Some(desc) = &proposal.description {
+                result.push_str(desc);
+                result.push_str("\n\n");
+            }
+            result.push_str(&proposal.proposed_commands.join("\n"));
+            result
+        } else {
+            return None;
+        };
+        
+        Some(match format {
+            AiCopyFormat::Text => content,
+            AiCopyFormat::Code => {
+                // Format as code block
+                format!("```bash\n{}\n```", content)
+            },
+            AiCopyFormat::Markdown => {
+                // Format as markdown with title and description
+                let mut md = String::new();
+                if let Some(proposal) = self.ui.proposals.get(self.ui.selected_proposal) {
+                    md.push_str(&format!("## {}\n\n", proposal.title));
+                    if let Some(desc) = &proposal.description {
+                        md.push_str(desc);
+                        md.push_str("\n\n");
+                    }
+                    if !proposal.proposed_commands.is_empty() {
+                        md.push_str("### Commands\n\n");
+                        md.push_str("```bash\n");
+                        md.push_str(&proposal.proposed_commands.join("\n"));
+                        md.push_str("\n```\n");
+                    }
+                } else {
+                    // Fallback for streaming text
+                    md.push_str("```\n");
+                    md.push_str(&content);
+                    md.push_str("\n```\n");
+                }
+                md
+            },
+        })
+    }
+    
+    /// Check if we can perform actions (have content to act on)
+    pub fn has_content(&self) -> bool {
+        (!self.ui.streaming_text.is_empty() && self.ui.streaming_active) || !self.ui.proposals.is_empty()
+    }
 }
 
