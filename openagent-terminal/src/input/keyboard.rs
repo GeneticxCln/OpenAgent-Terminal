@@ -61,6 +61,55 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // AI panel input handling (if active). Never auto-run; only edit/propose.
         if self.ctx.ai_active() {
+            let mods = self.ctx.modifiers().state();
+            // Keyboard shortcuts inside AI panel
+            if mods.control_key() {
+                match key.logical_key.as_ref() {
+                    // Stop/cancel streaming
+                    Key::Character(c) if (c.eq_ignore_ascii_case("c")) => {
+                        // Ctrl+C maps here reliably across platforms
+                        self.ctx.event_proxy.send_event(crate::event::EventType::AiStop);
+                        return;
+                    },
+                    // Regenerate
+                    Key::Character(c) if (c.eq_ignore_ascii_case("r")) => {
+                        self.ctx.event_proxy.send_event(crate::event::EventType::AiRegenerate);
+                        return;
+                    },
+                    // Insert to prompt
+                    Key::Character(c) if (c.eq_ignore_ascii_case("i")) => {
+                        if let Some(runtime) = &mut self.ctx.ai_runtime {
+                            if let Some(text) = runtime.insert_to_prompt() {
+                                self.ctx.event_proxy.send_event(crate::event::EventType::AiInsertToPrompt(text));
+                            }
+                        }
+                        return;
+                    },
+                    // Apply as command (Safe-run: dry-run by default)
+                    Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
+                        if let Some(runtime) = &self.ctx.ai_runtime {
+                            if let Some((cmd, dry_run)) = runtime.apply_command(true) {
+                                self.ctx.event_proxy.send_event(crate::event::EventType::AiApplyAsCommand { command: cmd, dry_run });
+                            }
+                        }
+                        return;
+                    },
+                    // Copy as code (Ctrl+Shift+C)
+                    Key::Character(c) if (c.eq_ignore_ascii_case("c") && mods.shift_key()) => {
+                        #[cfg(feature = "ai")]
+                        self.ctx.event_proxy.send_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Code });
+                        return;
+                    },
+                    // Copy all (Ctrl+Shift+A)
+                    Key::Character(c) if (c.eq_ignore_ascii_case("a") && mods.shift_key()) => {
+                        #[cfg(feature = "ai")]
+                        self.ctx.event_proxy.send_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Text });
+                        return;
+                    },
+                    _ => {},
+                }
+            }
+
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Enter) => { self.ctx.ai_propose(); return; },
                 Key::Named(NamedKey::Escape) => { self.ctx.close_ai_panel(); return; },

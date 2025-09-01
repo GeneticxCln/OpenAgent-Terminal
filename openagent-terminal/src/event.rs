@@ -2221,6 +2221,42 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 },
+                #[cfg(feature = "ai")]
+                EventType::AiRegenerate => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        let proxy = self.ctx.event_proxy.clone();
+                        let window_id = self.ctx.display.window.id();
+                        runtime.regenerate(proxy, window_id);
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiStop => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        runtime.cancel();
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiInsertToPrompt(text) => {
+                    // Insert generated content into the shell prompt via paste
+                    self.ctx.paste(&text, true);
+                    *self.ctx.dirty = true;
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiApplyAsCommand { command, .. } => {
+                    // Apply selected command to the prompt; respect safe-run already embedded
+                    self.ctx.paste(&command, true);
+                    *self.ctx.dirty = true;
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiCopyOutput { format } => {
+                    if let Some(runtime) = &self.ctx.ai_runtime {
+                        if let Some(text) = runtime.copy_output(format) {
+                            self.ctx.copy_to_clipboard(text);
+                        }
+                    }
+                },
             },
             WinitEvent::WindowEvent { event, .. } => {
                 match event {

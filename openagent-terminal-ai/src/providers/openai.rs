@@ -204,6 +204,7 @@ if ai_log_summary() { info!("openai_propose_complete commands={}", commands.len(
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
 if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.model, self.endpoint); }
+        use crate::streaming::{RetryConfig, RetryStrategy};
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
@@ -234,48 +235,76 @@ if ai_log_summary() { info!("openai_stream_start model={} endpoint={}", self.mod
         };
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let response = self.client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .header("Accept", "text/event-stream")
-            .json(&request_body)
-            .send()
-            .map_err(|e| format!("Failed to send request: {}", e))?;
+        let retry = RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
+        let mut attempt = 0usize;
+        loop {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) { return Err("Cancelled".to_string()); }
+            let send_result = self.client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .json(&request_body)
+                .send();
+            let response = match send_result {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let msg = format!("Failed to send request: {}", e);
+                    if retry.should_retry(attempt, &msg, cancel) {
+                        let delay = retry.delay_for_attempt(attempt, &msg);
+                        if ai_log_summary() { info!("openai_stream_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                        std::thread::sleep(delay);
+                        attempt += 1;
+                        continue;
+                    } else {
+                        return Err(msg);
+                    }
+                }
+            };
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-            error!("OpenAI API error {}: {}", status, error_text);
-            return Err(format!("API error {}: {}", status, error_text));
-        }
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+                let msg = format!("API error {}: {}", status, error_text);
+                error!("OpenAI API error {}: {}", status, error_text);
+                if retry.should_retry(attempt, &msg, cancel) {
+                    let delay = retry.delay_for_attempt(attempt, &msg);
+                    if ai_log_summary() { info!("openai_stream_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                    std::thread::sleep(delay);
+                    attempt += 1;
+                    continue;
+                } else {
+                    return Err(msg);
+                }
+            }
 
-        // Stream SSE lines
-        let reader = BufReader::new(response);
-        for line in reader.lines() {
+            // Stream SSE lines
+            let reader = BufReader::new(response);
+            for line in reader.lines() {
 if cancel.load(std::sync::atomic::Ordering::Relaxed) { if ai_log_summary() { info!("openai_stream_cancelled"); } break; }
-            let line = line.map_err(|e| format!("Stream read error: {}", e))?;
-            let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
-            if let Some(rest) = trimmed.strip_prefix("data: ") {
-                if rest.trim() == "[DONE]" { break; }
-                match serde_json::from_str::<ChatCompletionChunk>(rest) {
-                    Ok(chunk) => {
-                        for choice in chunk.choices.into_iter() {
-                            if let Some(c) = choice.delta.content {
+                let line = line.map_err(|e| format!("Stream read error: {}", e))?;
+                let trimmed = line.trim();
+                if trimmed.is_empty() { continue; }
+                if let Some(rest) = trimmed.strip_prefix("data: ") {
+                    if rest.trim() == "[DONE]" { break; }
+                    match serde_json::from_str::<ChatCompletionChunk>(rest) {
+                        Ok(chunk) => {
+                            for choice in chunk.choices.into_iter() {
+                                if let Some(c) = choice.delta.content {
 if ai_log_verbose() { debug!("openai_stream_chunk len={}", c.len()); }
-                                on_chunk(&c);
+                                    on_chunk(&c);
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        debug!("Skipping non-JSON or unexpected SSE data from OpenAI: {}", e);
+                        Err(e) => {
+                            debug!("Skipping non-JSON or unexpected SSE data from OpenAI: {}", e);
+                        }
                     }
                 }
             }
-        }
 
 if ai_log_summary() { info!("openai_stream_finished"); }
-        Ok(true)
+            return Ok(true);
+        }
     }
 }

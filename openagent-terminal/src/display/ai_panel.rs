@@ -98,6 +98,16 @@ impl Display {
             self.draw_ai_text(separator_point, fg, bg, &separator, num_cols);
             current_line += 1;
         }
+
+        // Draw actions/help row
+        if current_line < num_lines {
+            let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] Copy code  [Ctrl+Shift+A] Copy all  [Ctrl+R] Regenerate  [Ctrl+C] Stop   [? Esc] Close";
+            let actions_point = Point::new(current_line, Column(2));
+            // Dim slightly for hint badge
+            let hint_color = Rgb::new(180, 200, 220);
+            self.draw_ai_text(actions_point, hint_color, bg, actions, num_cols.saturating_sub(2));
+            current_line += 1;
+        }
         
         // Draw content based on state
         if ai_state.is_loading {

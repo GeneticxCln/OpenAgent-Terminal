@@ -1,0 +1,233 @@
+# Example workflow definition for deployment pipeline
+
+name: "Deploy Application"
+version: "1.0.0"
+description: "Complete deployment pipeline with build, test, and deploy stages"
+author: "OpenAgent Team"
+
+# Workflow metadata
+metadata:
+  tags: ["deployment", "ci/cd", "production"]
+  icon: "🚀"
+  estimated_duration: "10m"
+  
+# Required environment checks
+requirements:
+  - command: "cargo"
+    min_version: "1.70.0"
+  - command: "docker"
+    min_version: "20.10.0"
+  - env_var: "DEPLOY_KEY"
+    required: true
+
+# Input parameters
+parameters:
+  - name: environment
+    type: choice
+    description: "Target deployment environment"
+    required: true
+    options:
+      - value: "dev"
+        label: "Development"
+      - value: "staging"
+        label: "Staging"
+      - value: "prod"
+        label: "Production"
+    default: "dev"
+    
+  - name: version
+    type: string
+    description: "Version tag or commit hash"
+    default: "latest"
+    validation: "^[a-zA-Z0-9.-]+$"
+    
+  - name: skip_tests
+    type: boolean
+    description: "Skip test suite execution"
+    default: false
+    
+  - name: parallel_jobs
+    type: number
+    description: "Number of parallel build jobs"
+    default: 4
+    min: 1
+    max: 16
+
+# Environment variables
+environment:
+  RUST_BACKTRACE: "1"
+  DEPLOY_ENV: "{{environment}}"
+  VERSION: "{{version}}"
+  BUILD_JOBS: "{{parallel_jobs}}"
+
+# Workflow steps
+steps:
+  - id: "pre-check"
+    name: "Pre-deployment Checks"
+    description: "Verify environment and dependencies"
+    commands:
+      - "echo '🔍 Running pre-deployment checks...'"
+      - "cargo --version"
+      - "docker --version"
+      - "git status --porcelain"
+    continue_on_error: false
+    timeout: "30s"
+    
+  - id: "build"
+    name: "Build Application"
+    description: "Compile the application with release optimizations"
+    commands:
+      - "echo '🔨 Building application for {{environment}}...'"
+      - "cargo build --release --jobs {{parallel_jobs}}"
+    environment:
+      CARGO_TARGET_DIR: "./target/{{environment}}"
+    artifacts:
+      - path: "target/{{environment}}/release/openagent-terminal"
+        name: "binary"
+    retry:
+      attempts: 2
+      delay: "5s"
+      
+  - id: "test"
+    name: "Run Tests"
+    description: "Execute test suite"
+    condition: "!{{skip_tests}}"
+    commands:
+      - "echo '🧪 Running test suite...'"
+      - "cargo test --release --jobs {{parallel_jobs}}"
+      - "cargo test --doc"
+    continue_on_error: false
+    parallel: true
+    
+  - id: "lint"
+    name: "Code Quality Checks"
+    description: "Run linting and formatting checks"
+    condition: "{{environment}} != 'prod'"
+    commands:
+      - "cargo fmt -- --check"
+      - "cargo clippy -- -D warnings"
+    parallel: true
+    
+  - id: "docker-build"
+    name: "Build Docker Image"
+    description: "Create container image"
+    commands:
+      - "echo '🐳 Building Docker image...'"
+      - |
+        docker build \
+          --tag openagent-terminal:{{version}} \
+          --build-arg VERSION={{version}} \
+          --build-arg ENV={{environment}} \
+          .
+    secrets:
+      - name: "DOCKER_REGISTRY_TOKEN"
+        source: "env"
+        
+  - id: "security-scan"
+    name: "Security Scan"
+    description: "Scan for vulnerabilities"
+    condition: "{{environment}} == 'prod'"
+    commands:
+      - "cargo audit"
+      - "docker scan openagent-terminal:{{version}}"
+    allow_failure: true
+    
+  - id: "deploy"
+    name: "Deploy to {{environment}}"
+    description: "Deploy the application to target environment"
+    commands:
+      - "echo '🚀 Deploying to {{environment}}...'"
+      - |
+        case {{environment}} in
+          dev)
+            ./scripts/deploy-dev.sh {{version}}
+            ;;
+          staging)
+            ./scripts/deploy-staging.sh {{version}}
+            ;;
+          prod)
+            ./scripts/deploy-prod.sh {{version}}
+            ;;
+        esac
+    secrets:
+      - name: "DEPLOY_KEY"
+        source: "env"
+      - name: "API_TOKEN"
+        source: "keychain"
+    environment:
+      DEPLOY_TIMEOUT: "300"
+    retry:
+      attempts: 3
+      delay: "10s"
+      backoff: "exponential"
+      
+  - id: "verify"
+    name: "Verify Deployment"
+    description: "Check that deployment was successful"
+    commands:
+      - "echo '✅ Verifying deployment...'"
+      - "curl -f https://{{environment}}.example.com/health"
+    retry:
+      attempts: 5
+      delay: "10s"
+      
+  - id: "notify"
+    name: "Send Notifications"
+    description: "Notify team of deployment status"
+    always_run: true
+    commands:
+      - |
+        if [ "$WORKFLOW_STATUS" = "success" ]; then
+          echo "✅ Deployment to {{environment}} successful!"
+        else
+          echo "❌ Deployment to {{environment}} failed!"
+        fi
+
+# Hooks for lifecycle events
+hooks:
+  pre_workflow:
+    - "echo 'Starting deployment workflow at $(date)'"
+    - "git log -1 --oneline"
+    
+  post_workflow:
+    - "echo 'Workflow completed with status: $WORKFLOW_STATUS'"
+    - "echo 'Total duration: $WORKFLOW_DURATION'"
+    
+  on_failure:
+    - "echo '❌ Workflow failed at step: $FAILED_STEP'"
+    - "./scripts/rollback.sh {{environment}} {{version}}"
+    
+  on_success:
+    - "echo '✅ All steps completed successfully'"
+    - "git tag -a deployed-{{environment}}-{{version}} -m 'Deployed to {{environment}}'"
+
+# Output values
+outputs:
+  - name: "deployed_version"
+    value: "{{version}}"
+    description: "Version that was deployed"
+    
+  - name: "deployment_url"
+    value: "https://{{environment}}.example.com"
+    description: "URL of deployed application"
+    
+  - name: "artifacts_path"
+    value: "target/{{environment}}/release/"
+    description: "Path to built artifacts"
+
+# AI integration hints
+ai_context:
+  description: |
+    This workflow deploys the OpenAgent Terminal application through a
+    complete CI/CD pipeline including building, testing, and deployment
+    to the specified environment.
+  
+  common_issues:
+    - "Build fails: Check Rust toolchain version and dependencies"
+    - "Docker build fails: Ensure Docker daemon is running"
+    - "Deployment fails: Verify DEPLOY_KEY is set correctly"
+    
+  parameter_suggestions:
+    environment: "Choose based on testing needs: dev for experiments, staging for QA, prod for releases"
+    version: "Use semantic versioning (e.g., v1.2.3) or git commit hash"
+    skip_tests: "Only skip tests for hotfixes in emergencies"

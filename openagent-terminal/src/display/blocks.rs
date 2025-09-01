@@ -62,6 +62,13 @@ impl Blocks {
                     if last.end_total_line.is_none() {
                         last.end_total_line = total_lines.checked_sub(1);
                         last.ended_at = Some(Instant::now());
+                        // Auto-collapse very long blocks to reduce visual noise
+                        if let Some(end) = last.end_total_line {
+                            let lines = end.saturating_sub(last.start_total_line) + 1;
+                            if lines > 200 {
+                                last.folded = true;
+                            }
+                        }
                     }
                 }
             },
