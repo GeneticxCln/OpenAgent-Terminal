@@ -1027,6 +1027,7 @@ impl Display {
         message_buffer: &MessageBuffer,
         config: &UiConfig,
         search_state: &mut SearchState,
+        #[cfg(feature = "ai")] ai_state: Option<&crate::ai_runtime::AiUiState>,
     ) {
         // Collect renderable content before the terminal is dropped.
         let mut content = RenderableContent::new(config, self, &terminal, search_state);
@@ -1295,6 +1296,12 @@ impl Display {
         } else {
             // Draw rectangles.
             self.renderer_draw_rects(&size_info, &metrics, rects);
+        }
+
+        // Draw AI overlay if enabled.
+        #[cfg(feature = "ai")]
+        if let Some(ai) = ai_state {
+            self.draw_ai_overlay(config, ai);
         }
 
         self.draw_render_timer(config);

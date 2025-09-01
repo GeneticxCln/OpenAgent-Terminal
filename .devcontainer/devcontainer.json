@@ -1,0 +1,24 @@
+{
+  "name": "OpenAgent Terminal Dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "serayuzgur.crates"
+      ]
+    }
+  },
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspaces/OpenAgent-Terminal,type=bind,consistency=cached"
+  ],
+  "postCreateCommand": "rustup component add clippy rustfmt && cargo fetch"
+}
+

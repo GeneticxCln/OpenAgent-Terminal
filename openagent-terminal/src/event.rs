@@ -638,6 +638,14 @@ pub enum EventType {
     BlinkCursorTimeout,
     SearchNext,
     Frame,
+    #[cfg(feature = "ai")]
+    AiStreamChunk(String),
+    #[cfg(feature = "ai")]
+    AiStreamFinished,
+    #[cfg(feature = "ai")]
+    AiStreamError(String),
+    #[cfg(feature = "ai")]
+    AiProposals(Vec<openagent_terminal_ai::AiProposal>),
 }
 
 /// Sync IPC event types.
@@ -786,6 +794,8 @@ pub struct ActionContext<'a, N, T> {
     pub master_fd: RawFd,
     #[cfg(not(windows))]
     pub shell_pid: u32,
+    #[cfg(feature = "ai")]
+    pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
@@ -1641,6 +1651,61 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Command palette has been removed; placeholder methods were deleted.
+
+    #[cfg(feature = "ai")]
+    fn open_ai_panel(&mut self) {
+        if let Some(runtime) = &mut self.ai_runtime {
+            runtime.ui.active = true;
+            runtime.ui.cursor_position = runtime.ui.scratch.len();
+            *self.dirty = true;
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn close_ai_panel(&mut self) {
+        if let Some(runtime) = &mut self.ai_runtime {
+            runtime.cancel();
+            runtime.ui.active = false;
+            *self.dirty = true;
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn ai_active(&self) -> bool {
+        if let Some(runtime) = &self.ai_runtime {
+            runtime.ui.active
+        } else {
+            false
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn ai_input(&mut self, c: char) {
+        if let Some(runtime) = &mut self.ai_runtime {
+            let mut buf = [0; 4];
+            let s = c.encode_utf8(&mut buf);
+            runtime.insert_text(s);
+            *self.dirty = true;
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn ai_backspace(&mut self) {
+        if let Some(runtime) = &mut self.ai_runtime {
+            runtime.backspace();
+            *self.dirty = true;
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn ai_propose(&mut self) {
+        if let Some(runtime) = &mut self.ai_runtime {
+            let proxy = self.event_proxy.clone();
+            let window_id = self.display.window.id();
+            runtime.start_propose_stream(None, None, proxy, window_id);
+            *self.dirty = true;
+        }
+    }
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
@@ -2092,6 +2157,51 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::ConfigReload(_)
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
+                #[cfg(feature = "ai")]
+                EventType::AiStreamChunk(chunk) => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        let prev = runtime.ui.streaming_text.len();
+                        let new = chunk.len();
+                        if matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose")) {
+                            log::debug!("ai_event_chunk_append prev={} add={} total={}", prev, new, prev + new);
+                        }
+                        runtime.ui.streaming_text.push_str(&chunk);
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiStreamFinished => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        if matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("summary") | Some("verbose")) {
+                            log::info!("ai_event_stream_finished total_len={}", runtime.ui.streaming_text.len());
+                        }
+                        runtime.ui.streaming_active = false;
+                        runtime.ui.is_loading = false;
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiStreamError(err) => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        log::error!("ai_event_stream_error err={}", err);
+                        runtime.ui.streaming_active = false;
+                        runtime.ui.is_loading = false;
+                        runtime.ui.error_message = Some(err);
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiProposals(props) => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        if matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("summary") | Some("verbose")) {
+                            log::info!("ai_event_blocking_proposals proposals={}", props.len());
+                        }
+                        runtime.ui.streaming_active = false;
+                        runtime.ui.is_loading = false;
+                        runtime.ui.proposals = props;
+                        *self.ctx.dirty = true;
+                    }
+                },
             },
             WinitEvent::WindowEvent { event, .. } => {
                 match event {

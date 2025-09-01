@@ -25,6 +25,10 @@ pub struct Options {
     #[clap(long)]
     pub print_events: bool,
 
+    /// AI logging verbosity: off | summary | verbose (overrides config.ai.log_verbosity)
+    #[clap(long = "ai-log-verbosity", value_enum)]
+    pub ai_log_verbosity: Option<crate::config::ai::AiLogVerbosity>,
+
     /// Generates ref test.
     #[clap(long, conflicts_with("daemon"))]
     pub ref_test: bool,
@@ -107,6 +111,16 @@ impl Options {
 
         // Replace CLI options.
         self.config_options.override_config(config);
+
+        // Override AI log verbosity via CLI flag by setting the env used by providers/event code.
+        if let Some(v) = self.ai_log_verbosity {
+            std::env::set_var("OPENAGENT_AI_LOG_VERBOSITY", v.to_string());
+            #[cfg(feature = "ai")]
+            {
+                // If AI is built-in, also update the config to keep UI-consistent.
+                config.ai.log_verbosity = v;
+            }
+        }
     }
 
     /// Logging filter level.

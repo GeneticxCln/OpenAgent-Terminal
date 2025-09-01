@@ -32,6 +32,22 @@ all: help
 help: ## Print this help message
 	@grep -E '^[a-zA-Z._-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+# Build manpages from scdoc sources into target/man
+man: ## Generate manpages into target/man using scdoc
+	@mkdir -p target/man
+	@scdoc < $(MANPAGE) | gzip -c > target/man/openagent-terminal.1.gz
+	@scdoc < $(MANPAGE-MSG) | gzip -c > target/man/openagent-terminal-msg.1.gz
+	@scdoc < $(MANPAGE-CONFIG) | gzip -c > target/man/openagent-terminal.5.gz
+	@scdoc < $(MANPAGE-CONFIG-BINDINGS) | gzip -c > target/man/openagent-terminal-bindings.5.gz
+	@echo "Manpages written to target/man/*.gz"
+
+# Preview manpages locally (may use a pager)
+man-preview: man ## Preview generated manpages with man -l
+	@man -l target/man/openagent-terminal.1.gz || true
+	@man -l target/man/openagent-terminal.5.gz || true
+	@man -l target/man/openagent-terminal-bindings.5.gz || true
+	@man -l target/man/openagent-terminal-msg.1.gz || true
+
 binary: $(TARGET)-native ## Build a release binary
 binary-universal: $(TARGET)-universal ## Build a universal release binary
 $(TARGET)-native:

@@ -830,17 +830,17 @@ _https://docs.rs/winit/latest/winit/keyboard/enum.Key.html#variant.Dead_
 		*ClearHistory*
 			Clear the display buffer(s) to remove history.
 		*Hide*
-Hide the OpenAgent Terminal window.
+			Hide the OpenAgent Terminal window.
 		*Minimize*
-Minimize the OpenAgent Terminal window.
+			Minimize the OpenAgent Terminal window.
 		*Quit*
-Quit OpenAgent Terminal.
+			Quit OpenAgent Terminal.
 		*ClearLogNotice*
 			Clear warning and error notices.
 		*SpawnNewInstance*
-Spawn a new instance of OpenAgent Terminal.
+			Spawn a new instance of OpenAgent Terminal.
 		*CreateNewWindow*
-Create a new OpenAgent Terminal window.
+			Create a new OpenAgent Terminal window.
 		*ToggleFullscreen*
 			Toggle fullscreen.
 		*ToggleMaximized*
@@ -960,7 +960,7 @@ Create a new OpenAgent Terminal window.
 		*ToggleSimpleFullscreen*
 			Enter fullscreen without occupying another space.
 		*HideOtherApplications*
-Hide all windows other than OpenAgent Terminal.
+			Hide all windows other than OpenAgent Terminal.
 		*CreateNewTab*
 			Create new window in a tab.
 		*SelectNextTab*
@@ -1037,10 +1037,50 @@ Keep the log file after quitting OpenAgent Terminal.
 
 *renderer* = _"glsl3"_ | _"gles2"_ | _"gles2pure"_ | _"None"_
 
-	Force use of a specific renderer, _"None"_ will use the highest available
+	Force use of a specific OpenGL renderer, _"None"_ will use the highest available
 	one.
 
 	Default: _"None"_
+
+*prefer_wgpu* = _true_ | _false_
+
+	Prefer using the experimental WGPU backend when built. If initialization fails,
+	OpenAgent Terminal automatically falls back to the OpenGL path.
+
+	Default: _false_
+
+*subpixel_text* = _"Auto"_ | _"Enabled"_ | _"Disabled"_
+
+	WGPU-only subpixel text rendering mode. _Auto_ enables subpixel when the
+	swapchain format is sRGB, otherwise disables it.
+
+	Default: _"Auto"_
+
+*srgb_swapchain* = _"Auto"_ | _"Enabled"_ | _"Disabled"_
+
+	WGPU-only surface format selection. Try _Enabled_ if text looks dull or
+	_Diasbled_ if you see color banding.
+
+	Default: _"Auto"_
+
+*zero_evicted_atlas_layer* = _true_ | _false_
+
+	WGPU-only cosmetic option to zero a glyph atlas layer when it is evicted.
+
+	Default: _false_
+
+*atlas_eviction_policy* = _"RoundRobin"_ | _"LruMinOccupancy"_
+
+	WGPU-only multipage text atlas eviction policy. _LruMinOccupancy_ evicts the
+	least-recently-used page, breaking ties by lowest occupancy.
+
+	Default: _"LruMinOccupancy"_
+
+*atlas_report_interval_frames* = _<integer>_
+
+	WGPU-only diagnostics: print atlas usage stats every N frames (0 disables).
+
+	Default: _0_
 
 *print_events* = _true_ | _false_
 

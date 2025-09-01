@@ -20,6 +20,9 @@ pub struct AiUiState {
     pub error_message: Option<String>,
     pub history: VecDeque<String>,
     pub history_index: Option<usize>,
+    // Streaming state
+    pub streaming_active: bool,
+    pub streaming_text: String,
 }
 
 impl Default for AiUiState {
@@ -34,19 +37,28 @@ impl Default for AiUiState {
             error_message: None,
             history: VecDeque::with_capacity(MAX_HISTORY),
             history_index: None,
+            streaming_active: false,
+            streaming_text: String::new(),
         }
     }
 }
 
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::thread;
+use winit::event_loop::EventLoopProxy;
+use winit::window::WindowId;
+use crate::event::{Event, EventType};
+
 pub struct AiRuntime {
     pub ui: AiUiState,
-    pub provider: Box<dyn AiProvider>,
+    pub provider: Arc<dyn AiProvider>,
+    cancel_flag: Arc<AtomicBool>,
 }
 
 impl AiRuntime {
     pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
-        Self { ui: AiUiState::default(), provider }
+        Self { ui: AiUiState::default(), provider: Arc::from(provider), cancel_flag: Arc::new(AtomicBool::new(false)) }
     }
 
     pub fn from_config(
@@ -88,6 +100,81 @@ impl AiRuntime {
         };
         
         Self::new(provider)
+    }
+
+    /// Begin a streaming proposal in a background thread. Falls back to blocking propose if the
+    /// provider doesn't support streaming.
+    pub fn start_propose_stream(
+        &mut self,
+        working_directory: Option<String>,
+        shell_kind: Option<String>,
+        event_proxy: EventLoopProxy<Event>,
+        window_id: WindowId,
+    ) {
+        info!("ai_runtime_stream_start provider={} scratch_len={}", self.provider.name(), self.ui.scratch.len());
+        if self.ui.scratch.trim().is_empty() {
+            self.ui.error_message = Some("Query cannot be empty".to_string());
+            return;
+        }
+
+        // Reset state
+        self.ui.proposals.clear();
+        self.ui.selected_proposal = 0;
+        self.ui.error_message = None;
+        self.ui.is_loading = true;
+        self.ui.streaming_active = true;
+        self.ui.streaming_text.clear();
+        self.cancel_flag.store(false, Ordering::Relaxed);
+
+        let cancel = self.cancel_flag.clone();
+        let provider = self.provider.clone();
+        let req = AiRequest {
+            scratch_text: self.ui.scratch.clone(),
+            working_directory,
+            shell_kind,
+            context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
+        };
+
+        // Spawn background worker
+        let _ = thread::Builder::new().name("ai-stream".into()).spawn(move || {
+            // First try streaming
+            let mut on_chunk = |chunk: &str| {
+                // Send chunk event
+                let _ = event_proxy.send_event(Event::new(EventType::AiStreamChunk(chunk.to_string()), window_id));
+            };
+            match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
+                Ok(true) => {
+                    info!("ai_runtime_stream_finished provider={}", provider.name());
+                    let _ = event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
+                },
+                Ok(false) => {
+                    info!("ai_runtime_fallback_blocking provider={}", provider.name());
+                    let result = provider.propose(req);
+                    match result {
+                        Ok(proposals) => {
+                            info!("ai_runtime_blocking_complete proposals={}", proposals.len());
+                            let _ = event_proxy.send_event(Event::new(EventType::AiProposals(proposals), window_id));
+                        },
+                        Err(e) => {
+                            error!("ai_runtime_blocking_error error={}", e);
+                            let _ = event_proxy.send_event(Event::new(EventType::AiStreamError(e), window_id));
+                        },
+                    }
+                },
+                Err(e) => {
+                    error!("ai_runtime_stream_error error={}", e);
+                    let _ = event_proxy.send_event(Event::new(EventType::AiStreamError(e), window_id));
+                },
+            }
+        });
+    }
+
+    /// Cancel any in-flight streaming.
+    pub fn cancel(&mut self) {
+        info!("ai_runtime_cancel_requested provider={}", self.provider.name());
+        self.cancel_flag.store(true, Ordering::SeqCst);
+        self.ui.streaming_active = false;
+        self.ui.is_loading = false;
     }
 
     pub fn propose(&mut self, working_directory: Option<String>, shell_kind: Option<String>) {

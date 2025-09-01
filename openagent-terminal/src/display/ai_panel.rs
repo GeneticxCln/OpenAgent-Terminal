@@ -29,7 +29,7 @@ const SELECTION_INDICATOR: &str = "▶ ";
 
 #[cfg(feature = "ai")]
 impl Display {
-    /// Draw the AI panel if it's active
+    /// Draw the AI panel if it's active (legacy helper using caller-owned rect list)
     pub fn draw_ai_panel(
         &mut self,
         config: &UiConfig,
@@ -105,6 +105,16 @@ impl Display {
             if current_line < num_lines {
                 let loading_point = Point::new(current_line, Column(2));
                 self.draw_ai_text(loading_point, fg, bg, LOADING_TEXT, num_cols - 2);
+                current_line += 1;
+            }
+            // Show streaming text (partial responses)
+            if !ai_state.streaming_text.is_empty() {
+                for line in ai_state.streaming_text.lines() {
+                    if current_line >= num_lines { break; }
+                    let text_point = Point::new(current_line, Column(2));
+                    self.draw_ai_text(text_point, fg, bg, line, num_cols - 2);
+                    current_line += 1;
+                }
             }
         } else if let Some(ref error) = ai_state.error_message {
             // Show error message
@@ -113,6 +123,14 @@ impl Display {
                 let error_point = Point::new(current_line, Column(2));
                 let error_color = Rgb::new(255, 100, 100); // Light red
                 self.draw_ai_text(error_point, error_color, bg, &error_text, num_cols - 2);
+            }
+        } else if !ai_state.streaming_text.is_empty() {
+            // Show final streamed text when streaming done
+            for line in ai_state.streaming_text.lines() {
+                if current_line >= num_lines { break; }
+                let text_point = Point::new(current_line, Column(2));
+                self.draw_ai_text(text_point, fg, bg, line, num_cols - 2);
+                current_line += 1;
             }
         } else if !ai_state.proposals.is_empty() {
             // Show proposals
@@ -178,6 +196,52 @@ impl Display {
                     }
                 }
             }
+        }
+    }
+
+    /// Draw the AI overlay immediately (background rects then text), independent of the main draw rect pipeline.
+    pub fn draw_ai_overlay(
+        &mut self,
+        config: &UiConfig,
+        ai_state: &crate::ai_runtime::AiUiState,
+    ) {
+        if !ai_state.active { return; }
+
+        // Build background rect(s) just like draw_ai_panel does, then flush them.
+        let size_info = self.size_info;
+        let num_cols = size_info.columns;
+        let num_lines = size_info.screen_lines;
+
+        let panel_lines = std::cmp::min(MAX_AI_PANEL_LINES, num_lines / 3);
+        let start_line = num_lines.saturating_sub(panel_lines);
+
+        let bg = config.colors.footer_bar_background();
+        let panel_y = start_line as f32 * size_info.cell_height();
+        let panel_height = panel_lines as f32 * size_info.cell_height();
+        let panel_rect = RenderRect::new(
+            0.0,
+            panel_y,
+            size_info.width(),
+            panel_height,
+            bg,
+            0.8,
+        );
+        let mut rects = Vec::with_capacity(1);
+        rects.push(panel_rect);
+
+        // Flush background rects now.
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+
+        // Now render the text using the same logic as draw_ai_panel, but in an isolated pass.
+        let mut local_rects = Vec::new();
+        self.draw_ai_panel(config, ai_state, &mut local_rects);
+        if !local_rects.is_empty() {
+            // Unlikely: currently only background used rects; handled above. Keep for completeness.
+            let metrics = self.glyph_cache.font_metrics();
+            let size_copy = self.size_info;
+            self.renderer_draw_rects(&size_copy, &metrics, local_rects);
         }
     }
     
