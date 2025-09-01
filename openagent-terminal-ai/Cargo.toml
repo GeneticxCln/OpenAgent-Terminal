@@ -14,6 +14,8 @@ default = []
 ai-ollama = ["serde", "serde_json", "reqwest", "tokio"]
 ai-openai = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 ai-anthropic = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
+# Internal feature to build examples; disabled by default
+examples = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
@@ -28,3 +30,9 @@ rand = "0.8"
 
 [dev-dependencies]
 httpmock = "0.7"
+
+# Ensure examples only build when explicitly requested via --features examples
+[[example]]
+name = "async_streaming_example"
+path = "examples/async_streaming_example.rs"
+required-features = ["examples"]

@@ -201,7 +201,7 @@ impl IntoAiError for String {
     }
 }
 
-#[cfg(feature = "ollama")]
+#[cfg(feature = "ai-ollama")]
 impl IntoAiError for reqwest::Error {
     fn into_ai_error(self, provider: &str) -> AiError {
         if self.is_timeout() {

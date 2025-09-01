@@ -46,7 +46,8 @@ pub fn sanitize_request(req: &AiRequest, opts: AiPrivacyOptions) -> AiRequest {
                     sanitized.scratch_text = sanitized.scratch_text.replace(&home, placeholder);
                 }
             }
-            sanitized.working_directory = Some(placeholder.to_string());
+            // Replace the precise working directory value with a generic redaction marker
+            sanitized.working_directory = Some("[REDACTED]".to_string());
         }
     }
 
@@ -79,12 +80,23 @@ fn is_sensitive_key(key: &str) -> bool {
 /// Comprehensive secret redaction function
 fn redact_secrets(text: &str) -> String {
     let patterns = vec![
-        // API keys and tokens (generic)
-        (r#"(?i)\b(api[_-]?key|token|secret|password|auth|credential)\s*[:=]\s*(["']?)([^\s"']{8,})\2"#, "$1: [REDACTED]"),
-        
-        // Command-line flags with secrets
-        (r#"(?i)--(password|token|key|secret|auth|api[_-]?key)\s*=?\s*(["']?)([^\s"']+)\2"#, "--$1=[REDACTED]"),
+        // Command-line flags with secrets (match these first to avoid generic kv rewriting)
+        (r#"(?i)--(password|token|key|secret|auth|api[_-]?key)\s*=?\s*(?:[\"']?)([^\s\"']+)(?:[\"']?)"#, "--$1=[REDACTED]"),
         (r#"(?i)-(p|P)\s+([^\s]+)"#, "-$1 [REDACTED]"),  // Common password flag
+
+        // Specific tokens should be redacted before generic ones
+        // GitHub tokens
+        (r#"\b(ghp_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_TOKEN]"),
+        (r#"\b(gho_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_OAUTH]"),
+        (r#"\b(ghu_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_USER]"),
+        (r#"\b(ghs_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_SERVER]"),
+        (r#"\b(ghr_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_REFRESH]"),
+
+        // Env-var style API keys (e.g., OPENAI_API_KEY=...)
+        (r#"(?i)\b([A-Z_]*api[_-]?key)\s*[:=]\s*\S+"#, "$1: [REDACTED]"),
+
+        // API keys and tokens (generic) — only when preceded by start or whitespace
+        (r#"(?i)(^|\s)(api[_-]?key|token|secret|password|auth|credential)\s*[:=]\s*(?:[\"']?)[^\s\"'\[][^\s\"']*(?:[\"']?)"#, "$1$2: [REDACTED]"),
         
         // JWT tokens (xxx.yyy.zzz format)
         (r#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[REDACTED_JWT]"),
@@ -123,7 +135,7 @@ fn redact_secrets(text: &str) -> String {
         (r#"xox[baprs]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24,}"#, "[REDACTED_SLACK_TOKEN]"),
         
         // Generic UUIDs that might be sensitive
-        (r#"(?i)(session[_-]?id|csrf[_-]?token)\s*[:=]\s*(["']?)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\2"#, "$1: [REDACTED_UUID]"),
+        (r#"(?i)(session[_-]?id|csrf[_-]?token)\s*[:=]\s*(?:[\"']?)[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:[\"']?)"#, "$1: [REDACTED_UUID]"),
     ];
     
     let mut result = text.to_string();

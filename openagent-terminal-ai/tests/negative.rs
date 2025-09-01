@@ -20,7 +20,7 @@ fn privacy_sanitizes_paths_and_secrets() {
     assert!(out.context.iter().any(|(k,v)| k=="MY_SECRET_TOKEN" && v=="[REDACTED]"));
 }
 
-#[cfg(feature = "ollama")]
+#[cfg(feature = "ai-openai")]
 mod http_tests {
     use super::*;
     use httpmock::prelude::*;

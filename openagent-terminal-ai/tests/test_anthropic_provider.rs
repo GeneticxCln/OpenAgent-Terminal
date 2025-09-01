@@ -1,3 +1,4 @@
+#![cfg(feature = "ai-anthropic")]
 #[cfg(test)]
 mod anthropic_provider_tests {
     use httpmock::prelude::*;
