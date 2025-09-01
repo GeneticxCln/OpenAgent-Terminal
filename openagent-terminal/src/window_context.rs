@@ -43,6 +43,7 @@ use crate::logging::LOG_TARGET_IPC_CONFIG;
 use crate::message_bar::MessageBuffer;
 use crate::scheduler::Scheduler;
 use crate::{input, renderer};
+use crate::components_init::InitializedComponents;
 
 /// Event context for one individual OpenAgent Terminal window.
 pub struct WindowContext {
@@ -67,6 +68,7 @@ pub struct WindowContext {
     shell_pid: u32,
     window_config: ParsedOptions,
     config: Rc<UiConfig>,
+    components: Option<Arc<InitializedComponents>>,
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
 }
@@ -327,6 +329,7 @@ impl WindowContext {
             #[cfg(not(windows))]
             shell_pid,
             config: config.clone(),
+            components: None, // Will be initialized later by the event processor
             notifier: Notifier(loop_tx),
             cursor_blink_timed_out: Default::default(),
             prev_bell_cmd: Default::default(),
@@ -612,6 +615,11 @@ impl WindowContext {
     /// ID of this terminal context.
     pub fn id(&self) -> WindowId {
         self.display.window.id()
+    }
+
+    /// Set the initialized components for this window context.
+    pub fn set_components(&mut self, components: Arc<InitializedComponents>) {
+        self.components = Some(components);
     }
 
     /// Write the ref test results to the disk.

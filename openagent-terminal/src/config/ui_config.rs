@@ -34,6 +34,8 @@ use crate::config::scrolling::Scrolling;
 use crate::config::selection::Selection;
 use crate::config::terminal::Terminal;
 use crate::config::window::WindowConfig;
+use crate::config::workspace::WorkspaceConfig;
+#[cfg(feature = "ai")]
 use crate::config::ai::AiConfig;
 #[cfg(feature = "sync")]
 use crate::config::sync::SyncConfig;
@@ -70,6 +72,10 @@ pub struct UiConfig {
 
     /// Window configuration.
     pub window: WindowConfig,
+
+    /// Workspace configuration for tabs and splits.
+    #[serde(default)]
+    pub workspace: WorkspaceConfig,
 
     /// Mouse configuration.
     pub mouse: Mouse,

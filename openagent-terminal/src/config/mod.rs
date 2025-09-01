@@ -21,11 +21,11 @@ pub mod scrolling;
 pub mod selection;
 pub mod serde_utils;
 pub mod terminal;
+pub mod theme;
 pub mod ui_config;
 pub mod window;
-pub mod ai;
+pub mod workspace;
 pub mod sync;
-pub mod theme;
 
 mod bindings;
 mod mouse;

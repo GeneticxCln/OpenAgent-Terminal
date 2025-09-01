@@ -53,6 +53,12 @@ mod scheduler;
 mod string;
 mod window_context;
 
+// New component modules
+mod components_init;
+mod text_shaping;
+mod blocks_v2;
+mod workspace;
+
 mod gl {
     #![allow(clippy::all, unsafe_op_in_unsafe_fn)]
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
@@ -210,7 +216,10 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
 
     // Event processor.
     let mut processor = Processor::new(config, options, &window_event_loop);
-
+    
+    // Initialize components in the background
+    // This will be done asynchronously during the first window creation
+    
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);
 

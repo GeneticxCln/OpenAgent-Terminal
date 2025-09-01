@@ -281,6 +281,45 @@ pub enum Action {
     /// Toggle the AI side panel (scratch buffer) [feature: ai].
     ToggleAiPanel,
 
+    /// Create a new tab in the current window.
+    CreateTab,
+
+    /// Close the current tab.
+    CloseTab,
+
+    /// Switch to the next tab.
+    NextTab,
+
+    /// Switch to the previous tab.
+    PreviousTab,
+
+    /// Split the current pane horizontally.
+    SplitHorizontal,
+
+    /// Split the current pane vertically.
+    SplitVertical,
+
+    /// Focus the next pane.
+    FocusNextPane,
+
+    /// Focus the previous pane.
+    FocusPreviousPane,
+
+    /// Close the current pane.
+    ClosePane,
+
+    /// Resize pane left.
+    ResizePaneLeft,
+
+    /// Resize pane right.
+    ResizePaneRight,
+
+    /// Resize pane up.
+    ResizePaneUp,
+
+    /// Resize pane down.
+    ResizePaneDown,
+
     /// No action.
     None,
 }

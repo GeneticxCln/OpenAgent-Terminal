@@ -64,6 +64,7 @@ use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::window_context::WindowContext;
+use crate::components_init::{InitializedComponents, ComponentConfig};
 
 /// Duration after the last user input until an unlimited search is performed.
 pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
@@ -94,6 +95,7 @@ pub struct Processor {
     windows: HashMap<WindowId, WindowContext, RandomState>,
     proxy: EventLoopProxy<Event>,
     gl_config: Option<GlutinConfig>,
+    components: Option<Arc<InitializedComponents>>,
     #[cfg(unix)]
     global_ipc_options: ParsedOptions,
     cli_options: CliOptions,
@@ -135,6 +137,7 @@ impl Processor {
             proxy,
             scheduler,
             gl_config: None,
+            components: None,
             config: Rc::new(config),
             clipboard,
             windows: Default::default(),
@@ -161,7 +164,15 @@ impl Processor {
         )?;
 
         self.gl_config = Some(window_context.display.gl_context().config());
-        self.windows.insert(window_context.id(), window_context);
+        let window_id = window_context.id();
+        self.windows.insert(window_id, window_context);
+        
+        // If components are already initialized, set them on the new window
+        if let Some(components) = &self.components {
+            if let Some(window_context) = self.windows.get_mut(&window_id) {
+                window_context.set_components(components.clone());
+            }
+        }
 
         Ok(())
     }
@@ -190,8 +201,55 @@ impl Processor {
             config_overrides,
         )?;
 
-        self.windows.insert(window_context.id(), window_context);
+        let window_id = window_context.id();
+        self.windows.insert(window_id, window_context);
+        
+        // If components are already initialized, set them on the new window
+        if let Some(components) = &self.components {
+            if let Some(window_context) = self.windows.get_mut(&window_id) {
+                window_context.set_components(components.clone());
+            }
+        }
+        
         Ok(())
+    }
+
+    /// Initialize components asynchronously
+    pub async fn initialize_components(
+        &mut self,
+        window: &winit::window::Window,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.components.is_some() {
+            return Ok(()); // Already initialized
+        }
+
+        let config = ComponentConfig {
+            enable_wgpu: cfg!(feature = "wgpu"),
+            enable_harfbuzz: cfg!(feature = "harfbuzz"),
+            enable_blocks: cfg!(feature = "blocks"),
+            enable_workflows: cfg!(feature = "workflow"),
+            enable_plugins: cfg!(feature = "plugins"),
+            ..Default::default()
+        };
+
+        info!("Initializing terminal components...");
+        match crate::components_init::initialize_components(config, window).await {
+            Ok(components) => {
+                self.components = Some(Arc::new(components));
+                info!("✓ All components initialized successfully");
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Component initialization failed: {}", e);
+                warn!("Continuing with basic functionality...");
+                Ok(()) // Don't fail completely, just continue without enhanced features
+            }
+        }
+    }
+
+    /// Get a reference to the initialized components
+    pub fn components(&self) -> Option<&Arc<InitializedComponents>> {
+        self.components.as_ref()
     }
 
     /// Run the event loop.
@@ -240,6 +298,38 @@ impl ApplicationHandler<Event> for Processor {
                 self.initial_window_error = Some(err);
                 event_loop.exit();
                 return;
+            }
+            
+            // Initialize components after the first window is created
+            if let Some(window_context) = self.windows.values().next() {
+                let window = &window_context.display.window.raw;
+                let proxy = self.proxy.clone();
+                
+                // Spawn component initialization in the background
+                tokio::spawn(async move {
+                    let config = ComponentConfig {
+                        enable_wgpu: cfg!(feature = "wgpu"),
+                        enable_harfbuzz: cfg!(feature = "harfbuzz"),
+                        enable_blocks: cfg!(feature = "blocks"),
+                        enable_workflows: cfg!(feature = "workflow"),
+                        enable_plugins: cfg!(feature = "plugins"),
+                        ..Default::default()
+                    };
+                    
+                    match crate::components_init::initialize_components(config, window).await {
+                        Ok(components) => {
+                            info!("✓ Components initialized in background");
+                            // Send event to notify components are ready
+                            let _ = proxy.send_event(Event::new(
+                                EventType::ComponentsInitialized(Arc::new(components)),
+                                None
+                            ));
+                        }
+                        Err(e) => {
+                            warn!("Background component initialization failed: {}", e);
+                        }
+                    }
+                });
             }
         }
 
@@ -454,6 +544,16 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             },
+            // Handle component initialization completion
+            (EventType::ComponentsInitialized(components), _) => {
+                info!("Components initialized, updating window contexts...");
+                self.components = Some(components.clone());
+                
+                // Update all existing windows with the initialized components
+                for window_context in self.windows.values_mut() {
+                    window_context.set_components(components.clone());
+                }
+            },
             // Create a new terminal window.
             (EventType::CreateWindow(options), _) => {
                 // XXX Ensure that no context is current when creating a new window,
@@ -665,6 +765,7 @@ pub enum EventType {
     AiApplyAsCommand { command: String, dry_run: bool },
     #[cfg(feature = "ai")]
     AiCopyOutput { format: AiCopyFormat },
+    ComponentsInitialized(Arc<InitializedComponents>),
 }
 
 /// Sync IPC event types.

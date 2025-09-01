@@ -1,0 +1,499 @@
+// Blocks 2.0 System for OpenAgent Terminal
+// Enhanced block system with per-block environments, tagging, and advanced features
+
+pub mod storage;
+pub mod environment;
+pub mod search;
+pub mod export;
+
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+use anyhow::{Context, Result};
+use tracing::{debug, info, warn};
+
+/// Block metadata and content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    /// Unique identifier
+    pub id: BlockId,
+    /// Command that was executed
+    pub command: String,
+    /// Output from the command
+    pub output: String,
+    /// Working directory when executed
+    pub directory: PathBuf,
+    /// Environment variables at execution time
+    pub environment: HashMap<String, String>,
+    /// Shell used for execution
+    pub shell: ShellType,
+    /// Creation timestamp
+    pub created_at: DateTime<Utc>,
+    /// Last modified timestamp
+    pub modified_at: DateTime<Utc>,
+    /// Tags for organization
+    pub tags: HashSet<String>,
+    /// Whether this block is starred/favorited
+    pub starred: bool,
+    /// Parent block ID (for chained blocks)
+    pub parent_id: Option<BlockId>,
+    /// Child block IDs
+    pub children: Vec<BlockId>,
+    /// Custom metadata
+    pub metadata: BlockMetadata,
+    /// Execution status
+    pub status: ExecutionStatus,
+    /// Exit code from command
+    pub exit_code: Option<i32>,
+    /// Duration of execution in milliseconds
+    pub duration_ms: Option<u64>,
+}
+
+/// Unique block identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BlockId(Uuid);
+
+impl BlockId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+    
+    pub fn from_string(s: &str) -> Result<Self> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
+    
+    pub fn to_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl Default for BlockId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Shell type for block execution
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShellType {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Nushell,
+    Custom(u32), // Hash of custom shell name
+}
+
+impl ShellType {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "bash" => Self::Bash,
+            "zsh" => Self::Zsh,
+            "fish" => Self::Fish,
+            "powershell" | "pwsh" => Self::PowerShell,
+            "nu" | "nushell" => Self::Nushell,
+            other => {
+                let hash = std::collections::hash_map::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                other.hash(&mut hash.clone());
+                Self::Custom(hash.finish() as u32)
+            }
+        }
+    }
+    
+    pub fn to_str(&self) -> &str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+            Self::PowerShell => "powershell",
+            Self::Nushell => "nushell",
+            Self::Custom(_) => "custom",
+        }
+    }
+}
+
+/// Execution status of a block
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExecutionStatus {
+    Running,
+    Success,
+    Failed,
+    Cancelled,
+    Timeout,
+}
+
+/// Custom metadata for blocks
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BlockMetadata {
+    /// User-defined notes
+    pub notes: Option<String>,
+    /// Category for organization
+    pub category: Option<String>,
+    /// Priority level (1-5)
+    pub priority: Option<u8>,
+    /// Whether this block contains sensitive data
+    pub sensitive: bool,
+    /// Custom key-value pairs
+    pub custom: HashMap<String, serde_json::Value>,
+}
+
+/// Block manager for creating and managing blocks
+pub struct BlockManager {
+    storage: Arc<storage::BlockStorage>,
+    environment_manager: environment::EnvironmentManager,
+    search_engine: search::SearchEngine,
+    export_manager: export::ExportManager,
+    current_session: SessionId,
+    active_blocks: HashMap<BlockId, Arc<Block>>,
+}
+
+/// Session identifier for grouping blocks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SessionId(Uuid);
+
+impl SessionId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl BlockManager {
+    /// Create a new block manager
+    pub async fn new(data_dir: PathBuf) -> Result<Self> {
+        let storage = Arc::new(storage::BlockStorage::new(&data_dir).await?);
+        let environment_manager = environment::EnvironmentManager::new();
+        let search_engine = search::SearchEngine::new(storage.clone()).await?;
+        let export_manager = export::ExportManager::new();
+        
+        Ok(Self {
+            storage,
+            environment_manager,
+            search_engine,
+            export_manager,
+            current_session: SessionId::new(),
+            active_blocks: HashMap::new(),
+        })
+    }
+    
+    /// Create a new block
+    pub async fn create_block(&mut self, params: CreateBlockParams) -> Result<Arc<Block>> {
+        let block_id = BlockId::new();
+        let now = Utc::now();
+        
+        // Capture current environment if not provided
+        let environment = params.environment.unwrap_or_else(|| {
+            self.environment_manager.capture_current()
+        });
+        
+        let block = Block {
+            id: block_id,
+            command: params.command,
+            output: String::new(),
+            directory: params.directory.unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_default()
+            }),
+            environment,
+            shell: params.shell.unwrap_or(ShellType::Bash),
+            created_at: now,
+            modified_at: now,
+            tags: params.tags.unwrap_or_default(),
+            starred: false,
+            parent_id: params.parent_id,
+            children: Vec::new(),
+            metadata: params.metadata.unwrap_or_default(),
+            status: ExecutionStatus::Running,
+            exit_code: None,
+            duration_ms: None,
+        };
+        
+        let block_arc = Arc::new(block);
+        
+        // Store in database
+        self.storage.insert(&block_arc).await?;
+        
+        // Update parent if exists
+        if let Some(parent_id) = block_arc.parent_id {
+            self.add_child_to_parent(parent_id, block_id).await?;
+        }
+        
+        // Cache in memory
+        self.active_blocks.insert(block_id, block_arc.clone());
+        
+        // Index for search
+        self.search_engine.index_block(&block_arc).await?;
+        
+        info!("Created block {}", block_id.to_string());
+        
+        Ok(block_arc)
+    }
+    
+    /// Update block output and status
+    pub async fn update_block_output(
+        &mut self,
+        block_id: BlockId,
+        output: String,
+        exit_code: i32,
+        duration_ms: u64,
+    ) -> Result<()> {
+        let block = self.get_block_mut(block_id).await?;
+        
+        let mut block_mut = Arc::make_mut(block);
+        block_mut.output = output;
+        block_mut.exit_code = Some(exit_code);
+        block_mut.duration_ms = Some(duration_ms);
+        block_mut.status = if exit_code == 0 {
+            ExecutionStatus::Success
+        } else {
+            ExecutionStatus::Failed
+        };
+        block_mut.modified_at = Utc::now();
+        
+        // Update storage
+        self.storage.update(&block_mut).await?;
+        
+        // Re-index for search
+        self.search_engine.update_block(&block_mut).await?;
+        
+        Ok(())
+    }
+    
+    /// Add tags to a block
+    pub async fn add_tags(&mut self, block_id: BlockId, tags: Vec<String>) -> Result<()> {
+        let block = self.get_block_mut(block_id).await?;
+        
+        let mut block_mut = Arc::make_mut(block);
+        for tag in tags {
+            block_mut.tags.insert(tag);
+        }
+        block_mut.modified_at = Utc::now();
+        
+        self.storage.update(&block_mut).await?;
+        self.search_engine.update_block(&block_mut).await?;
+        
+        Ok(())
+    }
+    
+    /// Toggle star status
+    pub async fn toggle_star(&mut self, block_id: BlockId) -> Result<bool> {
+        let block = self.get_block_mut(block_id).await?;
+        
+        let mut block_mut = Arc::make_mut(block);
+        block_mut.starred = !block_mut.starred;
+        block_mut.modified_at = Utc::now();
+        
+        let starred = block_mut.starred;
+        
+        self.storage.update(&block_mut).await?;
+        
+        info!("Block {} starred: {}", block_id.to_string(), starred);
+        
+        Ok(starred)
+    }
+    
+    /// Search blocks
+    pub async fn search(&self, query: SearchQuery) -> Result<Vec<Arc<Block>>> {
+        self.search_engine.search(query).await
+    }
+    
+    /// Get all starred blocks
+    pub async fn get_starred(&self) -> Result<Vec<Arc<Block>>> {
+        self.storage.get_starred().await
+    }
+    
+    /// Get blocks by tag
+    pub async fn get_by_tag(&self, tag: &str) -> Result<Vec<Arc<Block>>> {
+        self.storage.get_by_tag(tag).await
+    }
+    
+    /// Export blocks
+    pub async fn export_blocks(
+        &self,
+        block_ids: Vec<BlockId>,
+        format: export::ExportFormat,
+        options: export::ExportOptions,
+    ) -> Result<Vec<u8>> {
+        let mut blocks = Vec::new();
+        for id in block_ids {
+            if let Ok(block) = self.get_block(id).await {
+                blocks.push(block);
+            }
+        }
+        
+        self.export_manager.export(blocks, format, options).await
+    }
+    
+    /// Import blocks
+    pub async fn import_blocks(
+        &mut self,
+        data: &[u8],
+        format: export::ExportFormat,
+        options: export::ImportOptions,
+    ) -> Result<Vec<BlockId>> {
+        let blocks = self.export_manager.import(data, format, options).await?;
+        
+        let mut imported_ids = Vec::new();
+        for mut block in blocks {
+            // Generate new IDs if requested
+            if options.generate_new_ids {
+                block.id = BlockId::new();
+                block.parent_id = None;
+                block.children.clear();
+            }
+            
+            let block_arc = Arc::new(block);
+            self.storage.insert(&block_arc).await?;
+            self.search_engine.index_block(&block_arc).await?;
+            
+            imported_ids.push(block_arc.id);
+        }
+        
+        info!("Imported {} blocks", imported_ids.len());
+        
+        Ok(imported_ids)
+    }
+    
+    /// Get a block by ID
+    async fn get_block(&self, block_id: BlockId) -> Result<Arc<Block>> {
+        if let Some(block) = self.active_blocks.get(&block_id) {
+            return Ok(block.clone());
+        }
+        
+        self.storage.get(block_id).await
+    }
+    
+    /// Get mutable reference to block
+    async fn get_block_mut(&mut self, block_id: BlockId) -> Result<&mut Arc<Block>> {
+        if !self.active_blocks.contains_key(&block_id) {
+            let block = self.storage.get(block_id).await?;
+            self.active_blocks.insert(block_id, block);
+        }
+        
+        self.active_blocks.get_mut(&block_id)
+            .context("Block not found in cache")
+    }
+    
+    /// Add child to parent block
+    async fn add_child_to_parent(&mut self, parent_id: BlockId, child_id: BlockId) -> Result<()> {
+        let parent = self.get_block_mut(parent_id).await?;
+        
+        let mut parent_mut = Arc::make_mut(parent);
+        parent_mut.children.push(child_id);
+        parent_mut.modified_at = Utc::now();
+        
+        self.storage.update(&parent_mut).await?;
+        
+        Ok(())
+    }
+    
+    /// Clean up old blocks
+    pub async fn cleanup_old_blocks(&mut self, days: i64) -> Result<usize> {
+        let cutoff = Utc::now() - chrono::Duration::days(days);
+        let deleted = self.storage.delete_before(cutoff).await?;
+        
+        // Clear from cache
+        self.active_blocks.retain(|_, block| block.created_at > cutoff);
+        
+        info!("Deleted {} old blocks", deleted);
+        
+        Ok(deleted)
+    }
+}
+
+/// Parameters for creating a new block
+pub struct CreateBlockParams {
+    pub command: String,
+    pub directory: Option<PathBuf>,
+    pub environment: Option<HashMap<String, String>>,
+    pub shell: Option<ShellType>,
+    pub tags: Option<HashSet<String>>,
+    pub parent_id: Option<BlockId>,
+    pub metadata: Option<BlockMetadata>,
+}
+
+/// Search query for blocks
+pub struct SearchQuery {
+    pub text: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub directory: Option<PathBuf>,
+    pub shell: Option<ShellType>,
+    pub starred_only: bool,
+    pub date_from: Option<DateTime<Utc>>,
+    pub date_to: Option<DateTime<Utc>>,
+    pub status: Option<ExecutionStatus>,
+    pub limit: Option<usize>,
+}
+
+impl Default for SearchQuery {
+    fn default() -> Self {
+        Self {
+            text: None,
+            tags: None,
+            directory: None,
+            shell: None,
+            starred_only: false,
+            date_from: None,
+            date_to: None,
+            status: None,
+            limit: Some(100),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    
+    #[tokio::test]
+    async fn test_block_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut manager = BlockManager::new(temp_dir.path().to_path_buf()).await.unwrap();
+        
+        let params = CreateBlockParams {
+            command: "echo 'Hello, World!'".to_string(),
+            directory: None,
+            environment: None,
+            shell: Some(ShellType::Bash),
+            tags: Some(["test".to_string()].into()),
+            parent_id: None,
+            metadata: None,
+        };
+        
+        let block = manager.create_block(params).await.unwrap();
+        assert_eq!(block.command, "echo 'Hello, World!'");
+        assert!(block.tags.contains("test"));
+    }
+    
+    #[tokio::test]
+    async fn test_block_search() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut manager = BlockManager::new(temp_dir.path().to_path_buf()).await.unwrap();
+        
+        // Create test blocks
+        for i in 0..5 {
+            let params = CreateBlockParams {
+                command: format!("test command {}", i),
+                directory: None,
+                environment: None,
+                shell: Some(ShellType::Zsh),
+                tags: Some([format!("tag{}", i)].into()),
+                parent_id: None,
+                metadata: None,
+            };
+            manager.create_block(params).await.unwrap();
+        }
+        
+        // Search by text
+        let query = SearchQuery {
+            text: Some("command".to_string()),
+            ..Default::default()
+        };
+        
+        let results = manager.search(query).await.unwrap();
+        assert_eq!(results.len(), 5);
+    }
+}
