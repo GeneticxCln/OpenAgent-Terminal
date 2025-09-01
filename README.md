@@ -185,6 +185,32 @@ On Windows, the config file will be looked for in:
 
 * %APPDATA%\\openagent-terminal\\openagent-terminal.toml
 
+### Theming (new)
+
+You can enable theming via the `[theme]` section in your config or by pointing to a custom
+TOML theme file. Built-in themes: `dark`, `light`, `high-contrast-dark`.
+
+Example config snippet:
+
+```toml
+[theme]
+# choose a built-in theme or provide a custom path
+name = "dark"           # or "light", "high-contrast-dark"
+# path = "/path/to/custom_theme.toml"  # overrides `name` when set
+
+# global preference (respected by UI animations)
+reduce_motion = false
+
+# optional visual overrides
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = true
+shadow_alpha = 0.35
+shadow_size_px = 8
+```
+
+Sample themes are available in `extra/themes/`.
+
 ## Troubleshooting
 
 - Wayland vs X11 (Linux)

@@ -37,6 +37,7 @@ use crate::config::window::WindowConfig;
 use crate::config::ai::AiConfig;
 #[cfg(feature = "sync")]
 use crate::config::sync::SyncConfig;
+use crate::config::theme::{ThemeConfig, ResolvedTheme};
 
 /// Regex used for the default URL hint.
 #[rustfmt::skip]
@@ -97,6 +98,20 @@ pub struct UiConfig {
     #[cfg(feature = "ai")]
     #[serde(default)]
     pub ai: AiConfig,
+
+    /// Theme configuration (design tokens, UI visuals).
+    #[serde(default)]
+    pub theme: ThemeConfig,
+
+    /// Global per-user reduce motion override.
+    /// When set, this takes precedence over any theme-provided reduce_motion or theme.reduce_motion.
+    #[serde(default)]
+    pub reduce_motion_override: Option<bool>,
+
+    /// Resolved theme (computed at load time). Not serialized.
+    #[config(skip)]
+    #[serde(skip_serializing)]
+    pub resolved_theme: Option<ResolvedTheme>,
 
     /// Sync configuration.
     #[cfg(feature = "sync")]

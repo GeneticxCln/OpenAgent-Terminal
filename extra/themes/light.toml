@@ -1,0 +1,23 @@
+# OpenAgent Terminal Light theme
+
+[tokens]
+surface = "#f7f7f7"
+surface_muted = "#ededed"
+text = "#181818"
+text_muted = "#555555"
+accent = "#3b82f6"
+success = "#16a34a"
+warning = "#d98e1a"
+error = "#dc2626"
+selection = "#c7ddff"
+border = "#cccccc"
+overlay = "#000000"
+
+[ui]
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = true
+shadow_alpha = 0.30
+shadow_size_px = 8
+reduce_motion = false
+

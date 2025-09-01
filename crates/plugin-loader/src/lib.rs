@@ -3,7 +3,7 @@
 //! This module provides a secure, sandboxed environment for loading and executing
 //! WebAssembly plugins with enforced permissions and resource limits.
 
-use anyhow::{Context, Result};
+use anyhow::Result as AnyResult;
 use plugin_api::{PluginMetadata, PluginPermissions};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,12 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use wasmtime::*;
 use wasmtime_wasi::{Dir, WasiCtx, WasiCtxBuilder};
+
+// Epoch-based CPU limiting constants
+const CPU_INIT_TICKS: u64 = 20;
+const CPU_CLEANUP_TICKS: u64 = 20;
+// A far-away deadline used to effectively disable the limit between calls without causing overflow
+const CPU_FAR_TICKS: u64 = 1_000_000_000;
 
 /// Plugin loader error types
 #[derive(Debug, thiserror::Error)]
@@ -80,15 +86,27 @@ pub struct PluginManager {
 
 impl PluginManager {
     /// Create a new plugin manager
-    pub fn new(plugin_dir: impl AsRef<Path>, enforce_permissions: bool) -> Result<Self> {
+    pub fn new(plugin_dir: impl AsRef<Path>, enforce_permissions: bool) -> AnyResult<Self> {
         // Configure the WASM engine
         let mut config = Config::new();
         config.wasm_threads(false); // Disable threads for security
         config.wasm_simd(true);
         config.wasm_bulk_memory(true);
-        config.consume_fuel(true); // Enable fuel for CPU limiting
-        
+        // Enable epoch-based interruption for CPU limiting
+        config.epoch_interruption(true);
+
         let engine = Engine::new(&config)?;
+
+        // Start a lightweight ticker that increments the engine epoch periodically.
+        // This enables time-based interruption at loop back-edges and safepoints.
+        let ticker_engine = engine.clone();
+        std::thread::spawn(move || {
+            use std::time::Duration;
+            loop {
+                std::thread::sleep(Duration::from_millis(2));
+                ticker_engine.increment_epoch();
+            }
+        });
         
         Ok(Self {
             engine,
@@ -114,7 +132,9 @@ impl PluginManager {
         
         // Create plugin context with permissions
         let permissions = self.read_plugin_permissions(path)?;
-        let mut store = self.create_plugin_store(permissions.clone())?;
+        let mut store = self
+            .create_plugin_store(permissions.clone())
+            .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
         
         // Instantiate the module
         let instance = Instance::new(&mut store, &module, &[])
@@ -125,10 +145,17 @@ impl PluginManager {
         
         // Initialize the plugin
         if let Some(init) = exports.init {
-            store.add_fuel(1_000_000)?; // Add initial fuel
-            let result = init.call(&mut store, ())
+            // Set a small epoch deadline to cap CPU time for initialization.
+            // If the call exceeds the deadline, it will trap.
+            store.set_epoch_deadline(CPU_INIT_TICKS);
+
+            let result = init
+                .call(&mut store, ())
                 .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
             
+            // Reset the deadline far in the future between calls to avoid immediate traps.
+            store.set_epoch_deadline(CPU_FAR_TICKS);
+
             if result != 0 {
                 return Err(PluginError::InitializationFailed(
                     format!("Plugin init returned error code: {}", result)
@@ -166,13 +193,27 @@ impl PluginManager {
         if let Some(plugin) = plugins.remove(name) {
             // Call cleanup if available
             if let Some(cleanup) = plugin.exports.cleanup {
-                let mut store = &mut plugin.store;
-                cleanup.call(&mut store, ())
-                    .map_err(|e| PluginError::RuntimeError(e.to_string()))?;
+                match Arc::try_unwrap(plugin) {
+                    Ok(mut owned) => {
+                        // Apply a small epoch deadline around cleanup as well.
+                        owned.store.set_epoch_deadline(CPU_CLEANUP_TICKS);
+                        let call_res = cleanup.call(&mut owned.store, ());
+                        // Reset the deadline far in the future between calls
+                        owned.store.set_epoch_deadline(CPU_FAR_TICKS);
+
+                        call_res.map_err(|e| PluginError::RuntimeError(e.to_string()))?;
+                        info!("Unloaded plugin: {}", name);
+                        Ok(())
+                    },
+                    Err(_arc) => {
+                        warn!("Plugin {} still has outstanding references; skipping cleanup", name);
+                        Ok(())
+                    },
+                }
+            } else {
+                info!("Unloaded plugin: {}", name);
+                Ok(())
             }
-            
-            info!("Unloaded plugin: {}", name);
-            Ok(())
         } else {
             Err(PluginError::NotFound(name.to_string()))
         }
@@ -208,7 +249,7 @@ impl PluginManager {
     }
     
     /// Create a plugin store with WASI context
-    fn create_plugin_store(&self, permissions: PluginPermissions) -> Result<Store<PluginContext>> {
+    fn create_plugin_store(&self, permissions: PluginPermissions) -> std::result::Result<Store<PluginContext>, PluginError> {
         let mut wasi_builder = WasiCtxBuilder::new();
         
         // Configure WASI based on permissions
@@ -220,7 +261,8 @@ impl PluginManager {
         // Add allowed environment variables
         for var in &permissions.environment_variables {
             if let Ok(value) = std::env::var(var) {
-                wasi_builder = wasi_builder.env(var, value)?;
+                // Newer WasiCtxBuilder::env returns &mut Self; ignore the return value
+                let _ = wasi_builder.env(var, &value);
             }
         }
         
@@ -228,8 +270,8 @@ impl PluginManager {
         for pattern in &permissions.read_files {
             // In a real implementation, we'd parse glob patterns
             // For now, treat them as direct paths
-            if let Ok(dir) = Dir::open_ambient_dir(pattern, ambient_authority()) {
-                wasi_builder = wasi_builder.preopened_dir(dir, pattern)?;
+            if let Ok(dir) = Dir::open_ambient_dir(pattern, wasmtime_wasi::ambient_authority()) {
+                let _ = wasi_builder.preopened_dir(dir, pattern);
             }
         }
         
@@ -256,10 +298,10 @@ impl PluginManager {
         store: &mut Store<PluginContext>,
     ) -> Result<PluginExports, PluginError> {
         Ok(PluginExports {
-            init: instance.get_typed_func(store, "plugin_init").ok(),
-            get_metadata: instance.get_typed_func(store, "plugin_get_metadata").ok(),
-            handle_event: instance.get_typed_func(store, "plugin_handle_event").ok(),
-            cleanup: instance.get_typed_func(store, "plugin_cleanup").ok(),
+            init: instance.get_typed_func(&mut *store, "plugin_init").ok(),
+            get_metadata: instance.get_typed_func(&mut *store, "plugin_get_metadata").ok(),
+            handle_event: instance.get_typed_func(&mut *store, "plugin_handle_event").ok(),
+            cleanup: instance.get_typed_func(&mut *store, "plugin_cleanup").ok(),
         })
     }
     
@@ -363,10 +405,6 @@ impl ResourceLimiter for ResourceTracker {
     }
 }
 
-/// Get the ambient authority for directory access
-fn ambient_authority() -> wasmtime_wasi::ambient_authority::AmbientAuthority {
-    wasmtime_wasi::ambient_authority::ambient_authority()
-}
 
 #[cfg(test)]
 mod tests {
@@ -395,5 +433,100 @@ mod tests {
         let discovered = manager.discover_plugins().await.unwrap();
         
         assert_eq!(discovered.len(), 2);
+    }
+
+    // Build a minimal WASM module exporting `plugin_cleanup` that returns 0.
+    fn build_cleanup_only_wasm() -> Vec<u8> {
+        let wat = r#"(module
+            (func (export "plugin_cleanup") (result i32)
+                i32.const 0)
+        )"#;
+        wat::parse_str(wat).expect("Failed to compile WAT")
+    }
+
+    #[tokio::test]
+    async fn test_unload_calls_cleanup_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("cleanup_plugin.wasm");
+        let wasm_bytes = build_cleanup_only_wasm();
+        std::fs::write(&wasm_path, wasm_bytes).unwrap();
+
+        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+        let name = manager.load_plugin(&wasm_path).await.expect("load_plugin should succeed");
+
+        // Ensure it's listed
+        let listed = manager.list_plugins().await;
+        assert_eq!(listed.len(), 1);
+
+        // Unload; this will attempt to call the exported cleanup function
+        manager.unload_plugin(&name).await.expect("unload_plugin should call cleanup and succeed");
+
+        // Ensure it's gone
+        let listed = manager.list_plugins().await;
+        assert_eq!(listed.len(), 0);
+    }
+
+    // Build a module with a spinning plugin_init to trigger epoch timeout
+    fn build_init_spin_wasm() -> Vec<u8> {
+        let wat = r#"(module
+            (func (export "plugin_init") (result i32)
+                (loop $l
+                    br $l
+                )
+                (i32.const 0)
+            )
+        )"#;
+        wat::parse_str(wat).expect("Failed to compile WAT")
+    }
+
+    // Build a module where init is ok but cleanup spins forever
+    fn build_cleanup_spin_wasm() -> Vec<u8> {
+        let wat = r#"(module
+            (func (export "plugin_init") (result i32)
+                i32.const 0)
+            (func (export "plugin_cleanup") (result i32)
+                (loop $l
+                    br $l
+                )
+                (i32.const 0)
+            )
+        )"#;
+        wat::parse_str(wat).expect("Failed to compile WAT")
+    }
+
+    #[tokio::test]
+    async fn test_epoch_timeout_on_init() {
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("spin_init.wasm");
+        std::fs::write(&wasm_path, build_init_spin_wasm()).unwrap();
+
+        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+        let res = manager.load_plugin(&wasm_path).await;
+        assert!(res.is_err(), "Expected initialization to time out or fail");
+
+        // Ensure not listed
+        let listed = manager.list_plugins().await;
+        assert!(listed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_epoch_timeout_on_cleanup() {
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("spin_cleanup.wasm");
+        std::fs::write(&wasm_path, build_cleanup_spin_wasm()).unwrap();
+
+        let manager = PluginManager::new(temp_dir.path(), true).unwrap();
+        let name = manager.load_plugin(&wasm_path).await.expect("load_plugin should succeed");
+
+        // Ensure it's listed
+        let listed = manager.list_plugins().await;
+        assert_eq!(listed.len(), 1);
+
+        // Unload should return an error due to timeout, but the plugin entry should be removed
+        let unload_res = manager.unload_plugin(&name).await;
+        assert!(unload_res.is_err(), "Expected unload to return error due to timeout");
+
+        let listed = manager.list_plugins().await;
+        assert!(listed.is_empty());
     }
 }

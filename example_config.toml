@@ -25,6 +25,25 @@ style = "Regular"
 background = '#1e1e2e'
 foreground = '#cdd6f4'
 
+# Theme configuration (new)
+[theme]
+# Built-in theme by name: "dark" | "light" | "high-contrast-dark"
+name = "dark"
+# Or specify a custom theme file (TOML) instead of name
+# path = "/path/to/custom_theme.toml"
+# Global reduce motion preference (adds to theme value)
+reduce_motion = false
+# UI visual overrides
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = true
+shadow_alpha = 0.35
+shadow_size_px = 8
+
+# Per-user reduce motion override (takes precedence over theme and [theme].reduce_motion)
+# Uncomment and set to true/false to force the behavior regardless of theme
+# reduce_motion_override = true
+
 # AI Assistant Configuration (optional, disabled by default)
 [ai]
 enabled = true
@@ -101,6 +120,12 @@ hide_when_typing = true
 # Debug (optional)
 [debug]
 render_timer = false
+# Render timer style: "LowContrast" | "Warning"
+render_timer_style = "LowContrast"
+# Use theme tokens for block cursor and/or selection (off by default)
+# theme_block_cursor = true
+# theme_text_cursors = true
+# theme_selection = true
 persistent_logging = false
 log_level = "Info"
 # Prefer WGPU backend when available (falls back to OpenGL if initialization fails)

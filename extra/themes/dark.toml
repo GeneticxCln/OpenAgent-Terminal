@@ -1,0 +1,23 @@
+# OpenAgent Terminal built-in Dark theme (exportable file)
+
+[tokens]
+surface = "#121212"
+surface_muted = "#1e1e1e"
+text = "#e6e6e6"
+text_muted = "#a0a0a0"
+accent = "#7aa2f7"
+success = "#98c379"
+warning = "#f4bf75"
+error = "#ec6161"
+selection = "#2a4a77"
+border = "#333333"
+overlay = "#000000"
+
+[ui]
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = true
+shadow_alpha = 0.35
+shadow_size_px = 8
+reduce_motion = false
+

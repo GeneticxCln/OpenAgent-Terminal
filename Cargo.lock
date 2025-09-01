@@ -3599,6 +3599,7 @@ dependencies = [
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
+ "wat",
 ]
 
 [[package]]
