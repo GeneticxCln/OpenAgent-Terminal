@@ -3,8 +3,8 @@ use crossfont::{GlyphKey, RasterizedGlyph};
 
 use openagent_terminal_core::term::cell::Flags;
 
-use crate::display::SizeInfo;
 use crate::display::content::RenderableCell;
+use crate::display::SizeInfo;
 use crate::gl;
 use crate::gl::types::*;
 
@@ -205,7 +205,11 @@ pub fn with_dummy_loader<T, F: FnOnce(LoaderApi<'_>) -> T>(func: F) -> T {
     let mut active_tex: GLuint = 0;
     let mut atlas: Vec<Atlas> = Vec::new();
     let mut current_atlas: usize = 0;
-    func(LoaderApi { active_tex: &mut active_tex, atlas: &mut atlas, current_atlas: &mut current_atlas })
+    func(LoaderApi {
+        active_tex: &mut active_tex,
+        atlas: &mut atlas,
+        current_atlas: &mut current_atlas,
+    })
 }
 
 fn update_projection(u_projection: GLint, size: &SizeInfo) {

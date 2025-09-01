@@ -1,19 +1,17 @@
 // WGPU Renderer Backend for OpenAgent Terminal
 // This module provides GPU-accelerated rendering using WGPU
 
-use std::sync::Arc;
-use std::num::NonZeroU64;
-use wgpu::{
-    Adapter, Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor,
-    Limits, PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration,
-    TextureFormat, TextureUsages, PowerPreference,
-};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use winit::window::Window;
 use anyhow::{Context, Result};
-use tracing::{debug, error, info, warn};
+use std::sync::Arc;
+use tracing::{debug, info, warn};
+use wgpu::{
+    Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
+    PowerPreference, PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration,
+    TextureUsages,
+};
+use winit::window::Window;
 
-use super::{shader, rects::RenderRect};
+use super::{rects::RenderRect, shader};
 use crate::display::color::Rgb;
 
 /// Performance metrics for WGPU renderer
@@ -41,24 +39,24 @@ impl Default for RenderMetrics {
 }
 
 /// WGPU Renderer State
-pub struct WgpuRenderer {
-    surface: Surface,
+pub struct WgpuRenderer<'a> {
+    surface: Surface<'a>,
     device: Arc<Device>,
     queue: Arc<Queue>,
     config: SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
-    
+
     // Render pipeline components
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    
+
     // Text rendering
     text_atlas: TextAtlas,
     glyph_cache: GlyphCache,
-    
+
     // Performance monitoring
     metrics: RenderMetrics,
     frame_counter: u64,
@@ -110,19 +108,15 @@ impl WgpuRenderer {
     /// Create a new WGPU renderer instance
     pub async fn new(window: &Window) -> Result<Self> {
         let size = window.inner_size();
-        
+
         // Create WGPU instance with all backends
-        let instance = Instance::new(InstanceDescriptor {
-            backends: Backends::all(),
-            ..Default::default()
-        });
-        
+        let instance =
+            Instance::new(InstanceDescriptor { backends: Backends::all(), ..Default::default() });
+
         // Create surface from window
-        let surface = unsafe { 
-            instance.create_surface(window)
-                .context("Failed to create WGPU surface")?
-        };
-        
+        let surface =
+            unsafe { instance.create_surface(window).context("Failed to create WGPU surface")? };
+
         // Request adapter with high performance preference
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -132,15 +126,11 @@ impl WgpuRenderer {
             })
             .await
             .context("Failed to find suitable GPU adapter")?;
-        
+
         // Log adapter info
         let adapter_info = adapter.get_info();
-        info!(
-            "Using GPU: {} ({})",
-            adapter_info.name,
-            adapter_info.backend.to_string()
-        );
-        
+        info!("Using GPU: {} ({})", adapter_info.name, adapter_info.backend.to_string());
+
         // Create device and queue
         let (device, queue) = adapter
             .request_device(
@@ -153,10 +143,10 @@ impl WgpuRenderer {
             )
             .await
             .context("Failed to create WGPU device")?;
-        
+
         let device = Arc::new(device);
         let queue = Arc::new(queue);
-        
+
         // Configure surface
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -165,7 +155,7 @@ impl WgpuRenderer {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
-        
+
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -175,21 +165,22 @@ impl WgpuRenderer {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
-        
+
         surface.configure(&device, &config);
-        
+
         // Create render pipeline
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Terminal Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/terminal.wgsl")),
         });
-        
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[],
-            push_constant_ranges: &[],
-        });
-        
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -224,7 +215,7 @@ impl WgpuRenderer {
             },
             multiview: None,
         });
-        
+
         // Create buffers
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
@@ -232,39 +223,39 @@ impl WgpuRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Index Buffer"),
             size: 32768, // 32KB initial size
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Uniform Buffer"),
             size: 256, // Small uniform buffer
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         // Create bind group (placeholder for now)
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Bind Group Layout"),
             entries: &[],
         });
-        
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bind Group"),
             layout: &bind_group_layout,
             entries: &[],
         });
-        
+
         // Initialize text atlas
         let text_atlas = TextAtlas::new(&device, 2048, 2048);
-        
+
         // Initialize glyph cache
         let glyph_cache = GlyphCache::new(1024);
-        
+
         Ok(Self {
             surface,
             device,
@@ -283,7 +274,7 @@ impl WgpuRenderer {
             enable_performance_hud: false,
         })
     }
-    
+
     /// Resize the renderer
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -293,27 +284,29 @@ impl WgpuRenderer {
             self.surface.configure(&self.device, &self.config);
         }
     }
-    
+
     /// Begin a new frame
     pub fn begin_frame(&mut self) -> Result<wgpu::SurfaceTexture> {
         let frame_start = std::time::Instant::now();
-        
-        let output = self.surface.get_current_texture()
+
+        let output = self
+            .surface
+            .get_current_texture()
             .context("Failed to acquire next swap chain texture")?;
-        
+
         self.frame_counter += 1;
-        
+
         Ok(output)
     }
-    
+
     /// Render the current frame
     pub fn render(&mut self, output: &wgpu::SurfaceTexture) -> Result<()> {
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
-        
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -321,12 +314,7 @@ impl WgpuRenderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -334,41 +322,44 @@ impl WgpuRenderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            
+
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            
+
             // Draw calls would go here
             self.metrics.draw_calls += 1;
         }
-        
+
         // Submit command buffer
         self.queue.submit(std::iter::once(encoder.finish()));
-        
+
         // Update metrics
         self.metrics.frame_time_ms = 16.67; // Placeholder
-        
+
         Ok(())
     }
-    
+
     /// Present the rendered frame
     pub fn present(&mut self, output: wgpu::SurfaceTexture) {
         output.present();
     }
-    
+
     /// Toggle performance HUD
     pub fn toggle_performance_hud(&mut self) {
         self.enable_performance_hud = !self.enable_performance_hud;
-        info!("Performance HUD: {}", if self.enable_performance_hud { "enabled" } else { "disabled" });
+        info!(
+            "Performance HUD: {}",
+            if self.enable_performance_hud { "enabled" } else { "disabled" }
+        );
     }
-    
+
     /// Get current performance metrics
     pub fn get_metrics(&self) -> RenderMetrics {
         self.metrics.clone()
     }
-    
+
     /// Clear the glyph cache
     pub fn clear_glyph_cache(&mut self) {
         self.glyph_cache.clear();
@@ -378,12 +369,8 @@ impl WgpuRenderer {
 
 impl TextAtlas {
     fn new(device: &Device, width: u32, height: u32) -> Self {
-        let size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        
+        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Text Atlas"),
             size,
@@ -394,9 +381,9 @@ impl TextAtlas {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        
+
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -406,16 +393,10 @@ impl TextAtlas {
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-        
-        Self {
-            texture,
-            texture_view,
-            sampler,
-            size: (width, height),
-            used_space: Vec::new(),
-        }
+
+        Self { texture, texture_view, sampler, size: (width, height), used_space: Vec::new() }
     }
-    
+
     fn clear(&mut self) {
         self.used_space.clear();
     }
@@ -429,7 +410,7 @@ impl GlyphCache {
             max_entries,
         }
     }
-    
+
     fn clear(&mut self) {
         self.entries.clear();
         self.lru_order.clear();
@@ -438,23 +419,21 @@ impl GlyphCache {
 
 /// Renderer capabilities query
 pub fn query_wgpu_support() -> bool {
-    let instance = Instance::new(InstanceDescriptor {
-        backends: Backends::all(),
-        ..Default::default()
-    });
-    
+    let instance =
+        Instance::new(InstanceDescriptor { backends: Backends::all(), ..Default::default() });
+
     // Check if any adapters are available
     let adapters: Vec<_> = instance.enumerate_adapters(Backends::all()).collect();
-    
+
     if adapters.is_empty() {
         warn!("No WGPU adapters found");
         return false;
     }
-    
+
     for adapter in adapters {
         let info = adapter.get_info();
         debug!("Found adapter: {} ({})", info.name, info.backend);
     }
-    
+
     true
 }

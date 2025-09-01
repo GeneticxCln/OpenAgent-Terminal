@@ -6,17 +6,17 @@ use log::info;
 
 use openagent_terminal_core::term::cell::Flags;
 
-use crate::display::SizeInfo;
 use crate::display::content::RenderableCell;
+use crate::display::SizeInfo;
 use crate::gl;
 use crate::gl::types::*;
 use crate::renderer::shader::{ShaderProgram, ShaderVersion};
 use crate::renderer::{Error, GlExtensions};
 
-use super::atlas::{ATLAS_SIZE, Atlas};
+use super::atlas::{Atlas, ATLAS_SIZE};
 use super::{
-    Glyph, LoadGlyph, LoaderApi, RenderingGlyphFlags, RenderingPass, TextRenderApi,
-    TextRenderBatch, TextRenderer, TextShader, glsl3,
+    glsl3, Glyph, LoadGlyph, LoaderApi, RenderingGlyphFlags, RenderingPass, TextRenderApi,
+    TextRenderBatch, TextRenderer, TextShader,
 };
 
 // Shader source.

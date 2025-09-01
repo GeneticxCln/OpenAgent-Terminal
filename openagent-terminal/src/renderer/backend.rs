@@ -1,5 +1,5 @@
 use std::fmt;
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 use crate::config::debug::RendererPreference;
 
@@ -29,10 +29,7 @@ pub struct BackendSelector {
 
 impl BackendSelector {
     pub fn new(prefer_wgpu: bool, renderer_preference: Option<RendererPreference>) -> Self {
-        Self {
-            prefer_wgpu,
-            renderer_preference,
-        }
+        Self { prefer_wgpu, renderer_preference }
     }
 
     /// Select the appropriate backend based on availability and preferences
@@ -40,12 +37,12 @@ impl BackendSelector {
         // Check if user has explicit OpenGL preference
         if let Some(pref) = self.renderer_preference {
             match pref {
-                RendererPreference::Glsl3 | 
-                RendererPreference::Gles2 | 
-                RendererPreference::Gles2Pure => {
+                RendererPreference::Glsl3
+                | RendererPreference::Gles2
+                | RendererPreference::Gles2Pure => {
                     debug!("User preference forces OpenGL backend");
                     return RenderBackend::OpenGl;
-                }
+                },
             }
         }
 
@@ -70,7 +67,8 @@ impl BackendSelector {
         match wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
-        }).request_adapter(&wgpu::RequestAdapterOptions {
+        })
+        .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: None,
@@ -78,11 +76,11 @@ impl BackendSelector {
             Some(_) => {
                 debug!("WGPU backend is available");
                 true
-            }
+            },
             None => {
                 warn!("WGPU backend not available on this system");
                 false
-            }
+            },
         }
     }
 
@@ -102,10 +100,6 @@ pub struct BackendConfig {
 
 impl Default for BackendConfig {
     fn default() -> Self {
-        Self {
-            backend: RenderBackend::OpenGl,
-            vsync: true,
-            max_texture_size: None,
-        }
+        Self { backend: RenderBackend::OpenGl, vsync: true, max_texture_size: None }
     }
 }

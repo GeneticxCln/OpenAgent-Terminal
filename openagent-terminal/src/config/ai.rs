@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use clap::ValueEnum;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
+use serde::{Deserialize, Serialize};
 
 /// AI integration configuration (build- and run-time opt-in).
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
@@ -59,10 +59,10 @@ pub struct AiConfig {
 
     /// Hard safety: UI must never auto-run AI-proposed commands.
     pub never_auto_run: bool,
-    
+
     /// Show inline AI suggestions as you type.
     pub inline_suggestions: bool,
-    
+
     /// Keybinding to trigger AI assistant (e.g., "Ctrl+Shift+A").
     pub trigger_key: Option<String>,
 }
@@ -98,10 +98,10 @@ impl Default for AiConfig {
 pub struct OllamaConfig {
     /// Ollama API endpoint.
     pub endpoint: String,
-    
+
     /// Model to use.
     pub model: String,
-    
+
     /// Request timeout in seconds.
     pub timeout: u64,
 }
@@ -115,7 +115,9 @@ pub enum AiLogVerbosity {
 }
 
 impl Default for AiLogVerbosity {
-    fn default() -> Self { Self::Summary }
+    fn default() -> Self {
+        Self::Summary
+    }
 }
 
 impl std::fmt::Display for AiLogVerbosity {
@@ -137,4 +139,3 @@ impl Default for OllamaConfig {
         }
     }
 }
-

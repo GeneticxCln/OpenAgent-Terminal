@@ -32,9 +32,10 @@ use openagent_terminal_core::tty;
 
 use crate::cli::{ParsedOptions, WindowOptions};
 use crate::clipboard::Clipboard;
+use crate::components_init::InitializedComponents;
 use crate::config::UiConfig;
-use crate::display::Display;
 use crate::display::window::Window;
+use crate::display::Display;
 use crate::event::{
     ActionContext, Event, EventProxy, InlineSearchState, Mouse, SearchState, TouchPurpose,
 };
@@ -43,7 +44,6 @@ use crate::logging::LOG_TARGET_IPC_CONFIG;
 use crate::message_bar::MessageBuffer;
 use crate::scheduler::Scheduler;
 use crate::{input, renderer};
-use crate::components_init::InitializedComponents;
 
 /// Event context for one individual OpenAgent Terminal window.
 pub struct WindowContext {
@@ -128,8 +128,14 @@ impl WindowContext {
                                     "WGPU initialization failed after successful probe, falling back to OpenGL: {err}"
                                 );
                                 // Recreate the window for OpenGL fallback since it was moved.
-                                window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
-                                raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
+                                window_opt = Some(Window::new(
+                                    event_loop,
+                                    &config,
+                                    &identity,
+                                    &mut options,
+                                )?);
+                                raw_window_handle =
+                                    window_opt.as_ref().map(|w| w.raw_window_handle());
                             },
                         }
                     },
@@ -149,28 +155,24 @@ impl WindowContext {
         let gl_config = renderer::platform::pick_gl_config(&gl_display, raw_window_handle)?;
 
         #[cfg(not(windows))]
-        let mut window_opt = Some(
-            Window::new(
-                event_loop,
-                &config,
-                &identity,
-                &mut options,
-                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-                gl_config.x11_visual(),
-            )?,
-        );
+        let mut window_opt = Some(Window::new(
+            event_loop,
+            &config,
+            &identity,
+            &mut options,
+            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+            gl_config.x11_visual(),
+        )?);
 
         // Prefer WGPU if enabled and feature is built. We probe initialization first and then build the Display.
         #[cfg(feature = "wgpu")]
         if config.debug.prefer_wgpu {
             if let Some(ref win_ref) = window_opt {
-                let wgpu_probe = pollster::block_on(
-                    crate::renderer::wgpu::WgpuRenderer::new(
-                        win_ref.winit_window(),
-                        win_ref.inner_size(),
-                        config.debug.renderer,
-                    ),
-                );
+                let wgpu_probe = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
+                    win_ref.winit_window(),
+                    win_ref.inner_size(),
+                    config.debug.renderer,
+                ));
                 if wgpu_probe.is_ok() {
                     let window_for_wgpu = window_opt.take().unwrap();
                     match Display::new_wgpu(window_for_wgpu, &config, false) {
@@ -180,16 +182,17 @@ impl WindowContext {
                                 "WGPU initialization failed after successful probe, falling back to OpenGL: {err}"
                             );
                             // Recreate the window for OpenGL fallback since it was moved into the WGPU attempt.
-                            window_opt = Some(
-                                Window::new(
-                                    event_loop,
-                                    &config,
-                                    &identity,
-                                    &mut options,
-                                    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-                                    gl_config.x11_visual(),
-                                )?,
-                            );
+                            window_opt = Some(Window::new(
+                                event_loop,
+                                &config,
+                                &identity,
+                                &mut options,
+                                #[cfg(all(
+                                    feature = "x11",
+                                    not(any(target_os = "macos", windows))
+                                ))]
+                                gl_config.x11_visual(),
+                            )?);
                         },
                     }
                 }
@@ -364,7 +367,9 @@ impl WindowContext {
                     }
                 }
                 #[cfg(not(feature = "ai"))]
-                { None }
+                {
+                    None
+                }
             },
         })
     }
@@ -378,7 +383,6 @@ impl WindowContext {
 
         self.display.update_config(&self.config);
         self.terminal.lock().set_options(self.config.term_options());
-
 
         // Reload cursor if its thickness has changed.
         if (old_config.cursor.thickness() - self.config.cursor.thickness()).abs() > f32::EPSILON {
@@ -490,7 +494,7 @@ impl WindowContext {
 
         // Request immediate re-draw if visual bell animation is not finished yet.
         if !self.display.visual_bell.completed() {
-// We can get an OS redraw which bypasses OpenAgent Terminal's frame throttling, thus
+            // We can get an OS redraw which bypasses OpenAgent Terminal's frame throttling, thus
             // marking the window as dirty when we don't have frame yet.
             if self.display.window.has_frame {
                 self.display.window.request_redraw();

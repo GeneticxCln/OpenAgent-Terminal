@@ -1,5 +1,5 @@
-use crate::display::SizeInfo;
 use crate::display::color::Rgb;
+use crate::display::SizeInfo;
 use crate::gl;
 use crate::gl::types::*;
 use crate::renderer::shader::{ShaderError, ShaderProgram, ShaderVersion};
@@ -16,7 +16,15 @@ pub struct UiRoundedRect {
 }
 
 impl UiRoundedRect {
-    pub fn new(x: f32, y: f32, width: f32, height: f32, radius: f32, color: Rgb, alpha: f32) -> Self {
+    pub fn new(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        radius: f32,
+        color: Rgb,
+        alpha: f32,
+    ) -> Self {
         Self { x, y, width, height, radius, color, alpha }
     }
 }
@@ -50,7 +58,14 @@ impl UiGlRenderer {
             gl::GenBuffers(1, &mut vbo);
             gl::BindVertexArray(vao);
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, (std::mem::size_of::<f32>() * 2) as i32, std::ptr::null());
+            gl::VertexAttribPointer(
+                0,
+                2,
+                gl::FLOAT,
+                gl::FALSE,
+                (std::mem::size_of::<f32>() * 2) as i32,
+                std::ptr::null(),
+            );
             gl::EnableVertexAttribArray(0);
             gl::BindVertexArray(0);
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
@@ -60,7 +75,9 @@ impl UiGlRenderer {
     }
 
     pub fn draw(&mut self, size_info: &SizeInfo, shapes: &[UiRoundedRect]) {
-        if shapes.is_empty() { return; }
+        if shapes.is_empty() {
+            return;
+        }
         let half_w = size_info.width() / 2.0;
         let half_h = size_info.height() / 2.0;
 
@@ -77,22 +94,39 @@ impl UiGlRenderer {
             let ndc_h = s.height / half_h;
 
             let quad: [f32; 12] = [
-                ndc_x, ndc_y,
-                ndc_x, ndc_y - ndc_h,
-                ndc_x + ndc_w, ndc_y,
-                ndc_x + ndc_w, ndc_y,
-                ndc_x + ndc_w, ndc_y - ndc_h,
-                ndc_x, ndc_y - ndc_h,
+                ndc_x,
+                ndc_y,
+                ndc_x,
+                ndc_y - ndc_h,
+                ndc_x + ndc_w,
+                ndc_y,
+                ndc_x + ndc_w,
+                ndc_y,
+                ndc_x + ndc_w,
+                ndc_y - ndc_h,
+                ndc_x,
+                ndc_y - ndc_h,
             ];
 
             unsafe {
                 gl::Uniform2f(self.u_origin, s.x, s.y);
                 gl::Uniform2f(self.u_size, s.width, s.height);
                 gl::Uniform1f(self.u_radius, s.radius);
-                let (r,g,b) = s.color.as_tuple();
-                gl::Uniform4f(self.u_color, r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, s.alpha);
+                let (r, g, b) = s.color.as_tuple();
+                gl::Uniform4f(
+                    self.u_color,
+                    r as f32 / 255.0,
+                    g as f32 / 255.0,
+                    b as f32 / 255.0,
+                    s.alpha,
+                );
 
-                gl::BufferData(gl::ARRAY_BUFFER, (quad.len() * std::mem::size_of::<f32>()) as isize, quad.as_ptr().cast(), gl::STREAM_DRAW);
+                gl::BufferData(
+                    gl::ARRAY_BUFFER,
+                    (quad.len() * std::mem::size_of::<f32>()) as isize,
+                    quad.as_ptr().cast(),
+                    gl::STREAM_DRAW,
+                );
                 gl::DrawArrays(gl::TRIANGLES, 0, 6);
             }
         }
@@ -113,4 +147,3 @@ impl Drop for UiGlRenderer {
         }
     }
 }
-

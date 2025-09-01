@@ -1,5 +1,5 @@
 use openagent_terminal_ai::privacy::{sanitize_request, AiPrivacyOptions};
-use openagent_terminal_ai::{AiRequest};
+use openagent_terminal_ai::AiRequest;
 
 #[test]
 fn privacy_sanitizes_paths_and_secrets() {
@@ -17,7 +17,7 @@ fn privacy_sanitizes_paths_and_secrets() {
 
     assert!(out.scratch_text.contains("[REDACTED]"));
     assert!(out.working_directory.unwrap().contains("[REDACTED]"));
-    assert!(out.context.iter().any(|(k,v)| k=="MY_SECRET_TOKEN" && v=="[REDACTED]"));
+    assert!(out.context.iter().any(|(k, v)| k == "MY_SECRET_TOKEN" && v == "[REDACTED]"));
 }
 
 #[cfg(feature = "ai-openai")]
@@ -37,7 +37,12 @@ mod http_tests {
 
     #[test]
     fn openai_network_failure_returns_err() {
-        let provider = OpenAiProvider::new("test_key".to_string(), "http://127.0.0.1:9".to_string(), "gpt-3.5-turbo".to_string()).unwrap();
+        let provider = OpenAiProvider::new(
+            "test_key".to_string(),
+            "http://127.0.0.1:9".to_string(),
+            "gpt-3.5-turbo".to_string(),
+        )
+        .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }
@@ -50,7 +55,12 @@ mod http_tests {
             then.status(500).body("internal error");
         });
 
-        let provider = OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-3.5-turbo".to_string()).unwrap();
+        let provider = OpenAiProvider::new(
+            "test_key".to_string(),
+            server.base_url(),
+            "gpt-3.5-turbo".to_string(),
+        )
+        .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }
@@ -63,9 +73,13 @@ mod http_tests {
             then.status(200).header("content-type", "application/json").body("not json");
         });
 
-        let provider = OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-3.5-turbo".to_string()).unwrap();
+        let provider = OpenAiProvider::new(
+            "test_key".to_string(),
+            server.base_url(),
+            "gpt-3.5-turbo".to_string(),
+        )
+        .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }
 }
-

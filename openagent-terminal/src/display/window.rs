@@ -41,8 +41,8 @@ use winit::window::{
 use openagent_terminal_core::index::Point;
 
 use crate::cli::WindowOptions;
-use crate::config::UiConfig;
 use crate::config::window::{Decorations, Identity, WindowConfig};
+use crate::config::UiConfig;
 use crate::display::SizeInfo;
 
 /// Window icon for `_NET_WM_ICON` property.

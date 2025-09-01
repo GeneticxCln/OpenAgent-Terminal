@@ -1,19 +1,19 @@
 // Blocks 2.0 System for OpenAgent Terminal
 // Enhanced block system with per-block environments, tagging, and advanced features
 
-pub mod storage;
 pub mod environment;
-pub mod search;
 pub mod export;
+pub mod search;
+pub mod storage;
 
+use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+use tracing::info;
 use uuid::Uuid;
-use anyhow::{Context, Result};
-use tracing::{debug, info, warn};
 
 /// Block metadata and content
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,19 +60,21 @@ impl BlockId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
-    
+
     pub fn from_string(s: &str) -> Result<Self> {
         Ok(Self(Uuid::parse_str(s)?))
-    }
-    
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
     }
 }
 
 impl Default for BlockId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -100,11 +102,11 @@ impl ShellType {
                 use std::hash::{Hash, Hasher};
                 other.hash(&mut hash.clone());
                 Self::Custom(hash.finish() as u32)
-            }
+            },
         }
     }
-    
-    pub fn to_str(&self) -> &str {
+
+    pub fn to_str(self) -> &'static str {
         match self {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
@@ -142,6 +144,7 @@ pub struct BlockMetadata {
 }
 
 /// Block manager for creating and managing blocks
+#[allow(dead_code)]
 pub struct BlockManager {
     storage: Arc<storage::BlockStorage>,
     environment_manager: environment::EnvironmentManager,
@@ -168,7 +171,7 @@ impl BlockManager {
         let environment_manager = environment::EnvironmentManager::new();
         let search_engine = search::SearchEngine::new(storage.clone()).await?;
         let export_manager = export::ExportManager::new();
-        
+
         Ok(Self {
             storage,
             environment_manager,
@@ -178,24 +181,23 @@ impl BlockManager {
             active_blocks: HashMap::new(),
         })
     }
-    
+
     /// Create a new block
     pub async fn create_block(&mut self, params: CreateBlockParams) -> Result<Arc<Block>> {
         let block_id = BlockId::new();
         let now = Utc::now();
-        
+
         // Capture current environment if not provided
-        let environment = params.environment.unwrap_or_else(|| {
-            self.environment_manager.capture_current()
-        });
-        
+        let environment =
+            params.environment.unwrap_or_else(|| self.environment_manager.capture_current());
+
         let block = Block {
             id: block_id,
             command: params.command,
             output: String::new(),
-            directory: params.directory.unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_default()
-            }),
+            directory: params
+                .directory
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
             environment,
             shell: params.shell.unwrap_or(ShellType::Bash),
             created_at: now,
@@ -209,28 +211,28 @@ impl BlockManager {
             exit_code: None,
             duration_ms: None,
         };
-        
+
         let block_arc = Arc::new(block);
-        
+
         // Store in database
         self.storage.insert(&block_arc).await?;
-        
+
         // Update parent if exists
         if let Some(parent_id) = block_arc.parent_id {
             self.add_child_to_parent(parent_id, block_id).await?;
         }
-        
+
         // Cache in memory
         self.active_blocks.insert(block_id, block_arc.clone());
-        
+
         // Index for search
         self.search_engine.index_block(&block_arc).await?;
-        
+
         info!("Created block {}", block_id.to_string());
-        
+
         Ok(block_arc)
     }
-    
+
     /// Update block output and status
     pub async fn update_block_output(
         &mut self,
@@ -245,11 +247,8 @@ impl BlockManager {
             owned.output = output;
             owned.exit_code = Some(exit_code);
             owned.duration_ms = Some(duration_ms);
-            owned.status = if exit_code == 0 {
-                ExecutionStatus::Success
-            } else {
-                ExecutionStatus::Failed
-            };
+            owned.status =
+                if exit_code == 0 { ExecutionStatus::Success } else { ExecutionStatus::Failed };
             owned.modified_at = Utc::now();
             let arc_new = Arc::new(owned.clone());
             *entry = arc_new.clone();
@@ -261,7 +260,7 @@ impl BlockManager {
         self.search_engine.update_block(&updated_block).await?;
         Ok(())
     }
-    
+
     /// Add tags to a block
     pub async fn add_tags(&mut self, block_id: BlockId, tags: Vec<String>) -> Result<()> {
         let updated_block = {
@@ -279,7 +278,7 @@ impl BlockManager {
         self.search_engine.update_block(&updated_block).await?;
         Ok(())
     }
-    
+
     /// Toggle star status
     pub async fn toggle_star(&mut self, block_id: BlockId) -> Result<bool> {
         let (updated_block, starred) = {
@@ -297,22 +296,22 @@ impl BlockManager {
         info!("Block {} starred: {}", block_id.to_string(), starred);
         Ok(starred)
     }
-    
+
     /// Search blocks
     pub async fn search(&self, query: SearchQuery) -> Result<Vec<Arc<Block>>> {
         self.search_engine.search(query).await
     }
-    
+
     /// Get all starred blocks
     pub async fn get_starred(&self) -> Result<Vec<Arc<Block>>> {
         self.storage.get_starred().await
     }
-    
+
     /// Get blocks by tag
     pub async fn get_by_tag(&self, tag: &str) -> Result<Vec<Arc<Block>>> {
         self.storage.get_by_tag(tag).await
     }
-    
+
     /// Export blocks
     pub async fn export_blocks(
         &self,
@@ -326,10 +325,10 @@ impl BlockManager {
                 blocks.push(block);
             }
         }
-        
+
         self.export_manager.export(blocks, format, options).await
     }
-    
+
     /// Import blocks
     pub async fn import_blocks(
         &mut self,
@@ -338,7 +337,7 @@ impl BlockManager {
         options: export::ImportOptions,
     ) -> Result<Vec<BlockId>> {
         let blocks = self.export_manager.import(data, format, &options).await?;
-        
+
         let mut imported_ids = Vec::new();
         for mut block in blocks {
             // Generate new IDs if requested
@@ -347,39 +346,38 @@ impl BlockManager {
                 block.parent_id = None;
                 block.children.clear();
             }
-            
+
             let block_arc = Arc::new(block);
             self.storage.insert(&block_arc).await?;
             self.search_engine.index_block(&block_arc).await?;
-            
+
             imported_ids.push(block_arc.id);
         }
-        
+
         info!("Imported {} blocks", imported_ids.len());
-        
+
         Ok(imported_ids)
     }
-    
+
     /// Get a block by ID
     async fn get_block(&self, block_id: BlockId) -> Result<Arc<Block>> {
         if let Some(block) = self.active_blocks.get(&block_id) {
             return Ok(block.clone());
         }
-        
+
         self.storage.get(block_id).await
     }
-    
+
     /// Get mutable reference to block
     async fn get_block_mut(&mut self, block_id: BlockId) -> Result<&mut Arc<Block>> {
         if !self.active_blocks.contains_key(&block_id) {
             let block = self.storage.get(block_id).await?;
             self.active_blocks.insert(block_id, block);
         }
-        
-        self.active_blocks.get_mut(&block_id)
-            .context("Block not found in cache")
+
+        self.active_blocks.get_mut(&block_id).context("Block not found in cache")
     }
-    
+
     /// Add child to parent block
     async fn add_child_to_parent(&mut self, parent_id: BlockId, child_id: BlockId) -> Result<()> {
         let updated_parent = {
@@ -394,17 +392,17 @@ impl BlockManager {
         self.storage.update(&updated_parent).await?;
         Ok(())
     }
-    
+
     /// Clean up old blocks
     pub async fn cleanup_old_blocks(&mut self, days: i64) -> Result<usize> {
         let cutoff = Utc::now() - chrono::Duration::days(days);
         let deleted = self.storage.delete_before(cutoff).await?;
-        
+
         // Clear from cache
         self.active_blocks.retain(|_, block| block.created_at > cutoff);
-        
+
         info!("Deleted {} old blocks", deleted);
-        
+
         Ok(deleted)
     }
 }
@@ -453,12 +451,12 @@ impl Default for SearchQuery {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    
+
     #[tokio::test]
     async fn test_block_creation() {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = BlockManager::new(temp_dir.path().to_path_buf()).await.unwrap();
-        
+
         let params = CreateBlockParams {
             command: "echo 'Hello, World!'".to_string(),
             directory: None,
@@ -468,17 +466,17 @@ mod tests {
             parent_id: None,
             metadata: None,
         };
-        
+
         let block = manager.create_block(params).await.unwrap();
         assert_eq!(block.command, "echo 'Hello, World!'");
         assert!(block.tags.contains("test"));
     }
-    
+
     #[tokio::test]
     async fn test_block_search() {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = BlockManager::new(temp_dir.path().to_path_buf()).await.unwrap();
-        
+
         // Create test blocks
         for i in 0..5 {
             let params = CreateBlockParams {
@@ -492,13 +490,10 @@ mod tests {
             };
             manager.create_block(params).await.unwrap();
         }
-        
+
         // Search by text
-        let query = SearchQuery {
-            text: Some("command".to_string()),
-            ..Default::default()
-        };
-        
+        let query = SearchQuery { text: Some("command".to_string()), ..Default::default() };
+
         let results = manager.search(query).await.unwrap();
         assert_eq!(results.len(), 5);
     }

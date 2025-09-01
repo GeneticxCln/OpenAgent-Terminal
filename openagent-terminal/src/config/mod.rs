@@ -10,6 +10,8 @@ use toml::de::Error as TomlError;
 use toml::ser::Error as TomlSeError;
 use toml::{Table, Value};
 
+#[cfg(feature = "ai")]
+pub mod ai;
 pub mod bell;
 pub mod color;
 pub mod cursor;
@@ -20,14 +22,12 @@ pub mod monitor;
 pub mod scrolling;
 pub mod selection;
 pub mod serde_utils;
+pub mod sync;
 pub mod terminal;
 pub mod theme;
 pub mod ui_config;
 pub mod window;
 pub mod workspace;
-pub mod sync;
-#[cfg(feature = "ai")]
-pub mod ai;
 
 mod bindings;
 mod mouse;

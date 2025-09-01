@@ -3,10 +3,10 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::{
-    Data, DataStruct, DeriveInput, Error, Field, Fields, Generics, Ident, parse_macro_input,
+    parse_macro_input, Data, DataStruct, DeriveInput, Error, Field, Fields, Generics, Ident,
 };
 
-use crate::{Attr, GenericsStreams, MULTIPLE_FLATTEN_ERROR, config_crate_path};
+use crate::{config_crate_path, Attr, GenericsStreams, MULTIPLE_FLATTEN_ERROR};
 
 /// Error if the derive was used on an unsupported type.
 const UNSUPPORTED_ERROR: &str = "SerdeReplace must be used on a tuple struct";
@@ -80,7 +80,10 @@ pub fn derive_recursive<T>(
 }
 
 /// Create SerdeReplace recursive match arms.
-fn match_arms<T>(fields: &Punctuated<Field, T>, cfg_crate: &TokenStream2) -> Result<TokenStream2, syn::Error> {
+fn match_arms<T>(
+    fields: &Punctuated<Field, T>,
+    cfg_crate: &TokenStream2,
+) -> Result<TokenStream2, syn::Error> {
     let mut stream = TokenStream2::default();
     let mut flattened_arm = None;
 

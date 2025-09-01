@@ -24,11 +24,18 @@ pub fn compute_progress(
             let elapsed_ms = s.elapsed().as_millis() as u32;
             let t = (elapsed_ms as f32 / duration_ms as f32).clamp(0.0, 1.0);
             let eased = ease_out_cubic(t);
-            if opening { eased } else { 1.0 - eased }
-        }
+            if opening {
+                eased
+            } else {
+                1.0 - eased
+            }
+        },
         None => {
-            if active { 1.0 } else { 0.0 }
-        }
+            if active {
+                1.0
+            } else {
+                0.0
+            }
+        },
     }
 }
-

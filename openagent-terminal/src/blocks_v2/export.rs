@@ -14,6 +14,7 @@ pub enum ExportFormat {
 }
 
 /// Export blocks to different formats.
+#[allow(dead_code)]
 pub struct BlockExporter<'a> {
     storage: &'a BlockStorage,
 }
@@ -67,12 +68,8 @@ impl<'a> BlockExporter<'a> {
 
         // Write each block as a CSV row
         for block in blocks {
-            let output_preview = block
-                .output
-                .chars()
-                .take(100)
-                .collect::<String>()
-                .replace('\n', "\\n");
+            let output_preview =
+                block.output.chars().take(100).collect::<String>().replace('\n', "\\n");
             writeln!(
                 writer,
                 "{},{},{},{},{},{:?},\"{}\"",
@@ -109,7 +106,7 @@ impl ExportManager {
     pub fn new() -> Self {
         Self {}
     }
-    
+
     pub fn create_exporter<'a>(&self, storage: &'a BlockStorage) -> BlockExporter<'a> {
         BlockExporter::new(storage)
     }
@@ -126,33 +123,25 @@ impl ExportManager {
         match format {
             ExportFormat::Json => {
                 buf = serde_json::to_vec_pretty(&blocks_owned)?;
-            }
+            },
             ExportFormat::Yaml => {
                 let s = serde_yaml::to_string(&blocks_owned)?;
                 buf.extend_from_slice(s.as_bytes());
-            }
+            },
             ExportFormat::Csv => {
                 // Write CSV into the buffer using the same logic as BlockExporter.
                 self.write_csv(&mut buf, &blocks_owned)?;
-            }
+            },
         }
         Ok(buf)
     }
 
-    fn write_csv(
-        &self,
-        writer: &mut Vec<u8>,
-        blocks: &[Block],
-    ) -> anyhow::Result<()> {
+    fn write_csv(&self, writer: &mut Vec<u8>, blocks: &[Block]) -> anyhow::Result<()> {
         use std::io::Write as _;
         writeln!(writer, "id,command,directory,created_at,modified_at,exit_code,output_preview")?;
         for block in blocks {
-            let output_preview = block
-                .output
-                .chars()
-                .take(100)
-                .collect::<String>()
-                .replace('\n', "\\n");
+            let output_preview =
+                block.output.chars().take(100).collect::<String>().replace('\n', "\\n");
             writeln!(
                 writer,
                 "{},{},{},{},{},{:?},\"{}\"",
@@ -188,12 +177,16 @@ impl ExportManager {
                 for line in lines {
                     // Split on commas not handling escapes fully; for robust CSV use a csv crate.
                     let parts: Vec<&str> = line.split(',').collect();
-                    if parts.len() < 7 { continue; }
+                    if parts.len() < 7 {
+                        continue;
+                    }
                     let id = parts[0].trim();
                     let command = parts[1].replace("\\,", ",");
                     let directory = std::path::PathBuf::from(parts[2]);
-                    let created_at = chrono::DateTime::parse_from_rfc3339(parts[3])?.with_timezone(&chrono::Utc);
-                    let modified_at = chrono::DateTime::parse_from_rfc3339(parts[4])?.with_timezone(&chrono::Utc);
+                    let created_at =
+                        chrono::DateTime::parse_from_rfc3339(parts[3])?.with_timezone(&chrono::Utc);
+                    let modified_at =
+                        chrono::DateTime::parse_from_rfc3339(parts[4])?.with_timezone(&chrono::Utc);
                     let exit_code = parts[5].parse::<i32>().ok();
                     let output_preview = parts[6].trim().trim_matches('"').replace("\\n", "\n");
                     out.push(Block {
@@ -216,7 +209,7 @@ impl ExportManager {
                     });
                 }
                 out
-            }
+            },
         };
         Ok(blocks)
     }
@@ -257,11 +250,6 @@ pub struct ImportOptions {
 
 impl ImportOptions {
     pub fn new(source_path: std::path::PathBuf, format: ExportFormat) -> Self {
-        Self {
-            source_path,
-            format,
-            overwrite_existing: false,
-            generate_new_ids: false,
-        }
+        Self { source_path, format, overwrite_existing: false, generate_new_ids: false }
     }
 }

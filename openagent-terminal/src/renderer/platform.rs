@@ -10,7 +10,7 @@ use glutin::display::{Display, DisplayApiPreference, DisplayFeatures, GetGlDispl
 use glutin::error::Result as GlutinResult;
 use glutin::prelude::*;
 use glutin::surface::{Surface, SurfaceAttributesBuilder, WindowSurface};
-use log::{LevelFilter, debug};
+use log::{debug, LevelFilter};
 
 use winit::dpi::PhysicalSize;
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]

@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod anthropic_provider_tests {
     use httpmock::prelude::*;
-    use openagent_terminal_ai::{AiRequest, AiProvider};
     use openagent_terminal_ai::providers::AnthropicProvider;
+    use openagent_terminal_ai::{AiProvider, AiRequest};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
@@ -48,32 +48,31 @@ mod anthropic_provider_tests {
             "event: message_stop\n",
             "data: {\"type\":\"message_stop\"}\n\n"
         );
-        
+
         let mock = server.mock(|when, then| {
             when.method(POST)
                 .path("/messages")
                 .header("x-api-key", "test_key")
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(stream_data);
+            then.status(200).header("content-type", "text/event-stream").body(stream_data);
         });
 
         let provider = AnthropicProvider::new(
             "test_key".to_string(),
             server.base_url(),
             "claude-3-opus".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_ok());
         assert_eq!(collected, "find . -type f -size +100M");
         mock.assert();
@@ -101,29 +100,27 @@ mod anthropic_provider_tests {
             "event: message_stop\n",
             "data: {\"type\":\"message_stop\"}\n\n"
         );
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(stream_data);
+            when.method(POST).path("/messages");
+            then.status(200).header("content-type", "text/event-stream").body(stream_data);
         });
 
         let provider = AnthropicProvider::new(
             "test_key".to_string(),
             server.base_url(),
             "claude-3-opus".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_ok());
         assert!(collected.contains("First command"));
         assert!(collected.contains("find /var/log"));
@@ -132,7 +129,7 @@ mod anthropic_provider_tests {
     #[test]
     fn test_anthropic_error_response() {
         let server = MockServer::start();
-        
+
         let error_response = r#"{
             "type": "error",
             "error": {
@@ -140,29 +137,27 @@ mod anthropic_provider_tests {
                 "message": "Invalid authentication"
             }
         }"#;
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
-            then.status(401)
-                .header("content-type", "application/json")
-                .body(error_response);
+            when.method(POST).path("/messages");
+            then.status(401).header("content-type", "application/json").body(error_response);
         });
 
         let provider = AnthropicProvider::new(
             "invalid_key".to_string(),
             server.base_url(),
             "claude-3".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.contains("401") || error.contains("authentication"));
@@ -171,7 +166,7 @@ mod anthropic_provider_tests {
     #[test]
     fn test_anthropic_rate_limit() {
         let server = MockServer::start();
-        
+
         server.mock(|when, then| {
             when.method(POST)
                 .path("/messages");
@@ -186,16 +181,17 @@ mod anthropic_provider_tests {
             "test_key".to_string(),
             server.base_url(),
             "claude-3".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("429"));
     }
@@ -215,10 +211,9 @@ mod anthropic_provider_tests {
             "event: message_stop\n",
             "data: {\"type\":\"message_stop\"}\n\n"
         );
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
+            when.method(POST).path("/messages");
             then.status(200)
                 .header("content-type", "text/event-stream")
                 .delay(Duration::from_millis(50))
@@ -229,8 +224,9 @@ mod anthropic_provider_tests {
             "test_key".to_string(),
             server.base_url(),
             "claude-3".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut chunk_count = 0;
@@ -242,9 +238,9 @@ mod anthropic_provider_tests {
                 cancel.store(true, Ordering::SeqCst);
             }
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_ok());
         assert!(!collected.is_empty());
         // Should not have all the content due to cancellation
@@ -254,7 +250,7 @@ mod anthropic_provider_tests {
     #[test]
     fn test_anthropic_server_error() {
         let server = MockServer::start();
-        
+
         server.mock(|when, then| {
             when.method(POST)
                 .path("/messages");
@@ -266,16 +262,17 @@ mod anthropic_provider_tests {
             "test_key".to_string(),
             server.base_url(),
             "claude-3".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("500"));
     }
@@ -296,29 +293,27 @@ mod anthropic_provider_tests {
             "event: message_stop\n",
             "data: {\"type\":\"message_stop\"}\n\n"
         );
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(stream_data);
+            when.method(POST).path("/messages");
+            then.status(200).header("content-type", "text/event-stream").body(stream_data);
         });
 
         let provider = AnthropicProvider::new(
             "test_key".to_string(),
             server.base_url(),
             "claude-3".to_string(),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_ok());
         // Should only collect the actual content
         assert_eq!(collected, "du -sh");

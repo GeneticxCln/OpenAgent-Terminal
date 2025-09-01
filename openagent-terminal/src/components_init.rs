@@ -1,30 +1,27 @@
 // Component Initialization Module
 // Integrates WGPU renderer, HarfBuzz, Blocks 2.0, Workflows, and Plugins
 
+use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
-use anyhow::{Context, Result};
-use tracing::{debug, error, info, warn};
 use tokio::runtime::Runtime;
+use tracing::{debug, error, info, warn};
 
 // Import new components
-#[cfg(feature = "wgpu")]
-use crate::renderer::wgpu_backend::{WgpuRenderer, query_wgpu_support};
-#[cfg(feature = "harfbuzz")]
-use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockManager, CreateBlockParams};
-#[cfg(feature = "workflow")]
-use workflow_engine::{WorkflowEngine, WorkflowDefinition};
+#[cfg(feature = "wgpu")]
+use crate::renderer::wgpu_backend::{query_wgpu_support, WgpuRenderer};
+#[cfg(feature = "harfbuzz")]
+use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "plugins")]
-use plugin_loader::{PluginManager, PluginHost};
+use plugin_api::{CommandOutput, PluginError};
 #[cfg(feature = "plugins")]
-use plugin_api::{
-    PluginAPI, PluginCapability, PluginMetadata,
-    PluginEvent, PluginResult, PluginError,
-    LogLevel, CommandOutput, TerminalState,
-    Notification, CommandDefinition
+use plugin_loader::{
+    CommandDefinition, LogLevel, Notification, PluginHost, PluginManager, TerminalState,
 };
+#[cfg(feature = "workflow")]
+use workflow_engine::{WorkflowDefinition, WorkflowEngine};
 
 /// Component initialization configuration
 pub struct ComponentConfig {
@@ -46,14 +43,12 @@ pub struct ComponentConfig {
 
 impl Default for ComponentConfig {
     fn default() -> Self {
-        let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("openagent-terminal");
-        
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("openagent-terminal");
-        
+        let data_dir =
+            dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
+
+        let config_dir =
+            dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
+
         Self {
             enable_wgpu: true,
             enable_harfbuzz: true,
@@ -85,38 +80,45 @@ impl std::fmt::Debug for InitializedComponents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("InitializedComponents");
         #[cfg(feature = "wgpu")]
-        { let _ = ds.field("wgpu_renderer", &self.wgpu_renderer.as_ref().map(|_| "Some")); }
+        {
+            let _ = ds.field("wgpu_renderer", &self.wgpu_renderer.as_ref().map(|_| "Some"));
+        }
         #[cfg(feature = "harfbuzz")]
-        { let _ = ds.field("text_shaper", &self.text_shaper.as_ref().map(|_| "Some")); }
+        {
+            let _ = ds.field("text_shaper", &self.text_shaper.as_ref().map(|_| "Some"));
+        }
         #[cfg(feature = "blocks")]
-        { let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some")); }
+        {
+            let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some"));
+        }
         #[cfg(feature = "workflow")]
-        { let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some")); }
+        {
+            let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some"));
+        }
         #[cfg(feature = "plugins")]
-        { let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some")); }
+        {
+            let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some"));
+        }
         ds.field("runtime", &"<runtime>").finish()
     }
 }
 
 /// Initialize all components
 pub async fn initialize_components(
-    config: ComponentConfig,
+    config: &ComponentConfig,
     window: &winit::window::Window,
 ) -> Result<InitializedComponents> {
     info!("Initializing OpenAgent Terminal components...");
-    
+
     // Create async runtime for components
     let runtime = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4)
-            .enable_all()
-            .build()?
+        tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build()?,
     );
-    
+
     // Create directories
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.config_dir)?;
-    
+
     // Initialize WGPU renderer
     #[cfg(feature = "wgpu")]
     let wgpu_renderer = if config.enable_wgpu {
@@ -124,17 +126,17 @@ pub async fn initialize_components(
             Ok(renderer) => {
                 info!("✓ WGPU renderer initialized");
                 Some(Arc::new(tokio::sync::RwLock::new(renderer)))
-            }
+            },
             Err(e) => {
                 warn!("Failed to initialize WGPU renderer: {}, falling back to OpenGL", e);
                 None
-            }
+            },
         }
     } else {
         debug!("WGPU renderer disabled");
         None
     };
-    
+
     // Initialize HarfBuzz text shaper
     #[cfg(feature = "harfbuzz")]
     let text_shaper = if config.enable_harfbuzz {
@@ -142,17 +144,17 @@ pub async fn initialize_components(
             Ok(shaper) => {
                 info!("✓ HarfBuzz text shaping initialized");
                 Some(Arc::new(tokio::sync::RwLock::new(shaper)))
-            }
+            },
             Err(e) => {
                 warn!("Failed to initialize HarfBuzz: {}", e);
                 None
-            }
+            },
         }
     } else {
         debug!("HarfBuzz text shaping disabled");
         None
     };
-    
+
     // Initialize Blocks 2.0 system
     #[cfg(feature = "blocks")]
     let block_manager = if config.enable_blocks {
@@ -161,17 +163,17 @@ pub async fn initialize_components(
             Ok(manager) => {
                 info!("✓ Blocks 2.0 system initialized");
                 Some(Arc::new(tokio::sync::RwLock::new(manager)))
-            }
+            },
             Err(e) => {
                 error!("Failed to initialize Blocks system: {}", e);
                 None
-            }
+            },
         }
     } else {
         debug!("Blocks 2.0 system disabled");
         None
     };
-    
+
     // Initialize workflow engine
     #[cfg(feature = "workflow")]
     let workflow_engine = if config.enable_workflows {
@@ -179,17 +181,17 @@ pub async fn initialize_components(
             Ok(engine) => {
                 info!("✓ Workflow engine initialized");
                 Some(Arc::new(engine))
-            }
+            },
             Err(e) => {
                 error!("Failed to initialize workflow engine: {}", e);
                 None
-            }
+            },
         }
     } else {
         debug!("Workflow engine disabled");
         None
     };
-    
+
     // Initialize plugin manager
     #[cfg(feature = "plugins")]
     let plugin_manager = if config.enable_plugins {
@@ -198,19 +200,19 @@ pub async fn initialize_components(
             Ok(manager) => {
                 info!("✓ Plugin system initialized");
                 Some(Arc::new(manager))
-            }
+            },
             Err(e) => {
                 error!("Failed to initialize plugin system: {}", e);
                 None
-            }
+            },
         }
     } else {
         debug!("Plugin system disabled");
         None
     };
-    
+
     info!("Component initialization complete");
-    
+
     Ok(InitializedComponents {
         #[cfg(feature = "wgpu")]
         wgpu_renderer,
@@ -233,11 +235,10 @@ async fn initialize_wgpu_renderer(window: &winit::window::Window) -> Result<Wgpu
     if !query_wgpu_support() {
         anyhow::bail!("WGPU is not supported on this system");
     }
-    
+
     // Create renderer
-    let renderer = WgpuRenderer::new(window).await
-        .context("Failed to create WGPU renderer")?;
-    
+    let renderer = WgpuRenderer::new(window).await.context("Failed to create WGPU renderer")?;
+
     debug!("WGPU renderer created successfully");
     Ok(renderer)
 }
@@ -258,10 +259,9 @@ async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
         ],
         emoji_font: Some("Noto Color Emoji".to_string()),
     };
-    
-    let shaper = HarfBuzzShaper::new(config)
-        .context("Failed to create HarfBuzz shaper")?;
-    
+
+    let shaper = HarfBuzzShaper::new(config).context("Failed to create HarfBuzz shaper")?;
+
     debug!("HarfBuzz text shaper created with ligature support");
     Ok(shaper)
 }
@@ -269,37 +269,37 @@ async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
 /// Initialize workflow engine
 #[cfg(feature = "workflow")]
 async fn initialize_workflow_engine(config_dir: &PathBuf) -> Result<WorkflowEngine> {
-    let engine = WorkflowEngine::new()
-        .context("Failed to create workflow engine")?;
-    
+    let engine = WorkflowEngine::new().context("Failed to create workflow engine")?;
+
     // Load workflows from directory
     let workflows_dir = config_dir.join("workflows");
     if workflows_dir.exists() {
         let mut count = 0;
         let mut entries = tokio::fs::read_dir(&workflows_dir).await?;
-        
+
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("yaml") ||
-               path.extension().and_then(|s| s.to_str()) == Some("yml") {
+            if path.extension().and_then(|s| s.to_str()) == Some("yaml")
+                || path.extension().and_then(|s| s.to_str()) == Some("yml")
+            {
                 match engine.load_workflow(&path).await {
                     Ok(id) => {
                         debug!("Loaded workflow: {}", id);
                         count += 1;
-                    }
+                    },
                     Err(e) => {
                         warn!("Failed to load workflow {:?}: {}", path, e);
-                    }
+                    },
                 }
             }
         }
-        
+
         info!("Loaded {} workflows", count);
     } else {
         debug!("No workflows directory found, creating it");
         tokio::fs::create_dir_all(&workflows_dir).await?;
     }
-    
+
     Ok(engine)
 }
 
@@ -308,42 +308,41 @@ async fn initialize_workflow_engine(config_dir: &PathBuf) -> Result<WorkflowEngi
 async fn initialize_plugin_manager(plugins_dir: PathBuf) -> Result<PluginManager> {
     // Create plugins directory if it doesn't exist
     tokio::fs::create_dir_all(&plugins_dir).await?;
-    
-    // Create plugin host implementation
+
+    // Create plugin host
     let host = Arc::new(TerminalPluginHost::new());
-    
-    // Create plugin manager
-    let manager = PluginManager::new(plugins_dir.clone(), host)
+
+    // Create plugin manager with host
+    let manager = PluginManager::with_host(plugins_dir.clone(), Some(host))
         .context("Failed to create plugin manager")?;
-    
-    // Load all plugins from directory
-    match manager.load_all_plugins().await {
-        Ok(loaded) => {
-            info!("Loaded {} plugins", loaded.len());
-            for plugin_id in &loaded {
-                if let Some(metadata) = manager.get_plugin_metadata(plugin_id) {
-                    debug!("  - {} v{}: {}", metadata.name, metadata.version, metadata.description);
+
+    // Discover and load plugins
+    match manager.discover_plugins().await {
+        Ok(plugins) => {
+            info!("Discovered {} plugins", plugins.len());
+            for plugin_path in plugins {
+                match manager.load_plugin(&plugin_path).await {
+                    Ok(id) => debug!("Loaded plugin: {}", id),
+                    Err(e) => warn!("Failed to load plugin {:?}: {}", plugin_path, e),
                 }
             }
-        }
+        },
         Err(e) => {
-            warn!("Failed to load plugins: {}", e);
-        }
+            warn!("Failed to discover plugins: {}", e);
+        },
     }
-    
+
     Ok(manager)
 }
 
-/// Plugin host implementation for terminal
+/// Terminal plugin host implementation
 #[cfg(feature = "plugins")]
-struct TerminalPluginHost {
-    // Add fields as needed
-}
+struct TerminalPluginHost;
 
 #[cfg(feature = "plugins")]
 impl TerminalPluginHost {
     fn new() -> Self {
-        Self {}
+        Self
     }
 }
 
@@ -357,65 +356,61 @@ impl PluginHost for TerminalPluginHost {
             LogLevel::Error => error!("[Plugin] {}", message),
         }
     }
-    
+
     fn read_file(&self, path: &str) -> Result<Vec<u8>, PluginError> {
-        std::fs::read(path)
-            .map_err(|e| PluginError::Internal(e.to_string()))
+        std::fs::read(path).map_err(|e| PluginError::IoError(e))
     }
-    
+
     fn write_file(&self, path: &str, data: &[u8]) -> Result<(), PluginError> {
-        std::fs::write(path, data)
-            .map_err(|e| PluginError::Internal(e.to_string()))
+        std::fs::write(path, data).map_err(|e| PluginError::IoError(e))
     }
-    
+
     fn execute_command(&self, command: &str) -> Result<CommandOutput, PluginError> {
         let output = std::process::Command::new("sh")
             .arg("-c")
             .arg(command)
             .output()
             .map_err(|e| PluginError::CommandFailed(e.to_string()))?;
-        
+
         Ok(CommandOutput {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             exit_code: output.status.code().unwrap_or(-1),
+            execution_time_ms: 0,
         })
     }
-    
+
     fn get_terminal_state(&self) -> TerminalState {
         TerminalState {
-            current_dir: std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
+            current_dir: std::env::current_dir().unwrap_or_default().to_string_lossy().to_string(),
             environment: std::env::vars().collect(),
             shell: std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()),
-            terminal_size: (80, 24), // Would get from actual terminal
+            terminal_size: (80, 24),
             is_interactive: true,
             command_history: vec![],
         }
     }
-    
+
     fn show_notification(&self, notification: Notification) -> Result<(), PluginError> {
-        info!("Notification: {} - {}", notification.title, notification.body);
+        info!("[Notification] {}: {}", notification.title, notification.body);
         Ok(())
     }
-    
-    fn store_data(&self, key: &str, value: &[u8]) -> Result<(), PluginError> {
-        // Implementation would use a proper storage backend
+
+    fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), PluginError> {
+        // TODO: Implement persistent storage
         Ok(())
     }
-    
-    fn retrieve_data(&self, key: &str) -> Result<Option<Vec<u8>>, PluginError> {
-        // Implementation would use a proper storage backend
+
+    fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, PluginError> {
+        // TODO: Implement persistent storage
         Ok(None)
     }
-    
+
     fn register_command(&self, command: CommandDefinition) -> Result<(), PluginError> {
-        debug!("Registered command: {}", command.name);
+        debug!("Registered command: {} - {}", command.name, command.description);
         Ok(())
     }
-    
+
     fn subscribe_events(&self, events: Vec<String>) -> Result<(), PluginError> {
         debug!("Subscribed to events: {:?}", events);
         Ok(())
@@ -431,13 +426,13 @@ impl<'a> ComponentIntegration<'a> {
     pub fn new(components: &'a InitializedComponents) -> Self {
         Self { components }
     }
-    
+
     /// Create a new block for command execution
     #[cfg(feature = "blocks")]
     pub async fn create_command_block(&self, command: String, shell: &str) -> Result<()> {
         if let Some(manager) = &self.components.block_manager {
             let mut manager = manager.write().await;
-            
+
             let params = CreateBlockParams {
                 command,
                 directory: Some(std::env::current_dir()?),
@@ -447,27 +442,27 @@ impl<'a> ComponentIntegration<'a> {
                 parent_id: None,
                 metadata: None,
             };
-            
+
             let block = manager.create_block(params).await?;
             debug!("Created block: {}", block.id.to_string());
         }
-        
+
         Ok(())
     }
-    
+
     /// Shape text using HarfBuzz
     #[cfg(feature = "harfbuzz")]
     pub async fn shape_text(&self, text: &str, font: &str, size: f32) -> Result<Vec<u32>> {
         if let Some(shaper) = &self.components.text_shaper {
             let mut shaper = shaper.write().await;
             let shaped = shaper.shape_text(text, font, size)?;
-            
+
             Ok(shaped.glyphs.iter().map(|g| g.glyph_id).collect())
         } else {
             Ok(vec![])
         }
     }
-    
+
     /// Execute a workflow
     #[cfg(feature = "workflow")]
     pub async fn execute_workflow(
@@ -487,7 +482,7 @@ impl<'a> ComponentIntegration<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_component_config_default() {
         let config = ComponentConfig::default();

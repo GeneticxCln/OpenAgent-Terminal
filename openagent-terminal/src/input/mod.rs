@@ -6,7 +6,7 @@
 //! determine what to do when a non-modifier key is pressed.
 
 use std::borrow::Cow;
-use std::cmp::{Ordering, max, min};
+use std::cmp::{max, min, Ordering};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fmt::Debug;
@@ -148,7 +148,9 @@ pub trait ActionContext<T: EventListener> {
 
     // Command palette API
     fn open_command_palette(&mut self) {}
-    fn palette_active(&self) -> bool { false }
+    fn palette_active(&self) -> bool {
+        false
+    }
     fn palette_input(&mut self, _c: char) {}
     fn palette_backspace(&mut self) {}
     fn palette_move_selection(&mut self, _delta: isize) {}
@@ -159,24 +161,34 @@ pub trait ActionContext<T: EventListener> {
     // AI panel (feature=ai)
     fn open_ai_panel(&mut self) {}
     fn close_ai_panel(&mut self) {}
-    fn ai_active(&self) -> bool { false }
+    fn ai_active(&self) -> bool {
+        false
+    }
     fn ai_input(&mut self, _c: char) {}
     fn ai_backspace(&mut self) {}
     fn ai_propose(&mut self) {}
 
     // Return true if a header control click was handled (AI panel)
-    fn ai_try_handle_header_click(&mut self) -> bool { false }
+    fn ai_try_handle_header_click(&mut self) -> bool {
+        false
+    }
     // Update AI header hover state; return true if hovering a control (for pointer cursor)
-    fn ai_update_hover_header(&mut self) -> bool { false }
+    fn ai_update_hover_header(&mut self) -> bool {
+        false
+    }
 
     // UI event dispatch (e.g., to event loop proxy); default no-op in tests
     fn send_user_event(&self, _event: crate::event::EventType) {}
 
     // AI runtime accessors; default to None
     #[cfg(feature = "ai")]
-    fn ai_runtime_mut(&mut self) -> Option<&mut crate::ai_runtime::AiRuntime> { None }
+    fn ai_runtime_mut(&mut self) -> Option<&mut crate::ai_runtime::AiRuntime> {
+        None
+    }
     #[cfg(feature = "ai")]
-    fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> { None }
+    fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
+        None
+    }
 }
 
 impl Action {
@@ -230,7 +242,8 @@ impl<T: EventListener> Execute<T> for Action {
                         ctx.terminal().vi_mode_cursor.point,
                     ) {
                         let total_line = display_offset + view.line;
-                        let changed = { ctx.display().blocks.ensure_unfold_at_total_line(total_line) };
+                        let changed =
+                            { ctx.display().blocks.ensure_unfold_at_total_line(total_line) };
                         if changed {
                             ctx.display().damage_tracker.frame().mark_fully_damaged();
                             ctx.mark_dirty();
@@ -683,9 +696,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Update AI header hover state first; override cursor to pointer if hovering controls.
         let ai_hover = {
             #[cfg(feature = "ai")]
-            { self.ctx.ai_update_hover_header() }
+            {
+                self.ctx.ai_update_hover_header()
+            }
             #[cfg(not(feature = "ai"))]
-            { false }
+            {
+                false
+            }
         };
 
         // Update mouse state and check for URL change.
@@ -869,7 +886,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             #[cfg(not(test))]
             {
                 if button == MouseButton::Left && self.ctx.display().blocks.enabled {
-                    if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+                    if let Some(view) =
+                        openagent_terminal_core::term::point_to_viewport(display_offset, point)
+                    {
                         let toggled = {
                             let display = self.ctx.display();
                             display

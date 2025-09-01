@@ -1,16 +1,16 @@
 // async-streaming-migration.rs
 // Async streaming client implementation with unified cancellation
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use anyhow::{Context, Result};
 use futures::stream::{Stream, StreamExt};
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, timeout};
-use anyhow::{Result, Context};
 
 // ============================================================================
 // Core Types
@@ -83,7 +83,7 @@ impl CancellationToken {
 
     pub fn cancel(&self) {
         self.flag.store(true, Ordering::SeqCst);
-        
+
         // Execute cancellation callbacks
         tokio::spawn({
             let callbacks = Arc::clone(&self.callbacks);
@@ -165,7 +165,11 @@ pub struct BackpressureManager {
 }
 
 impl BackpressureManager {
-    pub fn new(target_fps: f32, threshold: usize, metrics: Arc<tokio::sync::Mutex<StreamMetrics>>) -> Self {
+    pub fn new(
+        target_fps: f32,
+        threshold: usize,
+        metrics: Arc<tokio::sync::Mutex<StreamMetrics>>,
+    ) -> Self {
         Self {
             buffer: Vec::with_capacity(threshold),
             last_flush: tokio::time::Instant::now(),
@@ -177,7 +181,7 @@ impl BackpressureManager {
 
     pub async fn push(&mut self, chunk: StreamChunk) -> Option<Vec<StreamChunk>> {
         self.buffer.push(chunk);
-        
+
         if self.should_flush().await {
             Some(self.flush().await)
         } else {
@@ -186,8 +190,7 @@ impl BackpressureManager {
     }
 
     async fn should_flush(&self) -> bool {
-        self.buffer.len() >= self.threshold || 
-        self.last_flush.elapsed() >= self.target_interval
+        self.buffer.len() >= self.threshold || self.last_flush.elapsed() >= self.target_interval
     }
 
     pub async fn flush(&mut self) -> Vec<StreamChunk> {
@@ -195,7 +198,7 @@ impl BackpressureManager {
             let mut metrics = self.metrics.lock().await;
             metrics.backpressure_events += 1;
         }
-        
+
         self.last_flush = tokio::time::Instant::now();
         std::mem::take(&mut self.buffer)
     }
@@ -236,32 +239,32 @@ impl OpenAIClient {
         metrics: Arc<tokio::sync::Mutex<StreamMetrics>>,
     ) -> impl Stream<Item = Result<StreamChunk>> {
         let (tx, mut rx) = mpsc::channel::<Result<StreamChunk>>(self.config.buffer_size);
-        
+
         tokio::spawn(async move {
             let mut bytes_stream = response.bytes_stream();
             let mut buffer = String::new();
             let start = tokio::time::Instant::now();
             let mut first_chunk = true;
-            
+
             while let Some(result) = bytes_stream.next().await {
                 if cancellation.is_cancelled() {
                     break;
                 }
-                
+
                 match result {
                     Ok(bytes) => {
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        
+
                         // Process complete SSE events
                         while let Some(event_end) = buffer.find("\n\n") {
                             let event = &buffer[..event_end];
                             buffer = buffer[event_end + 2..].to_string();
-                            
+
                             if let Some(data) = event.strip_prefix("data: ") {
                                 if data.trim() == "[DONE]" {
                                     return;
                                 }
-                                
+
                                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
                                     let chunk = StreamChunk {
                                         content: json["choices"][0]["delta"]["content"]
@@ -279,32 +282,33 @@ impl OpenAIClient {
                                             .map(|n| n as u32),
                                         metadata: Some(json.clone()),
                                     };
-                                    
+
                                     // Update metrics
                                     let mut m = metrics.lock().await;
                                     m.chunks_received += 1;
                                     m.bytes_received += bytes.len() as u64;
                                     if first_chunk {
-                                        m.time_to_first_chunk_ms = Some(start.elapsed().as_millis() as u64);
+                                        m.time_to_first_chunk_ms =
+                                            Some(start.elapsed().as_millis() as u64);
                                         first_chunk = false;
                                     }
                                     drop(m);
-                                    
+
                                     if tx.send(Ok(chunk)).await.is_err() {
                                         return;
                                     }
                                 }
                             }
                         }
-                    }
+                    },
                     Err(e) => {
                         let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", e))).await;
                         return;
-                    }
+                    },
                 }
             }
         });
-        
+
         // Convert channel receiver to Stream
         async_stream::stream! {
             while let Some(item) = rx.recv().await {
@@ -330,7 +334,7 @@ impl StreamingClient for OpenAIClient {
             backpressure_events: 0,
             retry_count: 0,
         }));
-        
+
         loop {
             let payload = serde_json::json!({
                 "model": request.model,
@@ -344,54 +348,53 @@ impl StreamingClient for OpenAIClient {
                 "temperature": request.temperature,
                 "max_tokens": request.max_tokens,
             });
-            
-            let response = self.client
+
+            let response = self
+                .client
                 .post(&format!("{}/chat/completions", self.base_url))
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&payload)
                 .send()
                 .await;
-            
+
             match response {
                 Ok(resp) if resp.status().is_success() => {
-                    let stream = self.parse_sse_stream(
-                        resp, 
-                        cancellation.clone(),
-                        Arc::clone(&metrics)
-                    ).await;
-                    
+                    let stream = self
+                        .parse_sse_stream(resp, cancellation.clone(), Arc::clone(&metrics))
+                        .await;
+
                     return Ok(StreamingResponse {
                         stream: Box::new(stream),
                         metrics,
                         cancellation,
                     });
-                }
+                },
                 Ok(resp) => {
                     let status = resp.status();
                     let error_body = resp.text().await.unwrap_or_default();
-                    
+
                     if status.is_server_error() && retry_count < self.config.max_retries {
                         retry_count += 1;
                         let mut m = metrics.lock().await;
                         m.retry_count = retry_count;
                         drop(m);
-                        
+
                         tokio::time::sleep(self.config.retry_delay * retry_count).await;
                         continue;
                     }
-                    
+
                     return Err(anyhow::anyhow!("API error {}: {}", status, error_body));
-                }
+                },
                 Err(e) if retry_count < self.config.max_retries => {
                     retry_count += 1;
                     let mut m = metrics.lock().await;
                     m.retry_count = retry_count;
                     drop(m);
-                    
+
                     tokio::time::sleep(self.config.retry_delay * retry_count).await;
                     continue;
-                }
+                },
                 Err(e) => return Err(anyhow::anyhow!("Request failed: {}", e)),
             }
         }
@@ -433,32 +436,32 @@ impl AnthropicClient {
         metrics: Arc<tokio::sync::Mutex<StreamMetrics>>,
     ) -> impl Stream<Item = Result<StreamChunk>> {
         let (tx, mut rx) = mpsc::channel::<Result<StreamChunk>>(self.config.buffer_size);
-        
+
         tokio::spawn(async move {
             let mut bytes_stream = response.bytes_stream();
             let mut buffer = String::new();
             let start = tokio::time::Instant::now();
             let mut first_chunk = true;
             let mut current_block = String::new();
-            
+
             while let Some(result) = bytes_stream.next().await {
                 if cancellation.is_cancelled() {
                     break;
                 }
-                
+
                 match result {
                     Ok(bytes) => {
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        
+
                         // Process complete SSE events
                         while let Some(event_end) = buffer.find("\n\n") {
                             let event = &buffer[..event_end];
                             buffer = buffer[event_end + 2..].to_string();
-                            
+
                             // Parse event type and data
                             let mut event_type = None;
                             let mut event_data = None;
-                            
+
                             for line in event.lines() {
                                 if let Some(evt) = line.strip_prefix("event: ") {
                                     event_type = Some(evt.to_string());
@@ -466,21 +469,19 @@ impl AnthropicClient {
                                     event_data = Some(data.to_string());
                                 }
                             }
-                            
+
                             if let (Some(evt_type), Some(data)) = (event_type, event_data) {
                                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
                                     let chunk = match evt_type.as_str() {
-                                        "message_start" => {
-                                            StreamChunk {
-                                                content: String::new(),
-                                                role: Some("assistant".to_string()),
-                                                finish_reason: None,
-                                                token_count: json["message"]["usage"]["input_tokens"]
-                                                    .as_u64()
-                                                    .map(|n| n as u32),
-                                                metadata: Some(json.clone()),
-                                            }
-                                        }
+                                        "message_start" => StreamChunk {
+                                            content: String::new(),
+                                            role: Some("assistant".to_string()),
+                                            finish_reason: None,
+                                            token_count: json["message"]["usage"]["input_tokens"]
+                                                .as_u64()
+                                                .map(|n| n as u32),
+                                            metadata: Some(json.clone()),
+                                        },
                                         "content_block_start" => {
                                             current_block.clear();
                                             StreamChunk {
@@ -490,7 +491,7 @@ impl AnthropicClient {
                                                 token_count: None,
                                                 metadata: Some(json.clone()),
                                             }
-                                        }
+                                        },
                                         "content_block_delta" => {
                                             let text = json["delta"]["text"]
                                                 .as_str()
@@ -504,73 +505,70 @@ impl AnthropicClient {
                                                 token_count: None,
                                                 metadata: Some(json.clone()),
                                             }
-                                        }
-                                        "content_block_stop" => {
-                                            StreamChunk {
-                                                content: String::new(),
-                                                role: None,
-                                                finish_reason: None,
-                                                token_count: None,
-                                                metadata: Some(json.clone()),
-                                            }
-                                        }
-                                        "message_delta" => {
-                                            StreamChunk {
-                                                content: String::new(),
-                                                role: None,
-                                                finish_reason: json["delta"]["stop_reason"]
-                                                    .as_str()
-                                                    .map(|s| s.to_string()),
-                                                token_count: json["usage"]["output_tokens"]
-                                                    .as_u64()
-                                                    .map(|n| n as u32),
-                                                metadata: Some(json.clone()),
-                                            }
-                                        }
-                                        "message_stop" => {
-                                            StreamChunk {
-                                                content: String::new(),
-                                                role: None,
-                                                finish_reason: Some("stop".to_string()),
-                                                token_count: None,
-                                                metadata: Some(json.clone()),
-                                            }
-                                        }
+                                        },
+                                        "content_block_stop" => StreamChunk {
+                                            content: String::new(),
+                                            role: None,
+                                            finish_reason: None,
+                                            token_count: None,
+                                            metadata: Some(json.clone()),
+                                        },
+                                        "message_delta" => StreamChunk {
+                                            content: String::new(),
+                                            role: None,
+                                            finish_reason: json["delta"]["stop_reason"]
+                                                .as_str()
+                                                .map(|s| s.to_string()),
+                                            token_count: json["usage"]["output_tokens"]
+                                                .as_u64()
+                                                .map(|n| n as u32),
+                                            metadata: Some(json.clone()),
+                                        },
+                                        "message_stop" => StreamChunk {
+                                            content: String::new(),
+                                            role: None,
+                                            finish_reason: Some("stop".to_string()),
+                                            token_count: None,
+                                            metadata: Some(json.clone()),
+                                        },
                                         "error" => {
                                             let error = json["error"]["message"]
                                                 .as_str()
                                                 .unwrap_or("Unknown error");
-                                            let _ = tx.send(Err(anyhow::anyhow!("API error: {}", error))).await;
+                                            let _ = tx
+                                                .send(Err(anyhow::anyhow!("API error: {}", error)))
+                                                .await;
                                             return;
-                                        }
+                                        },
                                         _ => continue,
                                     };
-                                    
+
                                     // Update metrics
                                     let mut m = metrics.lock().await;
                                     m.chunks_received += 1;
                                     m.bytes_received += bytes.len() as u64;
                                     if first_chunk && !chunk.content.is_empty() {
-                                        m.time_to_first_chunk_ms = Some(start.elapsed().as_millis() as u64);
+                                        m.time_to_first_chunk_ms =
+                                            Some(start.elapsed().as_millis() as u64);
                                         first_chunk = false;
                                     }
                                     drop(m);
-                                    
+
                                     if tx.send(Ok(chunk)).await.is_err() {
                                         return;
                                     }
                                 }
                             }
                         }
-                    }
+                    },
                     Err(e) => {
                         let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", e))).await;
                         return;
-                    }
+                    },
                 }
             }
         });
-        
+
         // Convert channel receiver to Stream
         async_stream::stream! {
             while let Some(item) = rx.recv().await {
@@ -596,7 +594,7 @@ impl StreamingClient for AnthropicClient {
             backpressure_events: 0,
             retry_count: 0,
         }));
-        
+
         loop {
             // Convert messages to Anthropic format
             let mut messages = Vec::new();
@@ -606,23 +604,24 @@ impl StreamingClient for AnthropicClient {
                     "content": msg.content,
                 }));
             }
-            
+
             let mut payload = serde_json::json!({
                 "model": request.model,
                 "messages": messages,
                 "stream": true,
                 "max_tokens": request.max_tokens.unwrap_or(4096),
             });
-            
+
             if let Some(temp) = request.temperature {
                 payload["temperature"] = serde_json::json!(temp);
             }
-            
+
             if let Some(system) = &request.system {
                 payload["system"] = serde_json::json!(system);
             }
-            
-            let response = self.client
+
+            let response = self
+                .client
                 .post(&format!("{}/messages", self.base_url))
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
@@ -630,46 +629,44 @@ impl StreamingClient for AnthropicClient {
                 .json(&payload)
                 .send()
                 .await;
-            
+
             match response {
                 Ok(resp) if resp.status().is_success() => {
-                    let stream = self.parse_event_stream(
-                        resp,
-                        cancellation.clone(),
-                        Arc::clone(&metrics)
-                    ).await;
-                    
+                    let stream = self
+                        .parse_event_stream(resp, cancellation.clone(), Arc::clone(&metrics))
+                        .await;
+
                     return Ok(StreamingResponse {
                         stream: Box::new(stream),
                         metrics,
                         cancellation,
                     });
-                }
+                },
                 Ok(resp) => {
                     let status = resp.status();
                     let error_body = resp.text().await.unwrap_or_default();
-                    
+
                     if status.is_server_error() && retry_count < self.config.max_retries {
                         retry_count += 1;
                         let mut m = metrics.lock().await;
                         m.retry_count = retry_count;
                         drop(m);
-                        
+
                         tokio::time::sleep(self.config.retry_delay * retry_count).await;
                         continue;
                     }
-                    
+
                     return Err(anyhow::anyhow!("API error {}: {}", status, error_body));
-                }
+                },
                 Err(e) if retry_count < self.config.max_retries => {
                     retry_count += 1;
                     let mut m = metrics.lock().await;
                     m.retry_count = retry_count;
                     drop(m);
-                    
+
                     tokio::time::sleep(self.config.retry_delay * retry_count).await;
                     continue;
-                }
+                },
                 Err(e) => return Err(anyhow::anyhow!("Request failed: {}", e)),
             }
         }
@@ -718,23 +715,24 @@ impl StreamingManager {
         cancellation: CancellationToken,
     ) -> Result<mpsc::Receiver<Vec<StreamChunk>>> {
         // Find the appropriate client
-        let client = self.clients
+        let client = self
+            .clients
             .iter()
             .find(|c| std::mem::discriminant(&c.provider()) == std::mem::discriminant(&provider))
             .ok_or_else(|| anyhow::anyhow!("Provider {:?} not configured", provider))?;
-        
+
         // Start streaming
         let mut response = client.stream(request, cancellation.clone()).await?;
-        
+
         // Setup backpressure handling
         let (tx, rx) = mpsc::channel::<Vec<StreamChunk>>(10);
         let (fps, threshold) = self.backpressure_config;
         let metrics = Arc::clone(&response.metrics);
-        
+
         tokio::spawn(async move {
             let mut backpressure = BackpressureManager::new(fps, threshold, metrics);
             let mut ticker = interval(Duration::from_millis(16)); // ~60Hz check
-            
+
             loop {
                 select! {
                     Some(chunk_result) = response.stream.next() => {
@@ -766,14 +764,14 @@ impl StreamingManager {
                     else => break,
                 }
             }
-            
+
             // Flush any remaining chunks
             if backpressure.pending_count() > 0 {
                 let chunks = backpressure.flush().await;
                 let _ = tx.send(chunks).await;
             }
         });
-        
+
         Ok(rx)
     }
 }
@@ -800,46 +798,38 @@ mod tests {
         // Setup
         let mut manager = StreamingManager::new();
         let config = StreamConfig::default();
-        
+
         // Add clients
-        manager.add_client(Box::new(OpenAIClient::new(
-            "test_key".to_string(),
-            config.clone(),
-        )));
-        
-        manager.add_client(Box::new(AnthropicClient::new(
-            "test_key".to_string(),
-            config.clone(),
-        )));
-        
+        manager.add_client(Box::new(OpenAIClient::new("test_key".to_string(), config.clone())));
+
+        manager.add_client(Box::new(AnthropicClient::new("test_key".to_string(), config.clone())));
+
         // Create request
         let request = StreamRequest {
-            messages: vec![
-                Message {
-                    role: "user".to_string(),
-                    content: "Hello, how are you?".to_string(),
-                },
-            ],
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: "Hello, how are you?".to_string(),
+            }],
             model: "gpt-4".to_string(),
             temperature: Some(0.7),
             max_tokens: Some(150),
             stream: true,
             system: None,
         };
-        
+
         // Start streaming
         let cancellation = CancellationToken::new();
         let mut receiver = manager
             .stream_with_backpressure(Provider::OpenAI, request, cancellation.clone())
             .await
             .unwrap();
-        
+
         // Simulate cancellation after 2 seconds
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(2)).await;
             cancellation.cancel();
         });
-        
+
         // Process chunks
         while let Some(chunks) = receiver.recv().await {
             for chunk in chunks {

@@ -2,7 +2,7 @@ use std::io::Write;
 use std::{io, panic, ptr};
 
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TASKMODAL, MessageBoxW,
+    MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TASKMODAL,
 };
 
 use openagent_terminal_core::tty::windows::win32_string;

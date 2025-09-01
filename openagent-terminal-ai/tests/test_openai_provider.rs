@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod openai_provider_tests {
     use httpmock::prelude::*;
-    use openagent_terminal_ai::{AiRequest, AiProvider};
     use openagent_terminal_ai::providers::OpenAiProvider;
+    use openagent_terminal_ai::{AiProvider, AiRequest};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
@@ -39,31 +39,27 @@ mod openai_provider_tests {
             "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n",
             "data: [DONE]\n\n"
         );
-        
+
         let mock = server.mock(|when, then| {
             when.method(POST)
                 .path("/chat/completions")
                 .header("authorization", "Bearer test_key")
                 .header("content-type", "application/json");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(stream_data);
+            then.status(200).header("content-type", "text/event-stream").body(stream_data);
         });
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.base_url(),
-            "gpt-4".to_string(),
-        ).unwrap();
-        
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_ok());
         assert_eq!(collected, "ls -la");
         mock.assert();
@@ -78,22 +74,19 @@ mod openai_provider_tests {
             "data: {\"choices\":[{\"delta\":{\"content\":\" /\"}}]}\n\n",
             "data: [DONE]\n\n"
         );
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
+            when.method(POST).path("/chat/completions");
             then.status(200)
                 .header("content-type", "text/event-stream")
                 .delay(Duration::from_millis(100))
                 .body(stream_data);
         });
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.base_url(),
-            "gpt-4".to_string(),
-        ).unwrap();
-        
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
@@ -103,9 +96,9 @@ mod openai_provider_tests {
                 cancel.store(true, Ordering::SeqCst);
             }
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         // Should return Ok(false) when cancelled
         assert!(result.is_ok());
         assert!(!collected.is_empty());
@@ -115,7 +108,7 @@ mod openai_provider_tests {
     #[test]
     fn test_openai_error_response() {
         let server = MockServer::start();
-        
+
         let error_response = r#"{
             "error": {
                 "message": "Invalid API key",
@@ -123,29 +116,24 @@ mod openai_provider_tests {
                 "code": "invalid_api_key"
             }
         }"#;
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
-            then.status(401)
-                .header("content-type", "application/json")
-                .body(error_response);
+            when.method(POST).path("/chat/completions");
+            then.status(401).header("content-type", "application/json").body(error_response);
         });
 
-        let provider = OpenAiProvider::new(
-            "invalid_key".to_string(),
-            server.base_url(),
-            "gpt-4".to_string(),
-        ).unwrap();
-        
+        let provider =
+            OpenAiProvider::new("invalid_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("401"));
     }
@@ -153,30 +141,27 @@ mod openai_provider_tests {
     #[test]
     fn test_openai_network_timeout() {
         let server = MockServer::start();
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
+            when.method(POST).path("/chat/completions");
             then.status(200)
                 .delay(Duration::from_secs(65)) // Longer than typical timeout
                 .body("data: timeout\n\n");
         });
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.base_url(),
-            "gpt-4".to_string(),
-        ).unwrap();
-        
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         // This should timeout and return an error
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         // The actual behavior depends on the provider's timeout configuration
         // For now, we just check it doesn't hang forever
         assert!(result.is_err() || result.is_ok());
@@ -187,33 +172,28 @@ mod openai_provider_tests {
         let server = MockServer::start();
         let malformed_data = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"valid\"}}]}\n\n",
-            "data: {invalid json}\n\n",  // Malformed JSON
+            "data: {invalid json}\n\n", // Malformed JSON
             "data: {\"choices\":[{\"delta\":{\"content\":\" data\"}}]}\n\n",
             "data: [DONE]\n\n"
         );
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .body(malformed_data);
+            when.method(POST).path("/chat/completions");
+            then.status(200).header("content-type", "text/event-stream").body(malformed_data);
         });
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.base_url(),
-            "gpt-4".to_string(),
-        ).unwrap();
-        
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         // Provider should handle malformed data gracefully
         assert!(result.is_ok());
         // Should have collected at least the valid parts
@@ -223,29 +203,26 @@ mod openai_provider_tests {
     #[test]
     fn test_openai_rate_limit_response() {
         let server = MockServer::start();
-        
+
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
+            when.method(POST).path("/chat/completions");
             then.status(429)
                 .header("retry-after", "60")
                 .body(r#"{"error": {"message": "Rate limit exceeded"}}"#);
         });
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.base_url(),
-            "gpt-4".to_string(),
-        ).unwrap();
-        
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+                .unwrap();
+
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |chunk: &str| {
             collected.push_str(chunk);
         };
-        
+
         let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("429"));
     }

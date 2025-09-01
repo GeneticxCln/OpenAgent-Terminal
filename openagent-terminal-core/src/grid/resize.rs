@@ -1,6 +1,6 @@
 //! Grid resize and reflow.
 
-use std::cmp::{Ordering, max, min};
+use std::cmp::{max, min, Ordering};
 use std::mem;
 
 use crate::index::{Boundary, Column, Line};
@@ -37,7 +37,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
     /// Add lines to the visible area.
     ///
-/// OpenAgent Terminal keeps the cursor at the bottom of the terminal as long as there
+    /// OpenAgent Terminal keeps the cursor at the bottom of the terminal as long as there
     /// is scrollback available. Once scrollback is exhausted, new lines are
     /// simply added to the bottom of the screen.
     fn grow_lines<D>(&mut self, target: usize)
@@ -74,7 +74,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
     /// bottom of the screen. This is achieved by pushing history "out the top"
     /// of the terminal window.
     ///
-/// OpenAgent Terminal takes the same approach.
+    /// OpenAgent Terminal takes the same approach.
     fn shrink_lines<D>(&mut self, target: usize)
     where
         T: ResetDiscriminant<D>,

@@ -5,11 +5,11 @@ use openagent_terminal_core::term::LineDamageBounds;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::UiConfig;
-use crate::display::Display;
+use crate::display::animation::compute_progress;
 use crate::display::color::Rgb;
+use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use crate::renderer::ui::UiRoundedRect;
-use crate::display::animation::compute_progress;
 
 /// Maximum lines to show for AI panel
 const MAX_AI_PANEL_LINES: usize = 10;
@@ -31,7 +31,11 @@ const SELECTION_INDICATOR: &str = "▶ ";
 
 #[cfg(feature = "ai")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AiHeaderControl { Stop, Regenerate, Close }
+pub enum AiHeaderControl {
+    Stop,
+    Regenerate,
+    Close,
+}
 
 #[cfg(feature = "ai")]
 #[derive(Debug, Clone, Copy)]
@@ -60,12 +64,17 @@ impl Display {
             self.ai_panel_anim_start = Some(std::time::Instant::now());
             self.ai_panel_anim_opening = ai_state.active;
             // Theme-aware duration; respect reduce motion
-            let reduce_motion = config
-                .resolved_theme
-                .as_ref()
-                .map(|t| t.ui.reduce_motion)
-                .unwrap_or(false);
-            self.ai_panel_anim_duration_ms = if reduce_motion { 0 } else { if ai_state.active { 160 } else { 140 } };
+            let reduce_motion =
+                config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false);
+            self.ai_panel_anim_duration_ms = if reduce_motion {
+                0
+            } else {
+                if ai_state.active {
+                    160
+                } else {
+                    140
+                }
+            };
         }
 
         // Compute animation progress (0..1) with an ease-out curve using the shared animation util.
@@ -90,11 +99,8 @@ impl Display {
         let num_lines = size_info.screen_lines;
 
         // Resolve theme tokens/ui for panel visuals
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let tui = theme.ui;
 
@@ -102,30 +108,47 @@ impl Display {
         #[allow(unused_variables)]
         let backdrop_alpha = {
             #[cfg(feature = "ai")]
-            { (config.ai.backdrop_alpha * progress as f32).clamp(0.0, 1.0) }
+            {
+                (config.ai.backdrop_alpha * progress as f32).clamp(0.0, 1.0)
+            }
             #[cfg(not(feature = "ai"))]
-            { 0.0 }
+            {
+                0.0
+            }
         };
         if backdrop_alpha > 0.0 {
-            let full = RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, backdrop_alpha);
+            let full = RenderRect::new(
+                0.0,
+                0.0,
+                size_info.width(),
+                size_info.height(),
+                tokens.overlay,
+                backdrop_alpha,
+            );
             rects.push(full);
         }
-        
+
         // Calculate panel dimensions (animated height) using fraction of viewport.
         let fraction = {
             #[cfg(feature = "ai")]
-            { config.ai.panel_height_fraction.clamp(0.20, 0.60) }
+            {
+                config.ai.panel_height_fraction.clamp(0.20, 0.60)
+            }
             #[cfg(not(feature = "ai"))]
-            { 0.40 }
+            {
+                0.40
+            }
         };
-        let target_lines = ((num_lines as f32 * fraction).round() as usize).clamp(6, MAX_AI_PANEL_LINES.max(6).min(num_lines));
-        let anim_lines = ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
+        let target_lines = ((num_lines as f32 * fraction).round() as usize)
+            .clamp(6, MAX_AI_PANEL_LINES.max(6).min(num_lines));
+        let anim_lines =
+            ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
         let start_line = num_lines.saturating_sub(anim_lines);
-        
+
         // Panel background/foreground from theme
         let bg = tokens.surface_muted;
         let fg = tokens.text;
-        
+
         // Compute panel geometry (pixels)
         let panel_y = start_line as f32 * size_info.cell_height();
         let panel_height = anim_lines as f32 * size_info.cell_height();
@@ -152,18 +175,26 @@ impl Display {
 
         // Stage main rounded panel
         let radius = if tui.rounded_corners { tui.corner_radius_px } else { 0.0 };
-        let panel = UiRoundedRect::new(0.0, panel_y, size_info.width(), panel_height, radius, bg, panel_alpha);
+        let panel = UiRoundedRect::new(
+            0.0,
+            panel_y,
+            size_info.width(),
+            panel_height,
+            radius,
+            bg,
+            panel_alpha,
+        );
         self.stage_ui_rounded_rect(panel);
-        
+
         // Damage the panel area
         for line_idx in start_line..num_lines {
             let damage = LineDamageBounds::new(line_idx, 0, num_cols);
             self.damage_tracker.frame().damage_line(damage);
             self.damage_tracker.next_frame().damage_line(damage);
         }
-        
+
         let mut current_line = start_line;
-        
+
         // Reserve bottom input row like Warp: separator + prompt at the bottom line of the sheet.
         let prompt_line = start_line + anim_lines - 1;
         let separator_line = prompt_line.saturating_sub(1);
@@ -247,16 +278,28 @@ impl Display {
                     AiHeaderControl::Close => "Close (Esc)",
                 };
                 let tip_color = tokens.text_muted;
-                self.draw_ai_text(actions_point, tip_color, bg, tooltip, num_cols.saturating_sub(2));
+                self.draw_ai_text(
+                    actions_point,
+                    tip_color,
+                    bg,
+                    tooltip,
+                    num_cols.saturating_sub(2),
+                );
             } else {
                 let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] Copy code  [Ctrl+Shift+A] Copy all  [Ctrl+R] Regenerate  [Ctrl+C] Stop   [? Esc] Close";
                 // Dim slightly for hint badge
                 let hint_color = tokens.text_muted;
-                self.draw_ai_text(actions_point, hint_color, bg, actions, num_cols.saturating_sub(2));
+                self.draw_ai_text(
+                    actions_point,
+                    hint_color,
+                    bg,
+                    actions,
+                    num_cols.saturating_sub(2),
+                );
             }
             current_line += 1;
         }
-        
+
         // Draw content based on state
         if ai_state.is_loading {
             // Show loading indicator
@@ -268,7 +311,9 @@ impl Display {
             // Show streaming text (partial responses)
             if !ai_state.streaming_text.is_empty() {
                 for line in ai_state.streaming_text.lines() {
-                    if current_line >= num_lines { break; }
+                    if current_line >= num_lines {
+                        break;
+                    }
                     let text_point = Point::new(current_line, Column(2));
                     self.draw_ai_text(text_point, fg, bg, line, num_cols - 2);
                     current_line += 1;
@@ -285,7 +330,9 @@ impl Display {
         } else if !ai_state.streaming_text.is_empty() {
             // Show final streamed text when streaming done
             for line in ai_state.streaming_text.lines() {
-                if current_line >= num_lines { break; }
+                if current_line >= num_lines {
+                    break;
+                }
                 let text_point = Point::new(current_line, Column(2));
                 self.draw_ai_text(text_point, fg, bg, line, num_cols - 2);
                 current_line += 1;
@@ -296,7 +343,7 @@ impl Display {
                 if current_line >= separator_line {
                     break;
                 }
-                
+
                 // Add selection indicator
                 let mut line_text = String::new();
                 if idx == ai_state.selected_proposal {
@@ -304,51 +351,53 @@ impl Display {
                 } else {
                     line_text.push_str("  ");
                 }
-                
+
                 // Add command with prefix
                 if let Some(first_cmd) = proposal.proposed_commands.first() {
                     line_text.push_str(SUGGESTION_PREFIX);
-                    
+
                     // Truncate command if too long
                     let available_width = num_cols.saturating_sub(line_text.width());
                     if first_cmd.width() > available_width {
-                        let truncated: String = first_cmd.chars()
-                            .take(available_width.saturating_sub(3))
-                            .collect();
+                        let truncated: String =
+                            first_cmd.chars().take(available_width.saturating_sub(3)).collect();
                         line_text.push_str(&truncated);
                         line_text.push_str("...");
                     } else {
                         line_text.push_str(first_cmd);
                     }
-                    
+
                     let text_point = Point::new(current_line, Column(0));
-                    let text_color = if idx == ai_state.selected_proposal {
-                        tokens.success
-                    } else {
-                        fg
-                    };
+                    let text_color =
+                        if idx == ai_state.selected_proposal { tokens.success } else { fg };
                     self.draw_ai_text(text_point, text_color, bg, &line_text, num_cols);
                     current_line += 1;
-                    
+
                     // Show additional commands if any (indented)
                     for additional_cmd in proposal.proposed_commands.iter().skip(1) {
                         if current_line >= separator_line {
                             break;
                         }
-                        
+
                         let indented = format!("    {}{}", SUGGESTION_PREFIX, additional_cmd);
                         let cmd_point = Point::new(current_line, Column(0));
                         self.draw_ai_text(cmd_point, fg, bg, &indented, num_cols);
                         current_line += 1;
                     }
-                    
+
                     // Add description if present
                     if let Some(ref description) = proposal.description {
                         if current_line <= separator_line {
                             let description_text = format!("    💡 {}", description);
                             let desc_point = Point::new(current_line, Column(0));
                             let desc_color = tokens.text_muted;
-                            self.draw_ai_text(desc_point, desc_color, bg, &description_text, num_cols);
+                            self.draw_ai_text(
+                                desc_point,
+                                desc_color,
+                                bg,
+                                &description_text,
+                                num_cols,
+                            );
                             current_line += 1;
                         }
                     }
@@ -374,7 +423,9 @@ impl Display {
         // Draw cursor at prompt line
         let base = unicode_width::UnicodeWidthStr::width(prefix);
         let mut cursor_col = base + ai_state.cursor_position;
-        if cursor_col >= num_cols { cursor_col = num_cols.saturating_sub(1); }
+        if cursor_col >= num_cols {
+            cursor_col = num_cols.saturating_sub(1);
+        }
         let cursor_point = Point::new(prompt_line, Column(cursor_col));
         self.draw_ai_text(cursor_point, bg, fg, " ", 1);
     }
@@ -391,12 +442,24 @@ impl Display {
             let dur = self.ai_panel_anim_duration_ms.max(1);
             let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
             let eased = 1.0 - (1.0 - t).powi(3);
-            if t >= 1.0 { self.ai_panel_anim_start = None; }
-            if self.ai_panel_anim_opening { eased } else { 1.0 - eased }
+            if t >= 1.0 {
+                self.ai_panel_anim_start = None;
+            }
+            if self.ai_panel_anim_opening {
+                eased
+            } else {
+                1.0 - eased
+            }
         } else {
-            if ai_state.active { 1.0 } else { 0.0 }
+            if ai_state.active {
+                1.0
+            } else {
+                0.0
+            }
         };
-        if progress <= 0.0 { return None; }
+        if progress <= 0.0 {
+            return None;
+        }
 
         let size_info = self.size_info;
         let num_lines = size_info.screen_lines;
@@ -405,7 +468,8 @@ impl Display {
         let fraction = config.ai.panel_height_fraction.clamp(0.20, 0.60);
         let target_lines = ((num_lines as f32 * fraction).round() as usize)
             .clamp(6, MAX_AI_PANEL_LINES.min(num_lines));
-        let anim_lines = ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
+        let anim_lines =
+            ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
         let start_line = num_lines.saturating_sub(anim_lines);
 
         let prompt_line = start_line + anim_lines - 1;
@@ -432,23 +496,31 @@ impl Display {
     }
 
     /// Draw the AI overlay immediately (background rects then text), independent of the main draw rect pipeline.
-    pub fn draw_ai_overlay(
-        &mut self,
-        config: &UiConfig,
-        ai_state: &crate::ai_runtime::AiUiState,
-    ) {
+    pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
         // Allow drawing during closing animation even if not active.
         let mut progress = if let Some(start) = self.ai_panel_anim_start {
             let elapsed = start.elapsed().as_millis() as u32;
             let dur = self.ai_panel_anim_duration_ms.max(1);
             let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
             let eased = 1.0 - (1.0 - t).powi(3);
-            if t >= 1.0 { self.ai_panel_anim_start = None; }
-            if self.ai_panel_anim_opening { eased } else { 1.0 - eased }
+            if t >= 1.0 {
+                self.ai_panel_anim_start = None;
+            }
+            if self.ai_panel_anim_opening {
+                eased
+            } else {
+                1.0 - eased
+            }
         } else {
-            if ai_state.active { 1.0 } else { 0.0 }
+            if ai_state.active {
+                1.0
+            } else {
+                0.0
+            }
         };
-        if progress <= 0.0 { return; }
+        if progress <= 0.0 {
+            return;
+        }
 
         // Render both background and content via draw_ai_panel into one batch.
         let mut rects = Vec::new();
@@ -459,7 +531,7 @@ impl Display {
             self.renderer_draw_rects(&size_copy, &metrics, rects);
         }
     }
-    
+
     /// Helper to draw text in the AI panel
     fn draw_ai_text(
         &mut self,
@@ -474,7 +546,7 @@ impl Display {
         } else {
             text.to_string()
         };
-        
+
         let size_info_copy = self.size_info;
         match &mut self.backend {
             crate::display::Backend::Gl { renderer, .. } => {

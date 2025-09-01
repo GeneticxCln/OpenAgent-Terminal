@@ -130,7 +130,8 @@ impl ThemeConfig {
         if let Some(path) = &self.path {
             if let Ok(text) = std::fs::read_to_string(path) {
                 if let Ok(file) = toml::from_str::<ThemeFile>(&text) {
-                    return self.apply_overrides(resolve_with_name(file, infer_name_from_path(path)));
+                    return self
+                        .apply_overrides(resolve_with_name(file, infer_name_from_path(path)));
                 }
             }
         }
@@ -166,11 +167,7 @@ impl ThemeConfig {
 }
 
 fn infer_name_from_path(path: &str) -> String {
-    std::path::Path::new(path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("custom")
-        .to_string()
+    std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("custom").to_string()
 }
 
 fn resolve_with_name(file: ThemeFile, name: String) -> ResolvedTheme {
@@ -186,10 +183,7 @@ impl openagent_terminal_config::SerdeReplace for ResolvedTheme {
 
 fn builtin_theme(name: &str) -> Option<ThemeFile> {
     match name.to_ascii_lowercase().as_str() {
-        "dark" => Some(ThemeFile {
-            tokens: ThemeTokens::default(),
-            ui: ThemeUi::default(),
-        }),
+        "dark" => Some(ThemeFile { tokens: ThemeTokens::default(), ui: ThemeUi::default() }),
         "light" => Some(ThemeFile {
             tokens: ThemeTokens {
                 surface: Rgb::new(0xf7, 0xf7, 0xf7),
@@ -225,4 +219,3 @@ fn builtin_theme(name: &str) -> Option<ThemeFile> {
         _ => None,
     }
 }
-

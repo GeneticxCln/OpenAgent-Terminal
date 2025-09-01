@@ -1,9 +1,9 @@
-use crate::{AiProvider, AiProposal, AiRequest};
 use crate::privacy::{sanitize_request, AiPrivacyOptions};
+use crate::{AiProposal, AiProvider, AiRequest};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
 use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
+use tracing::{debug, error, info};
 
 pub struct AnthropicProvider {
     api_key: String,
@@ -17,17 +17,17 @@ impl AnthropicProvider {
         if api_key.is_empty() {
             return Err("Anthropic API key is required".to_string());
         }
-        
+
         let client = reqwest::blocking::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(20))
             .user_agent("openagent-terminal-ai/0.1")
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-        
+
         Ok(Self { api_key, endpoint, model, client })
     }
-    
+
     pub fn from_env() -> Result<Self, String> {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .map_err(|_| "ANTHROPIC_API_KEY environment variable not set".to_string())?;
@@ -35,7 +35,7 @@ impl AnthropicProvider {
             .unwrap_or_else(|_| "https://api.anthropic.com/v1".to_string());
         let model = std::env::var("ANTHROPIC_MODEL")
             .unwrap_or_else(|_| "claude-3-haiku-20240307".to_string());
-        
+
         info!("Initializing Anthropic provider with model: {}", model);
         Self::new(api_key, endpoint, model)
     }
@@ -87,10 +87,7 @@ struct AnthropicDelta {
 fn ai_log_verbose() -> bool {
     static FLAG: OnceLock<bool> = OnceLock::new();
     *FLAG.get_or_init(|| {
-        matches!(
-            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
-            Some("verbose")
-        )
+        matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose"))
     })
 }
 fn ai_log_summary() -> bool {
@@ -107,9 +104,11 @@ impl AiProvider for AnthropicProvider {
     fn name(&self) -> &'static str {
         "anthropic"
     }
-    
+
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
-if ai_log_summary() { info!("anthropic_propose_start model={} endpoint={}", self.model, self.endpoint); }
+        if ai_log_summary() {
+            info!("anthropic_propose_start model={} endpoint={}", self.model, self.endpoint);
+        }
         // Build the system prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
@@ -117,28 +116,24 @@ if ai_log_summary() { info!("anthropic_propose_start model={} endpoint={}", self
              Provide only the necessary shell commands with brief comment explanations. \
              Format your response as a list of commands, one per line. \
              Start each explanation line with #. \
-             Be concise and practical."
+             Be concise and practical.",
         );
-        
+
         if let Some(shell) = &req.shell_kind {
             system_prompt.push_str(&format!(" The user is using {} shell.", shell));
         }
-        
+
         if let Some(dir) = &req.working_directory {
             system_prompt.push_str(&format!(" Current directory: {}", dir));
         }
-        
+
         for (key, value) in &req.context {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
-        
-        let messages = vec![
-            Message {
-                role: "user".to_string(),
-                content: req.scratch_text.clone(),
-            },
-        ];
-        
+
+        let messages =
+            vec![Message { role: "user".to_string(), content: req.scratch_text.clone() }];
+
         let request_body = MessageRequest {
             model: self.model.clone(),
             messages,
@@ -147,11 +142,12 @@ if ai_log_summary() { info!("anthropic_propose_start model={} endpoint={}", self
             system: system_prompt,
             stream: false,
         };
-        
+
         debug!("Sending request to Anthropic API");
-        
+
         let url = format!("{}/messages", self.endpoint);
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -159,18 +155,20 @@ if ai_log_summary() { info!("anthropic_propose_start model={} endpoint={}", self
             .json(&request_body)
             .send()
             .map_err(|e| format!("Failed to send request: {}", e))?;
-if ai_log_summary() { debug!("anthropic_propose_response_status status={}", response.status()); }
-        
+        if ai_log_summary() {
+            debug!("anthropic_propose_response_status status={}", response.status());
+        }
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
             error!("Anthropic API error {}: {}", status, error_text);
             return Err(format!("API error {}: {}", status, error_text));
         }
-        
-        let message_response: MessageResponse = response.json()
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        
+
+        let message_response: MessageResponse =
+            response.json().map_err(|e| format!("Failed to parse response: {}", e))?;
+
         if let Some(content) = message_response.content.first() {
             let text = &content.text;
             let commands: Vec<String> = text
@@ -178,16 +176,20 @@ if ai_log_summary() { debug!("anthropic_propose_response_status status={}", resp
                 .filter(|line| !line.trim().is_empty())
                 .map(|line| line.to_string())
                 .collect();
-            
+
             if commands.is_empty() {
-if ai_log_summary() { info!("anthropic_propose_complete commands=0"); }
+                if ai_log_summary() {
+                    info!("anthropic_propose_complete commands=0");
+                }
                 Ok(vec![AiProposal {
                     title: format!("Response for: {}", req.scratch_text),
                     description: Some("No specific commands suggested".to_string()),
                     proposed_commands: vec!["# No commands generated".to_string()],
                 }])
             } else {
-if ai_log_summary() { info!("anthropic_propose_complete commands={}", commands.len()); }
+                if ai_log_summary() {
+                    info!("anthropic_propose_complete commands={}", commands.len());
+                }
                 Ok(vec![AiProposal {
                     title: format!("Claude suggestion for: {}", req.scratch_text),
                     description: Some(format!("Generated by {}", self.model)),
@@ -204,7 +206,9 @@ if ai_log_summary() { info!("anthropic_propose_complete commands={}", commands.l
         on_chunk: &mut dyn FnMut(&str),
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
-if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint); }
+        if ai_log_summary() {
+            info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint);
+        }
         use crate::streaming::{RetryConfig, RetryStrategy};
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
@@ -212,7 +216,7 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
              Provide only the necessary shell commands with brief comment explanations. \
              Format your response as a list of commands, one per line. \
              Start each explanation line with #. \
-             Be concise and practical."
+             Be concise and practical.",
         );
 
         if let Some(shell) = &req.shell_kind {
@@ -225,9 +229,8 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![
-            Message { role: "user".to_string(), content: req.scratch_text.clone() },
-        ];
+        let messages =
+            vec![Message { role: "user".to_string(), content: req.scratch_text.clone() }];
 
         let request_body = MessageRequest {
             model: self.model.clone(),
@@ -239,11 +242,17 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
         };
 
         let url = format!("{}/messages", self.endpoint);
-        let retry = RetryStrategy::Anthropic { config: RetryConfig::default(), overload_backoff: std::time::Duration::from_secs(2) };
+        let retry = RetryStrategy::Anthropic {
+            config: RetryConfig::default(),
+            overload_backoff: std::time::Duration::from_secs(2),
+        };
         let mut attempt = 0usize;
         loop {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) { return Err("Cancelled".to_string()); }
-            let send_result = self.client
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled".to_string());
+            }
+            let send_result = self
+                .client
                 .post(&url)
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
@@ -257,14 +266,20 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
                     let msg = format!("Failed to send request: {}", e);
                     if retry.should_retry(attempt, &msg, cancel) {
                         let delay = retry.delay_for_attempt(attempt, &msg);
-                        if ai_log_summary() { info!("anthropic_stream_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                        if ai_log_summary() {
+                            info!(
+                                "anthropic_stream_retry attempt={} delay_ms={}",
+                                attempt + 1,
+                                delay.as_millis()
+                            );
+                        }
                         std::thread::sleep(delay);
                         attempt += 1;
                         continue;
                     } else {
                         return Err(msg);
                     }
-                }
+                },
             };
 
             if !response.status().is_success() {
@@ -274,7 +289,13 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
                 error!("Anthropic API error {}: {}", status, error_text);
                 if retry.should_retry(attempt, &msg, cancel) {
                     let delay = retry.delay_for_attempt(attempt, &msg);
-                    if ai_log_summary() { info!("anthropic_stream_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                    if ai_log_summary() {
+                        info!(
+                            "anthropic_stream_retry_http attempt={} delay_ms={}",
+                            attempt + 1,
+                            delay.as_millis()
+                        );
+                    }
                     std::thread::sleep(delay);
                     attempt += 1;
                     continue;
@@ -286,26 +307,42 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
             // Stream SSE lines; Anthropic sends JSON objects in data: lines
             let reader = BufReader::new(response);
             for line in reader.lines() {
-if cancel.load(std::sync::atomic::Ordering::Relaxed) { if ai_log_summary() { info!("anthropic_stream_cancelled"); } break; }
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    if ai_log_summary() {
+                        info!("anthropic_stream_cancelled");
+                    }
+                    break;
+                }
                 let line = line.map_err(|e| format!("Stream read error: {}", e))?;
                 let trimmed = line.trim();
-                if trimmed.is_empty() { continue; }
+                if trimmed.is_empty() {
+                    continue;
+                }
                 if let Some(rest) = trimmed.strip_prefix("data: ") {
-                    if rest.trim() == "[DONE]" { break; }
+                    if rest.trim() == "[DONE]" {
+                        break;
+                    }
                     match serde_json::from_str::<AnthropicStreamData>(rest) {
                         Ok(ev) => {
                             if let Some(delta) = ev.delta {
-if let Some(txt) = delta.text { if ai_log_verbose() { debug!("anthropic_stream_chunk len={}", txt.len()); } on_chunk(&txt); }
+                                if let Some(txt) = delta.text {
+                                    if ai_log_verbose() {
+                                        debug!("anthropic_stream_chunk len={}", txt.len());
+                                    }
+                                    on_chunk(&txt);
+                                }
                             }
-                        }
+                        },
                         Err(e) => {
                             debug!("Skipping unexpected Anthropic SSE data: {}", e);
-                        }
+                        },
                     }
                 }
             }
 
-if ai_log_summary() { info!("anthropic_stream_finished"); }
+            if ai_log_summary() {
+                info!("anthropic_stream_finished");
+            }
             return Ok(true);
         }
     }
