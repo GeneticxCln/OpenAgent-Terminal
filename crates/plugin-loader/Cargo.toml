@@ -1,0 +1,23 @@
+[package]
+name = "plugin-loader"
+version = "0.1.0"
+authors = ["OpenAgent Terminal Contributors"]
+license = "Apache-2.0"
+description = "WebAssembly plugin loader for OpenAgent Terminal"
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+plugin-api = { path = "../plugin-api" }
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile = "3.12.0"

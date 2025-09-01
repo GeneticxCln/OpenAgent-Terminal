@@ -45,7 +45,7 @@ jobs:
               echo "args=-p openagent-terminal -F wgpu" >> $GITHUB_OUTPUT
               ;;
             ai-ollama)
-              echo "args=-p openagent-terminal -F ai -F openagent-terminal-ai/ollama" >> $GITHUB_OUTPUT
+              echo "args=-p openagent-terminal -F ai-ollama" >> $GITHUB_OUTPUT
               ;;
             sync)
               echo "args=-p openagent-terminal -F sync" >> $GITHUB_OUTPUT

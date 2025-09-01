@@ -60,6 +60,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // AI panel input handling (if active). Never auto-run; only edit/propose.
+        #[cfg(feature = "ai")]
         if self.ctx.ai_active() {
             let mods = self.ctx.modifiers().state();
             // Keyboard shortcuts inside AI panel
@@ -96,13 +97,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     },
                     // Copy as code (Ctrl+Shift+C)
                     Key::Character(c) if (c.eq_ignore_ascii_case("c") && mods.shift_key()) => {
-                        #[cfg(feature = "ai")]
                         self.ctx.event_proxy.send_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Code });
                         return;
                     },
                     // Copy all (Ctrl+Shift+A)
                     Key::Character(c) if (c.eq_ignore_ascii_case("a") && mods.shift_key()) => {
-                        #[cfg(feature = "ai")]
                         self.ctx.event_proxy.send_event(crate::event::EventType::AiCopyOutput { format: crate::event::AiCopyFormat::Text });
                         return;
                     },

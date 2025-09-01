@@ -3,10 +3,36 @@ use clap::ValueEnum;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 
 /// AI integration configuration (build- and run-time opt-in).
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AiConfig {
     /// Enable AI interface at runtime. Defaults to false.
     pub enabled: bool,
+
+    /// Visual height of the AI panel as a fraction of the viewport (0.2..0.6 typical).
+    #[serde(default)]
+    pub panel_height_fraction: f32,
+
+    /// Backdrop dim alpha drawn behind the AI panel (0.0..0.6 typical).
+    #[serde(default)]
+    pub backdrop_alpha: f32,
+
+    /// Visuals: draw subtle drop shadow under the panel.
+    #[serde(default)]
+    pub shadow: bool,
+    /// Shadow extent in pixels (approximate blur radius).
+    #[serde(default)]
+    pub shadow_size_px: u32,
+    /// Shadow base alpha (will be distributed across steps).
+    #[serde(default)]
+    pub shadow_alpha: f32,
+
+    /// Visuals: rounded corners (best-effort; exact rounding may depend on backend).
+    #[serde(default)]
+    pub rounded_corners: bool,
+
+    /// Corner radius in pixels for rounded panel corners.
+    #[serde(default)]
+    pub corner_radius_px: f32,
 
     /// AI logging verbosity: "off" | "summary" | "verbose".
     /// off     -> only errors; summary -> start/finish; verbose -> per-chunk debug
@@ -45,6 +71,13 @@ impl Default for AiConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            panel_height_fraction: 0.40,
+            backdrop_alpha: 0.25,
+            shadow: true,
+            shadow_size_px: 8,
+            shadow_alpha: 0.35,
+            rounded_corners: true,
+            corner_radius_px: 12.0,
             log_verbosity: AiLogVerbosity::Summary,
             provider: Some("null".into()),
             endpoint_env: Some("OPENAGENT_AI_ENDPOINT".into()),

@@ -17,6 +17,7 @@ use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
 
 use super::rects::RenderRect;
+use super::ui::UiRoundedRect;
 use super::{Glyph, GlyphCache, LoaderApi, LoadGlyph};
 
 const RECT_SHADER_WGSL: &str = r#"
@@ -40,6 +41,51 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 const NUM_ATLAS_PAGES: u32 = 4;
+
+const UI_SHADER_WGSL: &str = r#"
+struct VsIn {
+  @location(0) pos: vec2<f32>,
+  @location(1) origin: vec2<f32>,
+  @location(2) size: vec2<f32>,
+  @location(3) radius: f32,
+  @location(4) color: vec4<f32>,
+};
+
+struct VsOut {
+  @builtin(position) pos: vec4<f32>,
+  @location(0) origin: vec2<f32>,
+  @location(1) size: vec2<f32>,
+  @location(2) radius: f32,
+  @location(3) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(in: VsIn) -> VsOut {
+  var out: VsOut;
+  out.pos = vec4<f32>(in.pos, 0.0, 1.0);
+  out.origin = in.origin;
+  out.size = in.size;
+  out.radius = in.radius;
+  out.color = in.color;
+  return out;
+}
+
+fn sdRoundedBox(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
+  let q = abs(p) - (b - vec2<f32>(r, r));
+  return length(max(q, vec2<f32>(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+@fragment
+fn fs_main(in: VsOut, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+  let center = in.origin + in.size * 0.5;
+  let p = frag_pos.xy - center;
+  let half_size = in.size * 0.5;
+  let d = sdRoundedBox(p, half_size, in.radius);
+  let aa = fwidth(d);
+  let alpha = smoothstep(0.0, -aa, d);
+  return vec4<f32>(in.color.rgb, in.color.a * alpha);
+}
+"#;
 
 const TEXT_SHADER_WGSL: &str = r#"
 struct Proj {
@@ -115,6 +161,7 @@ pub struct WgpuRenderer {
     window_ptr: *const winit::window::Window,
     // Pipelines
     rect_pipeline: wgpu::RenderPipeline,
+    ui_pipeline: wgpu::RenderPipeline,
     text_pipeline: wgpu::RenderPipeline,
     // Atlas resources
     atlas_texture: wgpu::Texture,
@@ -146,6 +193,7 @@ pub struct WgpuRenderer {
     pending_clear: Cell<Option<[f64; 4]>>,
     pending_text: Vec<TextVertex>,
     pending_bg: Vec<RenderRect>,
+    pending_ui: Vec<UiVertex>,
     atlas_evicted: Cell<bool>,
 }
 
@@ -158,6 +206,16 @@ impl From<String> for Error {
 struct RectVertex {
     pos: [f32; 2],
     color: [u8; 4],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct UiVertex {
+    pos: [f32; 2],
+    origin: [f32; 2],
+    size: [f32; 2],
+    radius: f32,
+    color: [f32; 4],
 }
 
 #[repr(C)]
@@ -323,6 +381,10 @@ impl WgpuRenderer {
             label: Some("rect-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(RECT_SHADER_WGSL)),
         });
+        let ui_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ui-shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER_WGSL)),
+        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect-pipeline-layout"),
             bind_group_layouts: &[],
@@ -353,6 +415,39 @@ impl WgpuRenderer {
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+        });
+
+        // UI pipeline (rounded rects)
+        let ui_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ui-pipeline-layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+        let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ui-pipeline"),
+            layout: Some(&ui_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &ui_shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<UiVertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32, 4 => Float32x4],
+                }],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &ui_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
@@ -492,6 +587,7 @@ impl WgpuRenderer {
             size,
             window_ptr: window_handle as *const _ as *const winit::window::Window,
             rect_pipeline,
+            ui_pipeline,
             text_pipeline,
             atlas_texture,
             atlas_view,
@@ -516,6 +612,7 @@ impl WgpuRenderer {
             pending_clear: Cell::new(None),
             pending_text: Vec::new(),
             pending_bg: Vec::new(),
+            pending_ui: Vec::new(),
             atlas_evicted: Cell::new(false),
         };
         // Apply constructor preferences that depend on caller config.
@@ -649,6 +746,19 @@ impl WgpuRenderer {
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 pass.draw(0..vertices.len() as u32, 0..1);
             }
+
+            // Draw pending UI rounded rects in the same pass for correct layering.
+            if !self.pending_ui.is_empty() {
+                let ui_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("ui-vertex-buffer"),
+                    contents: bytemuck::cast_slice(&self.pending_ui),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+                pass.set_pipeline(&self.ui_pipeline);
+                pass.set_vertex_buffer(0, ui_buf.slice(..));
+                pass.draw(0..self.pending_ui.len() as u32, 0..1);
+                self.pending_ui.clear();
+            }
         }
 
         // Draw staged text after rects, if any.
@@ -691,6 +801,21 @@ impl WgpuRenderer {
                 self.dump_atlas_stats();
             }
         }
+    }
+
+    pub fn stage_ui_rounded_rect(&mut self, size_info: &SizeInfo, rect: UiRoundedRect) {
+        let half_w = size_info.width() / 2.0;
+        let half_h = size_info.height() / 2.0;
+        let x = rect.x / half_w - 1.0;
+        let y = -rect.y / half_h + 1.0;
+        let w = rect.width / half_w;
+        let h = rect.height / half_h;
+        let color = [rect.color.r as f32 / 255.0, rect.color.g as f32 / 255.0, rect.color.b as f32 / 255.0, rect.alpha];
+let v0 = UiVertex { pos: [x, y], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
+        let v1 = UiVertex { pos: [x, y - h], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
+        let v2 = UiVertex { pos: [x + w, y], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
+        let v3 = UiVertex { pos: [x + w, y - h], origin: [rect.x, rect.y], size: [rect.width, rect.height], radius: rect.radius, color };
+        self.pending_ui.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
     }
 
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(

@@ -36,12 +36,18 @@ path = "../openagent-terminal-ai"
 version = "0.1.0"
 optional = true
 
+[dependencies.workflow-engine]
+path = "../crates/workflow-engine"
+version = "0.1.0"
+optional = true
+
 [dependencies]
 ahash = { version = "0.8.6", features = ["no-rng"] }
 bitflags = "2.2.1"
 clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
 crossfont = "0.8.1"
+tracing = { workspace = true }
 # OpenGL stack (existing)
 glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"] }
 # Optional WGPU stack (feature-gated)
@@ -62,7 +68,7 @@ tempfile = "3.12.0"
 toml.workspace = true
 toml_edit.workspace = true
 unicode-width = "0.2.0"
-winit = { version = "0.30.9", default-features = false, features = ["rwh_06", "serde"] }
+winit = { workspace = true, features = ["serde"] }
 
 
 [build-dependencies]
@@ -128,7 +134,11 @@ nightly = []
 ai = ["dep:openagent-terminal-ai"]
 # Optional sync feature for settings/history sync
 sync = ["dep:openagent-terminal-sync"]
+# Optional workflow engine for automated task execution
+workflow = ["dep:workflow-engine"]
 
 # Umbrella features for AI backends (one-flag builds)
 # Example: cargo build -p openagent-terminal --features ai-ollama
-ai-ollama = ["ai", "openagent-terminal-ai/ollama"]
+ai-ollama = ["ai", "openagent-terminal-ai/ai-ollama"]
+ai-openai = ["ai", "openagent-terminal-ai/ai-openai"]
+ai-anthropic = ["ai", "openagent-terminal-ai/ai-anthropic"]

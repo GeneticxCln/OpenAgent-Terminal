@@ -454,7 +454,7 @@ impl WorkflowEngine {
             WorkflowStatus::Failed
         };
         
-        self.update_status(&execution_id, final_status).await?;
+        self.update_status(&execution_id, final_status.clone()).await?;
         self.set_finished_time(&execution_id).await?;
         
         self.log(&execution_id, None, LogLevel::Info, 
@@ -728,7 +728,7 @@ impl WorkflowEngine {
                 timestamp: Utc::now(),
                 step_id: step_id.map(String::from),
                 level,
-                message,
+                message: message.clone(),
             });
         }
         

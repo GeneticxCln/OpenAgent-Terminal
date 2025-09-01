@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
-use log::{debug, warn, error};
+use tracing::{debug, warn, error};
 
 /// SSE parser state machine for handling fragmented frames
 #[derive(Debug, Default)]

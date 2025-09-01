@@ -87,7 +87,7 @@ For a complete feature list, see [docs/features.md](docs/features.md)
 ```bash
 git clone https://github.com/GeneticxCln/OpenAgent-Terminal.git
 cd OpenAgent-Terminal
-cargo build --release --features "ai ollama"
+cargo build --release --features "ai ai-ollama"
 ```
 
 ### 2. Set up AI Provider
