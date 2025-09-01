@@ -302,10 +302,11 @@ impl ApplicationHandler<Event> for Processor {
             
             // Initialize components after the first window is created
             if let Some(window_context) = self.windows.values().next() {
-                let window = &window_context.display.window.raw;
+                let window = window_context.display.window.inner();
                 let proxy = self.proxy.clone();
                 
-                // Spawn component initialization in the background
+                // Spawn component initialization in the background (optional)
+                #[cfg(feature = "background-components")]
                 tokio::spawn(async move {
                     let config = ComponentConfig {
                         enable_wgpu: cfg!(feature = "wgpu"),
@@ -1089,6 +1090,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[inline]
+    fn send_user_event(&self, event: crate::event::EventType) {
+        let _ = self.event_proxy.send_event(Event::new(event, self.display.window.id()));
+    }
+
+    #[cfg(feature = "ai")]
+    fn ai_runtime_mut(&mut self) -> Option<&mut crate::ai_runtime::AiRuntime> {
+        self.ai_runtime.as_deref_mut()
+    }
+
+    #[cfg(feature = "ai")]
+    fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
+        self.ai_runtime.as_ref().map(|r| &**r)
+    }
+
+    #[inline]
     fn terminal(&self) -> &Term<T> {
         self.terminal
     }
@@ -1830,23 +1846,26 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn ai_try_handle_header_click(&mut self) -> bool {
         #[cfg(feature = "ai")]
         {
-            // Require an AI runtime and an active or animating panel
-            let runtime = match &mut self.ai_runtime {
-                Some(rt) => rt,
-                None => return false,
-            };
-            // Compute geometry; None means fully hidden
-            let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
-                Some(g) => g,
-                None => return false,
-            };
-            // Map mouse to viewport point
+            // Precompute values requiring only &self to avoid borrow conflicts.
             let display_offset = self.terminal.grid().display_offset();
             let grid_point = self.mouse.point(&self.size_info(), display_offset);
             let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
                 Some(p) => p,
                 None => return false,
             };
+
+            // Borrow AI runtime mutably only after computing vpoint.
+            let runtime = match &mut self.ai_runtime {
+                Some(rt) => rt,
+                None => return false,
+            };
+
+            // Compute geometry; None means fully hidden
+            let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
+                Some(g) => g,
+                None => return false,
+            };
+
             // Hit header row
             if vpoint.line != geom.header_line { return false; }
             // If column within controls region
@@ -1890,6 +1909,17 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             // Default to no hover
             let mut hovered: Option<crate::display::ai_panel::AiHeaderControl> = None;
 
+            // Precompute mapping requiring only &self to avoid borrow conflicts
+            let display_offset = self.terminal.grid().display_offset();
+            let grid_point = self.mouse.point(&self.size_info(), display_offset);
+            let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                Some(p) => p,
+                None => {
+                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    return false;
+                },
+            };
+
             let runtime = match &mut self.ai_runtime {
                 Some(rt) => rt,
                 None => {
@@ -1900,17 +1930,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
             let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
                 Some(g) => g,
-                None => {
-                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
-                    return false;
-                },
-            };
-
-            // Map to viewport point
-            let display_offset = self.terminal.grid().display_offset();
-            let grid_point = self.mouse.point(&self.size_info(), display_offset);
-            let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
-                Some(p) => p,
                 None => {
                     if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
                     return false;
@@ -2312,6 +2331,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
     pub fn handle_event(&mut self, event: WinitEvent<Event>) {
         match event {
             WinitEvent::UserEvent(Event { payload, .. }) => match payload {
+                EventType::ComponentsInitialized(_) => (),
                 EventType::SearchNext => self.ctx.goto_match(None),
                 EventType::Scroll(scroll) => self.ctx.scroll(scroll),
                 EventType::BlinkCursor => {

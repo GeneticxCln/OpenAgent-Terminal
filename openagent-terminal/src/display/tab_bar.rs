@@ -78,7 +78,7 @@ impl Display {
         let fg = tokens.text;
         let active_bg = tokens.surface_muted;
         let active_fg = tokens.accent;
-        let hover_bg = tokens.surface_hover;
+        let hover_bg = tokens.surface_muted;
         let modified_color = tokens.warning;
         
         // Calculate tab dimensions

@@ -30,6 +30,7 @@ pub struct Options {
     #[cfg(feature = "ai")]
     pub ai_log_verbosity: Option<crate::config::ai::AiLogVerbosity>,
     #[cfg(not(feature = "ai"))]
+    #[clap(skip)]
     pub ai_log_verbosity: Option<()>,
 
     /// Generates ref test.
@@ -116,9 +117,9 @@ impl Options {
         self.config_options.override_config(config);
 
         // Override AI log verbosity via CLI flag by setting the env used by providers/event code.
+        #[cfg(feature = "ai")]
         if let Some(v) = self.ai_log_verbosity {
             std::env::set_var("OPENAGENT_AI_LOG_VERBOSITY", v.to_string());
-            #[cfg(feature = "ai")]
             {
                 // If AI is built-in, also update the config to keep UI-consistent.
                 config.ai.log_verbosity = v;

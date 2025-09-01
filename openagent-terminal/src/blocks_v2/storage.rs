@@ -192,6 +192,20 @@ impl BlockStorage {
         Ok(Arc::new(row.into_block()?))
     }
     
+    /// Get all blocks
+    pub async fn get_all_blocks(&self) -> Result<Vec<Block>> {
+        let rows = sqlx::query_as::<_, BlockRow>(
+            r#"
+            SELECT * FROM blocks
+            ORDER BY created_at DESC
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(|row| row.into_block()).collect()
+    }
+
     /// Get all starred blocks
     pub async fn get_starred(&self) -> Result<Vec<Arc<Block>>> {
         let rows = sqlx::query_as::<_, BlockRow>(

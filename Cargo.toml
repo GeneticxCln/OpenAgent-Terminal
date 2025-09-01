@@ -73,7 +73,7 @@ jsonrpc-ipc-server = "18.0"
 tera = "1.19"
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.6", features = ["v4"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
 
 # UI components
 egui = "0.25"

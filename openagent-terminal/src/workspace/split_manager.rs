@@ -127,6 +127,43 @@ pub struct SplitManager {
 }
 
 impl SplitManager {
+    /// Static convenience: split horizontally without borrowing a SplitManager instance.
+    pub fn split_horizontal_static(
+        layout: &mut SplitLayout,
+        pane_id: PaneId,
+        ratio: f32,
+    ) -> Option<PaneId> {
+        SplitManager::new().split_horizontal(layout, pane_id, ratio)
+    }
+
+    /// Static convenience: split vertically without borrowing a SplitManager instance.
+    pub fn split_vertical_static(
+        layout: &mut SplitLayout,
+        pane_id: PaneId,
+        ratio: f32,
+    ) -> Option<PaneId> {
+        SplitManager::new().split_vertical(layout, pane_id, ratio)
+    }
+
+    /// Static convenience: focus next pane without borrowing a SplitManager instance.
+    pub fn focus_next_pane_static(layout: &SplitLayout, current_pane: &mut PaneId) -> bool {
+        SplitManager::new().focus_next_pane(layout, current_pane)
+    }
+
+    /// Static convenience: focus previous pane without borrowing a SplitManager instance.
+    pub fn focus_previous_pane_static(layout: &SplitLayout, current_pane: &mut PaneId) -> bool {
+        SplitManager::new().focus_previous_pane(layout, current_pane)
+    }
+
+    /// Static convenience: close a pane without borrowing a SplitManager instance.
+    pub fn close_pane_static(layout: &mut SplitLayout, pane_id: PaneId) -> bool {
+        SplitManager::new().close_pane(layout, pane_id)
+    }
+
+    /// Static convenience: count panes.
+    pub fn pane_count_static(layout: &SplitLayout) -> usize {
+        layout.pane_count()
+    }
     /// Create a new split manager
     pub fn new() -> Self {
         Self {

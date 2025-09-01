@@ -1,10 +1,10 @@
 //! Workspace configuration for tabs and split panes
 
 use serde::{Deserialize, Serialize};
-use openagent_terminal_config_derive::ConfigDeserialize;
+use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 
 /// Workspace configuration
-#[derive(ConfigDeserialize, Debug, Clone, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct WorkspaceConfig {
     /// Whether workspace features are enabled
     #[config(default = true)]
@@ -35,7 +35,7 @@ impl Default for WorkspaceConfig {
 }
 
 /// Tab bar configuration
-#[derive(ConfigDeserialize, Debug, Clone, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct TabBarConfig {
     /// Position of the tab bar
     #[config(default = "TabBarPosition::Top")]
@@ -76,7 +76,7 @@ impl Default for TabBarConfig {
 }
 
 /// Split pane configuration
-#[derive(ConfigDeserialize, Debug, Clone, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct SplitConfig {
     /// Whether to show borders between splits
     #[config(default = true)]
@@ -145,7 +145,7 @@ impl Default for NewTabAction {
 }
 
 /// Workspace keybindings (for documentation, actual bindings in main keybinding system)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, SerdeReplace)]
 pub struct WorkspaceKeybindings {
     pub new_tab: String,
     pub close_tab: String,

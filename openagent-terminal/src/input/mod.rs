@@ -168,6 +168,15 @@ pub trait ActionContext<T: EventListener> {
     fn ai_try_handle_header_click(&mut self) -> bool { false }
     // Update AI header hover state; return true if hovering a control (for pointer cursor)
     fn ai_update_hover_header(&mut self) -> bool { false }
+
+    // UI event dispatch (e.g., to event loop proxy); default no-op in tests
+    fn send_user_event(&self, _event: crate::event::EventType) {}
+
+    // AI runtime accessors; default to None
+    #[cfg(feature = "ai")]
+    fn ai_runtime_mut(&mut self) -> Option<&mut crate::ai_runtime::AiRuntime> { None }
+    #[cfg(feature = "ai")]
+    fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> { None }
 }
 
 impl Action {

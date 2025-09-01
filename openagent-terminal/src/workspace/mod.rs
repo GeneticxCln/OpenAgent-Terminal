@@ -96,7 +96,7 @@ impl WorkspaceManager {
     /// Split the current pane horizontally
     pub fn split_horizontal(&mut self, ratio: f32) -> Option<PaneId> {
         if let Some(tab) = self.active_tab_mut() {
-            self.splits.split_horizontal(&mut tab.split_layout, tab.active_pane, ratio)
+            SplitManager::split_horizontal_static(&mut tab.split_layout, tab.active_pane, ratio)
         } else {
             None
         }
@@ -105,7 +105,7 @@ impl WorkspaceManager {
     /// Split the current pane vertically
     pub fn split_vertical(&mut self, ratio: f32) -> Option<PaneId> {
         if let Some(tab) = self.active_tab_mut() {
-            self.splits.split_vertical(&mut tab.split_layout, tab.active_pane, ratio)
+            SplitManager::split_vertical_static(&mut tab.split_layout, tab.active_pane, ratio)
         } else {
             None
         }
@@ -114,7 +114,7 @@ impl WorkspaceManager {
     /// Focus the next pane in the current tab
     pub fn focus_next_pane(&mut self) -> bool {
         if let Some(tab) = self.active_tab_mut() {
-            self.splits.focus_next_pane(&tab.split_layout, &mut tab.active_pane)
+            SplitManager::focus_next_pane_static(&tab.split_layout, &mut tab.active_pane)
         } else {
             false
         }
@@ -123,7 +123,7 @@ impl WorkspaceManager {
     /// Focus the previous pane in the current tab
     pub fn focus_previous_pane(&mut self) -> bool {
         if let Some(tab) = self.active_tab_mut() {
-            self.splits.focus_previous_pane(&tab.split_layout, &mut tab.active_pane)
+            SplitManager::focus_previous_pane_static(&tab.split_layout, &mut tab.active_pane)
         } else {
             false
         }
@@ -133,12 +133,12 @@ impl WorkspaceManager {
     pub fn close_pane(&mut self) -> bool {
         if let Some(tab) = self.active_tab_mut() {
             // If this is the last pane in the tab, close the tab instead
-            if self.splits.pane_count(&tab.split_layout) <= 1 {
+            if SplitManager::pane_count_static(&tab.split_layout) <= 1 {
                 let tab_id = tab.id;
                 return self.close_tab(tab_id);
             }
             
-            self.splits.close_pane(&mut tab.split_layout, tab.active_pane)
+            SplitManager::close_pane_static(&mut tab.split_layout, tab.active_pane)
         } else {
             false
         }

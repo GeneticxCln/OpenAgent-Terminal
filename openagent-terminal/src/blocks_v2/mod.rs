@@ -239,58 +239,62 @@ impl BlockManager {
         exit_code: i32,
         duration_ms: u64,
     ) -> Result<()> {
-        let block = self.get_block_mut(block_id).await?;
-        
-        let mut block_mut = Arc::make_mut(block);
-        block_mut.output = output;
-        block_mut.exit_code = Some(exit_code);
-        block_mut.duration_ms = Some(duration_ms);
-        block_mut.status = if exit_code == 0 {
-            ExecutionStatus::Success
-        } else {
-            ExecutionStatus::Failed
+        let updated_block = {
+            let entry = self.get_block_mut(block_id).await?;
+            let mut owned = (**entry).clone();
+            owned.output = output;
+            owned.exit_code = Some(exit_code);
+            owned.duration_ms = Some(duration_ms);
+            owned.status = if exit_code == 0 {
+                ExecutionStatus::Success
+            } else {
+                ExecutionStatus::Failed
+            };
+            owned.modified_at = Utc::now();
+            let arc_new = Arc::new(owned.clone());
+            *entry = arc_new.clone();
+            owned
         };
-        block_mut.modified_at = Utc::now();
-        
-        // Update storage
-        self.storage.update(&block_mut).await?;
-        
-        // Re-index for search
-        self.search_engine.update_block(&block_mut).await?;
-        
+
+        // Update storage and search without holding a mutable borrow on self
+        self.storage.update(&updated_block).await?;
+        self.search_engine.update_block(&updated_block).await?;
         Ok(())
     }
     
     /// Add tags to a block
     pub async fn add_tags(&mut self, block_id: BlockId, tags: Vec<String>) -> Result<()> {
-        let block = self.get_block_mut(block_id).await?;
-        
-        let mut block_mut = Arc::make_mut(block);
-        for tag in tags {
-            block_mut.tags.insert(tag);
-        }
-        block_mut.modified_at = Utc::now();
-        
-        self.storage.update(&block_mut).await?;
-        self.search_engine.update_block(&block_mut).await?;
-        
+        let updated_block = {
+            let entry = self.get_block_mut(block_id).await?;
+            let mut owned = (**entry).clone();
+            for tag in tags {
+                owned.tags.insert(tag);
+            }
+            owned.modified_at = Utc::now();
+            let arc_new = Arc::new(owned.clone());
+            *entry = arc_new.clone();
+            owned
+        };
+        self.storage.update(&updated_block).await?;
+        self.search_engine.update_block(&updated_block).await?;
         Ok(())
     }
     
     /// Toggle star status
     pub async fn toggle_star(&mut self, block_id: BlockId) -> Result<bool> {
-        let block = self.get_block_mut(block_id).await?;
-        
-        let mut block_mut = Arc::make_mut(block);
-        block_mut.starred = !block_mut.starred;
-        block_mut.modified_at = Utc::now();
-        
-        let starred = block_mut.starred;
-        
-        self.storage.update(&block_mut).await?;
-        
+        let (updated_block, starred) = {
+            let entry = self.get_block_mut(block_id).await?;
+            let mut owned = (**entry).clone();
+            owned.starred = !owned.starred;
+            owned.modified_at = Utc::now();
+            let starred = owned.starred;
+            let arc_new = Arc::new(owned.clone());
+            *entry = arc_new.clone();
+            (owned, starred)
+        };
+
+        self.storage.update(&updated_block).await?;
         info!("Block {} starred: {}", block_id.to_string(), starred);
-        
         Ok(starred)
     }
     
@@ -333,7 +337,7 @@ impl BlockManager {
         format: export::ExportFormat,
         options: export::ImportOptions,
     ) -> Result<Vec<BlockId>> {
-        let blocks = self.export_manager.import(data, format, options).await?;
+        let blocks = self.export_manager.import(data, format, &options).await?;
         
         let mut imported_ids = Vec::new();
         for mut block in blocks {
@@ -378,14 +382,16 @@ impl BlockManager {
     
     /// Add child to parent block
     async fn add_child_to_parent(&mut self, parent_id: BlockId, child_id: BlockId) -> Result<()> {
-        let parent = self.get_block_mut(parent_id).await?;
-        
-        let mut parent_mut = Arc::make_mut(parent);
-        parent_mut.children.push(child_id);
-        parent_mut.modified_at = Utc::now();
-        
-        self.storage.update(&parent_mut).await?;
-        
+        let updated_parent = {
+            let entry = self.get_block_mut(parent_id).await?;
+            let mut owned = (**entry).clone();
+            owned.children.push(child_id);
+            owned.modified_at = Utc::now();
+            let arc_new = Arc::new(owned.clone());
+            *entry = arc_new.clone();
+            owned
+        };
+        self.storage.update(&updated_parent).await?;
         Ok(())
     }
     
