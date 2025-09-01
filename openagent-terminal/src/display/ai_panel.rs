@@ -9,6 +9,7 @@ use crate::display::Display;
 use crate::display::color::Rgb;
 use crate::renderer::rects::RenderRect;
 use crate::renderer::ui::UiRoundedRect;
+use crate::display::animation::compute_progress;
 
 /// Maximum lines to show for AI panel
 const MAX_AI_PANEL_LINES: usize = 10;
@@ -58,28 +59,25 @@ impl Display {
             self.ai_panel_last_active = ai_state.active;
             self.ai_panel_anim_start = Some(std::time::Instant::now());
             self.ai_panel_anim_opening = ai_state.active;
-            self.ai_panel_anim_duration_ms = if ai_state.active { 160 } else { 140 };
+            // Theme-aware duration; respect reduce motion
+            let reduce_motion = config
+                .resolved_theme
+                .as_ref()
+                .map(|t| t.ui.reduce_motion)
+                .unwrap_or(false);
+            self.ai_panel_anim_duration_ms = if reduce_motion { 0 } else { if ai_state.active { 160 } else { 140 } };
         }
 
-        // Compute animation progress (0..1) with an ease-out curve.
-        let mut progress = if let Some(start) = self.ai_panel_anim_start {
-            let elapsed = start.elapsed().as_millis() as u32;
-            let dur = self.ai_panel_anim_duration_ms.max(1);
-            let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
-            // EaseOutCubic
-            let eased = 1.0 - (1.0 - t).powi(3);
-            if t >= 1.0 {
-                // End animation.
-                self.ai_panel_anim_start = None;
-            }
-            eased
-        } else {
-            if ai_state.active { 1.0 } else { 0.0 }
-        };
-
-        // If closing, invert progress so 1->0 becomes height fraction.
-        if !self.ai_panel_anim_opening {
-            progress = 1.0 - progress;
+        // Compute animation progress (0..1) with an ease-out curve using the shared animation util.
+        let mut progress = compute_progress(
+            self.ai_panel_anim_start,
+            self.ai_panel_anim_duration_ms.max(1),
+            self.ai_panel_anim_opening,
+            ai_state.active,
+        );
+        if progress >= 1.0 || (!ai_state.active && progress <= 0.0) {
+            // End animation.
+            self.ai_panel_anim_start = None;
         }
 
         // If panel fully hidden and not active, skip drawing.
@@ -91,7 +89,16 @@ impl Display {
         let num_cols = size_info.columns;
         let num_lines = size_info.screen_lines;
 
-        // Backdrop dim behind the panel (black with configurable alpha)
+        // Resolve theme tokens/ui for panel visuals
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let tui = theme.ui;
+
+        // Backdrop dim behind the panel using theme overlay color with configurable alpha
         #[allow(unused_variables)]
         let backdrop_alpha = {
             #[cfg(feature = "ai")]
@@ -100,8 +107,7 @@ impl Display {
             { 0.0 }
         };
         if backdrop_alpha > 0.0 {
-            let dim = Rgb::new(0, 0, 0);
-            let full = RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), dim, backdrop_alpha);
+            let full = RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, backdrop_alpha);
             rects.push(full);
         }
         
@@ -116,9 +122,9 @@ impl Display {
         let anim_lines = ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
         let start_line = num_lines.saturating_sub(anim_lines);
         
-        // Panel background
-        let bg = config.colors.footer_bar_background();
-        let fg = config.colors.footer_bar_foreground();
+        // Panel background/foreground from theme
+        let bg = tokens.surface_muted;
+        let fg = tokens.text;
         
         // Compute panel geometry (pixels)
         let panel_y = start_line as f32 * size_info.cell_height();
@@ -126,17 +132,17 @@ impl Display {
         let panel_alpha = 0.95_f32.max(0.0).min(1.0) * progress as f32;
 
         // Stage shadow as a separate rounded rect (simple soft shadow)
-        if config.ai.shadow {
-            let spread = config.ai.shadow_size_px.max(1) as f32;
-            let offset_y = (config.ai.shadow_size_px as f32 * 0.5).round();
-            let shadow_alpha = (config.ai.shadow_alpha * progress as f32).min(1.0);
+        if tui.shadow {
+            let spread = tui.shadow_size_px.max(1) as f32;
+            let offset_y = (tui.shadow_size_px as f32 * 0.5).round();
+            let shadow_alpha = (tui.shadow_alpha * progress as f32).min(1.0);
             if shadow_alpha > 0.0 {
                 let shadow = UiRoundedRect::new(
                     -spread,
                     panel_y + offset_y - spread,
                     size_info.width() + spread * 2.0,
                     panel_height + spread * 2.0,
-                    if config.ai.rounded_corners { config.ai.corner_radius_px + spread } else { 0.0 },
+                    if tui.rounded_corners { tui.corner_radius_px + spread } else { 0.0 },
                     Rgb::new(0, 0, 0),
                     shadow_alpha,
                 );
@@ -145,7 +151,7 @@ impl Display {
         }
 
         // Stage main rounded panel
-        let radius = if config.ai.rounded_corners { config.ai.corner_radius_px } else { 0.0 };
+        let radius = if tui.rounded_corners { tui.corner_radius_px } else { 0.0 };
         let panel = UiRoundedRect::new(0.0, panel_y, size_info.width(), panel_height, radius, bg, panel_alpha);
         self.stage_ui_rounded_rect(panel);
         
@@ -190,8 +196,8 @@ impl Display {
                 }
             };
 
-            let ctrl_color_enabled = Rgb::new(200, 210, 230);
-            let ctrl_color_disabled = Rgb::new(130, 140, 160);
+            let ctrl_color_enabled = tokens.accent;
+            let ctrl_color_disabled = tokens.text_muted;
 
             // Hover highlight background (subtle rounded capsule behind the glyph)
             if let Some(hovered) = self.ai_hover_control {
@@ -240,12 +246,12 @@ impl Display {
                     AiHeaderControl::Regenerate => "Regenerate (Ctrl+R)",
                     AiHeaderControl::Close => "Close (Esc)",
                 };
-                let tip_color = Rgb::new(220, 230, 250);
+                let tip_color = tokens.text_muted;
                 self.draw_ai_text(actions_point, tip_color, bg, tooltip, num_cols.saturating_sub(2));
             } else {
                 let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] Copy code  [Ctrl+Shift+A] Copy all  [Ctrl+R] Regenerate  [Ctrl+C] Stop   [? Esc] Close";
                 // Dim slightly for hint badge
-                let hint_color = Rgb::new(180, 200, 220);
+                let hint_color = tokens.text_muted;
                 self.draw_ai_text(actions_point, hint_color, bg, actions, num_cols.saturating_sub(2));
             }
             current_line += 1;
@@ -273,7 +279,7 @@ impl Display {
             if current_line < num_lines {
                 let error_text = format!("{}{}", ERROR_PREFIX, error);
                 let error_point = Point::new(current_line, Column(2));
-                let error_color = Rgb::new(255, 100, 100); // Light red
+                let error_color = tokens.error;
                 self.draw_ai_text(error_point, error_color, bg, &error_text, num_cols - 2);
             }
         } else if !ai_state.streaming_text.is_empty() {
@@ -317,7 +323,7 @@ impl Display {
                     
                     let text_point = Point::new(current_line, Column(0));
                     let text_color = if idx == ai_state.selected_proposal {
-                        Rgb::new(100, 255, 100) // Light green for selected
+                        tokens.success
                     } else {
                         fg
                     };
@@ -341,7 +347,7 @@ impl Display {
                         if current_line <= separator_line {
                             let description_text = format!("    💡 {}", description);
                             let desc_point = Point::new(current_line, Column(0));
-                            let desc_color = Rgb::new(200, 200, 200); // Slightly dimmed
+                            let desc_color = tokens.text_muted;
                             self.draw_ai_text(desc_point, desc_color, bg, &description_text, num_cols);
                             current_line += 1;
                         }

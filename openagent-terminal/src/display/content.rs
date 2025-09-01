@@ -135,6 +135,31 @@ impl<'a> RenderableContent<'a> {
             text_color = self.config.colors.primary.background;
         }
 
+        // Optionally style block cursor using theme tokens.
+        if self.cursor_shape == CursorShape::Block && self.config.debug.theme_block_cursor {
+            let theme = self
+                .config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.config.theme.resolve());
+            cursor_color = theme.tokens.accent;
+            text_color = theme.tokens.surface;
+        }
+
+        // Optionally style beam/underline cursors using theme tokens.
+        if (self.cursor_shape == CursorShape::Beam || self.cursor_shape == CursorShape::Underline)
+            && self.config.debug.theme_text_cursors
+        {
+            let theme = self
+                .config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.config.theme.resolve());
+            cursor_color = theme.tokens.accent;
+        }
+
         let width = if cell.flags.contains(Flags::WIDE_CHAR) {
             NonZeroU32::new(2).unwrap()
         } else {
@@ -252,15 +277,27 @@ impl RenderableCell {
 
             character = c.unwrap_or(character);
         } else if is_selected {
-            let config_fg = colors.selection.foreground;
-            let config_bg = colors.selection.background;
-            Self::compute_cell_rgb(&mut fg, &mut bg, &mut bg_alpha, config_fg, config_bg);
-
-            if fg == bg && !cell.flags.contains(Flags::HIDDEN) {
-                // Reveal inversed text when fg/bg is the same.
-                fg = content.color(NamedColor::Background as usize);
-                bg = content.color(NamedColor::Foreground as usize);
+            if content.config.debug.theme_selection {
+                let theme = content
+                    .config
+                    .resolved_theme
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| content.config.theme.resolve());
+                fg = theme.tokens.text;
+                bg = theme.tokens.selection;
                 bg_alpha = 1.0;
+            } else {
+                let config_fg = colors.selection.foreground;
+                let config_bg = colors.selection.background;
+                Self::compute_cell_rgb(&mut fg, &mut bg, &mut bg_alpha, config_fg, config_bg);
+
+                if fg == bg && !cell.flags.contains(Flags::HIDDEN) {
+                    // Reveal inversed text when fg/bg is the same.
+                    fg = content.color(NamedColor::Background as usize);
+                    bg = content.color(NamedColor::Foreground as usize);
+                    bg_alpha = 1.0;
+                }
             }
         } else if content.search.as_mut().is_some_and(|search| search.advance(cell.point)) {
             let focused = content.focused_match.is_some_and(|fm| fm.contains(&cell.point));

@@ -1,0 +1,23 @@
+# OpenAgent Terminal High Contrast Dark theme
+
+[tokens]
+surface = "#000000"
+surface_muted = "#0a0a0a"
+text = "#ffffff"
+text_muted = "#d0d0d0"
+accent = "#5aa6ff"
+success = "#8be15a"
+warning = "#ffc15a"
+error = "#ff6666"
+selection = "#224488"
+border = "#666666"
+overlay = "#000000"
+
+[ui]
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = false
+shadow_alpha = 0.0
+shadow_size_px = 0
+reduce_motion = false
+

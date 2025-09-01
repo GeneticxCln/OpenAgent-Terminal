@@ -13,6 +13,10 @@ pub struct CommandBlock {
     pub ended_at: Option<Instant>,
     pub started_at: Instant,
     pub folded: bool,
+    // Animation state for fold/unfold transitions
+    pub anim_start: Option<Instant>,
+    pub anim_opening: bool,
+    pub anim_duration_ms: u32,
 }
 
 impl CommandBlock {
@@ -52,6 +56,9 @@ impl Blocks {
                     ended_at: None,
                     started_at: Instant::now(),
                     folded: false,
+                    anim_start: None,
+                    anim_opening: false,
+                    anim_duration_ms: 140,
                 };
                 self.blocks.push(block);
             },
@@ -86,6 +93,8 @@ impl Blocks {
         let total_line = display_offset + viewport_point.line;
         if let Some(block) = self.blocks.iter_mut().rev().find(|b| b.contains_total_line(total_line)) {
             block.folded = !block.folded;
+            block.anim_start = Some(Instant::now());
+            block.anim_opening = !block.folded; // opening when unfolding
             return true;
         }
         false
@@ -133,6 +142,9 @@ impl Blocks {
         let total_line = display_offset + viewport_line;
         if let Some(block) = self.blocks.iter_mut().find(|b| total_line == b.start_total_line) {
             block.folded = !block.folded;
+            block.anim_start = Some(Instant::now());
+            block.anim_opening = !block.folded; // opening when unfolding
+            // keep existing duration
             return true;
         }
         false

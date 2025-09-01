@@ -40,6 +40,17 @@ impl Default for SrgbPreference {
     fn default() -> Self { Self::Auto }
 }
 
+/// Render timer color style.
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RenderTimerStyle {
+    /// Subtle, unobtrusive background using surface_muted with text color.
+    LowContrast,
+    /// Attention-grabbing highlight using warning background.
+    Warning,
+}
+
+impl Default for RenderTimerStyle { fn default() -> Self { Self::LowContrast } }
+
 /// Debugging options.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Debug {
@@ -52,6 +63,9 @@ pub struct Debug {
 
     /// Should show render timer.
     pub render_timer: bool,
+
+    /// Render timer color style.
+    pub render_timer_style: RenderTimerStyle,
 
     /// Highlight damage information produced by OpenAgent Terminal.
     pub highlight_damage: bool,
@@ -87,6 +101,15 @@ pub struct Debug {
     #[config(skip)]
     #[serde(skip_serializing)]
     pub ref_test: bool,
+
+    /// Use theme tokens to style the block cursor instead of terminal colors.
+    pub theme_block_cursor: bool,
+
+    /// Use theme tokens to style beam/underline cursors instead of terminal colors.
+    pub theme_text_cursors: bool,
+
+    /// Use theme tokens to style selection highlight instead of terminal colors.
+    pub theme_selection: bool,
 }
 
 impl Default for Debug {
@@ -96,6 +119,7 @@ impl Default for Debug {
             print_events: Default::default(),
             persistent_logging: Default::default(),
             render_timer: Default::default(),
+            render_timer_style: Default::default(),
             highlight_damage: Default::default(),
             ref_test: Default::default(),
             renderer: Default::default(),
@@ -107,6 +131,9 @@ impl Default for Debug {
             zero_evicted_atlas_layer: false,
             atlas_eviction_policy: Default::default(),
             atlas_report_interval_frames: 0,
+            theme_block_cursor: false,
+            theme_text_cursors: false,
+            theme_selection: false,
         }
     }
 }

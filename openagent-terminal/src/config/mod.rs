@@ -25,6 +25,7 @@ pub mod ui_config;
 pub mod window;
 pub mod ai;
 pub mod sync;
+pub mod theme;
 
 mod bindings;
 mod mouse;
@@ -164,6 +165,17 @@ pub fn reload(config_path: &Path, options: &mut Options) -> Result<UiConfig> {
 fn after_loading(config: &mut UiConfig, options: &mut Options) {
     // Override config with CLI options.
     options.override_config(config);
+
+    // Resolve theme after overrides so runtime has computed tokens available.
+    // Failures fall back to built-in defaults.
+    let mut resolved = config.theme.resolve();
+
+    // Apply per-user reduce-motion override if provided (takes precedence over theme).
+    if let Some(override_rm) = config.reduce_motion_override {
+        resolved.ui.reduce_motion = override_rm;
+    }
+
+    config.resolved_theme = Some(resolved);
 }
 
 /// Load configuration file and log errors.

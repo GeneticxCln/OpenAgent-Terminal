@@ -63,6 +63,7 @@ pub mod cursor;
 pub mod hint;
 pub mod window;
 pub mod blocks;
+pub mod animation;
 #[cfg(feature = "ai")]
 pub mod ai_panel;
 
@@ -1186,6 +1187,82 @@ Ok(Self {
 
         let mut rects = lines.rects(&metrics, &size_info);
 
+        // Draw folding/unfolding animation overlays for command blocks
+        if self.blocks.enabled {
+            let now = Instant::now();
+            let bg_cover = background_color; // cover uses terminal background to mask text
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
+            for b in &mut self.blocks.blocks {
+                if let Some(start) = b.anim_start {
+                    // Respect reduce_motion: end animation immediately
+                    if theme.ui.reduce_motion {
+                        b.anim_start = None;
+                        continue;
+                    }
+
+                    let dur = b.anim_duration_ms.max(1) as u128;
+                    let elapsed = now.saturating_duration_since(start).as_millis();
+                    let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
+                    // Ease-out cubic
+                    let eased = 1.0 - (1.0 - t).powi(3);
+
+                    // Determine block viewport range
+                    let start_total = b.start_total_line;
+                    let end_total = b.end_total_line.unwrap_or(total_lines.saturating_sub(1));
+                    if end_total < start_total { continue; }
+                    let start_vp = start_total.saturating_sub(display_offset);
+                    let end_vp = end_total.saturating_sub(display_offset);
+                    if start_vp >= self.size_info.screen_lines() { continue; }
+                    let end_vp = end_vp.min(self.size_info.screen_lines().saturating_sub(1));
+                    if end_vp < start_vp { continue; }
+
+                    let region_lines = end_vp.saturating_sub(start_vp) + 1;
+                    let region_height = region_lines as f32 * self.size_info.cell_height();
+                    let y_top = start_vp as f32 * self.size_info.cell_height();
+
+                    // Compute cover height progression
+                    let cover_height = if b.anim_opening {
+                        // Unfolding: cover shrinks from full to 0
+                        (1.0 - eased) * region_height
+                    } else {
+                        // Folding: cover grows from 0 to full
+                        eased * region_height
+                    };
+
+                    if cover_height > 0.0 {
+                        let cover = RenderRect::new(
+                            0.0,
+                            y_top,
+                            self.size_info.width(),
+                            cover_height,
+                            bg_cover,
+                            1.0,
+                        );
+                        rects.push(cover);
+
+                        // Damage affected lines current and next frame
+                        let first = start_vp;
+                        let last = (y_top + cover_height).div_euclid(self.size_info.cell_height()) as usize;
+                        let last = last.min(self.size_info.screen_lines().saturating_sub(1));
+                        for line in first..=last {
+                            let damage = LineDamageBounds::new(line, 0, self.size_info.columns());
+                            self.damage_tracker.frame().damage_line(damage);
+                            self.damage_tracker.next_frame().damage_line(damage);
+                        }
+                    }
+
+                    // End animation
+                    if t >= 1.0 {
+                        b.anim_start = None;
+                    }
+                }
+            }
+        }
+
         if let Some(vi_cursor_point) = vi_cursor_point {
             // Indicate vi mode by showing the cursor's position in the top right corner.
             let line = (-vi_cursor_point.line.0 + size_info.bottommost_line().0) as usize;
@@ -1262,11 +1339,12 @@ Ok(Self {
         // Handle IME.
         if self.ime.is_enabled() {
             if let Some(point) = ime_position {
-                let (fg, bg) = if search_state.regex().is_some() {
-                    (config.colors.footer_bar_foreground(), config.colors.footer_bar_background())
-                } else {
-                    (foreground_color, background_color)
-                };
+                let theme = config
+                    .resolved_theme
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| config.theme.resolve());
+                let (fg, bg) = (theme.tokens.text, theme.tokens.surface_muted);
 
                 self.draw_ime_preview(point, fg, bg, &mut rects, config);
             }
@@ -1281,9 +1359,14 @@ Ok(Self {
             let start_line = size_info.screen_lines() + search_offset;
             let y = size_info.cell_height().mul_add(start_line as f32, size_info.padding_y());
 
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
             let bg = match message.ty() {
-                MessageType::Error => config.colors.normal.red,
-                MessageType::Warning => config.colors.normal.yellow,
+                MessageType::Error => theme.tokens.error,
+                MessageType::Warning => theme.tokens.warning,
             };
 
             let x = 0;
@@ -1302,7 +1385,12 @@ Ok(Self {
             self.renderer_draw_rects(&size_info, &metrics, rects);
 
             // Relay messages to the user.
-            let fg = config.colors.primary.background;
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
+            let fg = theme.tokens.surface;
                 for (i, message_text) in text.iter().enumerate() {
                     let point = Point::new(start_line + i, Column(0));
                     let size_info_copy = size_info;
@@ -1352,8 +1440,13 @@ Ok(Self {
         // Draw overlays for command blocks (headers and folded regions).
         if self.blocks.enabled {
             let num_lines = self.size_info.screen_lines();
-            let fg = config.colors.footer_bar_foreground();
-            let bg = config.colors.footer_bar_background();
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
+            let fg = theme.tokens.text;
+            let bg = theme.tokens.surface_muted;
             for line in 0..num_lines {
                 // Folded overlay.
                 if let Some(label) = self.blocks.folded_label_at_viewport_line(display_offset, line) {
@@ -1782,8 +1875,13 @@ Ok(Self {
             .take(uris.len())
             .flat_map(|line| term::point_to_viewport(display_offset, Point::new(line, Column(0))));
 
-        let fg = config.colors.footer_bar_foreground();
-        let bg = config.colors.footer_bar_background();
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let fg = theme.tokens.text;
+        let bg = theme.tokens.surface_muted;
         for (uri, point) in uris.into_iter().zip(uri_lines) {
             // Damage the uri preview.
             let damage = LineDamageBounds::new(point.line, point.column.0, num_cols);
@@ -1817,8 +1915,15 @@ Ok(Self {
 
         let point = Point::new(self.size_info.screen_lines(), Column(0));
 
-        let fg = config.colors.footer_bar_foreground();
-        let bg = config.colors.footer_bar_background();
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let (fg, bg) = match config.debug.render_timer_style {
+            crate::config::debug::RenderTimerStyle::LowContrast => (theme.tokens.text, theme.tokens.surface_muted),
+            crate::config::debug::RenderTimerStyle::Warning => (theme.tokens.surface, theme.tokens.warning),
+        };
 
         {
             let size_info_copy = self.size_info;
@@ -1844,8 +1949,14 @@ Ok(Self {
 
         let timing = format!("{:.3} usec", self.meter.average());
         let point = Point::new(self.size_info.screen_lines().saturating_sub(2), Column(0));
-        let fg = config.colors.primary.background;
-        let bg = config.colors.normal.red;
+
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let fg = theme.tokens.text;
+        let bg = theme.tokens.surface_muted;
 
         // Damage render timer for current and next frame.
         let damage = LineDamageBounds::new(point.line, point.column.0, timing.len());
@@ -1885,9 +1996,13 @@ Ok(Self {
         self.damage_tracker.frame().damage_line(damage);
         self.damage_tracker.next_frame().damage_line(damage);
 
-        let colors = &config.colors;
-        let fg = colors.line_indicator.foreground.unwrap_or(colors.primary.background);
-        let bg = colors.line_indicator.background.unwrap_or(colors.primary.foreground);
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let fg = theme.tokens.text;
+        let bg = theme.tokens.surface_muted;
 
         // Do not render anything if it would obscure the vi mode cursor.
         if obstructed_column.is_none_or(|obstructed_column| obstructed_column < column) {
