@@ -10,12 +10,10 @@ rust-version.workspace = true
 
 [features]
 default = []
-# Individual provider features
+# Individual provider features - use these for specific AI backend support
 ai-ollama = ["serde", "serde_json", "reqwest", "tokio"]
 ai-openai = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 ai-anthropic = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
-# Legacy feature for compatibility
-ollama = ["ai-ollama", "ai-openai", "ai-anthropic"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
@@ -24,7 +22,7 @@ reqwest = { version = "0.11", features = ["json", "blocking", "stream"], optiona
 tokio = { version = "1", features = ["rt", "macros", "time"], optional = true }
 futures-util = { version = "0.3", optional = true }
 eventsource-stream = { version = "0.2", optional = true }
-log = "0.4"
+tracing = "0.1"
 regex = "1"
 rand = "0.8"
 

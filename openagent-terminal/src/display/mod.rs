@@ -52,6 +52,7 @@ use crate::display::window::Window;
 use crate::event::{Event, EventType, Mouse, SearchState};
 use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
+use crate::renderer::ui::UiRoundedRect;
 use crate::renderer::{self, GlyphCache, Renderer, platform, LoaderApi};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
@@ -346,6 +347,22 @@ pub struct Display {
 
     pub size_info: SizeInfo,
 
+    #[cfg(feature = "ai")]
+    /// Tracks last-known AI panel visibility to trigger open/close animations.
+    pub(crate) ai_panel_last_active: bool,
+    #[cfg(feature = "ai")]
+    /// Animation start time for AI panel transitions.
+    pub(crate) ai_panel_anim_start: Option<Instant>,
+    #[cfg(feature = "ai")]
+    /// True when animating opening, false when closing.
+    pub(crate) ai_panel_anim_opening: bool,
+    #[cfg(feature = "ai")]
+    /// Animation duration in milliseconds.
+    pub(crate) ai_panel_anim_duration_ms: u32,
+    #[cfg(feature = "ai")]
+    /// Hovered AI header control (for hover tooltips and cursor), if any.
+    pub(crate) ai_hover_control: Option<super::ai_panel::AiHeaderControl>,
+
     /// Hint highlighted by the mouse.
     pub highlighted_hint: Option<HintMatch>,
     /// Frames since hint highlight was created.
@@ -533,7 +550,7 @@ impl Display {
         blocks.enabled = config.debug.blocks;
 
 
-        Ok(Self {
+Ok(Self {
             backend: Backend::Gl {
                 renderer: ManuallyDrop::new(gl_renderer),
                 context: ManuallyDrop::new(context),
@@ -561,6 +578,16 @@ impl Display {
             meter: Default::default(),
             ime: Default::default(),
             blocks,
+            #[cfg(feature = "ai")]
+            ai_panel_last_active: false,
+            #[cfg(feature = "ai")]
+            ai_panel_anim_start: None,
+            #[cfg(feature = "ai")]
+            ai_panel_anim_opening: false,
+            #[cfg(feature = "ai")]
+            ai_panel_anim_duration_ms: 0,
+            #[cfg(feature = "ai")]
+            ai_hover_control: None,
         })
     }
 
@@ -687,7 +714,7 @@ impl Display {
         blocks.enabled = config.debug.blocks;
 
 
-        Ok(Self {
+Ok(Self {
             backend: Backend::Wgpu { renderer: wgpu_renderer },
             visual_bell: VisualBell::from(&config.bell),
             renderer_preference: config.debug.renderer,
@@ -711,6 +738,16 @@ impl Display {
             meter: Default::default(),
             ime: Default::default(),
             blocks,
+            #[cfg(feature = "ai")]
+            ai_panel_last_active: false,
+            #[cfg(feature = "ai")]
+            ai_panel_anim_start: None,
+            #[cfg(feature = "ai")]
+            ai_panel_anim_opening: false,
+            #[cfg(feature = "ai")]
+            ai_panel_anim_duration_ms: 0,
+            #[cfg(feature = "ai")]
+            ai_hover_control: None,
         })
     }
 
@@ -1492,6 +1529,14 @@ impl Display {
             Backend::Gl { renderer, .. } => renderer.resize(&self.size_info),
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => renderer.resize(&self.size_info),
+        }
+    }
+
+    fn stage_ui_rounded_rect(&mut self, rect: UiRoundedRect) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.stage_ui_rounded_rect(rect),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => renderer.stage_ui_rounded_rect(&self.size_info, rect),
         }
     }
 

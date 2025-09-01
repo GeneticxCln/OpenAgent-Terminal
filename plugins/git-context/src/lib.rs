@@ -442,8 +442,9 @@ impl Plugin for GitContextPlugin {
             
             HookType::PrePrompt => {
                 // Update git info for prompt
-                if let Some(ref config) = self.config {
-                    let path = Path::new(&config.terminal_info.current_dir);
+                if let Some(config) = &self.config {
+                    let current_dir = config.terminal_info.current_dir.clone();
+                    let path = Path::new(&current_dir);
                     if self.is_git_repo(path) {
                         let _ = self.get_branch(path);
                     }

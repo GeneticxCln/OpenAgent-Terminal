@@ -163,6 +163,11 @@ pub trait ActionContext<T: EventListener> {
     fn ai_input(&mut self, _c: char) {}
     fn ai_backspace(&mut self) {}
     fn ai_propose(&mut self) {}
+
+    // Return true if a header control click was handled (AI panel)
+    fn ai_try_handle_header_click(&mut self) -> bool { false }
+    // Update AI header hover state; return true if hovering a control (for pointer cursor)
+    fn ai_update_hover_header(&mut self) -> bool { false }
 }
 
 impl Action {
@@ -666,9 +671,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         self.ctx.mouse_mut().inside_text_area = inside_text_area;
         self.ctx.mouse_mut().cell_side = cell_side;
 
+        // Update AI header hover state first; override cursor to pointer if hovering controls.
+        let ai_hover = {
+            #[cfg(feature = "ai")]
+            { self.ctx.ai_update_hover_header() }
+            #[cfg(not(feature = "ai"))]
+            { false }
+        };
+
         // Update mouse state and check for URL change.
         let mouse_state = self.cursor_state();
-        self.ctx.window().set_mouse_cursor(mouse_state);
+        if ai_hover {
+            self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
+        } else {
+            self.ctx.window().set_mouse_cursor(mouse_state);
+        }
 
         // Prompt hint highlight update.
         self.ctx.mouse_mut().hint_highlight_dirty = true;
@@ -828,6 +845,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // Load mouse point, treating message bar and padding as the closest cell.
             let display_offset = self.ctx.terminal().grid().display_offset();
             let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+
+            // Handle AI panel header controls first (stop, regenerate, close).
+            #[cfg(feature = "ai")]
+            {
+                if button == MouseButton::Left {
+                    if self.ctx.ai_try_handle_header_click() {
+                        return;
+                    }
+                }
+            }
 
             // Handle clickable fold headers (skip in tests to avoid requiring full Display mock).
             #[cfg(not(test))]

@@ -23,10 +23,12 @@ use crate::gl;
 use crate::renderer::rects::{RectRenderer, RenderRect};
 use crate::renderer::shader::ShaderError;
 
+pub mod backend;
 pub mod platform;
 pub mod rects;
 mod shader;
 mod text;
+pub mod ui;
 #[cfg(feature = "wgpu")]
 pub mod wgpu;
 
@@ -92,6 +94,8 @@ enum TextRendererProvider {
 pub struct Renderer {
     text_renderer: TextRendererProvider,
     rect_renderer: RectRenderer,
+    ui_renderer: ui::UiGlRenderer,
+    pending_ui: Vec<ui::UiRoundedRect>,
     robustness: bool,
 }
 
@@ -153,15 +157,17 @@ impl Renderer {
             None => (shader_version.as_ref() >= "3.3" && !is_gles_context, true),
         };
 
-        let (text_renderer, rect_renderer) = if use_glsl3 {
+let (text_renderer, rect_renderer, ui_renderer) = if use_glsl3 {
             let text_renderer = TextRendererProvider::Glsl3(Glsl3Renderer::new()?);
             let rect_renderer = RectRenderer::new(ShaderVersion::Glsl3)?;
-            (text_renderer, rect_renderer)
+            let ui_renderer = ui::UiGlRenderer::new(ShaderVersion::Glsl3)?;
+            (text_renderer, rect_renderer, ui_renderer)
         } else {
             let text_renderer =
                 TextRendererProvider::Gles2(Gles2Renderer::new(allow_dsb, is_gles_context)?);
             let rect_renderer = RectRenderer::new(ShaderVersion::Gles2)?;
-            (text_renderer, rect_renderer)
+            let ui_renderer = ui::UiGlRenderer::new(ShaderVersion::Gles2)?;
+            (text_renderer, rect_renderer, ui_renderer)
         };
 
         // Enable debug logging for OpenGL as well.
@@ -174,7 +180,7 @@ impl Renderer {
             }
         }
 
-        Ok(Self { text_renderer, rect_renderer, robustness })
+Ok(Self { text_renderer, rect_renderer, ui_renderer, pending_ui: Vec::new(), robustness })
     }
 
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(
@@ -243,8 +249,8 @@ impl Renderer {
     }
 
     /// Draw all rectangles simultaneously to prevent excessive program swaps.
-    pub fn draw_rects(&mut self, size_info: &SizeInfo, metrics: &Metrics, rects: Vec<RenderRect>) {
-        if rects.is_empty() {
+pub fn draw_rects(&mut self, size_info: &SizeInfo, metrics: &Metrics, rects: Vec<RenderRect>) {
+        if rects.is_empty() && self.pending_ui.is_empty() {
             return;
         }
 
@@ -255,7 +261,14 @@ impl Renderer {
             gl::BlendFuncSeparate(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA, gl::SRC_ALPHA, gl::ONE);
         }
 
-        self.rect_renderer.draw(size_info, metrics, rects);
+        if !rects.is_empty() {
+            self.rect_renderer.draw(size_info, metrics, rects);
+        }
+
+        if !self.pending_ui.is_empty() {
+            self.ui_renderer.draw(size_info, &self.pending_ui);
+            self.pending_ui.clear();
+        }
 
         // Activate regular state again.
         unsafe {
@@ -268,6 +281,10 @@ impl Renderer {
     }
 
     /// Fill the window with `color` and `alpha`.
+    pub fn stage_ui_rounded_rect(&mut self, rect: ui::UiRoundedRect) {
+        self.pending_ui.push(rect);
+    }
+
     pub fn clear(&self, color: Rgb, alpha: f32) {
         unsafe {
             gl::ClearColor(

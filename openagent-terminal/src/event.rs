@@ -1725,6 +1725,143 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             *self.dirty = true;
         }
     }
+
+    fn ai_try_handle_header_click(&mut self) -> bool {
+        #[cfg(feature = "ai")]
+        {
+            // Require an AI runtime and an active or animating panel
+            let runtime = match &mut self.ai_runtime {
+                Some(rt) => rt,
+                None => return false,
+            };
+            // Compute geometry; None means fully hidden
+            let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
+                Some(g) => g,
+                None => return false,
+            };
+            // Map mouse to viewport point
+            let display_offset = self.terminal.grid().display_offset();
+            let grid_point = self.mouse.point(&self.size_info(), display_offset);
+            let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                Some(p) => p,
+                None => return false,
+            };
+            // Hit header row
+            if vpoint.line != geom.header_line { return false; }
+            // If column within controls region
+            let col = vpoint.column.0;
+            if col < geom.controls_col_start || col > geom.controls_col_end { return false; }
+
+            // Controls are laid out as: [⏹][space][⟳][space][✖]
+            let stop_col = geom.controls_col_start;
+            let regen_col = geom.controls_col_start + 2;
+            let close_col = geom.controls_col_start + 4;
+
+            let streaming = runtime.ui.streaming_active || runtime.ui.is_loading;
+            let stop_enabled = streaming;
+            let regen_enabled = !streaming;
+
+            // Close is a single-column target; Stop/Regenerate extend into their right space
+            if col == close_col {
+                self.close_ai_panel();
+                *self.dirty = true;
+                return true;
+            } else if (col == regen_col || col == regen_col + 1) && regen_enabled {
+                let _ = self.event_proxy.send_event(Event::new(EventType::AiRegenerate, self.display.window.id()));
+                *self.dirty = true;
+                return true;
+            } else if (col == stop_col || col == stop_col + 1) && stop_enabled {
+                let _ = self.event_proxy.send_event(Event::new(EventType::AiStop, self.display.window.id()));
+                *self.dirty = true;
+                return true;
+            }
+            false
+        }
+        #[cfg(not(feature = "ai"))]
+        {
+            false
+        }
+    }
+
+    fn ai_update_hover_header(&mut self) -> bool {
+        #[cfg(feature = "ai")]
+        {
+            // Default to no hover
+            let mut hovered: Option<crate::display::ai_panel::AiHeaderControl> = None;
+
+            let runtime = match &mut self.ai_runtime {
+                Some(rt) => rt,
+                None => {
+                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    return false;
+                },
+            };
+
+            let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
+                Some(g) => g,
+                None => {
+                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    return false;
+                },
+            };
+
+            // Map to viewport point
+            let display_offset = self.terminal.grid().display_offset();
+            let grid_point = self.mouse.point(&self.size_info(), display_offset);
+            let vpoint = match openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                Some(p) => p,
+                None => {
+                    if self.display.ai_hover_control.take().is_some() { *self.dirty = true; }
+                    return false;
+                },
+            };
+
+            // Only on header line and within controls band
+            if vpoint.line == geom.header_line {
+                let col = vpoint.column.0;
+                if col >= geom.controls_col_start && col <= geom.controls_col_end {
+                    // Controls at columns: start, start+2, start+4
+                    let stop_col = geom.controls_col_start;
+                    let regen_col = geom.controls_col_start + 2;
+                    let close_col = geom.controls_col_start + 4;
+
+                    let streaming = runtime.ui.streaming_active || runtime.ui.is_loading;
+                    let stop_enabled = streaming;
+                    let regen_enabled = !streaming;
+
+                    // Close is a single-column target; Stop/Regenerate extend into their right space
+                    if col == close_col {
+                        hovered = Some(crate::display::ai_panel::AiHeaderControl::Close);
+                    } else if (col == regen_col || col == regen_col + 1) && regen_enabled {
+                        hovered = Some(crate::display::ai_panel::AiHeaderControl::Regenerate);
+                    } else if (col == stop_col || col == stop_col + 1) && stop_enabled {
+                        hovered = Some(crate::display::ai_panel::AiHeaderControl::Stop);
+                    } else {
+                        hovered = None;
+                    }
+                }
+            }
+
+            // Update hover state and damage relevant lines if changed
+            if self.display.ai_hover_control != hovered {
+                self.display.ai_hover_control = hovered;
+                *self.dirty = true;
+                let cols = self.display.size_info.columns();
+                // Damage header and the actions/tooltip line beneath it
+                let header = geom.header_line;
+                let actions_line = header.saturating_add(1);
+                self.display.damage_tracker.frame().damage_line(openagent_terminal_core::term::LineDamageBounds::new(header, 0, cols));
+                if actions_line <= self.display.size_info.screen_lines().saturating_sub(1) {
+                    self.display.damage_tracker.frame().damage_line(openagent_terminal_core::term::LineDamageBounds::new(actions_line, 0, cols));
+                }
+            }
+
+            hovered.is_some()
+        }
+        #[cfg(not(feature = "ai"))]
+        { false }
+    }
+
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {

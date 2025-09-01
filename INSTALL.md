@@ -35,16 +35,19 @@ cp -r "OpenAgent Terminal.app" /Applications/
 #### Windows
 Download and run the installer from the [releases page](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
 
-### From Cargo
-
-If you have Rust installed, you can install OpenAgent Terminal directly through cargo:
+### From Source (Recommended for Development)
 
 ```sh
-# Install with AI features (Ollama support)
-cargo install openagent-terminal --features "ai ollama"
+# Clone and build with AI features (Ollama support)
+git clone https://github.com/GeneticxCln/OpenAgent-Terminal.git
+cd OpenAgent-Terminal
+cargo build -p openagent-terminal --release --features "ai-ollama"
 
-# Or install with all AI providers
-cargo install openagent-terminal --features "ai ollama openai anthropic"
+# Or build with all AI providers
+cargo build -p openagent-terminal --release --features "ai-ollama ai-openai ai-anthropic"
+
+# Install locally
+cargo install --path openagent-terminal --features "ai-ollama"
 ```
 
 Note that you will still need to install the dependencies for your OS of choice.

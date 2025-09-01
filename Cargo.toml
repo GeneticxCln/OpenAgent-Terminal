@@ -7,6 +7,8 @@ members = [
     "openagent-terminal-sync",
     "openagent-terminal-ai",
     "crates/plugin-api",
+    "crates/plugin-loader",
+    "crates/workflow-engine",
     "plugins/git-context",
     "plugins/docker-helper",
     "plugins/dev-tools",
@@ -24,10 +26,9 @@ debug = 1
 incremental = false
 
 [workspace.dependencies]
-# Core dependencies
+# Core dependencies (always needed)
 toml = "0.9.2"
 toml_edit = "0.23.1"
-tokio = { version = "1.35", features = ["full"] }
 anyhow = "1.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -36,12 +37,17 @@ serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
 # Rendering - WGPU
 wgpu = "0.19"
 raw-window-handle = "0.6"
-winit = "0.29"
+winit = { version = "0.30.9", default-features = false, features = ["rwh_06"] }
 
-# Text shaping and fonts
+# Text shaping and fonts (core requirement)
 swash = "0.1"
 harfbuzz-rs = "2.0"
 fontdb = "0.16"
@@ -49,15 +55,13 @@ ttf-parser = "0.20"
 unicode-bidi = "0.3"
 ab-glyph = "0.2"
 
-# Database for Blocks 2.0
+# Database
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
 rusqlite = { version = "0.30", features = ["bundled"] }
 
 # AI capabilities
 reqwest = { version = "0.11", features = ["json", "stream"] }
 async-openai = "0.19"
-async-trait = "0.1"
-futures = "0.3"
 
 # Plugin system
 wasmtime = "17.0"
@@ -69,6 +73,7 @@ jsonrpc-ipc-server = "18.0"
 tera = "1.19"
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4"] }
 
 # UI components
 egui = "0.25"

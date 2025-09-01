@@ -40,6 +40,14 @@ inline_suggestions = false
 trigger_key = "Ctrl+Shift+A"
 # AI logging verbosity: "off" for errors only, "summary" for start/finish, "verbose" for per-chunk
 log_verbosity = "summary"
+# Visuals
+panel_height_fraction = 0.40
+backdrop_alpha = 0.25
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = true
+shadow_size_px = 8
+shadow_alpha = 0.35
 
 # Provider-specific settings (optional)
 # Ollama (local, privacy-first)
