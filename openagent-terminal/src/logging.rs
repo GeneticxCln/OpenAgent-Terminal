@@ -301,19 +301,40 @@ impl Write for OnDemandLogFile {
 
 fn redact_sensitive_text(input: &str) -> String {
     // Redact common secret patterns; deliberately conservative to avoid false positives.
-    // Examples handled:
-    //  - api_key=..., apiKey: "...", Authorization: Bearer ...
-    //  - tokens/keys in JSON-like fields
+    // Covers JWTs, SSH private keys, AWS/GitHub/GCP tokens, and CLI flags with secrets.
     let patterns: &[(&str, &str)] = &[
-        // Key-value (various separators)
-        (r#"(?i)(api[_-]?key)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
+        // Generic key-value
+        (r#"(?i)(api[_-]?key)\s*[:=]\s*[^\s,\"']+"#, "$1=[REDACTED]"),
         (r#"(?i)(authorization)\s*:\s*bearer\s+[^\s]+"#, "$1: Bearer [REDACTED]"),
-        (r#"(?i)(token)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
-        (r#"(?i)(secret)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
-        (r#"(?i)(password)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
-        (r#"(?i)(bearer)\s+[^\s]+"#, "$1 [REDACTED]"),
-        // JSON-like: "api_key": "..."
+        (r#"(?i)(token)\s*[:=]\s*[^\s,\"']+"#, "$1=[REDACTED]"),
+        (r#"(?i)(secret)\s*[:=]\s*[^\s,\"']+"#, "$1=[REDACTED]"),
+        (r#"(?i)(password)\s*[:=]\s*[^\s,\"']+"#, "$1=[REDACTED]"),
+        (r#"(?i)\bbearer\s+[^\s]+"#, "Bearer [REDACTED]"),
+        // JSON-like fields
         (r#"(?i)("(?:api[_-]?key|token|secret|password|authorization)")\s*:\s*"[^"]*""#, r#"$1: "[REDACTED]""#),
+        // CLI flags with secrets
+        (r#"(?i)--(password|token|key|secret|auth|api[_-]?key)\s*=?\s*([\"']?)([^\s\"']+)\2"#, "--$1=[REDACTED]"),
+        (r#"(?i)-(p|P)\s+([^\s]+)"#, "-$1 [REDACTED]"),
+        // JWT tokens
+        (r#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[REDACTED_JWT]"),
+        // AWS credentials
+        (r#"\bAKIA[0-9A-Z]{16}\b"#, "[REDACTED_AWS_ACCESS_KEY]"),
+        (r#"\b([A-Za-z0-9/+=]{40})\b"#, "[REDACTED_AWS_SECRET_KEY]"),
+        (r#"aws_access_key_id\s*=\s*([^\s]+)"#, "aws_access_key_id = [REDACTED]"),
+        (r#"aws_secret_access_key\s*=\s*([^\s]+)"#, "aws_secret_access_key = [REDACTED]"),
+        // GitHub tokens
+        (r#"\bgh[pousr]_[A-Za-z0-9]{36}\b"#, "[REDACTED_GITHUB_TOKEN]"),
+        // GCP service account keys
+        (r#"\"private_key\"\s*:\s*\"-----BEGIN [^\"]+-----[\s\S]+?-----END [^\"]+-----\""#, r#""private_key": "[REDACTED_PRIVATE_KEY]""#),
+        (r#"\"client_email\"\s*:\s*\"[^@]+@[^.]+\.iam\.gserviceaccount\.com\""#, r#""client_email": "[REDACTED_SERVICE_ACCOUNT]""#),
+        // SSH private keys
+        (r#"-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]+?-----END (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"#, "[REDACTED_SSH_PRIVATE_KEY]"),
+        // DB connection strings
+        (r#"(mongodb|postgres|postgresql|mysql|redis|amqp)://[^:]+:([^@]+)@"#, "$1://[USER]:[REDACTED]@"),
+        // Slack tokens
+        (r#"xox[baprs]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24,}"#, "[REDACTED_SLACK_TOKEN]"),
+        // Generic UUID-like sensitive IDs
+        (r#"(?i)(session[_-]?id|csrf[_-]?token)\s*[:=]\s*([\"']?)([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})\2"#, "$1: [REDACTED_UUID]"),
     ];
 
     let mut out = input.to_string();

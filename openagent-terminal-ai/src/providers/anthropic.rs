@@ -205,6 +205,7 @@ if ai_log_summary() { info!("anthropic_propose_complete commands={}", commands.l
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
 if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint); }
+        use crate::streaming::{RetryConfig, RetryStrategy};
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
             "You are a helpful terminal command assistant. \
@@ -238,46 +239,74 @@ if ai_log_summary() { info!("anthropic_stream_start model={} endpoint={}", self.
         };
 
         let url = format!("{}/messages", self.endpoint);
-        let response = self.client
-            .post(&url)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("Content-Type", "application/json")
-            .header("Accept", "text/event-stream")
-            .json(&request_body)
-            .send()
-            .map_err(|e| format!("Failed to send request: {}", e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-            error!("Anthropic API error {}: {}", status, error_text);
-            return Err(format!("API error {}: {}", status, error_text));
-        }
-
-        // Stream SSE lines; Anthropic sends JSON objects in data: lines
-        let reader = BufReader::new(response);
-        for line in reader.lines() {
-if cancel.load(std::sync::atomic::Ordering::Relaxed) { if ai_log_summary() { info!("anthropic_stream_cancelled"); } break; }
-            let line = line.map_err(|e| format!("Stream read error: {}", e))?;
-            let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
-            if let Some(rest) = trimmed.strip_prefix("data: ") {
-                if rest.trim() == "[DONE]" { break; }
-                match serde_json::from_str::<AnthropicStreamData>(rest) {
-                    Ok(ev) => {
-                        if let Some(delta) = ev.delta {
-if let Some(txt) = delta.text { if ai_log_verbose() { debug!("anthropic_stream_chunk len={}", txt.len()); } on_chunk(&txt); }
-                        }
+        let retry = RetryStrategy::Anthropic { config: RetryConfig::default(), overload_backoff: std::time::Duration::from_secs(2) };
+        let mut attempt = 0usize;
+        loop {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) { return Err("Cancelled".to_string()); }
+            let send_result = self.client
+                .post(&url)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .json(&request_body)
+                .send();
+            let response = match send_result {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let msg = format!("Failed to send request: {}", e);
+                    if retry.should_retry(attempt, &msg, cancel) {
+                        let delay = retry.delay_for_attempt(attempt, &msg);
+                        if ai_log_summary() { info!("anthropic_stream_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                        std::thread::sleep(delay);
+                        attempt += 1;
+                        continue;
+                    } else {
+                        return Err(msg);
                     }
-                    Err(e) => {
-                        debug!("Skipping unexpected Anthropic SSE data: {}", e);
+                }
+            };
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+                let msg = format!("API error {}: {}", status, error_text);
+                error!("Anthropic API error {}: {}", status, error_text);
+                if retry.should_retry(attempt, &msg, cancel) {
+                    let delay = retry.delay_for_attempt(attempt, &msg);
+                    if ai_log_summary() { info!("anthropic_stream_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                    std::thread::sleep(delay);
+                    attempt += 1;
+                    continue;
+                } else {
+                    return Err(msg);
+                }
+            }
+
+            // Stream SSE lines; Anthropic sends JSON objects in data: lines
+            let reader = BufReader::new(response);
+            for line in reader.lines() {
+if cancel.load(std::sync::atomic::Ordering::Relaxed) { if ai_log_summary() { info!("anthropic_stream_cancelled"); } break; }
+                let line = line.map_err(|e| format!("Stream read error: {}", e))?;
+                let trimmed = line.trim();
+                if trimmed.is_empty() { continue; }
+                if let Some(rest) = trimmed.strip_prefix("data: ") {
+                    if rest.trim() == "[DONE]" { break; }
+                    match serde_json::from_str::<AnthropicStreamData>(rest) {
+                        Ok(ev) => {
+                            if let Some(delta) = ev.delta {
+if let Some(txt) = delta.text { if ai_log_verbose() { debug!("anthropic_stream_chunk len={}", txt.len()); } on_chunk(&txt); }
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Skipping unexpected Anthropic SSE data: {}", e);
+                        }
                     }
                 }
             }
-        }
 
 if ai_log_summary() { info!("anthropic_stream_finished"); }
-        Ok(true)
+            return Ok(true);
+        }
     }
 }
