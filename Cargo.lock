@@ -2493,6 +2493,7 @@ dependencies = [
  "parking_lot",
  "png",
  "pollster",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",

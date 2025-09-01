@@ -38,6 +38,8 @@ propose_max_commands = 10
 never_auto_run = true
 inline_suggestions = false
 trigger_key = "Ctrl+Shift+A"
+# AI logging verbosity: "off" for errors only, "summary" for start/finish, "verbose" for per-chunk
+log_verbosity = "summary"
 
 # Provider-specific settings (optional)
 # Ollama (local, privacy-first)
@@ -93,6 +95,18 @@ hide_when_typing = true
 render_timer = false
 persistent_logging = false
 log_level = "Info"
+# Prefer WGPU backend when available (falls back to OpenGL if initialization fails)
+prefer_wgpu = false
+# Subpixel text rendering for WGPU: "Auto" | "Enabled" | "Disabled"
+subpixel_text = "Auto"
+# sRGB swapchain preference for WGPU: "Auto" | "Enabled" | "Disabled"
+srgb_swapchain = "Auto"
+# Clear evicted WGPU atlas layer to zero (cosmetic)
+zero_evicted_atlas_layer = false
+# WGPU atlas eviction policy: "RoundRobin" | "LruMinOccupancy"
+atlas_eviction_policy = "LruMinOccupancy"
+# Periodic atlas stats reporting interval in frames (0 disables)
+atlas_report_interval_frames = 0
 
 # Keybindings can be customized here
 # The default Ctrl+Shift+. will toggle the AI panel

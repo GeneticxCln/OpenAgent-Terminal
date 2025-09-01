@@ -3,6 +3,7 @@ use crate::privacy::{sanitize_request, AiPrivacyOptions};
 use serde::{Deserialize, Serialize};
 use log::{debug, error, info};
 use std::io::{BufRead, BufReader};
+use std::sync::OnceLock;
 
 pub struct OllamaProvider {
     endpoint: String,
@@ -10,9 +11,34 @@ pub struct OllamaProvider {
     client: reqwest::blocking::Client,
 }
 
+fn ai_log_verbose() -> bool {
+    static FLAG: OnceLock<bool> = OnceLock::new();
+    *FLAG.get_or_init(|| {
+        matches!(
+            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
+            Some("verbose")
+        )
+    })
+}
+fn ai_log_summary() -> bool {
+    static FLAG: OnceLock<bool> = OnceLock::new();
+    *FLAG.get_or_init(|| {
+        matches!(
+            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
+            Some("summary") | Some("verbose")
+        )
+    })
+}
+
 impl OllamaProvider {
     /// Stream tokens from Ollama and invoke on_chunk for each text fragment.
-    fn stream_generate(&self, prompt: String, mut on_chunk: &mut dyn FnMut(&str)) -> Result<(), String> {
+    fn stream_generate(
+        &self,
+        prompt: String,
+        mut on_chunk: &mut dyn FnMut(&str),
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<(), String> {
+if ai_log_summary() { info!("ollama_stream_start model={} endpoint={} prompt_len={}", self.model, self.endpoint, prompt.len()); }
         let url = format!("{}/api/generate", self.endpoint);
         let req_body = OllamaRequest {
             model: self.model.clone(),
@@ -33,11 +59,16 @@ impl OllamaProvider {
         // Parse line-delimited JSON events
         let reader = BufReader::new(response);
         for line in reader.lines() {
+if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                if ai_log_summary() { info!("ollama_stream_cancelled"); }
+                break;
+            }
             let line = line.map_err(|e| format!("Stream read error: {}", e))?;
             if line.trim().is_empty() { continue; }
             match serde_json::from_str::<OllamaGenerateResponse>(&line) {
                 Ok(ev) => {
                     if !ev.response.is_empty() {
+if ai_log_verbose() { debug!("ollama_stream_chunk len={}", ev.response.len()); }
                         on_chunk(&ev.response);
                     }
                     if ev.done { break; }
@@ -47,6 +78,7 @@ impl OllamaProvider {
                 }
             }
         }
+if ai_log_summary() { info!("ollama_stream_finished"); }
         Ok(())
     }
 }
@@ -84,7 +116,12 @@ impl OllamaProvider {
         }
     }
 
-    fn stream_propose(&self, req: AiRequest, on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
+    fn stream_propose(
+        &self,
+        req: AiRequest,
+        on_chunk: &mut dyn FnMut(&str),
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<bool, String> {
         if !self.check_availability() {
             return Ok(false);
         }
@@ -106,7 +143,7 @@ impl OllamaProvider {
         prompt.push_str(&format!("\nUser request: {}\n", req.scratch_text));
         prompt.push_str("\nProvide the commands:");
 
-        self.stream_generate(prompt, on_chunk)?;
+        self.stream_generate(prompt, on_chunk, cancel)?;
         Ok(true)
     }
 }
@@ -136,6 +173,7 @@ impl AiProvider for OllamaProvider {
     }
     
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
+if ai_log_summary() { info!("ollama_propose_start model={} endpoint={}", self.model, self.endpoint); }
         // Check if Ollama is available
         if !self.check_availability() {
             return Ok(vec![AiProposal {
@@ -173,7 +211,7 @@ impl AiProvider for OllamaProvider {
         prompt.push_str(&format!("\nUser request: {}\n", req.scratch_text));
         prompt.push_str("\nProvide the commands:");
         
-        debug!("Sending prompt to Ollama: {}", prompt);
+if ai_log_verbose() { debug!("Sending prompt to Ollama: {}", prompt); }
         
         // Make the actual API call
         let url = format!("{}/api/generate", self.endpoint);
@@ -187,6 +225,7 @@ impl AiProvider for OllamaProvider {
             .json(&ollama_request)
             .send() {
             Ok(response) => {
+if ai_log_summary() { debug!("ollama_propose_response_status status={}", response.status()); }
                 if response.status().is_success() {
                     match response.json::<OllamaGenerateResponse>() {
                         Ok(ollama_response) => {
@@ -198,12 +237,14 @@ impl AiProvider for OllamaProvider {
                                 .collect();
                             
                             if commands.is_empty() {
+if ai_log_summary() { info!("ollama_propose_complete commands=0"); }
                                 Ok(vec![AiProposal {
                                     title: format!("Response for: {}", req.scratch_text),
                                     description: Some("No specific commands suggested".to_string()),
                                     proposed_commands: vec!["# No commands generated".to_string()],
                                 }])
                             } else {
+if ai_log_summary() { info!("ollama_propose_complete commands={}", commands.len()); }
                                 Ok(vec![AiProposal {
                                     title: format!("Suggestion for: {}", req.scratch_text),
                                     description: Some("AI-generated commands".to_string()),
@@ -228,7 +269,12 @@ impl AiProvider for OllamaProvider {
         }
     }
 
-    fn propose_stream(&self, req: AiRequest, on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
-        self.stream_propose(req, on_chunk)
+    fn propose_stream(
+        &self,
+        req: AiRequest,
+        on_chunk: &mut dyn FnMut(&str),
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<bool, String> {
+        self.stream_propose(req, on_chunk, cancel)
     }
 }

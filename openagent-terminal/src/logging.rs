@@ -6,13 +6,14 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, LineWriter, Stdout, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use std::{env, process};
 
 use log::{Level, LevelFilter};
+use regex::Regex;
 use winit::event_loop::EventLoopProxy;
 
 use crate::cli::Options;
@@ -56,6 +57,7 @@ const ALLOWED_TARGETS: &[&str] = &[
     "openagent_terminal_config",
     "openagent_terminal",
     "openagent_terminal_core",
+    "openagent_terminal_ai",
     "crossfont",
 ];
 
@@ -78,6 +80,9 @@ pub struct Logger {
     stdout: Mutex<LineWriter<Stdout>>,
     event_proxy: Mutex<EventLoopProxy<Event>>,
     start: Instant,
+    // Optional AI debug logfile (env-controlled)
+    ai_log_enabled: bool,
+    ai_logfile: Option<Mutex<OnDemandLogFile>>, 
 }
 
 impl Logger {
@@ -85,7 +90,29 @@ impl Logger {
         let logfile = Mutex::new(OnDemandLogFile::new());
         let stdout = Mutex::new(LineWriter::new(io::stdout()));
 
-        Logger { logfile, stdout, event_proxy: Mutex::new(event_proxy), start: Instant::now() }
+        // AI debug log is opt-in via env var OPENAGENT_AI_DEBUG_LOG
+        let ai_enabled = env::var("OPENAGENT_AI_DEBUG_LOG")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false);
+        let ai_path = env::var("OPENAGENT_AI_DEBUG_LOG_PATH").ok().map(PathBuf::from).or_else(|| {
+            if ai_enabled {
+                let mut p = env::temp_dir();
+                p.push(format!("openagent_ai_debug_{}.log", process::id()));
+                Some(p)
+            } else {
+                None
+            }
+        });
+        let ai_logfile = ai_path.map(|p| Mutex::new(OnDemandLogFile::with_path(p)));
+
+        Logger {
+            logfile,
+            stdout,
+            event_proxy: Mutex::new(event_proxy),
+            start: Instant::now(),
+            ai_log_enabled: ai_enabled,
+            ai_logfile,
+        }
     }
 
     fn file_path(&self) -> Option<PathBuf> {
@@ -156,6 +183,23 @@ impl log::Log for Logger {
         if let Ok(mut stdout) = self.stdout.lock() {
             let _ = stdout.write_all(message.as_ref());
         }
+
+        // AI debug log path: record only AI-related targets with sensitive-field redaction.
+        if self.ai_log_enabled {
+            let is_ai_target = target.starts_with("openagent_terminal_ai")
+                || target.starts_with("openagent_terminal::ai_runtime")
+                || record.args().to_string().to_lowercase().contains("ai");
+            if is_ai_target {
+                if let Some(ref ai_file_mutex) = self.ai_logfile {
+                    if let Ok(mut ai_file) = ai_file_mutex.lock() {
+                        let mut redacted = redact_sensitive_text(&message);
+                        // Ensure it ends with newline.
+                        if !redacted.ends_with('\n') { redacted.push('\n'); }
+                        let _ = ai_file.write_all(redacted.as_bytes());
+                    }
+                }
+            }
+        }
     }
 
     fn flush(&self) {}
@@ -173,7 +217,8 @@ fn create_log_message(record: &log::Record<'_>, target: &str, start: Instant) ->
 
     // Push lines with added extra padding on the next line, which is trimmed later.
     let lines = record.args().to_string();
-    for line in lines.split('\n') {
+    let redacted_lines = redact_sensitive_text(&lines);
+    for line in redacted_lines.split('\n') {
         let line = format!("{}\n{:width$}", line, "", width = alignment);
         message.push_str(&line);
     }
@@ -205,6 +250,10 @@ impl OnDemandLogFile {
         // Set log path as an environment variable.
         unsafe { env::set_var(OPENAGENT_TERMINAL_LOG_ENV, path.as_os_str()) };
 
+        OnDemandLogFile { path, file: None, created: Arc::new(AtomicBool::new(false)) }
+    }
+
+    fn with_path(path: PathBuf) -> Self {
         OnDemandLogFile { path, file: None, created: Arc::new(AtomicBool::new(false)) }
     }
 
@@ -248,4 +297,30 @@ impl Write for OnDemandLogFile {
     fn flush(&mut self) -> Result<(), io::Error> {
         self.file()?.flush()
     }
+}
+
+fn redact_sensitive_text(input: &str) -> String {
+    // Redact common secret patterns; deliberately conservative to avoid false positives.
+    // Examples handled:
+    //  - api_key=..., apiKey: "...", Authorization: Bearer ...
+    //  - tokens/keys in JSON-like fields
+    let patterns: &[(&str, &str)] = &[
+        // Key-value (various separators)
+        (r#"(?i)(api[_-]?key)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
+        (r#"(?i)(authorization)\s*:\s*bearer\s+[^\s]+"#, "$1: Bearer [REDACTED]"),
+        (r#"(?i)(token)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
+        (r#"(?i)(secret)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
+        (r#"(?i)(password)\s*[:=]\s*[^\s,;"]+"#, "$1=[REDACTED]"),
+        (r#"(?i)(bearer)\s+[^\s]+"#, "$1 [REDACTED]"),
+        // JSON-like: "api_key": "..."
+        (r#"(?i)("(?:api[_-]?key|token|secret|password|authorization)")\s*:\s*"[^"]*""#, r#"$1: "[REDACTED]""#),
+    ];
+
+    let mut out = input.to_string();
+    for (pat, rep) in patterns {
+        if let Ok(re) = Regex::new(pat) {
+            out = re.replace_all(&out, *rep).to_string();
+        }
+    }
+    out
 }

@@ -1,6 +1,6 @@
 # Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
 function __fish_openagent_terminal_global_optspecs
-	string join \n print-events ref-test embed= config-file= socket= q v daemon working-directory= hold e/command= T/title= class= o/option= h/help V/version
+	string join \n print-events ai-log-verbosity= ref-test embed= config-file= socket= q v daemon working-directory= hold e/command= T/title= class= o/option= h/help V/version
 end
 
 function __fish_openagent_terminal_needs_command
@@ -24,6 +24,9 @@ function __fish_openagent_terminal_using_subcommand
 	contains -- $cmd[1] $argv
 end
 
+complete -c openagent-terminal -n "__fish_openagent_terminal_needs_command" -l ai-log-verbosity -d 'AI logging verbosity: off | summary | verbose (overrides config.ai.log_verbosity)' -r -f -a "off\t''
+summary\t''
+verbose\t''"
 complete -c openagent-terminal -n "__fish_openagent_terminal_needs_command" -l embed -d 'X11 window ID to embed OpenAgent Terminal within (decimal or hexadecimal with "0x" prefix)' -r
 complete -c openagent-terminal -n "__fish_openagent_terminal_needs_command" -l config-file -d 'Specify alternative configuration file [default: $XDG_CONFIG_HOME/openagent-terminal/openagent-terminal.toml]' -r -F
 complete -c openagent-terminal -n "__fish_openagent_terminal_needs_command" -l socket -d 'Path for IPC socket creation' -r -F

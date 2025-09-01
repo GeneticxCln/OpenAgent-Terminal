@@ -54,7 +54,7 @@ pub fn sanitize_request(req: &AiRequest, opts: AiPrivacyOptions) -> AiRequest {
     if opts.strip_sensitive {
         let patterns = vec![
             // key=value or key: value with common secret names.
-            r"(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*([\"']?)[^\s\"']+\2",
+            r#"(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*(["']?)[^\s"']+\2"#,
         ];
         for pat in patterns {
             if let Ok(re) = Regex::new(pat) {

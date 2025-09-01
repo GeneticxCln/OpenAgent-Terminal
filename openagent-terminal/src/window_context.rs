@@ -67,6 +67,8 @@ pub struct WindowContext {
     shell_pid: u32,
     window_config: ParsedOptions,
     config: Rc<UiConfig>,
+    #[cfg(feature = "ai")]
+    pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
 }
 
 impl WindowContext {
@@ -324,7 +326,7 @@ impl WindowContext {
             master_fd,
             #[cfg(not(windows))]
             shell_pid,
-            config,
+            config: config.clone(),
             notifier: Notifier(loop_tx),
             cursor_blink_timed_out: Default::default(),
             prev_bell_cmd: Default::default(),
@@ -338,6 +340,29 @@ impl WindowContext {
             mouse: Default::default(),
             touch: Default::default(),
             dirty: Default::default(),
+            #[cfg(feature = "ai")]
+            ai_runtime: {
+                #[cfg(feature = "ai")]
+                {
+                    if config.ai.enabled {
+                        // Export AI log verbosity for provider/runtime side
+                        std::env::set_var(
+                            "OPENAGENT_AI_LOG_VERBOSITY",
+                            config.ai.log_verbosity.to_string(),
+                        );
+                        Some(crate::ai_runtime::AiRuntime::from_config(
+                            config.ai.provider.as_deref(),
+                            config.ai.endpoint_env.as_deref(),
+                            config.ai.api_key_env.as_deref(),
+                            config.ai.model_env.as_deref(),
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                #[cfg(not(feature = "ai"))]
+                { None }
+            },
         })
     }
 
@@ -473,12 +498,16 @@ impl WindowContext {
 
         // Redraw the window.
         let terminal = self.terminal.lock();
+        #[cfg(feature = "ai")]
+        let ai_state_opt = self.ai_runtime.as_ref().map(|r| &r.ui);
         self.display.draw(
             terminal,
             scheduler,
             &self.message_buffer,
             &self.config,
             &mut self.search_state,
+            #[cfg(feature = "ai")]
+            ai_state_opt,
         );
     }
 
@@ -536,6 +565,8 @@ impl WindowContext {
             event_loop,
             clipboard,
             scheduler,
+            #[cfg(feature = "ai")]
+            ai_runtime: self.ai_runtime.as_mut(),
         };
         let mut processor = input::Processor::new(context);
 

@@ -35,7 +35,13 @@ pub trait AiProvider: Send + Sync {
     /// Returns Ok(true) if streaming was performed, Ok(false) if not supported.
     /// Implementations should call `on_chunk` with incremental text (not commands),
     /// and finish by returning Ok(true). Errors should abort streaming with Err.
-    fn propose_stream(&self, _req: AiRequest, _on_chunk: &mut dyn FnMut(&str)) -> Result<bool, String> {
+    /// The `cancel` flag should be checked periodically to abort promptly when requested.
+    fn propose_stream(
+        &self,
+        _req: AiRequest,
+        _on_chunk: &mut dyn FnMut(&str),
+        _cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<bool, String> {
         Ok(false)
     }
 }

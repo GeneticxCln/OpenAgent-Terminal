@@ -74,12 +74,16 @@ _openagent-terminal() {
 
     case "${cmd}" in
         openagent__terminal)
-            opts="-q -v -e -T -o -h -V --print-events --ref-test --embed --config-file --socket --daemon --working-directory --hold --command --title --class --option --help --version msg migrate help"
+            opts="-q -v -e -T -o -h -V --print-events --ai-log-verbosity --ref-test --embed --config-file --socket --daemon --working-directory --hold --command --title --class --option --help --version msg migrate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --ai-log-verbosity)
+                    COMPREPLY=($(compgen -W "off summary verbose" -- "${cur}"))
+                    return 0
+                    ;;
                 --embed)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
