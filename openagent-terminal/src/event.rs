@@ -301,7 +301,7 @@ impl ApplicationHandler<Event> for Processor {
             }
 
             // Initialize components after the first window is created
-            if let Some(_window_context) = self.windows.values().next() {
+            if let Some(window_context) = self.windows.values().next() {
                 // Spawn component initialization in the background (optional)
                 #[cfg(feature = "background-components")]
                 {

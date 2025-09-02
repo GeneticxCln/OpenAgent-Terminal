@@ -35,7 +35,7 @@ pub mod wgpu;
 pub mod wgpu_backend;
 
 pub use text::{GlyphCache, LoaderApi};
-// pub use text::glyph_cache::{Glyph, LoadGlyph}; // TODO: Remove if truly unused
+pub use text::glyph_cache::{Glyph, LoadGlyph};
 
 use shader::ShaderVersion;
 use text::{Gles2Renderer, Glsl3Renderer, TextRenderer};
