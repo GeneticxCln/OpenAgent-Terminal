@@ -5,7 +5,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use image::GenericImageView; // for dimensions()
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapshotConfig {
@@ -103,7 +103,7 @@ impl SnapshotTest {
         let mut diff_image = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(width, height);
         let mut diff_pixels = 0;
         let mut max_difference = 0u8;
-        let mut total_difference = 0u64;
+        let mut _total_difference = 0u64;
 
         for (x, y, golden_pixel) in golden_rgba.enumerate_pixels() {
             let snapshot_pixel = snapshot_rgba.get_pixel(x, y);
@@ -127,7 +127,7 @@ impl SnapshotTest {
 
             if pixel_diff > 0 {
                 diff_pixels += 1;
-                total_difference += pixel_diff as u64;
+                _total_difference += pixel_diff as u64;
             }
 
             diff_image.put_pixel(x, y, diff_color);

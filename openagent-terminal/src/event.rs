@@ -74,6 +74,9 @@ pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
 /// Maximum number of lines for the blocking search while still typing the search regex.
 const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 
+/// Debounce delay for Blocks Search typing.
+pub const BLOCKS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
+
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 
@@ -300,6 +303,54 @@ self.gl_config = Some(window_context.display.gl_context().config());
     }
 }
 
+#[cfg(feature = "blocks")]
+impl Processor {
+    fn process_blocks_search_perform(&mut self, query: String, window_id: WindowId) {
+        let q = query.clone();
+        if let Some(components) = &self.components {
+            if let Some(manager) = &components.block_manager {
+                let manager = manager.clone();
+                let proxy = self.proxy.clone();
+                let win = window_id;
+                let runtime = components.runtime.clone();
+                runtime.spawn(async move {
+                    use crate::blocks_v2::SearchQuery;
+                    let mut items = Vec::new();
+                    let mut sq = SearchQuery::default();
+                    if !q.trim().is_empty() { sq.text = Some(q.clone()); }
+                    sq.limit = Some(100);
+                    if let Ok(res) = manager.read().await.search(sq).await {
+                        for b in res {
+                            items.push(crate::display::blocks_search_panel::BlocksSearchItem {
+                                id: b.id.to_string(),
+                                command: b.command.clone(),
+                                directory: b.directory.to_string_lossy().to_string(),
+                                created_at: b.created_at.to_rfc3339(),
+                                exit_code: b.exit_code,
+                            });
+                        }
+                    }
+                    #[cfg(test)]
+                    {
+                        test_posted_events::record(EventType::BlocksSearchResults(items.clone()));
+                    }
+                    let _ = proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
+                });
+                return;
+            }
+        }
+        // No components or no blocks manager: post empty results immediately
+        #[cfg(test)]
+        {
+            test_posted_events::record(EventType::BlocksSearchResults(Vec::new()));
+        }
+        let _ = self
+            .proxy
+            .send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), window_id));
+    }
+}
+
+// Application event handler implementation
 impl ApplicationHandler<Event> for Processor {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
@@ -681,38 +732,7 @@ let require_confirm = *policy
             // Blocks search events handled at processor level
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
-                let q = query.clone();
-                if let Some(components) = &self.components {
-                    if let Some(manager) = &components.block_manager {
-                        let manager = manager.clone();
-                        let proxy = self.proxy.clone();
-                        let win = *window_id;
-                        let runtime = components.runtime.clone();
-                        runtime.spawn(async move {
-                            use crate::blocks_v2::SearchQuery;
-                            let mut items = Vec::new();
-                            let mut sq = SearchQuery::default();
-                            if !q.trim().is_empty() { sq.text = Some(q.clone()); }
-                            sq.limit = Some(100);
-                            if let Ok(res) = manager.read().await.search(sq).await {
-                                for b in res {
-                                    items.push(crate::display::blocks_search_panel::BlocksSearchItem {
-                                        id: b.id.to_string(),
-                                        command: b.command.clone(),
-                                        directory: b.directory.to_string_lossy().to_string(),
-                                        created_at: b.created_at.to_rfc3339(),
-                                        exit_code: b.exit_code,
-                                    });
-                                }
-                            }
-                            let _ = proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
-                        });
-                    } else {
-                        let _ = self.proxy.send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), *window_id));
-                    }
-                } else {
-                    let _ = self.proxy.send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), *window_id));
-                }
+                self.process_blocks_search_perform(query, *window_id);
             },
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchResults(items), Some(window_id)) => {
@@ -873,6 +893,11 @@ pub struct Event {
 impl Event {
     pub fn new<I: Into<Option<WindowId>>>(payload: EventType, window_id: I) -> Self {
         Self { window_id: window_id.into(), payload }
+    }
+
+    /// Get a reference to the payload (event type)
+    pub fn payload(&self) -> &EventType {
+        &self.payload
     }
 }
 
@@ -1315,7 +1340,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.blocks_search.query.push(c);
         self.display.blocks_search.selected = 0;
         self.mark_dirty();
-        self.send_user_event(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()));
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::BlocksSearchTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let evt = Event::new(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()), window_id);
+        self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "blocks")]
@@ -1323,7 +1353,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.blocks_search.query.pop();
         self.display.blocks_search.selected = 0;
         self.mark_dirty();
-        self.send_user_event(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()));
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::BlocksSearchTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let evt = Event::new(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()), window_id);
+        self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "blocks")]
@@ -3035,3 +3070,54 @@ impl EventListener for EventProxy {
         let _ = self.proxy.send_event(Event::new(event.into(), self.window_id));
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_posted_events {
+    use super::*;
+    static SENT: once_cell::sync::Lazy<std::sync::Mutex<Vec<EventType>>> =
+        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
+
+    pub fn record(ev: EventType) {
+        let mut g = SENT.lock().unwrap();
+        g.push(ev);
+    }
+
+    pub fn take() -> Vec<EventType> {
+        let mut g = SENT.lock().unwrap();
+        let v = g.clone();
+        g.clear();
+        v
+    }
+
+    pub fn clear() {
+        SENT.lock().unwrap().clear();
+    }
+}
+
+#[cfg(test)]
+impl Processor {
+    /// Lightweight event delivery helper for tests to emulate ApplicationHandler::user_event
+    /// without requiring an ActiveEventLoop.
+    pub(crate) fn handle_user_event_for_test(&mut self, event: Event) {
+        match (event.payload, event.window_id) {
+            #[cfg(feature = "blocks")]
+            (EventType::BlocksSearchPerform(query), Some(window_id)) => {
+                self.process_blocks_search_perform(query, window_id);
+            },
+            _ => {},
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn schedule_blocks_search_for_test(
+    scheduler: &mut Scheduler,
+    window_id: WindowId,
+    query: String,
+) {
+    let timer_id = TimerId::new(Topic::BlocksSearchTyping, window_id);
+    scheduler.unschedule(timer_id);
+    let evt = Event::new(EventType::BlocksSearchPerform(query), window_id);
+    scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
+}
+

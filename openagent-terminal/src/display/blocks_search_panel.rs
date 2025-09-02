@@ -60,6 +60,38 @@ impl BlocksSearchState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn move_selection_bounds() {
+        let mut st = BlocksSearchState::new();
+        st.results = vec![
+            BlocksSearchItem { id: "1".into(), command: "a".into(), directory: "d".into(), created_at: "t".into(), exit_code: None },
+            BlocksSearchItem { id: "2".into(), command: "b".into(), directory: "d".into(), created_at: "t".into(), exit_code: None },
+            BlocksSearchItem { id: "3".into(), command: "c".into(), directory: "d".into(), created_at: "t".into(), exit_code: None },
+        ];
+        st.selected = 1;
+        st.move_selection(-10);
+        assert_eq!(st.selected, 0);
+        st.move_selection(100);
+        assert_eq!(st.selected, 2);
+    }
+
+    #[test]
+    fn open_resets_selection_and_active() {
+        let mut st = BlocksSearchState::new();
+        st.selected = 5;
+        st.active = false;
+        st.open();
+        assert!(st.active);
+        assert_eq!(st.selected, 0);
+        st.close();
+        assert!(!st.active);
+    }
+}
+
 impl Display {
     /// Draw the Blocks Search panel (bottom overlay). This draws both background rects and text.
     pub fn draw_blocks_search_overlay(
@@ -96,9 +128,14 @@ impl Display {
         let bg = tokens.surface_muted;
 
         let mut line = start_line;
-        // Header
-        let header = "Blocks Search";
-        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, header, num_cols - 2);
+        // Header with result count
+        let count = state.results.len();
+        let header = if count == 1 {
+            format!("Blocks Search — {} result", count)
+        } else {
+            format!("Blocks Search — {} results", count)
+        };
+        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &header, num_cols - 2);
         line += 1;
 
         // Query prompt
@@ -117,8 +154,10 @@ impl Display {
         self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &sep, num_cols);
         line += 1;
 
-        // Results list
-        let max_lines = start_line + target_lines - 1; // keep last for padding
+        // Compute footer line and results area
+        let footer_line = start_line + target_lines - 1;
+        // Results list (reserve one line for footer)
+        let max_lines = footer_line.saturating_sub(1);
         for (idx, item) in state.results.iter().enumerate() {
             if line > max_lines { break; }
             let mut row = String::new();
@@ -136,6 +175,11 @@ impl Display {
             self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &row, num_cols);
             line += 1;
         }
+
+        // Footer controls/hints
+        let hint = "Enter: Paste  •  Esc: Close  •  ↑/↓/PgUp/PgDn: Navigate  •  Ctrl+N/Ctrl+P: Navigate  •  Backspace: Delete";
+        let hint_fg = tokens.text_muted;
+        self.draw_ai_text(Point::new(footer_line, Column(2)), hint_fg, bg, hint, num_cols - 2);
     }
 
     /// Helper reused from AI panel for drawing text; exists on all builds.

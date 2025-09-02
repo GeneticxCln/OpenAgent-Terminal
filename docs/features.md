@@ -91,3 +91,7 @@ OpenAgent Terminal provides scaffolding for two optional, opt-in features:
 - AI integration interface: disabled by default. See docs/ai.md.
 
 Both features can be disabled at build-time and runtime, default to zero telemetry, and require secrets via environment variables only.
+
+## Security Lens & Confirmation Overlay
+
+OpenAgent Terminal includes an optional Security Lens that analyzes risky commands, blocks critical ones, and presents an interactive confirmation overlay for others according to your policy. See docs/security_lens.md for details, policy options, and keyboard shortcuts.
