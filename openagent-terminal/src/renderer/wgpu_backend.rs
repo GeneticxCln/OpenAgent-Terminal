@@ -6,8 +6,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use wgpu::{
     Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
-    PowerPreference, PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration,
-    TextureUsages,
+    PowerPreference, PresentMode, Queue, RequestAdapterOptions, SurfaceConfiguration, TextureUsages,
 };
 use winit::window::Window;
 
@@ -39,12 +38,14 @@ impl Default for RenderMetrics {
 }
 
 /// WGPU Renderer State
-pub struct WgpuRenderer<'a> {
-    surface: Surface<'a>,
+pub struct WgpuRenderer {
+    instance: Instance,
     device: Arc<Device>,
     queue: Arc<Queue>,
     config: SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
+    // Keep a raw pointer to the winit window; we recreate the surface on demand
+    window_ptr: *const winit::window::Window,
 
     // Render pipeline components
     render_pipeline: wgpu::RenderPipeline,
@@ -110,12 +111,10 @@ impl WgpuRenderer {
         let size = window.inner_size();
 
         // Create WGPU instance with all backends
-        let instance =
-            Instance::new(InstanceDescriptor { backends: Backends::all(), ..Default::default() });
+        let instance = Instance::new(InstanceDescriptor { backends: Backends::all(), ..Default::default() });
 
-        // Create surface from window
-        let surface =
-            unsafe { instance.create_surface(window).context("Failed to create WGPU surface")? };
+        // Create surface from window (ephemeral; we don't store it to avoid lifetimes)
+        let surface = unsafe { instance.create_surface(window).context("Failed to create WGPU surface")? };
 
         // Request adapter with high performance preference
         let adapter = instance
@@ -129,15 +128,15 @@ impl WgpuRenderer {
 
         // Log adapter info
         let adapter_info = adapter.get_info();
-        info!("Using GPU: {} ({})", adapter_info.name, adapter_info.backend.to_string());
+        info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
 
         // Create device and queue
         let (device, queue) = adapter
             .request_device(
                 &DeviceDescriptor {
                     label: Some("OpenAgent Terminal Device"),
-                    features: Features::empty(),
-                    limits: Limits::default(),
+                    required_features: Features::empty(),
+                    required_limits: Limits::default(),
                 },
                 None,
             )
@@ -164,6 +163,7 @@ impl WgpuRenderer {
             present_mode: PresentMode::AutoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 1,
         };
 
         surface.configure(&device, &config);
@@ -171,7 +171,7 @@ impl WgpuRenderer {
         // Create render pipeline
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Terminal Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/terminal.wgsl")),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/terminal.wgsl").into()),
         });
 
         let render_pipeline_layout =
@@ -257,11 +257,12 @@ impl WgpuRenderer {
         let glyph_cache = GlyphCache::new(1024);
 
         Ok(Self {
-            surface,
+            instance,
             device,
             queue,
             config,
             size,
+            window_ptr: window as *const _ as *const winit::window::Window,
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -281,7 +282,11 @@ impl WgpuRenderer {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
+            // Reconfigure using a fresh surface
+            let window_ref = unsafe { &*self.window_ptr };
+            if let Ok(surface) = unsafe { self.instance.create_surface(window_ref) } {
+                surface.configure(&self.device, &self.config);
+            }
         }
     }
 
@@ -419,11 +424,10 @@ impl GlyphCache {
 
 /// Renderer capabilities query
 pub fn query_wgpu_support() -> bool {
-    let instance =
-        Instance::new(InstanceDescriptor { backends: Backends::all(), ..Default::default() });
+    let instance = Instance::new(InstanceDescriptor { backends: Backends::all(), ..Default::default() });
 
     // Check if any adapters are available
-    let adapters: Vec<_> = instance.enumerate_adapters(Backends::all()).collect();
+    let adapters = instance.enumerate_adapters(Backends::all());
 
     if adapters.is_empty() {
         warn!("No WGPU adapters found");

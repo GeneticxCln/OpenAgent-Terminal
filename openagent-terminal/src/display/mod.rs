@@ -998,7 +998,7 @@ impl Display {
     /// Update the state of the renderer.
     pub fn process_renderer_update(&mut self) {
         // Merge any pending renderer update with runtime signals (like WGPU atlas eviction).
-        let renderer_update = self.pending_renderer_update.take().unwrap_or_default();
+        let mut renderer_update = self.pending_renderer_update.take().unwrap_or_default();
         #[cfg(feature = "wgpu")]
         if let Backend::Wgpu { renderer } = &mut self.backend {
             if renderer.take_atlas_evicted() {
