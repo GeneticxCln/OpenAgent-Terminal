@@ -68,7 +68,7 @@ impl SecurityLens {
         vec![
             // Critical: System destruction
             (
-                Regex::new(r"rm\s+-rf\s+/\s*$|rm\s+-rf\s+/\*").unwrap(),
+                Regex::new(r"rm\\s+-rf\\s+/\\s*$|rm\\s+-rf\\s+/\\*").unwrap(),
                 RiskFactor {
                     category: "system_destruction".to_string(),
                     description: "Attempts to delete entire filesystem".to_string(),
@@ -78,7 +78,7 @@ impl SecurityLens {
             ),
             // Critical: Disk overwrite
             (
-                Regex::new(r"dd\s+if=/dev/(zero|random|urandom)\s+of=/dev/[sh]d[a-z]").unwrap(),
+                Regex::new(r"dd\\s+if=/dev/(zero|random|urandom)\\s+of=/dev/[sh]d[a-z]").unwrap(),
                 RiskFactor {
                     category: "disk_overwrite".to_string(),
                     description: "Direct disk overwrite operation".to_string(),
@@ -88,7 +88,7 @@ impl SecurityLens {
             ),
             // Critical: Fork bomb
             (
-                Regex::new(r":\(\)\s*\{\s*:\|:&\s*\};:").unwrap(),
+                Regex::new(r":\\(\\)\\s*\\{\\s*:\\|:&\\s*\\};:").unwrap(),
                 RiskFactor {
                     category: "fork_bomb".to_string(),
                     description: "Fork bomb that can crash the system".to_string(),
@@ -98,7 +98,7 @@ impl SecurityLens {
             ),
             // Warning: Curl pipe to shell
             (
-                Regex::new(r"curl.*\|.*sh|wget.*\|.*bash").unwrap(),
+                Regex::new(r"curl.*\\|.*sh|wget.*\\|.*bash").unwrap(),
                 RiskFactor {
                     category: "remote_execution".to_string(),
                     description: "Downloading and executing remote code".to_string(),
@@ -108,7 +108,7 @@ impl SecurityLens {
             ),
             // Warning: Chmod 777
             (
-                Regex::new(r"chmod\s+777").unwrap(),
+                Regex::new(r"chmod\\s+777").unwrap(),
                 RiskFactor {
                     category: "permission_exposure".to_string(),
                     description: "Setting world-writable permissions".to_string(),
@@ -118,7 +118,7 @@ impl SecurityLens {
             ),
             // Caution: Recursive operations
             (
-                Regex::new(r"(rm|chmod|chown)\s+.*-[rR]").unwrap(),
+                Regex::new(r"(rm|chmod|chown)\\s+.*-[rR]").unwrap(),
                 RiskFactor {
                     category: "recursive_operation".to_string(),
                     description: "Recursive file operation".to_string(),
@@ -128,7 +128,7 @@ impl SecurityLens {
             ),
             // Warning: AWS deletion
             (
-                Regex::new(r"aws\s+.*delete|aws\s+.*terminate").unwrap(),
+                Regex::new(r"aws\\s+.*delete|aws\\s+.*terminate").unwrap(),
                 RiskFactor {
                     category: "cloud_deletion".to_string(),
                     description: "AWS resource deletion operation".to_string(),
@@ -138,11 +138,81 @@ impl SecurityLens {
             ),
             // Warning: Database drops
             (
-                Regex::new(r"DROP\s+(DATABASE|TABLE|SCHEMA)").unwrap(),
+                Regex::new(r"DROP\\s+(DATABASE|TABLE|SCHEMA)").unwrap(),
                 RiskFactor {
                     category: "database_deletion".to_string(),
                     description: "Database deletion operation".to_string(),
                     pattern: "DROP DATABASE/TABLE".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Warning: Kubernetes operations (general)
+            (
+                Regex::new(r"(?i)kubectl\\s+(apply|scale|rollout)\\b").unwrap(),
+                RiskFactor {
+                    category: "kubernetes_change".to_string(),
+                    description: "Kubernetes apply/scale/rollout operation".to_string(),
+                    pattern: "kubectl apply/scale/rollout".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Critical: kubectl delete in production namespace
+            (
+                Regex::new(r"(?i)kubectl\\s+delete\\s+.*(-n|--namespace)\\s+(prod|production)\\b").unwrap(),
+                RiskFactor {
+                    category: "kubernetes_delete".to_string(),
+                    description: "Deleting resources in production namespace".to_string(),
+                    pattern: "kubectl delete -n prod".to_string(),
+                },
+                RiskLevel::Critical,
+            ),
+            // Warning: terraform destroy
+            (
+                Regex::new(r"(?i)terraform\\s+destroy(\\s|$)").unwrap(),
+                RiskFactor {
+                    category: "iac_destroy".to_string(),
+                    description: "Terraform destroy will remove infrastructure".to_string(),
+                    pattern: "terraform destroy".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Warning: docker system prune -a
+            (
+                Regex::new(r"(?i)docker\\s+system\\s+prune\\s+-a(\\s|$)").unwrap(),
+                RiskFactor {
+                    category: "container_cleanup".to_string(),
+                    description: "Pruning all unused Docker data".to_string(),
+                    pattern: "docker system prune -a".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Caution: git reset --hard
+            (
+                Regex::new(r"(?i)git\\s+reset\\s+--hard(\\s|$)").unwrap(),
+                RiskFactor {
+                    category: "vcs_rewrite".to_string(),
+                    description: "Hard reset will discard local changes".to_string(),
+                    pattern: "git reset --hard".to_string(),
+                },
+                RiskLevel::Caution,
+            ),
+            // Warning: remove .git directory
+            (
+                Regex::new(r"rm\\s+-rf\\s+\\.git(\\s|$)").unwrap(),
+                RiskFactor {
+                    category: "vcs_removal".to_string(),
+                    description: "Removing VCS metadata (.git)".to_string(),
+                    pattern: "rm -rf .git".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Warning: systemctl stop/disable services
+            (
+                Regex::new(r"(?i)systemctl\\s+(stop|disable)\\s+\\S+").unwrap(),
+                RiskFactor {
+                    category: "service_control".to_string(),
+                    description: "Stopping or disabling a system service".to_string(),
+                    pattern: "systemctl stop/disable".to_string(),
                 },
                 RiskLevel::Warning,
             ),

@@ -144,11 +144,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.blocks_search_move_selection(1);
                     return;
                 },
+                Key::Named(NamedKey::PageUp) if mods.is_empty() => {
+                    // Page navigation when no modifiers
+                    self.ctx.blocks_search_prev_page();
+                    return;
+                },
+                Key::Named(NamedKey::PageDown) if mods.is_empty() => {
+                    // Page navigation when no modifiers
+                    self.ctx.blocks_search_next_page();
+                    return;
+                },
                 Key::Named(NamedKey::PageUp) => {
+                    // Selection movement when modifiers present
                     self.ctx.blocks_search_move_selection(-5);
                     return;
                 },
                 Key::Named(NamedKey::PageDown) => {
+                    // Selection movement when modifiers present
                     self.ctx.blocks_search_move_selection(5);
                     return;
                 },
@@ -160,9 +172,65 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.blocks_search_move_selection(-1);
                     return;
                 },
+                // Advanced search mode controls
+                Key::Named(NamedKey::Tab) => {
+                    // Cycle search mode: Basic -> Command -> Output -> Advanced -> Basic
+                    self.ctx.blocks_search_cycle_mode();
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("s")) => {
+                    // Ctrl+S: Cycle sort field
+                    self.ctx.blocks_search_cycle_sort_field();
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("r")) => {
+                    // Ctrl+R: Toggle sort order (reverse)
+                    self.ctx.blocks_search_toggle_sort_order();
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("f")) => {
+                    // Ctrl+F: Toggle starred filter
+                    self.ctx.blocks_search_toggle_starred();
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("c")) => {
+                    // Ctrl+C: Clear all filters
+                    self.ctx.blocks_search_clear_filters();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "*") => {
+                    // * : Toggle star on selected item
+                    self.ctx.blocks_search_toggle_star_selected();
+                    return;
+                },
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "j" || c == "k") => {
                     let delta = if c == "j" { 1 } else { -1 };
                     self.ctx.blocks_search_move_selection(delta);
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "a") => {
+                    // 'a': Show actions menu for selected item
+                    self.ctx.blocks_search_show_actions();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "d") => {
+                    // 'd': Delete selected item
+                    self.ctx.blocks_search_delete_selected();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "c") => {
+                    // 'c': Copy command of selected item
+                    self.ctx.blocks_search_copy_command();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "o") => {
+                    // 'o': Copy output of selected item
+                    self.ctx.blocks_search_copy_output();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "r") => {
+                    // 'r': Rerun selected command
+                    self.ctx.blocks_search_rerun_selected();
                     return;
                 },
                 _ => {},
@@ -171,6 +239,57 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 // Ignore non-printable controls
                 if !ch.is_control() {
                     self.ctx.blocks_search_input(ch);
+                }
+            }
+            return;
+        }
+
+        // Workflows panel input handling (if active)
+        #[cfg(feature = "workflow")]
+        if self.ctx.workflows_panel_active() {
+            let mods = self.ctx.modifiers().state();
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.workflows_panel_confirm();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.workflows_panel_cancel();
+                    return;
+                },
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.workflows_panel_backspace();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.workflows_panel_move_selection(-1);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.workflows_panel_move_selection(1);
+                    return;
+                },
+                Key::Named(NamedKey::PageUp) => {
+                    self.ctx.workflows_panel_move_selection(-5);
+                    return;
+                },
+                Key::Named(NamedKey::PageDown) => {
+                    self.ctx.workflows_panel_move_selection(5);
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("n")) => {
+                    self.ctx.workflows_panel_move_selection(1);
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("p")) => {
+                    self.ctx.workflows_panel_move_selection(-1);
+                    return;
+                },
+                _ => {},
+            }
+            for ch in text.chars() {
+                if !ch.is_control() {
+                    self.ctx.workflows_panel_input(ch);
                 }
             }
             return;
@@ -233,6 +352,44 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         });
                         return;
                     },
+                    // Explain (Ctrl+X)
+                    Key::Character(c) if (c.eq_ignore_ascii_case("x")) => {
+                        // Get selection text first to avoid borrowing conflicts
+                        let selected_text = self.ctx.terminal().selection_to_string();
+                        let target = selected_text
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| {
+                                // Fallback to scratch text if available
+                                self.ctx.ai_runtime_ref()
+                                    .map(|r| r.ui.scratch.clone())
+                                    .unwrap_or_default()
+                            });
+                        
+                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                            runtime.propose_explain(target.to_string(), None, None);
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    // Fix (Ctrl+F)
+                    Key::Character(c) if (c.eq_ignore_ascii_case("f")) => {
+                        // Get selection text first to avoid borrowing conflicts
+                        let selected_text = self.ctx.terminal().selection_to_string();
+                        let error_text = selected_text
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| {
+                                // Fallback to scratch text if available
+                                self.ctx.ai_runtime_ref()
+                                    .map(|r| r.ui.scratch.clone())
+                                    .unwrap_or_default()
+                            });
+                        
+                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                            runtime.propose_fix(error_text.to_string(), None, None, None);
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
                     _ => {},
                 }
             }
@@ -279,6 +436,18 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
 
             return;
+        }
+
+        // Workflows progress overlay: allow Esc to dismiss when visible
+        #[cfg(feature = "workflow")]
+        if self.ctx.workflows_progress_active() && self.ctx.workflows_progress_terminal() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.workflows_progress_dismiss();
+                    return;
+                },
+                _ => {},
+            }
         }
 
         // Vi mode on its own doesn't have any input, the search input was done before.

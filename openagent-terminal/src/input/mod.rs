@@ -159,7 +159,7 @@ pub trait ActionContext<T: EventListener> {
     fn palette_cancel(&mut self) {}
     fn run_workflow_by_name(&mut self, _name: &str) {}
 
-    // Blocks Search panel
+    // Blocks Search panel - basic functionality
     fn open_blocks_search_panel(&mut self) {}
     fn close_blocks_search_panel(&mut self) {}
     fn blocks_search_active(&self) -> bool { false }
@@ -168,6 +168,35 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_move_selection(&mut self, _delta: isize) {}
     fn blocks_search_confirm(&mut self) {}
     fn blocks_search_cancel(&mut self) {}
+
+    // Blocks Search panel - enhanced functionality
+    fn blocks_search_cycle_mode(&mut self) {}
+    fn blocks_search_cycle_sort_field(&mut self) {}
+    fn blocks_search_toggle_sort_order(&mut self) {}
+    fn blocks_search_toggle_starred(&mut self) {}
+    fn blocks_search_clear_filters(&mut self) {}
+    fn blocks_search_next_page(&mut self) {}
+    fn blocks_search_prev_page(&mut self) {}
+    fn blocks_search_toggle_star_selected(&mut self) {}
+    fn blocks_search_show_actions(&mut self) {}
+    fn blocks_search_delete_selected(&mut self) {}
+    fn blocks_search_copy_command(&mut self) {}
+    fn blocks_search_copy_output(&mut self) {}
+    fn blocks_search_rerun_selected(&mut self) {}
+
+    // Workflows panel (feature="workflow"). Default to no-op/false when disabled.
+    fn open_workflows_panel(&mut self) {}
+    fn workflows_panel_cancel(&mut self) {}
+    fn workflows_panel_confirm(&mut self) {}
+    fn workflows_panel_input(&mut self, _c: char) {}
+    fn workflows_panel_backspace(&mut self) {}
+    fn workflows_panel_move_selection(&mut self, _delta: isize) {}
+    fn workflows_panel_active(&self) -> bool { false }
+
+    // Workflows progress overlay controls
+    fn workflows_progress_active(&self) -> bool { false }
+    fn workflows_progress_dismiss(&mut self) {}
+    fn workflows_progress_terminal(&self) -> bool { false }
 
     // Confirm overlay
     fn confirm_overlay_active(&self) -> bool { false }
@@ -484,7 +513,51 @@ impl<T: EventListener> Execute<T> for Action {
                     ctx.open_blocks_search_panel();
                 }
             },
+            Action::OpenWorkflowsPanel => {
+                if ctx.workflows_panel_active() {
+                    ctx.workflows_panel_cancel();
+                } else {
+                    ctx.open_workflows_panel();
+                }
+            },
             Action::ToggleAiPanel => ctx.open_ai_panel(),
+            #[cfg(feature = "ai")]
+            Action::AiExplain => {
+                // Get selected text or last command output for explanation
+                let text_to_explain = ctx.terminal().selection_to_string()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        // Fallback: get the last few lines of terminal output
+                        // For now, use a simple placeholder
+                        "Please explain the last command output".to_string()
+                    });
+                
+                // Open AI panel with explain prompt
+                ctx.open_ai_panel();
+                if let Some(runtime) = ctx.ai_runtime_mut() {
+                    runtime.ui.scratch = format!("Explain this: {}", text_to_explain);
+                    runtime.ui.cursor_position = runtime.ui.scratch.len();
+                }
+                ctx.mark_dirty();
+            },
+            #[cfg(feature = "ai")]
+            Action::AiFix => {
+                // Get selected text or error output for fixing suggestions
+                let text_to_fix = ctx.terminal().selection_to_string()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        // Fallback: analyze recent terminal output for errors
+                        "Please suggest a fix for the recent error".to_string()
+                    });
+                
+                // Open AI panel with fix prompt
+                ctx.open_ai_panel();
+                if let Some(runtime) = ctx.ai_runtime_mut() {
+                    runtime.ui.scratch = format!("How do I fix this error: {}", text_to_fix);
+                    runtime.ui.cursor_position = runtime.ui.scratch.len();
+                }
+                ctx.mark_dirty();
+            },
             Action::SearchForward => ctx.start_search(Direction::Right),
             Action::SearchBackward => ctx.start_search(Direction::Left),
             Action::Copy => ctx.copy_selection(ClipboardType::Clipboard),

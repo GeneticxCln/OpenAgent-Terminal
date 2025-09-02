@@ -72,6 +72,8 @@ pub mod tab_bar;
 pub mod window;
 pub mod blocks_search_panel;
 pub mod confirm_overlay;
+#[cfg(feature = "workflow")]
+pub mod workflow_panel;
 
 mod bell;
 mod damage;
@@ -433,6 +435,13 @@ pub struct Display {
 
     /// Confirmation overlay state.
     pub confirm_overlay: confirm_overlay::ConfirmOverlayState,
+
+    /// Workflows panel state.
+    #[cfg(feature = "workflow")]
+    pub workflows_panel: workflow_panel::WorkflowsPanelState,
+    /// Workflows progress overlay state.
+    #[cfg(feature = "workflow")]
+    pub workflows_progress: workflow_panel::WorkflowProgressState,
 }
 
 enum Backend {
@@ -606,6 +615,10 @@ blocks,
             #[cfg(feature = "ai")]
             ai_hover_control: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
+            #[cfg(feature = "workflow")]
+            workflows_panel: workflow_panel::WorkflowsPanelState::new(),
+            #[cfg(feature = "workflow")]
+            workflows_progress: Default::default(),
         })
     }
 
@@ -765,6 +778,10 @@ blocks,
             ai_panel_anim_duration_ms: 0,
             #[cfg(feature = "ai")]
             ai_hover_control: None,
+            #[cfg(feature = "workflow")]
+            workflows_panel: workflow_panel::WorkflowsPanelState::new(),
+            #[cfg(feature = "workflow")]
+            workflows_progress: Default::default(),
         })
     }
 
@@ -1462,6 +1479,19 @@ blocks,
         if self.confirm_overlay.active {
             let st = self.confirm_overlay.clone();
             self.draw_confirm_overlay(config, &st);
+        }
+
+        // Workflows panel overlay if active
+        #[cfg(feature = "workflow")]
+        if self.workflows_panel.active {
+            let st = self.workflows_panel.clone();
+            self.draw_workflows_panel_overlay(config, &st);
+        }
+        // Workflows progress overlay if active
+        #[cfg(feature = "workflow")]
+        if self.workflows_progress.active {
+            let st = self.workflows_progress.clone();
+            self.draw_workflows_progress_overlay(config, &st);
         }
 
         // Debug split overlay preview (temporary until full pane implementation is wired)

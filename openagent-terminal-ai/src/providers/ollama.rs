@@ -249,49 +249,62 @@ impl AiProvider for OllamaProvider {
                     if response.status().is_success() {
                         match response.json::<OllamaGenerateResponse>() {
                             Ok(ollama_response) => {
-                            // Parse the response into commands
-                            let commands: Vec<String> = ollama_response
-                                .response
-                                .lines()
-                                .filter(|line| !line.trim().is_empty())
-                                .map(|line| line.to_string())
-                                .collect();
+                                // Parse the response into commands
+                                let commands: Vec<String> = ollama_response
+                                    .response
+                                    .lines()
+                                    .filter(|line| !line.trim().is_empty())
+                                    .map(|line| line.to_string())
+                                    .collect();
 
-                            if commands.is_empty() {
-                                if ai_log_summary() {
-                                    info!("ollama_propose_complete commands=0");
+                                if commands.is_empty() {
+                                    if ai_log_summary() {
+                                        info!("ollama_propose_complete commands=0");
+                                    }
+                                    return Ok(vec![AiProposal {
+                                        title: format!("Response for: {}", req.scratch_text),
+                                        description: Some("No specific commands suggested".to_string()),
+                                        proposed_commands: vec!["# No commands generated".to_string()],
+                                    }]);
+                                } else {
+                                    if ai_log_summary() {
+                                        info!("ollama_propose_complete commands={}", commands.len());
+                                    }
+                                    return Ok(vec![AiProposal {
+                                        title: format!("Suggestion for: {}", req.scratch_text),
+                                        description: Some("AI-generated commands".to_string()),
+                                        proposed_commands: commands,
+                                    }]);
                                 }
-                                Ok(vec![AiProposal {
-                                    title: format!("Response for: {}", req.scratch_text),
-                                    description: Some("No specific commands suggested".to_string()),
-                                    proposed_commands: vec!["# No commands generated".to_string()],
-                                }])
-                            } else {
-                                if ai_log_summary() {
-                                    info!("ollama_propose_complete commands={}", commands.len());
+                            }
+                            Err(e) => {
+                                error!("Failed to parse Ollama response: {}", e);
+                                let msg = format!("Failed to parse response: {}", e);
+                                if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                                    let delay = retry.delay_for_attempt(attempt, &msg);
+                                    std::thread::sleep(delay);
+                                    attempt += 1;
+                                    continue;
+                                } else {
+                                    return Err(msg);
                                 }
-                                Ok(vec![AiProposal {
-                                    title: format!("Suggestion for: {}", req.scratch_text),
-                                    description: Some("AI-generated commands".to_string()),
-                                    proposed_commands: commands,
-                                }])
                             }
-                        },
-                        Err(e) => {
-                            error!("Failed to parse Ollama response: {}", e);
-                            let msg = format!("Failed to parse response: {}", e);
-                            if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
-                                let delay = retry.delay_for_attempt(attempt, &msg);
-                                std::thread::sleep(delay);
-                                attempt += 1;
-                                continue;
-                            } else {
-                                return Err(msg);
-                            }
-                        },
+                        }
+                    } else {
+                        let msg = format!("API error: {}", response.status());
+                        error!("{}", msg);
+                        if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                            let delay = retry.delay_for_attempt(attempt, &msg);
+                            std::thread::sleep(delay);
+                            attempt += 1;
+                            continue;
+                        } else {
+                            return Err(msg);
+                        }
                     }
-                } else {
-                    let msg = format!("API error: {}", response.status());
+                }
+                Err(e) => {
+                    let msg = format!("Connection error: {}", e);
                     error!("{}", msg);
                     if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
                         let delay = retry.delay_for_attempt(attempt, &msg);
@@ -302,19 +315,7 @@ impl AiProvider for OllamaProvider {
                         return Err(msg);
                     }
                 }
-            },
-            Err(e) => {
-                let msg = format!("Connection error: {}", e);
-                error!("{}", msg);
-                if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
-                    let delay = retry.delay_for_attempt(attempt, &msg);
-                    std::thread::sleep(delay);
-                    attempt += 1;
-                    continue;
-                } else {
-                    return Err(msg);
-                }
-            },
+            }
         }
     }
 

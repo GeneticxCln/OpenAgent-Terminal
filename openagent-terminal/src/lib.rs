@@ -26,6 +26,8 @@ pub mod migrate;
 pub mod panic;
 pub mod renderer;
 pub mod scheduler;
+#[cfg(feature = "blocks")]
+pub mod storage;
 pub mod string;
 pub mod window_context;
 

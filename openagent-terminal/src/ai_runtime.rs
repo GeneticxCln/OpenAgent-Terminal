@@ -466,4 +466,106 @@ pub fn apply_command(&self, dry_run: bool) -> Option<(String, bool)> {
         (!self.ui.streaming_text.is_empty() && self.ui.streaming_active)
             || !self.ui.proposals.is_empty()
     }
+
+    /// Generate an explanation for a given command or output snippet.
+    /// The explanation is produced by the current AI provider with context flags.
+    pub fn propose_explain(
+        &mut self,
+        target_text: String,
+        working_directory: Option<String>,
+        shell_kind: Option<String>,
+    ) {
+        if target_text.trim().is_empty() {
+            self.ui.error_message = Some("Nothing to explain".to_string());
+            return;
+        }
+
+        self.ui.proposals.clear();
+        self.ui.selected_proposal = 0;
+        self.ui.error_message = None;
+        self.ui.is_loading = true;
+
+        let mut context = vec![
+            ("mode".to_string(), "explain".to_string()),
+            ("explain_target".to_string(), target_text.clone()),
+            ("platform".to_string(), std::env::consts::OS.to_string()),
+        ];
+        if let Some(ref sh) = shell_kind { context.push(("shell".into(), sh.clone())); }
+        if let Some(ref dir) = working_directory { context.push(("cwd".into(), dir.clone())); }
+
+        let req = AiRequest {
+            // Keep the scratch as the current query if present, else use the target_text
+            scratch_text: if self.ui.scratch.trim().is_empty() {
+                format!("Explain: {}", target_text)
+            } else {
+                self.ui.scratch.clone()
+            },
+            working_directory,
+            shell_kind,
+            context,
+        };
+
+        match self.provider.propose(req) {
+            Ok(proposals) => {
+                self.ui.proposals = proposals;
+                self.ui.is_loading = false;
+            },
+            Err(e) => {
+                self.ui.error_message = Some(format!("Explain failed: {}", e));
+                self.ui.is_loading = false;
+            },
+        }
+    }
+
+    /// Suggest a fix for an error snippet, optionally with the failed command.
+    pub fn propose_fix(
+        &mut self,
+        error_text: String,
+        failed_command: Option<String>,
+        working_directory: Option<String>,
+        shell_kind: Option<String>,
+    ) {
+        if error_text.trim().is_empty() {
+            self.ui.error_message = Some("No error text provided".to_string());
+            return;
+        }
+
+        self.ui.proposals.clear();
+        self.ui.selected_proposal = 0;
+        self.ui.error_message = None;
+        self.ui.is_loading = true;
+
+        let mut context = vec![
+            ("mode".to_string(), "fix".to_string()),
+            ("error".to_string(), error_text.clone()),
+            ("platform".to_string(), std::env::consts::OS.to_string()),
+        ];
+        if let Some(ref fc) = failed_command { context.push(("failed_command".into(), fc.clone())); }
+        if let Some(ref sh) = shell_kind { context.push(("shell".into(), sh.clone())); }
+        if let Some(ref dir) = working_directory { context.push(("cwd".into(), dir.clone())); }
+
+        let prompt = if let Some(fc) = &failed_command {
+            format!("Error encountered while running '{}':\n{}\nSuggest a fix.", fc, error_text)
+        } else {
+            format!("Error: {}\nSuggest a fix.", error_text)
+        };
+
+        let req = AiRequest {
+            scratch_text: prompt,
+            working_directory,
+            shell_kind,
+            context,
+        };
+
+        match self.provider.propose(req) {
+            Ok(proposals) => {
+                self.ui.proposals = proposals;
+                self.ui.is_loading = false;
+            },
+            Err(e) => {
+                self.ui.error_message = Some(format!("Fix suggestion failed: {}", e));
+                self.ui.is_loading = false;
+            },
+        }
+    }
 }

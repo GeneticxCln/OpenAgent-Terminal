@@ -418,23 +418,81 @@ pub struct CreateBlockParams {
     pub metadata: Option<BlockMetadata>,
 }
 
-/// Search query for blocks
+/// Search query for blocks with advanced filtering
+#[derive(Debug, Clone)]
 pub struct SearchQuery {
+    /// Text search in command and output
     pub text: Option<String>,
+    /// Search only in command text
+    pub command_text: Option<String>,
+    /// Search only in output text
+    pub output_text: Option<String>,
+    /// Tags to filter by (AND operation)
     pub tags: Option<Vec<String>>,
+    /// Directory path filter (supports wildcards)
     pub directory: Option<PathBuf>,
+    /// Shell type filter
     pub shell: Option<ShellType>,
+    /// Show only starred blocks
     pub starred_only: bool,
+    /// Date range filtering
     pub date_from: Option<DateTime<Utc>>,
     pub date_to: Option<DateTime<Utc>>,
+    /// Execution status filter
     pub status: Option<ExecutionStatus>,
+    /// Exit code filtering
+    pub exit_code: Option<ExitCodeFilter>,
+    /// Duration filtering (in milliseconds)
+    pub duration: Option<DurationFilter>,
+    /// Sorting options
+    pub sort_by: SortField,
+    pub sort_order: SortOrder,
+    /// Pagination
+    pub offset: Option<usize>,
     pub limit: Option<usize>,
+}
+
+/// Exit code filtering options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitCodeFilter {
+    Success,       // exit_code = 0
+    Failure,       // exit_code != 0
+    Specific(i32), // exact exit code
+    Range(i32, i32), // exit code range (inclusive)
+}
+
+/// Duration filtering options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurationFilter {
+    LessThan(u64),    // duration < value (ms)
+    GreaterThan(u64), // duration > value (ms)
+    Range(u64, u64),  // duration range (ms, inclusive)
+}
+
+/// Sort field options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortField {
+    CreatedAt,
+    ModifiedAt,
+    Command,
+    Duration,
+    ExitCode,
+    Directory,
+}
+
+/// Sort order options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
 }
 
 impl Default for SearchQuery {
     fn default() -> Self {
         Self {
             text: None,
+            command_text: None,
+            output_text: None,
             tags: None,
             directory: None,
             shell: None,
@@ -442,6 +500,11 @@ impl Default for SearchQuery {
             date_from: None,
             date_to: None,
             status: None,
+            exit_code: None,
+            duration: None,
+            sort_by: SortField::CreatedAt,
+            sort_order: SortOrder::Descending,
+            offset: None,
             limit: Some(100),
         }
     }
