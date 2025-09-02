@@ -1,7 +1,7 @@
 // Component Initialization Module
 // Integrates WGPU renderer, HarfBuzz, Blocks 2.0, Workflows, and Plugins
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -10,8 +10,6 @@ use tracing::{debug, error, info, warn};
 // Import new components
 #[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockManager, CreateBlockParams};
-#[cfg(feature = "wgpu")]
-use crate::renderer::wgpu_backend::{query_wgpu_support, WgpuRenderer};
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "plugins")]
@@ -63,8 +61,6 @@ impl Default for ComponentConfig {
 
 /// Initialized components container
 pub struct InitializedComponents {
-    #[cfg(feature = "wgpu")]
-    pub wgpu_renderer: Option<Arc<tokio::sync::RwLock<WgpuRenderer>>>,
     #[cfg(feature = "harfbuzz")]
     pub text_shaper: Option<Arc<tokio::sync::RwLock<HarfBuzzShaper>>>,
     #[cfg(feature = "blocks")]
@@ -79,10 +75,6 @@ pub struct InitializedComponents {
 impl std::fmt::Debug for InitializedComponents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("InitializedComponents");
-        #[cfg(feature = "wgpu")]
-        {
-            let _ = ds.field("wgpu_renderer", &self.wgpu_renderer.as_ref().map(|_| "Some"));
-        }
         #[cfg(feature = "harfbuzz")]
         {
             let _ = ds.field("text_shaper", &self.text_shaper.as_ref().map(|_| "Some"));
@@ -119,23 +111,7 @@ pub async fn initialize_components(
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.config_dir)?;
 
-    // Initialize WGPU renderer
-    #[cfg(feature = "wgpu")]
-    let wgpu_renderer = if config.enable_wgpu {
-        match initialize_wgpu_renderer(window).await {
-            Ok(renderer) => {
-                info!("✓ WGPU renderer initialized");
-                Some(Arc::new(tokio::sync::RwLock::new(renderer)))
-            },
-            Err(e) => {
-                warn!("Failed to initialize WGPU renderer: {}, falling back to OpenGL", e);
-                None
-            },
-        }
-    } else {
-        debug!("WGPU renderer disabled");
-        None
-    };
+    // WGPU renderer is initialized as part of the display path; no separate component here.
 
     // Initialize HarfBuzz text shaper
     #[cfg(feature = "harfbuzz")]
@@ -214,8 +190,6 @@ pub async fn initialize_components(
     info!("Component initialization complete");
 
     Ok(InitializedComponents {
-        #[cfg(feature = "wgpu")]
-        wgpu_renderer,
         #[cfg(feature = "harfbuzz")]
         text_shaper,
         #[cfg(feature = "blocks")]
@@ -228,20 +202,6 @@ pub async fn initialize_components(
     })
 }
 
-/// Initialize WGPU renderer
-#[cfg(feature = "wgpu")]
-async fn initialize_wgpu_renderer(window: &winit::window::Window) -> Result<WgpuRenderer> {
-    // Check if WGPU is supported
-    if !query_wgpu_support() {
-        anyhow::bail!("WGPU is not supported on this system");
-    }
-
-    // Create renderer
-    let renderer = WgpuRenderer::new(window).await.context("Failed to create WGPU renderer")?;
-
-    debug!("WGPU renderer created successfully");
-    Ok(renderer)
-}
 
 /// Initialize HarfBuzz text shaper
 #[cfg(feature = "harfbuzz")]

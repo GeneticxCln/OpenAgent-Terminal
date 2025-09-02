@@ -117,6 +117,11 @@ impl WindowContext {
                     win_ref.winit_window(),
                     win_ref.inner_size(),
                     config.debug.renderer,
+                    config.debug.srgb_swapchain,
+                    config.debug.subpixel_text,
+                    config.debug.zero_evicted_atlas_layer,
+                    config.debug.atlas_eviction_policy,
+                    config.debug.atlas_report_interval_frames,
                 )) {
                     Ok(_) => {
                         // Move the window into the WGPU display creation.
@@ -172,6 +177,11 @@ impl WindowContext {
                     win_ref.winit_window(),
                     win_ref.inner_size(),
                     config.debug.renderer,
+                    config.debug.srgb_swapchain,
+                    config.debug.subpixel_text,
+                    config.debug.zero_evicted_atlas_layer,
+                    config.debug.atlas_eviction_policy,
+                    config.debug.atlas_report_interval_frames,
                 ));
                 if wgpu_probe.is_ok() {
                     let window_for_wgpu = window_opt.take().unwrap();

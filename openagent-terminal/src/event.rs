@@ -300,39 +300,14 @@ impl ApplicationHandler<Event> for Processor {
                 return;
             }
 
-            // Initialize components after the first window is created
-            if let Some(window_context) = self.windows.values().next() {
-                // Spawn component initialization in the background (optional)
-                #[cfg(feature = "background-components")]
-                {
-                    let window = window_context.display.window.inner();
-                    let proxy = self.proxy.clone();
-                    tokio::spawn(async move {
-                        let config = ComponentConfig {
-                            enable_wgpu: cfg!(feature = "wgpu"),
-                            enable_harfbuzz: cfg!(feature = "harfbuzz"),
-                            enable_blocks: cfg!(feature = "blocks"),
-                            enable_workflows: cfg!(feature = "workflow"),
-                            enable_plugins: cfg!(feature = "plugins"),
-                            ..Default::default()
-                        };
-
-                        match crate::components_init::initialize_components(&config, window).await {
-                            Ok(components) => {
-                                info!("✓ Components initialized in background");
-                                // Send event to notify components are ready
-                                let _ = proxy.send_event(Event::new(
-                                    EventType::ComponentsInitialized(Arc::new(components)),
-                                    None,
-                                ));
-                            },
-                            Err(e) => {
-                                warn!("Background component initialization failed: {}", e);
-                            },
+                    // Initialize components after the first window is created
+                    if let Some(_window_context) = self.windows.values().next() {
+                        // Background components are disabled in this build to avoid non-Send captures.
+                        #[cfg(feature = "background-components")]
+                        {
+                            info!("background-components enabled: async init disabled for thread-safety");
                         }
-                    });
-                }
-            }
+                    }
         }
 
         info!("Initialisation complete");

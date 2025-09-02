@@ -2,16 +2,13 @@
 // Provides advanced text shaping for complex scripts, ligatures, and bidirectional text
 
 use anyhow::{Context, Result};
-use fontdb::{Database, Family, Query, Source};
-use harfbuzz_rs::{
-    Blob, Direction, Face, Feature, Font as HbFont, GlyphBuffer, GlyphInfo, GlyphPosition,
-    Language, Script, Tag, UnicodeBuffer,
-};
+use fontdb::{Database, Family, Query};
+use harfbuzz_rs::{Direction, Face, Feature, Font as HbFont, GlyphBuffer, Language, Owned, Tag, UnicodeBuffer};
 use std::collections::{HashMap, VecDeque};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
-use ttf_parser::Face as TtfFace;
-use unicode_bidi::{BidiClass, BidiInfo, Level};
+use unicode_bidi::{BidiClass, BidiInfo};
 
 /// Text shaping configuration
 #[derive(Debug, Clone)]
@@ -122,7 +119,7 @@ impl ShapingCache {
 pub struct HarfBuzzShaper {
     config: ShapingConfig,
     font_database: Arc<Database>,
-    font_cache: HashMap<String, Arc<HbFont>>,
+    font_cache: HashMap<String, Arc<Owned<HbFont<'static>>>>,
     shaping_cache: Arc<RwLock<ShapingCache>>,
 }
 
@@ -134,9 +131,8 @@ impl HarfBuzzShaper {
         // Load system fonts
         font_database.load_system_fonts();
 
-        // Log available fonts
-        let families: Vec<_> = font_database.families().collect();
-        info!("Loaded {} font families", families.len());
+        // Log loaded system fonts
+        info!("Loaded system fonts into font database");
 
         Ok(Self {
             config,
@@ -168,18 +164,18 @@ impl HarfBuzzShaper {
         // Get or load font
         let hb_font = self.get_or_load_font(font_name, font_size)?;
 
-        // Create buffer and add text
-        let mut buffer = UnicodeBuffer::new();
-        buffer.add_str(text);
-
-        // Set buffer properties
-        buffer.set_direction(match direction {
-            TextDirection::RightToLeft => Direction::RTL,
-            _ => Direction::LTR,
-        });
-
-        buffer.set_script(self.detect_script(text));
-        buffer.set_language(Language::from_str(&self.config.default_language));
+        // Create buffer and add text, using builder-style chaining since setters consume the buffer
+        let buffer = UnicodeBuffer::new()
+            .add_str(text)
+            .set_direction(match direction {
+                TextDirection::RightToLeft => Direction::Rtl,
+                _ => Direction::Ltr,
+            })
+            .set_script(self.detect_script_tag(text))
+            .set_language(
+                Language::from_str(&self.config.default_language)
+                    .unwrap_or_else(|_| Language::from_str("en").unwrap()),
+            );
 
         // Apply features
         let features = self.build_features();
@@ -264,7 +260,7 @@ impl HarfBuzzShaper {
     }
 
     /// Detect script for text
-    fn detect_script(&self, text: &str) -> Script {
+    fn detect_script_tag(&self, text: &str) -> Tag {
         // Simple script detection - could be enhanced
         for ch in text.chars() {
             if ch.is_ascii() {
@@ -274,21 +270,21 @@ impl HarfBuzzShaper {
             // Check for common scripts
             let code = ch as u32;
             if (0x0600..=0x06FF).contains(&code) {
-                return Script::Arabic;
+                return Tag::new('a','r','a','b');
             } else if (0x0900..=0x097F).contains(&code) {
-                return Script::Devanagari;
+                return Tag::new('d','e','v','a');
             } else if (0x0E00..=0x0E7F).contains(&code) {
-                return Script::Thai;
+                return Tag::new('t','h','a','i');
             } else if (0x4E00..=0x9FFF).contains(&code) {
-                return Script::Han;
+                return Tag::new('h','a','n','i');
             } else if (0x3040..=0x309F).contains(&code) {
-                return Script::Hiragana;
+                return Tag::new('h','i','r','a');
             } else if (0x30A0..=0x30FF).contains(&code) {
-                return Script::Katakana;
+                return Tag::new('k','a','n','a');
             }
         }
 
-        Script::Latin
+        Tag::new('l','a','t','n')
     }
 
     /// Build HarfBuzz features from config
@@ -296,23 +292,24 @@ impl HarfBuzzShaper {
         let mut features = Vec::new();
 
         if self.config.enable_ligatures {
-            features.push(Feature::new(Tag::from_bytes(b"liga"), 1, 0..));
-            features.push(Feature::new(Tag::from_bytes(b"clig"), 1, 0..));
+            features.push(Feature::new(Tag::new('l','i','g','a'), 1, 0..));
+            features.push(Feature::new(Tag::new('c','l','i','g'), 1, 0..));
         }
 
         if self.config.enable_kerning {
-            features.push(Feature::new(Tag::from_bytes(b"kern"), 1, 0..));
+            features.push(Feature::new(Tag::new('k','e','r','n'), 1, 0..));
         }
 
         if self.config.enable_contextual_alternates {
-            features.push(Feature::new(Tag::from_bytes(b"calt"), 1, 0..));
+            features.push(Feature::new(Tag::new('c','a','l','t'), 1, 0..));
         }
 
         // Add stylistic sets
         for &set_num in &self.config.stylistic_sets {
             if set_num <= 20 {
-                let tag = format!("ss{:02}", set_num);
-                features.push(Feature::new(Tag::from_bytes(tag.as_bytes()), 1, 0..));
+                let tens = ((set_num / 10) % 10) as u8 + b'0';
+                let ones = (set_num % 10) as u8 + b'0';
+                features.push(Feature::new(Tag::new('s','s', tens as char, ones as char), 1, 0..));
             }
         }
 
@@ -320,7 +317,7 @@ impl HarfBuzzShaper {
     }
 
     /// Get or load a font
-    fn get_or_load_font(&mut self, font_name: &str, size: f32) -> Result<Arc<HbFont>> {
+fn get_or_load_font(&mut self, font_name: &str, size: f32) -> Result<Arc<Owned<HbFont<'static>>>> {
         let key = format!("{}:{}", font_name, size);
 
         if let Some(font) = self.font_cache.get(&key) {
@@ -332,16 +329,24 @@ impl HarfBuzzShaper {
 
         let font_id = self.font_database.query(&query).context("Font not found in database")?;
 
-        let (font_data, _) = self
+        let (source, _index) = self
             .font_database
             .face_source(font_id)
-            .context("Failed to get font data")?
-            .load(&self.font_database)
-            .context("Failed to load font data")?;
+            .ok_or_else(|| anyhow::anyhow!("Failed to get font data"))?;
 
-        // Create HarfBuzz font
-        let blob = Blob::from_bytes(&font_data)?;
-        let face = Face::new(blob)?;
+        // Read font bytes depending on source
+        let font_bytes: Vec<u8> = match source {
+            fontdb::Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+            fontdb::Source::File(path) => std::fs::read(path)
+                .map_err(|e| anyhow::anyhow!("Failed to read font file: {e}"))?,
+            fontdb::Source::SharedFile(path, _) => std::fs::read(&*path)
+                .map_err(|e| anyhow::anyhow!("Failed to read shared font file: {e}"))?,
+        };
+
+        // Leak font bytes to satisfy 'static lifetime for HarfBuzz font objects.
+        let data_static: &'static [u8] = Box::leak(font_bytes.into_boxed_slice());
+        // Create HarfBuzz face directly from bytes (index 0)
+        let face = Face::new(data_static, 0);
         let mut hb_font = HbFont::new(face);
 
         // Set scale for the font size
@@ -349,7 +354,7 @@ impl HarfBuzzShaper {
         let scale = (size * 64.0 * 96.0 / 72.0) / units_per_em;
         hb_font.set_scale(scale as i32, scale as i32);
 
-        let font_arc = Arc::new(hb_font);
+        let font_arc: Arc<Owned<HbFont<'static>>> = Arc::new(hb_font);
         self.font_cache.insert(key, font_arc.clone());
 
         Ok(font_arc)
@@ -362,8 +367,8 @@ impl HarfBuzzShaper {
         font_size: f32,
         direction: TextDirection,
     ) -> ShapedText {
-        let glyph_infos = buffer.glyph_infos();
-        let glyph_positions = buffer.glyph_positions();
+        let glyph_infos = buffer.get_glyph_infos();
+        let glyph_positions = buffer.get_glyph_positions();
 
         let mut glyphs = Vec::new();
         let mut total_width = 0.0;

@@ -213,7 +213,7 @@ struct RectVertex {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct UiVertex {
     pos: [f32; 2],
     origin: [f32; 2],
@@ -760,6 +760,15 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             })
         });
 
+        // Prepare UI vertex buffer outside the pass to satisfy borrow checker.
+        let ui_buf_opt = (!self.pending_ui.is_empty()).then(|| {
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ui-vertex-buffer"),
+                contents: bytemuck::cast_slice(&self.pending_ui),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("rects-pass"),
@@ -783,17 +792,16 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             }
 
             // Draw pending UI rounded rects in the same pass for correct layering.
-            if !self.pending_ui.is_empty() {
-                let ui_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ui-vertex-buffer"),
-                    contents: bytemuck::cast_slice(&self.pending_ui),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
+            if let Some(ref ui_buf) = ui_buf_opt {
                 pass.set_pipeline(&self.ui_pipeline);
                 pass.set_vertex_buffer(0, ui_buf.slice(..));
                 pass.draw(0..self.pending_ui.len() as u32, 0..1);
-                self.pending_ui.clear();
             }
+        }
+
+        // After the pass, it's safe to clear pending UI vertices.
+        if !self.pending_ui.is_empty() {
+            self.pending_ui.clear();
         }
 
         // Draw staged text after rects, if any.
@@ -890,6 +898,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         cells: I,
     ) {
         // Stage text vertices to render on the next draw_rects pass.
+        let subpixel = self.subpixel_enabled;
         let mut loader = WgpuGlyphLoader { renderer: self };
         let mut staged: Vec<TextVertex> = Vec::new();
         let mut staged_bg: Vec<RenderRect> = Vec::new();
@@ -933,7 +942,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 size_info,
                 &cell,
                 &g,
-                self.subpixel_enabled,
+                subpixel,
             ));
 
             // Zero-width characters.
@@ -948,7 +957,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                         size_info,
                         &cell,
                         &gzw,
-                        self.subpixel_enabled,
+                        subpixel,
                     ));
                 }
             }
@@ -968,6 +977,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         glyph_cache: &mut GlyphCache,
     ) {
         // Minimal implementation: render string via staged text path.
+        let subpixel = self.subpixel_enabled;
         let mut loader = WgpuGlyphLoader { renderer: self };
         let mut col = point.column.0;
         let mut staged: Vec<TextVertex> = Vec::new();
@@ -1004,7 +1014,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 size_info,
                 &cell,
                 &g,
-                self.subpixel_enabled,
+                subpixel,
             ));
             col += 1;
         }
