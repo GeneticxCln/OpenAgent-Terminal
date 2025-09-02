@@ -1,0 +1,21 @@
+[changelog]
+header = ""
+body = """
+{{#each releases}}
+## {{version}} - {{date}}
+{{#if commits}}
+{{#each commits}}
+- {{this.message | trim}}
+{{/each}}
+{{/if}}
+
+{{/each}}
+"""
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+# Only pick annotated tags matching vX[.Y[.Z]]
+tag_pattern = "v[0-9]*"
+

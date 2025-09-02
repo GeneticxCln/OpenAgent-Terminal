@@ -181,3 +181,14 @@ blocks = ["dep:chrono", "dep:uuid", "dep:sqlx"]
 ai-ollama = ["ai", "openagent-terminal-ai/ai-ollama"]
 ai-openai = ["ai", "openagent-terminal-ai/ai-openai"]
 ai-anthropic = ["ai", "openagent-terminal-ai/ai-anthropic"]
+
+[package.metadata.msix]
+# Minimal MSIX metadata for unsigned packaging in CI
+identity_name = "OpenAgent.Terminal"
+publisher = "CN=OpenAgent"
+msix_version = "1.0.0.0"
+display_name = "OpenAgent Terminal"
+description = "AI-enhanced, cross-platform terminal"
+logo_path = "extra/logo/openagent-terminal.png"
+# Keep capability surface minimal
+capabilities = ["internetClient"]

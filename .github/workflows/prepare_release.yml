@@ -27,17 +27,14 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           cargo workspaces version "$VERSION" --force --no-git-tag
 
-      - name: Update CHANGELOG stub
-        shell: bash
+      - name: Install git-cliff
+        run: cargo install git-cliff --locked
+
+      - name: Generate CHANGELOG with git-cliff
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          DATE=$(date +%Y-%m-%d)
-          tmp=$(mktemp)
-          echo "## $VERSION - $DATE" > "$tmp"
-          echo "\n- Placeholder: Add changes here" >> "$tmp"
-          echo "\n" >> "$tmp"
-          cat CHANGELOG.md >> "$tmp" || true
-          mv "$tmp" CHANGELOG.md
+          # Generate full changelog anchored at the new tag name
+          git cliff --tag "v${VERSION}" -o CHANGELOG.md
 
       - name: Commit changes
         run: |
