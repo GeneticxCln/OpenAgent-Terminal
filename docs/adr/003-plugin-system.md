@@ -1,7 +1,7 @@
 # ADR 003: Plugin System Architecture
 
 ## Status
-Proposed
+Preview (GA stance: feature marked as preview; minimal trait set will stabilize post-GA)
 
 ## Date
 2024-08-30

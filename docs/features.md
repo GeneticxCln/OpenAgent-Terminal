@@ -92,6 +92,16 @@ OpenAgent Terminal provides scaffolding for two optional, opt-in features:
 
 Both features can be disabled at build-time and runtime, default to zero telemetry, and require secrets via environment variables only.
 
+## Rendering Backends
+
+OpenAgent Terminal supports two rendering backends:
+- OpenGL (default): stable and widely compatible.
+- WGPU (experimental): available behind a feature flag; enable with:
+  - Build: `cargo build -p openagent-terminal --features wgpu`
+  - Runtime preference: set `debug.prefer_wgpu = true` in your config to attempt WGPU; the app will fall back to OpenGL if WGPU initialization fails.
+
+WGPU is documented as experimental until visual parity and stability are proven through snapshot testing on all platforms.
+
 ## Security Lens & Confirmation Overlay
 
 OpenAgent Terminal includes an optional Security Lens that analyzes risky commands, blocks critical ones, and presents an interactive confirmation overlay for others according to your policy. See docs/security_lens.md for details, policy options, and keyboard shortcuts.
