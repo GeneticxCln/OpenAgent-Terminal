@@ -169,6 +169,11 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_confirm(&mut self) {}
     fn blocks_search_cancel(&mut self) {}
 
+    // Confirm overlay
+    fn confirm_overlay_active(&self) -> bool { false }
+    fn confirm_overlay_confirm(&mut self) {}
+    fn confirm_overlay_cancel(&mut self) {}
+
     // AI panel (feature=ai)
     fn open_ai_panel(&mut self) {}
     fn close_ai_panel(&mut self) {}

@@ -65,6 +65,19 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         }
 
+// Confirmation overlay handling takes precedence.
+        if self.ctx.confirm_overlay_active() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => { self.ctx.confirm_overlay_confirm(); return; },
+                Key::Named(NamedKey::Escape) => { self.ctx.confirm_overlay_cancel(); return; },
+                Key::Character(c) if (c.eq_ignore_ascii_case("y")) => { self.ctx.confirm_overlay_confirm(); return; },
+                Key::Character(c) if (c.eq_ignore_ascii_case("n")) => { self.ctx.confirm_overlay_cancel(); return; },
+                _ => {}
+            }
+            // Swallow other keys while confirm overlay is active
+            return;
+        }
+
         // Command Palette handling takes precedence.
         if self.ctx.palette_active() {
             match key.logical_key.as_ref() {

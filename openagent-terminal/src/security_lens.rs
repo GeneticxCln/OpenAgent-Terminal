@@ -29,7 +29,7 @@ pub struct CommandRisk {
     pub requires_confirmation: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecurityPolicy {
     pub enabled: bool,
     pub block_critical: bool,
@@ -38,7 +38,7 @@ pub struct SecurityPolicy {
     pub custom_patterns: Vec<CustomPattern>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CustomPattern {
     pub pattern: String,
     pub risk_level: RiskLevel,
@@ -356,6 +356,13 @@ impl Default for SecurityPolicy {
             require_reason,
             custom_patterns: vec![],
         }
+    }
+}
+
+impl openagent_terminal_config::SerdeReplace for SecurityPolicy {
+    fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
+        *self = SecurityPolicy::deserialize(value)?;
+        Ok(())
     }
 }
 
