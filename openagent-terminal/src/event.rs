@@ -59,6 +59,8 @@ use crate::display::hint::HintMatch;
 use crate::display::window::Window;
 use crate::display::{Display, Preedit, SizeInfo};
 use crate::input::{self, ActionContext as _, FONT_SIZE_STEP};
+#[cfg(feature = "ai")]
+use crate::security_lens::{SecurityLens, SecurityPolicy, RiskLevel};
 #[cfg(unix)]
 use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
@@ -100,6 +102,10 @@ pub struct Processor {
     global_ipc_options: ParsedOptions,
     cli_options: CliOptions,
     config: Rc<UiConfig>,
+
+    // Pending security confirmation for AI apply-to-command flow
+#[cfg(feature = "ai")]
+    pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
 }
 
 impl Processor {
@@ -109,7 +115,10 @@ impl Processor {
         cli_options: CliOptions,
         event_loop: &EventLoop<Event>,
     ) -> Processor {
-        let proxy = event_loop.create_proxy();
+let proxy = event_loop.create_proxy();
+        // Initialize confirmation broker hooks (proxy + initial policy)
+        crate::ui_confirm::set_event_proxy(proxy.clone());
+        crate::ui_confirm::set_security_policy(config.security.clone());
         let scheduler = Scheduler::new(proxy.clone());
         let initial_window_options = Some(cli_options.window_options.clone());
 
@@ -144,6 +153,8 @@ impl Processor {
             #[cfg(unix)]
             global_ipc_options: Default::default(),
             config_monitor,
+            #[cfg(feature = "ai")]
+pending_security_ai: Default::default(),
         }
     }
 
@@ -163,8 +174,10 @@ impl Processor {
             window_options,
         )?;
 
-        self.gl_config = Some(window_context.display.gl_context().config());
+self.gl_config = Some(window_context.display.gl_context().config());
         let window_id = window_context.id();
+        // Set default window for confirmations (first window)
+        crate::ui_confirm::set_default_window_id(window_id);
         self.windows.insert(window_id, window_context);
 
         // If components are already initialized, set them on the new window
@@ -525,7 +538,10 @@ impl ApplicationHandler<Event> for Processor {
 
                 // Load config and update each terminal.
                 if let Ok(config) = config::reload(&path, &mut self.cli_options) {
-                    self.config = Rc::new(config);
+self.config = Rc::new(config);
+
+                    // Update confirmation broker security policy
+                    crate::ui_confirm::set_security_policy(self.config.security.clone());
 
                     // Restart config monitor if imports changed.
                     if let Some(monitor) = self.config_monitor.take() {
@@ -574,7 +590,82 @@ impl ApplicationHandler<Event> for Processor {
                 }
             },
             // Process events affecting all windows.
+            #[cfg(feature = "ai")]
+            (EventType::SecurityCheckAiApply { command, dry_run }, Some(window_id)) => {
+// Security Lens analysis and interactive confirmation logic
+                let policy: SecurityPolicy = self.config.security.clone();
+                let lens = SecurityLens::new(policy.clone());
+                let risk = lens.analyze_command(&command);
+
+                if lens.should_block(&risk) {
+                    let msg = self
+                        .config
+                        .theme
+                        .resolve()
+                        .tokens
+                        .warning; // color not directly used here
+                    let message = crate::message_bar::Message::new(
+                        format!("Blocked risky command ({}). {}", match risk.level { RiskLevel::Critical => "CRITICAL", RiskLevel::Warning => "WARNING", RiskLevel::Caution => "CAUTION", RiskLevel::Safe => "SAFE" }, risk.explanation),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self.proxy.send_event(Event::new(EventType::Message(message), *window_id));
+                    return;
+                }
+
+let require_confirm = *policy
+                    .require_confirmation
+                    .get(&risk.level)
+                    .unwrap_or(&false);
+
+                if require_confirm && risk.level != RiskLevel::Safe {
+                    // Create a confirmation overlay request for this window
+                    let id = crate::ui_confirm::generate_id();
+                    // Prepare body with explanation and mitigations
+                    let mut body = String::new();
+                    body.push_str(&format!("{}\n\n", risk.explanation));
+                    if !risk.mitigations.is_empty() {
+                        body.push_str("Suggested mitigations:\n");
+                        for m in &risk.mitigations { body.push_str(&format!("  • {}\n", m)); }
+                        body.push('\n');
+                    }
+                    body.push_str(&format!("Command:\n  {}", command));
+
+                    // Track pending AI action by id
+                    self.pending_security_ai.insert(id.clone(), (command.clone(), dry_run, *window_id));
+
+                    let _ = self.proxy.send_event(Event::new(EventType::ConfirmOpen {
+                        id: id.clone(),
+                        title: match risk.level {
+                            RiskLevel::Critical => "CRITICAL: Confirm running command".into(),
+                            RiskLevel::Warning => "Warning: Confirm running command".into(),
+                            RiskLevel::Caution => "Caution: Confirm running command".into(),
+                            RiskLevel::Safe => "Confirm running command".into(),
+                        },
+                        body,
+                        confirm_label: Some("Run".into()),
+                        cancel_label: Some("Cancel".into()),
+                    }, *window_id));
+                } else {
+                    let _ = self
+                        .proxy
+                        .send_event(Event::new(EventType::AiApplyAsCommandChecked { command, dry_run }, *window_id));
+                }
+            },
             (payload, None) => {
+// For broadcast events that modify UI state (like ConfirmResolved), handle here
+                match &payload {
+                    EventType::ConfirmResolved { id, .. } => {
+                        for window_context in self.windows.values_mut() {
+                            window_context.display.confirm_overlay.close_if(id);
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        }
+                        return;
+                    },
+                    _ => {}
+                }
                 let event = WinitEvent::UserEvent(Event::new(payload, None));
                 for window_context in self.windows.values_mut() {
                     window_context.handle_event(
@@ -632,6 +723,32 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
+},
+            (EventType::ConfirmOpen { id, title, body, confirm_label, cancel_label }, Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    window_context.display.confirm_overlay.open(id.clone(), title.clone(), body.clone(), confirm_label.clone(), cancel_label.clone());
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            },
+            (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
+                // If this is an AI pending confirm, handle it
+                #[cfg(feature = "ai")]
+                if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
+                    if accepted {
+                        let _ = self.proxy.send_event(Event::new(EventType::AiApplyAsCommandChecked { command: cmd, dry_run }, win));
+                    } else {
+                        // Show canceled message
+                        let message = crate::message_bar::Message::new("Command canceled".into(), crate::message_bar::MessageType::Warning);
+                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                    }
+                }
+                // Resolve for plugin-host waiters if any
+                let _ = crate::ui_confirm::resolve(&id, accepted);
+                // Broadcast resolution to close overlays in all windows
+                let _ = self.proxy.send_event(Event::new(EventType::ConfirmResolved { id, accepted }, None));
             },
             (EventType::Terminal(TerminalEvent::Wakeup), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -811,6 +928,17 @@ pub enum EventType {
         command: String,
         dry_run: bool,
     },
+    // Security Lens: check AI apply before pasting to prompt
+    #[cfg(feature = "ai")]
+    SecurityCheckAiApply {
+        command: String,
+        dry_run: bool,
+    },
+    #[cfg(feature = "ai")]
+    AiApplyAsCommandChecked {
+        command: String,
+        dry_run: bool,
+    },
     #[cfg(feature = "ai")]
     AiCopyOutput {
         format: AiCopyFormat,
@@ -824,8 +952,19 @@ pub enum EventType {
     // Blocks Search panel events
     #[cfg(feature = "blocks")]
     BlocksSearchPerform(String),
-    #[cfg(feature = "blocks")]
+#[cfg(feature = "blocks")]
     BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
+
+    // Global confirmation overlay events
+    ConfirmOpen {
+        id: String,
+        title: String,
+        body: String,
+        confirm_label: Option<String>,
+        cancel_label: Option<String>,
+    },
+    ConfirmRespond { id: String, accepted: bool },
+    ConfirmResolved { id: String, accepted: bool },
 }
 
 /// Sync IPC event types.
@@ -1204,10 +1343,27 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+#[cfg(feature = "blocks")]
     fn blocks_search_cancel(&mut self) {
         self.display.blocks_search.close();
         self.mark_dirty();
+    }
+
+    // Confirm overlay controls
+    fn confirm_overlay_active(&self) -> bool {
+        self.display.confirm_overlay.active
+    }
+
+    fn confirm_overlay_confirm(&mut self) {
+        if let Some(id) = self.display.confirm_overlay.id.clone() {
+            let _ = self.event_proxy.send_event(Event::new(EventType::ConfirmRespond { id, accepted: true }, self.display.window.id()));
+        }
+    }
+
+    fn confirm_overlay_cancel(&mut self) {
+        if let Some(id) = self.display.confirm_overlay.id.clone() {
+            let _ = self.event_proxy.send_event(Event::new(EventType::ConfirmRespond { id, accepted: false }, self.display.window.id()));
+        }
     }
 
     #[inline]
@@ -2582,6 +2738,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::ConfigReload(_)
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
+                // Confirmation overlay events are handled at the window-processor level
+                EventType::ConfirmOpen { .. } | EventType::ConfirmRespond { .. } | EventType::ConfirmResolved { .. } => (),
                 #[cfg(feature = "blocks")]
                 EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
                 // Blocks quick actions
@@ -2698,8 +2856,20 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     *self.ctx.dirty = true;
                 },
                 #[cfg(feature = "ai")]
-                EventType::AiApplyAsCommand { command, .. } => {
-                    // Apply selected command to the prompt; respect safe-run already embedded
+                EventType::AiApplyAsCommand { command, dry_run } => {
+                    // Route through Security Lens check
+                    let _ = self
+                        .ctx
+                        .event_proxy
+                        .send_event(Event::new(
+                            EventType::SecurityCheckAiApply { command, dry_run },
+                            self.ctx.display.window.id(),
+                        ));
+                    *self.ctx.dirty = true;
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiApplyAsCommandChecked { command, .. } => {
+                    // Confirmed or safe; paste to prompt
                     self.ctx.paste(&command, true);
                     *self.ctx.dirty = true;
                 },

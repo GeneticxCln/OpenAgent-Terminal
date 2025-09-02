@@ -70,6 +70,7 @@ pub mod hint;
 pub mod tab_bar;
 pub mod window;
 pub mod blocks_search_panel;
+pub mod confirm_overlay;
 
 mod bell;
 mod damage;
@@ -422,8 +423,11 @@ pub struct Display {
     pub blocks: blocks::Blocks,
 
     /// Blocks Search panel UI state.
-    #[cfg(feature = "blocks")]
+#[cfg(feature = "blocks")]
     pub blocks_search: blocks_search_panel::BlocksSearchState,
+
+    /// Confirmation overlay state.
+    pub confirm_overlay: confirm_overlay::ConfirmOverlayState,
 }
 
 enum Backend {
@@ -595,6 +599,7 @@ impl Display {
             ai_panel_anim_duration_ms: 0,
             #[cfg(feature = "ai")]
             ai_hover_control: None,
+            confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
         })
     }
 
@@ -1440,10 +1445,16 @@ impl Display {
         }
 
         // Draw Blocks Search panel overlay if active.
-        #[cfg(feature = "blocks")]
+#[cfg(feature = "blocks")]
         if self.blocks_search.active {
             let bs_state = self.blocks_search.clone();
             self.draw_blocks_search_overlay(config, &bs_state);
+        }
+
+        // Confirmation overlay
+        if self.confirm_overlay.active {
+            let st = self.confirm_overlay.clone();
+            self.draw_confirm_overlay(config, &st);
         }
 
         self.draw_render_timer(config);

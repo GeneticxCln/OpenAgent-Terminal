@@ -59,6 +59,7 @@ mod components_init;
 mod text_shaping;
 mod workspace;
 mod security_lens;
+mod ui_confirm;
 
 mod gl {
     #![allow(clippy::all, unsafe_op_in_unsafe_fn)]
