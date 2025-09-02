@@ -22,7 +22,7 @@
 
 OpenAgent Terminal is an **AI-enhanced terminal emulator** that combines the speed and reliability of [Alacritty](https://github.com/alacritty/alacritty) with powerful AI capabilities for command assistance and automation. It's designed for developers who want intelligent help without sacrificing performance or privacy.
 
-> 🚀 **From broken fork to production-ready AI terminal in just 3 phases!**
+> 🚀 **From broken fork to a fast, AI-enhanced terminal in 3 phases (continuing with Phase 4).**
 
 ### Key Features
 
@@ -286,12 +286,15 @@ OpenAgent Terminal focuses on being a fast, AI-enhanced terminal. Features like 
 
 ## Project Status
 
-- ✅ **Phase 1**: Foundation & Identity (Complete)
-- ✅ **Phase 2**: Core AI Implementation (Complete)
-- ✅ **Phase 3**: UI Polish & Optimization (Complete)
-- 🔄 **Phase 4**: Plugin System & Advanced Features (Planned)
+This repository’s canonical, up-to-date status lives in [STATUS.md](STATUS.md).
 
-See our [Development Plan](DEVELOPMENT_PLAN.md) for the full roadmap.
+Summary:
+- ✅ Phase 1: Foundation & Identity — complete
+- ✅ Phase 2: Core AI Implementation — complete
+- ✅ Phase 3: AI UI and integration — complete
+- 🚧 Phase 4: Plugin system, Security Lens, WGPU parity, and testing infrastructure — in progress
+
+For detailed timelines and next milestones, see [STATUS.md](STATUS.md) and the [Development Plan](DEVELOPMENT_PLAN.md).
 
 ## Attribution
 

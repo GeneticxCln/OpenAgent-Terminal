@@ -2,6 +2,7 @@
 // Visual regression detection for terminal rendering
 
 use image::{DynamicImage, ImageBuffer, Rgba};
+use image::GenericImageView; // for dimensions()
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -347,7 +348,8 @@ mod tests {
             name: "test_compare".to_string(),
             platforms: vec!["linux".to_string()],
             gpu_types: vec!["mock".to_string()],
-            compare_threshold: 0.95,
+            // Set threshold to 1.0 so any difference should fail
+            compare_threshold: 1.0,
             dimensions: (10, 10),
         };
 
@@ -361,7 +363,7 @@ mod tests {
         img2.as_mut_rgba8().unwrap().put_pixel(5, 5, Rgba([255, 0, 0, 255]));
 
         let result = test.compare_images(&img1, &img2);
-        assert!(!result.passed); // Should fail due to difference
+        assert!(!result.passed); // Should fail due to difference at threshold 1.0
         assert_eq!(result.diff_pixels, 1);
     }
 }

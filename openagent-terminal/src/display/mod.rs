@@ -69,6 +69,7 @@ pub mod cursor;
 pub mod hint;
 pub mod tab_bar;
 pub mod window;
+pub mod blocks_search_panel;
 
 mod bell;
 mod damage;
@@ -419,6 +420,10 @@ pub struct Display {
 
     /// Command block tracking state.
     pub blocks: blocks::Blocks,
+
+    /// Blocks Search panel UI state.
+    #[cfg(feature = "blocks")]
+    pub blocks_search: blocks_search_panel::BlocksSearchState,
 }
 
 enum Backend {
@@ -578,6 +583,8 @@ impl Display {
             meter: Default::default(),
             ime: Default::default(),
             blocks,
+            #[cfg(feature = "blocks")]
+            blocks_search: blocks_search_panel::BlocksSearchState::new(),
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
             #[cfg(feature = "ai")]
@@ -734,6 +741,8 @@ impl Display {
             meter: Default::default(),
             ime: Default::default(),
             blocks,
+            #[cfg(feature = "blocks")]
+            blocks_search: blocks_search_panel::BlocksSearchState::new(),
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
             #[cfg(feature = "ai")]
@@ -1427,6 +1436,13 @@ impl Display {
         #[cfg(feature = "ai")]
         if let Some(ai) = ai_state {
             self.draw_ai_overlay(config, ai);
+        }
+
+        // Draw Blocks Search panel overlay if active.
+        #[cfg(feature = "blocks")]
+        if self.blocks_search.active {
+            let bs_state = self.blocks_search.clone();
+            self.draw_blocks_search_overlay(config, &bs_state);
         }
 
         self.draw_render_timer(config);

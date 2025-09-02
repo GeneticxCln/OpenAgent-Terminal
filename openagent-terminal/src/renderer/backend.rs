@@ -103,3 +103,33 @@ impl Default for BackendConfig {
         Self { backend: RenderBackend::OpenGl, vsync: true, max_texture_size: None }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selector_prefers_gl_when_not_preferred() {
+        let sel = BackendSelector::new(false, None);
+        assert_eq!(sel.select_backend(), RenderBackend::OpenGl);
+    }
+
+    #[cfg(not(feature = "wgpu"))]
+    #[test]
+    fn selector_falls_back_to_gl_without_wgpu_feature() {
+        let sel = BackendSelector::new(true, None);
+        // Without the feature, selector must choose OpenGL even if preferred.
+        assert_eq!(sel.select_backend(), RenderBackend::OpenGl);
+    }
+
+    #[cfg(feature = "wgpu")]
+    #[test]
+    fn selector_handles_wgpu_preference_smoke() {
+        // Should not panic; returns either Wgpu (if available) or OpenGl.
+        let sel = BackendSelector::new(true, None);
+        let backend = sel.select_backend();
+        match backend {
+            RenderBackend::Wgpu | RenderBackend::OpenGl => {}
+        }
+    }
+}

@@ -45,6 +45,26 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Quick blocks actions via keyboard (when not in AI panel / palette)
+        // Ctrl+Alt+B toggle fold under cursor
+        if mods.control_key() && mods.alt_key() {
+            match key.logical_key.as_ref() {
+                Key::Character(c) if (c.eq_ignore_ascii_case("b")) => {
+                    self.ctx.send_user_event(crate::event::EventType::BlocksToggleFoldUnderCursor);
+                    return;
+                },
+                Key::Character(c) if (c.eq_ignore_ascii_case("c")) => {
+                    self.ctx.send_user_event(crate::event::EventType::BlocksCopyHeaderUnderCursor);
+                    return;
+                },
+                Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
+                    self.ctx.send_user_event(crate::event::EventType::BlocksExportHeaderUnderCursor);
+                    return;
+                },
+                _ => {}
+            }
+        }
+
         // Command Palette handling takes precedence.
         if self.ctx.palette_active() {
             match key.logical_key.as_ref() {
@@ -72,6 +92,62 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
             for ch in text.chars() {
                 self.ctx.palette_input(ch);
+            }
+            return;
+        }
+
+        // Blocks Search panel input handling (if active)
+        if self.ctx.blocks_search_active() {
+            let mods = self.ctx.modifiers().state();
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.blocks_search_confirm();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.blocks_search_cancel();
+                    return;
+                },
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.blocks_search_backspace();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.blocks_search_move_selection(-1);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.blocks_search_move_selection(1);
+                    return;
+                },
+                Key::Named(NamedKey::PageUp) => {
+                    self.ctx.blocks_search_move_selection(-5);
+                    return;
+                },
+                Key::Named(NamedKey::PageDown) => {
+                    self.ctx.blocks_search_move_selection(5);
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("n")) => {
+                    self.ctx.blocks_search_move_selection(1);
+                    return;
+                },
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("p")) => {
+                    self.ctx.blocks_search_move_selection(-1);
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "j" || c == "k") => {
+                    let delta = if c == "j" { 1 } else { -1 };
+                    self.ctx.blocks_search_move_selection(delta);
+                    return;
+                },
+                _ => {},
+            }
+            for ch in text.chars() {
+                // Ignore non-printable controls
+                if !ch.is_control() {
+                    self.ctx.blocks_search_input(ch);
+                }
             }
             return;
         }

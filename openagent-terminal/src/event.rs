@@ -585,6 +585,52 @@ impl ApplicationHandler<Event> for Processor {
                     );
                 }
             },
+            // Blocks search events handled at processor level
+            #[cfg(feature = "blocks")]
+            (EventType::BlocksSearchPerform(query), Some(window_id)) => {
+                let q = query.clone();
+                if let Some(components) = &self.components {
+                    if let Some(manager) = &components.block_manager {
+                        let manager = manager.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let runtime = components.runtime.clone();
+                        runtime.spawn(async move {
+                            use crate::blocks_v2::SearchQuery;
+                            let mut items = Vec::new();
+                            let mut sq = SearchQuery::default();
+                            if !q.trim().is_empty() { sq.text = Some(q.clone()); }
+                            sq.limit = Some(100);
+                            if let Ok(res) = manager.read().await.search(sq).await {
+                                for b in res {
+                                    items.push(crate::display::blocks_search_panel::BlocksSearchItem {
+                                        id: b.id.to_string(),
+                                        command: b.command.clone(),
+                                        directory: b.directory.to_string_lossy().to_string(),
+                                        created_at: b.created_at.to_rfc3339(),
+                                        exit_code: b.exit_code,
+                                    });
+                                }
+                            }
+                            let _ = proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
+                        });
+                    } else {
+                        let _ = self.proxy.send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), *window_id));
+                    }
+                } else {
+                    let _ = self.proxy.send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), *window_id));
+                }
+            },
+            #[cfg(feature = "blocks")]
+            (EventType::BlocksSearchResults(items), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    window_context.display.blocks_search.results = items;
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            },
             (EventType::Terminal(TerminalEvent::Wakeup), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.dirty = true;
@@ -768,6 +814,16 @@ pub enum EventType {
         format: AiCopyFormat,
     },
     ComponentsInitialized(Arc<InitializedComponents>),
+    // Blocks quick actions
+    BlocksToggleFoldUnderCursor,
+    BlocksCopyHeaderUnderCursor,
+    BlocksExportHeaderUnderCursor,
+
+    // Blocks Search panel events
+    #[cfg(feature = "blocks")]
+    BlocksSearchPerform(String),
+    #[cfg(feature = "blocks")]
+    BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
 }
 
 /// Sync IPC event types.
@@ -1092,6 +1148,64 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[inline]
     fn display(&mut self) -> &mut Display {
         self.display
+    }
+
+    // Blocks Search panel controls
+    #[cfg(feature = "blocks")]
+    fn open_blocks_search_panel(&mut self) {
+        self.display.blocks_search.open();
+        self.mark_dirty();
+        self.send_user_event(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()));
+    }
+
+    #[cfg(feature = "blocks")]
+    fn close_blocks_search_panel(&mut self) {
+        self.display.blocks_search.close();
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "blocks")]
+    fn blocks_search_active(&self) -> bool {
+        self.display.blocks_search.active
+    }
+
+    #[cfg(feature = "blocks")]
+    fn blocks_search_input(&mut self, c: char) {
+        self.display.blocks_search.query.push(c);
+        self.display.blocks_search.selected = 0;
+        self.mark_dirty();
+        self.send_user_event(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()));
+    }
+
+    #[cfg(feature = "blocks")]
+    fn blocks_search_backspace(&mut self) {
+        self.display.blocks_search.query.pop();
+        self.display.blocks_search.selected = 0;
+        self.mark_dirty();
+        self.send_user_event(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()));
+    }
+
+    #[cfg(feature = "blocks")]
+    fn blocks_search_move_selection(&mut self, delta: isize) {
+        self.display.blocks_search.move_selection(delta);
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "blocks")]
+    fn blocks_search_confirm(&mut self) {
+        if !self.display.blocks_search.results.is_empty() {
+            let idx = self.display.blocks_search.selected.min(self.display.blocks_search.results.len() - 1);
+            let cmd = self.display.blocks_search.results[idx].command.clone();
+            self.paste(&cmd, true);
+        }
+        self.display.blocks_search.close();
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "blocks")]
+    fn blocks_search_cancel(&mut self) {
+        self.display.blocks_search.close();
+        self.mark_dirty();
     }
 
     #[inline]
@@ -2466,6 +2580,37 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::ConfigReload(_)
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
+                #[cfg(feature = "blocks")]
+                EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
+                // Blocks quick actions
+                EventType::BlocksToggleFoldUnderCursor => {
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                        if self.ctx.display().blocks.toggle_fold_header_at_viewport_line(display_offset, vp.line) {
+                            self.ctx.display.damage_tracker.frame().mark_fully_damaged();
+                            *self.ctx.dirty = true;
+                        }
+                    }
+                },
+                EventType::BlocksCopyHeaderUnderCursor => {
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                        if let Some(header) = self.ctx.display().blocks.header_at_viewport_line(display_offset, vp.line) {
+                            self.ctx.copy_to_clipboard(header);
+                        }
+                    }
+                },
+                EventType::BlocksExportHeaderUnderCursor => {
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                        if let Some(header) = self.ctx.display().blocks.header_at_viewport_line(display_offset, vp.line) {
+                            self.ctx.prompt_and_export_block_output(header);
+                        }
+                    }
+                },
                 #[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {

@@ -5,8 +5,10 @@
 use super::{Block, BlockId, ExecutionStatus};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use sqlx::{sqlite::{SqlitePoolOptions, SqliteConnectOptions}, SqlitePool};
 use std::path::Path;
+use std::fs::File;
+use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -21,11 +23,17 @@ impl BlockStorage {
         std::fs::create_dir_all(data_dir)?;
 
         let db_path = data_dir.join("blocks.db");
-        let db_url = format!("sqlite:{}", db_path.display());
+        if !db_path.exists() {
+            File::create(&db_path)?;
+        }
+        let db_url = format!("sqlite://{}", db_path.display());
+
+        let connect_options = SqliteConnectOptions::from_str(&db_url)?
+            .create_if_missing(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&db_url)
+            .connect_with(connect_options)
             .await
             .context("Failed to connect to database")?;
 
@@ -79,19 +87,20 @@ impl BlockStorage {
                 content_rowid=rowid
             );
             
+            -- Maintain FTS index with external content table semantics
             CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN
-                INSERT INTO blocks_fts(id, command, output, tags)
-                VALUES (new.id, new.command, new.output, new.tags);
+                INSERT INTO blocks_fts(rowid, id, command, output, tags)
+                VALUES (new.rowid, new.id, new.command, new.output, new.tags);
             END;
             
             CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN
-                UPDATE blocks_fts
-                SET command = new.command, output = new.output, tags = new.tags
-                WHERE id = old.id;
+                INSERT INTO blocks_fts(blocks_fts, rowid) VALUES('delete', old.rowid);
+                INSERT INTO blocks_fts(rowid, id, command, output, tags)
+                VALUES (new.rowid, new.id, new.command, new.output, new.tags);
             END;
             
             CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN
-                DELETE FROM blocks_fts WHERE id = old.id;
+                INSERT INTO blocks_fts(blocks_fts, rowid) VALUES('delete', old.rowid);
             END;
             "#,
         )
@@ -224,7 +233,7 @@ impl BlockStorage {
 
     /// Get blocks by tag
     pub async fn get_by_tag(&self, tag: &str) -> Result<Vec<Arc<Block>>> {
-        let pattern = format!("%\"{}\" %", tag);
+        let pattern = format!("%\"{}\"%", tag);
 
         let rows = sqlx::query_as::<_, BlockRow>(
             r#"
@@ -237,6 +246,85 @@ impl BlockStorage {
         .await?;
 
         rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
+    }
+
+    /// Basic search with FTS and simple filters
+    pub async fn search(&self, query: &super::SearchQuery) -> Result<Vec<Arc<Block>>> {
+        // Build dynamic SQL
+        let mut sql = String::from(
+            "SELECT b.* FROM blocks b\n"
+        );
+
+        let mut where_clauses: Vec<String> = Vec::new();
+        let mut binds: Vec<(usize, String)> = Vec::new();
+        let mut bind_ix = 1;
+
+        // If text provided, join FTS table
+        if let Some(text) = &query.text {
+            sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
+            where_clauses.push("blocks_fts MATCH ?".into());
+            binds.push((bind_ix, text.clone()));
+            bind_ix += 1;
+        }
+
+        if query.starred_only {
+            where_clauses.push("b.starred = 1".into());
+        }
+
+        if let Some(status) = query.status {
+            where_clauses.push("b.status = ?".into());
+            binds.push((bind_ix, format!("{:?}", status)));
+            bind_ix += 1;
+        }
+
+        if let Some(dir) = &query.directory {
+            where_clauses.push("b.directory LIKE ?".into());
+            binds.push((bind_ix, format!("%{}%", dir.display())));
+            bind_ix += 1;
+        }
+
+        if let Some(tags) = &query.tags {
+            for tag in tags {
+                where_clauses.push("b.tags LIKE ?".into());
+                binds.push((bind_ix, format!("%\"{}\"%", tag)));
+                bind_ix += 1;
+            }
+        }
+
+        if let Some(from) = query.date_from {
+            where_clauses.push("b.created_at >= ?".into());
+            binds.push((bind_ix, from.to_rfc3339()));
+            bind_ix += 1;
+        }
+        if let Some(to) = query.date_to {
+            where_clauses.push("b.created_at <= ?".into());
+            binds.push((bind_ix, to.to_rfc3339()));
+            bind_ix += 1;
+        }
+
+        if !where_clauses.is_empty() {
+            sql.push_str("WHERE ");
+            sql.push_str(&where_clauses.join(" AND "));
+            sql.push('\n');
+        }
+
+        sql.push_str("ORDER BY b.created_at DESC\n");
+        let limit = query.limit.unwrap_or(100).to_string();
+        sql.push_str("LIMIT ");
+        sql.push_str(&limit);
+
+        // Build the query dynamically
+        let mut q = sqlx::query_as::<_, BlockRow>(&sql);
+        for (_idx, val) in binds {
+            q = q.bind(val);
+        }
+
+        let rows = q.fetch_all(&self.pool).await?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(Arc::new(row.into_block()?));
+        }
+        Ok(out)
     }
 
     /// Delete blocks before a certain date
@@ -309,5 +397,60 @@ fn parse_execution_status(s: &str) -> ExecutionStatus {
         "Cancelled" => ExecutionStatus::Cancelled,
         "Timeout" => ExecutionStatus::Timeout,
         _ => ExecutionStatus::Failed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blocks_v2::{Block, BlockId, BlockMetadata, ExecutionStatus, ShellType};
+    use std::collections::{HashMap, HashSet};
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn search_basic() {
+        let dir = TempDir::new().unwrap();
+        let storage = BlockStorage::new(dir.path()).await.unwrap();
+
+        // Insert sample block
+        let now = Utc::now();
+        let block = Block {
+            id: BlockId::new(),
+            command: "echo test command".to_string(),
+            output: "output line".to_string(),
+            directory: dir.path().to_path_buf(),
+            environment: HashMap::new(),
+            shell: ShellType::Bash,
+            created_at: now,
+            modified_at: now,
+            tags: HashSet::from(["tag1".to_string()]),
+            starred: true,
+            parent_id: None,
+            children: Vec::new(),
+            metadata: BlockMetadata::default(),
+            status: ExecutionStatus::Success,
+            exit_code: Some(0),
+            duration_ms: Some(10),
+        };
+        storage.insert(&Arc::new(block)).await.unwrap();
+
+        // Search text
+        let mut q = crate::blocks_v2::SearchQuery::default();
+        q.text = Some("test".to_string());
+        q.limit = Some(10);
+        let results = storage.search(&q).await.unwrap();
+        assert!(!results.is_empty());
+
+        // Search by tag
+        let mut q2 = crate::blocks_v2::SearchQuery::default();
+        q2.tags = Some(vec!["tag1".to_string()]);
+        let r2 = storage.search(&q2).await.unwrap();
+        assert!(!r2.is_empty());
+
+        // Search starred only
+        let mut q3 = crate::blocks_v2::SearchQuery::default();
+        q3.starred_only = true;
+        let r3 = storage.search(&q3).await.unwrap();
+        assert!(!r3.is_empty());
     }
 }

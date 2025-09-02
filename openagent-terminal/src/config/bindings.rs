@@ -274,6 +274,9 @@ pub enum Action {
     /// Open the command palette.
     OpenCommandPalette,
 
+    /// Open the Blocks Search panel.
+    OpenBlocksSearchPanel,
+
     /// Execute a named workflow from the config.
     #[config(skip)]
     RunWorkflow(String),
@@ -506,6 +509,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         KeyBinding;
         // Block folding and navigation.
         "f",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::ToggleFoldBlock;
+        // Open Blocks Search panel
+        "s",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenBlocksSearchPanel;
         // Toggle AI panel (scratch buffer) if built with feature `ai`.
         ".",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;

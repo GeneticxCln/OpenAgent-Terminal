@@ -1,5 +1,7 @@
 # OpenAgent Terminal - Phase 3 Complete! 🎉
 
+> Note: This is a historical snapshot describing completion of Phase 3 (AI integration) as of 2024-08-30. For current, canonical project status, see [STATUS.md](STATUS.md). Phase 3 deliverables are complete, but the overall project remains in active development (Phase 4).
+
 ## 🚀 Full AI Integration Achieved!
 
 ### ✅ Phase 3 Accomplishments
@@ -215,7 +217,7 @@ The OpenAgent Terminal is now:
 
 ---
 
-**Status**: 🟢 **READY FOR PRODUCTION USE**
+**Status**: 🟡 **Phase 3 complete; overall project in beta. See STATUS.md for the latest status.**
 
 *Phase 3 Completed: 2024-08-30*
 *Total Development Time: ~3 hours*
