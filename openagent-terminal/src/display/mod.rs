@@ -613,7 +613,7 @@ impl Display {
         }
 
         // WGPU renderer init.
-        let mut wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
+        let wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
             window.winit_window(),
             window.inner_size(),
             config.debug.renderer,

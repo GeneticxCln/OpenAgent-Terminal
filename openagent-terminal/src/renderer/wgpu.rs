@@ -988,7 +988,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 size: glyph_cache.font_size,
                 character: ch,
             };
-            let mut cell = RenderableCell {
+            let cell = RenderableCell {
                 point: Point::new(point.line, openagent_terminal_core::index::Column(col)),
                 character: ch,
                 extra: None,

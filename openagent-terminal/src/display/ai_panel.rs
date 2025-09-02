@@ -78,7 +78,7 @@ impl Display {
         }
 
         // Compute animation progress (0..1) with an ease-out curve using the shared animation util.
-        let mut progress = compute_progress(
+        let progress = compute_progress(
             self.ai_panel_anim_start,
             self.ai_panel_anim_duration_ms.max(1),
             self.ai_panel_anim_opening,
@@ -437,7 +437,7 @@ impl Display {
         ai_state: &crate::ai_runtime::AiUiState,
     ) -> Option<AiPanelGeometry> {
         // Animation progress like in draw_ai_panel/draw_ai_overlay.
-        let mut progress = if let Some(start) = self.ai_panel_anim_start {
+        let progress = if let Some(start) = self.ai_panel_anim_start {
             let elapsed = start.elapsed().as_millis() as u32;
             let dur = self.ai_panel_anim_duration_ms.max(1);
             let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
@@ -498,7 +498,7 @@ impl Display {
     /// Draw the AI overlay immediately (background rects then text), independent of the main draw rect pipeline.
     pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
         // Allow drawing during closing animation even if not active.
-        let mut progress = if let Some(start) = self.ai_panel_anim_start {
+        let progress = if let Some(start) = self.ai_panel_anim_start {
             let elapsed = start.elapsed().as_millis() as u32;
             let dur = self.ai_panel_anim_duration_ms.max(1);
             let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);

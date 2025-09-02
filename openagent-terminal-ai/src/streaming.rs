@@ -12,6 +12,7 @@ pub struct SseParser {
     /// Buffer for incomplete lines
     line_buffer: String,
     /// Whether we're currently in a data field
+    #[allow(dead_code)]
     in_data_field: bool,
 }
 
@@ -191,6 +192,7 @@ impl RetryConfig {
 /// Stream processor with backpressure handling
 pub struct StreamProcessor {
     parser: SseParser,
+    #[allow(dead_code)]
     retry_config: RetryConfig,
     buffer_limit: usize,
     buffered_events: Vec<SseEvent>,
