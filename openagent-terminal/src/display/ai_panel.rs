@@ -286,7 +286,7 @@ impl Display {
                     num_cols.saturating_sub(2),
                 );
             } else {
-                let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] Copy code  [Ctrl+Shift+A] Copy all  [Ctrl+R] Regenerate  [Ctrl+C] Stop   [? Esc] Close";
+                let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] Copy code  [Ctrl+Shift+A] Copy all  [Ctrl+X] Explain  [Ctrl+F] Fix  [Ctrl+R] Regenerate  [Ctrl+C] Stop   [? Esc] Close";
                 // Dim slightly for hint badge
                 let hint_color = tokens.text_muted;
                 self.draw_ai_text(
@@ -532,44 +532,4 @@ impl Display {
         }
     }
 
-    /// Helper to draw text in the AI panel
-    fn draw_ai_text(
-        &mut self,
-        point: Point<usize>,
-        fg: Rgb,
-        bg: Rgb,
-        text: &str,
-        max_width: usize,
-    ) {
-        let truncated_text: String = if text.width() > max_width {
-            text.chars().take(max_width).collect()
-        } else {
-            text.to_string()
-        };
-
-        let size_info_copy = self.size_info;
-        match &mut self.backend {
-            crate::display::Backend::Gl { renderer, .. } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    truncated_text.chars(),
-                    &size_info_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-            #[cfg(feature = "wgpu")]
-            crate::display::Backend::Wgpu { renderer } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    truncated_text.chars(),
-                    &size_info_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-        }
-    }
 }

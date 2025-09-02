@@ -248,37 +248,70 @@ impl BlockStorage {
         rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
     }
 
-    /// Basic search with FTS and simple filters
+    /// Advanced search with FTS and comprehensive filters
     pub async fn search(&self, query: &super::SearchQuery) -> Result<Vec<Arc<Block>>> {
+        use super::{ExitCodeFilter, DurationFilter, SortField, SortOrder};
+        
         // Build dynamic SQL
-        let mut sql = String::from(
-            "SELECT b.* FROM blocks b\n"
-        );
-
+        let mut sql = String::from("SELECT b.* FROM blocks b\n");
         let mut where_clauses: Vec<String> = Vec::new();
         let mut binds: Vec<String> = Vec::new();
+        let mut joins_fts = false;
 
-        // If text provided, join FTS table
+        // Text search handling
         if let Some(text) = &query.text {
-            sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
+            if !joins_fts {
+                sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
+                joins_fts = true;
+            }
             where_clauses.push("blocks_fts MATCH ?".into());
             binds.push(text.clone());
         }
 
+        // Command-specific text search
+        if let Some(cmd_text) = &query.command_text {
+            if !joins_fts {
+                sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
+                joins_fts = true;
+            }
+            where_clauses.push("f.command MATCH ?".into());
+            binds.push(cmd_text.clone());
+        }
+
+        // Output-specific text search
+        if let Some(output_text) = &query.output_text {
+            if !joins_fts {
+                sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
+                joins_fts = true;
+            }
+            where_clauses.push("f.output MATCH ?".into());
+            binds.push(output_text.clone());
+        }
+
+        // Starred filter
         if query.starred_only {
             where_clauses.push("b.starred = 1".into());
         }
 
+        // Status filter
         if let Some(status) = query.status {
             where_clauses.push("b.status = ?".into());
             binds.push(format!("{:?}", status));
         }
 
+        // Shell filter
+        if let Some(shell) = query.shell {
+            where_clauses.push("b.shell = ?".into());
+            binds.push(shell.to_str().to_string());
+        }
+
+        // Directory filter (supports wildcards via LIKE)
         if let Some(dir) = &query.directory {
             where_clauses.push("b.directory LIKE ?".into());
             binds.push(format!("%{}%", dir.display()));
         }
 
+        // Tags filter (AND operation)
         if let Some(tags) = &query.tags {
             for tag in tags {
                 where_clauses.push("b.tags LIKE ?".into());
@@ -286,6 +319,7 @@ impl BlockStorage {
             }
         }
 
+        // Date range filters
         if let Some(from) = query.date_from {
             where_clauses.push("b.created_at >= ?".into());
             binds.push(from.to_rfc3339());
@@ -295,18 +329,77 @@ impl BlockStorage {
             binds.push(to.to_rfc3339());
         }
 
+        // Exit code filter
+        if let Some(exit_filter) = query.exit_code {
+            match exit_filter {
+                ExitCodeFilter::Success => {
+                    where_clauses.push("b.exit_code = 0".into());
+                }
+                ExitCodeFilter::Failure => {
+                    where_clauses.push("(b.exit_code IS NOT NULL AND b.exit_code != 0)".into());
+                }
+                ExitCodeFilter::Specific(code) => {
+                    where_clauses.push("b.exit_code = ?".into());
+                    binds.push(code.to_string());
+                }
+                ExitCodeFilter::Range(min, max) => {
+                    where_clauses.push("(b.exit_code >= ? AND b.exit_code <= ?)".into());
+                    binds.push(min.to_string());
+                    binds.push(max.to_string());
+                }
+            }
+        }
+
+        // Duration filter
+        if let Some(duration_filter) = query.duration {
+            match duration_filter {
+                DurationFilter::LessThan(ms) => {
+                    where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms < ?)".into());
+                    binds.push((ms as i64).to_string());
+                }
+                DurationFilter::GreaterThan(ms) => {
+                    where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms > ?)".into());
+                    binds.push((ms as i64).to_string());
+                }
+                DurationFilter::Range(min_ms, max_ms) => {
+                    where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms >= ? AND b.duration_ms <= ?)".into());
+                    binds.push((min_ms as i64).to_string());
+                    binds.push((max_ms as i64).to_string());
+                }
+            }
+        }
+
+        // Build WHERE clause
         if !where_clauses.is_empty() {
             sql.push_str("WHERE ");
             sql.push_str(&where_clauses.join(" AND "));
             sql.push('\n');
         }
 
-        sql.push_str("ORDER BY b.created_at DESC\n");
-        let limit = query.limit.unwrap_or(100).to_string();
-        sql.push_str("LIMIT ");
-        sql.push_str(&limit);
+        // Add ORDER BY clause
+        sql.push_str("ORDER BY ");
+        match query.sort_by {
+            SortField::CreatedAt => sql.push_str("b.created_at"),
+            SortField::ModifiedAt => sql.push_str("b.modified_at"),
+            SortField::Command => sql.push_str("b.command"),
+            SortField::Duration => sql.push_str("COALESCE(b.duration_ms, 0)"),
+            SortField::ExitCode => sql.push_str("COALESCE(b.exit_code, 999999)"),
+            SortField::Directory => sql.push_str("b.directory"),
+        }
+        match query.sort_order {
+            SortOrder::Ascending => sql.push_str(" ASC"),
+            SortOrder::Descending => sql.push_str(" DESC"),
+        }
+        sql.push('\n');
 
-        // Build the query dynamically
+        // Add pagination
+        if let Some(offset) = query.offset {
+            sql.push_str(&format!("OFFSET {}\n", offset));
+        }
+        let limit = query.limit.unwrap_or(100);
+        sql.push_str(&format!("LIMIT {}", limit));
+
+        // Build and execute the query
         let mut q = sqlx::query_as::<_, BlockRow>(&sql);
         for val in binds {
             q = q.bind(val);

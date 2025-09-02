@@ -130,6 +130,12 @@ impl AiProvider for OpenAiProvider {
             system_prompt.push_str(&format!(" Current directory: {}", dir));
         }
 
+        // Include contextual signals (mode, error, history, workspace, etc.)
+        for (key, value) in &req.context {
+            // Keep it compact to preserve token budget
+            system_prompt.push_str(&format!(" {}: {}.", key, value));
+        }
+
         let messages = vec![
             ChatMessage { role: "system".to_string(), content: system_prompt },
             ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
@@ -260,6 +266,9 @@ impl AiProvider for OpenAiProvider {
         }
         if let Some(dir) = &req.working_directory {
             system_prompt.push_str(&format!(" Current directory: {}", dir));
+        }
+        for (key, value) in &req.context {
+            system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
         let messages = vec![

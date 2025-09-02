@@ -76,6 +76,11 @@ const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 
 /// Debounce delay for Blocks Search typing.
 pub const BLOCKS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
+/// Debounce delay for Workflows Search typing.
+pub const WORKFLOWS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
+/// Retention time for workflows progress overlay after completion.
+#[cfg(feature = "workflow")]
+pub const WORKFLOWS_OVERLAY_RETAIN: Duration = Duration::from_millis(3000);
 
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
@@ -306,27 +311,46 @@ self.gl_config = Some(window_context.display.gl_context().config());
 #[cfg(feature = "blocks")]
 impl Processor {
     fn process_blocks_search_perform(&mut self, query: String, window_id: WindowId) {
-        let q = query.clone();
+        self.process_blocks_search_with_state(query, window_id, None);
+    }
+    
+    fn process_blocks_search_with_state(&mut self, query: String, window_id: WindowId, state: Option<&crate::display::blocks_search_panel::BlocksSearchState>) {
         if let Some(components) = &self.components {
             if let Some(manager) = &components.block_manager {
                 let manager = manager.clone();
                 let proxy = self.proxy.clone();
                 let win = window_id;
                 let runtime = components.runtime.clone();
-                runtime.spawn(async move {
-                    use crate::blocks_v2::SearchQuery;
-                    let mut items = Vec::new();
-                    let mut sq = SearchQuery::default();
-                    if !q.trim().is_empty() { sq.text = Some(q.clone()); }
+                
+                // Build search query from state or simple text query
+                let search_query = if let Some(state) = state {
+                    self.build_search_query_from_state(state, &query)
+                } else {
+                    let mut sq = crate::blocks_v2::SearchQuery::default();
+                    if !query.trim().is_empty() {
+                        sq.text = Some(query.clone());
+                    }
                     sq.limit = Some(100);
-                    if let Ok(res) = manager.read().await.search(sq).await {
+                    sq
+                };
+                
+                runtime.spawn(async move {
+                    let mut items = Vec::new();
+                    if let Ok(res) = manager.read().await.search(search_query).await {
                         for b in res {
                             items.push(crate::display::blocks_search_panel::BlocksSearchItem {
                                 id: b.id.to_string(),
                                 command: b.command.clone(),
+                                output: b.output.clone(),
                                 directory: b.directory.to_string_lossy().to_string(),
                                 created_at: b.created_at.to_rfc3339(),
+                                modified_at: b.modified_at.to_rfc3339(),
                                 exit_code: b.exit_code,
+                                duration_ms: b.duration_ms,
+                                starred: b.starred,
+                                tags: b.tags.into_iter().collect(),
+                                shell: b.shell.to_str().to_string(),
+                                status: format!("{:?}", b.status),
                             });
                         }
                     }
@@ -347,6 +371,73 @@ impl Processor {
         let _ = self
             .proxy
             .send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), window_id));
+    }
+    
+    fn build_search_query_from_state(&self, state: &crate::display::blocks_search_panel::BlocksSearchState, query: &str) -> crate::blocks_v2::SearchQuery {
+        use crate::display::blocks_search_panel::SearchMode;
+        use crate::blocks_v2::SearchQuery;
+        
+        let mut sq = SearchQuery {
+            sort_by: state.sort_field,
+            sort_order: state.sort_order,
+            offset: Some(state.current_page * state.items_per_page),
+            limit: Some(state.items_per_page),
+            starred_only: state.filters.starred_only,
+            tags: if state.filters.tags.is_empty() { None } else { Some(state.filters.tags.clone()) },
+            directory: state.filters.directory.clone(),
+            shell: state.filters.shell,
+            status: state.filters.status,
+            exit_code: state.filters.exit_code,
+            duration: state.filters.duration,
+            date_from: state.filters.date_from,
+            date_to: state.filters.date_to,
+            ..Default::default()
+        };
+        
+        // Set text search based on mode
+        if !query.trim().is_empty() {
+            match state.mode {
+                SearchMode::Basic => {
+                    sq.text = Some(query.to_string());
+                }
+                SearchMode::Command => {
+                    sq.command_text = Some(query.to_string());
+                }
+                SearchMode::Output => {
+                    sq.output_text = Some(query.to_string());
+                }
+                SearchMode::Advanced => {
+                    sq.text = Some(query.to_string());
+                }
+            }
+        }
+        
+        sq
+    }
+}
+
+#[cfg(feature = "workflow")]
+impl Processor {
+    fn process_workflows_search_perform(&mut self, query: String, window_id: WindowId) {
+        // Build items from UiConfig.workflows; simple case-insensitive match on name/description
+        let mut items = Vec::new();
+        let q = query.to_lowercase();
+        let cfg = &self.config;
+        for wf in &cfg.workflows {
+            let name = wf.name.clone();
+            let desc = wf.description.clone();
+            let hay = format!("{} {}", name, desc.clone().unwrap_or_default()).to_lowercase();
+            if q.trim().is_empty() || hay.contains(&q) {
+                items.push(crate::display::workflow_panel::WorkflowItem {
+                    name,
+                    description: desc,
+                    source: crate::display::workflow_panel::WorkflowSource::Config,
+                });
+            }
+        }
+        let _ = self
+            .proxy
+            .send_event(Event::new(EventType::WorkflowsSearchResults(items), window_id));
     }
 }
 
@@ -744,6 +835,241 @@ let require_confirm = *policy
                     }
                 }
 },
+            // Workflows panel events
+            #[cfg(feature = "workflow")]
+            (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
+                self.process_workflows_search_perform(query, *window_id);
+            },
+            #[cfg(feature = "workflow")]
+            (EventType::WorkflowsSearchResults(items), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    window_context.display.workflows_panel.results = items;
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            },
+            #[cfg(feature = "workflow")]
+            (EventType::WorkflowsProgressUpdate { execution_id, workflow_name, status, current_step, log, done }, Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    let st = &mut window_context.display.workflows_progress;
+                    // Always show overlay on updates
+                    st.active = true;
+                    if st.execution_id.as_deref() != Some(&execution_id) {
+                        st.execution_id = Some(execution_id.clone());
+                        st.logs.clear();
+                        st.step_index = 0;
+                        st.total_steps = None;
+                        st.seen_steps.clear();
+                    }
+                    if let Some(name) = workflow_name { st.workflow_name = Some(name); }
+                    if let Some(s) = status { st.status = Some(s); }
+                    if let Some(step) = current_step {
+                        st.current_step = Some(step.clone());
+                        if !st.seen_steps.contains(&step) {
+                            st.seen_steps.push(step);
+                            st.step_index = st.seen_steps.len();
+                        }
+                    }
+                    if let Some(line) = log { st.logs.push(line); if st.logs.len() > 500 { let drop = st.logs.len() - 500; st.logs.drain(0..drop); } }
+
+                    // If done, schedule a quick clear to retain UI briefly
+                    if done {
+                        let tid = crate::scheduler::TimerId::new(crate::scheduler::Topic::WorkflowsProgressRetain, *window_id);
+                        self.scheduler.unschedule(tid);
+                        let evt = Event::new(EventType::WorkflowsProgressClear(execution_id.clone()), *window_id);
+                        self.scheduler.schedule(evt, WORKFLOWS_OVERLAY_RETAIN, false, tid);
+                    }
+
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            },
+            #[cfg(feature = "workflow")]
+            (EventType::WorkflowsProgressClear(execution_id), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    let st = &mut window_context.display.workflows_progress;
+                    if st.execution_id.as_deref() == Some(execution_id.as_str()) {
+                        st.active = false;
+                        window_context.dirty = true;
+                        if window_context.display.window.has_frame { window_context.display.window.request_redraw(); }
+                    }
+                }
+            },
+            #[cfg(feature = "workflow")]
+            (EventType::WorkflowsExecuteByName(name), Some(window_id)) => {
+                // Try engine first; on failure, fallback to config command paste
+                if let Some(components) = &self.components {
+                    if let Some(engine) = &components.workflow_engine {
+                        let engine = engine.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let cfg = self.config.clone();
+                        let runtime = components.runtime.clone();
+                        runtime.spawn(async move {
+                            use std::collections::HashMap;
+                            match engine.execute_workflow(&name, HashMap::new()).await {
+                                Ok(exec_id) => {
+                                    // Notify user and open progress overlay with initial state
+                                    let message = crate::message_bar::Message::new(
+                                        format!("Started workflow '{}' (execution {})", name, exec_id),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(message), win));
+                                    let _ = proxy.send_event(Event::new(
+                                        EventType::WorkflowsProgressUpdate {
+                                            execution_id: exec_id.clone(),
+                                            workflow_name: Some(name.clone()),
+                                            status: Some("Starting".to_string()),
+                                            current_step: None,
+                                            log: None,
+                                            done: false,
+                                        },
+                                        win,
+                                    ));
+
+                                    // Subscribe to workflow engine events and forward updates
+                                    let mut rx = engine.subscribe();
+                                    loop {
+                                        use workflow_engine::WorkflowEvent;
+                                        match rx.recv().await {
+                                            Ok(ev) => {
+                                                match ev {
+                                                    WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
+                                                        let _ = proxy.send_event(Event::new(
+                                                            EventType::WorkflowsProgressUpdate {
+                                                                execution_id,
+                                                                workflow_name: Some(name.clone()),
+                                                                status: Some("Running".to_string()),
+                                                                current_step: None,
+                                                                log: None,
+                                                                done: false,
+                                                            },
+                                                            win,
+                                                        ));
+                                                    },
+                                                    WorkflowEvent::StepStarted { execution_id, step_id } if execution_id == exec_id => {
+                                                        let _ = proxy.send_event(Event::new(
+                                                            EventType::WorkflowsProgressUpdate {
+                                                                execution_id,
+                                                                workflow_name: None,
+                                                                status: Some("Running".to_string()),
+                                                                current_step: Some(step_id),
+                                                                log: None,
+                                                                done: false,
+                                                            },
+                                                            win,
+                                                        ));
+                                                    },
+                                                    WorkflowEvent::StepCompleted { execution_id, step_id } if execution_id == exec_id => {
+                                                        let msg = format!("Completed step {step_id}");
+                                                        let _ = proxy.send_event(Event::new(
+                                                            EventType::WorkflowsProgressUpdate {
+                                                                execution_id,
+                                                                workflow_name: None,
+                                                                status: None,
+                                                                current_step: None,
+                                                                log: Some(msg),
+                                                                done: false,
+                                                            },
+                                                            win,
+                                                        ));
+                                                    },
+                                                    WorkflowEvent::StepFailed { execution_id, step_id } if execution_id == exec_id => {
+                                                        let msg = format!("Step failed: {step_id}");
+                                                        let _ = proxy.send_event(Event::new(
+                                                            EventType::WorkflowsProgressUpdate {
+                                                                execution_id,
+                                                                workflow_name: None,
+                                                                status: Some("Failed".to_string()),
+                                                                current_step: Some(step_id),
+                                                                log: Some(msg),
+                                                                done: false,
+                                                            },
+                                                            win,
+                                                        ));
+                                                    },
+                                                    WorkflowEvent::Completed { execution_id, status } if execution_id == exec_id => {
+                                                        let status_str = format!("{status:?}");
+                                                        let _ = proxy.send_event(Event::new(
+                                                            EventType::WorkflowsProgressUpdate {
+                                                                execution_id,
+                                                                workflow_name: None,
+                                                                status: Some(status_str),
+                                                                current_step: None,
+                                                                log: None,
+                                                                done: true,
+                                                            },
+                                                            win,
+                                                        ));
+                                                        break;
+                                                    },
+                                                    WorkflowEvent::Log { execution_id, step_id: _, message } if execution_id == exec_id => {
+                                                        let _ = proxy.send_event(Event::new(
+                                                            EventType::WorkflowsProgressUpdate {
+                                                                execution_id,
+                                                                workflow_name: None,
+                                                                status: None,
+                                                                current_step: None,
+                                                                log: Some(message),
+                                                                done: false,
+                                                            },
+                                                            win,
+                                                        ));
+                                                    },
+                                                    _ => {},
+                                                }
+                                            },
+                                            Err(_e) => {
+                                                // Receiver closed; stop forwarding
+                                                break;
+                                            },
+                                        }
+                                    }
+                                },
+                                Err(_e) => {
+                                    // Fallback to config command paste
+                                    if let Some(wf) = cfg.workflows.iter().find(|w| w.name == name) {
+                                        let mut cmd = wf.command.clone();
+                                        for p in &wf.params {
+                                            let placeholder = format!("{{{}}}", p.name);
+                                            let val = p.default.clone().unwrap_or_default();
+                                            cmd = cmd.replace(&placeholder, &val);
+                                        }
+                                        let _ = proxy.send_event(Event::new(EventType::PasteCommand(cmd), win));
+                                    } else {
+                                        let msg = crate::message_bar::Message::new(
+                                            format!("Workflow not found: {}", name),
+                                            crate::message_bar::MessageType::Warning,
+                                        );
+                                        let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    }
+                                },
+                            }
+                        });
+                        return;
+                    }
+                }
+                // No engine: fallback immediately
+                if let Some(wf) = self.config.workflows.iter().find(|w| w.name == name) {
+                    let mut cmd = wf.command.clone();
+                    for p in &wf.params {
+                        let placeholder = format!("{{{}}}", p.name);
+                        let val = p.default.clone().unwrap_or_default();
+                        cmd = cmd.replace(&placeholder, &val);
+                    }
+                    let _ = self.proxy.send_event(Event::new(EventType::PasteCommand(cmd), *window_id));
+                } else {
+                    let msg = crate::message_bar::Message::new(
+                        format!("Workflow not found: {}", name),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self.proxy.send_event(Event::new(EventType::Message(msg), *window_id));
+                }
+            },
             (EventType::ConfirmOpen { id, title, body, confirm_label, cancel_label }, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.confirm_overlay.open(id.clone(), title.clone(), body.clone(), confirm_label.clone(), cancel_label.clone());
@@ -979,6 +1305,28 @@ pub enum EventType {
     BlocksSearchPerform(String),
 #[cfg(feature = "blocks")]
     BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
+
+    // Workflows panel events
+    #[cfg(feature = "workflow")]
+    WorkflowsSearchPerform(String),
+    #[cfg(feature = "workflow")]
+    WorkflowsSearchResults(Vec<crate::display::workflow_panel::WorkflowItem>),
+    #[cfg(feature = "workflow")]
+    WorkflowsExecuteByName(String),
+    #[cfg(feature = "workflow")]
+    WorkflowsProgressUpdate {
+        execution_id: String,
+        workflow_name: Option<String>,
+        status: Option<String>,
+        current_step: Option<String>,
+        log: Option<String>,
+        done: bool,
+    },
+    #[cfg(feature = "workflow")]
+    WorkflowsProgressClear(String),
+
+    // Generic paste utility for fallbacks
+    PasteCommand(String),
 
     // Global confirmation overlay events
     ConfirmOpen {
@@ -1379,10 +1727,119 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-#[cfg(feature = "blocks")]
+    #[cfg(feature = "blocks")]
     fn blocks_search_cancel(&mut self) {
         self.display.blocks_search.close();
         self.mark_dirty();
+    }
+
+    // Workflows panel controls
+    #[cfg(feature = "workflow")]
+    fn open_workflows_panel(&mut self) {
+        self.display.workflows_panel.open();
+        self.mark_dirty();
+        // Trigger initial search with current query (may be empty)
+        let q = self.display.workflows_panel.query.clone();
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_panel_cancel(&mut self) {
+        self.display.workflows_panel.close();
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_panel_active(&self) -> bool {
+        self.display.workflows_panel.active
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_panel_input(&mut self, c: char) {
+        self.display.workflows_panel.query.push(c);
+        self.display.workflows_panel.selected = 0;
+        self.mark_dirty();
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::WorkflowsSearchTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let q = self.display.workflows_panel.query.clone();
+        let evt = Event::new(EventType::WorkflowsSearchPerform(q), window_id);
+        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_panel_backspace(&mut self) {
+        self.display.workflows_panel.query.pop();
+        self.display.workflows_panel.selected = 0;
+        self.mark_dirty();
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::WorkflowsSearchTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let q = self.display.workflows_panel.query.clone();
+        let evt = Event::new(EventType::WorkflowsSearchPerform(q), window_id);
+        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_panel_move_selection(&mut self, delta: isize) {
+        self.display.workflows_panel.move_selection(delta);
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_panel_confirm(&mut self) {
+        if !self.display.workflows_panel.results.is_empty() {
+            let idx = self
+                .display
+                .workflows_panel
+                .selected
+                .min(self.display.workflows_panel.results.len() - 1);
+            let name = self.display.workflows_panel.results[idx].name.clone();
+            // Ask processor to execute via engine if available, else fallback
+            self.send_user_event(EventType::WorkflowsExecuteByName(name));
+        }
+        self.display.workflows_panel.close();
+        self.mark_dirty();
+    }
+
+    // Workflows progress overlay controls
+    #[cfg(feature = "workflow")]
+    fn workflows_progress_active(&self) -> bool {
+        self.display.workflows_progress.active
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_progress_dismiss(&mut self) {
+        if let Some(exec) = self.display.workflows_progress.execution_id.clone() {
+            let _ = self
+                .event_proxy
+                .send_event(Event::new(EventType::WorkflowsProgressClear(exec), self.display.window.id()));
+        } else {
+            // No execution id; clear directly
+            self.display.workflows_progress.active = false;
+            self.mark_dirty();
+            if self.display.window.has_frame {
+                self.display.window.request_redraw();
+            }
+        }
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_progress_terminal(&self) -> bool {
+        // Treat the workflow progress overlay as a terminal-level overlay only when
+        // no other modal/panel UI has focus. This prevents Esc from dismissing the
+        // workflow overlay while the user is interacting with higher-priority UI.
+        !self.confirm_overlay_active()
+            && !self.search_active()
+            && !self.display.hint_state.active()
+            && !self.blocks_search_active()
+            && !self.workflows_panel_active()
+            && !self.ai_active()
+            && !self.palette_active()
     }
 
     // Confirm overlay controls
@@ -1552,6 +2009,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.damage_tracker.frame().mark_fully_damaged();
         self.display.pending_update.dirty = true;
     }
+    #[inline]
 
     #[inline]
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
@@ -2066,6 +2524,29 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn scheduler_mut(&mut self) -> &mut Scheduler {
         self.scheduler
+    }
+
+    fn run_workflow_by_name(&mut self, name: &str) {
+        // Try user-defined workflows from config
+        if let Some(wf) = self.config.workflows.iter().find(|w| w.name == name) {
+            // Expand simple {param} placeholders using defaults if any
+            let mut cmd = wf.command.clone();
+            for p in &wf.params {
+                let placeholder = format!("{{{}}}", p.name);
+                let val = p.default.clone().unwrap_or_default();
+                cmd = cmd.replace(&placeholder, &val);
+            }
+            // Paste to terminal; user can review/edit and hit Enter
+            self.paste(&cmd, true);
+            return;
+        }
+        // Not found: inform user
+        let msg = Message::new(
+            format!("Workflow not found: {}", name),
+            crate::message_bar::MessageType::Warning,
+        );
+        let _ = self.event_proxy.send_event(Event::new(EventType::Message(msg), self.display.window.id()));
+        self.display.pending_update.dirty = true;
     }
 
     // Workspace / panes: wire to real WorkspaceManager
@@ -2884,6 +3365,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::ConfigReload(_)
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
+                EventType::PasteCommand(text) => {
+                    self.ctx.paste(&text, true);
+                    *self.ctx.dirty = true;
+                },
                 // Confirmation overlay events are handled at the window-processor level
                 EventType::ConfirmOpen { .. } | EventType::ConfirmRespond { .. } | EventType::ConfirmResolved { .. } => (),
                 #[cfg(feature = "blocks")]
@@ -3009,6 +3494,19 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         .event_proxy
                         .send_event(Event::new(
                             EventType::SecurityCheckAiApply { command, dry_run },
+                            self.ctx.display.window.id(),
+                        ));
+                    *self.ctx.dirty = true;
+                },
+                #[cfg(feature = "ai")]
+                EventType::SecurityCheckAiApply { command, dry_run } => {
+                    // TODO: Integrate SecurityLens analysis and confirmation overlay.
+                    // For now, forward to the checked path to avoid blocking.
+                    let _ = self
+                        .ctx
+                        .event_proxy
+                        .send_event(Event::new(
+                            EventType::AiApplyAsCommandChecked { command, dry_run },
                             self.ctx.display.window.id(),
                         ));
                     *self.ctx.dirty = true;

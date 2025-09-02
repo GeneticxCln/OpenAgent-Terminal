@@ -54,6 +54,10 @@ pub enum Topic {
     Frame,
     // Debounced Blocks Search typing
     BlocksSearchTyping,
+    // Debounced Workflows Search typing
+    WorkflowsSearchTyping,
+    // Retain workflows progress overlay briefly after completion
+    WorkflowsProgressRetain,
 }
 
 /// Event scheduled to be emitted at a specific time.

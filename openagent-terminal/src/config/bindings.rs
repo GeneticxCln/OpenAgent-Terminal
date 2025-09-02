@@ -277,12 +277,23 @@ pub enum Action {
     /// Open the Blocks Search panel.
     OpenBlocksSearchPanel,
 
+    /// Open the Workflows panel.
+    OpenWorkflowsPanel,
+
     /// Execute a named workflow from the config.
     #[config(skip)]
     RunWorkflow(String),
 
     /// Toggle the AI side panel (scratch buffer) [feature: ai].
     ToggleAiPanel,
+
+    /// AI Explain mode - explain selected text or last command output [feature: ai].
+    #[cfg(feature = "ai")]
+    AiExplain,
+
+    /// AI Fix mode - suggest fix for error snippet or failed command [feature: ai].
+    #[cfg(feature = "ai")]
+    AiFix,
 
     /// Create a new tab in the current window.
     CreateTab,
@@ -513,6 +524,12 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         "s",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenBlocksSearchPanel;
         // Toggle AI panel (scratch buffer) if built with feature `ai`.
         ".",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
+        // AI Explain mode - Ctrl+Shift+E
+        "e",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::AiExplain;
+        // AI Fix mode - Ctrl+Shift+F
+        "g",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::AiFix;
+        // Open Workflows panel (feature `workflow`): Ctrl+Shift+W
+        "w",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenWorkflowsPanel;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;
         // Workspace pane controls (default shortcuts)
