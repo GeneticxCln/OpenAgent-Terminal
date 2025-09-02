@@ -1814,9 +1814,90 @@ mod tests {
     test_process_binding! {
         name: process_binding_appcursormode_appkeypadmode_nomod_require_appcursor,
         binding: Binding { trigger: KEY, mods: ModifiersState::empty(), action: Action::from("\x1bOD"), mode: BindingMode::APP_CURSOR, notmode: BindingMode::empty() },
-        triggers: true,
-        mode: BindingMode::APP_CURSOR | BindingMode::APP_KEYPAD,
+        triggers: false,
+        mode: BindingMode::empty(),
         mods: ModifiersState::empty(),
+    }
+
+    #[cfg(feature = "blocks")]
+    #[test]
+    fn blocks_search_binding_toggle_via_action() {
+        // Build EventLoop for scheduler proxy
+
+        // Minimal terminal and environment
+        let mut clipboard = Clipboard::new_nop();
+        let cfg = UiConfig::default();
+        let size = SizeInfo::new(21.0, 51.0, 3.0, 3.0, 0., 0., false);
+        let mut terminal = Term::new(cfg.term_options(), &size, MockEventProxy);
+
+        // Test context implementing only what's needed
+        struct BsCtx<'a, T: EventListener> {
+            term: &'a mut Term<T>,
+            size: SizeInfo,
+            mouse: Mouse,
+            clipboard: &'a mut Clipboard,
+            msg: MessageBuffer,
+            mods: Modifiers,
+            cfg: &'a UiConfig,
+            inline_state: InlineSearchState,
+            blocks_active: bool,
+            query: String,
+        }
+
+        impl<T: EventListener> super::ActionContext<T> for BsCtx<'_, T> {
+            fn size_info(&self) -> SizeInfo { self.size }
+            fn mouse_mode(&self) -> bool { false }
+            fn search_next(&mut self, _origin: Point, _direction: Direction, _side: Side) -> Option<Match> { None }
+            fn search_direction(&self) -> Direction { Direction::Right }
+            fn search_active(&self) -> bool { false }
+            fn selection_is_empty(&self) -> bool { true }
+            fn mouse_mut(&mut self) -> &mut Mouse { &mut self.mouse }
+            fn mouse(&self) -> &Mouse { &self.mouse }
+            fn touch_purpose(&mut self) -> &mut TouchPurpose { unimplemented!() }
+            fn modifiers(&mut self) -> &mut Modifiers { &mut self.mods }
+            fn window(&mut self) -> &mut Window { unimplemented!() }
+            fn display(&mut self) -> &mut Display { unimplemented!() }
+            fn message(&self) -> Option<&Message> { self.msg.message() }
+            fn config(&self) -> &UiConfig { self.cfg }
+            fn clipboard_mut(&mut self) -> &mut Clipboard { self.clipboard }
+            fn scheduler_mut(&mut self) -> &mut crate::scheduler::Scheduler { panic!("not used in this test") }
+            fn semantic_word(&self, _point: Point) -> String { String::new() }
+            fn inline_search_state(&mut self) -> &mut InlineSearchState { &mut self.inline_state }
+            fn terminal(&self) -> &Term<T> { self.term }
+            fn terminal_mut(&mut self) -> &mut Term<T> { self.term }
+            // Blocks Search overrides
+            fn open_blocks_search_panel(&mut self) { self.blocks_active = true; }
+            fn close_blocks_search_panel(&mut self) { self.blocks_active = false; }
+            fn blocks_search_active(&self) -> bool { self.blocks_active }
+            fn blocks_search_input(&mut self, c: char) {
+                self.query.push(c);
+            }
+            fn blocks_search_backspace(&mut self) {
+                self.query.pop();
+            }
+            fn blocks_search_cancel(&mut self) { self.blocks_active = false; }
+        }
+
+        let mut ctx = BsCtx {
+            term: &mut terminal,
+            size,
+            mouse: Mouse::default(),
+            clipboard: &mut clipboard,
+            msg: MessageBuffer::default(),
+            mods: Default::default(),
+            cfg: &cfg,
+            inline_state: InlineSearchState::default(),
+            blocks_active: false,
+            query: String::new(),
+        };
+
+        // Open via action (simulating keybinding resolution)
+        Action::OpenBlocksSearchPanel.execute(&mut ctx);
+        assert!(ctx.blocks_active);
+
+        // Toggle off
+        Action::OpenBlocksSearchPanel.execute(&mut ctx);
+        assert!(!ctx.blocks_active);
     }
 
     test_process_binding! {

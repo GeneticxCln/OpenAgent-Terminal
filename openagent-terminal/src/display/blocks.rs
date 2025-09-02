@@ -237,7 +237,6 @@ impl Blocks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openagent_terminal_core::index::Column;
 
     #[test]
     fn toggle_and_labels() {

@@ -65,7 +65,6 @@ pub mod providers;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[cfg(feature = "ai-openai")]
     #[test]

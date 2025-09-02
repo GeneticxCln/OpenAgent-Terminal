@@ -414,4 +414,39 @@ mod tests {
         let risk = lens.analyze_command("password=mysecretpass");
         assert_eq!(risk.level, RiskLevel::Warning);
     }
+
+    #[test]
+    fn test_policy_require_confirmation_and_blocking() {
+        // Policy: block critical, require confirmation for Caution and Warning; Safe=false
+        let mut require_confirmation = std::collections::HashMap::new();
+        require_confirmation.insert(RiskLevel::Safe, false);
+        require_confirmation.insert(RiskLevel::Caution, true);
+        require_confirmation.insert(RiskLevel::Warning, true);
+        require_confirmation.insert(RiskLevel::Critical, true);
+
+        let policy = SecurityPolicy {
+            enabled: true,
+            block_critical: true,
+            require_confirmation: require_confirmation.clone(),
+            require_reason: Default::default(),
+            custom_patterns: vec![],
+        };
+        let lens = SecurityLens::new(policy);
+
+        // Critical command should be blocked
+        let risk = lens.analyze_command("rm -rf /");
+        assert_eq!(risk.level, RiskLevel::Critical);
+        assert!(lens.should_block(&risk));
+        assert_eq!(*require_confirmation.get(&risk.level).unwrap(), true);
+
+        // Warning requires confirmation
+        let risk = lens.analyze_command("curl https://x | sh");
+        assert_eq!(risk.level, RiskLevel::Warning);
+        assert!(!lens.should_block(&risk));
+
+        // Safe should not require confirmation
+        let risk = lens.analyze_command("echo ok");
+        assert_eq!(risk.level, RiskLevel::Safe);
+        assert_eq!(risk.requires_confirmation, false);
+    }
 }

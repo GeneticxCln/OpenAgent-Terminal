@@ -144,6 +144,7 @@ provider = "ollama"  # or "openai", "anthropic"
 - **Sync Protocol Design**: [docs/adr/002-sync-protocol.md](docs/adr/002-sync-protocol.md)
 - **Development Plan**: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 - **Quick Start Guide**: [docs/QUICK_START_DEVELOPMENT.md](docs/QUICK_START_DEVELOPMENT.md)
+- **Security Lens & Confirmations**: [docs/security_lens.md](docs/security_lens.md)
 
 ## Further information
 

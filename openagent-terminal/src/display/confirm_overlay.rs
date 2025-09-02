@@ -18,6 +18,33 @@ pub struct ConfirmOverlayState {
     pub cancel_label: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_and_close_overlay_updates_state() {
+        let mut st = ConfirmOverlayState::new();
+        assert!(!st.active);
+        assert!(st.id.is_none());
+        st.open(
+            "id-1".into(),
+            "Title".into(),
+            "Body".into(),
+            Some("Confirm".into()),
+            Some("Cancel".into()),
+        );
+        assert!(st.active);
+        assert_eq!(st.id.as_deref(), Some("id-1"));
+        assert_eq!(st.title, "Title");
+        assert_eq!(st.body, "Body");
+        st.close_if("id-1");
+        assert!(!st.active);
+        assert!(st.id.is_none());
+        assert!(st.title.is_empty());
+    }
+}
+
 impl ConfirmOverlayState {
     pub fn new() -> Self {
         Self { active: false, id: None, title: String::new(), body: String::new(), confirm_label: "Confirm".into(), cancel_label: "Cancel".into() }
