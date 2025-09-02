@@ -8,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use tracing::info;
-use unicode_bidi::{BidiClass, BidiInfo};
+use unicode_bidi::BidiClass;
 
 /// Text shaping configuration
 #[derive(Debug, Clone)]

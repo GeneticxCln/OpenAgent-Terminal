@@ -3,6 +3,8 @@
 //! This module handles the visual representation of tabs, including rendering,
 //! animations, and interaction with the display system.
 
+#![allow(dead_code)]
+
 use std::time::Instant;
 
 use openagent_terminal_core::index::{Column, Point};
