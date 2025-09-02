@@ -701,7 +701,7 @@ impl SerdeReplace for Program {
 }
 
 /// Minimal workflow definition for reusable commands with parameters.
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Workflow {
     /// Unique workflow name used for display and bindings.
     pub name: String,
@@ -715,7 +715,7 @@ pub struct Workflow {
     pub params: Vec<WorkflowParam>,
 }
 
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq, Default)]
 pub struct WorkflowParam {
     /// Parameter name referenced by {name} in the template.
     pub name: String,
@@ -724,17 +724,6 @@ pub struct WorkflowParam {
     pub default: Option<String>,
 }
 
-impl Default for Workflow {
-    fn default() -> Self {
-        Self { name: String::new(), description: None, command: String::new(), params: Vec::new() }
-    }
-}
-
-impl Default for WorkflowParam {
-    fn default() -> Self {
-        Self { name: String::new(), default: None }
-    }
-}
 
 pub(crate) struct StringVisitor;
 impl serde::de::Visitor<'_> for StringVisitor {

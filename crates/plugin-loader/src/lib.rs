@@ -561,7 +561,7 @@ mod tests {
         assert!(manager.sanitize_plugin_path("/etc").is_none());
         // Relative inside plugin_dir should be accepted and resolved
         let sub = manager.sanitize_plugin_path("subdir").unwrap();
-        assert!(sub.starts_with(&*temp_dir.path().to_string_lossy()));
+        assert!(sub.starts_with(temp_dir.path().to_string_lossy().as_ref()));
     }
 
     #[test]
@@ -573,13 +573,16 @@ mod tests {
         let manifest_path = temp_dir.path().join("p.toml");
         let mut f = std::fs::File::create(&manifest_path).unwrap();
         // Include an unsafe preopen ('/') which should be filtered out
-        writeln!(f, "[permissions]\nread_files=[\"/\",\"sub\"]\nwrite_files=[\"sub\"]\n").unwrap();
+        writeln!(f, "[permissions]\nread_files=[\"/\",\"sub\"]\nwrite_files=[\"sub\"]\nnetwork=false\nexecute_commands=false\nenvironment_variables=[]\nmax_memory_mb=50\ntimeout_ms=5000\n").unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let perms = manager.read_plugin_permissions(&wasm_path).expect("permissions");
         // Ensure '/' was removed and 'sub' resolved under plugin_dir
         assert!(!perms.read_files.iter().any(|p| p == "/"));
-        assert!(perms.read_files.iter().any(|p| p.starts_with(&*temp_dir.path().to_string_lossy())));
+        assert!(perms
+            .read_files
+            .iter()
+            .any(|p| p.starts_with(temp_dir.path().to_string_lossy().as_ref())));
     }
 
     #[tokio::test]

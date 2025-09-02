@@ -1,10 +1,12 @@
 // Component Initialization Module
 // Integrates WGPU renderer, HarfBuzz, Blocks 2.0, Workflows, and Plugins
 
+#[allow(unused_imports)]
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+#[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
 
 // Import new components
@@ -22,6 +24,7 @@ use plugin_loader::{
 use workflow_engine::WorkflowEngine;
 
 /// Component initialization configuration
+#[allow(dead_code)]
 pub struct ComponentConfig {
     /// Enable WGPU renderer
     pub enable_wgpu: bool,
@@ -382,6 +385,7 @@ pub struct ComponentIntegration<'a> {
     components: &'a InitializedComponents,
 }
 
+#[allow(dead_code)]
 impl<'a> ComponentIntegration<'a> {
     pub fn new(components: &'a InitializedComponents) -> Self {
         Self { components }

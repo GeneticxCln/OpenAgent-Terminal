@@ -193,6 +193,7 @@ impl SplitManager {
     }
 
     /// Internal method to split a pane
+    #[allow(clippy::only_used_in_recursion)]
     fn split_pane(
         &self,
         layout: &mut SplitLayout,
@@ -237,6 +238,7 @@ impl SplitManager {
     }
 
     /// Remove a pane from the layout tree
+    #[allow(clippy::only_used_in_recursion)]
     fn remove_pane(&self, layout: &mut SplitLayout, pane_id: PaneId) -> Option<SplitLayout> {
         match layout {
             SplitLayout::Single(id) if *id == pane_id => {
@@ -320,6 +322,7 @@ impl SplitManager {
         rects
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn calculate_rects_recursive(
         &self,
         layout: &SplitLayout,
@@ -348,6 +351,7 @@ impl SplitManager {
         self.adjust_split_ratio(layout, pane_id, delta)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn adjust_split_ratio(&self, layout: &mut SplitLayout, pane_id: PaneId, delta: f32) -> bool {
         match layout {
             SplitLayout::Horizontal { left, right, ratio } => {

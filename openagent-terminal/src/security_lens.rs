@@ -51,6 +51,7 @@ pub struct SecurityLens {
     sensitive_patterns: Vec<Regex>,
 }
 
+#[allow(dead_code)]
 impl SecurityLens {
     pub fn new(policy: SecurityPolicy) -> Self {
         let dangerous_patterns = Self::init_dangerous_patterns();

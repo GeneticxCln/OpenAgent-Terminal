@@ -366,7 +366,7 @@ impl Plugin for GitContextPlugin {
 
                 // Status
                 let status = self.get_status_summary(path);
-                output.push_str(&"📊 Status:\n".to_string());
+                output.push_str("📊 Status:\n");
                 output.push_str(&format!("  ✅ Staged: {}\n", status.get("staged").unwrap_or(&0)));
                 output.push_str(&format!(
                     "  ✏️  Modified: {}\n",

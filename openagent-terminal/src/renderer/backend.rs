@@ -4,6 +4,7 @@ use tracing::{debug, info};
 use crate::config::debug::RendererPreference;
 
 /// Available rendering backends
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderBackend {
     /// WebGPU-based renderer (modern, cross-platform)
@@ -22,6 +23,7 @@ impl fmt::Display for RenderBackend {
 }
 
 /// Backend selection strategy
+#[allow(dead_code)]
 pub struct BackendSelector {
     prefer_wgpu: bool,
     renderer_preference: Option<RendererPreference>,
@@ -61,6 +63,7 @@ impl BackendSelector {
     }
 
     /// Check if WGPU is available on the current system
+    #[allow(dead_code)]
     #[cfg(feature = "wgpu")]
     fn is_wgpu_available() -> bool {
         // Try to create a WGPU instance to check availability
@@ -84,6 +87,7 @@ impl BackendSelector {
         }
     }
 
+    #[allow(dead_code)]
     #[cfg(not(feature = "wgpu"))]
     fn is_wgpu_available() -> bool {
         false
@@ -91,6 +95,7 @@ impl BackendSelector {
 }
 
 /// Backend-specific configuration
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct BackendConfig {
     pub backend: RenderBackend,

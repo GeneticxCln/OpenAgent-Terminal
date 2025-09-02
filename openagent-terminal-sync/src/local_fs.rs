@@ -268,8 +268,8 @@ mod tests {
 
         // Initial status should be default
         let status = provider.status().unwrap();
-        assert_eq!(status.last_push, None);
-        assert_eq!(status.last_pull, None);
+        assert!(status.last_push.is_none());
+        assert!(status.last_pull.is_none());
         assert!(!status.pending);
 
         // Write a custom status
