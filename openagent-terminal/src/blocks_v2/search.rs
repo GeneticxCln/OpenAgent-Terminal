@@ -26,8 +26,8 @@ impl SearchEngine {
         Ok(())
     }
 
-    pub async fn search(&self, _query: SearchQuery) -> Result<Vec<Arc<Block>>> {
-        // Simplified search implementation
-        Ok(vec![])
+    pub async fn search(&self, query: SearchQuery) -> Result<Vec<Arc<Block>>> {
+        // Delegate to storage to leverage SQL/FTS
+        self.storage.search(&query).await
     }
 }

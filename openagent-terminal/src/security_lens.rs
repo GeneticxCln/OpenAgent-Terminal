@@ -5,7 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RiskLevel {
     Safe,
     Caution,
@@ -151,15 +151,15 @@ impl SecurityLens {
     fn init_sensitive_patterns() -> Vec<Regex> {
         vec![
             // API Keys
-            Regex::new(r"(api[_-]?key|apikey|api_secret)[=:\s]+['\"]?[a-zA-Z0-9_-]{20,}").unwrap(),
+            Regex::new(r#"(?i)(api[_-]?key|apikey|api_secret)[=:\s]+['\"]?[a-zA-Z0-9_-]{8,}"#).unwrap(),
             // AWS Keys
-            Regex::new(r"AKIA[0-9A-Z]{16}").unwrap(),
+            Regex::new(r#"AKIA[0-9A-Z]{16}"#).unwrap(),
             // Generic secrets
-            Regex::new(r"(password|passwd|pwd|secret|token)[=:\s]+['\"]?[^\s'\"]+").unwrap(),
+            Regex::new(r#"(password|passwd|pwd|secret|token)[=:\s]+['"]?[^\s'"]+"#).unwrap(),
             // SSH private keys
-            Regex::new(r"-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----").unwrap(),
+            Regex::new(r#"-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----"#).unwrap(),
             // JWT tokens
-            Regex::new(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+").unwrap(),
+            Regex::new(r#"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"#).unwrap(),
         ]
     }
 

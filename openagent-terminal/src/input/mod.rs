@@ -158,6 +158,16 @@ pub trait ActionContext<T: EventListener> {
     fn palette_cancel(&mut self) {}
     fn run_workflow_by_name(&mut self, _name: &str) {}
 
+    // Blocks Search panel
+    fn open_blocks_search_panel(&mut self) {}
+    fn close_blocks_search_panel(&mut self) {}
+    fn blocks_search_active(&self) -> bool { false }
+    fn blocks_search_input(&mut self, _c: char) {}
+    fn blocks_search_backspace(&mut self) {}
+    fn blocks_search_move_selection(&mut self, _delta: isize) {}
+    fn blocks_search_confirm(&mut self) {}
+    fn blocks_search_cancel(&mut self) {}
+
     // AI panel (feature=ai)
     fn open_ai_panel(&mut self) {}
     fn close_ai_panel(&mut self) {}
@@ -450,6 +460,13 @@ impl<T: EventListener> Execute<T> for Action {
             Action::Mouse(MouseAction::ExpandSelection) => ctx.expand_selection(),
             Action::OpenCommandPalette => ctx.open_command_palette(),
             Action::RunWorkflow(name) => ctx.run_workflow_by_name(name),
+            Action::OpenBlocksSearchPanel => {
+                if ctx.blocks_search_active() {
+                    ctx.blocks_search_cancel();
+                } else {
+                    ctx.open_blocks_search_panel();
+                }
+            },
             Action::ToggleAiPanel => ctx.open_ai_panel(),
             Action::SearchForward => ctx.start_search(Direction::Right),
             Action::SearchBackward => ctx.start_search(Direction::Left),

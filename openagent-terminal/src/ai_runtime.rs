@@ -5,6 +5,7 @@ use log::{debug, error, info};
 use std::collections::VecDeque;
 
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
+use crate::security_lens::{SecurityLens, SecurityPolicy};
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -58,15 +59,17 @@ pub struct AiRuntime {
     pub ui: AiUiState,
     pub provider: Arc<dyn AiProvider>,
     cancel_flag: Arc<AtomicBool>,
+    security_lens: SecurityLens,
 }
 
 impl AiRuntime {
-    pub fn new(provider: Box<dyn AiProvider>) -> Self {
+pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
         Self {
             ui: AiUiState::default(),
             provider: Arc::from(provider),
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            security_lens: SecurityLens::new(SecurityPolicy::default()),
         }
     }
 
@@ -373,19 +376,34 @@ impl AiRuntime {
     }
 
     /// Apply command with safe-run (dry-run by default)
-    pub fn apply_command(&self, dry_run: bool) -> Option<(String, bool)> {
+pub fn apply_command(&self, dry_run: bool) -> Option<(String, bool)> {
         self.ui
             .proposals
             .get(self.ui.selected_proposal)
             .and_then(|p| p.proposed_commands.first())
             .map(|cmd| {
-                let safe_cmd = if dry_run {
-                    // Prepend echo for dry-run mode
-                    format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd)
+                if dry_run {
+                    // Analyze risk and annotate a dry-run output
+                    let risk = self.security_lens.analyze_command(cmd);
+                    let mut annotated = String::new();
+                    annotated.push_str(&format!("# Security Lens: {:?} - {}\n", risk.level, risk.explanation));
+                    if !risk.factors.is_empty() {
+                        annotated.push_str("# Risk factors:\n");
+                        for f in &risk.factors {
+                            annotated.push_str(&format!("#  - {} ({})\n", f.description, f.category));
+                        }
+                    }
+                    if !risk.mitigations.is_empty() {
+                        annotated.push_str("# Suggested mitigations:\n");
+                        for m in &risk.mitigations {
+                            annotated.push_str(&format!("#  - {}\n", m));
+                        }
+                    }
+                    annotated.push_str(&format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd));
+                    (annotated, true)
                 } else {
-                    cmd.clone()
-                };
-                (safe_cmd, dry_run)
+                    (cmd.clone(), false)
+                }
             })
     }
 

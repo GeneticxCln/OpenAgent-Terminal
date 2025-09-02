@@ -1,5 +1,7 @@
 # OpenAgent Terminal - Implementation Progress to 100%
 
+Note: The canonical project status is tracked in [STATUS.md](STATUS.md). This document focuses on implementation breakdown and task tracking.
+
 ## 🎯 Current Status: ~75% Complete
 
 ### ✅ Completed Features (75%)
@@ -218,6 +220,6 @@ cargo bench --features "all"
 
 ---
 
-**Last Updated**: 2025-09-01
+**Last Updated**: 2025-09-02
 **Estimated Completion**: 6 weeks
 **Current Sprint**: Infrastructure & Security

@@ -4,6 +4,8 @@
 
 OpenAgent Terminal is an open-source, AI-enhanced terminal emulator built on Alacritty's foundation, while Warp Terminal is a proprietary, cloud-native terminal with built-in AI features. Both aim to modernize the terminal experience with AI assistance, but they take fundamentally different approaches to architecture, privacy, and user experience.
 
+Current maturity note: OpenAgent Terminal is in beta. For the canonical, up-to-date status, see [STATUS.md](STATUS.md).
+
 ## Core Philosophy Comparison
 
 ### OpenAgent Terminal

@@ -143,6 +143,8 @@ default = ["wayland", "x11", "blocks"]
 background-components = []
 # Optional non-OpenGL rendering backend. Use with `--features wgpu`.
 wgpu = ["dep:wgpu", "dep:pollster"]
+# Convenience preset: enable WGPU backend with one flag (alias)
+renderer-wgpu = ["wgpu"]
 
 x11 = [
     "copypasta/x11",

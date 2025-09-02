@@ -233,3 +233,43 @@ impl Blocks {
         self.blocks.iter().any(|b| !b.folded && total_line == b.start_total_line && b.cmd.is_some())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openagent_terminal_core::index::Column;
+
+    #[test]
+    fn toggle_and_labels() {
+        let mut blocks = Blocks::new();
+        blocks.enabled = true;
+        // A block spanning total lines 10..=20
+        blocks.blocks.push(CommandBlock {
+            start_total_line: 10,
+            end_total_line: Some(20),
+            cmd: Some("make build".to_string()),
+            cwd: Some("/home/user/project".to_string()),
+            exit: Some(0),
+            ended_at: None,
+            started_at: Instant::now(),
+            folded: false,
+            anim_start: None,
+            anim_opening: false,
+            anim_duration_ms: 140,
+        });
+
+        let display_offset = 5; // so header is at viewport line 5
+        // Initially header present
+        assert!(blocks.is_viewport_line_header(display_offset, 5));
+        // Toggle fold at header
+        let toggled = blocks.toggle_fold_header_at_viewport_line(display_offset, 5);
+        assert!(toggled);
+        // Now folded label should appear at header viewport line
+        let label = blocks.folded_label_at_viewport_line(display_offset, 5);
+        assert!(label.is_some());
+        // Unfold again
+        let toggled2 = blocks.toggle_fold_header_at_viewport_line(display_offset, 5);
+        assert!(toggled2);
+        assert!(blocks.header_at_viewport_line(display_offset, 5).is_some());
+    }
+}
