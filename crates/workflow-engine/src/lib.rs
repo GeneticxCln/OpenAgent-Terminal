@@ -221,6 +221,7 @@ pub struct WorkflowEngine {
     workflows: Arc<RwLock<HashMap<String, WorkflowDefinition>>>,
     states: Arc<RwLock<HashMap<String, WorkflowState>>>,
     event_sender: broadcast::Sender<WorkflowEvent>,
+    #[allow(dead_code)]
     template_engine: Tera,
 }
 
@@ -615,11 +616,11 @@ impl WorkflowEngine {
                 }
 
                 // Check version if specified
-                if let Some(min_version) = &req.min_version {
+                if let Some(_min_version) = &req.min_version {
                     // This is simplified - in production you'd parse actual version output
                     let version_output = Command::new(command).arg("--version").output().await?;
 
-                    let version_str = String::from_utf8_lossy(&version_output.stdout);
+                    let _version_str = String::from_utf8_lossy(&version_output.stdout);
                     // Version comparison logic would go here
                 }
             }

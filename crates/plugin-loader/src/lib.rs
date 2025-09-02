@@ -46,6 +46,7 @@ pub struct LoadedPlugin {
     /// Plugin metadata
     pub metadata: PluginMetadata,
     /// WASM instance
+    #[allow(dead_code)]
     instance: Instance,
     /// WASM store with context
     store: Store<PluginContext>,
@@ -55,7 +56,9 @@ pub struct LoadedPlugin {
 
 /// Plugin context stored in WASM store
 struct PluginContext {
+    #[allow(dead_code)]
     wasi: WasiCtx,
+    #[allow(dead_code)]
     permissions: PluginPermissions,
     resource_tracker: ResourceTracker,
 }
@@ -63,7 +66,9 @@ struct PluginContext {
 /// Exported functions from a plugin
 struct PluginExports {
     init: Option<TypedFunc<(), i32>>,
+    #[allow(dead_code)]
     get_metadata: Option<TypedFunc<(), i32>>,
+    #[allow(dead_code)]
     handle_event: Option<TypedFunc<(i32, i32), i32>>,
     cleanup: Option<TypedFunc<(), i32>>,
 }
@@ -72,7 +77,9 @@ struct PluginExports {
 #[derive(Default)]
 struct ResourceTracker {
     memory_used: usize,
+    #[allow(dead_code)]
     cpu_time_ms: u64,
+    #[allow(dead_code)]
     api_calls: u64,
 }
 
@@ -389,8 +396,8 @@ impl PluginManager {
     /// Get plugin metadata
     fn get_plugin_metadata(
         &self,
-        exports: &PluginExports,
-        store: &mut Store<PluginContext>,
+        _exports: &PluginExports,
+        _store: &mut Store<PluginContext>,
     ) -> Result<PluginMetadata, PluginError> {
         // This is simplified - in reality we'd need to handle memory passing
         // between WASM and host for complex data structures
@@ -414,7 +421,7 @@ impl PluginManager {
         let manifest_path = path.with_extension("toml");
 
         if manifest_path.exists() {
-            let content = std::fs::read_to_string(&manifest_path)
+            let _content = std::fs::read_to_string(&manifest_path)
                 .map_err(|e| PluginError::InvalidFormat(e.to_string()))?;
 
             // Parse TOML manifest
@@ -458,7 +465,7 @@ impl PluginManager {
 impl ResourceLimiter for ResourceTracker {
     fn memory_growing(
         &mut self,
-        current: usize,
+        _current: usize,
         desired: usize,
         _maximum: Option<usize>,
     ) -> anyhow::Result<bool> {

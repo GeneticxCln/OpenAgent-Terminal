@@ -442,7 +442,7 @@ impl ApplicationHandler<Event> for Processor {
                 });
 
                 // Execute sync operation.
-                let result = match sync_type {
+                match sync_type {
                     IpcSyncType::Status(_) => match provider.status() {
                         Ok(status) => {
                             let status_json = serde_json::to_string_pretty(&status)
@@ -464,7 +464,7 @@ impl ApplicationHandler<Event> for Processor {
                             }
                         },
                     },
-                    IpcSyncType::Push(scope_arg) => {
+                    IpcSyncType::Push(_) => {
                         let scope = scope.unwrap_or(SyncScope::Settings);
                         match provider.push(scope) {
                             Ok(()) => {
@@ -487,7 +487,7 @@ impl ApplicationHandler<Event> for Processor {
                             },
                         }
                     },
-                    IpcSyncType::Pull(scope_arg) => {
+                    IpcSyncType::Pull(_) => {
                         let scope = scope.unwrap_or(SyncScope::Settings);
                         match provider.pull(scope) {
                             Ok(()) => {

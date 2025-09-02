@@ -7,7 +7,7 @@ use harfbuzz_rs::{Direction, Face, Feature, Font as HbFont, GlyphBuffer, Languag
 use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
-use tracing::{debug, info, warn};
+use tracing::info;
 use unicode_bidi::{BidiClass, BidiInfo};
 
 /// Text shaping configuration
@@ -158,7 +158,6 @@ impl HarfBuzzShaper {
         }
 
         // Analyze text direction
-        let bidi_info = BidiInfo::new(text, None);
         let direction = self.detect_direction(text);
 
         // Get or load font
@@ -433,14 +432,14 @@ fn get_or_load_font(&mut self, font_name: &str, size: f32) -> Result<Arc<Owned<H
     }
 
     /// Check if a font can render a character
-    fn can_render_char(&self, font_name: &str, ch: char) -> bool {
+    fn can_render_char(&self, _font_name: &str, _ch: char) -> bool {
         // This is a simplified check - actual implementation would
         // query the font's character map
         true
     }
 
     /// Find a fallback font for text
-    fn find_fallback_font(&self, text: &str, primary: &str) -> Option<&str> {
+    fn find_fallback_font(&self, _text: &str, primary: &str) -> Option<&str> {
         for fallback in &self.config.fallback_fonts {
             if fallback != primary {
                 // Check if this font can handle the text

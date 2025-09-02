@@ -19,7 +19,7 @@ use plugin_loader::{
     CommandDefinition, LogLevel, Notification, PluginHost, PluginManager, TerminalState,
 };
 #[cfg(feature = "workflow")]
-use workflow_engine::{WorkflowDefinition, WorkflowEngine};
+use workflow_engine::WorkflowEngine;
 
 /// Component initialization configuration
 pub struct ComponentConfig {
@@ -98,7 +98,7 @@ impl std::fmt::Debug for InitializedComponents {
 /// Initialize all components
 pub async fn initialize_components(
     config: &ComponentConfig,
-    window: &winit::window::Window,
+    _window: &winit::window::Window,
 ) -> Result<InitializedComponents> {
     info!("Initializing OpenAgent Terminal components...");
 

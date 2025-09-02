@@ -23,7 +23,7 @@ impl WorkflowExecutor {
     ) -> Result<Vec<Result<()>>> {
         let mut tasks = JoinSet::new();
 
-        for step in steps {
+        for _step in steps {
             tasks.spawn(async move {
                 // Execute step
                 Ok(())

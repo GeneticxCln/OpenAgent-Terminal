@@ -18,7 +18,9 @@ pub struct AiUiState {
     pub selected_proposal: usize,
     pub is_loading: bool,
     pub error_message: Option<String>,
+    #[allow(dead_code)]
     pub history: VecDeque<String>,
+    #[allow(dead_code)]
     pub history_index: Option<usize>,
     // Streaming state
     pub streaming_active: bool,
