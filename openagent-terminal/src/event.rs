@@ -215,10 +215,11 @@ impl Processor {
     }
 
     /// Initialize components asynchronously
+    #[allow(dead_code)]
     pub async fn initialize_components(
         &mut self,
         window: &winit::window::Window,
-    ) -> Result<(), Box<dyn Error>> {
+        ) -> Result<(), Box<dyn Error>> {
         if self.components.is_some() {
             return Ok(()); // Already initialized
         }
@@ -248,6 +249,7 @@ impl Processor {
     }
 
     /// Get a reference to the initialized components
+    #[allow(dead_code)]
     pub fn components(&self) -> Option<&Arc<InitializedComponents>> {
         self.components.as_ref()
     }

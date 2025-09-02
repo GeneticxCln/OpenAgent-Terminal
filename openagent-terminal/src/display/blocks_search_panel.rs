@@ -44,6 +44,7 @@ impl BlocksSearchState {
         self.active = false;
     }
 
+    #[allow(dead_code)]
     pub fn clear_results(&mut self) {
         self.results.clear();
         self.selected = 0;

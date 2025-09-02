@@ -819,50 +819,6 @@ impl WorkflowEngine {
     pub fn subscribe(&self) -> broadcast::Receiver<WorkflowEvent> {
         self.event_sender.subscribe()
     }
-
-        // Arrange a secret in the host env
-        std::env::set_var("WF_SECRET_SRC", "supersecret");
-        let engine = WorkflowEngine::new().unwrap();
-        // Workflow that runs `env` to print environment variables
-        let workflow = WorkflowDefinition {
-            name: "secret".into(),
-            version: "1.0.0".into(),
-            description: "Secret test".into(),
-            author: None,
-            metadata: WorkflowMetadata { tags: vec![], icon: None, estimated_duration: None },
-            requirements: vec![],
-            parameters: vec![],
-            environment: HashMap::new(),
-            steps: vec![WorkflowStep {
-                id: "s1".into(),
-                name: "Env".into(),
-                description: None,
-                commands: vec!["env".into()],
-                condition: None,
-                continue_on_error: false,
-                allow_failure: false,
-                always_run: false,
-                parallel: false,
-                timeout: None,
-                retry: None,
-                environment: None,
-                secrets: Some(vec![Secret { name: "MY_SECRET".into(), source: "WF_SECRET_SRC".into() }]),
-                artifacts: None,
-            }],
-            hooks: WorkflowHooks::default(),
-            outputs: vec![],
-            ai_context: None,
-        };
-        let id = "secret-1.0.0";
-        engine.workflows.write().await.insert(id.into(), workflow);
-        let exec_id = engine.execute_workflow(id, HashMap::new()).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        let state = engine.get_state(&exec_id).await.unwrap();
-        // Assert success and that the logs include the injected env var
-        assert_eq!(state.status, WorkflowStatus::Success);
-        let logs_joined = state.logs.iter().map(|l| l.message.clone()).collect::<String>();
-        assert!(logs_joined.contains("MY_SECRET=supersecret"));
-    }
 }
 
 impl Clone for WorkflowEngine {

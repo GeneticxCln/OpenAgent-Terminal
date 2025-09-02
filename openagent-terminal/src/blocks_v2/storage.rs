@@ -256,15 +256,13 @@ impl BlockStorage {
         );
 
         let mut where_clauses: Vec<String> = Vec::new();
-        let mut binds: Vec<(usize, String)> = Vec::new();
-        let mut bind_ix = 1;
+        let mut binds: Vec<String> = Vec::new();
 
         // If text provided, join FTS table
         if let Some(text) = &query.text {
             sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
             where_clauses.push("blocks_fts MATCH ?".into());
-            binds.push((bind_ix, text.clone()));
-            bind_ix += 1;
+            binds.push(text.clone());
         }
 
         if query.starred_only {
@@ -273,33 +271,28 @@ impl BlockStorage {
 
         if let Some(status) = query.status {
             where_clauses.push("b.status = ?".into());
-            binds.push((bind_ix, format!("{:?}", status)));
-            bind_ix += 1;
+            binds.push(format!("{:?}", status));
         }
 
         if let Some(dir) = &query.directory {
             where_clauses.push("b.directory LIKE ?".into());
-            binds.push((bind_ix, format!("%{}%", dir.display())));
-            bind_ix += 1;
+            binds.push(format!("%{}%", dir.display()));
         }
 
         if let Some(tags) = &query.tags {
             for tag in tags {
                 where_clauses.push("b.tags LIKE ?".into());
-                binds.push((bind_ix, format!("%\"{}\"%", tag)));
-                bind_ix += 1;
+                binds.push(format!("%\"{}\"%", tag));
             }
         }
 
         if let Some(from) = query.date_from {
             where_clauses.push("b.created_at >= ?".into());
-            binds.push((bind_ix, from.to_rfc3339()));
-            bind_ix += 1;
+            binds.push(from.to_rfc3339());
         }
         if let Some(to) = query.date_to {
             where_clauses.push("b.created_at <= ?".into());
-            binds.push((bind_ix, to.to_rfc3339()));
-            bind_ix += 1;
+            binds.push(to.to_rfc3339());
         }
 
         if !where_clauses.is_empty() {
@@ -315,7 +308,7 @@ impl BlockStorage {
 
         // Build the query dynamically
         let mut q = sqlx::query_as::<_, BlockRow>(&sql);
-        for (_idx, val) in binds {
+        for val in binds {
             q = q.bind(val);
         }
 

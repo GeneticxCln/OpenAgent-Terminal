@@ -175,7 +175,6 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
 
     // Select and log rendering backend early to avoid dead_code warnings and clarify startup.
     {
-        use crate::config::debug::RendererPreference as _;
         use crate::renderer::backend::BackendSelector;
         let prefer_wgpu = config.debug.prefer_wgpu;
         let selector = BackendSelector::new(prefer_wgpu, config.debug.renderer);
