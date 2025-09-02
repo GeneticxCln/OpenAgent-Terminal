@@ -69,14 +69,13 @@ jobs:
         run: |
           ./.github/workflows/upload_asset.sh \
             ./openagent-terminal-${GITHUB_REF##*/}-installer.msi $GITHUB_TOKEN
-      - name: Build MSIX (best-effort)
-        continue-on-error: true
+      - name: Build MSIX (unsigned)
         run: |
-          cargo install cargo-msix --locked || true
-          cargo msix bundle -p openagent-terminal --output "./openagent-terminal-${GITHUB_REF##*/}.msix" || true
-          if [ -f ./openagent-terminal-${GITHUB_REF##*/}.msix ]; then
-            ./.github/workflows/upload_asset.sh ./openagent-terminal-${GITHUB_REF##*/}.msix $GITHUB_TOKEN
-          fi
+          cargo install cargo-msix --locked
+          cargo msix bundle -p openagent-terminal --output "./openagent-terminal-${GITHUB_REF##*/}.msix"
+      - name: Upload MSIX (unsigned)
+        run: |
+          ./.github/workflows/upload_asset.sh ./openagent-terminal-${GITHUB_REF##*/}.msix $GITHUB_TOKEN
 
   linux:
     runs-on: ubuntu-latest

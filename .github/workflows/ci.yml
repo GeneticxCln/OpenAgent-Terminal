@@ -211,3 +211,20 @@ jobs:
         run: |
           set -euo pipefail
           xvfb-run -a cargo run -p openagent-terminal -F wgpu --release --example perf_wgpu
+
+      - name: WGPU offscreen snapshot readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT_JSON=$(xvfb-run -a cargo run -p openagent-terminal -F wgpu --release --example wgpu_snapshot)
+          echo "$OUT_JSON"
+          OUT_PATH=$(echo "$OUT_JSON" | sed -n 's/.*"output":"\([^"]*\)".*/\1/p')
+          WIDTH=$(echo "$OUT_JSON" | sed -n 's/.*"width":\([0-9]\+\).*/\1/p')
+          HEIGHT=$(echo "$OUT_JSON" | sed -n 's/.*"height":\([0-9]\+\).*/\1/p')
+          test -f "$OUT_PATH"
+          test "$WIDTH" = "256" && test "$HEIGHT" = "128"
+      - name: Upload WGPU offscreen artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wgpu-offscreen
+          path: tests/snapshot_output/wgpu_offscreen.png
