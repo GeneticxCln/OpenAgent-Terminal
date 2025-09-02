@@ -2066,6 +2066,81 @@ impl Display {
         }
     }
 
+    /// Public helper: draw a message bar preview with a single message.
+    pub fn draw_message_bar_preview(&mut self, config: &UiConfig, ty: MessageType, message: &str) {
+        let size_info = self.size_info;
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let bg = match ty {
+            MessageType::Error => theme.tokens.error,
+            MessageType::Warning => theme.tokens.warning,
+        };
+        let fg = theme.tokens.surface;
+
+        // Draw background panel occupying the footer area (below search bar if present).
+        let search_offset = 0usize; // preview only
+        let start_line = size_info.screen_lines() + search_offset;
+        let y = size_info.cell_height().mul_add(start_line as f32, size_info.padding_y());
+        let x = 0;
+        let width = size_info.width() as i32;
+        let height = (size_info.height() - y) as i32;
+        let rect = RenderRect::new(x as f32, y, width as f32, height as f32, bg, 1.0);
+        let metrics = self.glyph_cache.font_metrics();
+        let mut rects = vec![rect];
+        self.renderer_draw_rects(&size_info, &metrics, rects.drain(..).collect());
+
+        // Draw the single-line message text.
+        let text = message.to_string();
+        let point = Point::new(start_line, Column(0));
+        let size_copy = self.size_info;
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => {
+                renderer.draw_string(point, fg, bg, text.chars(), &size_copy, &mut self.glyph_cache);
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.draw_string(point, fg, bg, text.chars(), &size_copy, &mut self.glyph_cache);
+            },
+        }
+    }
+
+    /// Public helper: draw the search bar line and optionally a cursor.
+    pub fn draw_search_preview(&mut self, config: &UiConfig, text: &str, show_cursor: bool) {
+        self.draw_search(config, text);
+        if show_cursor {
+            // Draw cursor at the end of the search bar
+            let label_len = text.chars().count();
+            let line = self.size_info.screen_lines();
+            let column = Column(label_len.saturating_sub(1));
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let fg = theme.tokens.text;
+            let cursor = RenderableCursor::new(Point::new(line, column), CursorShape::Underline, fg, NonZeroU32::new(1).unwrap());
+            let rects = cursor.rects(&self.size_info, config.cursor.thickness());
+            let metrics = self.glyph_cache.font_metrics();
+            self.renderer_draw_rects(&self.size_info, &metrics, rects);
+        }
+    }
+
+    /// Public helper: draw a folded block label line at a given viewport line.
+    pub fn draw_folded_label_preview(&mut self, config: &UiConfig, viewport_line: usize, label: &str) {
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let fg = theme.tokens.text;
+        let bg = theme.tokens.surface_muted;
+        let point = Point::new(viewport_line, Column(0));
+        let size_copy = self.size_info;
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => {
+                renderer.draw_string(point, fg, bg, label.chars(), &size_copy, &mut self.glyph_cache);
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.draw_string(point, fg, bg, label.chars(), &size_copy, &mut self.glyph_cache);
+            },
+        }
+    }
+
     /// Draw render timer.
     #[inline(never)]
     fn draw_render_timer(&mut self, config: &UiConfig) {

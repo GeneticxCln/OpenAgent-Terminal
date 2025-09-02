@@ -24,9 +24,20 @@ jobs:
         run: cargo build --release --target=aarch64-apple-darwin
       - name: Make DMG
         run: make dmg-universal
+      - name: Notarize DMG (if secrets configured)
+        if: ${{ secrets.APPLE_ID && secrets.APPLE_TEAM_ID && secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DMG_PATH="./target/release/osx/OpenAgentTerminal.dmg"
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --wait
       - name: Upload Application
         run: |
-mv ./target/release/osx/OpenAgentTerminal.dmg ./openagent-terminal-${GITHUB_REF##*/}.dmg
+          mv ./target/release/osx/OpenAgentTerminal.dmg ./openagent-terminal-${GITHUB_REF##*/}.dmg
           ./.github/workflows/upload_asset.sh ./openagent-terminal-${GITHUB_REF##*/}.dmg $GITHUB_TOKEN
 
   windows:
@@ -58,6 +69,14 @@ mv ./target/release/osx/OpenAgentTerminal.dmg ./openagent-terminal-${GITHUB_REF#
         run: |
           ./.github/workflows/upload_asset.sh \
             ./openagent-terminal-${GITHUB_REF##*/}-installer.msi $GITHUB_TOKEN
+      - name: Build MSIX (best-effort)
+        continue-on-error: true
+        run: |
+          cargo install cargo-msix --locked || true
+          cargo msix bundle -p openagent-terminal --output "./openagent-terminal-${GITHUB_REF##*/}.msix" || true
+          if [ -f ./openagent-terminal-${GITHUB_REF##*/}.msix ]; then
+            ./.github/workflows/upload_asset.sh ./openagent-terminal-${GITHUB_REF##*/}.msix $GITHUB_TOKEN
+          fi
 
   linux:
     runs-on: ubuntu-latest
@@ -66,8 +85,9 @@ mv ./target/release/osx/OpenAgentTerminal.dmg ./openagent-terminal-${GITHUB_REF#
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
-          sudo apt-get install cmake pkg-config libfreetype6-dev libfontconfig1-dev \
-            libxcb-xfixes0-dev libxkbcommon-dev python3 scdoc
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libfreetype6-dev libfontconfig1-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev python3 scdoc curl file
       - name: Test
         run: cargo test --release
       - name: Regenerate shell completions
@@ -79,6 +99,37 @@ mv ./target/release/osx/OpenAgentTerminal.dmg ./openagent-terminal-${GITHUB_REF#
           scdoc < extra/man/openagent-terminal-msg.1.scd | gzip -c > "./openagent-terminal-msg.1.gz"
           scdoc < extra/man/openagent-terminal.5.scd | gzip -c > "./openagent-terminal.5.gz"
           scdoc < extra/man/openagent-terminal-bindings.5.scd | gzip -c > "./openagent-terminal-bindings.5.gz"
+      - name: Build .deb (cargo-deb)
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb -p openagent-terminal --no-build
+          DEB_PATH=$(ls target/debian/*.deb | head -n1)
+          cp "$DEB_PATH" ./openagent-terminal-${GITHUB_REF##*/}.deb
+          ./.github/workflows/upload_asset.sh ./openagent-terminal-${GITHUB_REF##*/}.deb $GITHUB_TOKEN
+      - name: Build AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPDIR=./AppDir
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications"
+          cp ./target/release/openagent-terminal "$APPDIR/usr/bin/"
+          cp ./extra/linux/OpenAgentTerminal.desktop "$APPDIR/usr/share/applications/"
+          # Minimal AppRun
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE=$(dirname "$0")
+          exec "$HERE/usr/bin/openagent-terminal" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+          # Fetch appimagetool
+          curl -L -o appimagetool-x86_64.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          # Build AppImage
+          ./appimagetool-x86_64.AppImage "$APPDIR" ./openagent-terminal-${GITHUB_REF##*/}.AppImage || ./appimagetool-x86_64.AppImage --appimage-extract-and-run "$APPDIR" ./openagent-terminal-${GITHUB_REF##*/}.AppImage
+          ./.github/workflows/upload_asset.sh ./openagent-terminal-${GITHUB_REF##*/}.AppImage $GITHUB_TOKEN
+      - name: Smoke launch
+        run: |
+          xvfb-run -a ./target/release/openagent-terminal --version || true
       - name: Upload Assets
         run: |
           ./.github/workflows/upload_asset.sh ./extra/logo/openagent-terminal.svg $GITHUB_TOKEN

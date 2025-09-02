@@ -148,15 +148,37 @@ jobs:
           cargo run -p openagent-terminal --release --example render_smoke -- --backend=gl | tee /tmp/smoke.log
           grep -E "backend:(gl|fallback-gl)" /tmp/smoke.log
 
-      - name: GPU snapshot (Linux via xvfb)
+      - name: GPU snapshots (Linux via xvfb)
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
           set -euo pipefail
-          # Generate/update goldens (one-time or per-run)
-          xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --update-golden
-          # Compare against goldens with similarity threshold (tunable)
-          xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --threshold=0.992
+          # Generate/update goldens (first run)
+          for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks; do
+            xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --update-golden --scenario=$scenario
+          done
+          # Compare against goldens with per-platform threshold
+          for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks; do
+            xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --threshold=0.995 --scenario=$scenario
+          done
+
+      - name: GPU snapshots (AI overlays)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build with ai feature for overlay rendering (no provider needed)
+          for scenario in ai_loading ai_error ai_proposals; do
+            xvfb-run -a cargo run -p openagent-terminal --release -F ai --example snapshot_capture -- --update-golden --scenario=$scenario
+            xvfb-run -a cargo run -p openagent-terminal --release -F ai --example snapshot_capture -- --threshold=0.995 --scenario=$scenario
+          done
+
+      - name: Perf cold start check (<= 800ms)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a cargo run -p openagent-terminal --release --example perf_cold_start -- --max-ms=800
 
       - name: Perf latency check (<16ms average)
         if: matrix.os == 'ubuntu-latest'
@@ -165,3 +187,27 @@ jobs:
           set -euo pipefail
           # Run perf with explicit threshold; rely on exit code
           xvfb-run -a cargo run -p openagent-terminal --release --example perf_latency -- --max-ms=16.0
+
+  wgpu-linux:
+    name: WGPU smoke + perf
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build with WGPU feature
+        run: cargo build -p openagent-terminal -F wgpu --release
+      - name: Smoke test render_smoke (wgpu)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a cargo run -p openagent-terminal -F wgpu --release --example render_smoke -- --backend=wgpu | tee /tmp/wgpu-smoke.log
+          # Accept either backend:wgpu or fallback-gl if adapter missing
+          grep -E "backend:(wgpu|fallback-gl)" /tmp/wgpu-smoke.log
+      - name: WGPU perf example
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a cargo run -p openagent-terminal -F wgpu --release --example perf_wgpu

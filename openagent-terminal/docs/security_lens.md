@@ -1,5 +1,7 @@
 # Security Lens and Confirmation Overlay
 
+This page mirrors the workspace-level documentation at ../../docs/security_lens.md and adds crate-specific notes if needed.
+
 This document summarizes the Security Lens policy and the interactive confirmation overlay UX.
 
 Policy (UiConfig.security)

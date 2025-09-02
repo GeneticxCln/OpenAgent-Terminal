@@ -1,0 +1,61 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (e.g., 0.17.0)"
+        required: true
+
+jobs:
+  bump-and-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.79.0
+
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
+
+      - name: Bump versions in workspace
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          cargo workspaces version "$VERSION" --force --no-git-tag
+
+      - name: Update CHANGELOG stub
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+          tmp=$(mktemp)
+          echo "## $VERSION - $DATE" > "$tmp"
+          echo "\n- Placeholder: Add changes here" >> "$tmp"
+          echo "\n" >> "$tmp"
+          cat CHANGELOG.md >> "$tmp" || true
+          mv "$tmp" CHANGELOG.md
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): bump to ${{ github.event.inputs.version }} and update CHANGELOG stub" || echo "No changes to commit"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "Prepare release ${{ github.event.inputs.version }}"
+          branch: "release/prepare-${{ github.event.inputs.version }}"
+          commit-message: "chore(release): bump to ${{ github.event.inputs.version }} and update CHANGELOG stub"
+          body: |
+            This PR prepares the ${{ github.event.inputs.version }} release.
+
+            - Bumped workspace crate versions
+            - Updated CHANGELOG with a stub section (please fill in)
+          labels: ["release"]
+
