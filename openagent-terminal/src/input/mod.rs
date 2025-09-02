@@ -205,6 +205,17 @@ pub trait ActionContext<T: EventListener> {
     fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
         None
     }
+
+    // Workspace / panes (placeholders; real implementation lives in event::ActionContext)
+    fn workspace_split_horizontal(&mut self) {}
+    fn workspace_split_vertical(&mut self) {}
+    fn workspace_focus_next_pane(&mut self) {}
+    fn workspace_focus_previous_pane(&mut self) {}
+    fn workspace_close_pane(&mut self) {}
+    fn workspace_resize_left(&mut self) {}
+    fn workspace_resize_right(&mut self) {}
+    fn workspace_resize_up(&mut self) {}
+    fn workspace_resize_down(&mut self) {}
 }
 
 impl Action {
@@ -669,6 +680,16 @@ impl<T: EventListener> Execute<T> for Action {
                     }
                 }
             },
+            // Workspace / pane management actions
+            Action::SplitHorizontal => ctx.workspace_split_horizontal(),
+            Action::SplitVertical => ctx.workspace_split_vertical(),
+            Action::FocusNextPane => ctx.workspace_focus_next_pane(),
+            Action::FocusPreviousPane => ctx.workspace_focus_previous_pane(),
+            Action::ClosePane => ctx.workspace_close_pane(),
+            Action::ResizePaneLeft => ctx.workspace_resize_left(),
+            Action::ResizePaneRight => ctx.workspace_resize_right(),
+            Action::ResizePaneUp => ctx.workspace_resize_up(),
+            Action::ResizePaneDown => ctx.workspace_resize_down(),
             _ => (),
         }
     }

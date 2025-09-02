@@ -1142,6 +1142,7 @@ pub struct ActionContext<'a, N, T> {
     pub shell_pid: u32,
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
+    pub workspace: &'a mut crate::workspace::WorkspaceManager,
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
@@ -2065,6 +2066,116 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn scheduler_mut(&mut self) -> &mut Scheduler {
         self.scheduler
+    }
+
+    // Workspace / panes: wire to real WorkspaceManager
+    fn workspace_split_horizontal(&mut self) {
+        let ratio = self.config.workspace.splits.default_ratio;
+        let res = self.workspace.split_horizontal(ratio);
+        let msg = if let Some(id) = res {
+            format!("Split pane horizontally, new pane id {:?}", id)
+        } else {
+            "Split pane horizontally failed".into()
+        };
+        self.message_buffer.push(Message::new(
+            msg,
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_split_vertical(&mut self) {
+        let ratio = self.config.workspace.splits.default_ratio;
+        let res = self.workspace.split_vertical(ratio);
+        let msg = if let Some(id) = res {
+            format!("Split pane vertically, new pane id {:?}", id)
+        } else {
+            "Split pane vertically failed".into()
+        };
+        self.message_buffer.push(Message::new(
+            msg,
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_focus_next_pane(&mut self) {
+        let ok = self.workspace.focus_next_pane();
+        let msg = if ok { "Focused next pane" } else { "Focus next pane failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_focus_previous_pane(&mut self) {
+        let ok = self.workspace.focus_previous_pane();
+        let msg = if ok { "Focused previous pane" } else { "Focus previous pane failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_close_pane(&mut self) {
+        let ok = self.workspace.close_pane();
+        let msg = if ok { "Closed pane" } else { "Close pane failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_resize_left(&mut self) {
+        let ok = self.workspace.resize_left();
+        let msg = if ok { "Resized pane left" } else { "Resize left failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_resize_right(&mut self) {
+        let ok = self.workspace.resize_right();
+        let msg = if ok { "Resized pane right" } else { "Resize right failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_resize_up(&mut self) {
+        let ok = self.workspace.resize_up();
+        let msg = if ok { "Resized pane up" } else { "Resize up failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_resize_down(&mut self) {
+        let ok = self.workspace.resize_down();
+        let msg = if ok { "Resized pane down" } else { "Resize down failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
     }
 
     fn copy_to_clipboard(&mut self, text: String) {

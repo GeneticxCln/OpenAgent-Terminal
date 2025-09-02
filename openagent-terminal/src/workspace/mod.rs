@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use crate::config::UiConfig;
 use crate::display::SizeInfo;
+use openagent_terminal_core::grid::Dimensions;
 
 pub mod split_manager;
 pub mod tab_manager;
@@ -43,6 +44,18 @@ impl WorkspaceManager {
     /// Create a new workspace manager
     pub fn new(id: WorkspaceId, config: Rc<UiConfig>, size_info: SizeInfo) -> Self {
         Self { id, tabs: TabManager::new(), splits: SplitManager::new(), config, size_info }
+    }
+
+    fn ratio_step_horizontal(&self) -> f32 {
+        let cells = self.size_info.columns().max(1) as f32;
+        let step_cells = self.config.workspace.splits.resize_increment as f32;
+        (step_cells / cells).clamp(0.005, 0.2)
+    }
+
+    fn ratio_step_vertical(&self) -> f32 {
+        let cells = self.size_info.screen_lines().max(1) as f32;
+        let step_cells = self.config.workspace.splits.resize_increment as f32;
+        (step_cells / cells).clamp(0.005, 0.2)
     }
 
     /// Get the currently active tab
@@ -135,6 +148,29 @@ impl WorkspaceManager {
             false
         }
     }
+
+    /// Resize the active pane horizontally; positive delta moves divider right, negative left
+    pub fn resize_horizontal(&mut self, delta: f32) -> bool {
+        if let Some(tab) = self.active_tab_mut() {
+            SplitManager::resize_split_static(&mut tab.split_layout, tab.active_pane, delta)
+        } else {
+            false
+        }
+    }
+
+    /// Resize the active pane vertically; positive delta moves divider down, negative up
+    pub fn resize_vertical(&mut self, delta: f32) -> bool {
+        if let Some(tab) = self.active_tab_mut() {
+            SplitManager::resize_split_static(&mut tab.split_layout, tab.active_pane, delta)
+        } else {
+            false
+        }
+    }
+
+    pub fn resize_left(&mut self) -> bool { self.resize_horizontal(-self.ratio_step_horizontal()) }
+    pub fn resize_right(&mut self) -> bool { self.resize_horizontal(self.ratio_step_horizontal()) }
+    pub fn resize_up(&mut self) -> bool { self.resize_vertical(-self.ratio_step_vertical()) }
+    pub fn resize_down(&mut self) -> bool { self.resize_vertical(self.ratio_step_vertical()) }
 
     /// Update the size information for the workspace
     pub fn update_size(&mut self, size_info: SizeInfo) {

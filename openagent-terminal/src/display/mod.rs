@@ -354,6 +354,10 @@ pub struct Display {
 
     pub size_info: SizeInfo,
 
+    // Debug overlay to visualize split panes (horizontal/vertical) before full pane implementation.
+    // None = off; Some(false) = horizontal split (left/right); Some(true) = vertical split (top/bottom).
+    pub debug_split_overlay: Option<bool>,
+
     #[cfg(feature = "ai")]
     /// Tracks last-known AI panel visibility to trigger open/close animations.
     pub(crate) ai_panel_last_active: bool,
@@ -587,9 +591,10 @@ impl Display {
             cursor_hidden: Default::default(),
             meter: Default::default(),
             ime: Default::default(),
-            blocks,
+blocks,
             #[cfg(feature = "blocks")]
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
+            debug_split_overlay: None,
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
             #[cfg(feature = "ai")]
@@ -746,9 +751,10 @@ impl Display {
             cursor_hidden: Default::default(),
             meter: Default::default(),
             ime: Default::default(),
-            blocks,
+blocks,
             #[cfg(feature = "blocks")]
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
+            debug_split_overlay: None,
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
             #[cfg(feature = "ai")]
@@ -1458,6 +1464,33 @@ impl Display {
             self.draw_confirm_overlay(config, &st);
         }
 
+        // Debug split overlay preview (temporary until full pane implementation is wired)
+        if let Some(vertical) = self.debug_split_overlay {
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let tokens = theme.tokens;
+            let mut rects = Vec::new();
+            let w = self.size_info.width();
+            let h = self.size_info.height();
+            let gap: f32 = 2.0;
+            if vertical {
+                // Top / bottom split
+                let top_h = (h - gap) * 0.5;
+                let bottom_h = h - gap - top_h;
+                rects.push(RenderRect::new(0.0, 0.0, w, top_h, tokens.surface_muted, 0.96));
+                rects.push(RenderRect::new(0.0, top_h + gap, w, bottom_h, tokens.surface, 0.96));
+            } else {
+                // Left / right split
+                let left_w = (w - gap) * 0.5;
+                let right_w = w - gap - left_w;
+                rects.push(RenderRect::new(0.0, 0.0, left_w, h, tokens.surface_muted, 0.96));
+                rects.push(RenderRect::new(left_w + gap, 0.0, right_w, h, tokens.surface, 0.96));
+            }
+            let metrics = self.glyph_cache.font_metrics();
+            let size_info = self.size_info;
+            self.renderer_draw_rects(&size_info, &metrics, rects);
+        }
+
         self.draw_render_timer(config);
 
         // Draw hyperlink uri preview.
@@ -2118,7 +2151,8 @@ impl Display {
             let cursor = RenderableCursor::new(Point::new(line, column), CursorShape::Underline, fg, NonZeroU32::new(1).unwrap());
             let rects = cursor.rects(&self.size_info, config.cursor.thickness());
             let metrics = self.glyph_cache.font_metrics();
-            self.renderer_draw_rects(&self.size_info, &metrics, rects);
+            let size_info = self.size_info;
+            self.renderer_draw_rects(&size_info, &metrics, rects.collect());
         }
     }
 

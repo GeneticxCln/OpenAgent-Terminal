@@ -105,6 +105,7 @@ clap_complete = "4.2.3"
 image = "0.24"
 chrono = { version = "0.4" }
 gl = "0.14"
+sha2 = "0.10"
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"

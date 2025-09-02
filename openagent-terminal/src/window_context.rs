@@ -50,7 +50,7 @@ pub struct WindowContext {
     pub message_buffer: MessageBuffer,
     pub display: Display,
     pub dirty: bool,
-    event_queue: Vec<WinitEvent<Event>>,
+    event_queue: Vec<winit::event::Event<Event>>,
     terminal: Arc<FairMutex<Term<EventProxy>>>,
     cursor_blink_timed_out: bool,
     prev_bell_cmd: Option<Instant>,
@@ -69,6 +69,8 @@ pub struct WindowContext {
     window_config: ParsedOptions,
     config: Rc<UiConfig>,
     components: Option<Arc<InitializedComponents>>,
+    /// Workspace manager for tabs and split panes
+    pub workspace: crate::workspace::WorkspaceManager,
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
 }
@@ -268,7 +270,7 @@ impl WindowContext {
 
     /// Create a new terminal window context.
     fn new(
-        display: Display,
+        mut display: Display,
         config: Rc<UiConfig>,
         options: WindowOptions,
         proxy: EventLoopProxy<Event>,
@@ -332,6 +334,18 @@ impl WindowContext {
             event_proxy.send_event(TerminalEvent::CursorBlinkingChange.into());
         }
 
+        // Initialize workspace manager for this window (tabs and panes)
+        let mut workspace = crate::workspace::WorkspaceManager::new(
+            crate::workspace::WorkspaceId(0),
+            config.clone(),
+            display.size_info,
+        );
+        // Create an initial tab
+        let _initial_tab = workspace.create_tab(
+            config.window.identity.title.clone(),
+            options.terminal_options.working_directory.clone(),
+        );
+
         // Create context for the OpenAgent Terminal window.
         Ok(WindowContext {
             preserve_title,
@@ -356,6 +370,7 @@ impl WindowContext {
             mouse: Default::default(),
             touch: Default::default(),
             dirty: Default::default(),
+            workspace,
             #[cfg(feature = "ai")]
             ai_runtime: {
                 #[cfg(feature = "ai")]
@@ -584,6 +599,7 @@ impl WindowContext {
             scheduler,
             #[cfg(feature = "ai")]
             ai_runtime: self.ai_runtime.as_mut(),
+            workspace: &mut self.workspace,
         };
         let mut processor = input::Processor::new(context);
 
