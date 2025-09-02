@@ -214,6 +214,10 @@ pub enum PluginError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    /// Backwards-compat variant used by some plugins; alias of CommandFailed
+    #[error("Command error: {0}")]
+    CommandError(String),
+
     #[error("Command failed: {0}")]
     CommandFailed(String),
 
@@ -235,7 +239,6 @@ pub enum PluginError {
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
-
 /// Helper macro for creating plugin metadata
 #[macro_export]
 macro_rules! plugin_metadata {
