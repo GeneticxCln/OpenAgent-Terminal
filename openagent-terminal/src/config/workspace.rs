@@ -126,6 +126,7 @@ impl Default for TabBarPosition {
 }
 
 /// Action when creating a new tab
+#[allow(clippy::enum_variant_names)]
 #[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NewTabAction {
     /// Inherit the working directory from the current tab

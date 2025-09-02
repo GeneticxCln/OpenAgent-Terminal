@@ -202,6 +202,7 @@ pub enum TabBarPosition {
     Hidden,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewTabAction {
     InheritWorkingDir,

@@ -435,21 +435,17 @@ mod tests {
         storage.insert(&Arc::new(block)).await.unwrap();
 
         // Search text
-        let mut q = crate::blocks_v2::SearchQuery::default();
-        q.text = Some("test".to_string());
-        q.limit = Some(10);
+        let q = crate::blocks_v2::SearchQuery { text: Some("test".to_string()), limit: Some(10), ..Default::default() };
         let results = storage.search(&q).await.unwrap();
         assert!(!results.is_empty());
 
         // Search by tag
-        let mut q2 = crate::blocks_v2::SearchQuery::default();
-        q2.tags = Some(vec!["tag1".to_string()]);
+        let q2 = crate::blocks_v2::SearchQuery { tags: Some(vec!["tag1".to_string()]), ..Default::default() };
         let r2 = storage.search(&q2).await.unwrap();
         assert!(!r2.is_empty());
 
         // Search starred only
-        let mut q3 = crate::blocks_v2::SearchQuery::default();
-        q3.starred_only = true;
+        let q3 = crate::blocks_v2::SearchQuery { starred_only: true, ..Default::default() };
         let r3 = storage.search(&q3).await.unwrap();
         assert!(!r3.is_empty());
     }

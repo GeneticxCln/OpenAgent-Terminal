@@ -368,13 +368,27 @@ impl WgpuRenderer {
         };
         let is_srgb_surface = format.is_srgb();
 
+        // Prefer vsync-capable present modes when available to avoid tearing.
+        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
+            wgpu::PresentMode::AutoVsync
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
+            wgpu::PresentMode::Fifo
+        } else {
+            surface_caps.present_modes[0]
+        };
+        // Choose a stable alpha mode if possible
+        let alpha_mode = if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Auto) {
+            wgpu::CompositeAlphaMode::Auto
+        } else {
+            surface_caps.alpha_modes[0]
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
+            present_mode,
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
         };

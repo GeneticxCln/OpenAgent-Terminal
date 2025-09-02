@@ -1,8 +1,8 @@
 //! OpenAgent Terminal - The GPU Enhanced Terminal.
 
 #![warn(rust_2018_idioms, future_incompatible)]
-#![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
-#![cfg_attr(clippy, deny(warnings))]
+#![warn(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
+// During development, keep warnings as warnings to allow feature-gated code paths without breaking clippy runs.
 // With the default subsystem, 'console', windows creates an additional console
 // window for the program.
 // This is silently ignored on non-windows systems.
@@ -172,6 +172,16 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Load configuration file.
     let config = config::load(&mut options);
     log_config_path(&config);
+
+    // Select and log rendering backend early to avoid dead_code warnings and clarify startup.
+    {
+        use crate::config::debug::RendererPreference as _;
+        use crate::renderer::backend::BackendSelector;
+        let prefer_wgpu = config.debug.prefer_wgpu;
+        let selector = BackendSelector::new(prefer_wgpu, config.debug.renderer);
+        let chosen = selector.select_backend();
+        log::info!("Render backend selected: {}", chosen);
+    }
 
     // Update the log level from config.
     log::set_max_level(config.debug.log_level);

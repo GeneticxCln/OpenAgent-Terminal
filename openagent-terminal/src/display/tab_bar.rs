@@ -294,7 +294,7 @@ impl Display {
         let tab_order = tab_manager.tab_order();
         let mut current_x = 0;
 
-        for (_index, &tab_id) in tab_order.iter().enumerate() {
+        for &tab_id in tab_order.iter() {
             let tab_width = max_tab_width.min(size_info.columns - current_x);
 
             // Check if click is within this tab
@@ -321,6 +321,7 @@ impl Display {
 }
 
 /// Actions that can be performed on the tab bar
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy)]
 pub enum TabBarAction {
     SelectTab(TabId),

@@ -357,12 +357,19 @@ impl PluginManager {
             }
         }
 
-        // Add file system access
-        for pattern in &permissions.read_files {
-            // In a real implementation, we'd parse glob patterns
-            // For now, treat them as direct paths
-            if let Ok(dir) = Dir::open_ambient_dir(pattern, wasmtime_wasi::ambient_authority()) {
-                let _ = wasi_builder.preopened_dir(dir, pattern);
+        // Always preopen the plugin directory as the sandbox root
+        if let Ok(dir) = Dir::open_ambient_dir(&self.plugin_dir, wasmtime_wasi::ambient_authority()) {
+            let _ = wasi_builder.preopened_dir(dir, &self.plugin_dir);
+        }
+
+        // Add file system access limited to subdirectories inside plugin_dir.
+        for pattern in permissions.read_files.iter().chain(permissions.write_files.iter()) {
+            if let Some(safe_path) = self.sanitize_plugin_path(pattern) {
+                if let Ok(dir) = Dir::open_ambient_dir(&safe_path, wasmtime_wasi::ambient_authority()) {
+                    let _ = wasi_builder.preopened_dir(dir, &safe_path);
+                }
+            } else {
+                debug!("Skipping unsafe preopen path: {}", pattern);
             }
         }
 
@@ -420,17 +427,40 @@ impl PluginManager {
         // Look for a manifest file next to the WASM file
         let manifest_path = path.with_extension("toml");
 
-        if manifest_path.exists() {
-            let _content = std::fs::read_to_string(&manifest_path)
-                .map_err(|e| PluginError::InvalidFormat(e.to_string()))?;
-
-            // Parse TOML manifest
-            // This is simplified - would need proper TOML parsing
-            debug!("Reading permissions from {:?}", manifest_path);
+        #[derive(serde::Deserialize)]
+        struct PluginManifest {
+            #[serde(default)]
+            permissions: Option<PluginPermissions>,
         }
 
-        // Return default permissions for now
-        Ok(PluginPermissions::default())
+        if manifest_path.exists() {
+            let content = std::fs::read_to_string(&manifest_path)
+                .map_err(|e| PluginError::InvalidFormat(e.to_string()))?;
+
+            match toml::from_str::<PluginManifest>(&content) {
+                Ok(manifest) => {
+                    if let Some(mut perms) = manifest.permissions {
+                        // Sanitize preopen paths: force relative to plugin_dir and disallow '/'
+                        perms.read_files = perms
+                            .read_files
+                            .into_iter()
+                            .filter_map(|p| self.sanitize_plugin_path(&p))
+                            .collect();
+                        perms.write_files = perms
+                            .write_files
+                            .into_iter()
+                            .filter_map(|p| self.sanitize_plugin_path(&p))
+                            .collect();
+                        return Ok(perms);
+                    }
+                },
+                Err(e) => return Err(PluginError::InvalidFormat(e.to_string())),
+            }
+        }
+
+        // Default: sandboxed to plugin_dir only
+        let default = PluginPermissions { read_files: vec![self.plugin_dir.to_string_lossy().to_string()], write_files: vec![], ..Default::default() };
+        Ok(default)
     }
 
     /// Validate that requested permissions match allowed permissions
@@ -447,7 +477,17 @@ impl PluginManager {
             return Err(PluginError::PermissionDenied("Command execution not allowed".into()));
         }
 
-        // Check file access patterns
+        // Check read access patterns
+        for pattern in &requested.read_files {
+            if !allowed.read_files.iter().any(|p| p == pattern) {
+                return Err(PluginError::PermissionDenied(format!(
+                    "Read access to {} not allowed",
+                    pattern
+                )));
+            }
+        }
+
+        // Check write access patterns
         for pattern in &requested.write_files {
             if !allowed.write_files.iter().any(|p| p == pattern) {
                 return Err(PluginError::PermissionDenied(format!(
@@ -458,6 +498,22 @@ impl PluginManager {
         }
 
         Ok(())
+    }
+}
+
+impl PluginManager {
+    // Sanitize a path from the manifest: resolve relative to plugin_dir and disallow '/'
+    fn sanitize_plugin_path(&self, p: &str) -> Option<String> {
+        use std::path::PathBuf;
+        let raw = PathBuf::from(p);
+        let resolved = if raw.is_absolute() { raw } else { self.plugin_dir.join(raw) };
+        // Disallow preopening '/' or paths outside plugin_dir
+        if resolved.components().count() == 0 {
+            return None;
+        }
+        if resolved.as_os_str() == "/" { return None; }
+        if !resolved.starts_with(&self.plugin_dir) { return None; }
+        Some(resolved.to_string_lossy().to_string())
     }
 }
 
@@ -494,6 +550,37 @@ impl ResourceLimiter for ResourceTracker {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_sanitize_plugin_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        // Absolute root should be rejected
+        assert!(manager.sanitize_plugin_path("/").is_none());
+        // Outside plugin_dir should be rejected
+        assert!(manager.sanitize_plugin_path("/etc").is_none());
+        // Relative inside plugin_dir should be accepted and resolved
+        let sub = manager.sanitize_plugin_path("subdir").unwrap();
+        assert!(sub.starts_with(&*temp_dir.path().to_string_lossy()));
+    }
+
+    #[test]
+    fn test_read_manifest_permissions_sanitized() {
+        use std::io::Write as _;
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("p.wasm");
+        std::fs::write(&wasm_path, b"00").unwrap();
+        let manifest_path = temp_dir.path().join("p.toml");
+        let mut f = std::fs::File::create(&manifest_path).unwrap();
+        // Include an unsafe preopen ('/') which should be filtered out
+        writeln!(f, "[permissions]\nread_files=[\"/\",\"sub\"]\nwrite_files=[\"sub\"]\n").unwrap();
+
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        let perms = manager.read_plugin_permissions(&wasm_path).expect("permissions");
+        // Ensure '/' was removed and 'sub' resolved under plugin_dir
+        assert!(!perms.read_files.iter().any(|p| p == "/"));
+        assert!(perms.read_files.iter().any(|p| p.starts_with(&*temp_dir.path().to_string_lossy())));
+    }
 
     #[tokio::test]
     async fn test_plugin_manager_creation() {

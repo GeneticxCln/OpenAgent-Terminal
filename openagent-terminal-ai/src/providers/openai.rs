@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
 use tracing::{debug, error, info};
+use crate::streaming::{RetryConfig, RetryStrategy};
 
 pub struct OpenAiProvider {
     api_key: String,
@@ -33,7 +34,9 @@ impl OpenAiProvider {
             .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())?;
         let endpoint = std::env::var("OPENAI_API_BASE")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-        let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string());
+        let model = std::env::var("OPENAI_MODEL").map_err(|_| {
+            "OPENAI_MODEL environment variable not set. Configure a model explicitly via config.ai.model_env (e.g., OPENAGENT_AI_MODEL) or export OPENAI_MODEL before launching.".to_string()
+        })?;
 
         info!("Initializing OpenAI provider with model: {}", model);
         Self::new(api_key, endpoint, model)
@@ -143,27 +146,64 @@ impl AiProvider for OpenAiProvider {
         debug!("Sending request to OpenAI API");
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let response = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .map_err(|e| format!("Failed to send request: {}", e))?;
-        if ai_log_summary() {
-            debug!("openai_propose_response_status status={}", response.status());
-        }
+        let retry = RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
+        let mut attempt = 0usize;
+        let completion: ChatCompletionResponse = loop {
+            let send = self
+                .client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("Content-Type", "application/json")
+                .json(&request_body)
+                .send();
+            let response = match send {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let msg = format!("Failed to send request: {}", e);
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                        let delay = retry.delay_for_attempt(attempt, &msg);
+                        if ai_log_summary() { info!("openai_propose_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                        std::thread::sleep(delay);
+                        attempt += 1;
+                        continue;
+                    } else {
+                        return Err(msg);
+                    }
+                }
+            };
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-            error!("OpenAI API error {}: {}", status, error_text);
-            return Err(format!("API error {}: {}", status, error_text));
-        }
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+                let msg = format!("API error {}: {}", status, error_text);
+                error!("OpenAI API error {}: {}", status, error_text);
+                if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    let delay = retry.delay_for_attempt(attempt, &msg);
+                    if ai_log_summary() { info!("openai_propose_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                    std::thread::sleep(delay);
+                    attempt += 1;
+                    continue;
+                } else {
+                    return Err(msg);
+                }
+            }
 
-        let completion: ChatCompletionResponse =
-            response.json().map_err(|e| format!("Failed to parse response: {}", e))?;
+            if ai_log_summary() { debug!("openai_propose_response_status status={}", response.status()); }
+            match response.json() {
+                Ok(json) => break json,
+                Err(e) => {
+                    let msg = format!("Failed to parse response: {}", e);
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                        let delay = retry.delay_for_attempt(attempt, &msg);
+                        std::thread::sleep(delay);
+                        attempt += 1;
+                        continue;
+                    } else {
+                        return Err(msg);
+                    }
+                }
+            }
+        };
 
         if let Some(choice) = completion.choices.first() {
             let content = &choice.message.content;

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::time::Instant;
 
 /// Easing function: ease-out cubic.

@@ -356,7 +356,7 @@ impl WorkflowEngine {
         if let Some(pre_hooks) = &workflow.hooks.pre_workflow {
             for command in pre_hooks {
                 let _ = self
-                    .execute_command(&execution_id, command, &context, &workflow.environment)
+                    .execute_command(&execution_id, command, &context, &workflow.environment, None)
                     .await;
             }
         }
@@ -415,6 +415,7 @@ impl WorkflowEngine {
                             &rendered_command,
                             &context,
                             step.environment.as_ref().unwrap_or(&workflow.environment),
+                            step.secrets.as_deref(),
                         )
                         .await;
 
@@ -455,14 +456,14 @@ impl WorkflowEngine {
             if let Some(success_hooks) = &workflow.hooks.on_success {
                 for command in success_hooks {
                     let _ = self
-                        .execute_command(&execution_id, command, &context, &workflow.environment)
+                        .execute_command(&execution_id, command, &context, &workflow.environment, None)
                         .await;
                 }
             }
         } else if let Some(failure_hooks) = &workflow.hooks.on_failure {
             for command in failure_hooks {
                 let _ = self
-                    .execute_command(&execution_id, command, &context, &workflow.environment)
+                    .execute_command(&execution_id, command, &context, &workflow.environment, None)
                     .await;
             }
         }
@@ -470,7 +471,7 @@ impl WorkflowEngine {
         if let Some(post_hooks) = &workflow.hooks.post_workflow {
             for command in post_hooks {
                 let _ = self
-                    .execute_command(&execution_id, command, &context, &workflow.environment)
+                    .execute_command(&execution_id, command, &context, &workflow.environment, None)
                     .await;
             }
         }
@@ -642,16 +643,33 @@ impl WorkflowEngine {
         command: &str,
         context: &Context,
         environment: &HashMap<String, String>,
+        secrets: Option<&[Secret]>,
     ) -> Result<()> {
         let rendered_command = self.render_template(command, context)?;
 
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(&rendered_command);
+        // Parse the rendered command into argv safely (no shell invocation)
+        let tokens = shlex::split(&rendered_command)
+            .ok_or_else(|| anyhow!("Failed to parse command: {}", rendered_command))?;
+        let (program, args) = tokens
+            .split_first()
+            .ok_or_else(|| anyhow!("Empty command after parsing: {}", rendered_command))?;
+
+        let mut cmd = Command::new(program);
+        cmd.args(args);
 
         // Set environment variables
         for (key, value) in environment {
             let rendered_value = self.render_template(value, context)?;
             cmd.env(key, rendered_value);
+        }
+
+        // Inject secrets via environment variables without logging
+        if let Some(sec_list) = secrets {
+            for secret in sec_list {
+                if let Ok(value) = std::env::var(&secret.source) {
+                    cmd.env(&secret.name, value);
+                }
+            }
         }
 
         // Set workflow environment variables
@@ -800,6 +818,50 @@ impl WorkflowEngine {
     /// Subscribe to workflow events
     pub fn subscribe(&self) -> broadcast::Receiver<WorkflowEvent> {
         self.event_sender.subscribe()
+    }
+
+        // Arrange a secret in the host env
+        std::env::set_var("WF_SECRET_SRC", "supersecret");
+        let engine = WorkflowEngine::new().unwrap();
+        // Workflow that runs `env` to print environment variables
+        let workflow = WorkflowDefinition {
+            name: "secret".into(),
+            version: "1.0.0".into(),
+            description: "Secret test".into(),
+            author: None,
+            metadata: WorkflowMetadata { tags: vec![], icon: None, estimated_duration: None },
+            requirements: vec![],
+            parameters: vec![],
+            environment: HashMap::new(),
+            steps: vec![WorkflowStep {
+                id: "s1".into(),
+                name: "Env".into(),
+                description: None,
+                commands: vec!["env".into()],
+                condition: None,
+                continue_on_error: false,
+                allow_failure: false,
+                always_run: false,
+                parallel: false,
+                timeout: None,
+                retry: None,
+                environment: None,
+                secrets: Some(vec![Secret { name: "MY_SECRET".into(), source: "WF_SECRET_SRC".into() }]),
+                artifacts: None,
+            }],
+            hooks: WorkflowHooks::default(),
+            outputs: vec![],
+            ai_context: None,
+        };
+        let id = "secret-1.0.0";
+        engine.workflows.write().await.insert(id.into(), workflow);
+        let exec_id = engine.execute_workflow(id, HashMap::new()).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let state = engine.get_state(&exec_id).await.unwrap();
+        // Assert success and that the logs include the injected env var
+        assert_eq!(state.status, WorkflowStatus::Success);
+        let logs_joined = state.logs.iter().map(|l| l.message.clone()).collect::<String>();
+        assert!(logs_joined.contains("MY_SECRET=supersecret"));
     }
 }
 

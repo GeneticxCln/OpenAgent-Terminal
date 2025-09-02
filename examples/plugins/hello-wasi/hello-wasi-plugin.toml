@@ -1,0 +1,17 @@
+# Minimal plugin manifest for hello-wasi-plugin
+# Place this file next to the built .wasm with the same basename
+# e.g., hello-wasi-plugin.wasm + hello-wasi-plugin.toml
+
+[permissions]
+# Allow reading specific environment variables inside the plugin
+environment_variables = ["HELLO_PLUGIN_MESSAGE"]
+# Disallow command execution and network
+execute_commands = false
+network = false
+# Constrain resources
+max_memory_mb = 32
+timeout_ms = 3000
+# Restrict filesystem preopens (defaults to plugin_dir if omitted)
+read_files = []
+write_files = []
+

@@ -124,6 +124,7 @@ pub struct Window {
 
 impl Window {
     /// Expose a reference to the inner winit Window for integrations that need it.
+    #[allow(dead_code)]
     pub fn inner(&self) -> &WinitWindow {
         &self.window
     }
@@ -225,6 +226,7 @@ impl Window {
 
     /// Access the underlying winit Window for integrations requiring it (e.g., wgpu).
     #[inline]
+    #[allow(dead_code)]
     pub fn winit_window(&self) -> &WinitWindow {
         &self.window
     }

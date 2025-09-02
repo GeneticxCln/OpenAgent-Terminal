@@ -75,7 +75,7 @@ impl<'a> BlockExporter<'a> {
             writeln!(
                 writer,
                 "{},{},{},{},{},{:?},\"{}\"",
-                block.id.to_string(),
+                block.id,
                 block.command.replace(',', "\\,"),
                 block.directory.display(),
                 block.created_at.to_rfc3339(),
@@ -147,7 +147,7 @@ impl ExportManager {
             writeln!(
                 writer,
                 "{},{},{},{},{},{:?},\"{}\"",
-                block.id.to_string(),
+                block.id,
                 block.command.replace(',', "\\,"),
                 block.directory.display(),
                 block.created_at.to_rfc3339(),
