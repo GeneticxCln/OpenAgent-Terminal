@@ -182,7 +182,7 @@ impl SecurityLens {
             if pattern.is_match(command) {
                 risk_factors.push(factor.clone());
                 if self.risk_level_value(risk_level) > self.risk_level_value(&highest_risk) {
-                    highest_risk = risk_level.clone();
+                    highest_risk = *risk_level;
                 }
             }
         }
@@ -211,7 +211,7 @@ impl SecurityLens {
                         pattern: custom.pattern.clone(),
                     });
                     if self.risk_level_value(&custom.risk_level) > self.risk_level_value(&highest_risk) {
-                        highest_risk = custom.risk_level.clone();
+                        highest_risk = custom.risk_level;
                     }
                 }
             }
@@ -219,10 +219,9 @@ impl SecurityLens {
 
         let explanation = self.generate_explanation(&risk_factors, &highest_risk);
         let mitigations = self.generate_mitigations(&risk_factors);
-        let requires_confirmation = self.policy.require_confirmation
+        let requires_confirmation = *self.policy.require_confirmation
             .get(&highest_risk)
-            .unwrap_or(&false)
-            .clone();
+            .unwrap_or(&false);
 
         CommandRisk {
             level: highest_risk,
@@ -305,10 +304,12 @@ impl SecurityLens {
         mitigations
     }
 
+    #[allow(dead_code)]
     pub fn should_block(&self, risk: &CommandRisk) -> bool {
         self.policy.block_critical && risk.level == RiskLevel::Critical
     }
 
+    #[allow(dead_code)]
     pub fn format_risk_display(&self, risk: &CommandRisk) -> String {
         let icon = match risk.level {
             RiskLevel::Safe => "✓",

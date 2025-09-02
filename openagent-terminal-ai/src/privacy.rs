@@ -199,4 +199,57 @@ mod tests {
         assert!(redacted.contains("[REDACTED]"));
         assert!(!redacted.contains("password123"));
     }
+
+    #[test]
+    fn test_multiline_and_shell_flags() {
+        let text = r#"pg_dump -U user -h host -p 5432 --password secret
+curl -H "Authorization: Bearer abc123" https://example.com
+export OPENAI_API_KEY=sk-abcdef
+mysql -u root -p hunter2
+"#;
+        let redacted = redact_secrets(text);
+        // --password redacted
+        assert!(redacted.contains("--password=[REDACTED]"));
+        // Header redacted
+        assert!(redacted.contains("Authorization: Bearer [REDACTED]"));
+        // Env-style API key redacted
+        assert!(redacted.contains("OPENAI_API_KEY: [REDACTED]") || redacted.contains("OPENAI_API_KEY=[REDACTED]"));
+        // Short -p flag with value redacted
+        assert!(redacted.contains("-p [REDACTED]"));
+    }
+
+    #[test]
+    fn test_sanitize_request_redacts_working_dir_and_home() {
+        let req = AiRequest {
+            scratch_text: "/home/alice/projects/demo: run --password=foo".to_string(),
+            working_directory: Some("/home/alice/projects/demo".to_string()),
+            shell_kind: Some("bash".to_string()),
+            context: vec![("OPENAI_API_KEY".into(), "sk-abc".into())],
+        };
+        // Set HOME for test
+        std::env::set_var("HOME", "/home/alice");
+        let out = sanitize_request(&req, AiPrivacyOptions::default());
+        // Working directory should be redacted
+        assert!(out.scratch_text.contains("[REDACTED_PATH]"));
+        // HOME path in scratch should be redacted as path
+        assert!(!out.scratch_text.contains("/home/alice"));
+        // Working directory field should be redacted
+        assert_eq!(out.working_directory.as_deref(), Some("[REDACTED]"));
+        // Context secret redacted
+        assert!(out.context.iter().any(|(k, v)| k == "OPENAI_API_KEY" && v == "[REDACTED]"));
+    }
+
+    #[test]
+    fn test_multiline_quotes_and_mixed_flags() {
+        let text = r#"psql --host=localhost --username=alice --password='s3cr3t'
+mysqldump -p hunter2 \
+  --result-file=/tmp/backup.sql
+"#;
+        let redacted = redact_secrets(text);
+        // Both styles should be redacted
+        assert!(redacted.contains("--password=[REDACTED]"));
+        assert!(redacted.contains("-p [REDACTED]"));
+        // Ensure the backup path remains
+        assert!(redacted.contains("--result-file=/tmp/backup.sql"));
+    }
 }

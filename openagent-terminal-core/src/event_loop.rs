@@ -628,8 +628,13 @@ impl<T> PeekableReceiver<T> {
             self.peeked.take()
         } else {
             match self.rx.try_recv() {
-                Err(TryRecvError::Disconnected) => panic!("event loop channel closed"),
-                res => res.ok(),
+                Ok(val) => Some(val),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => {
+                    // Graceful shutdown: treat a disconnected channel as no further messages
+                    // and let the event loop wind down without panicking.
+                    None
+                },
             }
         }
     }

@@ -98,3 +98,26 @@ jobs:
 
       - name: cargo-audit
         run: cargo audit -D warnings
+
+  shellcheck:
+    name: Shellcheck (shell-integration and scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find . \
+            -type f \
+            \( -name "*.sh" -o -name "*.bash" \) \
+            -not -path "*/target/*" \
+            -print)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          # Run with warning severity to keep signal strong but not overly strict initially
+          shellcheck -S warning "${files[@]}"

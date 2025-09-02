@@ -100,18 +100,22 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
         }
 
         let provider_name = provider_id.unwrap_or("null");
-        let provider = match create_provider(provider_name) {
+        let provider_result = create_provider(provider_name);
+        match provider_result {
             Ok(p) => {
                 info!("Successfully created AI provider: {}", provider_name);
-                p
+                Self::new(p)
             },
             Err(e) => {
                 error!("Failed to create provider '{}': {}", provider_name, e);
-                Box::new(openagent_terminal_ai::NullProvider::default())
+                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                rt.ui.error_message = Some(format!(
+                    "AI provider initialization failed: {}. Please check your AI settings (provider, endpoint, api key, model).",
+                    e
+                ));
+                rt
             },
-        };
-
-        Self::new(provider)
+        }
     }
 
     /// Begin a streaming proposal in a background thread. Falls back to blocking propose if the

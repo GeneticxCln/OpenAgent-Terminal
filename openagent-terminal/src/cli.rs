@@ -31,6 +31,7 @@ pub struct Options {
     pub ai_log_verbosity: Option<crate::config::ai::AiLogVerbosity>,
     #[cfg(not(feature = "ai"))]
     #[clap(skip)]
+    #[allow(dead_code)]
     pub ai_log_verbosity: Option<()>,
 
     /// Generates ref test.

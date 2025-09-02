@@ -1,5 +1,5 @@
 use std::fmt;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::config::debug::RendererPreference;
 
@@ -79,7 +79,7 @@ impl BackendSelector {
             debug!("WGPU backend is available");
             true
         } else {
-            warn!("WGPU backend not available on this system");
+            tracing::warn!("WGPU backend not available on this system");
             false
         }
     }

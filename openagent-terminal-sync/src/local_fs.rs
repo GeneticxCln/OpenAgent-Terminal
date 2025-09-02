@@ -238,7 +238,6 @@ impl SyncProvider for LocalFsProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     use tempfile::TempDir;
 
     #[test]
@@ -271,7 +270,7 @@ mod tests {
         let status = provider.status().unwrap();
         assert_eq!(status.last_push, None);
         assert_eq!(status.last_pull, None);
-        assert_eq!(status.pending, false);
+        assert!(!status.pending);
 
         // Write a custom status
         let custom_status =
@@ -282,6 +281,6 @@ mod tests {
         let read_status = provider.status().unwrap();
         assert_eq!(read_status.last_push, Some(1234567890));
         assert_eq!(read_status.last_pull, Some(1234567891));
-        assert_eq!(read_status.pending, true);
+        assert!(read_status.pending);
     }
 }

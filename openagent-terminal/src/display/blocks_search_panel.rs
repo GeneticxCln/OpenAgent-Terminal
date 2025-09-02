@@ -84,7 +84,7 @@ impl Display {
         let panel_bg = RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.95);
 
         // Stage rects then draw them
-        let mut rects = vec![backdrop, panel_bg];
+        let rects = vec![backdrop, panel_bg];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy: SizeInfo = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);

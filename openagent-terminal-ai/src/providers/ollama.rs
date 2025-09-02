@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
 use tracing::{debug, error, info};
+use crate::streaming::{RetryConfig, RetryStrategy};
 
 pub struct OllamaProvider {
     endpoint: String,
@@ -109,7 +110,9 @@ impl OllamaProvider {
     pub fn from_env() -> Result<Self, String> {
         let endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "codellama".to_string());
+        let model = std::env::var("OLLAMA_MODEL").map_err(|_| {
+            "OLLAMA_MODEL environment variable not set. Configure a model explicitly via config.ai.model_env (e.g., OPENAGENT_AI_MODEL) or export OLLAMA_MODEL before launching.".to_string()
+        })?;
 
         info!("Initializing Ollama provider with endpoint: {} and model: {}", endpoint, model);
         Self::new(endpoint, model)
@@ -235,14 +238,17 @@ impl AiProvider for OllamaProvider {
         let url = format!("{}/api/generate", self.endpoint);
         let ollama_request = OllamaRequest { model: self.model.clone(), prompt, stream: false };
 
-        match self.client.post(&url).json(&ollama_request).send() {
-            Ok(response) => {
-                if ai_log_summary() {
-                    debug!("ollama_propose_response_status status={}", response.status());
-                }
-                if response.status().is_success() {
-                    match response.json::<OllamaGenerateResponse>() {
-                        Ok(ollama_response) => {
+        let retry = RetryStrategy::Ollama { config: RetryConfig::default(), resource_wait: std::time::Duration::from_secs(1) };
+        let mut attempt = 0usize;
+        loop {
+            match self.client.post(&url).json(&ollama_request).send() {
+                Ok(response) => {
+                    if ai_log_summary() {
+                        debug!("ollama_propose_response_status status={}", response.status());
+                    }
+                    if response.status().is_success() {
+                        match response.json::<OllamaGenerateResponse>() {
+                            Ok(ollama_response) => {
                             // Parse the response into commands
                             let commands: Vec<String> = ollama_response
                                 .response
@@ -273,17 +279,41 @@ impl AiProvider for OllamaProvider {
                         },
                         Err(e) => {
                             error!("Failed to parse Ollama response: {}", e);
-                            Err(format!("Failed to parse response: {}", e))
+                            let msg = format!("Failed to parse response: {}", e);
+                            if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                                let delay = retry.delay_for_attempt(attempt, &msg);
+                                std::thread::sleep(delay);
+                                attempt += 1;
+                                continue;
+                            } else {
+                                return Err(msg);
+                            }
                         },
                     }
                 } else {
-                    error!("Ollama API error: {}", response.status());
-                    Err(format!("API error: {}", response.status()))
+                    let msg = format!("API error: {}", response.status());
+                    error!("{}", msg);
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                        let delay = retry.delay_for_attempt(attempt, &msg);
+                        std::thread::sleep(delay);
+                        attempt += 1;
+                        continue;
+                    } else {
+                        return Err(msg);
+                    }
                 }
             },
             Err(e) => {
-                error!("Failed to connect to Ollama: {}", e);
-                Err(format!("Connection error: {}", e))
+                let msg = format!("Connection error: {}", e);
+                error!("{}", msg);
+                if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    let delay = retry.delay_for_attempt(attempt, &msg);
+                    std::thread::sleep(delay);
+                    attempt += 1;
+                    continue;
+                } else {
+                    return Err(msg);
+                }
             },
         }
     }

@@ -77,6 +77,7 @@ pub struct Processor<T: EventListener, A: ActionContext<T>> {
     _phantom: PhantomData<T>,
 }
 
+#[allow(dead_code)]
 pub trait ActionContext<T: EventListener> {
     fn write_to_pty<B: Into<Cow<'static, [u8]>>>(&self, _data: B) {}
     fn mark_dirty(&mut self) {}
