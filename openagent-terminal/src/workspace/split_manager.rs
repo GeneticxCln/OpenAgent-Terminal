@@ -150,6 +150,11 @@ impl SplitManager {
     pub fn pane_count_static(layout: &SplitLayout) -> usize {
         layout.pane_count()
     }
+
+    /// Static convenience: resize split without borrowing a SplitManager instance.
+    pub fn resize_split_static(layout: &mut SplitLayout, pane_id: PaneId, delta: f32) -> bool {
+        SplitManager::new().resize_split(layout, pane_id, delta)
+    }
     /// Create a new split manager
     pub fn new() -> Self {
         Self { minimum_pane_size: 10, default_split_ratio: 0.5 }

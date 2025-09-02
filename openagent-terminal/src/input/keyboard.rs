@@ -61,6 +61,17 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.send_user_event(crate::event::EventType::BlocksExportHeaderUnderCursor);
                     return;
                 },
+                // Ctrl+Alt+M: Cycle debug split overlay (None -> H -> V -> None)
+                Key::Character(c) if (c.eq_ignore_ascii_case("m")) => {
+                    let next = match self.ctx.display().debug_split_overlay {
+                        None => Some(false),           // Horizontal first
+                        Some(false) => Some(true),      // Then vertical
+                        Some(true) => None,             // Then off
+                    };
+                    self.ctx.display().debug_split_overlay = next;
+                    self.ctx.display().pending_update.dirty = true;
+                    return;
+                },
                 _ => {}
             }
         }

@@ -199,6 +199,7 @@ impl ApplicationHandler<()> for SnapshotApp {
             "ai_error" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Error),
             #[cfg(feature = "ai")]
             "ai_proposals" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Proposals),
+            "split_panes" => draw_split_panes(&mut display, &config),
             _ => {
                 // Default to confirm overlay
                 let mut st = ConfirmOverlayState::new();
@@ -217,6 +218,21 @@ impl ApplicationHandler<()> for SnapshotApp {
         let (bytes, w, h) = display
             .read_frame_rgba()
             .expect("GL readback not available");
+
+        // Optional: print raw hash JSON for CI assertions
+        if std::env::var("RAW_HASH").ok().as_deref() == Some("1") {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let digest = hasher.finalize();
+            let hex = format!("{:x}", digest);
+            println!("{{\"width\":{},\"height\":{},\"sha256\":\"{}\"}}", w, h, hex);
+            self.exit_code = 0;
+            std::thread::sleep(Duration::from_millis(10));
+            event_loop.exit();
+            return;
+        }
+
         let snapshot = to_image(bytes, w, h);
 
         if self.update || !Path::new(&self.golden_path).exists() {
@@ -233,7 +249,7 @@ impl ApplicationHandler<()> for SnapshotApp {
                 let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
                 let out_dir = self
                     .out_dir
-                    .join(format!("confirm_overlay_{}", ts));
+                    .join(format!("{}_{}", scenario, ts));
                 let _ = fs::create_dir_all(&out_dir);
                 let _ = snapshot.save(out_dir.join("snapshot.png"));
                 eprintln!(
@@ -277,6 +293,29 @@ fn draw_folded_blocks_overlay(display: &mut Display, config: &UiConfig) {
     // Draw a synthetic folded label at viewport line 2
     let label = "⟞ Folded 42 lines [✓] make build";
     display.draw_folded_label_preview(config, 2, label);
+}
+
+fn draw_split_panes(display: &mut Display, config: &UiConfig) {
+    // Simple deterministic two-pane horizontal split visualization.
+    let size = display.size_info;
+    let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+    let tokens = theme.tokens;
+
+    let w = size.width();
+    let h = size.height();
+
+    // Left and right rects with 2px gap
+    let gap: f32 = 2.0;
+    let left_w = (w - gap) * 0.5;
+    let right_w = w - gap - left_w;
+
+    let left = RenderRect::new(0.0, 0.0, left_w, h, tokens.surface_muted, 1.0);
+    let right = RenderRect::new(left_w + gap, 0.0, right_w, h, tokens.surface, 1.0);
+
+    let rects = vec![left, right];
+    let metrics = display.glyph_cache.font_metrics();
+    let size_copy = display.size_info;
+    display.renderer_draw_rects(&size_copy, &metrics, rects);
 }
 
 #[cfg(feature = "ai")]

@@ -515,6 +515,16 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         ".",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;
+        // Workspace pane controls (default shortcuts)
+        "v",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::SplitVertical;
+        "h",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::SplitHorizontal;
+        "]",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusNextPane;
+        "[",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPreviousPane;
+        "w",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ClosePane;
+        ArrowLeft,  ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneLeft;
+        ArrowRight, ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneRight;
+        ArrowUp,    ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneUp;
+        ArrowDown,  ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneDown;
         Copy; Action::Copy;
         Copy,  +BindingMode::VI; Action::ClearSelection;
         Paste, ~BindingMode::VI; Action::Paste;
