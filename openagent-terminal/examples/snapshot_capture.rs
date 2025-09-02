@@ -22,6 +22,9 @@ use openagent_terminal::display::confirm_overlay::ConfirmOverlayState;
 use openagent_terminal::display::window::Window;
 use openagent_terminal::display::Display;
 use openagent_terminal::renderer::platform;
+use openagent_terminal::message_bar::MessageType;
+#[cfg(feature = "ai")]
+use openagent_terminal::ai_runtime::AiUiState;
 
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use glutin::platform::x11::X11GlConfigExt;
@@ -171,18 +174,44 @@ impl ApplicationHandler<()> for SnapshotApp {
             gl::Finish();
         }
 
-        // Prepare a stable confirmation overlay state
-        let mut st = ConfirmOverlayState::new();
-        st.open(
-            "snap-confirm".to_string(),
-            "Warning: Confirm running command".to_string(),
-            "This is a snapshot test.\nIt should be visually stable across runs.".to_string(),
-            Some("Run".to_string()),
-            Some("Cancel".to_string()),
-        );
+        // Scenario selection
+        let scenario = std::env::var("SNAPSHOT_SCENARIO").unwrap_or_else(|_| "confirm_overlay".into());
 
-        // Draw overlay using the public API
-        display.draw_confirm_overlay(&config, &st);
+        match scenario.as_str() {
+            "confirm_overlay" => {
+                let mut st = ConfirmOverlayState::new();
+                st.open(
+                    "snap-confirm".to_string(),
+                    "Warning: Confirm running command".to_string(),
+                    "This is a snapshot test.\nIt should be visually stable across runs.".to_string(),
+                    Some("Run".to_string()),
+                    Some("Cancel".to_string()),
+                );
+                display.draw_confirm_overlay(&config, &st);
+            }
+            "message_bar_error" => draw_message_bar(&mut display, &config, true),
+            "message_bar_warning" => draw_message_bar(&mut display, &config, false),
+            "search_bar_cursor" => draw_search_with_cursor(&mut display, &config, "Search: hello world"),
+            "folded_blocks" => draw_folded_blocks_overlay(&mut display, &config),
+            #[cfg(feature = "ai")]
+            "ai_loading" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Loading),
+            #[cfg(feature = "ai")]
+            "ai_error" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Error),
+            #[cfg(feature = "ai")]
+            "ai_proposals" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Proposals),
+            _ => {
+                // Default to confirm overlay
+                let mut st = ConfirmOverlayState::new();
+                st.open(
+                    "snap-confirm".to_string(),
+                    "Warning: Confirm running command".to_string(),
+                    "This is a snapshot test.\nIt should be visually stable across runs.".to_string(),
+                    Some("Run".to_string()),
+                    Some("Cancel".to_string()),
+                );
+                display.draw_confirm_overlay(&config, &st);
+            }
+        }
 
         // Read framebuffer via public API (GL backend only)
         let (bytes, w, h) = display
@@ -226,6 +255,58 @@ impl ApplicationHandler<()> for SnapshotApp {
     }
 }
 
+#[cfg(feature = "ai")]
+#[derive(Clone, Copy)]
+enum AiOverlayScenario { Loading, Error, Proposals }
+
+fn draw_message_bar(display: &mut Display, config: &UiConfig, is_error: bool) {
+    let ty = if is_error { MessageType::Error } else { MessageType::Warning };
+    let text = if is_error {
+        "❌ Error: Snapshot example error message"
+    } else {
+        "⚠️ Warning: Snapshot example warning message"
+    };
+    display.draw_message_bar_preview(config, ty, text);
+}
+
+fn draw_search_with_cursor(display: &mut Display, config: &UiConfig, text: &str) {
+    display.draw_search_preview(config, text, true);
+}
+
+fn draw_folded_blocks_overlay(display: &mut Display, config: &UiConfig) {
+    // Draw a synthetic folded label at viewport line 2
+    let label = "⟞ Folded 42 lines [✓] make build";
+    display.draw_folded_label_preview(config, 2, label);
+}
+
+#[cfg(feature = "ai")]
+fn draw_ai_overlay_state(display: &mut Display, config: &UiConfig, which: AiOverlayScenario) {
+    let mut ui = AiUiState::default();
+    ui.active = true;
+    match which {
+        AiOverlayScenario::Loading => {
+            ui.is_loading = true;
+            ui.streaming_active = true;
+            ui.streaming_text = "Streaming partial response...".into();
+            ui.scratch = "explain: cargo publish with changelog".into();
+        }
+        AiOverlayScenario::Error => {
+            ui.is_loading = false;
+            ui.error_message = Some("Provider error: rate_limited".into());
+        }
+        AiOverlayScenario::Proposals => {
+            ui.is_loading = false;
+            ui.proposals = vec![openagent_terminal_ai::AiProposal {
+                title: "Build and test".into(),
+                description: Some("Run build and unit tests".into()),
+                proposed_commands: vec!["cargo build -p openagent-terminal".into(), "cargo test -p openagent-terminal".into()],
+            }];
+            ui.selected_proposal = 0;
+        }
+    }
+    display.draw_ai_overlay(config, &ui);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let update = args.iter().any(|a| a == "--update-golden")
@@ -236,17 +317,25 @@ fn main() {
     if let Ok(envv) = std::env::var("SNAPSHOT_SIMILARITY_MIN") {
         if let Ok(v) = envv.parse::<f64>() { threshold = v; }
     }
+    // Scenario: confirm_overlay (default), folded_blocks, message_bar_error, message_bar_warning,
+    // search_bar_cursor, ai_loading, ai_error, ai_proposals
+    let mut scenario = String::from("confirm_overlay");
     for a in &args {
         if let Some(val) = a.strip_prefix("--threshold=") {
             if let Ok(v) = val.parse::<f64>() { threshold = v; }
+        }
+        if let Some(val) = a.strip_prefix("--scenario=") {
+            scenario = val.to_string();
         }
     }
 
     let (golden_dir, out_dir) = ensure_dirs();
     let platform = std::env::consts::OS;
-    let golden = golden_dir.join(format!("confirm_overlay_{}.png", platform));
+    let golden = golden_dir.join(format!("{}_{}.png", scenario, platform));
 
     let mut app = SnapshotApp { update, golden_path: golden, out_dir, threshold, exit_code: 1 };
+    // Store scenario name in env for the handler
+    std::env::set_var("SNAPSHOT_SCENARIO", &scenario);
     let event_loop = EventLoop::<()>::new().expect("event loop");
     let _ = event_loop.run_app(&mut app);
     std::process::exit(app.exit_code);

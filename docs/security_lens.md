@@ -19,6 +19,13 @@ Risk Levels
 - Warning: elevated risk patterns (e.g., curl | sh, chmod 777, DROP TABLE).
 - Critical: extremely dangerous operations (e.g., rm -rf /, fork bombs, direct disk overwrite).
 
+UX flow (high level)
+- User performs an action that would execute a command (paste, AI apply, plugin).
+- Security Lens analyzes text and assigns a RiskLevel with factors and mitigations.
+- If `block_critical` and risk is Critical: block with an error message.
+- Else if `require_confirmation[risk]` is true: show the confirmation overlay with details; user confirms or cancels.
+- On confirm, execution proceeds; on cancel, nothing is executed. Optional `require_reason[risk]` may prompt for a reason (future).
+
 Confirmation Overlay
 - Triggered when require_confirmation[risk_level] is true and the command is not blocked.
 - Keys while overlay is active:
@@ -42,8 +49,9 @@ Plugin and AI integration
 - AI "Apply as command" flows are analyzed by the Security Lens; blocking or confirmation is enforced before a command is pasted to the prompt.
 - Plugins that execute commands are required to honor the same policy and route confirmations through the overlay.
 
-Configuration example (TOML)
+Configuration examples
 
+TOML (recommended):
 ```toml path=null start=null
 [security]
 enabled = true
@@ -55,9 +63,33 @@ Caution = true
 Warning = true
 Critical = true
 
+# Ask for typed reason on Critical (future UI)
+[security.require_reason]
+Critical = true
+
+# Organization-/team-specific patterns
 [[security.custom_patterns]]
 pattern = "(?i)gcloud\s+compute\s+instances\s+delete"
 risk_level = "Warning"
 message = "Deleting a VM instance"
+
+[[security.custom_patterns]]
+pattern = "(?i)kubectl\s+delete\s+ns\s+prod"
+risk_level = "Critical"
+message = "Deleting the production namespace"
+```
+
+JSON (for external tooling/tests):
+```json path=null start=null
+{
+  "enabled": true,
+  "block_critical": true,
+  "require_confirmation": {"Safe": false, "Caution": true, "Warning": true, "Critical": true},
+  "require_reason": {"Critical": true},
+  "custom_patterns": [
+    {"pattern": "(?i)gcloud\\s+compute\\s+instances\\s+delete", "risk_level": "Warning", "message": "Deleting a VM instance"},
+    {"pattern": "(?i)kubectl\\s+delete\\s+ns\\s+prod", "risk_level": "Critical", "message": "Deleting the production namespace"}
+  ]
+}
 ```
 

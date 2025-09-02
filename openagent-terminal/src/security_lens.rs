@@ -449,4 +449,41 @@ mod tests {
         assert_eq!(risk.level, RiskLevel::Safe);
         assert_eq!(risk.requires_confirmation, false);
     }
+
+    #[test]
+    fn test_custom_patterns_and_disabled_policy() {
+        // Custom pattern should classify to requested risk level
+        let policy = SecurityPolicy {
+            enabled: true,
+            block_critical: false,
+            require_confirmation: HashMap::new(),
+            require_reason: HashMap::new(),
+            custom_patterns: vec![CustomPattern {
+                pattern: "(?i)kubectl\\s+delete\\s+ns\\s+prod".into(),
+                risk_level: RiskLevel::Critical,
+                message: "Deleting the production namespace".into(),
+            }],
+        };
+        let lens = SecurityLens::new(policy);
+        let risk = lens.analyze_command("kubectl delete ns prod");
+        assert_eq!(risk.level, RiskLevel::Critical);
+        assert!(risk.factors.iter().any(|f| f.category == "custom"));
+
+        // Disabled policy should always return Safe
+        let disabled = SecurityPolicy { enabled: false, ..SecurityPolicy::default() };
+        let lens_disabled = SecurityLens::new(disabled);
+        let risk = lens_disabled.analyze_command("rm -rf /");
+        assert_eq!(risk.level, RiskLevel::Safe);
+        assert!(risk.explanation.contains("disabled"));
+    }
+
+    #[test]
+    fn test_format_risk_display_output() {
+        let lens = SecurityLens::new(SecurityPolicy::default());
+        let risk = lens.analyze_command("chmod 777 somefile");
+        let rendered = lens.format_risk_display(&risk);
+        // Should include icon and explanation
+        assert!(rendered.contains("⚠️") || rendered.contains("\u{26a0}"));
+        assert!(rendered.contains("Warning") || rendered.contains("warning"));
+    }
 }

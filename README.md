@@ -139,12 +139,35 @@ provider = "ollama"  # or "openai", "anthropic"
 
 ## Architecture & Documentation
 
+### Security Lens (Command Safety)
+OpenAgent Terminal ships with a built-in Security Lens that analyzes commands before they run. It classifies risk as Safe, Caution, Warning, or Critical and can require a confirmation overlay or block Critical commands outright. You can add your own org-specific regex patterns.
+
+Quick example (TOML):
+```toml path=null start=null
+[security]
+enabled = true
+block_critical = true
+
+[security.require_confirmation]
+Safe = false
+Caution = true
+Warning = true
+Critical = true
+
+[[security.custom_patterns]]
+pattern = "(?i)kubectl\s+delete\s+ns\s+prod"
+risk_level = "Critical"
+message = "Deleting the production namespace"
+```
+See full docs and UX flow: docs/security_lens.md
+
 - **Architecture Overview**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **AI Design Decisions**: [docs/adr/001-ai-architecture.md](docs/adr/001-ai-architecture.md)
 - **Sync Protocol Design**: [docs/adr/002-sync-protocol.md](docs/adr/002-sync-protocol.md)
 - **Development Plan**: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 - **Quick Start Guide**: [docs/QUICK_START_DEVELOPMENT.md](docs/QUICK_START_DEVELOPMENT.md)
 - **Security Lens & Confirmations**: [docs/security_lens.md](docs/security_lens.md)
+- **Plugins & Workflows**: [docs/plugins.md](docs/plugins.md), [docs/workflows.md](docs/workflows.md)
 
 ## Further information
 
