@@ -1,5 +1,7 @@
 //! Export functionality for blocks data.
 
+#![allow(dead_code)]
+
 use std::io::Write;
 
 use super::Block;

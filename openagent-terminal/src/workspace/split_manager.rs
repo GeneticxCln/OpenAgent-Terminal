@@ -2,6 +2,8 @@
 //!
 //! This module handles the creation, resizing, and navigation of split panes within tabs.
 
+#![allow(dead_code)]
+
 /// Unique identifier for a pane
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PaneId(pub usize);

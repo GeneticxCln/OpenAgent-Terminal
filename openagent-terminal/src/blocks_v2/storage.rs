@@ -1,5 +1,7 @@
 // Block storage implementation using SQLite
 
+#![allow(dead_code)]
+
 use super::{Block, BlockId, ExecutionStatus};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};

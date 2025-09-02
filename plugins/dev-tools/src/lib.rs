@@ -343,7 +343,7 @@ impl Plugin for DevToolsPlugin {
     }
 
     fn collect_context(&self, request: ContextRequest) -> Option<Context> {
-        let config = self.config.as_ref()?;
+        let _config = self.config.as_ref()?;
         let mut context_data = HashMap::new();
 
         // Node.js context

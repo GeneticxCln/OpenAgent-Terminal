@@ -227,6 +227,7 @@ impl Blocks {
     }
 
     /// Check if the viewport line is a block header line (but not folded).
+    #[allow(dead_code)]
     pub fn is_viewport_line_header(&self, display_offset: usize, viewport_line: usize) -> bool {
         let total_line = display_offset + viewport_line;
         self.blocks.iter().any(|b| !b.folded && total_line == b.start_total_line && b.cmd.is_some())

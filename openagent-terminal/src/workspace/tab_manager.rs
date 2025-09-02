@@ -2,6 +2,8 @@
 //!
 //! This module handles the creation, switching, and lifecycle of tabs within a workspace.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

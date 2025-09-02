@@ -3,6 +3,8 @@
 //! This module provides built-in tab and split pane functionality for OpenAgent Terminal,
 //! allowing users to manage multiple terminal sessions within a single window.
 
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 use std::rc::Rc;
 
