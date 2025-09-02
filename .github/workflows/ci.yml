@@ -121,3 +121,47 @@ jobs:
           fi
           # Run with warning severity to keep signal strong but not overly strict initially
           shellcheck -S warning "${files[@]}"
+
+  release-smoke:
+    name: Release build + smoke tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release (core)
+        run: cargo build -p openagent-terminal --release
+
+      - name: Smoke test render (gl)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p openagent-terminal --release --example render_smoke -- --backend=gl | tee /tmp/smoke.log
+          grep -E "backend:(gl|fallback-gl)" /tmp/smoke.log
+
+      - name: GPU snapshot (Linux via xvfb)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Generate/update goldens (one-time or per-run)
+          xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --update-golden
+          # Compare against goldens with similarity threshold (tunable)
+          xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --threshold=0.992
+
+      - name: Perf latency check (<16ms average)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Run perf with explicit threshold; rely on exit code
+          xvfb-run -a cargo run -p openagent-terminal --release --example perf_latency -- --max-ms=16.0

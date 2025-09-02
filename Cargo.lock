@@ -1992,6 +1992,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gl"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a94edab108827d67608095e269cf862e60d920f144a5026d3dbcfd8b877fb404"
+dependencies = [
+ "gl_generator",
+]
+
+[[package]]
 name = "gl_generator"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3597,6 +3606,7 @@ dependencies = [
  "dirs 6.0.0",
  "embed-resource",
  "fontdb",
+ "gl",
  "gl_generator",
  "glutin",
  "harfbuzz_rs",

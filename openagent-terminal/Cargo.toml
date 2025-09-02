@@ -103,6 +103,8 @@ gl_generator = "0.14.0"
 [dev-dependencies]
 clap_complete = "4.2.3"
 image = "0.24"
+chrono = { version = "0.4" }
+gl = "0.14"
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"

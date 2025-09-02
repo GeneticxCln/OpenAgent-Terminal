@@ -56,6 +56,7 @@ use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
 use crate::renderer::ui::UiRoundedRect;
 use crate::renderer::{self, platform, GlyphCache, LoaderApi, Renderer};
+use crate::gl;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
 
@@ -1742,6 +1743,37 @@ impl Display {
             Backend::Gl { renderer, .. } => renderer.finish(),
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer: _ } => (),
+        }
+    }
+
+    /// Read the current frame's RGBA pixels from the active GL backbuffer.
+    /// Returns (bytes, width, height) on success. For non-GL backends this returns None.
+    pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
+        match &self.backend {
+            Backend::Gl { .. } => {
+                let w = self.size_info.width() as u32;
+                let h = self.size_info.height() as u32;
+                let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
+                unsafe {
+                    // Ensure GL commands are finished before readback.
+                    gl::Finish();
+                    // Read from back buffer which contains the most recent draws before swap.
+                    gl::ReadBuffer(gl::BACK);
+                    gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+                    gl::ReadPixels(
+                        0,
+                        0,
+                        w as i32,
+                        h as i32,
+                        gl::RGBA,
+                        gl::UNSIGNED_BYTE,
+                        buf.as_mut_ptr().cast(),
+                    );
+                }
+                Some((buf, w, h))
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => None,
         }
     }
 
