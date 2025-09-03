@@ -19,11 +19,15 @@ pub struct WorkspaceConfig {
     #[config(default)]
     pub splits: SplitConfig,
 
+    /// Quick Actions bar configuration
+    #[config(default)]
+    pub quick_actions: QuickActionsConfig,
+
     /// Workspace keybindings (handled by main keybinding system)
     #[config(skip)]
     pub keybindings: WorkspaceKeybindings,
 
-    /// Enable Warp-style enhanced tab and split functionality
+    /// Enable Warp-style enhanced functionality (optional)
     #[config(default = true)]
     pub warp_style: bool,
 
@@ -38,6 +42,7 @@ impl Default for WorkspaceConfig {
             enabled: true,
             tab_bar: TabBarConfig::default(),
             splits: SplitConfig::default(),
+            quick_actions: QuickActionsConfig::default(),
             keybindings: WorkspaceKeybindings::default(),
             warp_style: true,
             warp_session_file: None,
@@ -77,6 +82,37 @@ pub struct TabBarConfig {
     /// What to do when creating a new tab
     #[config(default = "NewTabAction::InheritWorkingDir")]
     pub new_tab_action: NewTabAction,
+}
+
+/// Quick Actions bar configuration
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct QuickActionsConfig {
+    /// Show the Quick Actions bar
+    #[config(default = true)]
+    pub show: bool,
+    /// Position of the bar: Auto chooses bottom/top intelligently, Top/Bottom force a side
+    #[config(default = "QuickActionsPosition::Auto")]
+    pub position: QuickActionsPosition,
+}
+
+impl Default for QuickActionsConfig {
+    fn default() -> Self {
+        Self { show: true, position: QuickActionsPosition::Auto }
+    }
+}
+
+/// Quick Actions bar position
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum QuickActionsPosition {
+    Auto,
+    Top,
+    Bottom,
+}
+
+impl Default for QuickActionsPosition {
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 impl Default for TabBarConfig {

@@ -52,7 +52,40 @@ position = "Top"   # or "Bottom"
 reserve_row = true
 ```
 
-The advanced style keys shown below are aspirational and may not all be wired yet; prefer the basic options above.
+Split indicators and resize handles are configurable via the [workspace.splits] section (wired). Colors come from your theme unless explicitly overridden. See below for the keys.
+
+### Split indicators (wired)
+
+```toml
+[workspace.splits]
+# Enable split indicators/preview overlay
+preview_enabled = true
+
+# Line visuals
+indicator_line_width = 2.5   # px
+indicator_line_alpha = 0.5   # 0.0..1.0
+
+# Hover emphasis
+indicator_hover_scale = 2.0  # multiplies line width on hover/drag
+indicator_hover_alpha = 0.95
+
+# Handle visuals
+handle_size = 8.0            # px
+handle_alpha = 0.95          # 0.0..1.0
+show_resize_handles = true
+
+# Optional explicit colors (fallbacks to theme tokens when unset)
+# indicator_line_color = { r = 180, g = 180, b = 180 }  # defaults to theme.tokens.border
+# handle_color        = { r = 122, g = 162, b = 247 }  # defaults to theme.tokens.accent
+# overlay_color       = { r = 0,   g = 0,   b = 0   }  # defaults to theme.tokens.overlay
+
+# Zoom overlay alpha
+zoom_overlay_alpha = 0.06
+```
+
+Hover and drag hit-testing tolerance automatically scales with your indicator_line_width and handle_size, making it easier to acquire the divider when you increase these sizes.
+
+Note: The advanced [workspace.warp] keys in the next section are still aspirational; for split visuals, prefer the [workspace.splits] keys above.
 
 ## Configuration
 

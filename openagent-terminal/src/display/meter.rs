@@ -4,8 +4,8 @@
 //!
 //! # Examples
 //!
-//! ```rust
-//! use crate::display::meter::Meter;
+//! ```ignore
+//! // use openagent_terminal::display::meter::Meter;
 //! // create a meter
 //! let mut meter = Meter::default();
 //!

@@ -287,9 +287,9 @@ impl WorkspaceManager {
         let active = self.tabs.active_tab()?;
         // Compute grid content container with padding and reserved rows
         let si = self.size_info;
-        let mut x0 = si.padding_x();
+        let x0 = si.padding_x();
         let mut y0 = si.padding_y();
-        let mut w = si.width() - 2.0 * si.padding_x();
+        let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
         if self.config.workspace.tab_bar.show
             && self.config.workspace.tab_bar.reserve_row
@@ -327,8 +327,10 @@ impl WorkspaceManager {
 
     /// Update the size information for the workspace
     pub fn update_size(&mut self, size_info: SizeInfo) {
+        // Ratios are layout-relative; pane rectangles are computed on demand during draw/hit-test
+        // based on current SizeInfo and configuration (padding, reserved rows). Updating size_info
+        // here is sufficient to make splits reflow on resize.
         self.size_info = size_info;
-        // TODO: Recalculate pane sizes
     }
 
     /// Check if workspace features are enabled
@@ -405,9 +407,9 @@ mod tests {
         set_simple_horizontal_split(&mut wm, 0.5);
 
         // Reconstruct expected container
-        let mut x0 = si.padding_x();
+        let x0 = si.padding_x();
         let mut y0 = si.padding_y();
-        let mut w = si.width() - 2.0 * si.padding_x();
+        let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
         if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row {
             match config.workspace.tab_bar.position {
@@ -452,9 +454,9 @@ mod tests {
         let _tab = wm.create_tab("Test".into(), None);
         set_simple_vertical_split(&mut wm, 0.5);
 
-        let mut x0 = si.padding_x();
-        let mut y0 = si.padding_y();
-        let mut w = si.width() - 2.0 * si.padding_x();
+        let x0 = si.padding_x();
+        let y0 = si.padding_y();
+        let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
         if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row {
             if config.workspace.tab_bar.position == TabBarPosition::Bottom {

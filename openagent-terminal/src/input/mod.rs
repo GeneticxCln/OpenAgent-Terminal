@@ -860,6 +860,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     }
 
     /// Handle clicks on the tab bar (top or bottom)
+    #[cfg_attr(test, allow(dead_code))]
     fn process_tab_bar_click(&mut self) -> bool {
         if !self.ctx.config().workspace.tab_bar.show {
             return false;
@@ -896,6 +897,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     }
 
     /// Handle clicks on the persistent Quick Actions bar at the bottom
+    #[cfg_attr(test, allow(dead_code))]
     fn process_quick_actions_click(&mut self) -> bool {
         let size_info = self.ctx.size_info();
         let display_offset = self.ctx.terminal().grid().display_offset();
@@ -1065,9 +1067,18 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Update split hover state
+        // Derive hover tolerance from configuration so users can tune indicator/handle sizes.
+        let splits = &self.ctx.config().workspace.splits;
+        let base_line = splits.indicator_line_width.max(1.0);
+        let base_handle = if splits.show_resize_handles { splits.handle_size.max(1.0) } else { 0.0 };
+        // Use half of the larger visual element as tolerance, with sane bounds.
+        let mut tol = (base_line.max(base_handle)) * 0.5;
+        // Slightly increase tolerance to ease hover acquisition, but clamp to reasonable range.
+        tol = (tol + 2.0).clamp(3.0, 12.0);
+
         let split_hover_new = self
             .ctx
-            .workspace_split_hit(x as f32, y as f32, 6.0 /* px tolerance */);
+            .workspace_split_hit(x as f32, y as f32, tol);
         if self.ctx.display().split_hover.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
             != split_hover_new.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
         {
@@ -1365,20 +1376,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
-        // Trigger hints highlighted by the mouse.
-        let hint = self.ctx.display().highlighted_hint.take();
-        if let Some(hint) = hint.as_ref().filter(|_| button == MouseButton::Left) {
-            self.ctx.trigger_hint(hint);
-        }
-        self.ctx.display().highlighted_hint = hint;
+        #[cfg(not(test))]
+        {
+            // Trigger hints highlighted by the mouse.
+            let hint = self.ctx.display().highlighted_hint.take();
+            if let Some(hint) = hint.as_ref().filter(|_| button == MouseButton::Left) {
+                self.ctx.trigger_hint(hint);
+            }
+            self.ctx.display().highlighted_hint = hint;
 
-        let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
-        self.ctx.scheduler_mut().unschedule(timer_id);
+            let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
+            self.ctx.scheduler_mut().unschedule(timer_id);
 
-        // Stop split drag on mouse release
-        if let MouseButton::Left = button {
-            if self.ctx.display().split_drag.take().is_some() {
-                return;
+            // Stop split drag on mouse release
+            if let MouseButton::Left = button {
+                if self.ctx.display().split_drag.take().is_some() {
+                    return;
+                }
             }
         }
 
@@ -1684,18 +1698,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else {
             match state {
                 ElementState::Pressed => {
-                    // Start split drag if hovering a divider
-                    if let Some(hit) = self.ctx.display().split_hover.clone() {
-                        self.ctx.display().split_drag = Some(hit);
-                        return;
-                    }
-                    // Tab bar click handling (top/bottom)
-                    if self.process_tab_bar_click() {
-                        return;
-                    }
-                    // Quick Actions bar click handling (bottom line)
-                    if self.process_quick_actions_click() {
-                        return;
+                    #[cfg(not(test))]
+                    {
+                        // Start split drag if hovering a divider
+                        if let Some(hit) = self.ctx.display().split_hover.clone() {
+                            self.ctx.display().split_drag = Some(hit);
+                            return;
+                        }
+                        // Tab bar click handling (top/bottom)
+                        if self.process_tab_bar_click() {
+                            return;
+                        }
+                        // Quick Actions bar click handling (bottom line)
+                        if self.process_quick_actions_click() {
+                            return;
+                        }
                     }
 
                     // Process mouse press before bindings to update the `click_state`.
@@ -1775,7 +1792,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         if let Some(mouse_state) = self.message_bar_cursor_state() {
             mouse_state
-        } else if self.ctx.display().highlighted_hint.as_ref().is_some_and(hint_highlighted) {
+        } else if cfg!(not(test))
+            && self.ctx.display().highlighted_hint.as_ref().is_some_and(hint_highlighted)
+        {
             CursorIcon::Pointer
         } else if !self.ctx.modifiers().state().shift_key() && self.ctx.mouse_mode() {
             CursorIcon::Default

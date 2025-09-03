@@ -189,7 +189,7 @@ impl Display {
     /// Draw Warp-style tab bar with enhanced styling
     pub fn draw_warp_tab_bar(
         &mut self,
-        config: &UiConfig,
+        _config: &UiConfig,
         tab_manager: &TabManager,
         position: TabBarPosition,
         style: &WarpTabStyle,
@@ -406,9 +406,9 @@ impl Display {
         // Calculate pane boundaries and draw split lines inside the grid content area,
         // accounting for window padding and any reserved tab bar row.
         let si = self.size_info;
-        let mut x0 = si.padding_x();
+        let x0 = si.padding_x();
         let mut y0 = si.padding_y();
-        let mut w = si.width() - 2.0 * si.padding_x();
+        let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
         if config.workspace.tab_bar.show
             && config.workspace.tab_bar.reserve_row
@@ -661,8 +661,8 @@ impl Display {
         split_direction: crate::workspace::warp_split_manager::WarpNavDirection,
         indicators: &WarpSplitIndicators,
     ) {
-        let preview_color = Rgb::new(100, 150, 250);
-        let preview_alpha = 0.3;
+        let preview_color = indicators.split_handle_color;
+        let preview_alpha = indicators.hover_line_alpha.min(1.0).max(0.0) * 0.5;
 
         let preview_rect = match split_direction {
             crate::workspace::warp_split_manager::WarpNavDirection::Right => {

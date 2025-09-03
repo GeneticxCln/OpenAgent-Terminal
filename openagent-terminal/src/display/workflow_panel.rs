@@ -6,7 +6,6 @@
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::UiConfig;
-use crate::display::color::Rgb;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
