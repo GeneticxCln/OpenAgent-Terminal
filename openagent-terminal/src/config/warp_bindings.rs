@@ -7,9 +7,8 @@
 //! - Resizing: Cmd+Ctrl+Arrow keys
 //! - Zoom: Cmd+Shift+Enter
 
-use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
-
-use crate::config::{Action, BindingKey, BindingMode, KeyBinding};
+use serde::{Deserialize, Serialize};
+use crate::config::KeyBinding;
 
 /// Macro to create Warp-style bindings (similar to existing bindings! macro)
 macro_rules! warp_bindings {
@@ -160,4 +159,24 @@ impl Default for WarpConfig {
             show_split_indicators: true,
         }
     }
+}
+
+/// Warp-style key bindings collection
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WarpKeyBindings {
+    /// Tab management bindings
+    pub tab_new: String,
+    pub tab_close: String,
+    pub tab_next: String,
+    pub tab_previous: String,
+    
+    /// Split management bindings
+    pub split_horizontal: String,
+    pub split_vertical: String,
+    pub split_focus_up: String,
+    pub split_focus_down: String,
+    pub split_focus_left: String,
+    pub split_focus_right: String,
+    pub split_close: String,
+    pub split_zoom: String,
 }

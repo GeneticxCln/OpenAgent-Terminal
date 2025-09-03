@@ -17,9 +17,10 @@ use crate::display::color::Rgb;
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use crate::renderer::ui::UiRoundedRect;
-use crate::workspace::{TabBarPosition, TabId, TabManager};
+use crate::workspace::{TabBarPosition, TabManager};
 
 /// Enhanced tab styling for Warp-like appearance
+#[derive(Debug, Clone, PartialEq)]
 pub struct WarpTabStyle {
     /// Tab height in pixels
     pub tab_height: f32,
@@ -74,6 +75,7 @@ impl Default for WarpTabStyle {
 }
 
 /// Split pane visual indicators
+#[derive(Debug, Clone, PartialEq)]
 pub struct WarpSplitIndicators {
     /// Show split preview when hovering
     pub show_split_preview: bool,
@@ -600,4 +602,20 @@ impl WarpAnimation {
     pub fn is_complete(&self) -> bool {
         self.start_time.elapsed().as_millis() >= self.duration_ms as u128
     }
+}
+
+/// Overall Warp UI style configuration
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WarpUiStyle {
+    /// Tab styling
+    pub tab_style: WarpTabStyle,
+    
+    /// Split indicators styling
+    pub split_indicators: WarpSplitIndicators,
+    
+    /// Animation settings
+    pub animations_enabled: bool,
+    
+    /// Default animation duration
+    pub animation_duration_ms: u32,
 }

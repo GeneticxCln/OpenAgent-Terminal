@@ -2976,6 +2976,60 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
+    fn workspace_create_tab(&mut self) {
+        let title = format!("Tab {}", self.workspace.tab_count() + 1);
+        let working_dir = std::env::current_dir().ok();
+        let tab_id = self.workspace.create_tab(title.clone(), working_dir);
+        let msg = format!("Created new tab '{}' with ID {:?}", title, tab_id);
+        self.message_buffer.push(Message::new(
+            msg,
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_close_tab(&mut self) {
+        if let Some(active_tab) = self.workspace.active_tab() {
+            let tab_id = active_tab.id;
+            let tab_title = active_tab.title.clone();
+            let ok = self.workspace.close_tab(tab_id);
+            let msg = if ok {
+                format!("Closed tab '{}'" , tab_title)
+            } else {
+                "Close tab failed".into()
+            };
+            self.message_buffer.push(Message::new(
+                msg,
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+        }
+    }
+
+    fn workspace_next_tab(&mut self) {
+        let ok = self.workspace.next_tab();
+        let msg = if ok { "Switched to next tab" } else { "Switch to next tab failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_previous_tab(&mut self) {
+        let ok = self.workspace.previous_tab();
+        let msg = if ok { "Switched to previous tab" } else { "Switch to previous tab failed" };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
     fn copy_to_clipboard(&mut self, text: String) {
         self.clipboard.store(ClipboardType::Clipboard, text);
     }
@@ -3683,6 +3737,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::Frame => (),
                 EventType::PasteCommand(text) => {
                     self.ctx.paste(&text, true);
+                    *self.ctx.dirty = true;
+                },
+                // Warp-style workspace events
+                EventType::WarpUiUpdate(_update_type) => {
+                    // Warp UI updates are handled at the display level
                     *self.ctx.dirty = true;
                 },
                 // Confirmation overlay events are handled at the window-processor level

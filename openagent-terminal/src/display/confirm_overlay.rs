@@ -227,7 +227,7 @@ impl Display {
 
         // Risk analysis details
         if let Some(ref risk) = state.risk_analysis {
-            self.draw_risk_analysis(config, risk, &mut line, x_col, modal_cols, tokens);
+            self.draw_risk_analysis(config, risk, &mut line, x_col, modal_cols, tokens.clone());
         }
 
         // Footer instructions
