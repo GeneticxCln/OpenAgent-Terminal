@@ -13,12 +13,16 @@ mod builtin_font;
 mod gles2;
 mod glsl3;
 pub mod glyph_cache;
+mod shaped_glyph_cache;
+#[cfg(all(feature = "harfbuzz", feature = "wgpu"))]
+pub mod shaped_renderer;
 
 use atlas::Atlas;
 pub use gles2::Gles2Renderer;
 pub use glsl3::Glsl3Renderer;
 pub use glyph_cache::GlyphCache;
 use glyph_cache::{Glyph, LoadGlyph};
+pub use shaped_glyph_cache::{ShapedGlyphCache, LoadedShapedCell, LoadedShapedGlyph, ShapedCacheStats};
 
 // NOTE: These flags must be in sync with their usage in the text.*.glsl shaders.
 bitflags! {
