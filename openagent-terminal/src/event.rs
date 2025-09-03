@@ -736,7 +736,7 @@ self.config = Rc::new(config);
             (EventType::SecurityCheckAiApply { command, dry_run }, Some(window_id)) => {
 // Security Lens analysis and interactive confirmation logic
                 let policy: SecurityPolicy = self.config.security.clone();
-                let lens = SecurityLens::new(policy.clone());
+                let mut lens = SecurityLens::new(policy.clone());
                 let risk = lens.analyze_command(&command);
 
                 if lens.should_block(&risk) {
@@ -3880,15 +3880,83 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 },
                 #[cfg(feature = "ai")]
                 EventType::SecurityCheckAiApply { command, dry_run } => {
-                    // TODO: Integrate SecurityLens analysis and confirmation overlay.
-                    // For now, forward to the checked path to avoid blocking.
-                    let _ = self
-                        .ctx
-                        .event_proxy
-                        .send_event(Event::new(
-                            EventType::AiApplyAsCommandChecked { command, dry_run },
+                    // Integrate SecurityLens analysis and confirmation overlay
+                    use crate::security_lens::{SecurityLens, RiskLevel};
+                    
+                    let mut security_lens = SecurityLens::new(self.ctx.config.security.clone());
+                    let risk_analysis = security_lens.analyze_command(&command);
+                    
+                    // Check if command should be blocked
+                    if self.ctx.config.security.block_critical && risk_analysis.level == RiskLevel::Critical {
+                        // Block critical commands if policy requires it
+                        self.ctx.message_buffer.push(crate::message_bar::Message::new(
+                            format!("Blocked critical command: {}", risk_analysis.explanation),
+                            crate::message_bar::MessageType::Error,
+                        ));
+                        *self.ctx.dirty = true;
+                        return;
+                    }
+                    
+                    // Check if confirmation is required based on policy
+                    let requires_confirmation = self.ctx.config.security
+                        .require_confirmation
+                        .get(&risk_analysis.level)
+                        .copied()
+                        .unwrap_or(false);
+                    
+                    if requires_confirmation {
+                        // Show security confirmation overlay
+                        // Generate unique ID for this confirmation
+                        let confirm_id = format!("security_{}", 
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                        );
+                        
+                        // Create confirmation request
+                        let title = match risk_analysis.level {
+                            RiskLevel::Critical => "🔴 CRITICAL: Confirm Command".to_string(),
+                            RiskLevel::Warning => "🟡 WARNING: Confirm Command".to_string(),
+                            RiskLevel::Caution => "🟠 CAUTION: Confirm Command".to_string(),
+                            RiskLevel::Safe => "✅ Confirm Command".to_string(),
+                        };
+                        
+                        let mut body = format!("Risk Level: {:?}\n\n", risk_analysis.level);
+                        body.push_str(&risk_analysis.explanation);
+                        if !risk_analysis.mitigations.is_empty() {
+                            body.push_str("\n\nSuggested mitigations:\n");
+                            for mitigation in &risk_analysis.mitigations {
+                                body.push_str(&format!("  • {}\n", mitigation));
+                            }
+                        }
+                        body.push_str(&format!("\nCommand to execute:\n  {}", command));
+                        
+                        let _ = self.ctx.event_proxy.send_event(Event::new(
+                            EventType::ConfirmOpen {
+                                id: confirm_id.clone(),
+                                title,
+                                body,
+                                confirm_label: Some("Execute".to_string()),
+                                cancel_label: Some("Cancel".to_string()),
+                            },
                             self.ctx.display.window.id(),
                         ));
+                        
+                        // Store command for when confirmation is resolved
+                        // TODO: Store pending security confirmations in a proper state manager
+                        // For now, we'll rely on the event system to handle this
+                        
+                    } else {
+                        // No confirmation required, proceed directly
+                        let _ = self
+                            .ctx
+                            .event_proxy
+                            .send_event(Event::new(
+                                EventType::AiApplyAsCommandChecked { command, dry_run },
+                                self.ctx.display.window.id(),
+                            ));
+                    }
                     *self.ctx.dirty = true;
                 },
                 #[cfg(feature = "ai")]
@@ -3934,7 +4002,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 },
                 #[cfg(feature = "ai")]
                 EventType::AiApplyDryRun => {
-                    if let Some(runtime) = &self.ctx.ai_runtime {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
                         if let Some((cmd, _)) = runtime.apply_command(true) {
                             // Show dry run output in confirmation overlay
                             let id = format!("ai_dry_run_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
@@ -3969,24 +4037,28 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 },
                 #[cfg(feature = "ai")]
                 EventType::AiExplain(target) => {
+                    // Extract selection before mutable borrow
+                    let text_to_explain = target.clone().unwrap_or_else(|| {
+                        self.ctx.terminal().selection_to_string()
+                            .filter(|s| !s.trim().is_empty())
+                            .unwrap_or_else(|| "Explain the last command output".to_string())
+                    });
+                    
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        let text_to_explain = target.clone().unwrap_or_else(|| {
-                            self.ctx.terminal().selection_to_string()
-                                .filter(|s| !s.trim().is_empty())
-                                .unwrap_or_else(|| "Explain the last command output".to_string())
-                        });
                         runtime.propose_explain(text_to_explain, None, None);
                         *self.ctx.dirty = true;
                     }
                 },
                 #[cfg(feature = "ai")]
                 EventType::AiFix(target) => {
+                    // Extract selection before mutable borrow
+                    let error_text = target.clone().unwrap_or_else(|| {
+                        self.ctx.terminal().selection_to_string()
+                            .filter(|s| !s.trim().is_empty())
+                            .unwrap_or_else(|| "Please suggest a fix for the recent error".to_string())
+                    });
+                    
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        let error_text = target.clone().unwrap_or_else(|| {
-                            self.ctx.terminal().selection_to_string()
-                                .filter(|s| !s.trim().is_empty())
-                                .unwrap_or_else(|| "Please suggest a fix for the recent error".to_string())
-                        });
                         runtime.propose_fix(error_text, None, None, None);
                         *self.ctx.dirty = true;
                     }
