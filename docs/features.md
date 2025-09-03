@@ -92,6 +92,51 @@ OpenAgent Terminal provides scaffolding for two optional, opt-in features:
 
 Both features can be disabled at build-time and runtime, default to zero telemetry, and require secrets via environment variables only.
 
+## Warp-style Tabs and Tab Bar (beta)
+
+OpenAgent Terminal includes a modern, Warp-like tab strip with optional reserved-row layout.
+
+- Enable Warp visuals: set `workspace.warp_style = true` in your config
+- Show the tab bar: set `workspace.tab_bar.show = true`
+- Position: `workspace.tab_bar.position = "Top" | "Bottom" | "Hidden"`
+- Reserve row (no overlay): `workspace.tab_bar.reserve_row = true`
+
+Example config snippet:
+
+```toml path=null start=null
+[workspace]
+warp_style = true
+
+[workspace.tab_bar]
+show = true
+position = "Top"
+reserve_row = true
+```
+
+Keyboard shortcuts (example):
+
+```toml path=null start=null
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control"
+action = "NextTab"
+
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control|Shift"
+action = "PreviousTab"
+
+[[keyboard.bindings]]
+key = "t"
+mods = "Control"
+action = "CreateTab"
+
+[[keyboard.bindings]]
+key = "w"
+mods = "Control"
+action = "CloseTab"
+```
+
 ## Rendering Backends
 
 OpenAgent Terminal supports two rendering backends:

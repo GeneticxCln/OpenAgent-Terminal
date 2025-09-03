@@ -38,6 +38,22 @@ OpenAgent Terminal now supports Warp-style tab and split pane management, provid
 - **Visual split indicators** and resize handles
 - **Zoom overlay** to indicate focused pane state
 
+## Quick Configuration
+
+To enable Warp-style visuals and the tab bar with a reserved row so it doesn’t overlap terminal content, add this to your config:
+
+```toml path=null start=null
+[workspace]
+warp_style = true
+
+[workspace.tab_bar]
+show = true
+position = "Top"   # or "Bottom"
+reserve_row = true
+```
+
+The advanced style keys shown below are aspirational and may not all be wired yet; prefer the basic options above.
+
 ## Configuration
 
 ### Basic Setup

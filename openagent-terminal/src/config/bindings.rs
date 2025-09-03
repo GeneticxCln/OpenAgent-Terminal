@@ -322,6 +322,9 @@ pub enum Action {
     /// Close the current pane.
     ClosePane,
 
+    /// Toggle zoom on the active pane
+    ToggleZoom,
+
     /// Resize pane left.
     ResizePaneLeft,
 
@@ -531,6 +534,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;
         // Workspace pane controls (default shortcuts)
         "v",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::SplitVertical;
+        // Toggle pane zoom (Ctrl+Shift+Enter)
+        Enter,   ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleZoom;
         "h",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::SplitHorizontal;
         "]",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusNextPane;
         "[",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPreviousPane;
