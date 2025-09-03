@@ -52,31 +52,31 @@ use crate::display::hint::{HintMatch, HintState};
 use crate::display::meter::Meter;
 use crate::display::window::Window;
 use crate::event::{Event, EventType, Mouse, SearchState};
+use crate::gl;
 use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
 use crate::renderer::ui::UiRoundedRect;
 use crate::renderer::{self, platform, GlyphCache, LoaderApi, Renderer};
-use crate::gl;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
 
 #[cfg(feature = "ai")]
-pub mod ai_panel;
-#[cfg(feature = "ai")]
 pub mod ai_drawing;
+#[cfg(feature = "ai")]
+pub mod ai_panel;
 pub mod animation;
 pub mod blocks;
+#[cfg(feature = "blocks")]
+pub mod blocks_search_actions;
+pub mod blocks_search_panel;
 pub mod color;
+pub mod confirm_overlay;
 pub mod content;
 pub mod cursor;
 pub mod hint;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
-pub mod blocks_search_panel;
-#[cfg(feature = "blocks")]
-pub mod blocks_search_actions;
-pub mod confirm_overlay;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
 
@@ -435,7 +435,7 @@ pub struct Display {
     pub blocks: blocks::Blocks,
 
     /// Blocks Search panel UI state.
-#[cfg(feature = "blocks")]
+    #[cfg(feature = "blocks")]
     pub blocks_search: blocks_search_panel::BlocksSearchState,
 
     /// Confirmation overlay state.
@@ -605,7 +605,7 @@ impl Display {
             cursor_hidden: Default::default(),
             meter: Default::default(),
             ime: Default::default(),
-blocks,
+            blocks,
             #[cfg(feature = "blocks")]
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
             debug_split_overlay: None,
@@ -769,7 +769,7 @@ blocks,
             cursor_hidden: Default::default(),
             meter: Default::default(),
             ime: Default::default(),
-blocks,
+            blocks,
             #[cfg(feature = "blocks")]
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
             debug_split_overlay: None,
@@ -1479,7 +1479,7 @@ blocks,
         }
 
         // Draw Blocks Search panel overlay if active.
-#[cfg(feature = "blocks")]
+        #[cfg(feature = "blocks")]
         if self.blocks_search.active {
             let bs_state = self.blocks_search.clone();
             self.draw_blocks_search_overlay(config, &bs_state);
@@ -2168,11 +2168,25 @@ blocks,
         let size_copy = self.size_info;
         match &mut self.backend {
             Backend::Gl { renderer, .. } => {
-                renderer.draw_string(point, fg, bg, text.chars(), &size_copy, &mut self.glyph_cache);
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    text.chars(),
+                    &size_copy,
+                    &mut self.glyph_cache,
+                );
             },
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => {
-                renderer.draw_string(point, fg, bg, text.chars(), &size_copy, &mut self.glyph_cache);
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    text.chars(),
+                    &size_copy,
+                    &mut self.glyph_cache,
+                );
             },
         }
     }
@@ -2188,7 +2202,12 @@ blocks,
             let theme =
                 config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
             let fg = theme.tokens.text;
-            let cursor = RenderableCursor::new(Point::new(line, column), CursorShape::Underline, fg, NonZeroU32::new(1).unwrap());
+            let cursor = RenderableCursor::new(
+                Point::new(line, column),
+                CursorShape::Underline,
+                fg,
+                NonZeroU32::new(1).unwrap(),
+            );
             let rects = cursor.rects(&self.size_info, config.cursor.thickness());
             let metrics = self.glyph_cache.font_metrics();
             let size_info = self.size_info;
@@ -2197,7 +2216,12 @@ blocks,
     }
 
     /// Public helper: draw a folded block label line at a given viewport line.
-    pub fn draw_folded_label_preview(&mut self, config: &UiConfig, viewport_line: usize, label: &str) {
+    pub fn draw_folded_label_preview(
+        &mut self,
+        config: &UiConfig,
+        viewport_line: usize,
+        label: &str,
+    ) {
         let theme =
             config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
@@ -2206,11 +2230,25 @@ blocks,
         let size_copy = self.size_info;
         match &mut self.backend {
             Backend::Gl { renderer, .. } => {
-                renderer.draw_string(point, fg, bg, label.chars(), &size_copy, &mut self.glyph_cache);
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    label.chars(),
+                    &size_copy,
+                    &mut self.glyph_cache,
+                );
             },
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => {
-                renderer.draw_string(point, fg, bg, label.chars(), &size_copy, &mut self.glyph_cache);
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    label.chars(),
+                    &size_copy,
+                    &mut self.glyph_cache,
+                );
             },
         }
     }

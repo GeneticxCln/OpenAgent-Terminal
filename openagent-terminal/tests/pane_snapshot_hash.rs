@@ -40,6 +40,9 @@ fn test_split_panes_hash_linux_only() {
     if let Ok(expected) = std::env::var("OPENAGENT_PANE_SPLIT_SHA256") {
         assert_eq!(sha, expected, "pane split hash mismatch");
     } else {
-        eprintln!("Observed split_panes sha256: {} (set OPENAGENT_PANE_SPLIT_SHA256 to enforce)", sha);
+        eprintln!(
+            "Observed split_panes sha256: {} (set OPENAGENT_PANE_SPLIT_SHA256 to enforce)",
+            sha
+        );
     }
 }

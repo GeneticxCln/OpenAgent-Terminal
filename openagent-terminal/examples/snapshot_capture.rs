@@ -9,23 +9,23 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gl; // dev-dependency gl crate for manual clear only
+use glutin::display::{GetGlDisplay, GlDisplay};
 use image::{DynamicImage, ImageBuffer, Rgba};
 use winit::application::ApplicationHandler;
 use winit::event::StartCause;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
-use glutin::display::{GetGlDisplay, GlDisplay};
 
+#[cfg(feature = "ai")]
+use openagent_terminal::ai_runtime::AiUiState;
 use openagent_terminal::cli::WindowOptions;
 use openagent_terminal::config::UiConfig;
 use openagent_terminal::display::confirm_overlay::ConfirmOverlayState;
 use openagent_terminal::display::window::Window;
 use openagent_terminal::display::Display;
+use openagent_terminal::message_bar::MessageType;
 use openagent_terminal::renderer::platform;
 use openagent_terminal::renderer::rects::RenderRect;
-use openagent_terminal::message_bar::MessageType;
-#[cfg(feature = "ai")]
-use openagent_terminal::ai_runtime::AiUiState;
 
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use glutin::platform::x11::X11GlConfigExt;
@@ -114,8 +114,8 @@ impl ApplicationHandler<()> for SnapshotApp {
         // Create window
         #[cfg(windows)]
         let window = {
-            let w = Window::new(event_loop, &config, &identity, &mut win_opts)
-                .expect("create window");
+            let w =
+                Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window");
             raw_window_handle = Some(w.raw_window_handle());
             w
         };
@@ -147,12 +147,9 @@ impl ApplicationHandler<()> for SnapshotApp {
             platform::pick_gl_config(&gl_display, raw_window_handle).expect("pick gl config");
 
         // Create GL context
-        let gl_context = platform::create_gl_context(
-            &gl_display,
-            &gl_config,
-            Some(window.raw_window_handle()),
-        )
-        .expect("create gl context");
+        let gl_context =
+            platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
+                .expect("create gl context");
 
         // Initialize Display (OpenGL backend)
         let mut display = Display::new(window, gl_context, &config, false).expect("display init");
@@ -176,7 +173,8 @@ impl ApplicationHandler<()> for SnapshotApp {
         }
 
         // Scenario selection
-        let scenario = std::env::var("SNAPSHOT_SCENARIO").unwrap_or_else(|_| "confirm_overlay".into());
+        let scenario =
+            std::env::var("SNAPSHOT_SCENARIO").unwrap_or_else(|_| "confirm_overlay".into());
 
         match scenario.as_str() {
             "confirm_overlay" => {
@@ -184,22 +182,29 @@ impl ApplicationHandler<()> for SnapshotApp {
                 st.open(
                     "snap-confirm".to_string(),
                     "Warning: Confirm running command".to_string(),
-                    "This is a snapshot test.\nIt should be visually stable across runs.".to_string(),
+                    "This is a snapshot test.\nIt should be visually stable across runs."
+                        .to_string(),
                     Some("Run".to_string()),
                     Some("Cancel".to_string()),
                 );
                 display.draw_confirm_overlay(&config, &st);
-            }
+            },
             "message_bar_error" => draw_message_bar(&mut display, &config, true),
             "message_bar_warning" => draw_message_bar(&mut display, &config, false),
-            "search_bar_cursor" => draw_search_with_cursor(&mut display, &config, "Search: hello world"),
+            "search_bar_cursor" => {
+                draw_search_with_cursor(&mut display, &config, "Search: hello world")
+            },
             "folded_blocks" => draw_folded_blocks_overlay(&mut display, &config),
             #[cfg(feature = "ai")]
-            "ai_loading" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Loading),
+            "ai_loading" => {
+                draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Loading)
+            },
             #[cfg(feature = "ai")]
             "ai_error" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Error),
             #[cfg(feature = "ai")]
-            "ai_proposals" => draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Proposals),
+            "ai_proposals" => {
+                draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Proposals)
+            },
             "split_panes" => draw_split_panes(&mut display, &config),
             _ => {
                 // Default to confirm overlay
@@ -207,18 +212,17 @@ impl ApplicationHandler<()> for SnapshotApp {
                 st.open(
                     "snap-confirm".to_string(),
                     "Warning: Confirm running command".to_string(),
-                    "This is a snapshot test.\nIt should be visually stable across runs.".to_string(),
+                    "This is a snapshot test.\nIt should be visually stable across runs."
+                        .to_string(),
                     Some("Run".to_string()),
                     Some("Cancel".to_string()),
                 );
                 display.draw_confirm_overlay(&config, &st);
-            }
+            },
         }
 
         // Read framebuffer via public API (GL backend only)
-        let (bytes, w, h) = display
-            .read_frame_rgba()
-            .expect("GL readback not available");
+        let (bytes, w, h) = display.read_frame_rgba().expect("GL readback not available");
 
         // Optional: print raw hash JSON for CI assertions
         if std::env::var("RAW_HASH").ok().as_deref() == Some("1") {
@@ -237,9 +241,7 @@ impl ApplicationHandler<()> for SnapshotApp {
         let snapshot = to_image(bytes, w, h);
 
         if self.update || !Path::new(&self.golden_path).exists() {
-            snapshot
-                .save(&self.golden_path)
-                .expect("failed to save golden image");
+            snapshot.save(&self.golden_path).expect("failed to save golden image");
             println!("Wrote golden: {}", self.golden_path.display());
             self.exit_code = 0;
         } else {
@@ -248,9 +250,7 @@ impl ApplicationHandler<()> for SnapshotApp {
             if sim < self.threshold {
                 // Save artifacts directory with snapshot and diff for debugging.
                 let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-                let out_dir = self
-                    .out_dir
-                    .join(format!("{}_{}", scenario, ts));
+                let out_dir = self.out_dir.join(format!("{}_{}", scenario, ts));
                 let _ = fs::create_dir_all(&out_dir);
                 let _ = snapshot.save(out_dir.join("snapshot.png"));
                 eprintln!(
@@ -274,7 +274,11 @@ impl ApplicationHandler<()> for SnapshotApp {
 
 #[cfg(feature = "ai")]
 #[derive(Clone, Copy)]
-enum AiOverlayScenario { Loading, Error, Proposals }
+enum AiOverlayScenario {
+    Loading,
+    Error,
+    Proposals,
+}
 
 fn draw_message_bar(display: &mut Display, config: &UiConfig, is_error: bool) {
     let ty = if is_error { MessageType::Error } else { MessageType::Warning };
@@ -320,20 +324,23 @@ fn draw_ai_overlay_state(display: &mut Display, config: &UiConfig, which: AiOver
             ui.streaming_active = true;
             ui.streaming_text = "Streaming partial response...".into();
             ui.scratch = "explain: cargo publish with changelog".into();
-        }
+        },
         AiOverlayScenario::Error => {
             ui.is_loading = false;
             ui.error_message = Some("Provider error: rate_limited".into());
-        }
+        },
         AiOverlayScenario::Proposals => {
             ui.is_loading = false;
             ui.proposals = vec![openagent_terminal_ai::AiProposal {
                 title: "Build and test".into(),
                 description: Some("Run build and unit tests".into()),
-                proposed_commands: vec!["cargo build -p openagent-terminal".into(), "cargo test -p openagent-terminal".into()],
+                proposed_commands: vec![
+                    "cargo build -p openagent-terminal".into(),
+                    "cargo test -p openagent-terminal".into(),
+                ],
             }];
             ui.selected_proposal = 0;
-        }
+        },
     }
     display.draw_ai_overlay(config, &ui);
 }
@@ -346,14 +353,18 @@ fn main() {
     // Similarity threshold: default 0.995, override via --threshold=VAL or env SNAPSHOT_SIMILARITY_MIN
     let mut threshold = 0.995f64;
     if let Ok(envv) = std::env::var("SNAPSHOT_SIMILARITY_MIN") {
-        if let Ok(v) = envv.parse::<f64>() { threshold = v; }
+        if let Ok(v) = envv.parse::<f64>() {
+            threshold = v;
+        }
     }
     // Scenario: confirm_overlay (default), folded_blocks, message_bar_error, message_bar_warning,
     // search_bar_cursor, ai_loading, ai_error, ai_proposals
     let mut scenario = String::from("confirm_overlay");
     for a in &args {
         if let Some(val) = a.strip_prefix("--threshold=") {
-            if let Ok(v) = val.parse::<f64>() { threshold = v; }
+            if let Ok(v) = val.parse::<f64>() {
+                threshold = v;
+            }
         }
         if let Some(val) = a.strip_prefix("--scenario=") {
             scenario = val.to_string();

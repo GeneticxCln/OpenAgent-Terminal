@@ -456,7 +456,13 @@ impl WorkflowEngine {
             if let Some(success_hooks) = &workflow.hooks.on_success {
                 for command in success_hooks {
                     let _ = self
-                        .execute_command(&execution_id, command, &context, &workflow.environment, None)
+                        .execute_command(
+                            &execution_id,
+                            command,
+                            &context,
+                            &workflow.environment,
+                            None,
+                        )
                         .await;
                 }
             }

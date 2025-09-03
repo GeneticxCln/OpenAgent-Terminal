@@ -31,7 +31,9 @@ fn make_display(raw: RawDisplayHandle) -> Display {
     unsafe { Display::new(raw, pref).expect("display") }
 }
 
-struct PerfApp { max_ms: f64 }
+struct PerfApp {
+    max_ms: f64,
+}
 
 impl ApplicationHandler<()> for PerfApp {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
@@ -74,22 +76,19 @@ impl ApplicationHandler<()> for PerfApp {
             size.width.try_into().unwrap(),
             size.height.try_into().unwrap(),
         );
-        let surface: Surface<WindowSurface> = unsafe {
-            gl_display
-                .create_window_surface(&config, &surf_attrs)
-                .expect("surface")
-        };
+        let surface: Surface<WindowSurface> =
+            unsafe { gl_display.create_window_surface(&config, &surf_attrs).expect("surface") };
 
         // Context
-        use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version};
+        use glutin::context::{
+            ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version,
+        };
         let ctx_attrs = ContextAttributesBuilder::new()
             .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 3))))
             .build(Some(window.window_handle().unwrap().as_raw()));
-        let not_current = unsafe { gl_display.create_context(&config, &ctx_attrs) }
-            .expect("context");
-        let ctx: PossiblyCurrentContext = not_current
-            .make_current(&surface)
-            .expect("make current");
+        let not_current =
+            unsafe { gl_display.create_context(&config, &ctx_attrs) }.expect("context");
+        let ctx: PossiblyCurrentContext = not_current.make_current(&surface).expect("make current");
 
         // Load GL
         unsafe {
@@ -132,13 +131,17 @@ fn main() {
     let mut max_ms = 16.0f64;
     // Env override
     if let Ok(envv) = std::env::var("PERF_AVG_MS_MAX") {
-        if let Ok(v) = envv.parse::<f64>() { max_ms = v; }
+        if let Ok(v) = envv.parse::<f64>() {
+            max_ms = v;
+        }
     }
     // CLI override
     let args: Vec<String> = std::env::args().collect();
     for a in &args {
         if let Some(val) = a.strip_prefix("--max-ms=") {
-            if let Ok(v) = val.parse::<f64>() { max_ms = v; }
+            if let Ok(v) = val.parse::<f64>() {
+                max_ms = v;
+            }
         }
     }
 

@@ -56,10 +56,10 @@ mod window_context;
 // New component modules
 mod blocks_v2;
 mod components_init;
-mod text_shaping;
-mod workspace;
 mod security_lens;
+mod text_shaping;
 mod ui_confirm;
+mod workspace;
 
 mod gl {
     #![allow(clippy::all, unsafe_op_in_unsafe_fn)]

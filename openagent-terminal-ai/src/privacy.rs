@@ -213,7 +213,10 @@ mysql -u root -p hunter2
         // Header redacted
         assert!(redacted.contains("Authorization: Bearer [REDACTED]"));
         // Env-style API key redacted
-        assert!(redacted.contains("OPENAI_API_KEY: [REDACTED]") || redacted.contains("OPENAI_API_KEY=[REDACTED]"));
+        assert!(
+            redacted.contains("OPENAI_API_KEY: [REDACTED]")
+                || redacted.contains("OPENAI_API_KEY=[REDACTED]")
+        );
         // Short -p flag with value redacted
         assert!(redacted.contains("-p [REDACTED]"));
     }

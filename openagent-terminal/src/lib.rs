@@ -3,8 +3,8 @@
 #![warn(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
 
 // Re-export SerdeReplace at crate root so config derive macros can refer to `crate::SerdeReplace`.
-pub use openagent_terminal_config::SerdeReplace;
 pub use crate::config::monitor::ConfigMonitor;
+pub use openagent_terminal_config::SerdeReplace;
 
 #[cfg(feature = "ai")]
 pub mod ai_runtime;
@@ -34,10 +34,10 @@ pub mod window_context;
 // New component modules
 pub mod blocks_v2;
 pub mod components_init;
-pub mod text_shaping;
-pub mod workspace;
 pub mod security_lens;
+pub mod text_shaping;
 pub mod ui_confirm;
+pub mod workspace;
 
 // Internal GL bindings used by display/render paths.
 pub mod gl {

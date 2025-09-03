@@ -72,11 +72,12 @@ impl BackendSelector {
             ..Default::default()
         });
 
-        let adapter_opt = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: None,
-        }));
+        let adapter_opt =
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+            }));
 
         if adapter_opt.is_some() {
             debug!("WGPU backend is available");
@@ -134,7 +135,7 @@ mod tests {
         let sel = BackendSelector::new(true, None);
         let backend = sel.select_backend();
         match backend {
-            RenderBackend::Wgpu | RenderBackend::OpenGl => {}
+            RenderBackend::Wgpu | RenderBackend::OpenGl => {},
         }
     }
 }

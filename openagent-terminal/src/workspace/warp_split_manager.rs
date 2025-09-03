@@ -16,17 +16,17 @@ use super::split_manager::{PaneId, PaneRect, SplitLayout, SplitManager};
 pub struct WarpSplitManager {
     /// Base split manager functionality
     base: SplitManager,
-    
+
     /// Navigation history for pane focus
     focus_history: VecDeque<PaneId>,
-    
+
     /// Zoom state - when a pane is "zoomed" to full size
     zoomed_pane: Option<PaneId>,
     zoomed_original_layout: Option<SplitLayout>,
-    
+
     /// Resize step size for keyboard shortcuts
     resize_step: f32,
-    
+
     /// Quick access to most recently used panes
     recent_panes: VecDeque<PaneId>,
 }
@@ -45,21 +45,36 @@ impl WarpSplitManager {
     }
 
     /// Split current pane to the right (Warp Cmd+D behavior)
-    pub fn split_right(&self, layout: &mut SplitLayout, current_pane: PaneId, new_pane_id: PaneId) -> bool {
+    pub fn split_right(
+        &self,
+        layout: &mut SplitLayout,
+        current_pane: PaneId,
+        new_pane_id: PaneId,
+    ) -> bool {
         self.base.split_pane(layout, current_pane, new_pane_id, 0.5, true)
     }
 
     /// Split current pane downward (Warp Cmd+Shift+D behavior)
-    pub fn split_down(&self, layout: &mut SplitLayout, current_pane: PaneId, new_pane_id: PaneId) -> bool {
+    pub fn split_down(
+        &self,
+        layout: &mut SplitLayout,
+        current_pane: PaneId,
+        new_pane_id: PaneId,
+    ) -> bool {
         self.base.split_pane(layout, current_pane, new_pane_id, 0.5, false)
     }
 
     /// Navigate to pane in direction (Warp Cmd+Alt+Arrow behavior)
-    pub fn navigate_pane(&mut self, layout: &SplitLayout, current_pane: &mut PaneId, direction: WarpNavDirection) -> bool {
-        let pane_rects = self.calculate_pane_positions(layout, PaneRect::new(0.0, 0.0, 100.0, 100.0));
-        let current_rect = pane_rects.iter()
-            .find(|(id, _)| *id == *current_pane)
-            .map(|(_, rect)| *rect);
+    pub fn navigate_pane(
+        &mut self,
+        layout: &SplitLayout,
+        current_pane: &mut PaneId,
+        direction: WarpNavDirection,
+    ) -> bool {
+        let pane_rects =
+            self.calculate_pane_positions(layout, PaneRect::new(0.0, 0.0, 100.0, 100.0));
+        let current_rect =
+            pane_rects.iter().find(|(id, _)| *id == *current_pane).map(|(_, rect)| *rect);
 
         let Some(current_rect) = current_rect else {
             return false;
@@ -103,8 +118,9 @@ impl WarpSplitManager {
 
             if is_valid_direction {
                 // Calculate distance and alignment score
-                let distance = ((pane_center_x - current_center_x).powi(2) + 
-                               (pane_center_y - current_center_y).powi(2)).sqrt();
+                let distance = ((pane_center_x - current_center_x).powi(2)
+                    + (pane_center_y - current_center_y).powi(2))
+                .sqrt();
 
                 let alignment_score = match direction {
                     WarpNavDirection::Left | WarpNavDirection::Right => {
@@ -132,7 +148,12 @@ impl WarpSplitManager {
     }
 
     /// Resize current pane (Warp Cmd+Alt+Arrow with modifiers behavior)
-    pub fn resize_pane(&self, layout: &mut SplitLayout, current_pane: PaneId, direction: WarpResizeDirection) -> bool {
+    pub fn resize_pane(
+        &self,
+        layout: &mut SplitLayout,
+        current_pane: PaneId,
+        direction: WarpResizeDirection,
+    ) -> bool {
         let delta = match direction {
             WarpResizeDirection::ExpandLeft | WarpResizeDirection::ShrinkRight => -self.resize_step,
             WarpResizeDirection::ExpandRight | WarpResizeDirection::ShrinkLeft => self.resize_step,
@@ -182,16 +203,16 @@ impl WarpSplitManager {
         if let Some(pos) = self.recent_panes.iter().position(|&id| id == *current_pane) {
             let next_pos = (pos + 1) % self.recent_panes.len();
             let next_pane = self.recent_panes[next_pos];
-            
+
             self.update_focus_history(*current_pane);
             *current_pane = next_pane;
-            
+
             // Move the selected pane to the front of recent panes
             if let Some(idx) = self.recent_panes.iter().position(|&id| id == next_pane) {
                 let pane = self.recent_panes.remove(idx).unwrap();
                 self.recent_panes.push_front(pane);
             }
-            
+
             true
         } else {
             false
@@ -199,11 +220,17 @@ impl WarpSplitManager {
     }
 
     /// Close pane with smart focus handling
-    pub fn close_pane_smart(&mut self, layout: &mut SplitLayout, pane_id: PaneId, current_pane: &mut PaneId) -> bool {
+    pub fn close_pane_smart(
+        &mut self,
+        layout: &mut SplitLayout,
+        pane_id: PaneId,
+        current_pane: &mut PaneId,
+    ) -> bool {
         // Before closing, determine where focus should go
         let next_focus = if *current_pane == pane_id {
             // Closing the focused pane - try to focus the most recent pane
-            self.recent_panes.iter()
+            self.recent_panes
+                .iter()
                 .find(|&&id| id != pane_id && layout.find_pane(id))
                 .copied()
                 .or_else(|| {
@@ -253,26 +280,30 @@ impl WarpSplitManager {
     fn swap_adjacent_panes(&self, layout: &mut SplitLayout, pane1: PaneId, pane2: PaneId) -> bool {
         match layout {
             SplitLayout::Horizontal { left, right, .. } => {
-                if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) = (left.as_ref(), right.as_ref()) {
+                if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) =
+                    (left.as_ref(), right.as_ref())
+                {
                     if (*id1 == pane1 && *id2 == pane2) || (*id1 == pane2 && *id2 == pane1) {
                         std::mem::swap(left, right);
                         return true;
                     }
                 }
                 // Recursively check children
-                self.swap_adjacent_panes(left, pane1, pane2) || 
-                self.swap_adjacent_panes(right, pane1, pane2)
+                self.swap_adjacent_panes(left, pane1, pane2)
+                    || self.swap_adjacent_panes(right, pane1, pane2)
             },
             SplitLayout::Vertical { top, bottom, .. } => {
-                if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) = (top.as_ref(), bottom.as_ref()) {
+                if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) =
+                    (top.as_ref(), bottom.as_ref())
+                {
                     if (*id1 == pane1 && *id2 == pane2) || (*id1 == pane2 && *id2 == pane1) {
                         std::mem::swap(top, bottom);
                         return true;
                     }
                 }
                 // Recursively check children
-                self.swap_adjacent_panes(top, pane1, pane2) || 
-                self.swap_adjacent_panes(bottom, pane1, pane2)
+                self.swap_adjacent_panes(top, pane1, pane2)
+                    || self.swap_adjacent_panes(bottom, pane1, pane2)
             },
             SplitLayout::Single(_) => false,
         }
@@ -303,7 +334,11 @@ impl WarpSplitManager {
     }
 
     /// Calculate pane positions for navigation
-    fn calculate_pane_positions(&self, layout: &SplitLayout, container: PaneRect) -> Vec<(PaneId, PaneRect)> {
+    fn calculate_pane_positions(
+        &self,
+        layout: &SplitLayout,
+        container: PaneRect,
+    ) -> Vec<(PaneId, PaneRect)> {
         self.base.calculate_pane_rects(layout, container)
     }
 
@@ -313,10 +348,10 @@ impl WarpSplitManager {
         if let Some(pos) = self.focus_history.iter().position(|&id| id == pane_id) {
             self.focus_history.remove(pos);
         }
-        
+
         // Add to front
         self.focus_history.push_front(pane_id);
-        
+
         // Keep reasonable history size
         if self.focus_history.len() > 20 {
             self.focus_history.pop_back();
@@ -329,10 +364,10 @@ impl WarpSplitManager {
         if let Some(pos) = self.recent_panes.iter().position(|&id| id == pane_id) {
             self.recent_panes.remove(pos);
         }
-        
+
         // Add to front
         self.recent_panes.push_front(pane_id);
-        
+
         // Keep reasonable size
         while self.recent_panes.len() > 10 {
             self.recent_panes.pop_back();
@@ -343,10 +378,10 @@ impl WarpSplitManager {
     fn remove_pane_from_tracking(&mut self, pane_id: PaneId) {
         // Remove from focus history
         self.focus_history.retain(|&id| id != pane_id);
-        
+
         // Remove from recent panes
         self.recent_panes.retain(|&id| id != pane_id);
-        
+
         // Clear zoom if this pane was zoomed
         if self.zoomed_pane == Some(pane_id) {
             self.zoomed_pane = None;
@@ -409,11 +444,25 @@ impl Default for WarpSplitManager {
 
 /// Helper trait to extend base SplitManager functionality
 trait SplitManagerExt {
-    fn split_pane(&self, layout: &mut SplitLayout, target_id: PaneId, new_pane_id: PaneId, ratio: f32, horizontal: bool) -> bool;
+    fn split_pane(
+        &self,
+        layout: &mut SplitLayout,
+        target_id: PaneId,
+        new_pane_id: PaneId,
+        ratio: f32,
+        horizontal: bool,
+    ) -> bool;
 }
 
 impl SplitManagerExt for SplitManager {
-    fn split_pane(&self, layout: &mut SplitLayout, target_id: PaneId, new_pane_id: PaneId, ratio: f32, horizontal: bool) -> bool {
+    fn split_pane(
+        &self,
+        layout: &mut SplitLayout,
+        target_id: PaneId,
+        new_pane_id: PaneId,
+        ratio: f32,
+        horizontal: bool,
+    ) -> bool {
         if horizontal {
             self.split_horizontal(layout, target_id, ratio).is_some()
         } else {

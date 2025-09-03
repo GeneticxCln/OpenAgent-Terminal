@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::Duration;
 
 use openagent_terminal::security_lens::{SecurityLens, SecurityPolicy};
@@ -7,7 +7,7 @@ fn benchmark_security_analysis(c: &mut Criterion) {
     let mut group = c.benchmark_group("security_analysis");
     group.measurement_time(Duration::from_secs(10));
     group.sample_size(200);
-    
+
     // Test command scenarios with different risk levels
     let long_cmd = format!("echo {}", "A".repeat(500));
     let command_scenarios = vec![
@@ -20,7 +20,7 @@ fn benchmark_security_analysis(c: &mut Criterion) {
         ("obfuscated", "$(echo 'cm0gLXJm' | base64 -d) /tmp/*"),
         ("long_command", long_cmd.as_str()),
     ];
-    
+
     for (risk_type, command) in command_scenarios {
         group.bench_with_input(
             BenchmarkId::new("command_analysis", risk_type),
@@ -35,14 +35,14 @@ fn benchmark_security_analysis(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
 fn benchmark_pattern_matching(c: &mut Criterion) {
     let mut group = c.benchmark_group("pattern_matching");
     group.measurement_time(Duration::from_secs(8));
-    
+
     // Test bulk command analysis (simulating rapid-fire AI suggestions)
     let bulk_commands: Vec<&str> = vec![
         "git status",
@@ -56,7 +56,7 @@ fn benchmark_pattern_matching(c: &mut Criterion) {
         "rm file.txt",
         "cp src dest",
     ];
-    
+
     group.bench_function("bulk_analysis", |b| {
         b.iter(|| {
             let mut lens = SecurityLens::new(SecurityPolicy::default());
@@ -65,29 +65,29 @@ fn benchmark_pattern_matching(c: &mut Criterion) {
             }
         });
     });
-    
+
     group.finish();
 }
 
 fn benchmark_policy_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("policy_creation");
     group.measurement_time(Duration::from_secs(5));
-    
+
     group.bench_function("security_policy_default", |b| {
         b.iter(|| SecurityPolicy::default());
     });
-    
+
     group.bench_function("security_lens_init", |b| {
         b.iter(|| SecurityLens::new(SecurityPolicy::default()));
     });
-    
+
     group.finish();
 }
 
 fn benchmark_rate_limiting(c: &mut Criterion) {
     let mut group = c.benchmark_group("rate_limiting");
     group.measurement_time(Duration::from_secs(6));
-    
+
     group.bench_function("rapid_analysis", |b| {
         b.iter_with_setup(
             || SecurityLens::new(SecurityPolicy::default()),
@@ -100,7 +100,7 @@ fn benchmark_rate_limiting(c: &mut Criterion) {
             },
         );
     });
-    
+
     group.finish();
 }
 

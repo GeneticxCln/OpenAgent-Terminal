@@ -4,8 +4,8 @@
 use log::{debug, error, info};
 use std::collections::VecDeque;
 
-use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
 use crate::security_lens::{SecurityLens, SecurityPolicy};
+use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -63,7 +63,7 @@ pub struct AiRuntime {
 }
 
 impl AiRuntime {
-pub fn new(provider: Box<dyn AiProvider>) -> Self {
+    pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
         Self {
             ui: AiUiState::default(),
@@ -390,11 +390,15 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
                     // Analyze risk and annotate a dry-run output
                     let risk = self.security_lens.analyze_command(cmd);
                     let mut annotated = String::new();
-                    annotated.push_str(&format!("# Security Lens: {:?} - {}\n", risk.level, risk.explanation));
+                    annotated.push_str(&format!(
+                        "# Security Lens: {:?} - {}\n",
+                        risk.level, risk.explanation
+                    ));
                     if !risk.factors.is_empty() {
                         annotated.push_str("# Risk factors:\n");
                         for f in &risk.factors {
-                            annotated.push_str(&format!("#  - {} ({})\n", f.description, f.category));
+                            annotated
+                                .push_str(&format!("#  - {} ({})\n", f.description, f.category));
                         }
                     }
                     if !risk.mitigations.is_empty() {
@@ -490,8 +494,12 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
             ("explain_target".to_string(), target_text.clone()),
             ("platform".to_string(), std::env::consts::OS.to_string()),
         ];
-        if let Some(ref sh) = shell_kind { context.push(("shell".into(), sh.clone())); }
-        if let Some(ref dir) = working_directory { context.push(("cwd".into(), dir.clone())); }
+        if let Some(ref sh) = shell_kind {
+            context.push(("shell".into(), sh.clone()));
+        }
+        if let Some(ref dir) = working_directory {
+            context.push(("cwd".into(), dir.clone()));
+        }
 
         let req = AiRequest {
             // Keep the scratch as the current query if present, else use the target_text
@@ -540,9 +548,15 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
             ("error".to_string(), error_text.clone()),
             ("platform".to_string(), std::env::consts::OS.to_string()),
         ];
-        if let Some(ref fc) = failed_command { context.push(("failed_command".into(), fc.clone())); }
-        if let Some(ref sh) = shell_kind { context.push(("shell".into(), sh.clone())); }
-        if let Some(ref dir) = working_directory { context.push(("cwd".into(), dir.clone())); }
+        if let Some(ref fc) = failed_command {
+            context.push(("failed_command".into(), fc.clone()));
+        }
+        if let Some(ref sh) = shell_kind {
+            context.push(("shell".into(), sh.clone()));
+        }
+        if let Some(ref dir) = working_directory {
+            context.push(("cwd".into(), dir.clone()));
+        }
 
         let prompt = if let Some(fc) = &failed_command {
             format!("Error encountered while running '{}':\n{}\nSuggest a fix.", fc, error_text)
@@ -550,12 +564,7 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
             format!("Error: {}\nSuggest a fix.", error_text)
         };
 
-        let req = AiRequest {
-            scratch_text: prompt,
-            working_directory,
-            shell_kind,
-            context,
-        };
+        let req = AiRequest { scratch_text: prompt, working_directory, shell_kind, context };
 
         match self.provider.propose(req) {
             Ok(proposals) => {

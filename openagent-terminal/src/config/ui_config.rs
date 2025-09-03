@@ -729,7 +729,6 @@ pub struct WorkflowParam {
     pub default: Option<String>,
 }
 
-
 pub(crate) struct StringVisitor;
 impl serde::de::Visitor<'_> for StringVisitor {
     type Value = String;

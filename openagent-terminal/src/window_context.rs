@@ -270,7 +270,7 @@ impl WindowContext {
 
     /// Create a new terminal window context.
     fn new(
-        mut display: Display,
+        display: Display,
         config: Rc<UiConfig>,
         options: WindowOptions,
         proxy: EventLoopProxy<Event>,
@@ -349,7 +349,7 @@ impl WindowContext {
                 display.size_info,
             )
         };
-        
+
         // For non-Warp mode, create an initial tab
         if !config.workspace.warp_style {
             let _initial_tab = workspace.create_tab(
@@ -360,7 +360,7 @@ impl WindowContext {
         // Warp mode will create its initial tab during initialization
 
         // Create context for the OpenAgent Terminal window.
-        let mut window_context = WindowContext {
+        let window_context = WindowContext {
             preserve_title,
             terminal,
             display,
@@ -672,7 +672,11 @@ impl WindowContext {
 
     /// Initialize Warp functionality for this window context.
     /// This should be called after the window context is stored in the processor.
-    pub fn initialize_warp_if_enabled(&mut self, window_context_weak: std::sync::Weak<std::sync::Mutex<WindowContext>>, event_proxy: EventLoopProxy<Event>) -> Result<(), Box<dyn Error>> {
+    pub fn initialize_warp_if_enabled(
+        &mut self,
+        window_context_weak: std::sync::Weak<std::sync::Mutex<WindowContext>>,
+        event_proxy: EventLoopProxy<Event>,
+    ) -> Result<(), Box<dyn Error>> {
         if self.config.workspace.warp_style {
             // Create a temporary Arc to pass to the Warp initialization
             // In a real implementation, we'd need a better approach to avoid circular references

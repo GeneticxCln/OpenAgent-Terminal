@@ -1,10 +1,10 @@
 use crate::privacy::{sanitize_request, AiPrivacyOptions};
+use crate::streaming::{RetryConfig, RetryStrategy};
 use crate::{AiProposal, AiProvider, AiRequest};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
 use tracing::{debug, error, info};
-use crate::streaming::{RetryConfig, RetryStrategy};
 
 pub struct OpenAiProvider {
     api_key: String,
@@ -152,7 +152,8 @@ impl AiProvider for OpenAiProvider {
         debug!("Sending request to OpenAI API");
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let retry = RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
+        let retry =
+            RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
         let completion: ChatCompletionResponse = loop {
             let send = self
@@ -166,16 +167,23 @@ impl AiProvider for OpenAiProvider {
                 Ok(resp) => resp,
                 Err(e) => {
                     let msg = format!("Failed to send request: {}", e);
-                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false))
+                    {
                         let delay = retry.delay_for_attempt(attempt, &msg);
-                        if ai_log_summary() { info!("openai_propose_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                        if ai_log_summary() {
+                            info!(
+                                "openai_propose_retry attempt={} delay_ms={}",
+                                attempt + 1,
+                                delay.as_millis()
+                            );
+                        }
                         std::thread::sleep(delay);
                         attempt += 1;
                         continue;
                     } else {
                         return Err(msg);
                     }
-                }
+                },
             };
 
             if !response.status().is_success() {
@@ -185,7 +193,13 @@ impl AiProvider for OpenAiProvider {
                 error!("OpenAI API error {}: {}", status, error_text);
                 if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
                     let delay = retry.delay_for_attempt(attempt, &msg);
-                    if ai_log_summary() { info!("openai_propose_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis()); }
+                    if ai_log_summary() {
+                        info!(
+                            "openai_propose_retry_http attempt={} delay_ms={}",
+                            attempt + 1,
+                            delay.as_millis()
+                        );
+                    }
                     std::thread::sleep(delay);
                     attempt += 1;
                     continue;
@@ -194,12 +208,15 @@ impl AiProvider for OpenAiProvider {
                 }
             }
 
-            if ai_log_summary() { debug!("openai_propose_response_status status={}", response.status()); }
+            if ai_log_summary() {
+                debug!("openai_propose_response_status status={}", response.status());
+            }
             match response.json() {
                 Ok(json) => break json,
                 Err(e) => {
                     let msg = format!("Failed to parse response: {}", e);
-                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false))
+                    {
                         let delay = retry.delay_for_attempt(attempt, &msg);
                         std::thread::sleep(delay);
                         attempt += 1;
@@ -207,7 +224,7 @@ impl AiProvider for OpenAiProvider {
                     } else {
                         return Err(msg);
                     }
-                }
+                },
             }
         };
 

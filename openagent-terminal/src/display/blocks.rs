@@ -258,7 +258,7 @@ mod tests {
         });
 
         let display_offset = 5; // so header is at viewport line 5
-        // Initially header present
+                                // Initially header present
         assert!(blocks.is_viewport_line_header(display_offset, 5));
         // Toggle fold at header
         let toggled = blocks.toggle_fold_header_at_viewport_line(display_offset, 5);

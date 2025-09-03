@@ -58,32 +58,45 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     return;
                 },
                 Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
-                    self.ctx.send_user_event(crate::event::EventType::BlocksExportHeaderUnderCursor);
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksExportHeaderUnderCursor);
                     return;
                 },
                 // Ctrl+Alt+M: Cycle debug split overlay (None -> H -> V -> None)
                 Key::Character(c) if (c.eq_ignore_ascii_case("m")) => {
                     let next = match self.ctx.display().debug_split_overlay {
-                        None => Some(false),           // Horizontal first
-                        Some(false) => Some(true),      // Then vertical
-                        Some(true) => None,             // Then off
+                        None => Some(false),       // Horizontal first
+                        Some(false) => Some(true), // Then vertical
+                        Some(true) => None,        // Then off
                     };
                     self.ctx.display().debug_split_overlay = next;
                     self.ctx.display().pending_update.dirty = true;
                     return;
                 },
-                _ => {}
+                _ => {},
             }
         }
 
-// Confirmation overlay handling takes precedence.
+        // Confirmation overlay handling takes precedence.
         if self.ctx.confirm_overlay_active() {
             match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Enter) => { self.ctx.confirm_overlay_confirm(); return; },
-                Key::Named(NamedKey::Escape) => { self.ctx.confirm_overlay_cancel(); return; },
-                Key::Character(c) if (c.eq_ignore_ascii_case("y")) => { self.ctx.confirm_overlay_confirm(); return; },
-                Key::Character(c) if (c.eq_ignore_ascii_case("n")) => { self.ctx.confirm_overlay_cancel(); return; },
-                _ => {}
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.confirm_overlay_confirm();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.confirm_overlay_cancel();
+                    return;
+                },
+                Key::Character(c) if (c.eq_ignore_ascii_case("y")) => {
+                    self.ctx.confirm_overlay_confirm();
+                    return;
+                },
+                Key::Character(c) if (c.eq_ignore_ascii_case("n")) => {
+                    self.ctx.confirm_overlay_cancel();
+                    return;
+                },
+                _ => {},
             }
             // Swallow other keys while confirm overlay is active
             return;
@@ -123,7 +136,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Blocks Search panel input handling (if active)
         if self.ctx.blocks_search_active() {
             let mods = self.ctx.modifiers().state();
-            
+
             // Handle actions menu input if active
             if self.ctx.blocks_search_actions_menu_active() {
                 match key.logical_key.as_ref() {
@@ -153,12 +166,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.blocks_search_move_actions_selection(1);
                         return;
                     },
-                    _ => {}
+                    _ => {},
                 }
                 // Don't process other keys when actions menu is active
                 return;
             }
-            
+
             // Handle help overlay input if active
             if self.ctx.blocks_search_help_active() {
                 match key.logical_key.as_ref() {
@@ -180,12 +193,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.blocks_search_navigate_help(false);
                         return;
                     },
-                    _ => {}
+                    _ => {},
                 }
                 // Don't process other keys when help is active
                 return;
             }
-            
+
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.blocks_search_confirm();
@@ -266,7 +279,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.blocks_search_toggle_star_selected();
                     return;
                 },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "j" || c == "k") => {
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && (c == "j" || c == "k") =>
+                {
                     let delta = if c == "j" { 1 } else { -1 };
                     self.ctx.blocks_search_move_selection(delta);
                     return;
@@ -419,12 +434,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 _ => {},
             }
         }
-        
+
         // AI panel input handling (if active). Never auto-run; only edit/propose.
         #[cfg(feature = "ai")]
         if self.ctx.ai_active() {
             let mods = self.ctx.modifiers().state();
-            
+
             // Handle Ctrl+Shift combinations first
             if mods.control_key() && mods.shift_key() {
                 match key.logical_key.as_ref() {
@@ -441,7 +456,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     _ => {},
                 }
             }
-            
+
             // Keyboard shortcuts inside AI panel
             if mods.control_key() {
                 match key.logical_key.as_ref() {
@@ -550,7 +565,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 },
                 _ => {},
             }
-            
+
             // Only allow printable characters to be input to AI panel
             for ch in text.chars() {
                 if !ch.is_control() {

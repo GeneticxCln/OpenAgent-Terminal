@@ -1,10 +1,10 @@
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use sqlx::{FromRow, Pool, Row, Sqlite};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use sqlx::{Pool, Sqlite, FromRow, Row};
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 
 use crate::display::blocks::CommandBlock;
-use crate::storage::{StorageResult, StorageError};
+use crate::storage::{StorageError, StorageResult};
 
 /// Persisted block data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,25 +73,26 @@ impl BlockStorage {
 
     /// Insert a new block record
     pub async fn insert_block(
-        &self, 
-        block: &CommandBlock, 
+        &self,
+        block: &CommandBlock,
         session_id: Option<&str>,
-        output_content: Option<&str>
+        output_content: Option<&str>,
     ) -> StorageResult<i64> {
         let started_at = system_time_to_millis(instant_to_system_time(block.started_at));
-        let ended_at = block.ended_at.map(|instant| system_time_to_millis(instant_to_system_time(instant)));
-        
+        let ended_at =
+            block.ended_at.map(|instant| system_time_to_millis(instant_to_system_time(instant)));
+
         let (output_preview, output_hash) = if let Some(content) = output_content {
             let preview = if content.len() > 1000 {
                 format!("{}...", &content[..1000])
             } else {
                 content.to_string()
             };
-            
+
             let mut hasher = Sha256::new();
             hasher.update(content.as_bytes());
             let hash = format!("{:x}", hasher.finalize());
-            
+
             (Some(preview), Some(hash))
         } else {
             (None, None)
@@ -104,7 +105,7 @@ impl BlockStorage {
                 working_directory, exit_code, started_at, ended_at,
                 output_preview, output_hash
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#
+            "#,
         )
         .bind(session_id)
         .bind(block.start_total_line as i32)
@@ -127,22 +128,23 @@ impl BlockStorage {
         &self,
         id: i64,
         block: &CommandBlock,
-        output_content: Option<&str>
+        output_content: Option<&str>,
     ) -> StorageResult<()> {
         let started_at = system_time_to_millis(instant_to_system_time(block.started_at));
-        let ended_at = block.ended_at.map(|instant| system_time_to_millis(instant_to_system_time(instant)));
-        
+        let ended_at =
+            block.ended_at.map(|instant| system_time_to_millis(instant_to_system_time(instant)));
+
         let (output_preview, output_hash) = if let Some(content) = output_content {
             let preview = if content.len() > 1000 {
                 format!("{}...", &content[..1000])
             } else {
                 content.to_string()
             };
-            
+
             let mut hasher = Sha256::new();
             hasher.update(content.as_bytes());
             let hash = format!("{:x}", hasher.finalize());
-            
+
             (Some(preview), Some(hash))
         } else {
             (None, None)
@@ -155,7 +157,7 @@ impl BlockStorage {
                 working_directory = ?, exit_code = ?, started_at = ?,
                 ended_at = ?, output_preview = ?, output_hash = ?
             WHERE id = ?
-            "#
+            "#,
         )
         .bind(block.start_total_line as i32)
         .bind(block.end_total_line.map(|line| line as i32))
@@ -177,7 +179,7 @@ impl BlockStorage {
     pub async fn search_blocks(
         &self,
         filter: &BlockFilter,
-        sort: &BlockSort
+        sort: &BlockSort,
     ) -> StorageResult<Vec<PersistedBlock>> {
         let mut query_builder = Vec::new();
         let mut bind_values: Vec<Box<dyn sqlx::Encode<'static, Sqlite> + Send + Sync>> = Vec::new();
@@ -191,12 +193,13 @@ impl BlockStorage {
                 SELECT blocks.* FROM blocks 
                 JOIN blocks_fts ON blocks.id = blocks_fts.rowid 
                 WHERE blocks_fts MATCH ?
-                "#.to_string()
+                "#
+                .to_string(),
             );
             bind_values.push(Box::new(search_query.clone()));
         } else {
             query_builder.push("SELECT * FROM blocks".to_string());
-            
+
             // Add WHERE conditions
             if let Some(command_pattern) = &filter.command_pattern {
                 where_clauses.push("command LIKE ?");
@@ -255,10 +258,10 @@ impl BlockStorage {
         }
 
         let final_query = query_builder.join("");
-        
+
         // Execute the query
         let _query = sqlx::query_as::<Sqlite, PersistedBlock>(&final_query);
-        
+
         // Note: SQLx doesn't support dynamic binding easily, so we'll need to handle this
         // For now, let's implement a simpler version without full dynamic binding
         self.execute_search_query(filter, sort).await
@@ -268,7 +271,7 @@ impl BlockStorage {
     async fn execute_search_query(
         &self,
         filter: &BlockFilter,
-        sort: &BlockSort
+        sort: &BlockSort,
     ) -> StorageResult<Vec<PersistedBlock>> {
         // Base query with common filtering
         let query = if let Some(search_query) = &filter.query {
@@ -276,61 +279,49 @@ impl BlockStorage {
                 "SELECT blocks.* FROM blocks 
                  JOIN blocks_fts ON blocks.id = blocks_fts.rowid 
                  WHERE blocks_fts MATCH ?
-                 ORDER BY started_at DESC LIMIT ?"
+                 ORDER BY started_at DESC LIMIT ?",
             )
             .bind(search_query)
             .bind(filter.limit.unwrap_or(100))
         } else {
             // Simple filtering without FTS
             match sort {
-                BlockSort::StartedAt(SortOrder::Desc) => {
-                    sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY started_at DESC LIMIT ?"
-                    )
-                    .bind(filter.limit.unwrap_or(100))
-                },
-                BlockSort::StartedAt(SortOrder::Asc) => {
-                    sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY started_at ASC LIMIT ?"
-                    )
-                    .bind(filter.limit.unwrap_or(100))
-                },
-                BlockSort::Command(SortOrder::Desc) => {
-                    sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY command DESC LIMIT ?"
-                    )
-                    .bind(filter.limit.unwrap_or(100))
-                },
-                BlockSort::Command(SortOrder::Asc) => {
-                    sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY command ASC LIMIT ?"
-                    )
-                    .bind(filter.limit.unwrap_or(100))
-                },
+                BlockSort::StartedAt(SortOrder::Desc) => sqlx::query_as::<Sqlite, PersistedBlock>(
+                    "SELECT * FROM blocks WHERE 1=1 ORDER BY started_at DESC LIMIT ?",
+                )
+                .bind(filter.limit.unwrap_or(100)),
+                BlockSort::StartedAt(SortOrder::Asc) => sqlx::query_as::<Sqlite, PersistedBlock>(
+                    "SELECT * FROM blocks WHERE 1=1 ORDER BY started_at ASC LIMIT ?",
+                )
+                .bind(filter.limit.unwrap_or(100)),
+                BlockSort::Command(SortOrder::Desc) => sqlx::query_as::<Sqlite, PersistedBlock>(
+                    "SELECT * FROM blocks WHERE 1=1 ORDER BY command DESC LIMIT ?",
+                )
+                .bind(filter.limit.unwrap_or(100)),
+                BlockSort::Command(SortOrder::Asc) => sqlx::query_as::<Sqlite, PersistedBlock>(
+                    "SELECT * FROM blocks WHERE 1=1 ORDER BY command ASC LIMIT ?",
+                )
+                .bind(filter.limit.unwrap_or(100)),
                 BlockSort::WorkingDirectory(SortOrder::Desc) => {
                     sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY working_directory DESC LIMIT ?"
+                        "SELECT * FROM blocks WHERE 1=1 ORDER BY working_directory DESC LIMIT ?",
                     )
                     .bind(filter.limit.unwrap_or(100))
                 },
                 BlockSort::WorkingDirectory(SortOrder::Asc) => {
                     sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY working_directory ASC LIMIT ?"
+                        "SELECT * FROM blocks WHERE 1=1 ORDER BY working_directory ASC LIMIT ?",
                     )
                     .bind(filter.limit.unwrap_or(100))
                 },
-                BlockSort::ExitCode(SortOrder::Desc) => {
-                    sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY exit_code DESC LIMIT ?"
-                    )
-                    .bind(filter.limit.unwrap_or(100))
-                },
-                BlockSort::ExitCode(SortOrder::Asc) => {
-                    sqlx::query_as::<Sqlite, PersistedBlock>(
-                        "SELECT * FROM blocks WHERE 1=1 ORDER BY exit_code ASC LIMIT ?"
-                    )
-                    .bind(filter.limit.unwrap_or(100))
-                },
+                BlockSort::ExitCode(SortOrder::Desc) => sqlx::query_as::<Sqlite, PersistedBlock>(
+                    "SELECT * FROM blocks WHERE 1=1 ORDER BY exit_code DESC LIMIT ?",
+                )
+                .bind(filter.limit.unwrap_or(100)),
+                BlockSort::ExitCode(SortOrder::Asc) => sqlx::query_as::<Sqlite, PersistedBlock>(
+                    "SELECT * FROM blocks WHERE 1=1 ORDER BY exit_code ASC LIMIT ?",
+                )
+                .bind(filter.limit.unwrap_or(100)),
             }
         };
 
@@ -340,22 +331,17 @@ impl BlockStorage {
 
     /// Get a block by ID
     pub async fn get_block(&self, id: i64) -> StorageResult<Option<PersistedBlock>> {
-        let block = sqlx::query_as::<Sqlite, PersistedBlock>(
-            "SELECT * FROM blocks WHERE id = ?"
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let block = sqlx::query_as::<Sqlite, PersistedBlock>("SELECT * FROM blocks WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(block)
     }
 
     /// Delete a block by ID
     pub async fn delete_block(&self, id: i64) -> StorageResult<()> {
-        sqlx::query("DELETE FROM blocks WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query("DELETE FROM blocks WHERE id = ?").bind(id).execute(&self.pool).await?;
 
         Ok(())
     }
@@ -363,7 +349,7 @@ impl BlockStorage {
     /// Get blocks for a specific session
     pub async fn get_session_blocks(&self, session_id: &str) -> StorageResult<Vec<PersistedBlock>> {
         let blocks = sqlx::query_as::<Sqlite, PersistedBlock>(
-            "SELECT * FROM blocks WHERE session_id = ? ORDER BY started_at ASC"
+            "SELECT * FROM blocks WHERE session_id = ? ORDER BY started_at ASC",
         )
         .bind(session_id)
         .fetch_all(&self.pool)
@@ -374,9 +360,8 @@ impl BlockStorage {
 
     /// Add or remove tags from a block
     pub async fn update_block_tags(&self, id: i64, tags: Vec<String>) -> StorageResult<()> {
-        let tags_json = serde_json::to_string(&tags).map_err(|e| {
-            StorageError::Database(sqlx::Error::Decode(Box::new(e)))
-        })?;
+        let tags_json = serde_json::to_string(&tags)
+            .map_err(|e| StorageError::Database(sqlx::Error::Decode(Box::new(e))))?;
 
         sqlx::query("UPDATE blocks SET tags = ? WHERE id = ?")
             .bind(tags_json)
@@ -397,9 +382,7 @@ fn instant_to_system_time(_instant: Instant) -> SystemTime {
 
 /// Convert SystemTime to milliseconds since epoch
 fn system_time_to_millis(time: SystemTime) -> i64 {
-    time.duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
+    time.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
 }
 
 impl FromRow<'_, sqlx::sqlite::SqliteRow> for PersistedBlock {
@@ -435,7 +418,7 @@ impl From<PersistedBlock> for CommandBlock {
             exit: block.exit_code,
             started_at: Instant::now(), // Approximate - consider storing system time instead
             ended_at: block.ended_at.map(|_| Instant::now()), // Approximate
-            folded: false, // UI state, not persisted
+            folded: false,              // UI state, not persisted
             anim_start: None,
             anim_opening: false,
             anim_duration_ms: 140,

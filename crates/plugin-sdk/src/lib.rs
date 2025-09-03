@@ -3,10 +3,7 @@
 //! This crate provides ergonomic tools for developing WebAssembly plugins for OpenAgent Terminal.
 //! It includes macros for easy plugin definition and safe wrappers for host function calls.
 
-use plugin_api::{PluginMetadata, PluginPermissions};
-use serde::{Deserialize, Serialize};
-use std::ffi::{c_char, CString};
-use std::slice;
+use plugin_api::PluginMetadata;
 
 pub use plugin_api;
 
@@ -34,13 +31,23 @@ pub mod result_codes {
 extern "C" {
     /// Log a message to the host
     fn host_log(level: i32, ptr: *const u8, len: usize);
-    
+
     /// Read a file from the host filesystem
-    fn host_read_file(path_ptr: *const u8, path_len: usize, result_ptr: *mut u8, result_len_ptr: *mut u32) -> i32;
-    
+    fn host_read_file(
+        path_ptr: *const u8,
+        path_len: usize,
+        result_ptr: *mut u8,
+        result_len_ptr: *mut u32,
+    ) -> i32;
+
     /// Write a file to the host filesystem
-    fn host_write_file(path_ptr: *const u8, path_len: usize, data_ptr: *const u8, data_len: usize) -> i32;
-    
+    fn host_write_file(
+        path_ptr: *const u8,
+        path_len: usize,
+        data_ptr: *const u8,
+        data_len: usize,
+    ) -> i32;
+
     /// Execute a command on the host
     fn host_execute_command(cmd_ptr: *const u8, cmd_len: usize) -> i32;
 }
@@ -53,7 +60,7 @@ pub fn log(level: LogLevel, message: &str) {
         LogLevel::Warning => 2,
         LogLevel::Error => 3,
     };
-    
+
     unsafe {
         host_log(level_int, message.as_ptr(), message.len());
     }
@@ -71,17 +78,12 @@ pub enum LogLevel {
 /// Safe wrapper for file reading
 pub fn read_file(path: &str) -> Result<Vec<u8>, PluginError> {
     let mut result_len: u32 = 0;
-    
+
     // First call to get the required buffer size
     let result = unsafe {
-        host_read_file(
-            path.as_ptr(),
-            path.len(),
-            std::ptr::null_mut(),
-            &mut result_len as *mut u32,
-        )
+        host_read_file(path.as_ptr(), path.len(), std::ptr::null_mut(), &mut result_len as *mut u32)
     };
-    
+
     match result {
         0 => {
             // Success, allocate buffer and read data
@@ -94,7 +96,7 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, PluginError> {
                     &mut result_len as *mut u32,
                 )
             };
-            
+
             if read_result == 0 {
                 Ok(buffer)
             } else {
@@ -103,7 +105,7 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, PluginError> {
                     "Failed to read file data",
                 )))
             }
-        }
+        },
         -1 => Err(PluginError::PermissionDenied("File read not permitted".into())),
         -2 => Err(PluginError::IoError(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -115,10 +117,8 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, PluginError> {
 
 /// Safe wrapper for file writing  
 pub fn write_file(path: &str, data: &[u8]) -> Result<(), PluginError> {
-    let result = unsafe {
-        host_write_file(path.as_ptr(), path.len(), data.as_ptr(), data.len())
-    };
-    
+    let result = unsafe { host_write_file(path.as_ptr(), path.len(), data.as_ptr(), data.len()) };
+
     match result {
         0 => Ok(()),
         -1 => Err(PluginError::PermissionDenied("File write not permitted".into())),
@@ -132,10 +132,8 @@ pub fn write_file(path: &str, data: &[u8]) -> Result<(), PluginError> {
 
 /// Safe wrapper for command execution
 pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
-    let result = unsafe {
-        host_execute_command(command.as_ptr(), command.len())
-    };
-    
+    let result = unsafe { host_execute_command(command.as_ptr(), command.len()) };
+
     match result {
         0 => {
             // For now, return a placeholder output
@@ -146,7 +144,7 @@ pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
                 exit_code: 0,
                 execution_time_ms: 100,
             })
-        }
+        },
         -1 => Err(PluginError::PermissionDenied("Command execution not permitted".into())),
         -2 => Err(PluginError::CommandFailed("Command execution failed".into())),
         -3 => Err(PluginError::Unknown("Host not available".into())),
@@ -156,13 +154,12 @@ pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
 
 /// Set the plugin metadata (called during initialization)
 pub fn set_plugin_metadata(metadata: &PluginMetadata) -> Result<(), PluginError> {
-    let json = serde_json::to_vec(metadata)
-        .map_err(|e| PluginError::SerializationError(e))?;
-    
+    let json = serde_json::to_vec(metadata).map_err(|e| PluginError::SerializationError(e))?;
+
     unsafe {
         PLUGIN_METADATA_JSON = Some(json);
     }
-    
+
     Ok(())
 }
 
@@ -190,7 +187,7 @@ pub extern "C" fn plugin_handle_event(ptr: i32, len: i32) -> i32 {
     // 3. Call the plugin's event handler
     // 4. Serialize the response back to memory
     // 5. Return success/error code
-    
+
     // For now, just log that an event was received
     log(LogLevel::Info, &format!("Received event at ptr={}, len={}", ptr, len));
     result_codes::SUCCESS
@@ -225,7 +222,7 @@ macro_rules! define_plugin {
         $(cleanup: $cleanup_fn:expr,)?
     ) => {
         use $crate::{PluginMetadata, PluginCapabilities, PluginPermissions, result_codes, log, LogLevel, set_plugin_metadata};
-        
+
         // Plugin metadata
         static PLUGIN_META: std::sync::LazyLock<PluginMetadata> = std::sync::LazyLock::new(|| {
             PluginMetadata {
@@ -257,7 +254,7 @@ macro_rules! define_plugin {
                 log(LogLevel::Error, &format!("Failed to set plugin metadata: {:?}", e));
                 return result_codes::ERROR_GENERIC;
             }
-            
+
             // Call custom initialization
             match $init_fn() {
                 Ok(()) => {
@@ -276,7 +273,7 @@ macro_rules! define_plugin {
             pub extern "C" fn plugin_handle_event(ptr: i32, len: i32) -> i32 {
                 // Read event JSON from memory (simplified for now)
                 log(LogLevel::Info, &format!("Handling event at ptr={}, len={}", ptr, len));
-                
+
                 // Call custom event handler
                 match $event_fn(ptr, len) {
                     Ok(()) => result_codes::SUCCESS,
@@ -329,8 +326,8 @@ mod tests {
         assert_eq!(result_codes::SUCCESS, 0);
         assert_eq!(result_codes::ERROR_GENERIC, -1);
     }
-    
-    #[test] 
+
+    #[test]
     fn test_log_levels() {
         // Just ensure the enum compiles and works
         let level = LogLevel::Info;

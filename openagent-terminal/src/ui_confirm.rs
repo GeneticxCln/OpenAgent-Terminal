@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{mpsc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
 use winit::event_loop::EventLoopProxy;
@@ -13,7 +13,8 @@ mod test_helpers {
     use super::*;
     use std::sync::{mpsc, Mutex};
 
-    static SENT: once_cell::sync::Lazy<Mutex<Vec<crate::event::EventType>>> = once_cell::sync::Lazy::new(|| Mutex::new(Vec::new()));
+    static SENT: once_cell::sync::Lazy<Mutex<Vec<crate::event::EventType>>> =
+        once_cell::sync::Lazy::new(|| Mutex::new(Vec::new()));
 
     pub fn with_state<F: FnOnce(&mut ConfirmState)>(f: F) {
         let mut st = STATE.lock().unwrap();
@@ -68,13 +69,17 @@ struct ConfirmState {
 
 impl Default for ConfirmState {
     fn default() -> Self {
-        Self { proxy: None, default_window: None, pending: HashMap::new(), policy: SecurityPolicy::default() }
+        Self {
+            proxy: None,
+            default_window: None,
+            pending: HashMap::new(),
+            policy: SecurityPolicy::default(),
+        }
     }
 }
 
-static STATE: once_cell::sync::Lazy<Mutex<ConfirmState>> = once_cell::sync::Lazy::new(|| {
-    Mutex::new(ConfirmState::default())
-});
+static STATE: once_cell::sync::Lazy<Mutex<ConfirmState>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(ConfirmState::default()));
 
 #[allow(dead_code)]
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -135,13 +140,7 @@ pub fn request_confirm(
     let maybe_proxy = proxy_opt;
     if let Some(proxy) = maybe_proxy {
         let evt = Event::new(
-            EventType::ConfirmOpen {
-                id: id.clone(),
-                title,
-                body,
-                confirm_label,
-                cancel_label,
-            },
+            EventType::ConfirmOpen { id: id.clone(), title, body, confirm_label, cancel_label },
             window_opt,
         );
         let _ = proxy.send_event(evt);
@@ -181,10 +180,16 @@ pub fn request_confirm(
                     state.pending.remove(&id);
                     if let Some(proxy) = state.proxy.clone() {
                         // Inform UI to close overlay (not accepted)
-                        let _ = proxy.send_event(Event::new(EventType::ConfirmResolved { id: id.clone(), accepted: false }, None));
+                        let _ = proxy.send_event(Event::new(
+                            EventType::ConfirmResolved { id: id.clone(), accepted: false },
+                            None,
+                        ));
                         #[cfg(test)]
                         {
-                            test_helpers::record_event(EventType::ConfirmResolved { id: id.clone(), accepted: false });
+                            test_helpers::record_event(EventType::ConfirmResolved {
+                                id: id.clone(),
+                                accepted: false,
+                            });
                         }
                         // Optionally, send a message to the default window
                         if let Some(win) = state.default_window {
@@ -198,12 +203,15 @@ pub fn request_confirm(
                         // Tests without proxy: still record the resolution event
                         #[cfg(test)]
                         {
-                            test_helpers::record_event(EventType::ConfirmResolved { id: id.clone(), accepted: false });
+                            test_helpers::record_event(EventType::ConfirmResolved {
+                                id: id.clone(),
+                                accepted: false,
+                            });
                         }
                     }
                 }
                 Err("confirmation timed out".to_string())
-            }
+            },
         },
         None => rx.recv().map_err(|_| "confirmation channel closed".to_string()),
     }
@@ -259,10 +267,20 @@ mod tests {
         assert!(res.is_err());
         let evs = th::take_events();
         // We should have seen an open and a resolved
-        let open_id = evs.iter().find_map(|e| {
-            if let crate::event::EventType::ConfirmOpen { id, .. } = e { Some(id.clone()) } else { None }
-        }).expect("ConfirmOpen not recorded");
-        assert!(evs.iter().any(|e| matches!(e, crate::event::EventType::ConfirmResolved { accepted: false, .. } )));
+        let open_id = evs
+            .iter()
+            .find_map(|e| {
+                if let crate::event::EventType::ConfirmOpen { id, .. } = e {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .expect("ConfirmOpen not recorded");
+        assert!(evs.iter().any(|e| matches!(
+            e,
+            crate::event::EventType::ConfirmResolved { accepted: false, .. }
+        )));
         // Ensure the specific pending request created by this call was cleaned up
         assert!(!th::has_pending(&open_id));
     }

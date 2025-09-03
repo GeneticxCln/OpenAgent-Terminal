@@ -455,9 +455,9 @@ pub struct SearchQuery {
 /// Exit code filtering options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitCodeFilter {
-    Success,       // exit_code = 0
-    Failure,       // exit_code != 0
-    Specific(i32), // exact exit code
+    Success,         // exit_code = 0
+    Failure,         // exit_code != 0
+    Specific(i32),   // exact exit code
     Range(i32, i32), // exit code range (inclusive)
 }
 

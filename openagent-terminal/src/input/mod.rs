@@ -162,7 +162,9 @@ pub trait ActionContext<T: EventListener> {
     // Blocks Search panel - basic functionality
     fn open_blocks_search_panel(&mut self) {}
     fn close_blocks_search_panel(&mut self) {}
-    fn blocks_search_active(&self) -> bool { false }
+    fn blocks_search_active(&self) -> bool {
+        false
+    }
     fn blocks_search_input(&mut self, _c: char) {}
     fn blocks_search_backspace(&mut self) {}
     fn blocks_search_move_selection(&mut self, _delta: isize) {}
@@ -195,15 +197,19 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_view_output(&mut self) {}
     fn blocks_search_share_block(&mut self) {}
     fn blocks_search_create_snippet(&mut self) {}
-    
+
     // Blocks Search panel - actions menu support
-    fn blocks_search_actions_menu_active(&self) -> bool { false }
+    fn blocks_search_actions_menu_active(&self) -> bool {
+        false
+    }
     fn blocks_search_execute_action(&mut self) {}
     fn blocks_search_close_actions_menu(&mut self) {}
     fn blocks_search_move_actions_selection(&mut self, _delta: isize) {}
-    
+
     // Blocks Search panel - help overlay support
-    fn blocks_search_help_active(&self) -> bool { false }
+    fn blocks_search_help_active(&self) -> bool {
+        false
+    }
     fn blocks_search_close_help(&mut self) {}
     fn blocks_search_navigate_help(&mut self, _forward: bool) {}
 
@@ -214,15 +220,23 @@ pub trait ActionContext<T: EventListener> {
     fn workflows_panel_input(&mut self, _c: char) {}
     fn workflows_panel_backspace(&mut self) {}
     fn workflows_panel_move_selection(&mut self, _delta: isize) {}
-    fn workflows_panel_active(&self) -> bool { false }
+    fn workflows_panel_active(&self) -> bool {
+        false
+    }
 
     // Workflows progress overlay controls
-    fn workflows_progress_active(&self) -> bool { false }
+    fn workflows_progress_active(&self) -> bool {
+        false
+    }
     fn workflows_progress_dismiss(&mut self) {}
-    fn workflows_progress_terminal(&self) -> bool { false }
+    fn workflows_progress_terminal(&self) -> bool {
+        false
+    }
 
     // Confirm overlay
-    fn confirm_overlay_active(&self) -> bool { false }
+    fn confirm_overlay_active(&self) -> bool {
+        false
+    }
     fn confirm_overlay_confirm(&mut self) {}
     fn confirm_overlay_cancel(&mut self) {}
 
@@ -268,7 +282,7 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_resize_right(&mut self) {}
     fn workspace_resize_up(&mut self) {}
     fn workspace_resize_down(&mut self) {}
-    
+
     // Tab management (placeholders; real implementation lives in event::ActionContext)
     fn workspace_create_tab(&mut self) {}
     fn workspace_close_tab(&mut self) {}
@@ -553,14 +567,16 @@ impl<T: EventListener> Execute<T> for Action {
             #[cfg(feature = "ai")]
             Action::AiExplain => {
                 // Get selected text or last command output for explanation
-                let text_to_explain = ctx.terminal().selection_to_string()
+                let text_to_explain = ctx
+                    .terminal()
+                    .selection_to_string()
                     .filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| {
                         // Fallback: get the last few lines of terminal output
                         // For now, use a simple placeholder
                         "Please explain the last command output".to_string()
                     });
-                
+
                 // Open AI panel with explain prompt
                 ctx.open_ai_panel();
                 if let Some(runtime) = ctx.ai_runtime_mut() {
@@ -572,13 +588,15 @@ impl<T: EventListener> Execute<T> for Action {
             #[cfg(feature = "ai")]
             Action::AiFix => {
                 // Get selected text or error output for fixing suggestions
-                let text_to_fix = ctx.terminal().selection_to_string()
+                let text_to_fix = ctx
+                    .terminal()
+                    .selection_to_string()
                     .filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| {
                         // Fallback: analyze recent terminal output for errors
                         "Please suggest a fix for the recent error".to_string()
                     });
-                
+
                 // Open AI panel with fix prompt
                 ctx.open_ai_panel();
                 if let Some(runtime) = ctx.ai_runtime_mut() {
@@ -1973,37 +1991,90 @@ mod tests {
         }
 
         impl<T: EventListener> super::ActionContext<T> for BsCtx<'_, T> {
-            fn size_info(&self) -> SizeInfo { self.size }
-            fn mouse_mode(&self) -> bool { false }
-            fn search_next(&mut self, _origin: Point, _direction: Direction, _side: Side) -> Option<Match> { None }
-            fn search_direction(&self) -> Direction { Direction::Right }
-            fn search_active(&self) -> bool { false }
-            fn selection_is_empty(&self) -> bool { true }
-            fn mouse_mut(&mut self) -> &mut Mouse { &mut self.mouse }
-            fn mouse(&self) -> &Mouse { &self.mouse }
-            fn touch_purpose(&mut self) -> &mut TouchPurpose { unimplemented!() }
-            fn modifiers(&mut self) -> &mut Modifiers { &mut self.mods }
-            fn window(&mut self) -> &mut Window { unimplemented!() }
-            fn display(&mut self) -> &mut Display { unimplemented!() }
-            fn message(&self) -> Option<&Message> { self.msg.message() }
-            fn config(&self) -> &UiConfig { self.cfg }
-            fn clipboard_mut(&mut self) -> &mut Clipboard { self.clipboard }
-            fn scheduler_mut(&mut self) -> &mut crate::scheduler::Scheduler { panic!("not used in this test") }
-            fn semantic_word(&self, _point: Point) -> String { String::new() }
-            fn inline_search_state(&mut self) -> &mut InlineSearchState { &mut self.inline_state }
-            fn terminal(&self) -> &Term<T> { self.term }
-            fn terminal_mut(&mut self) -> &mut Term<T> { self.term }
+            fn size_info(&self) -> SizeInfo {
+                self.size
+            }
+            fn mouse_mode(&self) -> bool {
+                false
+            }
+            fn search_next(
+                &mut self,
+                _origin: Point,
+                _direction: Direction,
+                _side: Side,
+            ) -> Option<Match> {
+                None
+            }
+            fn search_direction(&self) -> Direction {
+                Direction::Right
+            }
+            fn search_active(&self) -> bool {
+                false
+            }
+            fn selection_is_empty(&self) -> bool {
+                true
+            }
+            fn mouse_mut(&mut self) -> &mut Mouse {
+                &mut self.mouse
+            }
+            fn mouse(&self) -> &Mouse {
+                &self.mouse
+            }
+            fn touch_purpose(&mut self) -> &mut TouchPurpose {
+                unimplemented!()
+            }
+            fn modifiers(&mut self) -> &mut Modifiers {
+                &mut self.mods
+            }
+            fn window(&mut self) -> &mut Window {
+                unimplemented!()
+            }
+            fn display(&mut self) -> &mut Display {
+                unimplemented!()
+            }
+            fn message(&self) -> Option<&Message> {
+                self.msg.message()
+            }
+            fn config(&self) -> &UiConfig {
+                self.cfg
+            }
+            fn clipboard_mut(&mut self) -> &mut Clipboard {
+                self.clipboard
+            }
+            fn scheduler_mut(&mut self) -> &mut crate::scheduler::Scheduler {
+                panic!("not used in this test")
+            }
+            fn semantic_word(&self, _point: Point) -> String {
+                String::new()
+            }
+            fn inline_search_state(&mut self) -> &mut InlineSearchState {
+                &mut self.inline_state
+            }
+            fn terminal(&self) -> &Term<T> {
+                self.term
+            }
+            fn terminal_mut(&mut self) -> &mut Term<T> {
+                self.term
+            }
             // Blocks Search overrides
-            fn open_blocks_search_panel(&mut self) { self.blocks_active = true; }
-            fn close_blocks_search_panel(&mut self) { self.blocks_active = false; }
-            fn blocks_search_active(&self) -> bool { self.blocks_active }
+            fn open_blocks_search_panel(&mut self) {
+                self.blocks_active = true;
+            }
+            fn close_blocks_search_panel(&mut self) {
+                self.blocks_active = false;
+            }
+            fn blocks_search_active(&self) -> bool {
+                self.blocks_active
+            }
             fn blocks_search_input(&mut self, c: char) {
                 self.query.push(c);
             }
             fn blocks_search_backspace(&mut self) {
                 self.query.pop();
             }
-            fn blocks_search_cancel(&mut self) { self.blocks_active = false; }
+            fn blocks_search_cancel(&mut self) {
+                self.blocks_active = false;
+            }
         }
 
         let mut ctx = BsCtx {

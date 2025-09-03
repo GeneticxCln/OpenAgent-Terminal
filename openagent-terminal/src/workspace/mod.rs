@@ -14,9 +14,9 @@ use openagent_terminal_core::grid::Dimensions;
 
 pub mod split_manager;
 pub mod tab_manager;
-pub mod warp_tab_manager;
-pub mod warp_split_manager;
 pub mod warp_integration;
+pub mod warp_split_manager;
+pub mod warp_tab_manager;
 // Warp modules
 pub mod warp_bindings {
     pub use crate::config::warp_bindings::*;
@@ -29,14 +29,9 @@ mod warp_integration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};
-pub use warp_tab_manager::{WarpTabManager, SplitDirection};
-pub use warp_split_manager::{WarpSplitManager, WarpNavDirection, WarpResizeDirection};
 pub use warp_integration::{
-    WarpIntegration, WarpAction, WarpUiUpdateType, WarpDebugInfo, 
-    WarpIntegrationError, ActionExt
+    WarpAction, WarpIntegration, WarpIntegrationError, WarpUiUpdateType,
 };
-pub use self::warp_bindings::{WarpKeyBindings};
-pub use self::warp_ui::{WarpUiStyle, WarpTabStyle, WarpSplitIndicators};
 
 /// Unique identifier for a workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -66,31 +61,40 @@ pub struct WorkspaceManager {
 impl WorkspaceManager {
     /// Create a new workspace manager
     pub fn new(id: WorkspaceId, config: Rc<UiConfig>, size_info: SizeInfo) -> Self {
-        Self { 
-            id, 
-            tabs: TabManager::new(), 
-            splits: SplitManager::new(), 
-            warp: None, 
-            config, 
-            size_info 
+        Self {
+            id,
+            tabs: TabManager::new(),
+            splits: SplitManager::new(),
+            warp: None,
+            config,
+            size_info,
         }
     }
 
     /// Create workspace manager with Warp-style functionality enabled
-    pub fn with_warp(id: WorkspaceId, config: Rc<UiConfig>, size_info: SizeInfo, session_file: Option<PathBuf>) -> Self {
+    pub fn with_warp(
+        id: WorkspaceId,
+        config: Rc<UiConfig>,
+        size_info: SizeInfo,
+        session_file: Option<PathBuf>,
+    ) -> Self {
         let warp_integration = WarpIntegration::new(config.clone(), session_file);
-        Self { 
-            id, 
-            tabs: TabManager::new(), 
-            splits: SplitManager::new(), 
-            warp: Some(warp_integration), 
-            config, 
-            size_info 
+        Self {
+            id,
+            tabs: TabManager::new(),
+            splits: SplitManager::new(),
+            warp: Some(warp_integration),
+            config,
+            size_info,
         }
     }
 
     /// Initialize Warp functionality if enabled
-    pub fn initialize_warp(&mut self, window_context: std::sync::Arc<crate::window_context::WindowContext>, event_proxy: winit::event_loop::EventLoopProxy<crate::event::Event>) -> Result<(), WarpIntegrationError> {
+    pub fn initialize_warp(
+        &mut self,
+        window_context: std::sync::Arc<crate::window_context::WindowContext>,
+        event_proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
+    ) -> Result<(), WarpIntegrationError> {
         if let Some(warp) = &mut self.warp {
             warp.initialize(window_context, event_proxy)?;
         }
@@ -98,7 +102,10 @@ impl WorkspaceManager {
     }
 
     /// Execute a Warp action if Warp functionality is enabled
-    pub fn execute_warp_action(&mut self, action: &WarpAction) -> Result<bool, WarpIntegrationError> {
+    pub fn execute_warp_action(
+        &mut self,
+        action: &WarpAction,
+    ) -> Result<bool, WarpIntegrationError> {
         if let Some(warp) = &mut self.warp {
             warp.execute_warp_action(action)
         } else {
@@ -232,10 +239,18 @@ impl WorkspaceManager {
         }
     }
 
-    pub fn resize_left(&mut self) -> bool { self.resize_horizontal(-self.ratio_step_horizontal()) }
-    pub fn resize_right(&mut self) -> bool { self.resize_horizontal(self.ratio_step_horizontal()) }
-    pub fn resize_up(&mut self) -> bool { self.resize_vertical(-self.ratio_step_vertical()) }
-    pub fn resize_down(&mut self) -> bool { self.resize_vertical(self.ratio_step_vertical()) }
+    pub fn resize_left(&mut self) -> bool {
+        self.resize_horizontal(-self.ratio_step_horizontal())
+    }
+    pub fn resize_right(&mut self) -> bool {
+        self.resize_horizontal(self.ratio_step_horizontal())
+    }
+    pub fn resize_up(&mut self) -> bool {
+        self.resize_vertical(-self.ratio_step_vertical())
+    }
+    pub fn resize_down(&mut self) -> bool {
+        self.resize_vertical(self.ratio_step_vertical())
+    }
 
     /// Update the size information for the workspace
     pub fn update_size(&mut self, size_info: SizeInfo) {
@@ -261,4 +276,4 @@ pub struct PersistentTabState {
 }
 
 // WorkspaceConfig is now imported from crate::config::workspace
-pub use crate::config::workspace::{WorkspaceConfig, TabBarPosition, NewTabAction};
+pub use crate::config::workspace::TabBarPosition;

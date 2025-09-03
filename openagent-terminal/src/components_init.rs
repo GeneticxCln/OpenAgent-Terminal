@@ -205,7 +205,6 @@ pub async fn initialize_components(
     })
 }
 
-
 /// Initialize HarfBuzz text shaper
 #[cfg(feature = "harfbuzz")]
 async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
@@ -329,37 +328,49 @@ impl PluginHost for TerminalPluginHost {
     }
 
     fn execute_command(&self, command: &str) -> Result<CommandOutput, PluginError> {
-// Security Lens gating for plugin-executed commands.
+        // Security Lens gating for plugin-executed commands.
         // Read policy from current UiConfig via confirm broker.
         let policy = crate::ui_confirm::get_security_policy();
         let lens = crate::security_lens::SecurityLens::new(policy.clone());
         let risk = lens.analyze_command(command);
         if lens.should_block(&risk) {
-            return Err(PluginError::CommandFailed(
-                format!("Blocked risky plugin command ({}): {}", risk.level as u8, risk.explanation),
-            ));
+            return Err(PluginError::CommandFailed(format!(
+                "Blocked risky plugin command ({}): {}",
+                risk.level as u8, risk.explanation
+            )));
         }
         // Interactive confirmation if required by policy
-        let require_confirm = *policy
-            .require_confirmation
-            .get(&risk.level)
-            .unwrap_or(&false);
+        let require_confirm = *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
         if require_confirm {
             let mut body = String::new();
             body.push_str(&format!("{}\n\n", risk.explanation));
             if !risk.mitigations.is_empty() {
                 body.push_str("Suggested mitigations:\n");
-                for m in &risk.mitigations { body.push_str(&format!("  • {}\n", m)); }
+                for m in &risk.mitigations {
+                    body.push_str(&format!("  • {}\n", m));
+                }
                 body.push('\n');
             }
             body.push_str(&format!("Command:\n  {}", command));
             let title = match risk.level {
-                crate::security_lens::RiskLevel::Critical => "CRITICAL: Confirm plugin command".into(),
-                crate::security_lens::RiskLevel::Warning => "Warning: Confirm plugin command".into(),
-                crate::security_lens::RiskLevel::Caution => "Caution: Confirm plugin command".into(),
+                crate::security_lens::RiskLevel::Critical => {
+                    "CRITICAL: Confirm plugin command".into()
+                },
+                crate::security_lens::RiskLevel::Warning => {
+                    "Warning: Confirm plugin command".into()
+                },
+                crate::security_lens::RiskLevel::Caution => {
+                    "Caution: Confirm plugin command".into()
+                },
                 crate::security_lens::RiskLevel::Safe => "Confirm plugin command".into(),
             };
-            match crate::ui_confirm::request_confirm(title, body, Some("Run".into()), Some("Cancel".into()), Some(30_000)) {
+            match crate::ui_confirm::request_confirm(
+                title,
+                body,
+                Some("Run".into()),
+                Some("Cancel".into()),
+                Some(30_000),
+            ) {
                 Ok(true) => {},
                 Ok(false) => {
                     return Err(PluginError::CommandFailed("User canceled command".into()));

@@ -59,13 +59,13 @@ use crate::display::hint::HintMatch;
 use crate::display::window::Window;
 use crate::display::{Display, Preedit, SizeInfo};
 use crate::input::{self, ActionContext as _, FONT_SIZE_STEP};
-#[cfg(feature = "ai")]
-use crate::security_lens::{SecurityLens, SecurityPolicy, RiskLevel};
 #[cfg(unix)]
 use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+#[cfg(feature = "ai")]
+use crate::security_lens::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
 
 /// Duration after the last user input until an unlimited search is performed.
@@ -112,7 +112,7 @@ pub struct Processor {
     config: Rc<UiConfig>,
 
     // Pending security confirmation for AI apply-to-command flow
-#[cfg(feature = "ai")]
+    #[cfg(feature = "ai")]
     pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
 }
 
@@ -123,7 +123,7 @@ impl Processor {
         cli_options: CliOptions,
         event_loop: &EventLoop<Event>,
     ) -> Processor {
-let proxy = event_loop.create_proxy();
+        let proxy = event_loop.create_proxy();
         // Initialize confirmation broker hooks (proxy + initial policy)
         crate::ui_confirm::set_event_proxy(proxy.clone());
         crate::ui_confirm::set_security_policy(config.security.clone());
@@ -162,7 +162,7 @@ let proxy = event_loop.create_proxy();
             global_ipc_options: Default::default(),
             config_monitor,
             #[cfg(feature = "ai")]
-pending_security_ai: Default::default(),
+            pending_security_ai: Default::default(),
         }
     }
 
@@ -182,7 +182,7 @@ pending_security_ai: Default::default(),
             window_options,
         )?;
 
-self.gl_config = Some(window_context.display.gl_context().config());
+        self.gl_config = Some(window_context.display.gl_context().config());
         let window_id = window_context.id();
         // Set default window for confirmations (first window)
         crate::ui_confirm::set_default_window_id(window_id);
@@ -240,7 +240,7 @@ self.gl_config = Some(window_context.display.gl_context().config());
     pub async fn initialize_components(
         &mut self,
         window: &winit::window::Window,
-        ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         if self.components.is_some() {
             return Ok(()); // Already initialized
         }
@@ -313,15 +313,20 @@ impl Processor {
     fn process_blocks_search_perform(&mut self, query: String, window_id: WindowId) {
         self.process_blocks_search_with_state(query, window_id, None);
     }
-    
-    fn process_blocks_search_with_state(&mut self, query: String, window_id: WindowId, state: Option<&crate::display::blocks_search_panel::BlocksSearchState>) {
+
+    fn process_blocks_search_with_state(
+        &mut self,
+        query: String,
+        window_id: WindowId,
+        state: Option<&crate::display::blocks_search_panel::BlocksSearchState>,
+    ) {
         if let Some(components) = &self.components {
             if let Some(manager) = &components.block_manager {
                 let manager = manager.clone();
                 let proxy = self.proxy.clone();
                 let win = window_id;
                 let runtime = components.runtime.clone();
-                
+
                 // Build search query from state or simple text query
                 let search_query = if let Some(state) = state {
                     self.build_search_query_from_state(state, &query)
@@ -333,7 +338,7 @@ impl Processor {
                     sq.limit = Some(100);
                     sq
                 };
-                
+
                 runtime.spawn(async move {
                     let mut items = Vec::new();
                     if let Ok(res) = manager.read().await.search(search_query).await {
@@ -358,7 +363,8 @@ impl Processor {
                     {
                         test_posted_events::record(EventType::BlocksSearchResults(items.clone()));
                     }
-                    let _ = proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
+                    let _ =
+                        proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
                 });
                 return;
             }
@@ -372,18 +378,26 @@ impl Processor {
             .proxy
             .send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), window_id));
     }
-    
-    fn build_search_query_from_state(&self, state: &crate::display::blocks_search_panel::BlocksSearchState, query: &str) -> crate::blocks_v2::SearchQuery {
-        use crate::display::blocks_search_panel::SearchMode;
+
+    fn build_search_query_from_state(
+        &self,
+        state: &crate::display::blocks_search_panel::BlocksSearchState,
+        query: &str,
+    ) -> crate::blocks_v2::SearchQuery {
         use crate::blocks_v2::SearchQuery;
-        
+        use crate::display::blocks_search_panel::SearchMode;
+
         let mut sq = SearchQuery {
             sort_by: state.sort_field,
             sort_order: state.sort_order,
             offset: Some(state.current_page * state.items_per_page),
             limit: Some(state.items_per_page),
             starred_only: state.filters.starred_only,
-            tags: if state.filters.tags.is_empty() { None } else { Some(state.filters.tags.clone()) },
+            tags: if state.filters.tags.is_empty() {
+                None
+            } else {
+                Some(state.filters.tags.clone())
+            },
             directory: state.filters.directory.clone(),
             shell: state.filters.shell,
             status: state.filters.status,
@@ -393,25 +407,25 @@ impl Processor {
             date_to: state.filters.date_to,
             ..Default::default()
         };
-        
+
         // Set text search based on mode
         if !query.trim().is_empty() {
             match state.mode {
                 SearchMode::Basic => {
                     sq.text = Some(query.to_string());
-                }
+                },
                 SearchMode::Command => {
                     sq.command_text = Some(query.to_string());
-                }
+                },
                 SearchMode::Output => {
                     sq.output_text = Some(query.to_string());
-                }
+                },
                 SearchMode::Advanced => {
                     sq.text = Some(query.to_string());
-                }
+                },
             }
         }
-        
+
         sq
     }
 }
@@ -435,9 +449,8 @@ impl Processor {
                 });
             }
         }
-        let _ = self
-            .proxy
-            .send_event(Event::new(EventType::WorkflowsSearchResults(items), window_id));
+        let _ =
+            self.proxy.send_event(Event::new(EventType::WorkflowsSearchResults(items), window_id));
     }
 }
 
@@ -457,14 +470,14 @@ impl ApplicationHandler<Event> for Processor {
                 return;
             }
 
-                    // Initialize components after the first window is created
-                    if let Some(_window_context) = self.windows.values().next() {
-                        // Background components are disabled in this build to avoid non-Send captures.
-                        #[cfg(feature = "background-components")]
-                        {
-                            info!("background-components enabled: async init disabled for thread-safety");
-                        }
-                    }
+            // Initialize components after the first window is created
+            if let Some(_window_context) = self.windows.values().next() {
+                // Background components are disabled in this build to avoid non-Send captures.
+                #[cfg(feature = "background-components")]
+                {
+                    info!("background-components enabled: async init disabled for thread-safety");
+                }
+            }
         }
 
         info!("Initialisation complete");
@@ -680,7 +693,7 @@ impl ApplicationHandler<Event> for Processor {
 
                 // Load config and update each terminal.
                 if let Ok(config) = config::reload(&path, &mut self.cli_options) {
-self.config = Rc::new(config);
+                    self.config = Rc::new(config);
 
                     // Update confirmation broker security policy
                     crate::ui_confirm::set_security_policy(self.config.security.clone());
@@ -734,30 +747,33 @@ self.config = Rc::new(config);
             // Process events affecting all windows.
             #[cfg(feature = "ai")]
             (EventType::SecurityCheckAiApply { command, dry_run }, Some(window_id)) => {
-// Security Lens analysis and interactive confirmation logic
+                // Security Lens analysis and interactive confirmation logic
                 let policy: SecurityPolicy = self.config.security.clone();
                 let mut lens = SecurityLens::new(policy.clone());
                 let risk = lens.analyze_command(&command);
 
                 if lens.should_block(&risk) {
-                    let msg = self
-                        .config
-                        .theme
-                        .resolve()
-                        .tokens
-                        .warning; // color not directly used here
+                    let msg = self.config.theme.resolve().tokens.warning; // color not directly used here
                     let message = crate::message_bar::Message::new(
-                        format!("Blocked risky command ({}). {}", match risk.level { RiskLevel::Critical => "CRITICAL", RiskLevel::Warning => "WARNING", RiskLevel::Caution => "CAUTION", RiskLevel::Safe => "SAFE" }, risk.explanation),
+                        format!(
+                            "Blocked risky command ({}). {}",
+                            match risk.level {
+                                RiskLevel::Critical => "CRITICAL",
+                                RiskLevel::Warning => "WARNING",
+                                RiskLevel::Caution => "CAUTION",
+                                RiskLevel::Safe => "SAFE",
+                            },
+                            risk.explanation
+                        ),
                         crate::message_bar::MessageType::Warning,
                     );
-                    let _ = self.proxy.send_event(Event::new(EventType::Message(message), *window_id));
+                    let _ =
+                        self.proxy.send_event(Event::new(EventType::Message(message), *window_id));
                     return;
                 }
 
-let require_confirm = *policy
-                    .require_confirmation
-                    .get(&risk.level)
-                    .unwrap_or(&false);
+                let require_confirm =
+                    *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
 
                 if require_confirm && risk.level != RiskLevel::Safe {
                     // Create a confirmation overlay request for this window
@@ -767,34 +783,41 @@ let require_confirm = *policy
                     body.push_str(&format!("{}\n\n", risk.explanation));
                     if !risk.mitigations.is_empty() {
                         body.push_str("Suggested mitigations:\n");
-                        for m in &risk.mitigations { body.push_str(&format!("  • {}\n", m)); }
+                        for m in &risk.mitigations {
+                            body.push_str(&format!("  • {}\n", m));
+                        }
                         body.push('\n');
                     }
                     body.push_str(&format!("Command:\n  {}", command));
 
                     // Track pending AI action by id
-                    self.pending_security_ai.insert(id.clone(), (command.clone(), dry_run, *window_id));
+                    self.pending_security_ai
+                        .insert(id.clone(), (command.clone(), dry_run, *window_id));
 
-                    let _ = self.proxy.send_event(Event::new(EventType::ConfirmOpen {
-                        id: id.clone(),
-                        title: match risk.level {
-                            RiskLevel::Critical => "CRITICAL: Confirm running command".into(),
-                            RiskLevel::Warning => "Warning: Confirm running command".into(),
-                            RiskLevel::Caution => "Caution: Confirm running command".into(),
-                            RiskLevel::Safe => "Confirm running command".into(),
+                    let _ = self.proxy.send_event(Event::new(
+                        EventType::ConfirmOpen {
+                            id: id.clone(),
+                            title: match risk.level {
+                                RiskLevel::Critical => "CRITICAL: Confirm running command".into(),
+                                RiskLevel::Warning => "Warning: Confirm running command".into(),
+                                RiskLevel::Caution => "Caution: Confirm running command".into(),
+                                RiskLevel::Safe => "Confirm running command".into(),
+                            },
+                            body,
+                            confirm_label: Some("Run".into()),
+                            cancel_label: Some("Cancel".into()),
                         },
-                        body,
-                        confirm_label: Some("Run".into()),
-                        cancel_label: Some("Cancel".into()),
-                    }, *window_id));
+                        *window_id,
+                    ));
                 } else {
-                    let _ = self
-                        .proxy
-                        .send_event(Event::new(EventType::AiApplyAsCommandChecked { command, dry_run }, *window_id));
+                    let _ = self.proxy.send_event(Event::new(
+                        EventType::AiApplyAsCommandChecked { command, dry_run },
+                        *window_id,
+                    ));
                 }
             },
             (payload, None) => {
-// For broadcast events that modify UI state (like ConfirmResolved), handle here
+                // For broadcast events that modify UI state (like ConfirmResolved), handle here
                 match &payload {
                     EventType::ConfirmResolved { id, .. } => {
                         for window_context in self.windows.values_mut() {
@@ -806,7 +829,7 @@ let require_confirm = *policy
                         }
                         return;
                     },
-                    _ => {}
+                    _ => {},
                 }
                 let event = WinitEvent::UserEvent(Event::new(payload, None));
                 for window_context in self.windows.values_mut() {
@@ -834,7 +857,7 @@ let require_confirm = *policy
                         window_context.display.window.request_redraw();
                     }
                 }
-},
+            },
             // Workflows panel events
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
@@ -851,7 +874,17 @@ let require_confirm = *policy
                 }
             },
             #[cfg(feature = "workflow")]
-            (EventType::WorkflowsProgressUpdate { execution_id, workflow_name, status, current_step, log, done }, Some(window_id)) => {
+            (
+                EventType::WorkflowsProgressUpdate {
+                    execution_id,
+                    workflow_name,
+                    status,
+                    current_step,
+                    log,
+                    done,
+                },
+                Some(window_id),
+            ) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     let st = &mut window_context.display.workflows_progress;
                     // Always show overlay on updates
@@ -863,8 +896,12 @@ let require_confirm = *policy
                         st.total_steps = None;
                         st.seen_steps.clear();
                     }
-                    if let Some(name) = workflow_name { st.workflow_name = Some(name); }
-                    if let Some(s) = status { st.status = Some(s); }
+                    if let Some(name) = workflow_name {
+                        st.workflow_name = Some(name);
+                    }
+                    if let Some(s) = status {
+                        st.status = Some(s);
+                    }
                     if let Some(step) = current_step {
                         st.current_step = Some(step.clone());
                         if !st.seen_steps.contains(&step) {
@@ -872,13 +909,25 @@ let require_confirm = *policy
                             st.step_index = st.seen_steps.len();
                         }
                     }
-                    if let Some(line) = log { st.logs.push(line); if st.logs.len() > 500 { let drop = st.logs.len() - 500; st.logs.drain(0..drop); } }
+                    if let Some(line) = log {
+                        st.logs.push(line);
+                        if st.logs.len() > 500 {
+                            let drop = st.logs.len() - 500;
+                            st.logs.drain(0..drop);
+                        }
+                    }
 
                     // If done, schedule a quick clear to retain UI briefly
                     if done {
-                        let tid = crate::scheduler::TimerId::new(crate::scheduler::Topic::WorkflowsProgressRetain, *window_id);
+                        let tid = crate::scheduler::TimerId::new(
+                            crate::scheduler::Topic::WorkflowsProgressRetain,
+                            *window_id,
+                        );
                         self.scheduler.unschedule(tid);
-                        let evt = Event::new(EventType::WorkflowsProgressClear(execution_id.clone()), *window_id);
+                        let evt = Event::new(
+                            EventType::WorkflowsProgressClear(execution_id.clone()),
+                            *window_id,
+                        );
                         self.scheduler.schedule(evt, WORKFLOWS_OVERLAY_RETAIN, false, tid);
                     }
 
@@ -895,7 +944,9 @@ let require_confirm = *policy
                     if st.execution_id.as_deref() == Some(execution_id.as_str()) {
                         st.active = false;
                         window_context.dirty = true;
-                        if window_context.display.window.has_frame { window_context.display.window.request_redraw(); }
+                        if window_context.display.window.has_frame {
+                            window_context.display.window.request_redraw();
+                        }
                     }
                 }
             },
@@ -915,10 +966,14 @@ let require_confirm = *policy
                                 Ok(exec_id) => {
                                     // Notify user and open progress overlay with initial state
                                     let message = crate::message_bar::Message::new(
-                                        format!("Started workflow '{}' (execution {})", name, exec_id),
+                                        format!(
+                                            "Started workflow '{}' (execution {})",
+                                            name, exec_id
+                                        ),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(message), win));
+                                    let _ = proxy
+                                        .send_event(Event::new(EventType::Message(message), win));
                                     let _ = proxy.send_event(Event::new(
                                         EventType::WorkflowsProgressUpdate {
                                             execution_id: exec_id.clone(),
@@ -936,92 +991,108 @@ let require_confirm = *policy
                                     loop {
                                         use workflow_engine::WorkflowEvent;
                                         match rx.recv().await {
-                                            Ok(ev) => {
-                                                match ev {
-                                                    WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
-                                                        let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: Some(name.clone()),
-                                                                status: Some("Running".to_string()),
-                                                                current_step: None,
-                                                                log: None,
-                                                                done: false,
-                                                            },
-                                                            win,
-                                                        ));
-                                                    },
-                                                    WorkflowEvent::StepStarted { execution_id, step_id } if execution_id == exec_id => {
-                                                        let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: None,
-                                                                status: Some("Running".to_string()),
-                                                                current_step: Some(step_id),
-                                                                log: None,
-                                                                done: false,
-                                                            },
-                                                            win,
-                                                        ));
-                                                    },
-                                                    WorkflowEvent::StepCompleted { execution_id, step_id } if execution_id == exec_id => {
-                                                        let msg = format!("Completed step {step_id}");
-                                                        let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: None,
-                                                                status: None,
-                                                                current_step: None,
-                                                                log: Some(msg),
-                                                                done: false,
-                                                            },
-                                                            win,
-                                                        ));
-                                                    },
-                                                    WorkflowEvent::StepFailed { execution_id, step_id } if execution_id == exec_id => {
-                                                        let msg = format!("Step failed: {step_id}");
-                                                        let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: None,
-                                                                status: Some("Failed".to_string()),
-                                                                current_step: Some(step_id),
-                                                                log: Some(msg),
-                                                                done: false,
-                                                            },
-                                                            win,
-                                                        ));
-                                                    },
-                                                    WorkflowEvent::Completed { execution_id, status } if execution_id == exec_id => {
-                                                        let status_str = format!("{status:?}");
-                                                        let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: None,
-                                                                status: Some(status_str),
-                                                                current_step: None,
-                                                                log: None,
-                                                                done: true,
-                                                            },
-                                                            win,
-                                                        ));
-                                                        break;
-                                                    },
-                                                    WorkflowEvent::Log { execution_id, step_id: _, message } if execution_id == exec_id => {
-                                                        let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: None,
-                                                                status: None,
-                                                                current_step: None,
-                                                                log: Some(message),
-                                                                done: false,
-                                                            },
-                                                            win,
-                                                        ));
-                                                    },
-                                                    _ => {},
-                                                }
+                                            Ok(ev) => match ev {
+                                                WorkflowEvent::Started { execution_id }
+                                                    if execution_id == exec_id =>
+                                                {
+                                                    let _ = proxy.send_event(Event::new(
+                                                        EventType::WorkflowsProgressUpdate {
+                                                            execution_id,
+                                                            workflow_name: Some(name.clone()),
+                                                            status: Some("Running".to_string()),
+                                                            current_step: None,
+                                                            log: None,
+                                                            done: false,
+                                                        },
+                                                        win,
+                                                    ));
+                                                },
+                                                WorkflowEvent::StepStarted {
+                                                    execution_id,
+                                                    step_id,
+                                                } if execution_id == exec_id => {
+                                                    let _ = proxy.send_event(Event::new(
+                                                        EventType::WorkflowsProgressUpdate {
+                                                            execution_id,
+                                                            workflow_name: None,
+                                                            status: Some("Running".to_string()),
+                                                            current_step: Some(step_id),
+                                                            log: None,
+                                                            done: false,
+                                                        },
+                                                        win,
+                                                    ));
+                                                },
+                                                WorkflowEvent::StepCompleted {
+                                                    execution_id,
+                                                    step_id,
+                                                } if execution_id == exec_id => {
+                                                    let msg = format!("Completed step {step_id}");
+                                                    let _ = proxy.send_event(Event::new(
+                                                        EventType::WorkflowsProgressUpdate {
+                                                            execution_id,
+                                                            workflow_name: None,
+                                                            status: None,
+                                                            current_step: None,
+                                                            log: Some(msg),
+                                                            done: false,
+                                                        },
+                                                        win,
+                                                    ));
+                                                },
+                                                WorkflowEvent::StepFailed {
+                                                    execution_id,
+                                                    step_id,
+                                                } if execution_id == exec_id => {
+                                                    let msg = format!("Step failed: {step_id}");
+                                                    let _ = proxy.send_event(Event::new(
+                                                        EventType::WorkflowsProgressUpdate {
+                                                            execution_id,
+                                                            workflow_name: None,
+                                                            status: Some("Failed".to_string()),
+                                                            current_step: Some(step_id),
+                                                            log: Some(msg),
+                                                            done: false,
+                                                        },
+                                                        win,
+                                                    ));
+                                                },
+                                                WorkflowEvent::Completed {
+                                                    execution_id,
+                                                    status,
+                                                } if execution_id == exec_id => {
+                                                    let status_str = format!("{status:?}");
+                                                    let _ = proxy.send_event(Event::new(
+                                                        EventType::WorkflowsProgressUpdate {
+                                                            execution_id,
+                                                            workflow_name: None,
+                                                            status: Some(status_str),
+                                                            current_step: None,
+                                                            log: None,
+                                                            done: true,
+                                                        },
+                                                        win,
+                                                    ));
+                                                    break;
+                                                },
+                                                WorkflowEvent::Log {
+                                                    execution_id,
+                                                    step_id: _,
+                                                    message,
+                                                } if execution_id == exec_id => {
+                                                    let _ = proxy.send_event(Event::new(
+                                                        EventType::WorkflowsProgressUpdate {
+                                                            execution_id,
+                                                            workflow_name: None,
+                                                            status: None,
+                                                            current_step: None,
+                                                            log: Some(message),
+                                                            done: false,
+                                                        },
+                                                        win,
+                                                    ));
+                                                },
+                                                _ => {},
                                             },
                                             Err(_e) => {
                                                 // Receiver closed; stop forwarding
@@ -1032,20 +1103,25 @@ let require_confirm = *policy
                                 },
                                 Err(_e) => {
                                     // Fallback to config command paste
-                                    if let Some(wf) = cfg.workflows.iter().find(|w| w.name == name) {
+                                    if let Some(wf) = cfg.workflows.iter().find(|w| w.name == name)
+                                    {
                                         let mut cmd = wf.command.clone();
                                         for p in &wf.params {
                                             let placeholder = format!("{{{}}}", p.name);
                                             let val = p.default.clone().unwrap_or_default();
                                             cmd = cmd.replace(&placeholder, &val);
                                         }
-                                        let _ = proxy.send_event(Event::new(EventType::PasteCommand(cmd), win));
+                                        let _ = proxy.send_event(Event::new(
+                                            EventType::PasteCommand(cmd),
+                                            win,
+                                        ));
                                     } else {
                                         let msg = crate::message_bar::Message::new(
                                             format!("Workflow not found: {}", name),
                                             crate::message_bar::MessageType::Warning,
                                         );
-                                        let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                        let _ = proxy
+                                            .send_event(Event::new(EventType::Message(msg), win));
                                     }
                                 },
                             }
@@ -1061,7 +1137,8 @@ let require_confirm = *policy
                         let val = p.default.clone().unwrap_or_default();
                         cmd = cmd.replace(&placeholder, &val);
                     }
-                    let _ = self.proxy.send_event(Event::new(EventType::PasteCommand(cmd), *window_id));
+                    let _ =
+                        self.proxy.send_event(Event::new(EventType::PasteCommand(cmd), *window_id));
                 } else {
                     let msg = crate::message_bar::Message::new(
                         format!("Workflow not found: {}", name),
@@ -1070,9 +1147,18 @@ let require_confirm = *policy
                     let _ = self.proxy.send_event(Event::new(EventType::Message(msg), *window_id));
                 }
             },
-            (EventType::ConfirmOpen { id, title, body, confirm_label, cancel_label }, Some(window_id)) => {
+            (
+                EventType::ConfirmOpen { id, title, body, confirm_label, cancel_label },
+                Some(window_id),
+            ) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
-                    window_context.display.confirm_overlay.open(id.clone(), title.clone(), body.clone(), confirm_label.clone(), cancel_label.clone());
+                    window_context.display.confirm_overlay.open(
+                        id.clone(),
+                        title.clone(),
+                        body.clone(),
+                        confirm_label.clone(),
+                        cancel_label.clone(),
+                    );
                     window_context.dirty = true;
                     if window_context.display.window.has_frame {
                         window_context.display.window.request_redraw();
@@ -1084,17 +1170,25 @@ let require_confirm = *policy
                 #[cfg(feature = "ai")]
                 if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
                     if accepted {
-                        let _ = self.proxy.send_event(Event::new(EventType::AiApplyAsCommandChecked { command: cmd, dry_run }, win));
+                        let _ = self.proxy.send_event(Event::new(
+                            EventType::AiApplyAsCommandChecked { command: cmd, dry_run },
+                            win,
+                        ));
                     } else {
                         // Show canceled message
-                        let message = crate::message_bar::Message::new("Command canceled".into(), crate::message_bar::MessageType::Warning);
+                        let message = crate::message_bar::Message::new(
+                            "Command canceled".into(),
+                            crate::message_bar::MessageType::Warning,
+                        );
                         let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
                     }
                 }
                 // Resolve for plugin-host waiters if any
                 let _ = crate::ui_confirm::resolve(&id, accepted);
                 // Broadcast resolution to close overlays in all windows
-                let _ = self.proxy.send_event(Event::new(EventType::ConfirmResolved { id, accepted }, None));
+                let _ = self
+                    .proxy
+                    .send_event(Event::new(EventType::ConfirmResolved { id, accepted }, None));
             },
             (EventType::Terminal(TerminalEvent::Wakeup), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1359,8 +1453,14 @@ pub enum EventType {
         confirm_label: Option<String>,
         cancel_label: Option<String>,
     },
-    ConfirmRespond { id: String, accepted: bool },
-    ConfirmResolved { id: String, accepted: bool },
+    ConfirmRespond {
+        id: String,
+        accepted: bool,
+    },
+    ConfirmResolved {
+        id: String,
+        accepted: bool,
+    },
 
     // Warp-style workspace events
     WarpUiUpdate(crate::workspace::WarpUiUpdateType),
@@ -1696,7 +1796,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn open_blocks_search_panel(&mut self) {
         self.display.blocks_search.open();
         self.mark_dirty();
-        self.send_user_event(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()));
+        self.send_user_event(EventType::BlocksSearchPerform(
+            self.display.blocks_search.query.clone(),
+        ));
     }
 
     #[cfg(feature = "blocks")]
@@ -1719,7 +1821,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let window_id = self.display.window.id();
         let timer_id = TimerId::new(Topic::BlocksSearchTyping, window_id);
         self.scheduler.unschedule(timer_id);
-        let evt = Event::new(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()), window_id);
+        let evt = Event::new(
+            EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()),
+            window_id,
+        );
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
@@ -1732,7 +1837,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let window_id = self.display.window.id();
         let timer_id = TimerId::new(Topic::BlocksSearchTyping, window_id);
         self.scheduler.unschedule(timer_id);
-        let evt = Event::new(EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()), window_id);
+        let evt = Event::new(
+            EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()),
+            window_id,
+        );
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
@@ -1745,7 +1853,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[cfg(feature = "blocks")]
     fn blocks_search_confirm(&mut self) {
         if !self.display.blocks_search.results.is_empty() {
-            let idx = self.display.blocks_search.selected.min(self.display.blocks_search.results.len() - 1);
+            let idx = self
+                .display
+                .blocks_search
+                .selected
+                .min(self.display.blocks_search.results.len() - 1);
             let cmd = self.display.blocks_search.results[idx].command.clone();
             self.paste(&cmd, true);
         }
@@ -1758,50 +1870,50 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.blocks_search.close();
         self.mark_dirty();
     }
-    
+
     // Enhanced blocks search functionality
     #[cfg(feature = "blocks")]
     fn blocks_search_cycle_mode(&mut self) {
         self.display.blocks_search.cycle_search_mode();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_cycle_sort_field(&mut self) {
         self.display.blocks_search.cycle_sort_field();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_toggle_sort_order(&mut self) {
         self.display.blocks_search.toggle_sort_order();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_toggle_starred(&mut self) {
         self.display.blocks_search.toggle_starred_filter();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_clear_filters(&mut self) {
         self.display.blocks_search.clear_all_filters();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_next_page(&mut self) {
         self.display.blocks_search.next_page();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_prev_page(&mut self) {
         self.display.blocks_search.prev_page();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_toggle_star_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1811,13 +1923,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_show_actions(&mut self) {
         self.display.blocks_search.open_actions_menu();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_delete_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1833,14 +1945,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             });
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_copy_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_copy_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1849,7 +1961,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_rerun_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1860,7 +1972,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.mark_dirty();
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_insert_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1872,44 +1984,44 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_show_help(&mut self) {
         self.display.blocks_search.open_help();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_export_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let content = format!(
-                "Command: {}\n\nOutput:\n{}", 
+                "Command: {}\n\nOutput:\n{}",
                 item.command,
                 if item.output.is_empty() { "<no output>" } else { &item.output }
             );
             self.prompt_and_export_block_output(content);
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_toggle_tag(&mut self) {
         // Placeholder for tag functionality - would need tag management system
         // For now, just mark dirty to acknowledge the input
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_copy_both(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let both = format!(
-                "$ {}\n{}", 
+                "$ {}\n{}",
                 item.command,
                 if item.output.is_empty() { "<no output>" } else { &item.output }
             );
             self.clipboard.store(ClipboardType::Clipboard, both);
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_insert_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1917,7 +2029,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.paste(&command, false); // Don't close search panel
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_view_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1928,12 +2040,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_share_block(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let share_content = format!(
-                "Command: {}\nOutput: {}", 
+                "Command: {}\nOutput: {}",
                 item.command,
                 if item.output.is_empty() { "<no output>" } else { &item.output }
             );
@@ -1941,7 +2053,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.clipboard.store(ClipboardType::Clipboard, share_content);
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_create_snippet(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
@@ -1950,54 +2062,61 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_insert_heredoc_custom(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
                 // Use grep as default custom command (can be edited by user)
-                let heredoc = crate::display::blocks_search_actions::generate_heredoc_with_command(&item.output, "grep ''");
+                let heredoc = crate::display::blocks_search_actions::generate_heredoc_with_command(
+                    &item.output,
+                    "grep ''",
+                );
                 self.paste(&heredoc, false); // Don't close panel to allow editing
                 self.mark_dirty();
             }
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_insert_json_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
-                let heredoc = crate::display::blocks_search_actions::format_as_json_heredoc(&item.output);
+                let heredoc =
+                    crate::display::blocks_search_actions::format_as_json_heredoc(&item.output);
                 self.paste(&heredoc, true);
                 self.display.blocks_search.close();
                 self.mark_dirty();
             }
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_insert_shell_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
-                let heredoc = crate::display::blocks_search_actions::format_heredoc_for_shell(&item.output, &item.shell);
+                let heredoc = crate::display::blocks_search_actions::format_heredoc_for_shell(
+                    &item.output,
+                    &item.shell,
+                );
                 self.paste(&heredoc, true);
                 self.display.blocks_search.close();
                 self.mark_dirty();
             }
         }
     }
-    
+
     // Actions menu support
     #[cfg(feature = "blocks")]
     fn blocks_search_actions_menu_active(&self) -> bool {
         self.display.blocks_search.actions_menu_active()
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_execute_action(&mut self) {
         if let Some(action) = self.display.blocks_search.get_selected_action() {
             use crate::display::blocks_search_actions::BlockAction;
-            
+
             match action {
                 BlockAction::CopyCommand => self.blocks_search_copy_command(),
                 BlockAction::CopyOutput => self.blocks_search_copy_output(),
@@ -2020,31 +2139,31 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.display.blocks_search.close_actions_menu();
         }
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_close_actions_menu(&mut self) {
         self.display.blocks_search.close_actions_menu();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_move_actions_selection(&mut self, delta: isize) {
         self.display.blocks_search.move_actions_selection(delta);
         self.mark_dirty();
     }
-    
+
     // Help overlay support
     #[cfg(feature = "blocks")]
     fn blocks_search_help_active(&self) -> bool {
         self.display.blocks_search.help_active()
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_close_help(&mut self) {
         self.display.blocks_search.close_help();
         self.mark_dirty();
     }
-    
+
     #[cfg(feature = "blocks")]
     fn blocks_search_navigate_help(&mut self, forward: bool) {
         self.display.blocks_search.navigate_help(forward);
@@ -2133,9 +2252,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[cfg(feature = "workflow")]
     fn workflows_progress_dismiss(&mut self) {
         if let Some(exec) = self.display.workflows_progress.execution_id.clone() {
-            let _ = self
-                .event_proxy
-                .send_event(Event::new(EventType::WorkflowsProgressClear(exec), self.display.window.id()));
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::WorkflowsProgressClear(exec),
+                self.display.window.id(),
+            ));
         } else {
             // No execution id; clear directly
             self.display.workflows_progress.active = false;
@@ -2167,13 +2287,19 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn confirm_overlay_confirm(&mut self) {
         if let Some(id) = self.display.confirm_overlay.id.clone() {
-            let _ = self.event_proxy.send_event(Event::new(EventType::ConfirmRespond { id, accepted: true }, self.display.window.id()));
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::ConfirmRespond { id, accepted: true },
+                self.display.window.id(),
+            ));
         }
     }
 
     fn confirm_overlay_cancel(&mut self) {
         if let Some(id) = self.display.confirm_overlay.id.clone() {
-            let _ = self.event_proxy.send_event(Event::new(EventType::ConfirmRespond { id, accepted: false }, self.display.window.id()));
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::ConfirmRespond { id, accepted: false },
+                self.display.window.id(),
+            ));
         }
     }
 
@@ -2328,7 +2454,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.pending_update.dirty = true;
     }
     #[inline]
-    #[inline]
+    
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
         let origin = self.terminal.vi_mode_cursor.point;
 
@@ -2862,7 +2988,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             format!("Workflow not found: {}", name),
             crate::message_bar::MessageType::Warning,
         );
-        let _ = self.event_proxy.send_event(Event::new(EventType::Message(msg), self.display.window.id()));
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(EventType::Message(msg), self.display.window.id()));
         self.display.pending_update.dirty = true;
     }
 
@@ -2875,10 +3003,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else {
             "Split pane horizontally failed".into()
         };
-        self.message_buffer.push(Message::new(
-            msg,
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2891,10 +3016,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else {
             "Split pane vertically failed".into()
         };
-        self.message_buffer.push(Message::new(
-            msg,
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2902,10 +3024,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_focus_next_pane(&mut self) {
         let ok = self.workspace.focus_next_pane();
         let msg = if ok { "Focused next pane" } else { "Focus next pane failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2913,10 +3033,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_focus_previous_pane(&mut self) {
         let ok = self.workspace.focus_previous_pane();
         let msg = if ok { "Focused previous pane" } else { "Focus previous pane failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2924,10 +3042,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_close_pane(&mut self) {
         let ok = self.workspace.close_pane();
         let msg = if ok { "Closed pane" } else { "Close pane failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2935,10 +3051,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_resize_left(&mut self) {
         let ok = self.workspace.resize_left();
         let msg = if ok { "Resized pane left" } else { "Resize left failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2946,10 +3060,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_resize_right(&mut self) {
         let ok = self.workspace.resize_right();
         let msg = if ok { "Resized pane right" } else { "Resize right failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2957,10 +3069,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_resize_up(&mut self) {
         let ok = self.workspace.resize_up();
         let msg = if ok { "Resized pane up" } else { "Resize up failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2968,10 +3078,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_resize_down(&mut self) {
         let ok = self.workspace.resize_down();
         let msg = if ok { "Resized pane down" } else { "Resize down failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2981,10 +3089,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let working_dir = std::env::current_dir().ok();
         let tab_id = self.workspace.create_tab(title.clone(), working_dir);
         let msg = format!("Created new tab '{}' with ID {:?}", title, tab_id);
-        self.message_buffer.push(Message::new(
-            msg,
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -2994,15 +3099,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
             let ok = self.workspace.close_tab(tab_id);
-            let msg = if ok {
-                format!("Closed tab '{}'" , tab_title)
-            } else {
-                "Close tab failed".into()
-            };
-            self.message_buffer.push(Message::new(
-                msg,
-                crate::message_bar::MessageType::Warning,
-            ));
+            let msg =
+                if ok { format!("Closed tab '{}'", tab_title) } else { "Close tab failed".into() };
+            self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
             self.display.pending_update.dirty = true;
             *self.dirty = true;
         }
@@ -3011,10 +3110,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_next_tab(&mut self) {
         let ok = self.workspace.next_tab();
         let msg = if ok { "Switched to next tab" } else { "Switch to next tab failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -3022,10 +3119,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn workspace_previous_tab(&mut self) {
         let ok = self.workspace.previous_tab();
         let msg = if ok { "Switched to previous tab" } else { "Switch to previous tab failed" };
-        self.message_buffer.push(Message::new(
-            msg.into(),
-            crate::message_bar::MessageType::Warning,
-        ));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -3745,7 +3840,9 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     *self.ctx.dirty = true;
                 },
                 // Confirmation overlay events are handled at the window-processor level
-                EventType::ConfirmOpen { .. } | EventType::ConfirmRespond { .. } | EventType::ConfirmResolved { .. } => (),
+                EventType::ConfirmOpen { .. }
+                | EventType::ConfirmRespond { .. }
+                | EventType::ConfirmResolved { .. } => (),
                 #[cfg(feature = "blocks")]
                 EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
                 #[cfg(feature = "blocks")]
@@ -3757,8 +3854,15 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::BlocksToggleFoldUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
                     let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
-                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
-                        if self.ctx.display().blocks.toggle_fold_header_at_viewport_line(display_offset, vp.line) {
+                    if let Some(vp) =
+                        openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
+                    {
+                        if self
+                            .ctx
+                            .display()
+                            .blocks
+                            .toggle_fold_header_at_viewport_line(display_offset, vp.line)
+                        {
                             self.ctx.display.damage_tracker.frame().mark_fully_damaged();
                             *self.ctx.dirty = true;
                         }
@@ -3767,8 +3871,15 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::BlocksCopyHeaderUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
                     let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
-                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
-                        if let Some(header) = self.ctx.display().blocks.header_at_viewport_line(display_offset, vp.line) {
+                    if let Some(vp) =
+                        openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
+                    {
+                        if let Some(header) = self
+                            .ctx
+                            .display()
+                            .blocks
+                            .header_at_viewport_line(display_offset, vp.line)
+                        {
                             self.ctx.copy_to_clipboard(header);
                         }
                     }
@@ -3776,8 +3887,15 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::BlocksExportHeaderUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
                     let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
-                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
-                        if let Some(header) = self.ctx.display().blocks.header_at_viewport_line(display_offset, vp.line) {
+                    if let Some(vp) =
+                        openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
+                    {
+                        if let Some(header) = self
+                            .ctx
+                            .display()
+                            .blocks
+                            .header_at_viewport_line(display_offset, vp.line)
+                        {
                             self.ctx.prompt_and_export_block_output(header);
                         }
                     }
@@ -3869,25 +3987,24 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 #[cfg(feature = "ai")]
                 EventType::AiApplyAsCommand { command, dry_run } => {
                     // Route through Security Lens check
-                    let _ = self
-                        .ctx
-                        .event_proxy
-                        .send_event(Event::new(
-                            EventType::SecurityCheckAiApply { command, dry_run },
-                            self.ctx.display.window.id(),
-                        ));
+                    let _ = self.ctx.event_proxy.send_event(Event::new(
+                        EventType::SecurityCheckAiApply { command, dry_run },
+                        self.ctx.display.window.id(),
+                    ));
                     *self.ctx.dirty = true;
                 },
                 #[cfg(feature = "ai")]
                 EventType::SecurityCheckAiApply { command, dry_run } => {
                     // Integrate SecurityLens analysis and confirmation overlay
-                    use crate::security_lens::{SecurityLens, RiskLevel};
-                    
+                    use crate::security_lens::{RiskLevel, SecurityLens};
+
                     let mut security_lens = SecurityLens::new(self.ctx.config.security.clone());
                     let risk_analysis = security_lens.analyze_command(&command);
-                    
+
                     // Check if command should be blocked
-                    if self.ctx.config.security.block_critical && risk_analysis.level == RiskLevel::Critical {
+                    if self.ctx.config.security.block_critical
+                        && risk_analysis.level == RiskLevel::Critical
+                    {
                         // Block critical commands if policy requires it
                         self.ctx.message_buffer.push(crate::message_bar::Message::new(
                             format!("Blocked critical command: {}", risk_analysis.explanation),
@@ -3896,24 +4013,28 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                         return;
                     }
-                    
+
                     // Check if confirmation is required based on policy
-                    let requires_confirmation = self.ctx.config.security
+                    let requires_confirmation = self
+                        .ctx
+                        .config
+                        .security
                         .require_confirmation
                         .get(&risk_analysis.level)
                         .copied()
                         .unwrap_or(false);
-                    
+
                     if requires_confirmation {
                         // Show security confirmation overlay
                         // Generate unique ID for this confirmation
-                        let confirm_id = format!("security_{}", 
+                        let confirm_id = format!(
+                            "security_{}",
                             std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis()
                         );
-                        
+
                         // Create confirmation request
                         let title = match risk_analysis.level {
                             RiskLevel::Critical => "🔴 CRITICAL: Confirm Command".to_string(),
@@ -3921,7 +4042,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             RiskLevel::Caution => "🟠 CAUTION: Confirm Command".to_string(),
                             RiskLevel::Safe => "✅ Confirm Command".to_string(),
                         };
-                        
+
                         let mut body = format!("Risk Level: {:?}\n\n", risk_analysis.level);
                         body.push_str(&risk_analysis.explanation);
                         if !risk_analysis.mitigations.is_empty() {
@@ -3931,7 +4052,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             }
                         }
                         body.push_str(&format!("\nCommand to execute:\n  {}", command));
-                        
+
                         let _ = self.ctx.event_proxy.send_event(Event::new(
                             EventType::ConfirmOpen {
                                 id: confirm_id.clone(),
@@ -3942,20 +4063,16 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             },
                             self.ctx.display.window.id(),
                         ));
-                        
+
                         // Store command for when confirmation is resolved
                         // TODO: Store pending security confirmations in a proper state manager
                         // For now, we'll rely on the event system to handle this
-                        
                     } else {
                         // No confirmation required, proceed directly
-                        let _ = self
-                            .ctx
-                            .event_proxy
-                            .send_event(Event::new(
-                                EventType::AiApplyAsCommandChecked { command, dry_run },
-                                self.ctx.display.window.id(),
-                            ));
+                        let _ = self.ctx.event_proxy.send_event(Event::new(
+                            EventType::AiApplyAsCommandChecked { command, dry_run },
+                            self.ctx.display.window.id(),
+                        ));
                     }
                     *self.ctx.dirty = true;
                 },
@@ -4005,7 +4122,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         if let Some((cmd, _)) = runtime.apply_command(true) {
                             // Show dry run output in confirmation overlay
-                            let id = format!("ai_dry_run_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                            let id = format!(
+                                "ai_dry_run_{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis()
+                            );
                             let _ = self.ctx.event_proxy.send_event(Event::new(
                                 EventType::ConfirmOpen {
                                     id,
@@ -4039,11 +4162,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::AiExplain(target) => {
                     // Extract selection before mutable borrow
                     let text_to_explain = target.clone().unwrap_or_else(|| {
-                        self.ctx.terminal().selection_to_string()
+                        self.ctx
+                            .terminal()
+                            .selection_to_string()
                             .filter(|s| !s.trim().is_empty())
                             .unwrap_or_else(|| "Explain the last command output".to_string())
                     });
-                    
+
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.propose_explain(text_to_explain, None, None);
                         *self.ctx.dirty = true;
@@ -4053,11 +4178,15 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::AiFix(target) => {
                     // Extract selection before mutable borrow
                     let error_text = target.clone().unwrap_or_else(|| {
-                        self.ctx.terminal().selection_to_string()
+                        self.ctx
+                            .terminal()
+                            .selection_to_string()
                             .filter(|s| !s.trim().is_empty())
-                            .unwrap_or_else(|| "Please suggest a fix for the recent error".to_string())
+                            .unwrap_or_else(|| {
+                                "Please suggest a fix for the recent error".to_string()
+                            })
                     });
-                    
+
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.propose_fix(error_text, None, None, None);
                         *self.ctx.dirty = true;
@@ -4267,4 +4396,3 @@ pub(crate) fn schedule_blocks_search_for_test(
     let evt = Event::new(EventType::BlocksSearchPerform(query), window_id);
     scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
 }
-

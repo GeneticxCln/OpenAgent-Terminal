@@ -1,8 +1,8 @@
 // GPU Snapshot Testing Infrastructure
 // Visual regression detection for terminal rendering
 
-use image::{DynamicImage, ImageBuffer, Rgba};
 use image::GenericImageView; // for dimensions()
+use image::{DynamicImage, ImageBuffer, Rgba};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;

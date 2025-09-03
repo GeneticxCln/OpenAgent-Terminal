@@ -952,12 +952,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             let glyph_key =
                 GlyphKey { font_key, size: glyph_cache.font_size, character: cell.character };
             let g = glyph_cache.get(glyph_key, &mut loader, true);
-            staged.extend_from_slice(&build_text_vertices(
-                size_info,
-                &cell,
-                &g,
-                subpixel,
-            ));
+            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel));
 
             // Zero-width characters.
             if let Some(zw) =
@@ -967,12 +962,8 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 for ch in zw {
                     key.character = ch;
                     let gzw = glyph_cache.get(key, &mut loader, false);
-                    staged.extend_from_slice(&build_text_vertices(
-                        size_info,
-                        &cell,
-                        &gzw,
-                        subpixel,
-                    ));
+                    staged
+                        .extend_from_slice(&build_text_vertices(size_info, &cell, &gzw, subpixel));
                 }
             }
         }
@@ -1024,12 +1015,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 1.0,
             ));
             let g = glyph_cache.get(glyph_key, &mut loader, true);
-            staged.extend_from_slice(&build_text_vertices(
-                size_info,
-                &cell,
-                &g,
-                subpixel,
-            ));
+            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel));
             col += 1;
         }
         self.pending_text.extend(staged);
