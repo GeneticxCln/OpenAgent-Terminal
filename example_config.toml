@@ -93,6 +93,41 @@ timeout = 30
 # model = "claude-3-haiku-20240307"
 # timeout = 30
 
+# Security Lens Configuration - Command Risk Analysis
+[security]
+# Enable security analysis for terminal commands
+enabled = true
+# Block execution of critical risk level commands
+block_critical = false
+# Gate paste events through security analysis
+gate_paste_events = true
+
+# Confirmation requirements by risk level
+[security.require_confirmation]
+Safe = false
+Caution = false
+Warning = true
+Critical = true
+
+# Require reason/justification for certain risk levels
+[security.require_reason]
+Critical = true
+
+# Rate limiting for security detections
+[security.rate_limit]
+enabled = true
+max_detections = 10
+window_seconds = 300  # 5 minutes
+
+# Documentation base URL for mitigation links
+docs_base_url = "https://docs.openagent-terminal.org/security"
+
+# Custom security patterns (advanced)
+# [[security.custom_patterns]]
+# pattern = "docker\\s+run\\s+.*--privileged"
+# risk_level = "Warning"
+# message = "Running privileged container"
+
 # Sync Configuration (optional, disabled by default)
 [sync]
 enabled = false

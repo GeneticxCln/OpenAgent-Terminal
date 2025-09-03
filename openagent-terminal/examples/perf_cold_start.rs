@@ -8,6 +8,9 @@ use winit::event::StartCause;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::raw_window_handle::HasDisplayHandle;
 
+#[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+use glutin::platform::x11::X11GlConfigExt;
+
 use openagent_terminal::cli::WindowOptions;
 use openagent_terminal::config::UiConfig;
 use openagent_terminal::display::window::Window;
@@ -22,6 +25,15 @@ struct ColdStartApp {
 
 impl ApplicationHandler<()> for ColdStartApp {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
+    fn window_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        _event: winit::event::WindowEvent,
+    ) {
+        // No-op for this perf test
+    }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if cause != StartCause::Init { return; }

@@ -380,7 +380,7 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
     }
 
     /// Apply command with safe-run (dry-run by default)
-pub fn apply_command(&self, dry_run: bool) -> Option<(String, bool)> {
+    pub fn apply_command(&mut self, dry_run: bool) -> Option<(String, bool)> {
         self.ui
             .proposals
             .get(self.ui.selected_proposal)
