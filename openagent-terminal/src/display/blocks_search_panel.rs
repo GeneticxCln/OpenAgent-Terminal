@@ -7,14 +7,19 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::blocks_v2::{ExitCodeFilter, DurationFilter, SortField, SortOrder, ExecutionStatus, ShellType};
 use crate::config::UiConfig;
+use crate::config::theme::ThemeTokens;
 use crate::display::color::Rgb;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use std::path::PathBuf;
+
+// Re-export action types for convenience
+pub use crate::display::blocks_search_actions::{
+    BlockAction, ActionsMenuState, HelpOverlayState
+};
 
 /// One item in the search results list (UI summary)
 #[derive(Clone, Debug)]
@@ -74,6 +79,16 @@ pub struct BlocksSearchState {
     pub filter_input_active: bool,
     pub filter_input_field: String,
     pub available_tags: Vec<String>,
+    
+    // New enhanced features
+    /// Actions menu state for advanced operations
+    pub actions_menu: ActionsMenuState,
+    /// Help overlay state
+    pub help_overlay: HelpOverlayState,
+    /// Search history for suggestions
+    pub search_history: Vec<String>,
+    /// Quick filter suggestions
+    pub filter_suggestions: Vec<String>,
 }
 
 impl BlocksSearchState {
@@ -94,6 +109,11 @@ impl BlocksSearchState {
             filter_input_active: false,
             filter_input_field: String::new(),
             available_tags: Vec::new(),
+            // Initialize new enhanced features
+            actions_menu: ActionsMenuState::new(),
+            help_overlay: HelpOverlayState::new(),
+            search_history: Vec::new(),
+            filter_suggestions: Vec::new(),
         }
     }
 
@@ -208,6 +228,89 @@ impl BlocksSearchState {
 
     pub fn get_selected_item(&self) -> Option<&BlocksSearchItem> {
         self.results.get(self.selected)
+    }
+    
+    /// Open actions menu for currently selected item
+    pub fn open_actions_menu(&mut self) {
+        if let Some(item) = self.get_selected_item().cloned() {
+            let position = Point::new(
+                self.selected.min(self.results.len().saturating_sub(1)),
+                Column(0)
+            );
+            self.actions_menu.open_for_block(&item, position);
+        }
+    }
+    
+    /// Close actions menu
+    pub fn close_actions_menu(&mut self) {
+        self.actions_menu.close();
+    }
+    
+    /// Check if actions menu is active
+    pub fn actions_menu_active(&self) -> bool {
+        self.actions_menu.active
+    }
+    
+    /// Move selection in actions menu
+    pub fn move_actions_selection(&mut self, delta: isize) {
+        self.actions_menu.move_selection(delta);
+    }
+    
+    /// Get selected action from actions menu
+    pub fn get_selected_action(&self) -> Option<BlockAction> {
+        self.actions_menu.get_selected_action()
+    }
+    
+    /// Open help overlay
+    pub fn open_help(&mut self) {
+        self.help_overlay.open();
+    }
+    
+    /// Close help overlay
+    pub fn close_help(&mut self) {
+        self.help_overlay.close();
+    }
+    
+    /// Check if help overlay is active
+    pub fn help_active(&self) -> bool {
+        self.help_overlay.active
+    }
+    
+    /// Navigate help sections
+    pub fn navigate_help(&mut self, forward: bool) {
+        if forward {
+            self.help_overlay.next_section();
+        } else {
+            self.help_overlay.prev_section();
+        }
+    }
+    
+    /// Add to search history (for suggestions)
+    pub fn add_to_history(&mut self, query: &str) {
+        if query.is_empty() || self.search_history.contains(&query.to_string()) {
+            return;
+        }
+        
+        self.search_history.insert(0, query.to_string());
+        
+        // Limit history size
+        if self.search_history.len() > 50 {
+            self.search_history.truncate(50);
+        }
+    }
+    
+    /// Get search suggestions based on current query
+    pub fn get_search_suggestions(&self, partial: &str) -> Vec<String> {
+        if partial.is_empty() {
+            return self.search_history.iter().take(10).cloned().collect();
+        }
+        
+        self.search_history
+            .iter()
+            .filter(|entry| entry.starts_with(partial))
+            .take(10)
+            .cloned()
+            .collect()
     }
 }
 
@@ -358,6 +461,15 @@ impl Display {
 
         // Footer with keyboard shortcuts
         self.draw_footer(state, footer_start, footer_lines, num_cols, muted_fg, bg);
+        
+        // Draw overlays on top
+        if state.actions_menu.active {
+            self.draw_actions_menu(&state.actions_menu, &tokens);
+        }
+        
+        if state.help_overlay.active {
+            self.draw_help_overlay(&state.help_overlay, &tokens);
+        }
     }
 
     fn draw_search_header(
@@ -604,15 +716,19 @@ impl Display {
         let mut line = footer_start;
         
         if state.mode == SearchMode::Advanced {
-            // Advanced mode shortcuts
-            let advanced_hint = "Tab: Mode • F: Filters • S: Sort • *: Star • C: Clear • A: Actions";
-            self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, advanced_hint, num_cols - 2);
+            // Advanced mode shortcuts - first line
+            let advanced_hint1 = "Tab: Mode • Ctrl+S: Sort • Ctrl+R: Reverse • Ctrl+F: ⭐Filter • *: Star • A: Actions";
+            self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, advanced_hint1, num_cols - 2);
             line += 1;
+            
+            // Advanced mode shortcuts - second line
+            let advanced_hint2 = "C: Copy Cmd • O: Copy Out • B: Copy Both • I: Insert Cmd • H: Here-doc • Ctrl+C: Clear";
+            self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, advanced_hint2, num_cols - 2);
+        } else {
+            // Basic navigation shortcuts
+            let basic_hint = "Enter: Paste • Esc: Close • ↑/↓/j/k: Navigate • PgUp/PgDn: Page • Tab: Mode • ?: Help";
+            self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, basic_hint, num_cols - 2);
         }
-        
-        // Basic navigation shortcuts
-        let basic_hint = "Enter: Paste • Esc: Close • ↑/↓: Navigate • PgUp/PgDn: Page • Ctrl+S: Search Mode";
-        self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, basic_hint, num_cols - 2);
     }
     
     fn format_duration(&self, duration_ms: Option<u64>) -> String {
@@ -630,6 +746,62 @@ impl Display {
         } else {
             dir.to_string()
         }
+    }
+    
+    fn draw_actions_menu(
+        &mut self,
+        menu: &ActionsMenuState,
+        tokens: &ThemeTokens,
+    ) {
+        if !menu.active {
+            return;
+        }
+        
+        let size_info = self.size_info;
+        let menu_width = 30;
+        let menu_height = 15;
+        let menu_x = (menu.position.column.0 as f32).min(size_info.width() - menu_width as f32 * size_info.cell_width());
+        let menu_y = (menu.position.line as f32 * size_info.cell_height()).min(size_info.height() - menu_height as f32 * size_info.cell_height());
+        
+        // Menu background
+        let menu_bg = RenderRect::new(menu_x, menu_y, menu_width as f32 * size_info.cell_width(), menu_height as f32 * size_info.cell_height(), tokens.surface, 0.95);
+        let border_rect = RenderRect::new(menu_x - 1.0, menu_y - 1.0, (menu_width as f32 + 2.0) * size_info.cell_width(), (menu_height as f32 + 2.0) * size_info.cell_height(), tokens.border, 1.0);
+        
+        let rects = vec![border_rect, menu_bg];
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy: SizeInfo = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+        
+        // Render menu items
+        menu.render(self, tokens);
+    }
+    
+    fn draw_help_overlay(
+        &mut self,
+        help: &HelpOverlayState,
+        tokens: &ThemeTokens,
+    ) {
+        if !help.active {
+            return;
+        }
+        
+        let size_info = self.size_info;
+        let overlay_width = size_info.width() * 0.8;
+        let overlay_height = size_info.height() * 0.8;
+        let overlay_x = (size_info.width() - overlay_width) / 2.0;
+        let overlay_y = (size_info.height() - overlay_height) / 2.0;
+        
+        // Help background
+        let help_bg = RenderRect::new(overlay_x, overlay_y, overlay_width, overlay_height, tokens.surface, 0.98);
+        let border_rect = RenderRect::new(overlay_x - 2.0, overlay_y - 2.0, overlay_width + 4.0, overlay_height + 4.0, tokens.border, 1.0);
+        
+        let rects = vec![border_rect, help_bg];
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy: SizeInfo = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+        
+        // Render help content
+        help.render(self, tokens);
     }
 
     /// Helper reused from AI panel for drawing text; exists on all builds.

@@ -3,11 +3,10 @@
 
 use std::collections::HashMap;
 use ahash::RandomState;
-use crossfont::{FontKey, GlyphKey, RasterizedGlyph, Rasterizer};
+use crossfont::{FontKey, GlyphKey, RasterizedGlyph};
 use anyhow::Result;
-#[cfg(feature = "harfbuzz")]
-use unicode_bidi;
 
+#[cfg(feature = "harfbuzz")]
 use crate::text_shaping::integration::{ShapedCell, ShapedCellGlyph, ShapedLine};
 use super::glyph_cache::{Glyph, GlyphCache, LoadGlyph};
 
@@ -58,7 +57,10 @@ pub struct ShapedGlyphPosition {
 pub struct BidiRun {
     pub start: usize,
     pub end: usize,
+    #[cfg(feature = "harfbuzz")]
     pub direction: crate::text_shaping::harfbuzz::TextDirection,
+    #[cfg(not(feature = "harfbuzz"))]
+    pub direction: u8, // Placeholder when harfbuzz is disabled
     pub level: u8,
 }
 
@@ -77,6 +79,7 @@ impl ShapedGlyphCache {
     }
 
     /// Get a shaped glyph, loading it if necessary
+    #[cfg(feature = "harfbuzz")]
     pub fn get_shaped_glyph<L>(
         &mut self,
         shaped_glyph: &ShapedCellGlyph,
@@ -112,6 +115,7 @@ impl ShapedGlyphCache {
     }
 
     /// Load all glyphs for a shaped line
+    #[cfg(feature = "harfbuzz")]
     pub fn load_shaped_line<L>(
         &mut self,
         shaped_line: &ShapedLine,
@@ -135,6 +139,7 @@ impl ShapedGlyphCache {
     }
 
     /// Load all glyphs for a shaped cell
+    #[cfg(feature = "harfbuzz")]
     pub fn load_shaped_cell<L>(
         &mut self,
         shaped_cell: &ShapedCell,
@@ -163,6 +168,7 @@ impl ShapedGlyphCache {
     }
 
     /// Get the appropriate font key for a shaped glyph
+    #[cfg(feature = "harfbuzz")]
     fn get_font_key_for_shaped_glyph(&self, shaped_glyph: &ShapedCellGlyph) -> FontKey {
         // For now, use the font index to select the appropriate font key
         // In a full implementation, this would be more sophisticated
@@ -264,43 +270,56 @@ impl ShapedGlyphCache {
     }
     
     /// Analyze text for BiDi runs and cache the result
-    pub fn analyze_bidi(&mut self, text: &str) -> &Vec<BidiRun> {
+    pub fn analyze_bidi(&mut self, text: &str) -> Vec<BidiRun> {
         if let Some(cached) = self.bidi_cache.get(text) {
-            return cached;
+            return cached.clone();
         }
         
         let runs = self.perform_bidi_analysis(text);
-        self.bidi_cache.insert(text.to_string(), runs);
-        self.bidi_cache.get(text).unwrap() // Safe because we just inserted
+        self.bidi_cache.insert(text.to_string(), runs.clone());
+        runs
     }
     
     /// Perform BiDi analysis on text
-    fn perform_bidi_analysis(&self, text: &str) -> Vec<BidiRun> {
-        use unicode_bidi::{BidiInfo, Level};
-        
-        let bidi_info = BidiInfo::new(text, None);
-        let mut runs = Vec::new();
-        
-        // Get the paragraph embedding level
-        let para_level = bidi_info.paragraphs[0].level;
-        
-        // Convert BiDi levels to our BidiRun structure
-        for run in bidi_info.visual_runs(para_level) {
-            let direction = if run.level.is_ltr() {
-                crate::text_shaping::harfbuzz::TextDirection::LeftToRight
-            } else {
-                crate::text_shaping::harfbuzz::TextDirection::RightToLeft
-            };
+    fn perform_bidi_analysis(&self, _text: &str) -> Vec<BidiRun> {
+        #[cfg(feature = "harfbuzz")]
+        {
+            use unicode_bidi::{BidiInfo, Level};
             
-            runs.push(BidiRun {
-                start: run.start,
-                end: run.end,
-                direction,
-                level: run.level.number(),
-            });
+            let bidi_info = BidiInfo::new(_text, None);
+            let mut runs = Vec::new();
+            
+            // Get the paragraph embedding level
+            let para_level = bidi_info.paragraphs[0].level;
+            
+            // Convert BiDi levels to our BidiRun structure
+            for run in bidi_info.visual_runs(para_level) {
+                let direction = if run.level.is_ltr() {
+                    crate::text_shaping::harfbuzz::TextDirection::LeftToRight
+                } else {
+                    crate::text_shaping::harfbuzz::TextDirection::RightToLeft
+                };
+                
+                runs.push(BidiRun {
+                    start: run.start,
+                    end: run.end,
+                    direction,
+                    level: run.level.number(),
+                });
+            }
+            
+            runs
         }
-        
-        runs
+        #[cfg(not(feature = "harfbuzz"))]
+        {
+            // Without harfbuzz, assume left-to-right text
+            vec![BidiRun {
+                start: 0,
+                end: _text.len(),
+                direction: 0, // LTR placeholder
+                level: 0,
+            }]
+        }
     }
     
     /// Cache shaped text with position offsets for ligatures

@@ -71,6 +71,8 @@ pub mod hint;
 pub mod tab_bar;
 pub mod window;
 pub mod blocks_search_panel;
+#[cfg(feature = "blocks")]
+pub mod blocks_search_actions;
 pub mod confirm_overlay;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;

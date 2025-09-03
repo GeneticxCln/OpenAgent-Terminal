@@ -1303,8 +1303,10 @@ pub enum EventType {
     // Blocks Search panel events
     #[cfg(feature = "blocks")]
     BlocksSearchPerform(String),
-#[cfg(feature = "blocks")]
+    #[cfg(feature = "blocks")]
     BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
+    #[cfg(feature = "blocks")]
+    BlocksToggleStar(String),
 
     // Workflows panel events
     #[cfg(feature = "workflow")]
@@ -1732,6 +1734,298 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.blocks_search.close();
         self.mark_dirty();
     }
+    
+    // Enhanced blocks search functionality
+    #[cfg(feature = "blocks")]
+    fn blocks_search_cycle_mode(&mut self) {
+        self.display.blocks_search.cycle_search_mode();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_cycle_sort_field(&mut self) {
+        self.display.blocks_search.cycle_sort_field();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_toggle_sort_order(&mut self) {
+        self.display.blocks_search.toggle_sort_order();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_toggle_starred(&mut self) {
+        self.display.blocks_search.toggle_starred_filter();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_clear_filters(&mut self) {
+        self.display.blocks_search.clear_all_filters();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_next_page(&mut self) {
+        self.display.blocks_search.next_page();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_prev_page(&mut self) {
+        self.display.blocks_search.prev_page();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_toggle_star_selected(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let block_id = item.id.clone();
+            // Send event to toggle star status in storage
+            self.send_user_event(EventType::BlocksToggleStar(block_id));
+        }
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_show_actions(&mut self) {
+        self.display.blocks_search.open_actions_menu();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_delete_selected(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let block_id = item.id.clone();
+            let title = format!("Delete block {}?", &block_id);
+            let message = "This action cannot be undone.";
+            self.send_user_event(EventType::ConfirmOpen {
+                id: format!("delete_block_{}", block_id),
+                title,
+                body: message.to_string(),
+                confirm_label: Some("Delete".to_string()),
+                cancel_label: Some("Cancel".to_string()),
+            });
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_copy_command(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_copy_output(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            if !item.output.is_empty() {
+                self.clipboard.store(ClipboardType::Clipboard, item.output.clone());
+            }
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_rerun_selected(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let command = item.command.clone();
+            self.paste(&command, true);
+            // Also close the search panel
+            self.display.blocks_search.close();
+            self.mark_dirty();
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_insert_heredoc(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            if !item.output.is_empty() {
+                let heredoc = crate::display::blocks_search_actions::generate_heredoc(&item.output);
+                self.paste(&heredoc, true);
+                self.display.blocks_search.close();
+                self.mark_dirty();
+            }
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_show_help(&mut self) {
+        self.display.blocks_search.open_help();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_export_selected(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let content = format!(
+                "Command: {}\n\nOutput:\n{}", 
+                item.command,
+                if item.output.is_empty() { "<no output>" } else { &item.output }
+            );
+            self.prompt_and_export_block_output(content);
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_toggle_tag(&mut self) {
+        // Placeholder for tag functionality - would need tag management system
+        // For now, just mark dirty to acknowledge the input
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_copy_both(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let both = format!(
+                "$ {}\n{}", 
+                item.command,
+                if item.output.is_empty() { "<no output>" } else { &item.output }
+            );
+            self.clipboard.store(ClipboardType::Clipboard, both);
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_insert_command(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let command = item.command.clone();
+            self.paste(&command, false); // Don't close search panel
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_view_output(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            if !item.output.is_empty() {
+                // Create a temporary viewer for the output
+                // For now, copy to clipboard as fallback
+                self.clipboard.store(ClipboardType::Clipboard, item.output.clone());
+            }
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_share_block(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            let share_content = format!(
+                "Command: {}\nOutput: {}", 
+                item.command,
+                if item.output.is_empty() { "<no output>" } else { &item.output }
+            );
+            // For now, copy to clipboard as sharing mechanism
+            self.clipboard.store(ClipboardType::Clipboard, share_content);
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_create_snippet(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            // Create snippet from command - would integrate with snippet system
+            // For now, copy command to clipboard
+            self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_insert_heredoc_custom(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            if !item.output.is_empty() {
+                // Use grep as default custom command (can be edited by user)
+                let heredoc = crate::display::blocks_search_actions::generate_heredoc_with_command(&item.output, "grep ''");
+                self.paste(&heredoc, false); // Don't close panel to allow editing
+                self.mark_dirty();
+            }
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_insert_json_heredoc(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            if !item.output.is_empty() {
+                let heredoc = crate::display::blocks_search_actions::format_as_json_heredoc(&item.output);
+                self.paste(&heredoc, true);
+                self.display.blocks_search.close();
+                self.mark_dirty();
+            }
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_insert_shell_heredoc(&mut self) {
+        if let Some(item) = self.display.blocks_search.get_selected_item() {
+            if !item.output.is_empty() {
+                let heredoc = crate::display::blocks_search_actions::format_heredoc_for_shell(&item.output, &item.shell);
+                self.paste(&heredoc, true);
+                self.display.blocks_search.close();
+                self.mark_dirty();
+            }
+        }
+    }
+    
+    // Actions menu support
+    #[cfg(feature = "blocks")]
+    fn blocks_search_actions_menu_active(&self) -> bool {
+        self.display.blocks_search.actions_menu_active()
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_execute_action(&mut self) {
+        if let Some(action) = self.display.blocks_search.get_selected_action() {
+            use crate::display::blocks_search_actions::BlockAction;
+            
+            match action {
+                BlockAction::CopyCommand => self.blocks_search_copy_command(),
+                BlockAction::CopyOutput => self.blocks_search_copy_output(),
+                BlockAction::CopyBoth => self.blocks_search_copy_both(),
+                BlockAction::InsertCommand => self.blocks_search_insert_command(),
+                BlockAction::InsertAsHereDoc => self.blocks_search_insert_heredoc(),
+                BlockAction::InsertAsHereDocCustom => self.blocks_search_insert_heredoc_custom(),
+                BlockAction::InsertAsJsonHereDoc => self.blocks_search_insert_json_heredoc(),
+                BlockAction::InsertAsShellHereDoc => self.blocks_search_insert_shell_heredoc(),
+                BlockAction::RerunCommand => self.blocks_search_rerun_selected(),
+                BlockAction::ToggleStar => self.blocks_search_toggle_star_selected(),
+                BlockAction::EditTags => self.blocks_search_toggle_tag(),
+                BlockAction::ExportBlock => self.blocks_search_export_selected(),
+                BlockAction::ShareBlock => self.blocks_search_share_block(),
+                BlockAction::DeleteBlock => self.blocks_search_delete_selected(),
+                BlockAction::ViewFullOutput => self.blocks_search_view_output(),
+                BlockAction::CreateSnippet => self.blocks_search_create_snippet(),
+            }
+            // Close menu after action
+            self.display.blocks_search.close_actions_menu();
+        }
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_close_actions_menu(&mut self) {
+        self.display.blocks_search.close_actions_menu();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_move_actions_selection(&mut self, delta: isize) {
+        self.display.blocks_search.move_actions_selection(delta);
+        self.mark_dirty();
+    }
+    
+    // Help overlay support
+    #[cfg(feature = "blocks")]
+    fn blocks_search_help_active(&self) -> bool {
+        self.display.blocks_search.help_active()
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_close_help(&mut self) {
+        self.display.blocks_search.close_help();
+        self.mark_dirty();
+    }
+    
+    #[cfg(feature = "blocks")]
+    fn blocks_search_navigate_help(&mut self, forward: bool) {
+        self.display.blocks_search.navigate_help(forward);
+        self.mark_dirty();
+    }
 
     // Workflows panel controls
     #[cfg(feature = "workflow")]
@@ -2010,7 +2304,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.pending_update.dirty = true;
     }
     #[inline]
-
     #[inline]
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
         let origin = self.terminal.vi_mode_cursor.point;
@@ -3373,6 +3666,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::ConfirmOpen { .. } | EventType::ConfirmRespond { .. } | EventType::ConfirmResolved { .. } => (),
                 #[cfg(feature = "blocks")]
                 EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
+                #[cfg(feature = "blocks")]
+                EventType::BlocksToggleStar(_block_id) => {
+                    // Star toggling is handled at the processor level, not in input processor
+                    // This event should already be processed there
+                },
                 // Blocks quick actions
                 EventType::BlocksToggleFoldUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
