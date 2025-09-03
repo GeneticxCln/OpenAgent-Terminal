@@ -702,8 +702,29 @@ impl Display {
         let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
-        // Bottom line geometry
-        let line = lines.saturating_sub(1);
+        // Determine reserved rows for tab bar
+        let reserve_top = config.workspace.tab_bar.show
+            && config.workspace.tab_bar.reserve_row
+            && config.workspace.tab_bar.position == crate::workspace::TabBarPosition::Top;
+        let reserve_bottom = config.workspace.tab_bar.show
+            && config.workspace.tab_bar.reserve_row
+            && config.workspace.tab_bar.position == crate::workspace::TabBarPosition::Bottom;
+
+        // Determine line based on quick actions position
+        let mut line = match config.workspace.quick_actions.position {
+            crate::config::workspace::QuickActionsPosition::Top => {
+                if reserve_top { 1 } else { 0 }
+            },
+            crate::config::workspace::QuickActionsPosition::Bottom => {
+                let base = lines.saturating_sub(1);
+                if reserve_bottom { base.saturating_sub(1) } else { base }
+            },
+            crate::config::workspace::QuickActionsPosition::Auto => {
+                let base = lines.saturating_sub(1);
+                if reserve_bottom { base.saturating_sub(1) } else { base }
+            },
+        };
+        if line >= lines { line = lines.saturating_sub(1); }
         let y = line as f32 * size_info.cell_height();
         let h = 1.0_f32 * size_info.cell_height();
 
@@ -1815,7 +1836,12 @@ impl Display {
         }
 
         // Draw persistent Quick Actions bar (mouse-first entrypoint)
-        self.draw_quick_actions_bar(config);
+        // Avoid overlap with reserved bottom tab row and with active search/footer bars
+        let has_search = search_state.regex().is_some();
+        let has_message = message_buffer.message().is_some();
+        if config.workspace.quick_actions.show && !has_search && !has_message {
+            self.draw_quick_actions_bar(config);
+        }
 
         // Notify winit that we're about to present.
         self.window.pre_present_notify();
