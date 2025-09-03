@@ -1,15 +1,15 @@
 [package]
-name = "hello-wasi-plugin"
+name = "simple-demo"
 version = "1.0.0"
 edition = "2021"
 
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
 plugin-sdk = { path = "../../../crates/plugin-sdk" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+
+[lib]
+name = "simple_demo"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
 
 # Build for wasm32-wasi target
 [profile.release]
@@ -17,4 +17,3 @@ opt-level = "s"  # Optimize for size
 lto = true
 debug = false
 panic = "abort"
-

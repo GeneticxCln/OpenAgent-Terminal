@@ -1,17 +1,38 @@
-# Minimal plugin manifest for hello-wasi-plugin
-# Place this file next to the built .wasm with the same basename
-# e.g., hello-wasi-plugin.wasm + hello-wasi-plugin.toml
+# Enhanced plugin manifest for hello-wasi-plugin using new SDK
+# This demonstrates the improved TOML permission system
+
+[plugin]
+name = "hello-wasi"
+version = "1.0.0"
+author = "OpenAgent Terminal Team"
+description = "A minimal WASI plugin demonstrating SDK usage and permission enforcement"
+license = "MIT"
+
+[plugin.capabilities]
+completions = false
+context_provider = true
+commands = []
+hooks = []
+file_associations = []
 
 [permissions]
-# Allow reading specific environment variables inside the plugin
+# Environment variables the plugin is allowed to access
 environment_variables = ["HELLO_PLUGIN_MESSAGE"]
-# Disallow command execution and network
-execute_commands = false
-network = false
-# Constrain resources
-max_memory_mb = 32
-timeout_ms = 3000
-# Restrict filesystem preopens (defaults to plugin_dir if omitted)
-read_files = []
+
+# File system access permissions
+read_files = ["plugin-test.txt"]
 write_files = []
+
+# Network and command execution permissions
+network = false
+execute_commands = false
+
+# Resource limits
+max_memory_mb = 50
+timeout_ms = 5000
+
+[plugin.metadata]
+# Additional metadata for the plugin system
+tags = ["example", "wasi", "demo"]
+required_host_version = ">=0.3.0"
 
