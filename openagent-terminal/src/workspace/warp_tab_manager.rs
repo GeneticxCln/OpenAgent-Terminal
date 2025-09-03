@@ -10,17 +10,11 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-
-use openagent_terminal_core::sync::FairMutex;
-use openagent_terminal_core::term::Term;
 use serde::{Deserialize, Serialize};
 
 use super::split_manager::{PaneId, SplitLayout};
 use super::tab_manager::{TabId, TabContext, PaneContext};
-use crate::event::EventProxy;
-use crate::window_context::WindowContext;
 
 /// Warp-style session data for persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,7 +249,7 @@ impl WarpTabManager {
 
     /// Create a new tab and split from existing tab (Warp Cmd+D behavior)
     pub fn duplicate_tab_as_split(&mut self, source_tab_id: TabId, direction: SplitDirection) -> Option<PaneId> {
-        let source_tab = self.tabs.get(&source_tab_id)?.clone();
+        let source_tab = self.tabs.get(&source_tab_id)?;
         
         let new_pane_id = PaneId(self.next_pane_id);
         self.next_pane_id += 1;
@@ -465,6 +459,30 @@ impl WarpTabManager {
     /// Get active tab
     pub fn active_tab(&self) -> Option<&TabContext> {
         self.active_tab_id.and_then(|id| self.tabs.get(&id))
+    }
+
+    /// Switch to the next tab
+    pub fn next_tab(&mut self) -> bool {
+        if let Some(current_id) = self.active_tab_id {
+            if let Some(pos) = self.tab_order.iter().position(|&id| id == current_id) {
+                let next_pos = (pos + 1) % self.tab_order.len();
+                self.active_tab_id = Some(self.tab_order[next_pos]);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Switch to the previous tab
+    pub fn previous_tab(&mut self) -> bool {
+        if let Some(current_id) = self.active_tab_id {
+            if let Some(pos) = self.tab_order.iter().position(|&id| id == current_id) {
+                let prev_pos = if pos == 0 { self.tab_order.len() - 1 } else { pos - 1 };
+                self.active_tab_id = Some(self.tab_order[prev_pos]);
+                return true;
+            }
+        }
+        false
     }
 
     /// Close tab with session cleanup

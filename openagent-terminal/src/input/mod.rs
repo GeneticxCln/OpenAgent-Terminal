@@ -268,6 +268,12 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_resize_right(&mut self) {}
     fn workspace_resize_up(&mut self) {}
     fn workspace_resize_down(&mut self) {}
+    
+    // Tab management (placeholders; real implementation lives in event::ActionContext)
+    fn workspace_create_tab(&mut self) {}
+    fn workspace_close_tab(&mut self) {}
+    fn workspace_next_tab(&mut self) {}
+    fn workspace_previous_tab(&mut self) {}
 }
 
 impl Action {
@@ -786,6 +792,11 @@ impl<T: EventListener> Execute<T> for Action {
             Action::ResizePaneRight => ctx.workspace_resize_right(),
             Action::ResizePaneUp => ctx.workspace_resize_up(),
             Action::ResizePaneDown => ctx.workspace_resize_down(),
+            // Tab management actions
+            Action::CreateTab => ctx.workspace_create_tab(),
+            Action::CloseTab => ctx.workspace_close_tab(),
+            Action::NextTab => ctx.workspace_next_tab(),
+            Action::PreviousTab => ctx.workspace_previous_tab(),
             _ => (),
         }
     }

@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::config::{UiConfig, workspace::WorkspaceConfig};
+use crate::config::UiConfig;
 use crate::display::SizeInfo;
 use openagent_terminal_core::grid::Dimensions;
 
@@ -17,21 +17,26 @@ pub mod tab_manager;
 pub mod warp_tab_manager;
 pub mod warp_split_manager;
 pub mod warp_integration;
-pub mod warp_bindings;
-pub mod warp_ui;
+// Warp modules
+pub mod warp_bindings {
+    pub use crate::config::warp_bindings::*;
+}
+pub mod warp_ui {
+    pub use crate::display::warp_ui::*;
+}
 #[cfg(test)]
 mod warp_integration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};
-pub use warp_tab_manager::{WarpTabManager, SplitDirection, WarpSession};
+pub use warp_tab_manager::{WarpTabManager, SplitDirection};
 pub use warp_split_manager::{WarpSplitManager, WarpNavDirection, WarpResizeDirection};
 pub use warp_integration::{
     WarpIntegration, WarpAction, WarpUiUpdateType, WarpDebugInfo, 
     WarpIntegrationError, ActionExt
 };
-pub use warp_bindings::{WarpKeyBinding, WarpKeyBindings};
-pub use warp_ui::{WarpUiStyle, WarpTabStyle, WarpSplitStyle, WarpAnimationConfig};
+pub use self::warp_bindings::{WarpKeyBindings};
+pub use self::warp_ui::{WarpUiStyle, WarpTabStyle, WarpSplitIndicators};
 
 /// Unique identifier for a workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
