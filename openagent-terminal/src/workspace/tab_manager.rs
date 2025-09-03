@@ -16,7 +16,7 @@ use crate::event::EventProxy;
 use crate::window_context::WindowContext;
 
 /// Unique identifier for a tab
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TabId(pub usize);
 
 /// Context for a single tab

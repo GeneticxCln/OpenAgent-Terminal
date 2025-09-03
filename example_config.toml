@@ -67,6 +67,10 @@ corner_radius_px = 12.0
 shadow = true
 shadow_size_px = 8
 shadow_alpha = 0.35
+# UI behavior
+auto_focus = true
+animated_typing = true
+animation_speed = 1.0
 
 # Provider-specific settings (optional)
 # Ollama (local, privacy-first)

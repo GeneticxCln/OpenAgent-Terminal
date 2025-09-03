@@ -31,6 +31,7 @@ pub mod workspace;
 
 mod bindings;
 mod mouse;
+pub mod warp_bindings;
 
 use crate::cli::Options;
 #[cfg(test)]

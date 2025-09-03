@@ -62,6 +62,8 @@ use crate::string::{ShortenDirection, StrShortener};
 
 #[cfg(feature = "ai")]
 pub mod ai_panel;
+#[cfg(feature = "ai")]
+pub mod ai_drawing;
 pub mod animation;
 pub mod blocks;
 pub mod color;
@@ -69,6 +71,7 @@ pub mod content;
 pub mod cursor;
 pub mod hint;
 pub mod tab_bar;
+pub mod warp_ui;
 pub mod window;
 pub mod blocks_search_panel;
 #[cfg(feature = "blocks")]
@@ -1464,10 +1467,15 @@ blocks,
             self.renderer_draw_rects(&size_info, &metrics, rects);
         }
 
-        // Draw AI overlay if enabled.
+        // Draw AI panel using unified drawing system.
         #[cfg(feature = "ai")]
         if let Some(ai) = ai_state {
-            self.draw_ai_overlay(config, ai);
+            use crate::display::ai_drawing::AiRenderMode;
+            let ai_rects = self.draw_ai_unified(config, ai, AiRenderMode::Panel);
+            if !ai_rects.is_empty() {
+                let size_info_copy = self.size_info;
+                self.renderer_draw_rects(&size_info_copy, &metrics, ai_rects);
+            }
         }
 
         // Draw Blocks Search panel overlay if active.

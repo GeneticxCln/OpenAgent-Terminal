@@ -1,0 +1,178 @@
+# OpenAgent Terminal Configuration with Warp-style Features
+# 
+# This example configuration shows how to enable and configure the new
+# Warp Terminal-inspired tab and split pane functionality in OpenAgent Terminal.
+
+# Workspace configuration
+[workspace]
+# Enable the enhanced workspace functionality
+enabled = true
+
+# Enable Warp-style enhanced tab and split functionality
+warp_style = true
+
+# Optional: specify a custom session file location 
+# If not specified, sessions will be stored in the default location
+# warp_session_file = "~/.config/openagent-terminal/warp-session.json"
+
+# Tab bar configuration
+tab_bar_position = "top"  # "top", "bottom", or "hidden"
+show_tab_bar = true
+show_tab_close_button = true
+show_modified_indicator = true
+max_tab_title_length = 25
+new_tab_action = "inherit_working_dir"  # "inherit_working_dir", "home_dir", "last_used_dir"
+
+# Split pane configuration  
+[workspace.splits]
+split_borders = true
+border_thickness = 1.0
+default_ratio = 0.5
+minimum_pane_size = 10
+resize_increment = 5
+
+# Warp-style UI configuration
+[workspace.warp_ui]
+# Tab styling
+[workspace.warp_ui.tabs]
+active_bg = "#2d3748"       # Active tab background
+inactive_bg = "#4a5568"     # Inactive tab background  
+hover_bg = "#718096"        # Tab background on hover
+text_active = "#f7fafc"     # Active tab text color
+text_inactive = "#a0aec0"   # Inactive tab text color
+border_active = "#63b3ed"   # Active tab border color
+border_radius = 6           # Tab corner radius in pixels
+tab_padding_x = 12          # Horizontal padding inside tabs
+tab_padding_y = 6           # Vertical padding inside tabs
+close_button_size = 14      # Size of close button
+indicator_size = 8          # Size of modification indicator
+
+# Split pane styling
+[workspace.warp_ui.splits]
+border_color = "#4a5568"           # Split border color
+border_active_color = "#63b3ed"    # Active split border color  
+border_width = 2                   # Split border width
+resize_indicator_color = "#ed8936" # Color when resizing splits
+resize_indicator_width = 4         # Width of resize indicator
+
+# Animation settings
+[workspace.warp_ui.animations]
+tab_switch_duration_ms = 150       # Tab switch animation duration
+split_resize_duration_ms = 100     # Split resize animation duration  
+focus_transition_duration_ms = 80  # Focus transition animation duration
+enable_animations = true           # Whether to enable animations
+
+# Warp-style keyboard bindings
+# These use Warp Terminal's default shortcuts by default
+[workspace.warp_bindings]
+
+# Tab management
+create_tab = { key = "t", mods = "cmd" }           # Cmd+T (macOS) / Ctrl+T (others)
+close_tab = { key = "w", mods = "cmd" }            # Cmd+W / Ctrl+W
+next_tab = { key = "RightBracket", mods = "cmd" }  # Cmd+] / Ctrl+]
+previous_tab = { key = "LeftBracket", mods = "cmd" } # Cmd+[ / Ctrl+[
+
+# Split management  
+split_right = { key = "d", mods = "cmd" }          # Cmd+D / Ctrl+D
+split_down = { key = "d", mods = "cmd+shift" }     # Cmd+Shift+D / Ctrl+Shift+D
+close_pane = { key = "w", mods = "cmd+shift" }     # Cmd+Shift+W / Ctrl+Shift+W
+
+# Pane navigation
+nav_left = { key = "LeftArrow", mods = "cmd+alt" }    # Cmd+Alt+← / Ctrl+Alt+←
+nav_right = { key = "RightArrow", mods = "cmd+alt" }  # Cmd+Alt+→ / Ctrl+Alt+→  
+nav_up = { key = "UpArrow", mods = "cmd+alt" }        # Cmd+Alt+↑ / Ctrl+Alt+↑
+nav_down = { key = "DownArrow", mods = "cmd+alt" }    # Cmd+Alt+↓ / Ctrl+Alt+↓
+
+# Pane resizing
+resize_left = { key = "LeftArrow", mods = "cmd+shift+alt" }  # Cmd+Shift+Alt+←
+resize_right = { key = "RightArrow", mods = "cmd+shift+alt" } # Cmd+Shift+Alt+→
+resize_up = { key = "UpArrow", mods = "cmd+shift+alt" }      # Cmd+Shift+Alt+↑  
+resize_down = { key = "DownArrow", mods = "cmd+shift+alt" }   # Cmd+Shift+Alt+↓
+
+# Advanced pane operations  
+zoom_pane = { key = "z", mods = "cmd+shift" }         # Cmd+Shift+Z / Ctrl+Shift+Z
+cycle_recent_panes = { key = "semicolon", mods = "cmd" } # Cmd+; / Ctrl+;
+equalize_splits = { key = "e", mods = "cmd+alt" }     # Cmd+Alt+E / Ctrl+Alt+E
+
+# Session management
+save_session = { key = "s", mods = "cmd+shift" }      # Cmd+Shift+S / Ctrl+Shift+S
+load_session = { key = "o", mods = "cmd+shift" }      # Cmd+Shift+O / Ctrl+Shift+O
+
+# Notes on usage:
+#
+# 1. Tab Management:
+#    - Cmd+T: Create new tab (inherits current directory)
+#    - Cmd+W: Close current tab
+#    - Cmd+]: Next tab  
+#    - Cmd+[: Previous tab
+#    - Tabs auto-name based on current directory and running command
+#
+# 2. Split Management:
+#    - Cmd+D: Split current pane vertically (right)
+#    - Cmd+Shift+D: Split current pane horizontally (down)
+#    - Cmd+Shift+W: Close current pane
+#
+# 3. Pane Navigation:
+#    - Cmd+Alt+Arrow: Navigate between panes
+#    - Cmd+;: Cycle through recently used panes
+#    - Visual focus indicators show active pane
+#
+# 4. Pane Resizing:
+#    - Cmd+Shift+Alt+Arrow: Resize current pane
+#    - Cmd+Alt+E: Equalize all split sizes
+#    - Cmd+Shift+Z: Toggle pane zoom (maximize/restore)
+#
+# 5. Session Management:
+#    - Sessions automatically save tab layout and working directories
+#    - Cmd+Shift+S: Manually save current session
+#    - Cmd+Shift+O: Load saved session
+#    - Sessions restore on terminal restart
+#
+# 6. Visual Enhancements:
+#    - Smooth animations for tab switching and pane operations
+#    - Modern tab styling similar to Warp Terminal
+#    - Visual split indicators when resizing
+#    - Breadcrumb paths in tab titles
+#    - Recent pane highlighting
+
+# Example additional configuration sections:
+# You can customize colors, fonts, and other appearance settings 
+# as usual - the Warp styling integrates with your existing theme
+
+[colors.primary]
+background = "#1a202c"
+foreground = "#f7fafc"
+
+[colors.normal]  
+black = "#2d3748"
+red = "#f56565"
+green = "#48bb78"
+yellow = "#ed8936"
+blue = "#4299e1"
+magenta = "#9f7aea"
+cyan = "#38b2ac"
+white = "#e2e8f0"
+
+[font]
+normal = { family = "FiraCode Nerd Font", style = "Regular" }
+size = 14
+
+[window]
+opacity = 0.95
+blur = true
+decorations = "full"
+dynamic_title = true
+
+[mouse]
+hide_when_typing = true
+
+[cursor]
+style = { shape = "Block", blinking = "On" }
+blink_interval = 750
+
+# With these settings, you'll get:
+# - Warp-style tab management with smart naming
+# - Intuitive split pane system with visual feedback  
+# - Session persistence across restarts
+# - Modern, clean UI styling
+# - Familiar keyboard shortcuts matching Warp Terminal

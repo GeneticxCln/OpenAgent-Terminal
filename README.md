@@ -39,6 +39,7 @@ OpenAgent Terminal is an **AI-enhanced terminal emulator** that combines the spe
 - No telemetry or data collection
 - Your terminal history stays private
 - API keys stored securely in environment variables
+- **Security Lens integration** - AI-suggested commands are analyzed for risks
 
 ⚡ **High Performance**
 - GPU-accelerated rendering (inherited from Alacritty)
@@ -114,19 +115,50 @@ export OPENAI_API_KEY="your-api-key"
 export ANTHROPIC_API_KEY="your-api-key"
 ```
 
-### 3. Configure (example_config.toml provided)
+### 3. Configure AI Assistant
+
+Create or edit your config file with the AI section:
+
 ```toml
 [ai]
+# Basic settings
 enabled = true
 provider = "ollama"  # or "openai", "anthropic"
+trigger_key = "Ctrl+Shift+A"
+
+# Panel appearance
+panel_height_fraction = 0.40  # 40% of screen height
+backdrop_alpha = 0.25         # dim background
+rounded_corners = true
+corner_radius_px = 12.0
+shadow = true
+shadow_alpha = 0.35
+shadow_size_px = 8
+
+# Behavior
+auto_focus = true           # focus panel when opened
+animated_typing = true      # animate AI responses
+animation_speed = 1.0       # animation speed multiplier
+propose_max_commands = 10   # max suggestions per query
+never_auto_run = true       # safety: never auto-execute
+inline_suggestions = false  # show suggestions as you type
+
+# Logging
+log_verbosity = "summary"    # "off", "summary", "verbose"
 ```
 
+See `example_config.toml` for complete configuration options.
+
 ### 4. Use AI Assistant
-- Press `Ctrl+Shift+A` to open AI panel
+- Press `Ctrl+Shift+A` to toggle AI panel
 - Type your request in natural language
 - Press `Enter` to get suggestions
-- Use arrow keys to navigate
-- Press `Ctrl+C` to copy commands
+- Use arrow keys to navigate proposals
+- Press `Ctrl+I` to insert selected command
+- Press `Ctrl+E` to apply dry-run analysis
+- Press `Ctrl+C` to copy selected command
+- Press `Ctrl+R` to regenerate suggestions
+- Press `Esc` to close panel
 
 ### Example AI Queries
 ```

@@ -12,6 +12,8 @@ use crate::config::UiConfig;
 use crate::display::Display;
 use crate::display::color::Rgb;
 use crate::renderer::rects::RenderRect;
+#[cfg(feature = "ai")]
+use crate::config::ai::AiConfig;
 
 /// Configuration for AI UI rendering
 #[derive(Debug, Clone)]
@@ -46,6 +48,30 @@ impl Default for AiDrawConfig {
     }
 }
 
+impl AiDrawConfig {
+    /// Create AiDrawConfig from UiConfig, using AI settings where available
+    pub fn from_ui_config(ui_config: &UiConfig) -> Self {
+        #[cfg(feature = "ai")]
+        {
+            let ai_config = &ui_config.ai;
+            Self {
+                max_panel_lines: (ai_config.propose_max_commands as usize).clamp(5, 20),
+                panel_label: "🤖 AI Assistant: ",
+                loading_text: "⏳ Thinking...",
+                error_prefix: "❌ Error: ",
+                suggestion_prefix: "$ ",
+                selection_indicator: "▶ ",
+                anim_duration_ms: if ui_config.theme.resolve().ui.reduce_motion { 0 } else { 160 },
+            }
+        }
+        #[cfg(not(feature = "ai"))]
+        {
+            let _ = ui_config; // Silence unused warning
+            Self::default()
+        }
+    }
+}
+
 /// Render mode for AI UI
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AiRenderMode {
@@ -73,7 +99,7 @@ impl<'a> AiDrawContext<'a> {
         Self {
             display,
             config,
-            draw_config: AiDrawConfig::default(),
+            draw_config: AiDrawConfig::from_ui_config(config),
             mode,
         }
     }

@@ -523,7 +523,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         // Open Blocks Search panel
         "s",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenBlocksSearchPanel;
         // Toggle AI panel (scratch buffer) if built with feature `ai`.
-        ".",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
+        "a",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
         // AI keybindings added conditionally below when the `ai` feature is enabled.
         // Open Workflows panel (feature `workflow`): Ctrl+Shift+W
         "w",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenWorkflowsPanel;

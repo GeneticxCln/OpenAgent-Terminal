@@ -335,19 +335,32 @@ impl WindowContext {
         }
 
         // Initialize workspace manager for this window (tabs and panes)
-        let mut workspace = crate::workspace::WorkspaceManager::new(
-            crate::workspace::WorkspaceId(0),
-            config.clone(),
-            display.size_info,
-        );
-        // Create an initial tab
-        let _initial_tab = workspace.create_tab(
-            config.window.identity.title.clone(),
-            options.terminal_options.working_directory.clone(),
-        );
+        let mut workspace = if config.workspace.warp_style {
+            crate::workspace::WorkspaceManager::with_warp(
+                crate::workspace::WorkspaceId(0),
+                config.clone(),
+                display.size_info,
+                config.workspace.warp_session_file.clone(),
+            )
+        } else {
+            crate::workspace::WorkspaceManager::new(
+                crate::workspace::WorkspaceId(0),
+                config.clone(),
+                display.size_info,
+            )
+        };
+        
+        // For non-Warp mode, create an initial tab
+        if !config.workspace.warp_style {
+            let _initial_tab = workspace.create_tab(
+                config.window.identity.title.clone(),
+                options.terminal_options.working_directory.clone(),
+            );
+        }
+        // Warp mode will create its initial tab during initialization
 
         // Create context for the OpenAgent Terminal window.
-        Ok(WindowContext {
+        let mut window_context = WindowContext {
             preserve_title,
             terminal,
             display,
@@ -396,7 +409,12 @@ impl WindowContext {
                     None
                 }
             },
-        })
+        };
+
+        // Note: Warp functionality will be initialized later in the event processor
+        // after the WindowContext is fully set up and Arc-wrapped
+
+        Ok(window_context)
     }
 
     /// Update the terminal window to the latest config.
@@ -650,6 +668,22 @@ impl WindowContext {
     /// Set the initialized components for this window context.
     pub fn set_components(&mut self, components: Arc<InitializedComponents>) {
         self.components = Some(components);
+    }
+
+    /// Initialize Warp functionality for this window context.
+    /// This should be called after the window context is stored in the processor.
+    pub fn initialize_warp_if_enabled(&mut self, window_context_weak: std::sync::Weak<std::sync::Mutex<WindowContext>>, event_proxy: EventLoopProxy<Event>) -> Result<(), Box<dyn Error>> {
+        if self.config.workspace.warp_style {
+            // Create a temporary Arc to pass to the Warp initialization
+            // In a real implementation, we'd need a better approach to avoid circular references
+            if let Some(window_context_arc) = window_context_weak.upgrade() {
+                // This is a simplified approach - in production code we'd need a different pattern
+                // to avoid the Arc<Mutex<WindowContext>> dependency
+                info!("Warp-style workspace enabled but initialization requires architectural changes");
+                info!("Warp session file: {:?}", self.config.workspace.warp_session_file);
+            }
+        }
+        Ok(())
     }
 
     /// Write the ref test results to the disk.
