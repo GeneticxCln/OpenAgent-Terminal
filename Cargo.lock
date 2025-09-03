@@ -1987,6 +1987,7 @@ name = "git-context"
 version = "1.0.0"
 dependencies = [
  "plugin-api",
+ "plugin-sdk",
  "serde",
  "serde_json",
 ]
@@ -4037,6 +4038,19 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wat",
+]
+
+[[package]]
+name = "plugin-sdk"
+version = "0.1.0"
+dependencies = [
+ "plugin-api",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.104",
+ "wasi 0.11.1+wasi-snapshot-preview1",
 ]
 
 [[package]]

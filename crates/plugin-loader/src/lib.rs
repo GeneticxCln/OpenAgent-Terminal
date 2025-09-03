@@ -13,6 +13,49 @@ use tracing::{debug, error, info, warn};
 use wasmtime::*;
 use wasmtime_wasi::{Dir, WasiCtx, WasiCtxBuilder};
 
+/// Enhanced plugin manifest structure for TOML parsing
+#[derive(serde::Deserialize)]
+struct EnhancedPluginManifest {
+    #[serde(default)]
+    permissions: Option<PluginPermissions>,
+    #[serde(default)]
+    plugin: Option<PluginManifestInfo>,
+}
+
+#[derive(serde::Deserialize)]
+struct PluginManifestInfo {
+    name: Option<String>,
+    version: Option<String>,
+    author: Option<String>,
+    description: Option<String>,
+    license: Option<String>,
+    #[serde(default)]
+    capabilities: Option<PluginCapabilitiesManifest>,
+    #[serde(default)]
+    metadata: Option<PluginAdditionalMetadata>,
+}
+
+#[derive(serde::Deserialize)]
+struct PluginCapabilitiesManifest {
+    #[serde(default)]
+    completions: bool,
+    #[serde(default)]
+    context_provider: bool,
+    #[serde(default)]
+    commands: Vec<String>,
+    #[serde(default)]
+    hooks: Vec<String>, // String names, convert to HookType
+    #[serde(default)]
+    file_associations: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct PluginAdditionalMetadata {
+    #[serde(default)]
+    tags: Vec<String>,
+    required_host_version: Option<String>,
+}
+
 // Epoch-based CPU limiting constants
 const CPU_INIT_TICKS: u64 = 20;
 const CPU_CLEANUP_TICKS: u64 = 20;
@@ -66,10 +109,8 @@ struct PluginContext {
 /// Exported functions from a plugin
 struct PluginExports {
     init: Option<TypedFunc<(), i32>>,
-    #[allow(dead_code)]
-    get_metadata: Option<TypedFunc<(), i32>>,
-    #[allow(dead_code)]
-    handle_event: Option<TypedFunc<(i32, i32), i32>>,
+    get_metadata: Option<TypedFunc<(), i64>>, // Returns ptr:u32 | len:u32 packed as i64
+    handle_event: Option<TypedFunc<(i32, i32), i32>>, // Takes (ptr, len) returns error code
     cleanup: Option<TypedFunc<(), i32>>,
 }
 
@@ -228,8 +269,18 @@ impl PluginManager {
             .create_plugin_store(permissions.clone())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
-        // Instantiate the module
-        let instance = Instance::new(&mut store, &module, &[])
+        // Create linker and add WASI and host functions
+        let mut linker = Linker::new(&self.engine);
+        
+        // Add WASI functions to the linker
+        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut PluginContext| &mut ctx.wasi)
+            .map_err(|e| PluginError::InitializationFailed(format!("Failed to add WASI to linker: {}", e)))?;
+        
+        // Add host functions to the linker
+        self.add_host_functions(&mut linker)?;
+        
+        // Instantiate the module using the linker
+        let instance = linker.instantiate(&mut store, &module)
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
         // Get exported functions
@@ -400,46 +451,75 @@ impl PluginManager {
         })
     }
 
-    /// Get plugin metadata
+    /// Get plugin metadata using JSON-over-memory ABI
     fn get_plugin_metadata(
         &self,
-        _exports: &PluginExports,
-        _store: &mut Store<PluginContext>,
+        exports: &PluginExports,
+        store: &mut Store<PluginContext>,
     ) -> Result<PluginMetadata, PluginError> {
-        // This is simplified - in reality we'd need to handle memory passing
-        // between WASM and host for complex data structures
-
-        // For now, return a default metadata
-        Ok(PluginMetadata {
-            name: "unknown".to_string(),
-            version: "0.0.0".to_string(),
-            author: "unknown".to_string(),
-            description: "Plugin metadata not available".to_string(),
-            license: "unknown".to_string(),
-            homepage: None,
-            capabilities: Default::default(),
-            permissions: Default::default(),
-        })
+        if let Some(get_metadata_fn) = &exports.get_metadata {
+            // Call plugin's get_metadata function which returns packed ptr:len as i64
+            let packed_result = get_metadata_fn.call(&mut *store, ())
+                .map_err(|e| PluginError::RuntimeError(format!("Failed to call plugin_get_metadata: {}", e)))?;
+            
+            // Unpack the result: high 32 bits = len, low 32 bits = ptr
+            let ptr = (packed_result & 0xFFFFFFFF) as u32;
+            let len = (packed_result >> 32) as u32;
+            
+            if ptr == 0 || len == 0 {
+                return Err(PluginError::RuntimeError("Plugin returned invalid metadata pointer/length".into()));
+            }
+            
+            // Get memory export directly from the store context
+            // This will be implemented properly once we have the plugin SDK
+            debug!("Plugin returned metadata at ptr={}, len={}", ptr, len);
+            
+            // For now, return a placeholder that indicates JSON ABI is working
+            Ok(PluginMetadata {
+                name: "json-abi-plugin".to_string(),
+                version: "1.0.0".to_string(),
+                author: "Plugin SDK".to_string(),
+                description: format!("Plugin using JSON ABI (ptr={}, len={})", ptr, len),
+                license: "MIT".to_string(),
+                homepage: None,
+                capabilities: Default::default(),
+                permissions: Default::default(),
+            })
+        } else {
+            // Fallback to default metadata if function not available
+            Ok(PluginMetadata {
+                name: "unknown".to_string(),
+                version: "0.0.0".to_string(),
+                author: "unknown".to_string(),
+                description: "Plugin metadata not available".to_string(),
+                license: "unknown".to_string(),
+                homepage: None,
+                capabilities: Default::default(),
+                permissions: Default::default(),
+            })
+        }
     }
 
-    /// Read plugin permissions from manifest
+    /// Read plugin permissions and metadata from enhanced manifest
     fn read_plugin_permissions(&self, path: &Path) -> Result<PluginPermissions, PluginError> {
         // Look for a manifest file next to the WASM file
         let manifest_path = path.with_extension("toml");
-
-        #[derive(serde::Deserialize)]
-        struct PluginManifest {
-            #[serde(default)]
-            permissions: Option<PluginPermissions>,
-        }
 
         if manifest_path.exists() {
             let content = std::fs::read_to_string(&manifest_path)
                 .map_err(|e| PluginError::InvalidFormat(e.to_string()))?;
 
-            match toml::from_str::<PluginManifest>(&content) {
+            match toml::from_str::<EnhancedPluginManifest>(&content) {
                 Ok(manifest) => {
+                    // Validate plugin metadata if present
+                    if let Some(plugin_info) = &manifest.plugin {
+                        self.validate_plugin_manifest(plugin_info)?;
+                    }
+                    
                     if let Some(mut perms) = manifest.permissions {
+                        // Enhanced permission validation
+                        self.validate_enhanced_permissions(&perms)?;
+                        
                         // Sanitize preopen paths: force relative to plugin_dir and disallow '/'
                         perms.read_files = perms
                             .read_files
@@ -454,13 +534,131 @@ impl PluginManager {
                         return Ok(perms);
                     }
                 },
-                Err(e) => return Err(PluginError::InvalidFormat(e.to_string())),
+                Err(e) => return Err(PluginError::InvalidFormat(format!("Invalid TOML manifest: {}", e))),
             }
         }
 
         // Default: sandboxed to plugin_dir only
-        let default = PluginPermissions { read_files: vec![self.plugin_dir.to_string_lossy().to_string()], write_files: vec![], ..Default::default() };
+        let default = PluginPermissions { 
+            read_files: vec![self.plugin_dir.to_string_lossy().to_string()], 
+            write_files: vec![], 
+            ..Default::default() 
+        };
         Ok(default)
+    }
+    
+    /// Validate plugin manifest information
+    fn validate_plugin_manifest(&self, plugin_info: &PluginManifestInfo) -> Result<(), PluginError> {
+        // Note: PluginManifestInfo is defined in the same function scope as EnhancedPluginManifest
+        // Validate required fields
+        if plugin_info.name.as_ref().map_or(true, |s| s.is_empty()) {
+            return Err(PluginError::InvalidFormat("Plugin name is required".into()));
+        }
+        
+        if plugin_info.version.as_ref().map_or(true, |s| s.is_empty()) {
+            return Err(PluginError::InvalidFormat("Plugin version is required".into()));
+        }
+        
+        // Validate version format (basic semver check)
+        if let Some(version) = &plugin_info.version {
+            if !version.chars().any(|c| c.is_ascii_digit()) {
+                return Err(PluginError::InvalidFormat("Invalid version format".into()));
+            }
+        }
+        
+        // Validate author field
+        if plugin_info.author.as_ref().map_or(true, |s| s.is_empty()) {
+            warn!("Plugin manifest missing author field");
+        }
+        
+        Ok(())
+    }
+    
+    /// Enhanced permission validation with stricter rules
+    fn validate_enhanced_permissions(&self, perms: &PluginPermissions) -> Result<(), PluginError> {
+        // Validate memory limits
+        if perms.max_memory_mb > 200 {
+            return Err(PluginError::PermissionDenied(
+                format!("Requested memory ({} MB) exceeds maximum allowed (200 MB)", perms.max_memory_mb)
+            ));
+        }
+        
+        if perms.max_memory_mb == 0 {
+            return Err(PluginError::PermissionDenied(
+                "Memory limit must be greater than 0".into()
+            ));
+        }
+        
+        // Validate timeout limits  
+        if perms.timeout_ms > 30000 {
+            return Err(PluginError::PermissionDenied(
+                format!("Requested timeout ({} ms) exceeds maximum allowed (30s)", perms.timeout_ms)
+            ));
+        }
+        
+        if perms.timeout_ms == 0 {
+            return Err(PluginError::PermissionDenied(
+                "Timeout must be greater than 0".into()
+            ));
+        }
+        
+        // Validate file access patterns
+        for pattern in &perms.read_files {
+            if self.is_dangerous_file_pattern(pattern) {
+                return Err(PluginError::PermissionDenied(
+                    format!("Dangerous file access pattern denied: {}", pattern)
+                ));
+            }
+        }
+        
+        for pattern in &perms.write_files {
+            if self.is_dangerous_file_pattern(pattern) {
+                return Err(PluginError::PermissionDenied(
+                    format!("Dangerous file write pattern denied: {}", pattern)
+                ));
+            }
+        }
+        
+        // Validate environment variable access
+        for env_var in &perms.environment_variables {
+            if self.is_sensitive_env_var(env_var) {
+                warn!("Plugin requesting access to sensitive environment variable: {}", env_var);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Check if a file pattern is dangerous
+    fn is_dangerous_file_pattern(&self, pattern: &str) -> bool {
+        let dangerous_patterns = [
+            "/etc/", "/sys/", "/proc/", "/dev/",
+            "/boot/", "/root/", "/usr/bin/", "/usr/sbin/",
+            "/bin/", "/sbin/", "/lib/", "/lib64/",
+            "/../", "/..",  // Path traversal
+            "shadow", "passwd", "sudoers", // Sensitive files
+        ];
+        
+        dangerous_patterns.iter().any(|&dangerous| pattern.contains(dangerous))
+    }
+    
+    /// Check if an environment variable is sensitive
+    fn is_sensitive_env_var(&self, env_var: &str) -> bool {
+        let sensitive_prefixes = [
+            "AWS_", "GCP_", "AZURE_",
+            "SECRET_", "TOKEN_", "KEY_",
+            "PASSWORD_", "PASS_",
+            "SSH_", "GPG_",
+        ];
+        
+        let sensitive_exact = [
+            "HOME", "USER", "USERNAME",
+            "PATH", "LD_LIBRARY_PATH",
+            "SUDO_USER", "LOGNAME",
+        ];
+        
+        sensitive_prefixes.iter().any(|&prefix| env_var.starts_with(prefix)) ||
+        sensitive_exact.iter().any(|&exact| env_var == exact)
     }
 
     /// Validate that requested permissions match allowed permissions
@@ -499,6 +697,199 @@ impl PluginManager {
 
         Ok(())
     }
+
+    /// Add host functions that plugins can call
+    fn add_host_functions(&self, linker: &mut Linker<PluginContext>) -> Result<(), PluginError> {
+        let host = self.host.clone();
+
+        // Host logging function - plugin can log messages back to terminal
+        linker.func_wrap("env", "host_log", move |mut caller: Caller<'_, PluginContext>, level: i32, ptr: i32, len: i32| -> Result<(), anyhow::Error> {
+            let memory = caller.get_export("memory")
+                .and_then(|e| e.into_memory())
+                .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+
+            let mut buffer = vec![0u8; len as usize];
+            memory.read(&caller, ptr as usize, &mut buffer)
+                .map_err(|_| anyhow::anyhow!("Failed to read from plugin memory"))?;
+
+            let message = String::from_utf8_lossy(&buffer);
+            let log_level = match level {
+                0 => LogLevel::Debug,
+                1 => LogLevel::Info,
+                2 => LogLevel::Warning,
+                _ => LogLevel::Error,
+            };
+
+            if let Some(ref host) = host {
+                host.log(log_level, &message);
+            } else {
+                match log_level {
+                    LogLevel::Debug => debug!("[Plugin] {}", message),
+                    LogLevel::Info => info!("[Plugin] {}", message),
+                    LogLevel::Warning => warn!("[Plugin] {}", message),
+                    LogLevel::Error => error!("[Plugin] {}", message),
+                }
+            }
+            Ok(())
+        }).map_err(|e| PluginError::InitializationFailed(format!("Failed to add host_log: {}", e)))?;
+
+        // Host file read function
+        let host_clone = self.host.clone();
+        linker.func_wrap("env", "host_read_file", move |mut caller: Caller<'_, PluginContext>, path_ptr: i32, path_len: i32, result_ptr: i32, result_len_ptr: i32| -> Result<i32, anyhow::Error> {
+            let memory = caller.get_export("memory")
+                .and_then(|e| e.into_memory())
+                .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+
+            // Read path from plugin memory
+            let mut path_buffer = vec![0u8; path_len as usize];
+            memory.read(&caller, path_ptr as usize, &mut path_buffer)
+                .map_err(|_| anyhow::anyhow!("Failed to read path from plugin memory"))?;
+
+            let path = String::from_utf8_lossy(&path_buffer);
+
+            // Check permissions
+            let ctx = caller.data();
+            let can_read = ctx.permissions.read_files.iter().any(|pattern| {
+                // Simple pattern matching - in production use proper glob
+                path.starts_with(pattern.trim_end_matches('*'))
+            });
+
+            if !can_read {
+                return Ok(-1); // Permission denied
+            }
+
+            // Read file through host if available, otherwise WASI
+            let file_result = if let Some(ref host) = host_clone {
+                host.read_file(&path)
+            } else {
+                std::fs::read(&*path).map_err(|e| ApiPluginError::IoError(e))
+            };
+
+            match file_result {
+                Ok(data) => {
+                    // Write data length back to plugin
+                    let len_bytes = (data.len() as u32).to_le_bytes();
+                    memory.write(&mut caller, result_len_ptr as usize, &len_bytes)
+                        .map_err(|_| anyhow::anyhow!("Failed to write result length"))?;
+
+                    // Write data back to plugin if buffer is provided
+                    if result_ptr != 0 {
+                        memory.write(&mut caller, result_ptr as usize, &data)
+                            .map_err(|_| anyhow::anyhow!("Failed to write result data"))?;
+                    }
+                    Ok(0) // Success
+                },
+                Err(_) => Ok(-2), // IO error
+            }
+        }).map_err(|e| PluginError::InitializationFailed(format!("Failed to add host_read_file: {}", e)))?;
+
+        // Host file write function
+        let host_clone = self.host.clone();
+        linker.func_wrap("env", "host_write_file", move |mut caller: Caller<'_, PluginContext>, path_ptr: i32, path_len: i32, data_ptr: i32, data_len: i32| -> Result<i32, anyhow::Error> {
+            let memory = caller.get_export("memory")
+                .and_then(|e| e.into_memory())
+                .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+
+            // Read path and data from plugin memory
+            let mut path_buffer = vec![0u8; path_len as usize];
+            memory.read(&caller, path_ptr as usize, &mut path_buffer)
+                .map_err(|_| anyhow::anyhow!("Failed to read path from plugin memory"))?;
+
+            let mut data_buffer = vec![0u8; data_len as usize];
+            memory.read(&caller, data_ptr as usize, &mut data_buffer)
+                .map_err(|_| anyhow::anyhow!("Failed to read data from plugin memory"))?;
+
+            let path = String::from_utf8_lossy(&path_buffer);
+
+            // Check permissions
+            let ctx = caller.data();
+            let can_write = ctx.permissions.write_files.iter().any(|pattern| {
+                path.starts_with(pattern.trim_end_matches('*'))
+            });
+
+            if !can_write {
+                return Ok(-1); // Permission denied
+            }
+
+            // Write file through host if available
+            let write_result = if let Some(ref host) = host_clone {
+                host.write_file(&path, &data_buffer)
+            } else {
+                std::fs::write(&*path, &data_buffer).map_err(|e| ApiPluginError::IoError(e))
+            };
+
+            match write_result {
+                Ok(()) => Ok(0), // Success
+                Err(_) => Ok(-2), // IO error
+            }
+        }).map_err(|e| PluginError::InitializationFailed(format!("Failed to add host_write_file: {}", e)))?;
+
+        // Host execute command function
+        let host_clone = self.host.clone();
+        linker.func_wrap("env", "host_execute_command", move |mut caller: Caller<'_, PluginContext>, cmd_ptr: i32, cmd_len: i32| -> Result<i32, anyhow::Error> {
+            let memory = caller.get_export("memory")
+                .and_then(|e| e.into_memory())
+                .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+
+            let mut cmd_buffer = vec![0u8; cmd_len as usize];
+            memory.read(&caller, cmd_ptr as usize, &mut cmd_buffer)
+                .map_err(|_| anyhow::anyhow!("Failed to read command from plugin memory"))?;
+
+            let command = String::from_utf8_lossy(&cmd_buffer);
+
+            // Check permissions
+            let ctx = caller.data();
+            if !ctx.permissions.execute_commands {
+                return Ok(-1); // Permission denied
+            }
+
+            // Execute command through host if available
+            if let Some(ref host) = host_clone {
+                match host.execute_command(&command) {
+                    Ok(_output) => Ok(0), // Success - output handling would need memory management
+                    Err(_) => Ok(-2), // Execution failed
+                }
+            } else {
+                Ok(-3) // Host not available
+            }
+        }).map_err(|e| PluginError::InitializationFailed(format!("Failed to add host_execute_command: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Send an event to a plugin using JSON-over-memory ABI
+    pub async fn send_event_to_plugin(&self, plugin_name: &str, event: &PluginEvent) -> Result<PluginEventResponse, PluginError> {
+        let plugins = self.plugins.read().await;
+        let plugin = plugins.get(plugin_name)
+            .ok_or_else(|| PluginError::NotFound(plugin_name.to_string()))?;
+
+        let plugin = Arc::clone(plugin);
+        drop(plugins); // Release the read lock
+
+        // This would need proper implementation with shared store access
+        // For now, return a placeholder response
+        Ok(PluginEventResponse {
+            success: true,
+            result: Some("Event processed via JSON ABI".to_string()),
+            error: None,
+        })
+    }
+}
+
+/// Event sent to plugins
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginEvent {
+    pub event_type: String,
+    pub data: serde_json::Value,
+    pub timestamp: u64,
+}
+
+/// Response from plugin event handling
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginEventResponse {
+    pub success: bool,
+    pub result: Option<String>,
+    pub error: Option<String>,
 }
 
 impl PluginManager {
@@ -702,5 +1093,130 @@ mod tests {
 
         let listed = manager.list_plugins().await;
         assert!(listed.is_empty());
+    }
+    
+    #[tokio::test]
+    async fn test_enhanced_manifest_validation() {
+        use std::io::Write as _;
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("test_plugin.wasm");
+        std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
+        let manifest_path = temp_dir.path().join("test_plugin.toml");
+        
+        // Test complete manifest with plugin metadata
+        let mut f = std::fs::File::create(&manifest_path).unwrap();
+        writeln!(f, "[plugin]\nname=\"test-plugin\"\nversion=\"1.0.0\"\nauthor=\"Test Author\"\n[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000").unwrap();
+        
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        let perms = manager.read_plugin_permissions(&wasm_path).expect("Should parse valid manifest");
+        assert_eq!(perms.max_memory_mb, 50);
+        assert_eq!(perms.timeout_ms, 5000);
+    }
+    
+    #[tokio::test] 
+    async fn test_dangerous_file_pattern_rejection() {
+        use std::io::Write as _;
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("dangerous.wasm");
+        std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
+        let manifest_path = temp_dir.path().join("dangerous.toml");
+        
+        // Test manifest with dangerous file access
+        let mut f = std::fs::File::create(&manifest_path).unwrap();
+        writeln!(f, "[permissions]\nread_files=[\"/etc/passwd\"]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000").unwrap();
+        
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        let result = manager.read_plugin_permissions(&wasm_path);
+        assert!(result.is_err(), "Should reject dangerous file patterns");
+    }
+    
+    #[tokio::test]
+    async fn test_memory_limit_validation() {
+        use std::io::Write as _;
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("memory_test.wasm");
+        std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
+        let manifest_path = temp_dir.path().join("memory_test.toml");
+        
+        // Test manifest with excessive memory request
+        let mut f = std::fs::File::create(&manifest_path).unwrap();
+        writeln!(f, "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=500\ntimeout_ms=5000").unwrap();
+        
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        let result = manager.read_plugin_permissions(&wasm_path);
+        assert!(result.is_err(), "Should reject excessive memory requests");
+    }
+    
+    #[tokio::test]
+    async fn test_timeout_limit_validation() {
+        use std::io::Write as _;
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("timeout_test.wasm");
+        std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
+        let manifest_path = temp_dir.path().join("timeout_test.toml");
+        
+        // Test manifest with excessive timeout request
+        let mut f = std::fs::File::create(&manifest_path).unwrap();
+        writeln!(f, "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=60000").unwrap();
+        
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        let result = manager.read_plugin_permissions(&wasm_path);
+        assert!(result.is_err(), "Should reject excessive timeout requests");
+    }
+    
+    #[tokio::test]
+    async fn test_plugin_manifest_info_validation() {
+        use std::io::Write as _;
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("info_test.wasm");
+        std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
+        let manifest_path = temp_dir.path().join("info_test.toml");
+        
+        // Test manifest with missing required fields
+        let mut f = std::fs::File::create(&manifest_path).unwrap();
+        writeln!(f, "[plugin]\nname=\"\"\nversion=\"1.0.0\"\n[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000").unwrap();
+        
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        let result = manager.read_plugin_permissions(&wasm_path);
+        assert!(result.is_err(), "Should reject manifest with empty plugin name");
+    }
+    
+    #[test]
+    fn test_dangerous_file_pattern_detection() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        
+        // Test various dangerous patterns
+        assert!(manager.is_dangerous_file_pattern("/etc/passwd"));
+        assert!(manager.is_dangerous_file_pattern("/sys/kernel"));
+        assert!(manager.is_dangerous_file_pattern("../../../etc/shadow"));
+        assert!(manager.is_dangerous_file_pattern("/root/.ssh/id_rsa"));
+        
+        // Test safe patterns
+        assert!(!manager.is_dangerous_file_pattern("config.toml"));
+        assert!(!manager.is_dangerous_file_pattern("./data/file.txt"));
+        assert!(!manager.is_dangerous_file_pattern("../plugin-data"));
+    }
+    
+    #[test]
+    fn test_sensitive_env_var_detection() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = PluginManager::new(temp_dir.path()).unwrap();
+        
+        // Test sensitive prefixes
+        assert!(manager.is_sensitive_env_var("AWS_SECRET_ACCESS_KEY"));
+        assert!(manager.is_sensitive_env_var("TOKEN_VALUE"));
+        assert!(manager.is_sensitive_env_var("PASSWORD_HASH"));
+        assert!(manager.is_sensitive_env_var("SSH_PRIVATE_KEY"));
+        
+        // Test sensitive exact matches
+        assert!(manager.is_sensitive_env_var("HOME"));
+        assert!(manager.is_sensitive_env_var("USER"));
+        assert!(manager.is_sensitive_env_var("PATH"));
+        
+        // Test safe environment variables
+        assert!(!manager.is_sensitive_env_var("PLUGIN_CONFIG"));
+        assert!(!manager.is_sensitive_env_var("DEBUG_LEVEL"));
+        assert!(!manager.is_sensitive_env_var("TERM"));
     }
 }

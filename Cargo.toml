@@ -8,6 +8,7 @@ members = [
     "openagent-terminal-ai",
     "crates/plugin-api",
     "crates/plugin-loader",
+    "crates/plugin-sdk",
     "crates/workflow-engine",
     "plugins/git-context",
     "plugins/docker-helper",
