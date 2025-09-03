@@ -42,6 +42,9 @@ pub struct Font {
 
     /// Whether to use the built-in font for box drawing characters.
     pub builtin_box_drawing: bool,
+
+    /// Text shaping configuration.
+    pub text_shaping: TextShapingConfig,
 }
 
 impl Font {
@@ -88,6 +91,7 @@ impl Default for Font {
             normal: Default::default(),
             bold: Default::default(),
             size: Default::default(),
+            text_shaping: Default::default(),
         }
     }
 }
@@ -170,5 +174,71 @@ impl Serialize for Size {
         S: Serializer,
     {
         serializer.serialize_f32(self.0.as_pt())
+    }
+}
+
+/// Text shaping configuration.
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct TextShapingConfig {
+    /// Enable programming ligatures (e.g., ->, =>, !=, <=).
+    pub enable_ligatures: bool,
+
+    /// Enable kerning adjustments between characters.
+    pub enable_kerning: bool,
+
+    /// Enable contextual alternates for better typography.
+    pub enable_contextual_alternates: bool,
+
+    /// Enable complex script shaping (Arabic, Hebrew, Devanagari, etc.).
+    pub enable_complex_scripts: bool,
+
+    /// Enable bidirectional text support.
+    pub enable_bidi: bool,
+
+    /// Cache shaped text lines to improve performance.
+    pub cache_shaped_lines: bool,
+
+    /// Maximum number of cached shaped lines.
+    pub max_cached_lines: usize,
+
+    /// Stylistic sets to enable (SS01, SS02, etc.).
+    pub stylistic_sets: Vec<u32>,
+
+    /// Fallback fonts for complex scripts and emojis.
+    pub fallback_fonts: Vec<String>,
+
+    /// Emoji font to use for emoji rendering.
+    pub emoji_font: Option<String>,
+
+    /// Fall back to basic rendering if HarfBuzz fails.
+    pub fallback_to_basic_rendering: bool,
+
+    /// Default language for text shaping hints.
+    pub default_language: String,
+}
+
+impl Default for TextShapingConfig {
+    fn default() -> Self {
+        Self {
+            enable_ligatures: true,
+            enable_kerning: true,
+            enable_contextual_alternates: true,
+            enable_complex_scripts: true,
+            enable_bidi: true,
+            cache_shaped_lines: true,
+            max_cached_lines: 500,
+            stylistic_sets: vec![],
+            fallback_fonts: vec![
+                "Noto Sans".to_string(),
+                "DejaVu Sans".to_string(),
+                "Liberation Sans".to_string(),
+                "Noto Sans CJK".to_string(),
+                "Noto Sans Arabic".to_string(),
+                "Noto Sans Hebrew".to_string(),
+            ],
+            emoji_font: Some("Noto Color Emoji".to_string()),
+            fallback_to_basic_rendering: true,
+            default_language: "en".to_string(),
+        }
     }
 }
