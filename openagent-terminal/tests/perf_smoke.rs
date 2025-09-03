@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use openagent_terminal_core::event::EventListener;
 use openagent_terminal_core::term::Term;
 use openagent_terminal_core::vi_mode::ViMotion;
+use openagent_terminal::config::UiConfig;
 
 struct MockEventProxy;
 impl EventListener for MockEventProxy {}
@@ -60,7 +61,7 @@ fn idle_memory_usage_under_targets() {
 #[test]
 fn startup_time_under_100ms_core_term() {
     // Measure constructing a core Term with a tiny size; should be very fast.
-    let cfg = openagent_terminal_config::UiConfig::default();
+    let cfg = UiConfig::default();
     let size = openagent_terminal::display::SizeInfo::new(21.0, 51.0, 3.0, 3.0, 0., 0., false);
 
     let start = Instant::now();

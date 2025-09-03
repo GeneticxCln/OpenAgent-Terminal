@@ -1,0 +1,135 @@
+# Organization Security Policy Bundle Template
+# This file provides an example of customizing the Security Lens with organization-specific policies
+
+# === Main Security Policy Configuration ===
+[security_lens]
+# Enable/disable security lens completely
+enabled = true
+
+# Whether to completely block critical commands
+block_critical = true
+
+# URL base for documentation links (leave empty for default docs)
+docs_base_url = "https://internal.example.com/security"
+
+# Gate paste events (analyze and warn on risky commands in paste operations)
+gate_paste_events = true
+
+# === Risk Level Confirmation Requirements ===
+# Configure which risk levels require user confirmation before execution
+[security_lens.require_confirmation]
+Safe = false
+Caution = false
+Warning = true
+Critical = true
+
+# Configure which risk levels require the user to provide a reason for execution
+[security_lens.require_reason]
+Safe = false
+Caution = false
+Warning = false
+Critical = true
+
+# === Rate Limiting Configuration ===
+# Prevents abuse of security lens and provides additional protections
+[security_lens.rate_limit]
+# Maximum detections in time window (set to 0 to disable)
+max_detections = 5
+# Time window in seconds
+window_seconds = 60
+# Enable rate limiting
+enabled = true
+
+# === Custom Organization-specific Patterns ===
+# Add your own patterns specific to your organization's needs
+
+# Example: Detect operations against production databases
+[[security_lens.custom_patterns]]
+pattern = "(?i)psql\\s+.*-d\\s+(prod|production)"
+risk_level = "Warning"
+message = "Direct connection to production database"
+
+# Example: Internal API service manipulation
+[[security_lens.custom_patterns]]
+pattern = "(?i)systemctl\\s+(stop|restart)\\s+company-api-service"
+risk_level = "Warning"
+message = "Manipulation of critical internal API service"
+
+# Example: Corporate VPN manipulation
+[[security_lens.custom_patterns]]
+pattern = "(?i)systemctl\\s+(stop|disable)\\s+corporate-vpn"
+risk_level = "Warning"
+message = "Attempting to disconnect corporate VPN"
+
+# Example: Company CI/CD tools
+[[security_lens.custom_patterns]]
+pattern = "(?i)jenkins-(cli|build)\\s+.*production.*"
+risk_level = "Warning"
+message = "Production CI/CD build operation"
+
+# === Platform-Specific Pattern Groups ===
+# Create groups of patterns that are specific to certain platforms
+
+# Linux-specific patterns for your organization
+[[security_lens.platform_groups]]
+enabled = true
+platform = "Linux"
+patterns = [
+  # Corporate Linux firewall tool
+  { pattern = "(?i)corp-firewall\\s+--disable", risk_level = "Warning", message = "Disabling corporate firewall" },
+  # Custom deployment tools
+  { pattern = "(?i)corp-deploy\\s+--prod", risk_level = "Warning", message = "Production deployment operation" },
+]
+
+# macOS-specific patterns for your organization
+[[security_lens.platform_groups]]
+enabled = true
+platform = "MacOS"
+patterns = [
+  # Corporate MDM tools
+  { pattern = "(?i)jamf\\s+remove", risk_level = "Warning", message = "Removing corporate MDM management" },
+  # macOS security tools
+  { pattern = "(?i)company-vpn-helper\\s+disable", risk_level = "Warning", message = "Disabling corporate VPN helper" },
+]
+
+# Windows-specific patterns for your organization
+[[security_lens.platform_groups]]
+enabled = true
+platform = "Windows"
+patterns = [
+  # Corporate Windows security tools
+  { pattern = "(?i)Disable-CorporateEDR", risk_level = "Warning", message = "Disabling corporate EDR protection" },
+  # Domain management
+  { pattern = "(?i)Remove-Computer\\s+-Domain", risk_level = "Warning", message = "Removing computer from domain" },
+]
+
+# === Categories for Common Enterprise Tools ===
+
+# Cloud operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)aws\\s+.*\\s+--profile\\s+production"
+risk_level = "Warning"
+message = "Operation using production AWS profile"
+
+[[security_lens.custom_patterns]]
+pattern = "(?i)terraform\\s+.*\\s+-var-file=prod"
+risk_level = "Warning"
+message = "Terraform operation with production variables"
+
+# Database operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)mongodump\\s+.*--uri=.*prod"
+risk_level = "Warning"
+message = "MongoDB dump operation on production database"
+
+# Container operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)docker\\s+push\\s+company/.*:prod"
+risk_level = "Warning"
+message = "Pushing to production container registry"
+
+# Internal deployment tools
+[[security_lens.custom_patterns]]
+pattern = "(?i)deploy-tool\\s+--target=prod"
+risk_level = "Warning"
+message = "Using internal deployment tool on production"
