@@ -1,6 +1,7 @@
 // Enhanced glyph cache for shaped text support
 // Extends the existing glyph cache to handle HarfBuzz shaped text
 
+#![allow(dead_code)]
 use ahash::RandomState;
 use anyhow::Result;
 use crossfont::{FontKey, GlyphKey, RasterizedGlyph};
@@ -393,7 +394,7 @@ pub struct ShapedCacheStats {
 /// Trait extension for loaders that support shaped glyphs
 pub trait LoadShapedGlyph: LoadGlyph {
     /// Load a shaped glyph by ID instead of character
-    fn load_shaped_glyph(&mut self, glyph_id: u32, rasterized: &RasterizedGlyph) -> Glyph {
+    fn load_shaped_glyph(&mut self, _glyph_id: u32, rasterized: &RasterizedGlyph) -> Glyph {
         // Default implementation falls back to regular glyph loading
         self.load_glyph(rasterized)
     }
@@ -442,7 +443,7 @@ mod tests {
     #[test]
     fn test_cache_stats() {
         let font = Font::default();
-        let rasterizer = crossfont::Rasterizer::new().unwrap();
+        let rasterizer = Rasterizer::new().unwrap();
         let base_cache = GlyphCache::new(rasterizer, &font).unwrap();
         let cache = ShapedGlyphCache::new(base_cache);
 

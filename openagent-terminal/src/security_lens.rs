@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Security Lens - Command Analysis System
 // Provides real-time risk assessment for terminal commands
 

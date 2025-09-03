@@ -98,6 +98,7 @@ async fn get_schema_version(pool: &Pool<Sqlite>) -> StorageResult<i32> {
 }
 
 /// Set schema version in database
+#[allow(dead_code)]
 async fn set_schema_version(pool: &Pool<Sqlite>, version: i32) -> StorageResult<()> {
     sqlx::query("INSERT OR REPLACE INTO schema_version (version) VALUES (?)")
         .bind(version)

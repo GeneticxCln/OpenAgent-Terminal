@@ -459,7 +459,7 @@ impl SplitManagerExt for SplitManager {
         &self,
         layout: &mut SplitLayout,
         target_id: PaneId,
-        new_pane_id: PaneId,
+        _new_pane_id: PaneId,
         ratio: f32,
         horizontal: bool,
     ) -> bool {

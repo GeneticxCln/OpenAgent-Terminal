@@ -1,7 +1,7 @@
 // Measure cold start time (time-to-first-frame) for OpenGL backend
 // Prints JSON with metrics and exits non-zero if budget exceeded.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use winit::application::ApplicationHandler;
 use winit::event::StartCause;
@@ -41,7 +41,7 @@ impl ApplicationHandler<()> for ColdStartApp {
         }
         let t0 = self.start;
 
-        let mut config = UiConfig::default();
+        let config = UiConfig::default();
         let mut win_opts = WindowOptions::default();
         let identity = config.window.identity.clone();
 
@@ -99,7 +99,7 @@ impl ApplicationHandler<()> for ColdStartApp {
             platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
                 .expect("gl ctx");
 
-        let mut display = Display::new(window, gl_context, &config, false).expect("display");
+        let display = Display::new(window, gl_context, &config, false).expect("display");
 
         // Present one frame by drawing a no-op confirm overlay (inactive) then swapping
         // We ensure clear happened in Display::new; swap on GL occurs in drop or explicit draw.

@@ -258,34 +258,26 @@ impl BlockStorage {
         let mut sql = String::from("SELECT b.* FROM blocks b\n");
         let mut where_clauses: Vec<String> = Vec::new();
         let mut binds: Vec<String> = Vec::new();
-        let mut joins_fts = false;
+        // Join the FTS table once if any FTS field is used
+        let need_fts = query.text.is_some() || query.command_text.is_some() || query.output_text.is_some();
+        if need_fts {
+            sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
+        }
 
         // Text search handling
         if let Some(text) = &query.text {
-            if !joins_fts {
-                sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
-                joins_fts = true;
-            }
             where_clauses.push("blocks_fts MATCH ?".into());
             binds.push(text.clone());
         }
 
         // Command-specific text search
         if let Some(cmd_text) = &query.command_text {
-            if !joins_fts {
-                sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
-                joins_fts = true;
-            }
             where_clauses.push("f.command MATCH ?".into());
             binds.push(cmd_text.clone());
         }
 
         // Output-specific text search
         if let Some(output_text) = &query.output_text {
-            if !joins_fts {
-                sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
-                joins_fts = true;
-            }
             where_clauses.push("f.output MATCH ?".into());
             binds.push(output_text.clone());
         }

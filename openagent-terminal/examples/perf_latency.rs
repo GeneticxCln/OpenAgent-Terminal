@@ -11,7 +11,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::WindowAttributes;
 
-use glutin::config::{ConfigTemplateBuilder, GetGlConfig};
+use glutin::config::ConfigTemplateBuilder;
 use glutin::display::{Display, DisplayApiPreference};
 use glutin::prelude::*;
 use glutin::surface::{Surface, SurfaceAttributesBuilder, WindowSurface};
@@ -91,12 +91,10 @@ impl ApplicationHandler<()> for PerfApp {
         let ctx: PossiblyCurrentContext = not_current.make_current(&surface).expect("make current");
 
         // Load GL
-        unsafe {
-            gl::load_with(|s| {
-                let s = CString::new(s).unwrap();
-                gl_display.get_proc_address(s.as_c_str()).cast()
-            });
-        }
+        gl::load_with(|s| {
+            let s = CString::new(s).unwrap();
+            gl_display.get_proc_address(s.as_c_str()).cast()
+        });
 
         // Draw frames
         let frames = 120u32;

@@ -4,8 +4,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::UiConfig;
 use crate::display::{Display, SizeInfo};
-use crate::renderer::rects::RenderRect;
 use crate::security_lens::{CommandRisk, RiskLevel};
+use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 
@@ -20,6 +20,7 @@ pub struct ConfirmOverlayState {
 }
 
 /// Enhanced confirmation overlay state for Security Lens dry-run displays
+#[cfg(feature = "preview_ui")]
 #[derive(Clone, Debug, Default)]
 pub struct SecurityConfirmOverlayState {
     pub active: bool,
@@ -98,6 +99,8 @@ impl ConfirmOverlayState {
     }
 }
 
+#[allow(dead_code)]
+#[cfg(feature = "preview_ui")]
 impl SecurityConfirmOverlayState {
     pub fn new() -> Self {
         Self {
@@ -228,6 +231,7 @@ impl Display {
     }
 
     /// Draw the Security Lens confirmation overlay with detailed risk analysis
+#[cfg(feature = "preview_ui")]
     pub fn draw_security_confirm_overlay(
         &mut self,
         config: &UiConfig,
@@ -324,9 +328,10 @@ impl Display {
     }
 
     /// Draw detailed risk analysis information
+#[cfg(feature = "preview_ui")]
     fn draw_risk_analysis(
         &mut self,
-        config: &UiConfig,
+        _config: &UiConfig,
         risk: &CommandRisk,
         line: &mut usize,
         x_col: usize,

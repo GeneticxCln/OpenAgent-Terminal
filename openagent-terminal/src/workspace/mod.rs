@@ -19,9 +19,11 @@ pub mod warp_split_manager;
 pub mod warp_tab_manager;
 // Warp modules
 pub mod warp_bindings {
+    #[allow(unused_imports)]
     pub use crate::config::warp_bindings::*;
 }
 pub mod warp_ui {
+    #[allow(unused_imports)]
     pub use crate::display::warp_ui::*;
 }
 #[cfg(test)]

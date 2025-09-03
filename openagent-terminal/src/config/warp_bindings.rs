@@ -1,3 +1,4 @@
+#![allow(unused_macros, dead_code)]
 //! Warp-style keyboard bindings for OpenAgent Terminal
 //!
 //! This module defines keyboard shortcuts that match Warp Terminal's behavior:
