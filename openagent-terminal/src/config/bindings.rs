@@ -524,10 +524,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         "s",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenBlocksSearchPanel;
         // Toggle AI panel (scratch buffer) if built with feature `ai`.
         ".",     ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleAiPanel;
-        // AI Explain mode - Ctrl+Shift+E
-        "e",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::AiExplain;
-        // AI Fix mode - Ctrl+Shift+F
-        "g",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::AiFix;
+        // AI keybindings added conditionally below when the `ai` feature is enabled.
         // Open Workflows panel (feature `workflow`): Ctrl+Shift+W
         "w",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenWorkflowsPanel;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
@@ -647,6 +644,17 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Enter,                              +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
         Enter, ModifiersState::SHIFT,       +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
     );
+
+    #[cfg(feature = "ai")]
+    {
+        bindings.extend(bindings!(
+            KeyBinding;
+            // AI Explain mode - Ctrl+Shift+E
+            "e",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::AiExplain;
+            // AI Fix mode - Ctrl+Shift+F
+            "g",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::AiFix;
+        ));
+    }
 
     bindings.extend(platform_key_bindings());
 

@@ -348,7 +348,7 @@ impl Processor {
                                 exit_code: b.exit_code,
                                 duration_ms: b.duration_ms,
                                 starred: b.starred,
-                                tags: b.tags.into_iter().collect(),
+                                tags: b.tags.iter().cloned().collect(),
                                 shell: b.shell.to_str().to_string(),
                                 status: format!("{:?}", b.status),
                             });
