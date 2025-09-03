@@ -63,6 +63,12 @@ pub struct TabBarConfig {
     #[config(default = true)]
     pub show_modified_indicator: bool,
 
+    /// Reserve a terminal row for the tab bar (avoids overlaying content)
+    /// Note: Top reservation hides the top line of grid content; Bottom reservation hides the
+    /// bottom line. Future versions may shift the grid instead of hiding.
+    #[config(default = true)]
+    pub reserve_row: bool,
+
     /// Maximum tab title length
     #[config(default = 20)]
     pub max_title_length: usize,
@@ -81,6 +87,7 @@ impl Default for TabBarConfig {
             show_modified_indicator: true,
             max_title_length: 20,
             new_tab_action: NewTabAction::InheritWorkingDir,
+            reserve_row: true,
         }
     }
 }

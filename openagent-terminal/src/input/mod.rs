@@ -288,6 +288,16 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_close_tab(&mut self) {}
     fn workspace_next_tab(&mut self) {}
     fn workspace_previous_tab(&mut self) {}
+    fn workspace_switch_to_tab(&mut self, _tab_id: crate::workspace::TabId) {}
+
+    // Workspace tab bar hit testing (handled in event::ActionContext)
+    fn workspace_tab_bar_hit(
+        &mut self,
+        _mouse_x: usize,
+        _mouse_y: usize,
+    ) -> Option<crate::display::tab_bar::TabBarAction> {
+        None
+    }
 }
 
 impl Action {
@@ -823,6 +833,99 @@ impl<T: EventListener> Execute<T> for Action {
 impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     pub fn new(ctx: A) -> Self {
         Self { ctx, _phantom: Default::default() }
+    }
+
+    /// Handle clicks on the tab bar (top or bottom)
+    fn process_tab_bar_click(&mut self) -> bool {
+        if !self.ctx.config().workspace.tab_bar.show {
+            return false;
+        }
+        // Compute mouse point in grid coordinates
+        let size_info = self.ctx.size_info();
+        let display_offset = self.ctx.terminal().grid().display_offset();
+        let point = self.ctx.mouse().point(&size_info, display_offset);
+        if point.line < 0 {
+            return false;
+        }
+        let mouse_x = point.column.0;
+        let mouse_y = point.line.0 as usize;
+
+        // Ask the context to compute hit-testing, then perform the action
+        if let Some(action) = self.ctx.workspace_tab_bar_hit(mouse_x, mouse_y) {
+            use crate::display::tab_bar::TabBarAction;
+            match action {
+                TabBarAction::SelectTab(tab_id) => {
+                    self.ctx.workspace_switch_to_tab(tab_id);
+                },
+                TabBarAction::CloseTab(tab_id) => {
+                    // Close specific tab; if it's not active, manager will handle update gracefully
+                    self.ctx.workspace_close_tab();
+                },
+                TabBarAction::CreateTab => {
+                    self.ctx.workspace_create_tab();
+                },
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Handle clicks on the persistent Quick Actions bar at the bottom
+    fn process_quick_actions_click(&mut self) -> bool {
+        let size_info = self.ctx.size_info();
+        let display_offset = self.ctx.terminal().grid().display_offset();
+        let point = self.ctx.mouse().point(&size_info, display_offset);
+        let bottom_line = size_info.screen_lines().saturating_sub(1);
+        if point.line != bottom_line {
+            return false;
+        }
+
+        // Compute label hitboxes
+        let labels = ["[Workflows]", "[Blocks]", "[Palette]", "[AI]"];
+        let mut start = 1usize;
+        let col = point.column.0;
+
+        // Workflows
+        let wf_end = start + labels[0].len();
+        if col >= start && col < wf_end {
+            #[cfg(feature = "workflow")]
+            {
+                self.ctx.open_workflows_panel();
+            }
+            return true;
+        }
+        start = wf_end + 2;
+
+        // Blocks
+        let bl_end = start + labels[1].len();
+        if col >= start && col < bl_end {
+            #[cfg(feature = "blocks")]
+            {
+                self.ctx.open_blocks_search_panel();
+            }
+            return true;
+        }
+        start = bl_end + 2;
+
+        // Palette
+        let pa_end = start + labels[2].len();
+        if col >= start && col < pa_end {
+            self.ctx.open_command_palette();
+            return true;
+        }
+        start = pa_end + 2;
+
+        // AI (optional)
+        let ai_end = start + labels[3].len();
+        if col >= start && col < ai_end {
+            #[cfg(feature = "ai")]
+            {
+                self.ctx.open_ai_panel();
+            }
+            return true;
+        }
+
+        false
     }
 
     #[inline]
@@ -1442,6 +1545,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else {
             match state {
                 ElementState::Pressed => {
+                    // Tab bar click handling (top/bottom)
+                    if self.process_tab_bar_click() {
+                        return;
+                    }
+                    // Quick Actions bar click handling (bottom line)
+                    if self.process_quick_actions_click() {
+                        return;
+                    }
+
                     // Process mouse press before bindings to update the `click_state`.
                     self.on_mouse_press(button);
                     self.process_mouse_bindings(button);

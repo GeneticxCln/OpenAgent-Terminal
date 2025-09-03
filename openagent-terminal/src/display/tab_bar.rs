@@ -263,7 +263,7 @@ impl Display {
     /// Handle mouse click on tab bar
     pub fn handle_tab_bar_click(
         &self,
-        tab_manager: &mut TabManager,
+        tab_manager: &TabManager,
         position: TabBarPosition,
         mouse_x: usize,
         mouse_y: usize,
