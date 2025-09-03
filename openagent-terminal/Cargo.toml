@@ -108,6 +108,7 @@ image = "0.24"
 chrono = { version = "0.4" }
 gl = "0.14"
 sha2 = "0.10"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"
@@ -197,3 +198,15 @@ description = "AI-enhanced, cross-platform terminal"
 logo_path = "extra/logo/openagent-terminal.png"
 # Keep capability surface minimal
 capabilities = ["internetClient"]
+
+[[bench]]
+name = "terminal_startup"
+harness = false
+
+[[bench]]
+name = "render_performance"
+harness = false
+
+[[bench]]
+name = "security_analysis"
+harness = false
