@@ -6,7 +6,7 @@
 use crate::display::blocks_search_panel::BlocksSearchItem;
 use crate::display::color::Rgb;
 use crate::display::Display;
-use crate::renderer::blocks::{RenderLine, RenderLines};
+use crate::renderer::rects::{RenderLine, RenderLines};
 use crate::renderer::rects::RenderRect;
 use crate::config::theme::ThemeTokens;
 use openagent_terminal_core::grid::Dimensions;
