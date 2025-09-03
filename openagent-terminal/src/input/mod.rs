@@ -183,6 +183,29 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_copy_command(&mut self) {}
     fn blocks_search_copy_output(&mut self) {}
     fn blocks_search_rerun_selected(&mut self) {}
+    fn blocks_search_insert_heredoc(&mut self) {}
+    fn blocks_search_insert_heredoc_custom(&mut self) {}
+    fn blocks_search_insert_json_heredoc(&mut self) {}
+    fn blocks_search_insert_shell_heredoc(&mut self) {}
+    fn blocks_search_show_help(&mut self) {}
+    fn blocks_search_export_selected(&mut self) {}
+    fn blocks_search_toggle_tag(&mut self) {}
+    fn blocks_search_copy_both(&mut self) {}
+    fn blocks_search_insert_command(&mut self) {}
+    fn blocks_search_view_output(&mut self) {}
+    fn blocks_search_share_block(&mut self) {}
+    fn blocks_search_create_snippet(&mut self) {}
+    
+    // Blocks Search panel - actions menu support
+    fn blocks_search_actions_menu_active(&self) -> bool { false }
+    fn blocks_search_execute_action(&mut self) {}
+    fn blocks_search_close_actions_menu(&mut self) {}
+    fn blocks_search_move_actions_selection(&mut self, _delta: isize) {}
+    
+    // Blocks Search panel - help overlay support
+    fn blocks_search_help_active(&self) -> bool { false }
+    fn blocks_search_close_help(&mut self) {}
+    fn blocks_search_navigate_help(&mut self, _forward: bool) {}
 
     // Workflows panel (feature="workflow"). Default to no-op/false when disabled.
     fn open_workflows_panel(&mut self) {}

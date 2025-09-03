@@ -123,6 +123,69 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Blocks Search panel input handling (if active)
         if self.ctx.blocks_search_active() {
             let mods = self.ctx.modifiers().state();
+            
+            // Handle actions menu input if active
+            if self.ctx.blocks_search_actions_menu_active() {
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Enter) => {
+                        // Execute selected action
+                        self.ctx.blocks_search_execute_action();
+                        return;
+                    },
+                    Key::Named(NamedKey::Escape) => {
+                        // Close actions menu
+                        self.ctx.blocks_search_close_actions_menu();
+                        return;
+                    },
+                    Key::Named(NamedKey::ArrowUp) => {
+                        self.ctx.blocks_search_move_actions_selection(-1);
+                        return;
+                    },
+                    Key::Named(NamedKey::ArrowDown) => {
+                        self.ctx.blocks_search_move_actions_selection(1);
+                        return;
+                    },
+                    Key::Character(c) if c == "k" => {
+                        self.ctx.blocks_search_move_actions_selection(-1);
+                        return;
+                    },
+                    Key::Character(c) if c == "j" => {
+                        self.ctx.blocks_search_move_actions_selection(1);
+                        return;
+                    },
+                    _ => {}
+                }
+                // Don't process other keys when actions menu is active
+                return;
+            }
+            
+            // Handle help overlay input if active
+            if self.ctx.blocks_search_help_active() {
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => {
+                        // Close help
+                        self.ctx.blocks_search_close_help();
+                        return;
+                    },
+                    Key::Character(c) if c == "?" => {
+                        // Close help
+                        self.ctx.blocks_search_close_help();
+                        return;
+                    },
+                    Key::Named(NamedKey::Tab) | Key::Named(NamedKey::ArrowRight) => {
+                        self.ctx.blocks_search_navigate_help(true);
+                        return;
+                    },
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        self.ctx.blocks_search_navigate_help(false);
+                        return;
+                    },
+                    _ => {}
+                }
+                // Don't process other keys when help is active
+                return;
+            }
+            
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.blocks_search_confirm();
@@ -231,6 +294,56 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "r") => {
                     // 'r': Rerun selected command
                     self.ctx.blocks_search_rerun_selected();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "h") => {
+                    // 'h': Insert block output as here-doc
+                    self.ctx.blocks_search_insert_heredoc();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "?") => {
+                    // '?': Show keyboard help
+                    self.ctx.blocks_search_show_help();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "e") => {
+                    // 'e': Export selected block
+                    self.ctx.blocks_search_export_selected();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "t") => {
+                    // 't': Toggle tag on selected item
+                    self.ctx.blocks_search_toggle_tag();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "b") => {
+                    // 'b': Copy both command and output
+                    self.ctx.blocks_search_copy_both();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "i") => {
+                    // 'i': Insert command into prompt
+                    self.ctx.blocks_search_insert_command();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "v") => {
+                    // 'v': View full output
+                    self.ctx.blocks_search_view_output();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "s") => {
+                    // 's': Share block
+                    self.ctx.blocks_search_share_block();
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "n") => {
+                    // 'n': Create snippet from command
+                    self.ctx.blocks_search_create_snippet();
+                    return;
+                },
+                Key::Named(NamedKey::Delete) => {
+                    // Delete: Delete selected block with confirmation
+                    self.ctx.blocks_search_delete_selected();
                     return;
                 },
                 _ => {},
