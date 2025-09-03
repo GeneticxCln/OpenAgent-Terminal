@@ -744,6 +744,111 @@ binding         = { key = _"O"_, mods = _"Control|Shift"_ }++
 regex =
 _"(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)[^\\u0000-\\u001F\\u007F-\\u009F<>\\"\\\\s{-}\\\\^⟨⟩`\\\\\\\\]+"_
 
+# WORKSPACE
+
+This section documents the *[workspace]* table of the configuration file.
+
+*warp_style* = _true_ | _false_
+
+	Enable Warp-style visuals and interactions for tabs/splits.
+
+	Default: _true_
+
+*[workspace.tab_bar]*
+
+*position* = _"Top"_ | _"Bottom"_ | _"Hidden"_
+
+	Position of the tab bar.
+
+	Default: _"Top"_
+
+*show* = _true_ | _false_
+
+	Whether to show the tab bar.
+
+	Default: _true_
+
+*reserve_row* = _true_ | _false_
+
+	Reserve a terminal grid row for the tab bar to avoid overlaying content. When enabled,
+	the top or bottom grid line will be hidden depending on *position*.
+
+	Default: _true_
+
+*[workspace.splits]*
+
+*preview_enabled* = _true_ | _false_
+
+	Enable split indicators/preview overlay.
+
+	Default: _true_
+
+*indicator_line_width* = _<float>_
+
+	Base line width for split indicators (pixels).
+
+	Default: _2.5_
+
+*indicator_line_alpha* = _<float>_
+
+	Base line alpha for split indicators (0.0..1.0).
+
+	Default: _0.5_
+
+*indicator_hover_scale* = _<float>_
+
+	Line width multiplier when a divider is hovered/dragged.
+
+	Default: _2.0_
+
+*indicator_hover_alpha* = _<float>_
+
+	Line alpha when a divider is hovered/dragged (0.0..1.0).
+
+	Default: _0.95_
+
+*handle_size* = _<float>_
+
+	Resize handle baseline size (pixels). Actual size also adapts to divider length.
+
+	Default: _8.0_
+
+*handle_alpha* = _<float>_
+
+	Resize handle alpha (0.0..1.0).
+
+	Default: _0.95_
+
+*show_resize_handles* = _true_ | _false_
+
+	Show resize handles on divider hover.
+
+	Default: _true_
+
+*indicator_line_color* = _{ r = <int>, g = <int>, b = <int> }_
+
+	Optional explicit line color. When not set, the theme's border color is used.
+
+	Default: _None_
+
+*handle_color* = _{ r = <int>, g = <int>, b = <int> }_
+
+	Optional explicit handle color. When not set, the theme's accent color is used.
+
+	Default: _None_
+
+*overlay_color* = _{ r = <int>, g = <int>, b = <int> }_
+
+	Optional explicit zoom overlay color. When not set, the theme's overlay color is used.
+
+	Default: _None_
+
+*zoom_overlay_alpha* = _<float>_
+
+	Alpha for the zoom overlay when a pane is zoomed (0.0..1.0).
+
+	Default: _0.06_
+
 # KEYBOARD
 
 This section documents the *[keyboard]* table of the configuration file.

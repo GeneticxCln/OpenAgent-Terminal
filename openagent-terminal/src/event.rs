@@ -3224,6 +3224,26 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
+    fn workspace_split_hit(
+        &mut self,
+        mouse_x_px: f32,
+        mouse_y_px: f32,
+        tolerance_px: f32,
+    ) -> Option<crate::workspace::split_manager::SplitDividerHit> {
+        self.workspace.hit_test_split_divider(mouse_x_px, mouse_y_px, tolerance_px)
+    }
+
+    fn workspace_set_split_ratio_at_path(
+        &mut self,
+        path: Vec<crate::workspace::split_manager::SplitChild>,
+        axis: crate::workspace::split_manager::SplitAxis,
+        new_ratio: f32,
+    ) {
+        let _ = self.workspace.set_split_ratio_at_path(&path, axis, new_ratio);
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
     fn workspace_tab_bar_hit(
         &mut self,
         mouse_x: usize,

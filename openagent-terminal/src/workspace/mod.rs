@@ -277,6 +277,54 @@ impl WorkspaceManager {
             .unwrap_or(false)
     }
 
+    /// Hit test for split divider given mouse position (in pixels)
+    pub fn hit_test_split_divider(
+        &self,
+        x: f32,
+        y: f32,
+        tol: f32,
+    ) -> Option<crate::workspace::split_manager::SplitDividerHit> {
+        let active = self.tabs.active_tab()?;
+        // Compute grid content container with padding and reserved rows
+        let si = self.size_info;
+        let mut x0 = si.padding_x();
+        let mut y0 = si.padding_y();
+        let mut w = si.width() - 2.0 * si.padding_x();
+        let mut h = si.height() - 2.0 * si.padding_y();
+        if self.config.workspace.tab_bar.show
+            && self.config.workspace.tab_bar.reserve_row
+            && self.config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
+        {
+            let ch = si.cell_height();
+            match self.config.workspace.tab_bar.position {
+                crate::config::workspace::TabBarPosition::Top => {
+                    y0 += ch;
+                    h = (h - ch).max(0.0);
+                },
+                crate::config::workspace::TabBarPosition::Bottom => {
+                    h = (h - ch).max(0.0);
+                },
+                _ => {},
+            }
+        }
+        let container = split_manager::PaneRect::new(x0, y0, w, h);
+        active.split_layout.hit_test_divider(container, x, y, tol)
+    }
+
+    /// Apply new ratio at a divider path
+    pub fn set_split_ratio_at_path(
+        &mut self,
+        path: &[split_manager::SplitChild],
+        axis: split_manager::SplitAxis,
+        new_ratio: f32,
+    ) -> bool {
+        if let Some(tab) = self.active_tab_mut() {
+            tab.split_layout.set_ratio_at_path_internal(path, axis, new_ratio)
+        } else {
+            false
+        }
+    }
+
     /// Update the size information for the workspace
     pub fn update_size(&mut self, size_info: SizeInfo) {
         self.size_info = size_info;
@@ -302,3 +350,157 @@ pub struct PersistentTabState {
 
 // WorkspaceConfig is now imported from crate::config::workspace
 pub use crate::config::workspace::TabBarPosition;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::rc::Rc;
+
+    use crate::config::workspace::TabBarPosition;
+    use crate::config::UiConfig;
+    use crate::display::SizeInfo;
+
+    fn make_size_info(width: f32, height: f32, cell_w: f32, cell_h: f32, pad_x: f32, pad_y: f32) -> SizeInfo {
+        // dynamic_padding = false for predictable pixel math in tests
+        SizeInfo::new(width, height, cell_w, cell_h, pad_x, pad_y, false)
+    }
+
+    fn make_workspace(config: UiConfig, size_info: SizeInfo) -> WorkspaceManager {
+        WorkspaceManager::new(WorkspaceId(0), Rc::new(config), size_info)
+    }
+
+    fn set_simple_horizontal_split(wm: &mut WorkspaceManager, ratio: f32) {
+        if let Some(tab) = wm.tabs.active_tab_mut() {
+            let pid = tab.active_pane;
+            tab.split_layout = split_manager::SplitLayout::Horizontal {
+                left: Box::new(split_manager::SplitLayout::Single(pid)),
+                right: Box::new(split_manager::SplitLayout::Single(pid)),
+                ratio,
+            };
+        }
+    }
+
+    fn set_simple_vertical_split(wm: &mut WorkspaceManager, ratio: f32) {
+        if let Some(tab) = wm.tabs.active_tab_mut() {
+            let pid = tab.active_pane;
+            tab.split_layout = split_manager::SplitLayout::Vertical {
+                top: Box::new(split_manager::SplitLayout::Single(pid)),
+                bottom: Box::new(split_manager::SplitLayout::Single(pid)),
+                ratio,
+            };
+        }
+    }
+
+    #[test]
+    fn hit_test_excludes_reserved_top_row() {
+        let mut config = UiConfig::default();
+        config.workspace.tab_bar.show = true;
+        config.workspace.tab_bar.reserve_row = true;
+        config.workspace.tab_bar.position = TabBarPosition::Top;
+
+        // Geometry: w=1000,h=600, cell 10x20, padding 20x10
+        let si = make_size_info(1000.0, 600.0, 10.0, 20.0, 20.0, 10.0);
+        let mut wm = make_workspace(config.clone(), si);
+        let _tab = wm.create_tab("Test".into(), None);
+        set_simple_horizontal_split(&mut wm, 0.5);
+
+        // Reconstruct expected container
+        let mut x0 = si.padding_x();
+        let mut y0 = si.padding_y();
+        let mut w = si.width() - 2.0 * si.padding_x();
+        let mut h = si.height() - 2.0 * si.padding_y();
+        if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row {
+            match config.workspace.tab_bar.position {
+                TabBarPosition::Top => {
+                    y0 += si.cell_height();
+                    h = (h - si.cell_height()).max(0.0);
+                },
+                TabBarPosition::Bottom => {
+                    h = (h - si.cell_height()).max(0.0);
+                },
+                TabBarPosition::Hidden => {},
+            }
+        }
+
+        let split_x = x0 + w * 0.5;
+        let tol = 3.0;
+
+        // Y in reserved top row: should be outside container and not hit
+        let y_reserved_top = si.padding_y() + si.cell_height() * 0.5;
+        assert!(
+            wm.hit_test_split_divider(split_x, y_reserved_top, tol).is_none(),
+            "divider should not be hittable in reserved top row",
+        );
+
+        // Y inside container center: should hit
+        let y_inside = y0 + h * 0.5;
+        let hit = wm.hit_test_split_divider(split_x, y_inside, tol);
+        assert!(hit.is_some(), "divider should be hittable inside content area");
+        let hit = hit.unwrap();
+        assert_eq!(hit.axis, split_manager::SplitAxis::Horizontal);
+    }
+
+    #[test]
+    fn hit_test_excludes_reserved_bottom_row() {
+        let mut config = UiConfig::default();
+        config.workspace.tab_bar.show = true;
+        config.workspace.tab_bar.reserve_row = true;
+        config.workspace.tab_bar.position = TabBarPosition::Bottom;
+
+        let si = make_size_info(800.0, 500.0, 8.0, 16.0, 12.0, 6.0);
+        let mut wm = make_workspace(config.clone(), si);
+        let _tab = wm.create_tab("Test".into(), None);
+        set_simple_vertical_split(&mut wm, 0.5);
+
+        let mut x0 = si.padding_x();
+        let mut y0 = si.padding_y();
+        let mut w = si.width() - 2.0 * si.padding_x();
+        let mut h = si.height() - 2.0 * si.padding_y();
+        if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row {
+            if config.workspace.tab_bar.position == TabBarPosition::Bottom {
+                h = (h - si.cell_height()).max(0.0);
+            }
+        }
+        let split_y = y0 + h * 0.5;
+        let tol = 3.0;
+
+        // Y in reserved bottom row: pick a y below container range; should not hit
+        let y_reserved_bottom = y0 + h + (si.cell_height() * 0.5);
+        let x_inside = x0 + w * 0.5;
+        assert!(
+            wm.hit_test_split_divider(x_inside, y_reserved_bottom, tol).is_none(),
+            "divider should not be hittable in reserved bottom row",
+        );
+
+        // Inside container
+        let hit = wm.hit_test_split_divider(x_inside, split_y, tol);
+        assert!(hit.is_some(), "divider should be hittable inside content area");
+        let hit = hit.unwrap();
+        assert_eq!(hit.axis, split_manager::SplitAxis::Vertical);
+    }
+
+    #[test]
+    fn hit_test_respects_padding() {
+        let mut config = UiConfig::default();
+        config.workspace.tab_bar.show = false; // ignore reserved rows in this test
+
+        let si = make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0);
+        let mut wm = make_workspace(config.clone(), si);
+        let _tab = wm.create_tab("Test".into(), None);
+        set_simple_horizontal_split(&mut wm, 0.25);
+
+        let x0 = si.padding_x();
+        let y0 = si.padding_y();
+        let w = si.width() - 2.0 * si.padding_x();
+        let h = si.height() - 2.0 * si.padding_y();
+
+        // Divider at 25% of content width from left padding
+        let split_x = x0 + w * 0.25;
+        let y_inside = y0 + h * 0.5;
+        let tol = 2.0;
+
+        let hit = wm.hit_test_split_divider(split_x, y_inside, tol);
+        assert!(hit.is_some(), "divider should be hittable at correct x considering padding");
+        assert_eq!(hit.unwrap().axis, split_manager::SplitAxis::Horizontal);
+    }
+}

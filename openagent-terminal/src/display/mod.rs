@@ -458,6 +458,11 @@ pub struct Display {
 
     /// Hover state for tab bar interactions
     pub tab_hover: Option<TabHoverTarget>,
+
+    /// Hovered split divider (if any)
+    pub split_hover: Option<crate::workspace::split_manager::SplitDividerHit>,
+    /// Active split drag (if any)
+    pub split_drag: Option<crate::workspace::split_manager::SplitDividerHit>,
 }
 
 enum Backend {
@@ -636,6 +641,8 @@ impl Display {
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
             tab_hover: None,
+            split_hover: None,
+            split_drag: None,
         })
     }
 
@@ -1648,8 +1655,8 @@ impl Display {
         // Draw split indicators for Warp-style splits (visual only)
         if config.workspace.warp_style {
             if let Some(active_tab) = tab_manager.and_then(|tm| tm.active_tab()) {
-                let indicators = crate::display::warp_ui::WarpSplitIndicators::default();
-                self.draw_warp_split_indicators(&active_tab.split_layout, &indicators);
+                let indicators = self.warp_split_indicators_from_config(config);
+                self.draw_warp_split_indicators(config, &active_tab.split_layout, &indicators);
                 // Optional: draw a subtle overlay if zoomed (detected via saved layout)
                 if active_tab.zoom_saved_layout.is_some() {
                     // Draw overlay to indicate zoom state
