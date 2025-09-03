@@ -411,19 +411,19 @@ impl<T: LoadGlyph> LoadShapedGlyph for T {}
 mod tests {
     use super::*;
     use crate::config::font::Font;
-    use crossfont::{Size, Rasterizer};
+    use crossfont::{Size, Rasterizer, Rasterize};
 
     #[test]
     fn test_shaped_glyph_key_equality() {
         let key1 = ShapedGlyphKey {
-            font_key: FontKey::default(),
+            font_key: FontKey::next(),
             glyph_id: 42,
             size: Size::new(16.0),
             character: Some('a'),
         };
 
         let key2 = ShapedGlyphKey {
-            font_key: FontKey::default(),
+            font_key: FontKey::next(),
             glyph_id: 42,
             size: Size::new(16.0),
             character: Some('a'),
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn test_cache_stats() {
         let font = Font::default();
-        let rasterizer = Rasterizer::new(1.0).unwrap();
+        let rasterizer = crossfont::Rasterizer::new().unwrap();
         let base_cache = GlyphCache::new(rasterizer, &font).unwrap();
         let cache = ShapedGlyphCache::new(base_cache);
 
