@@ -3215,6 +3215,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
+    fn workspace_toggle_zoom(&mut self) {
+        let ok = self.workspace.toggle_zoom();
+        let msg = if ok { "Toggled pane zoom" } else { "Toggle zoom failed" };
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
     fn workspace_tab_bar_hit(
         &mut self,
         mouse_x: usize,

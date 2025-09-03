@@ -84,6 +84,14 @@ mod bell;
 mod damage;
 mod meter;
 
+/// Hover target kinds for the tab bar
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabHoverTarget {
+    Tab(crate::workspace::TabId),
+    Close(crate::workspace::TabId),
+    Create,
+}
+
 /// Label for the forward terminal search bar.
 const FORWARD_SEARCH_LABEL: &str = "Search: ";
 
@@ -447,6 +455,9 @@ pub struct Display {
     /// Workflows progress overlay state.
     #[cfg(feature = "workflow")]
     pub workflows_progress: workflow_panel::WorkflowProgressState,
+
+    /// Hover state for tab bar interactions
+    pub tab_hover: Option<TabHoverTarget>,
 }
 
 enum Backend {
@@ -624,6 +635,7 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            tab_hover: None,
         })
     }
 
@@ -1443,7 +1455,14 @@ impl Display {
             let obstructed_column = Some(vi_cursor_point)
                 .filter(|point| point.line == -(display_offset as i32))
                 .map(|point| point.column);
-            self.draw_line_indicator(config, total_lines, obstructed_column, line);
+            // Suppress vi-mode line indicator when the top row is reserved for the tab bar.
+            let top_reserved = config.workspace.tab_bar.show
+                && config.workspace.tab_bar.reserve_row
+                && config.workspace.tab_bar.position
+                    == crate::config::workspace::TabBarPosition::Top;
+            if !top_reserved {
+                self.draw_line_indicator(config, total_lines, obstructed_column, line);
+            }
         } else if search_state.regex().is_some() {
             // Show current display offset in vi-less search to indicate match position.
             self.draw_line_indicator(config, total_lines, None, display_offset);
@@ -1624,6 +1643,19 @@ impl Display {
         if self.blocks_search.active {
             let bs_state = self.blocks_search.clone();
             self.draw_blocks_search_overlay(config, &bs_state);
+        }
+
+        // Draw split indicators for Warp-style splits (visual only)
+        if config.workspace.warp_style {
+            if let Some(active_tab) = tab_manager.and_then(|tm| tm.active_tab()) {
+                let indicators = crate::display::warp_ui::WarpSplitIndicators::default();
+                self.draw_warp_split_indicators(&active_tab.split_layout, &indicators);
+                // Optional: draw a subtle overlay if zoomed (detected via saved layout)
+                if active_tab.zoom_saved_layout.is_some() {
+                    // Draw overlay to indicate zoom state
+                    self.draw_warp_zoom_overlay(active_tab.active_pane, &indicators);
+                }
+            }
         }
 
         // Confirmation overlay

@@ -250,6 +250,33 @@ impl WorkspaceManager {
         self.resize_vertical(self.ratio_step_vertical())
     }
 
+    /// Toggle zoom for the active pane in the active tab
+    pub fn toggle_zoom(&mut self) -> bool {
+        if let Some(tab) = self.active_tab_mut() {
+            if let Some(saved) = tab.zoom_saved_layout.take() {
+                // Restore
+                tab.split_layout = saved;
+                true
+            } else {
+                // Save and zoom
+                let saved = tab.split_layout.clone();
+                tab.zoom_saved_layout = Some(saved);
+                tab.split_layout = split_manager::SplitLayout::Single(tab.active_pane);
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Check if the active tab is currently zoomed
+    pub fn active_tab_zoomed(&self) -> bool {
+        self.tabs
+            .active_tab_id()
+            .map(|id| self.tabs.is_tab_zoomed(id))
+            .unwrap_or(false)
+    }
+
     /// Update the size information for the workspace
     pub fn update_size(&mut self, size_info: SizeInfo) {
         self.size_info = size_info;

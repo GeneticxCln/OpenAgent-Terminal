@@ -118,6 +118,7 @@ impl Display {
         let active_tab_id = tab_manager.active_tab_id();
 
         let mut current_x = 0;
+        let hover = self.tab_hover;
         for (index, &tab_id) in tab_order.iter().enumerate() {
             if current_x >= num_cols {
                 break;
@@ -131,12 +132,19 @@ impl Display {
             let is_active = Some(tab_id) == active_tab_id;
             let tab_width = max_tab_width.min(num_cols - current_x);
 
+            // Determine hover state for this tab
+            let is_hover_tab = matches!(hover, Some(crate::display::TabHoverTarget::Tab(id)) if id == tab_id)
+                || matches!(hover, Some(crate::display::TabHoverTarget::Close(id)) if id == tab_id);
+            let is_hover_close = matches!(hover, Some(crate::display::TabHoverTarget::Close(id)) if id == tab_id);
+
             // Draw tab background
-            if is_active {
+            if is_active || is_hover_tab {
                 let tab_x = current_x as f32 * size_info.cell_width();
                 let tab_width_px = tab_width as f32 * size_info.cell_width();
 
                 // Active tab background with rounded corners
+                let bg_color = if is_active { active_bg } else { tokens.surface_muted };
+                let alpha = if is_active { 1.0 } else { 0.85 };
                 let active_rect = if tui.rounded_corners {
                     UiRoundedRect::new(
                         tab_x,
@@ -144,11 +152,11 @@ impl Display {
                         tab_width_px,
                         bar_height,
                         tui.corner_radius_px * 0.5,
-                        active_bg,
-                        1.0,
+                        bg_color,
+                        alpha,
                     )
                 } else {
-                    UiRoundedRect::new(tab_x, bar_y, tab_width_px, bar_height, 0.0, active_bg, 1.0)
+                    UiRoundedRect::new(tab_x, bar_y, tab_width_px, bar_height, 0.0, bg_color, alpha)
                 };
                 self.stage_ui_rounded_rect(active_rect);
             }
@@ -177,7 +185,13 @@ impl Display {
             }
 
             // Draw tab text
-            let text_color = if is_active { active_fg } else { fg };
+            let text_color = if is_active {
+                active_fg
+            } else if is_hover_tab {
+                tokens.accent
+            } else {
+                fg
+            };
             let text_point = Point::new(start_line, Column(current_x + 1));
             self.draw_tab_text(text_point, text_color, bg, &tab_text, tab_width.saturating_sub(2));
 
@@ -186,7 +200,13 @@ impl Display {
             let close_x = current_x + tab_width.saturating_sub(2);
             if close_x > current_x {
                 let close_point = Point::new(start_line, Column(close_x));
-                let close_color = if is_active { active_fg } else { tokens.text_muted };
+                let close_color = if is_hover_close {
+                    tokens.accent
+                } else if is_active {
+                    active_fg
+                } else {
+                    tokens.text_muted
+                };
                 self.draw_tab_text(close_point, close_color, bg, CLOSE_BUTTON, 1);
             }
 
@@ -200,6 +220,15 @@ impl Display {
             }
 
             current_x += tab_width + 1; // +1 for separator
+        }
+
+        // Draw new tab button ("[+]") in the remaining area
+        if current_x < num_cols {
+            let plus_label = "[+]";
+            let plus_point = Point::new(start_line, Column(current_x + 1));
+            let hovered_create = matches!(hover, Some(crate::display::TabHoverTarget::Create));
+            let plus_color = if hovered_create { tokens.accent } else { tokens.text_muted };
+            self.draw_tab_text(plus_point, plus_color, bg, plus_label, plus_label.len());
         }
 
         // Damage the tab bar area

@@ -200,8 +200,9 @@ impl Display {
             current_x += tab_width + 8.0; // 8px gap between tabs
         }
 
-        // Draw "+" button for new tab
-        self.draw_new_tab_button(current_x, start_y, style);
+        // Draw "+" button for new tab (hover-aware)
+        let create_hover = matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
+        self.draw_new_tab_button(current_x, start_y, style, create_hover);
 
         Some(crate::display::tab_bar::TabBarGeometry {
             start_line: (start_y / size_info.cell_height()) as usize,
@@ -311,18 +312,20 @@ impl Display {
     }
 
     /// Draw "+" button for creating new tabs
-    fn draw_new_tab_button(&mut self, x: f32, y: f32, style: &WarpTabStyle) {
+    fn draw_new_tab_button(&mut self, x: f32, y: f32, style: &WarpTabStyle, hovered: bool) {
         let button_size = style.tab_height * 0.8;
         let button_y = y + (style.tab_height - button_size) / 2.0;
 
+        let bg_color = if hovered { style.hover_bg } else { style.inactive_bg };
+        let bg_alpha = if hovered { 1.0 } else { 0.9 };
         let button_bg = UiRoundedRect::new(
             x,
             button_y,
             button_size,
             button_size,
             button_size / 2.0,
-            style.hover_bg,
-            1.0,
+            bg_color,
+            bg_alpha,
         );
         self.stage_ui_rounded_rect(button_bg);
 
@@ -332,14 +335,15 @@ impl Display {
         let icon_y = button_y + (button_size - 2.0) / 2.0;
 
         // Horizontal line
-        let h_line = RenderRect::new(icon_x, icon_y, icon_size, 2.0, style.inactive_fg, 1.0);
+        let plus_color = if hovered { style.active_fg } else { style.inactive_fg };
+        let h_line = RenderRect::new(icon_x, icon_y, icon_size, 2.0, plus_color, 1.0);
         // Vertical line
         let v_line = RenderRect::new(
             icon_x + (icon_size - 2.0) / 2.0,
             button_y + (button_size - icon_size) / 2.0,
             2.0,
             icon_size,
-            style.inactive_fg,
+            plus_color,
             1.0,
         );
 

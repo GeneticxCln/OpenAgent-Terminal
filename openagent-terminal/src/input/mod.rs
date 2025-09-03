@@ -290,6 +290,9 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_previous_tab(&mut self) {}
     fn workspace_switch_to_tab(&mut self, _tab_id: crate::workspace::TabId) {}
 
+    // Toggle zoom of active pane in active tab
+    fn workspace_toggle_zoom(&mut self) {}
+
     // Workspace tab bar hit testing (handled in event::ActionContext)
     fn workspace_tab_bar_hit(
         &mut self,
@@ -825,6 +828,8 @@ impl<T: EventListener> Execute<T> for Action {
             Action::CloseTab => ctx.workspace_close_tab(),
             Action::NextTab => ctx.workspace_next_tab(),
             Action::PreviousTab => ctx.workspace_previous_tab(),
+            // Pane zoom
+            Action::ToggleZoom => ctx.workspace_toggle_zoom(),
             _ => (),
         }
     }
@@ -858,7 +863,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.workspace_switch_to_tab(tab_id);
                 },
                 TabBarAction::CloseTab(tab_id) => {
-                    // Close specific tab; if it's not active, manager will handle update gracefully
+                    // Ensure we close the correct tab: switch to it, then close
+                    self.ctx.workspace_switch_to_tab(tab_id);
                     self.ctx.workspace_close_tab();
                 },
                 TabBarAction::CreateTab => {
@@ -977,12 +983,68 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         };
 
+        // Tab bar hover: set pointer when hovering on a clickable tab area
+        let tab_hover = {
+            if self.ctx.config().workspace.tab_bar.show
+                && self.ctx.config().workspace.tab_bar.position
+                    != crate::workspace::TabBarPosition::Hidden
+            {
+                let mx = point.column.0;
+                let my = point.line.0 as usize;
+                self.ctx.workspace_tab_bar_hit(mx, my).is_some()
+            } else {
+                false
+            }
+        };
+
         // Update mouse state and check for URL change.
         let mouse_state = self.cursor_state();
-        if ai_hover {
+        if ai_hover || tab_hover {
             self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
         } else {
             self.ctx.window().set_mouse_cursor(mouse_state);
+        }
+
+        // Update tab hover state for visuals and damage tab bar line when it changes
+        let new_hover = if self.ctx.config().workspace.tab_bar.show
+            && self.ctx.config().workspace.tab_bar.position
+                != crate::workspace::TabBarPosition::Hidden
+        {
+            let mx = point.column.0;
+            let my = point.line.0 as usize;
+            if let Some(action) = self.ctx.workspace_tab_bar_hit(mx, my) {
+                use crate::display::tab_bar::TabBarAction;
+                match action {
+                    TabBarAction::SelectTab(id) => Some(crate::display::TabHoverTarget::Tab(id)),
+                    TabBarAction::CloseTab(id) => Some(crate::display::TabHoverTarget::Close(id)),
+                    TabBarAction::CreateTab => Some(crate::display::TabHoverTarget::Create),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if self.ctx.display().tab_hover != new_hover {
+            self.ctx.display().tab_hover = new_hover;
+            // Damage the tab bar line
+            let line = match self.ctx.config().workspace.tab_bar.position {
+                crate::workspace::TabBarPosition::Top => 0,
+                crate::workspace::TabBarPosition::Bottom => {
+                    self.ctx.size_info().screen_lines().saturating_sub(1)
+                },
+                crate::workspace::TabBarPosition::Hidden => 0,
+            };
+            let cols = self.ctx.size_info().columns();
+            self.ctx
+                .display()
+                .damage_tracker
+                .frame()
+                .damage_line(openagent_terminal_core::term::LineDamageBounds::new(
+                    line, 0, cols,
+                ));
+            self.ctx.mark_dirty();
         }
 
         // Prompt hint highlight update.

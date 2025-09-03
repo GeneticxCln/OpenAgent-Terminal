@@ -205,6 +205,28 @@ key = "a"
 mods = "Control|Shift"
 action = "ToggleAiPanel"
 
+# Tabs: next/previous (Ctrl+Tab / Ctrl+Shift+Tab)
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control"
+action = "NextTab"
+
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control|Shift"
+action = "PreviousTab"
+
+# Tabs: create/close (Ctrl+T / Ctrl+W)
+[[keyboard.bindings]]
+key = "t"
+mods = "Control"
+action = "CreateTab"
+
+[[keyboard.bindings]]
+key = "w"
+mods = "Control"
+action = "CloseTab"
+
 # Sample local workflows (appear in Workflows panel and palette)
 [[workflows]]
 name = "Find large files"

@@ -48,6 +48,9 @@ pub struct TabContext {
 
     /// Shell command used to create this tab
     pub shell_command: Option<String>,
+
+    /// Saved split layout when zoom is active; None when not zoomed
+    pub zoom_saved_layout: Option<SplitLayout>,
 }
 
 /// Context for a single pane within a tab
@@ -117,6 +120,7 @@ impl TabManager {
             ai_runtime: None,
             modified: false,
             shell_command: None,
+            zoom_saved_layout: None,
         };
 
         self.tabs.insert(tab_id, tab_context);
@@ -196,6 +200,14 @@ impl TabManager {
     /// Get the currently active tab mutably
     pub fn active_tab_mut(&mut self) -> Option<&mut TabContext> {
         self.active_tab_id.and_then(|id| self.tabs.get_mut(&id))
+    }
+
+    /// Return whether the given tab is zoomed (has a saved layout)
+    pub fn is_tab_zoomed(&self, tab_id: TabId) -> bool {
+        self.tabs
+            .get(&tab_id)
+            .map(|t| t.zoom_saved_layout.is_some())
+            .unwrap_or(false)
     }
 
     /// Get a tab by ID
