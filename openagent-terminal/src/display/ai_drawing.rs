@@ -6,13 +6,10 @@
 use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::LineDamageBounds;
 use tracing::{debug, trace};
-use unicode_width::UnicodeWidthStr;
 
-#[cfg(feature = "ai")]
-use crate::config::ai::AiConfig;
 use crate::config::UiConfig;
 use crate::display::color::Rgb;
-use crate::display::Display;
+use crate::display::{Backend, Display};
 use crate::renderer::rects::RenderRect;
 
 /// Configuration for AI UI rendering
@@ -205,10 +202,8 @@ impl<'a> AiDrawContext<'a> {
 
         let target_lines = ((num_lines as f32 * fraction).round() as usize)
             .clamp(6, self.draw_config.max_panel_lines.min(num_lines));
-
         let anim_lines =
             ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
-
         let start_line = num_lines.saturating_sub(anim_lines);
 
         (start_line, anim_lines)
@@ -288,7 +283,7 @@ impl<'a> AiDrawContext<'a> {
     fn draw_header(&mut self, line: usize, fg: Rgb, bg: Rgb, num_cols: usize) {
         let header_text = "AI Assistant";
         let header_point = Point::new(line, Column(2));
-        self.display.draw_ai_text(header_point, fg, bg, header_text, num_cols - 2);
+        self.display.draw_ai_panel_text(header_point, fg, bg, header_text, num_cols - 2);
     }
 
     /// Draw action hints
@@ -302,7 +297,7 @@ impl<'a> AiDrawContext<'a> {
 
         let hint_color = Rgb::new(180, 200, 220);
         let actions_point = Point::new(line, Column(2));
-        self.display.draw_ai_text(actions_point, hint_color, bg, actions, num_cols - 2);
+        self.display.draw_ai_panel_text(actions_point, hint_color, bg, actions, num_cols - 2);
     }
 
     /// Draw main content area
@@ -352,7 +347,7 @@ impl<'a> AiDrawContext<'a> {
     ) {
         if *current_line <= separator_line {
             let loading_point = Point::new(*current_line, Column(2));
-            self.display.draw_ai_text(
+            self.display.draw_ai_panel_text(
                 loading_point,
                 fg,
                 bg,
@@ -380,7 +375,7 @@ impl<'a> AiDrawContext<'a> {
         let error_text = format!("{}{}", self.draw_config.error_prefix, error);
         let error_point = Point::new(line, Column(2));
         let error_color = Rgb::new(255, 100, 100);
-        self.display.draw_ai_text(error_point, error_color, bg, &error_text, num_cols - 2);
+        self.display.draw_ai_panel_text(error_point, error_color, bg, &error_text, num_cols - 2);
     }
 
     /// Draw streaming text
@@ -398,7 +393,7 @@ impl<'a> AiDrawContext<'a> {
                 break;
             }
             let text_point = Point::new(*current_line, Column(2));
-            self.display.draw_ai_text(text_point, fg, bg, line, num_cols - 2);
+            self.display.draw_ai_panel_text(text_point, fg, bg, line, num_cols - 2);
             *current_line += 1;
         }
     }
@@ -423,76 +418,60 @@ impl<'a> AiDrawContext<'a> {
             if idx == ai_state.selected_proposal {
                 line_text.push_str(self.draw_config.selection_indicator);
             } else {
-                line_text.push_str("  ");
+                line_text.push_str("  "); // Indent for non-selected
+            }
+            
+            // Add command
+            if let Some(first_cmd) = proposal.proposed_commands.first() {
+                line_text.push_str(&format!("{}{}", self.draw_config.suggestion_prefix, first_cmd));
             }
 
-            // Add first command
-            if let Some(first_cmd) = proposal.proposed_commands.first() {
-                line_text.push_str(self.draw_config.suggestion_prefix);
+            let text_point = Point::new(*current_line, Column(0));
+            let text_color = if idx == ai_state.selected_proposal {
+                Rgb::new(100, 255, 100) // Green for selected
+            } else {
+                fg
+            };
+            self.display.draw_ai_panel_text(text_point, text_color, bg, &line_text, num_cols);
+            *current_line += 1;
 
-                // Truncate if needed
-                let available_width = num_cols.saturating_sub(line_text.width());
-                if first_cmd.width() > available_width {
-                    let truncated: String =
-                        first_cmd.chars().take(available_width.saturating_sub(3)).collect();
-                    line_text.push_str(&truncated);
-                    line_text.push_str("...");
-                } else {
-                    line_text.push_str(first_cmd);
+            // Show description if present and space available
+            if let Some(ref description) = proposal.description {
+                if *current_line <= separator_line {
+                    let desc_text = format!("    💡 {}", description);
+                    let desc_point = Point::new(*current_line, Column(0));
+                    let desc_color = Rgb::new(180, 180, 180); // Gray for description
+                    self.display.draw_ai_panel_text(desc_point, desc_color, bg, &desc_text, num_cols);
+                    *current_line += 1;
                 }
-
-                let text_color = if idx == ai_state.selected_proposal {
-                    Rgb::new(100, 255, 100) // Highlight selected
-                } else {
-                    fg
-                };
-
-                let text_point = Point::new(*current_line, Column(0));
-                self.display.draw_ai_text(text_point, text_color, bg, &line_text, num_cols);
-                *current_line += 1;
             }
         }
     }
 
     /// Draw separator line
     fn draw_separator(&mut self, line: usize, fg: Rgb, bg: Rgb, num_cols: usize) {
-        let separator = "─".repeat(num_cols);
-        let separator_point = Point::new(line, Column(0));
-        self.display.draw_ai_text(separator_point, fg, bg, &separator, num_cols);
+        let separator = "─".repeat(num_cols.saturating_sub(4));
+        let separator_point = Point::new(line, Column(2));
+        self.display.draw_ai_panel_text(separator_point, fg, bg, &separator, num_cols - 2);
     }
 
-    /// Draw prompt line
-    fn draw_prompt_line(
-        &mut self,
-        ai_state: &crate::ai_runtime::AiUiState,
-        line: usize,
-        fg: Rgb,
-        bg: Rgb,
-        num_cols: usize,
-    ) {
+    /// Draw prompt line with input
+    fn draw_prompt_line(&mut self, ai_state: &crate::ai_runtime::AiUiState, line: usize, fg: Rgb, bg: Rgb, num_cols: usize) {
         let prefix = "🤖 ";
-        let mut prompt = String::with_capacity(prefix.len() + ai_state.scratch.len());
-        prompt.push_str(prefix);
-        prompt.push_str(&ai_state.scratch);
-
+        let prompt = format!("{}{}", prefix, ai_state.scratch);
         let prompt_point = Point::new(line, Column(0));
-        self.display.draw_ai_text(prompt_point, fg, bg, &prompt, num_cols);
-
+        self.display.draw_ai_panel_text(prompt_point, fg, bg, &prompt, num_cols);
+        
         // Draw cursor
-        let cursor_col = prefix.width() + ai_state.cursor_position;
-        let cursor_col = cursor_col.min(num_cols.saturating_sub(1));
+        let cursor_col = (prefix.chars().count() + ai_state.cursor_position).min(num_cols.saturating_sub(1));
         let cursor_point = Point::new(line, Column(cursor_col));
-        self.display.draw_ai_text(cursor_point, bg, fg, " ", 1);
+        self.display.draw_ai_panel_text(cursor_point, bg, fg, " ", 1);
     }
 
-    /// Apply damage tracking for the affected area
+    /// Apply damage tracking for the panel area
     fn apply_damage(&mut self, start_line: usize, anim_lines: usize) {
-        let size_info = self.display.size_info;
-        let num_cols = size_info.columns;
-        let end_line = start_line + anim_lines;
-
-        for line_idx in start_line..end_line {
-            let damage = LineDamageBounds::new(line_idx, 0, num_cols);
+        for line_idx in start_line..(start_line + anim_lines) {
+            let damage = LineDamageBounds::new(line_idx, 0, self.display.size_info.columns);
             self.display.damage_tracker.frame().damage_line(damage);
             self.display.damage_tracker.next_frame().damage_line(damage);
         }
@@ -510,5 +489,53 @@ impl Display {
     ) -> Vec<RenderRect> {
         let mut ctx = AiDrawContext::new(self, config, mode);
         ctx.draw(ai_state)
+    }
+
+    /// Draw text at a specific point with AI panel styling
+    pub fn draw_ai_panel_text(
+        &mut self,
+        point: Point<usize>,
+        fg: Rgb,
+        bg: Rgb,
+        text: &str,
+        max_width: usize,
+    ) {
+        // Truncate text to fit in max_width
+        let displayed_text: String = if text.chars().count() > max_width {
+            text.chars().take(max_width.saturating_sub(1)).collect::<String>() + "…"
+        } else {
+            text.to_string()
+        };
+
+        // Damage the line
+        let damage = LineDamageBounds::new(point.line, point.column.0, self.size_info.columns);
+        self.damage_tracker.frame().damage_line(damage);
+        self.damage_tracker.next_frame().damage_line(damage);
+
+        // Draw the text using the backend
+        let size_info_copy = self.size_info;
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => {
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    displayed_text.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    displayed_text.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
+            },
+        }
     }
 }
