@@ -1,10 +1,10 @@
 use crate::privacy::{sanitize_request, AiPrivacyOptions};
+use crate::streaming::{RetryConfig, RetryStrategy};
 use crate::{AiProposal, AiProvider, AiRequest};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
 use tracing::{debug, error, info};
-use crate::streaming::{RetryConfig, RetryStrategy};
 
 pub struct OllamaProvider {
     endpoint: String,
@@ -238,7 +238,10 @@ impl AiProvider for OllamaProvider {
         let url = format!("{}/api/generate", self.endpoint);
         let ollama_request = OllamaRequest { model: self.model.clone(), prompt, stream: false };
 
-        let retry = RetryStrategy::Ollama { config: RetryConfig::default(), resource_wait: std::time::Duration::from_secs(1) };
+        let retry = RetryStrategy::Ollama {
+            config: RetryConfig::default(),
+            resource_wait: std::time::Duration::from_secs(1),
+        };
         let mut attempt = 0usize;
         loop {
             match self.client.post(&url).json(&ollama_request).send() {
@@ -263,12 +266,19 @@ impl AiProvider for OllamaProvider {
                                     }
                                     return Ok(vec![AiProposal {
                                         title: format!("Response for: {}", req.scratch_text),
-                                        description: Some("No specific commands suggested".to_string()),
-                                        proposed_commands: vec!["# No commands generated".to_string()],
+                                        description: Some(
+                                            "No specific commands suggested".to_string(),
+                                        ),
+                                        proposed_commands: vec![
+                                            "# No commands generated".to_string()
+                                        ],
                                     }]);
                                 } else {
                                     if ai_log_summary() {
-                                        info!("ollama_propose_complete commands={}", commands.len());
+                                        info!(
+                                            "ollama_propose_complete commands={}",
+                                            commands.len()
+                                        );
                                     }
                                     return Ok(vec![AiProposal {
                                         title: format!("Suggestion for: {}", req.scratch_text),
@@ -276,11 +286,15 @@ impl AiProvider for OllamaProvider {
                                         proposed_commands: commands,
                                     }]);
                                 }
-                            }
+                            },
                             Err(e) => {
                                 error!("Failed to parse Ollama response: {}", e);
                                 let msg = format!("Failed to parse response: {}", e);
-                                if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                                if retry.should_retry(
+                                    attempt,
+                                    &msg,
+                                    &std::sync::atomic::AtomicBool::new(false),
+                                ) {
                                     let delay = retry.delay_for_attempt(attempt, &msg);
                                     std::thread::sleep(delay);
                                     attempt += 1;
@@ -288,12 +302,16 @@ impl AiProvider for OllamaProvider {
                                 } else {
                                     return Err(msg);
                                 }
-                            }
+                            },
                         }
                     } else {
                         let msg = format!("API error: {}", response.status());
                         error!("{}", msg);
-                        if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                        if retry.should_retry(
+                            attempt,
+                            &msg,
+                            &std::sync::atomic::AtomicBool::new(false),
+                        ) {
                             let delay = retry.delay_for_attempt(attempt, &msg);
                             std::thread::sleep(delay);
                             attempt += 1;
@@ -302,11 +320,12 @@ impl AiProvider for OllamaProvider {
                             return Err(msg);
                         }
                     }
-                }
+                },
                 Err(e) => {
                     let msg = format!("Connection error: {}", e);
                     error!("{}", msg);
-                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false))
+                    {
                         let delay = retry.delay_for_attempt(attempt, &msg);
                         std::thread::sleep(delay);
                         attempt += 1;
@@ -314,7 +333,7 @@ impl AiProvider for OllamaProvider {
                     } else {
                         return Err(msg);
                     }
-                }
+                },
             }
         }
     }

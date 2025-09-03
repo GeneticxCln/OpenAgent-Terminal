@@ -24,34 +24,34 @@ use crate::workspace::{TabBarPosition, TabManager};
 pub struct WarpTabStyle {
     /// Tab height in pixels
     pub tab_height: f32,
-    
+
     /// Corner radius for tabs
     pub corner_radius: f32,
-    
+
     /// Tab padding (horizontal)
     pub tab_padding: f32,
-    
+
     /// Active tab background color
     pub active_bg: Rgb,
-    
+
     /// Inactive tab background color  
     pub inactive_bg: Rgb,
-    
+
     /// Hover tab background color
     pub hover_bg: Rgb,
-    
+
     /// Active tab text color
     pub active_fg: Rgb,
-    
+
     /// Inactive tab text color
     pub inactive_fg: Rgb,
-    
+
     /// Tab separator color
     pub separator_color: Rgb,
-    
+
     /// Drop shadow enabled
     pub drop_shadow: bool,
-    
+
     /// Animation duration for tab state changes
     pub animation_duration_ms: u32,
 }
@@ -79,25 +79,25 @@ impl Default for WarpTabStyle {
 pub struct WarpSplitIndicators {
     /// Show split preview when hovering
     pub show_split_preview: bool,
-    
+
     /// Split line width in pixels
     pub split_line_width: f32,
-    
+
     /// Split line color
     pub split_line_color: Rgb,
-    
+
     /// Split handle size for resizing
     pub split_handle_size: f32,
-    
+
     /// Split handle color (when visible)
     pub split_handle_color: Rgb,
-    
+
     /// Show resize handles on hover
     pub show_resize_handles: bool,
-    
+
     /// Zoom overlay transparency
     pub zoom_overlay_alpha: f32,
-    
+
     /// Zoom overlay color
     pub zoom_overlay_color: Rgb,
 }
@@ -160,7 +160,7 @@ impl Display {
 
         let size_info = self.size_info;
         let tab_count = tab_manager.tab_count();
-        
+
         if tab_count == 0 {
             return None;
         }
@@ -178,7 +178,7 @@ impl Display {
         // Draw tabs with Warp styling
         let tab_order = tab_manager.tab_order();
         let active_tab_id = tab_manager.active_tab_id();
-        
+
         let available_width = size_info.width() - style.tab_padding * 2.0;
         let tab_width = (available_width / tab_count as f32).min(200.0).max(120.0);
 
@@ -214,7 +214,7 @@ impl Display {
     /// Draw Warp-style tab background
     fn draw_warp_tab_background(&mut self, y: f32, height: f32, style: &WarpTabStyle) {
         let size_info = self.size_info;
-        
+
         // Main background
         let bg_rect = RenderRect::new(0.0, y, size_info.width(), height, style.inactive_bg, 1.0);
         let metrics = self.glyph_cache.font_metrics();
@@ -246,20 +246,12 @@ impl Display {
         style: &WarpTabStyle,
     ) {
         let height = style.tab_height;
-        
+
         // Tab background
         let bg_color = if is_active { style.active_bg } else { style.inactive_bg };
         let corner_radius = if is_active { style.corner_radius } else { style.corner_radius * 0.5 };
 
-        let tab_bg = UiRoundedRect::new(
-            x,
-            y,
-            width,
-            height,
-            corner_radius,
-            bg_color,
-            1.0,
-        );
+        let tab_bg = UiRoundedRect::new(x, y, width, height, corner_radius, bg_color, 1.0);
         self.stage_ui_rounded_rect(tab_bg);
 
         // Active tab indicator (bottom border)
@@ -281,7 +273,7 @@ impl Display {
         let text_color = if is_active { style.active_fg } else { style.inactive_fg };
         let text_y = ((y + height / 2.0) / self.size_info.cell_height()) as usize;
         let text_x = ((x + style.tab_padding) / self.size_info.cell_width()) as usize;
-        
+
         // Truncate title to fit
         let max_chars = ((width - style.tab_padding * 2.0) / self.size_info.cell_width()) as usize;
         let title = if tab.title.len() > max_chars.saturating_sub(3) {
@@ -313,15 +305,8 @@ impl Display {
         // Close button (when hovering)
         let close_x = x + width - 25.0;
         let close_y = y + height / 2.0 - 8.0;
-        let close_button = UiRoundedRect::new(
-            close_x,
-            close_y,
-            16.0,
-            16.0,
-            8.0,
-            Rgb::new(220, 220, 220),
-            0.8,
-        );
+        let close_button =
+            UiRoundedRect::new(close_x, close_y, 16.0, 16.0, 8.0, Rgb::new(220, 220, 220), 0.8);
         self.stage_ui_rounded_rect(close_button);
     }
 
@@ -375,11 +360,12 @@ impl Display {
 
         // Calculate pane boundaries and draw split lines
         let container = crate::workspace::split_manager::PaneRect::new(
-            0.0, 0.0, 
-            self.size_info.width(), 
-            self.size_info.height()
+            0.0,
+            0.0,
+            self.size_info.width(),
+            self.size_info.height(),
         );
-        
+
         self.draw_split_lines_recursive(split_layout, container, indicators);
     }
 
@@ -393,7 +379,7 @@ impl Display {
         match layout {
             crate::workspace::split_manager::SplitLayout::Horizontal { left, right, ratio } => {
                 let split_x = rect.x + rect.width * ratio;
-                
+
                 // Draw vertical split line
                 let split_line = RenderRect::new(
                     split_x - indicators.split_line_width / 2.0,
@@ -403,7 +389,7 @@ impl Display {
                     indicators.split_line_color,
                     0.6,
                 );
-                
+
                 let size_info = self.size_info;
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_info, &metrics, vec![split_line]);
@@ -415,7 +401,7 @@ impl Display {
             },
             crate::workspace::split_manager::SplitLayout::Vertical { top, bottom, ratio } => {
                 let split_y = rect.y + rect.height * ratio;
-                
+
                 // Draw horizontal split line
                 let split_line = RenderRect::new(
                     rect.x,
@@ -425,7 +411,7 @@ impl Display {
                     indicators.split_line_color,
                     0.6,
                 );
-                
+
                 let size_info = self.size_info;
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_info, &metrics, vec![split_line]);
@@ -489,8 +475,7 @@ impl Display {
     ) {
         // This is similar to existing draw_tab_text but with Warp-style adjustments
         let truncated_text: String = if text.len() > max_width {
-            text.chars().take(max_width.saturating_sub(3))
-                .collect::<String>() + "..."
+            text.chars().take(max_width.saturating_sub(3)).collect::<String>() + "..."
         } else {
             text.to_string()
         };
@@ -579,7 +564,7 @@ impl WarpAnimation {
     pub fn progress(&self) -> f32 {
         let elapsed = self.start_time.elapsed().as_millis() as f32;
         let progress = (elapsed / self.duration_ms as f32).min(1.0);
-        
+
         match self.easing {
             WarpEasing::Linear => progress,
             WarpEasing::EaseOut => 1.0 - (1.0 - progress).powi(3),
@@ -609,13 +594,13 @@ impl WarpAnimation {
 pub struct WarpUiStyle {
     /// Tab styling
     pub tab_style: WarpTabStyle,
-    
+
     /// Split indicators styling
     pub split_indicators: WarpSplitIndicators,
-    
+
     /// Animation settings
     pub animations_enabled: bool,
-    
+
     /// Default animation duration
     pub animation_duration_ms: u32,
 }

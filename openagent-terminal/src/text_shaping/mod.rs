@@ -11,4 +11,7 @@ pub use harfbuzz::{HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextD
 
 #[cfg(feature = "harfbuzz")]
 #[allow(unused_imports)]
-pub use integration::{IntegratedTextShaper, ShapedLine, ShapedCell, ShapedCellGlyph, ShapingIntegrationConfig, ShapedTextRenderer};
+pub use integration::{
+    IntegratedTextShaper, ShapedCell, ShapedCellGlyph, ShapedLine, ShapedTextRenderer,
+    ShapingIntegrationConfig,
+};

@@ -1,10 +1,10 @@
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use openagent_terminal::config::UiConfig;
 use openagent_terminal_core::event::EventListener;
 use openagent_terminal_core::term::Term;
 use openagent_terminal_core::vi_mode::ViMotion;
-use openagent_terminal::config::UiConfig;
 
 struct MockEventProxy;
 impl EventListener for MockEventProxy {}
@@ -51,11 +51,7 @@ fn idle_memory_usage_under_targets() {
     // - Idle core (no full GUI): < 50 MB
     // Give some headroom for CI variance.
     let rss_mb = rss_kb as f64 / 1024.0;
-    assert!(
-        rss_mb < 150.0,
-        "Idle RSS exceeded target (<150MB): {:.1}MB",
-        rss_mb
-    );
+    assert!(rss_mb < 150.0, "Idle RSS exceeded target (<150MB): {:.1}MB", rss_mb);
 }
 
 #[test]

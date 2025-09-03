@@ -40,15 +40,20 @@ impl Display {
         config: &UiConfig,
         st: &WorkflowProgressState,
     ) {
-        if !st.active { return; }
+        if !st.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Fixed-height bar at bottom: 5 lines
         let lines = 5usize;
         let num_lines = size_info.screen_lines();
-        if num_lines == 0 { return; }
+        if num_lines == 0 {
+            return;
+        }
         let start_line = num_lines.saturating_sub(lines);
         let y = start_line as f32 * size_info.cell_height();
         let h = (lines as f32) * size_info.cell_height();
@@ -85,15 +90,25 @@ impl Display {
         if let Some(status) = &st.status {
             let col_offset = 1 + base.width();
             let (badge, color) = match status.as_str() {
-                s if s.eq_ignore_ascii_case("running") || s.eq_ignore_ascii_case("starting") => ("● ", tokens.accent),
+                s if s.eq_ignore_ascii_case("running") || s.eq_ignore_ascii_case("starting") => {
+                    ("● ", tokens.accent)
+                },
                 s if s.eq_ignore_ascii_case("success") => ("✔ ", tokens.success),
                 s if s.eq_ignore_ascii_case("failed") => ("✖ ", tokens.error),
-                s if s.eq_ignore_ascii_case("cancelled") || s.eq_ignore_ascii_case("canceled") => ("⚠ ", tokens.warning),
+                s if s.eq_ignore_ascii_case("cancelled") || s.eq_ignore_ascii_case("canceled") => {
+                    ("⚠ ", tokens.warning)
+                },
                 _ => ("• ", tokens.text_muted),
             };
             let status_text = format!("{}{}", badge, status);
             let col = Column(col_offset.min(max_cols));
-            self.draw_ai_text(Point::new(start_line, col), color, bg, &status_text, max_cols.saturating_sub(col_offset));
+            self.draw_ai_text(
+                Point::new(start_line, col),
+                color,
+                bg,
+                &status_text,
+                max_cols.saturating_sub(col_offset),
+            );
         }
 
         // Current step line with optional progress index/total
@@ -101,10 +116,12 @@ impl Display {
         let terminal_status = st
             .status
             .as_ref()
-            .map(|s| s.eq_ignore_ascii_case("success")
-                || s.eq_ignore_ascii_case("failed")
-                || s.eq_ignore_ascii_case("cancelled")
-                || s.eq_ignore_ascii_case("canceled"))
+            .map(|s| {
+                s.eq_ignore_ascii_case("success")
+                    || s.eq_ignore_ascii_case("failed")
+                    || s.eq_ignore_ascii_case("cancelled")
+                    || s.eq_ignore_ascii_case("canceled")
+            })
             .unwrap_or(false);
 
         if let Some(step) = &st.current_step {
@@ -114,7 +131,13 @@ impl Display {
                 _ => "Step: ".to_string(),
             };
             let s = format!("{}{}", prefix, step);
-            self.draw_ai_text(Point::new(step_line, Column(1)), tokens.text_muted, bg, &s, size_info.columns().saturating_sub(2));
+            self.draw_ai_text(
+                Point::new(step_line, Column(1)),
+                tokens.text_muted,
+                bg,
+                &s,
+                size_info.columns().saturating_sub(2),
+            );
         } else if terminal_status {
             // If completed without a current_step, show final status prominently
             let status = st.status.as_ref().unwrap();
@@ -125,24 +148,45 @@ impl Display {
             } else {
                 ("Cancelled", tokens.warning)
             };
-            self.draw_ai_text(Point::new(step_line, Column(1)), color, bg, label, size_info.columns().saturating_sub(2));
+            self.draw_ai_text(
+                Point::new(step_line, Column(1)),
+                color,
+                bg,
+                label,
+                size_info.columns().saturating_sub(2),
+            );
         }
 
         // Logs and optional footer hint on the last line when in terminal status
         let mut line = start_line + 2;
-        let available_log_lines = if terminal_status { lines.saturating_sub(3) } else { lines.saturating_sub(2) };
+        let available_log_lines =
+            if terminal_status { lines.saturating_sub(3) } else { lines.saturating_sub(2) };
         let max_log_line = start_line + 1 + available_log_lines; // exclusive upper bound
         let skip = st.logs.len().saturating_sub(available_log_lines);
         for log in st.logs.iter().skip(skip) {
-            if line >= max_log_line { break; }
-            self.draw_ai_text(Point::new(line, Column(1)), fg, bg, log, size_info.columns().saturating_sub(2));
+            if line >= max_log_line {
+                break;
+            }
+            self.draw_ai_text(
+                Point::new(line, Column(1)),
+                fg,
+                bg,
+                log,
+                size_info.columns().saturating_sub(2),
+            );
             line += 1;
         }
 
         if terminal_status {
             let footer_line = start_line + lines - 1;
             let hint = "Esc: Dismiss";
-            self.draw_ai_text(Point::new(footer_line, Column(1)), tokens.text_muted, bg, hint, size_info.columns().saturating_sub(2));
+            self.draw_ai_text(
+                Point::new(footer_line, Column(1)),
+                tokens.text_muted,
+                bg,
+                hint,
+                size_info.columns().saturating_sub(2),
+            );
         }
     }
 }
@@ -178,25 +222,31 @@ impl WorkflowsPanelState {
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        if self.results.is_empty() { self.selected = 0; return; }
+        if self.results.is_empty() {
+            self.selected = 0;
+            return;
+        }
         let len = self.results.len() as isize;
         let mut idx = self.selected as isize + delta;
-        if idx < 0 { idx = 0; }
-        if idx >= len { idx = len - 1; }
+        if idx < 0 {
+            idx = 0;
+        }
+        if idx >= len {
+            idx = len - 1;
+        }
         self.selected = idx as usize;
     }
 }
 
 impl Display {
     /// Draw the Workflows panel (bottom overlay). This draws both background rects and text.
-    pub fn draw_workflows_panel_overlay(
-        &mut self,
-        config: &UiConfig,
-        state: &WorkflowsPanelState,
-    ) {
-        if !state.active { return; }
+    pub fn draw_workflows_panel_overlay(&mut self, config: &UiConfig, state: &WorkflowsPanelState) {
+        if !state.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 35% of viewport height, min 6 lines
@@ -207,9 +257,11 @@ impl Display {
         let panel_h = target_lines as f32 * size_info.cell_height();
 
         // Backdrop dim
-        let backdrop = RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.20);
+        let backdrop =
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.20);
         // Panel background
-        let panel_bg = RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.95);
+        let panel_bg =
+            RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.95);
 
         // Stage rects then draw them
         let rects = vec![backdrop, panel_bg];
@@ -240,7 +292,9 @@ impl Display {
         prompt.push_str(&state.query);
         self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &prompt, num_cols);
         let mut cursor_col = prompt_prefix.width() + state.query.width();
-        if cursor_col >= num_cols { cursor_col = num_cols.saturating_sub(1); }
+        if cursor_col >= num_cols {
+            cursor_col = num_cols.saturating_sub(1);
+        }
         self.draw_ai_text(Point::new(line, Column(cursor_col)), bg, fg, " ", 1);
         line += 1;
 
@@ -254,9 +308,15 @@ impl Display {
         // Results list (reserve one line for footer)
         let max_lines = footer_line.saturating_sub(1);
         for (idx, item) in state.results.iter().enumerate() {
-            if line > max_lines { break; }
+            if line > max_lines {
+                break;
+            }
             let mut row = String::new();
-            if idx == state.selected { row.push_str("▶ "); } else { row.push_str("  "); }
+            if idx == state.selected {
+                row.push_str("▶ ");
+            } else {
+                row.push_str("  ");
+            }
             // Build display text: name — description (truncated)
             row.push_str(&item.name);
             if let Some(desc) = &item.description {
@@ -278,4 +338,3 @@ impl Display {
         self.draw_ai_text(Point::new(footer_line, Column(2)), hint_fg, bg, hint, num_cols - 2);
     }
 }
-

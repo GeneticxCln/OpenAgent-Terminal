@@ -1,6 +1,6 @@
-use std::path::Path;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Pool, Sqlite, Error as SqlxError};
+use sqlx::{Error as SqlxError, Pool, Sqlite};
+use std::path::Path;
 use thiserror::Error;
 
 pub mod blocks;
@@ -29,7 +29,7 @@ impl Storage {
     /// Create a new storage instance with SQLite database at the specified path
     pub async fn new<P: AsRef<Path>>(db_path: P) -> StorageResult<Self> {
         let db_path = db_path.as_ref();
-        
+
         // Create parent directories if they don't exist
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -41,16 +41,13 @@ impl Storage {
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
+        let pool = SqlitePoolOptions::new().max_connections(5).connect_with(options).await?;
 
         let storage = Self { pool };
-        
+
         // Run migrations
         storage.migrate().await?;
-        
+
         Ok(storage)
     }
 

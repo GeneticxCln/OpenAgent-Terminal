@@ -22,29 +22,29 @@ use crate::config::{Action, UiConfig};
 use crate::event::{Event, EventProxy, EventType};
 use crate::window_context::WindowContext;
 
-use super::warp_tab_manager::WarpTabManager;
-use super::warp_split_manager::{WarpSplitManager, WarpNavDirection, WarpResizeDirection};
 use super::split_manager::PaneId;
-use super::tab_manager::{TabId, TabContext};
+use super::tab_manager::TabId;
+use super::warp_split_manager::{WarpNavDirection, WarpResizeDirection, WarpSplitManager};
+use super::warp_tab_manager::WarpTabManager;
 
 /// Errors that can occur during Warp integration
 #[derive(Debug, thiserror::Error)]
 pub enum WarpIntegrationError {
     #[error("Failed to create terminal: {0}")]
     TerminalCreation(String),
-    
+
     #[error("Session file error: {0}")]
     SessionFile(#[from] std::io::Error),
-    
+
     #[error("Session format error: {0}")]
     SessionFormat(#[from] serde_json::Error),
-    
+
     #[error("Invalid pane ID: {0:?}")]
     InvalidPaneId(PaneId),
-    
+
     #[error("Invalid tab ID: {0:?}")]
     InvalidTabId(TabId),
-    
+
     #[error("Window context not found for ID: {0:?}")]
     WindowNotFound(WindowId),
 }
@@ -56,28 +56,28 @@ type WarpResult<T> = Result<T, WarpIntegrationError>;
 pub struct WarpIntegration {
     /// Enhanced tab management
     tab_manager: WarpTabManager,
-    
+
     /// Enhanced split management
     split_manager: WarpSplitManager,
-    
+
     /// Active terminal instances keyed by pane ID
     terminals: HashMap<PaneId, Arc<FairMutex<Term<EventProxy>>>>,
-    
+
     /// PTY managers for each terminal  
     // pty_managers: HashMap<PaneId, Arc<PtyManager>>, // TODO: Uncomment when PtyManager is available
-    
+
     /// Configuration
     config: Rc<UiConfig>,
-    
+
     /// Window context for creating terminals
     window_context: Option<Arc<WindowContext>>,
-    
+
     /// Event proxy for sending events
     event_proxy: Option<EventLoopProxy<Event>>,
-    
+
     /// Last activity timestamp for session auto-save
     last_activity: Instant,
-    
+
     /// Performance monitoring
     perf_stats: WarpPerformanceStats,
 }
@@ -146,12 +146,11 @@ impl WarpIntegration {
     /// Create default tab when no session exists
     fn create_default_tab(&mut self) -> WarpResult<TabId> {
         let start = Instant::now();
-        
-        let current_dir = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/"));
-        
+
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+
         let tab_id = self.tab_manager.create_warp_tab(Some(current_dir));
-        
+
         // Create the actual terminal for the default pane
         if let Some(tab) = self.tab_manager.active_tab() {
             let active_pane = tab.active_pane;
@@ -161,7 +160,7 @@ impl WarpIntegration {
 
         self.perf_stats.tab_creation_time_ms = start.elapsed().as_millis() as u64;
         self.update_activity();
-        
+
         Ok(tab_id)
     }
 
@@ -176,39 +175,36 @@ impl WarpIntegration {
     fn create_terminal_for_pane(&mut self, pane_id: PaneId, working_dir: &Path) -> WarpResult<()> {
         let Some(window_context) = &self.window_context else {
             return Err(WarpIntegrationError::TerminalCreation(
-                "Window context not initialized".to_string()
+                "Window context not initialized".to_string(),
             ));
         };
 
         let Some(event_proxy) = &self.event_proxy else {
             return Err(WarpIntegrationError::TerminalCreation(
-                "Event proxy not initialized".to_string()
+                "Event proxy not initialized".to_string(),
             ));
         };
 
         // Create EventProxy for this terminal
         let terminal_event_proxy = EventProxy::new(event_proxy.clone(), window_context.id());
-        
+
         // Create terminal configuration
         let term_config = openagent_terminal_core::term::Config::default();
         let size_info = window_context.display.size_info;
-        
+
         // Create terminal instance
-        let terminal = Arc::new(FairMutex::new(Term::new(
-            term_config,
-            &size_info,
-            terminal_event_proxy,
-        )));
+        let terminal =
+            Arc::new(FairMutex::new(Term::new(term_config, &size_info, terminal_event_proxy)));
 
         // Store terminal reference
         self.terminals.insert(pane_id, terminal);
-        
+
         // TODO: Create and store PTY manager
         // let pty_manager = Arc::new(PtyManager::new(pane_id, working_dir)?);
         // self.pty_managers.insert(pane_id, pty_manager);
 
         self.perf_stats.active_terminals = self.terminals.len();
-        
+
         debug!("Created terminal for pane {:?} in {}", pane_id, working_dir.display());
         Ok(())
     }
@@ -216,7 +212,7 @@ impl WarpIntegration {
     /// Handle Warp-style action execution
     pub fn execute_warp_action(&mut self, action: &WarpAction) -> WarpResult<bool> {
         let start = Instant::now();
-        
+
         let result = match action {
             WarpAction::CreateTab => self.handle_create_tab(),
             WarpAction::CloseTab => self.handle_close_tab(),
@@ -238,8 +234,12 @@ impl WarpIntegration {
         let elapsed = start.elapsed().as_millis() as u64;
         match action {
             WarpAction::NavigatePane(_) => self.perf_stats.navigation_time_ms = elapsed,
-            WarpAction::SplitRight | WarpAction::SplitDown => self.perf_stats.split_creation_time_ms = elapsed,
-            WarpAction::SaveSession | WarpAction::LoadSession => self.perf_stats.session_save_time_ms = elapsed,
+            WarpAction::SplitRight | WarpAction::SplitDown => {
+                self.perf_stats.split_creation_time_ms = elapsed
+            },
+            WarpAction::SaveSession | WarpAction::LoadSession => {
+                self.perf_stats.session_save_time_ms = elapsed
+            },
             _ => {},
         }
 
@@ -249,14 +249,13 @@ impl WarpIntegration {
 
     /// Handle tab creation
     fn handle_create_tab(&mut self) -> WarpResult<bool> {
-        let current_dir = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/"));
-        
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+
         let tab_id = self.tab_manager.create_warp_tab(Some(current_dir.clone()));
-        
+
         // Send UI update event
         self.send_ui_update_event(WarpUiUpdateType::TabCreated(tab_id));
-        
+
         // TODO: Create terminal when tab structure is available
         info!("Created Warp tab {:?}", tab_id);
         Ok(true)
@@ -268,23 +267,23 @@ impl WarpIntegration {
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
             let ok = self.tab_manager.close_warp_tab(tab_id);
-            
+
             let msg = if ok {
-                format!("Closed Warp tab '{}'" , tab_title)
+                format!("Closed Warp tab '{}'", tab_title)
             } else {
                 "Close Warp tab failed".into()
             };
-            
+
             info!("{}", msg);
-            
+
             if ok {
                 // Cleanup terminal for the closed tab's panes
                 // TODO: Get panes from tab before closing and cleanup
-                
+
                 // Send UI update event
                 self.send_ui_update_event(WarpUiUpdateType::TabClosed(tab_id));
             }
-            
+
             Ok(ok)
         } else {
             info!("No active tab to close");
@@ -351,7 +350,7 @@ impl WarpIntegration {
     /// Handle session saving
     fn handle_save_session(&mut self) -> WarpResult<bool> {
         let start = Instant::now();
-        
+
         match self.tab_manager.save_session() {
             Ok(()) => {
                 self.perf_stats.session_save_time_ms = start.elapsed().as_millis() as u64;
@@ -361,7 +360,7 @@ impl WarpIntegration {
             Err(e) => {
                 error!("Failed to save Warp session: {}", e);
                 Err(WarpIntegrationError::SessionFile(e))
-            }
+            },
         }
     }
 
@@ -369,7 +368,7 @@ impl WarpIntegration {
     fn handle_load_session(&mut self) -> WarpResult<bool> {
         // Clean up current state first
         self.cleanup_all_terminals();
-        
+
         match self.tab_manager.load_session() {
             Ok(true) => {
                 self.restore_session_terminals()?;
@@ -380,7 +379,7 @@ impl WarpIntegration {
                 self.create_default_tab()?;
                 Ok(false)
             },
-            Err(e) => Err(WarpIntegrationError::SessionFile(e))
+            Err(e) => Err(WarpIntegrationError::SessionFile(e)),
         }
     }
 
@@ -389,14 +388,14 @@ impl WarpIntegration {
         let ok = self.tab_manager.next_tab();
         let msg = if ok { "Switched to next tab" } else { "Switch to next tab failed" };
         info!("{}", msg);
-        
+
         if ok {
             // Send UI update event
             if let Some(active_tab) = self.tab_manager.active_tab() {
                 self.send_ui_update_event(WarpUiUpdateType::TabSwitched { tab_id: active_tab.id });
             }
         }
-        
+
         Ok(ok)
     }
 
@@ -404,14 +403,14 @@ impl WarpIntegration {
         let ok = self.tab_manager.previous_tab();
         let msg = if ok { "Switched to previous tab" } else { "Switch to previous tab failed" };
         info!("{}", msg);
-        
+
         if ok {
             // Send UI update event
             if let Some(active_tab) = self.tab_manager.active_tab() {
                 self.send_ui_update_event(WarpUiUpdateType::TabSwitched { tab_id: active_tab.id });
             }
         }
-        
+
         Ok(ok)
     }
 
@@ -446,8 +445,10 @@ impl WarpIntegration {
     /// Send UI update event through the event proxy
     fn send_ui_update_event(&self, update_type: WarpUiUpdateType) {
         if let Some(proxy) = &self.event_proxy {
-            let event = Event::new(EventType::WarpUiUpdate(update_type), 
-                                 self.window_context.as_ref().unwrap().id());
+            let event = Event::new(
+                EventType::WarpUiUpdate(update_type),
+                self.window_context.as_ref().unwrap().id(),
+            );
             let _ = proxy.send_event(event);
         }
     }
@@ -481,7 +482,9 @@ impl WarpIntegration {
         WarpDebugInfo {
             tab_count: self.tab_manager.tab_count(),
             active_tab_id: self.tab_manager.active_tab().map(|t| t.id),
-            active_pane_count: self.tab_manager.active_tab()
+            active_pane_count: self
+                .tab_manager
+                .active_tab()
                 .map(|t| t.split_layout.pane_count())
                 .unwrap_or(0),
             terminal_count: self.terminals.len(),
@@ -495,7 +498,7 @@ impl WarpIntegration {
         let terminal_memory = self.terminals.len() as u64 * 50 * 1024;
         let tab_memory = self.tab_manager.tab_count() as u64 * 10 * 1024;
         let base_memory = 100 * 1024; // 100KB base
-        
+
         terminal_memory + tab_memory + base_memory
     }
 }
@@ -560,7 +563,9 @@ impl ActionExt for Action {
             Action::FocusNextPane => Some(WarpAction::NavigatePane(WarpNavDirection::Right)),
             Action::FocusPreviousPane => Some(WarpAction::NavigatePane(WarpNavDirection::Left)),
             Action::ResizePaneLeft => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandLeft)),
-            Action::ResizePaneRight => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandRight)),
+            Action::ResizePaneRight => {
+                Some(WarpAction::ResizePane(WarpResizeDirection::ExpandRight))
+            },
             Action::ResizePaneUp => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandUp)),
             Action::ResizePaneDown => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandDown)),
             Action::ClosePane => Some(WarpAction::ClosePane),

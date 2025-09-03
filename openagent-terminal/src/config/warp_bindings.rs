@@ -7,8 +7,8 @@
 //! - Resizing: Cmd+Ctrl+Arrow keys
 //! - Zoom: Cmd+Shift+Enter
 
-use serde::{Deserialize, Serialize};
 use crate::config::KeyBinding;
+use serde::{Deserialize, Serialize};
 
 /// Macro to create Warp-style bindings (similar to existing bindings! macro)
 macro_rules! warp_bindings {
@@ -47,7 +47,7 @@ pub fn warp_key_bindings_macos() -> Vec<KeyBinding> {
         Tab,     ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::PreviousTab;
         "]",     ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::NextTab;
         "[",     ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::PreviousTab;
-        
+
         // Tab selection by number (Cmd+1 through Cmd+9)
         "1",     ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SelectTab1;
         "2",     ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SelectTab2;
@@ -62,30 +62,29 @@ pub fn warp_key_bindings_macos() -> Vec<KeyBinding> {
         // Pane Splitting (Warp's signature shortcuts)
         "d",     ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SplitHorizontal;
         "d",     ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SplitVertical;
-        
+
         // Pane Navigation (Cmd+Alt+Arrow)
         ArrowLeft,  ModifiersState::SUPER | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneLeft;
         ArrowRight, ModifiersState::SUPER | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneRight;
         ArrowUp,    ModifiersState::SUPER | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneUp;
         ArrowDown,  ModifiersState::SUPER | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneDown;
-        
+
         // Pane Resizing (Cmd+Ctrl+Arrow)
         ArrowLeft,  ModifiersState::SUPER | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ResizePaneLeft;
         ArrowRight, ModifiersState::SUPER | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ResizePaneRight;
         ArrowUp,    ModifiersState::SUPER | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ResizePaneUp;
         ArrowDown,  ModifiersState::SUPER | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ResizePaneDown;
-        
+
         // Pane Management
         "w",     ModifiersState::SUPER | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ClosePane;
         Enter,   ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ZoomPane;
         "=",     ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::EqualizeSplits;
-        
+
         // Recent pane cycling
         ";",     ModifiersState::SUPER, ~BindingMode::SEARCH; Action::CycleRecentPanes;
         "[",     ModifiersState::SUPER | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPreviousPane;
     )
 }
-
 
 /// Actions needed for Warp-style functionality (to be added to Action enum)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,19 +94,19 @@ pub enum WarpAction {
     FocusPaneRight,
     FocusPaneUp,
     FocusPaneDown,
-    
+
     // Pane zoom
     ZoomPane,
-    
+
     // Split equalization
     EqualizeSplits,
-    
+
     // Recent pane cycling
     CycleRecentPanes,
-    
+
     // Tab creation with smart naming
     CreateSmartTab,
-    
+
     // Session management
     SaveSession,
     LoadSession,
@@ -117,7 +116,7 @@ pub enum WarpAction {
 pub fn integrate_warp_bindings(existing_bindings: &mut Vec<KeyBinding>) {
     #[cfg(target_os = "macos")]
     existing_bindings.extend(warp_key_bindings_macos());
-    
+
     #[cfg(not(target_os = "macos"))]
     existing_bindings.extend(warp_key_bindings_linux());
 }
@@ -127,22 +126,22 @@ pub fn integrate_warp_bindings(existing_bindings: &mut Vec<KeyBinding>) {
 pub struct WarpConfig {
     /// Enable Warp-style tab and split behavior
     pub enabled: bool,
-    
+
     /// Enable automatic tab naming
     pub auto_tab_naming: bool,
-    
+
     /// Session persistence file path
     pub session_file: Option<String>,
-    
+
     /// Auto-save session interval in seconds
     pub session_auto_save_interval: u64,
-    
+
     /// Pane resize step size (0.01 = 1%)
     pub pane_resize_step: f32,
-    
+
     /// Enable pane zoom functionality
     pub enable_pane_zoom: bool,
-    
+
     /// Show split indicators when splitting
     pub show_split_indicators: bool,
 }
@@ -169,7 +168,7 @@ pub struct WarpKeyBindings {
     pub tab_close: String,
     pub tab_next: String,
     pub tab_previous: String,
-    
+
     /// Split management bindings
     pub split_horizontal: String,
     pub split_vertical: String,

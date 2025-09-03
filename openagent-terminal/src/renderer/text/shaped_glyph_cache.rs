@@ -1,14 +1,14 @@
 // Enhanced glyph cache for shaped text support
 // Extends the existing glyph cache to handle HarfBuzz shaped text
 
-use std::collections::HashMap;
 use ahash::RandomState;
-use crossfont::{FontKey, GlyphKey, RasterizedGlyph};
 use anyhow::Result;
+use crossfont::{FontKey, GlyphKey, RasterizedGlyph};
+use std::collections::HashMap;
 
+use super::glyph_cache::{Glyph, GlyphCache, LoadGlyph};
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::integration::{ShapedCell, ShapedCellGlyph, ShapedLine};
-use super::glyph_cache::{Glyph, GlyphCache, LoadGlyph};
 
 /// Key for shaped glyph caching that includes position information
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -24,19 +24,19 @@ pub struct ShapedGlyphKey {
 pub struct ShapedGlyphCache {
     /// Base glyph cache for basic character rendering
     base_cache: GlyphCache,
-    
+
     /// Cache for shaped glyphs by glyph ID
     shaped_cache: HashMap<ShapedGlyphKey, Glyph, RandomState>,
-    
-/// Cache for shaped glyph positions by character cluster
+
+    /// Cache for shaped glyph positions by character cluster
     position_cache: HashMap<u32, Vec<ShapedGlyphPosition>, RandomState>,
-    
+
     /// Cache for BiDi analysis results
     bidi_cache: HashMap<String, Vec<BidiRun>, RandomState>,
-    
+
     /// Maximum number of cached shaped glyphs
     max_shaped_cache_size: usize,
-    
+
     /// Statistics for cache performance
     shaped_cache_hits: u64,
     shaped_cache_misses: u64,
@@ -186,13 +186,9 @@ impl ShapedGlyphCache {
         // Simple eviction: remove random entries when cache is full
         if self.shaped_cache.len() >= self.max_shaped_cache_size {
             // Remove 20% of entries to avoid frequent evictions
-            let keys_to_remove: Vec<ShapedGlyphKey> = self
-                .shaped_cache
-                .keys()
-                .take(self.max_shaped_cache_size / 5)
-                .cloned()
-                .collect();
-            
+            let keys_to_remove: Vec<ShapedGlyphKey> =
+                self.shaped_cache.keys().take(self.max_shaped_cache_size / 5).cloned().collect();
+
             for key_to_remove in keys_to_remove {
                 self.shaped_cache.remove(&key_to_remove);
             }
@@ -210,7 +206,8 @@ impl ShapedGlyphCache {
             cache_hits: self.shaped_cache_hits,
             cache_misses: self.shaped_cache_misses,
             hit_ratio: if self.shaped_cache_hits + self.shaped_cache_misses > 0 {
-                self.shaped_cache_hits as f64 / (self.shaped_cache_hits + self.shaped_cache_misses) as f64
+                self.shaped_cache_hits as f64
+                    / (self.shaped_cache_hits + self.shaped_cache_misses) as f64
             } else {
                 0.0
             },
@@ -248,10 +245,13 @@ impl ShapedGlyphCache {
     }
 
     /// Update font size (delegates to base cache)
-    pub fn update_font_size(&mut self, font: &crate::config::font::Font) -> Result<(), crossfont::Error> {
+    pub fn update_font_size(
+        &mut self,
+        font: &crate::config::font::Font,
+    ) -> Result<(), crossfont::Error> {
         // Clear shaped caches since font size changed
         self.clear_shaped_caches();
-        
+
         // Update base cache
         self.base_cache.update_font_size(font)
     }
@@ -268,30 +268,30 @@ impl ShapedGlyphCache {
     {
         self.base_cache.get(glyph_key, loader, show_missing)
     }
-    
+
     /// Analyze text for BiDi runs and cache the result
     pub fn analyze_bidi(&mut self, text: &str) -> Vec<BidiRun> {
         if let Some(cached) = self.bidi_cache.get(text) {
             return cached.clone();
         }
-        
+
         let runs = self.perform_bidi_analysis(text);
         self.bidi_cache.insert(text.to_string(), runs.clone());
         runs
     }
-    
+
     /// Perform BiDi analysis on text
     fn perform_bidi_analysis(&self, _text: &str) -> Vec<BidiRun> {
         #[cfg(feature = "harfbuzz")]
         {
             use unicode_bidi::{BidiInfo, Level};
-            
+
             let bidi_info = BidiInfo::new(_text, None);
             let mut runs = Vec::new();
-            
+
             // Get the paragraph embedding level
             let para_level = bidi_info.paragraphs[0].level;
-            
+
             // Convert BiDi levels to our BidiRun structure
             for run in bidi_info.visual_runs(para_level) {
                 let direction = if run.level.is_ltr() {
@@ -299,7 +299,7 @@ impl ShapedGlyphCache {
                 } else {
                     crate::text_shaping::harfbuzz::TextDirection::RightToLeft
                 };
-                
+
                 runs.push(BidiRun {
                     start: run.start,
                     end: run.end,
@@ -307,7 +307,7 @@ impl ShapedGlyphCache {
                     level: run.level.number(),
                 });
             }
-            
+
             runs
         }
         #[cfg(not(feature = "harfbuzz"))]
@@ -321,33 +321,33 @@ impl ShapedGlyphCache {
             }]
         }
     }
-    
+
     /// Cache shaped text with position offsets for ligatures
     pub fn cache_ligature_positions(&mut self, cluster: u32, positions: Vec<ShapedGlyphPosition>) {
         self.position_cache.insert(cluster, positions);
     }
-    
+
     /// Get cached ligature positions
     pub fn get_ligature_positions(&self, cluster: u32) -> Option<&Vec<ShapedGlyphPosition>> {
         self.position_cache.get(&cluster)
     }
-    
+
     /// Optimize cache by removing least recently used entries
     pub fn optimize_cache(&mut self) {
         // Remove oldest BiDi cache entries if we have too many
         if self.bidi_cache.len() > 1000 {
-            let keys_to_remove: Vec<String> = self.bidi_cache.keys()
-                .take(self.bidi_cache.len() - 800)
-                .cloned()
-                .collect();
+            let keys_to_remove: Vec<String> =
+                self.bidi_cache.keys().take(self.bidi_cache.len() - 800).cloned().collect();
             for key in keys_to_remove {
                 self.bidi_cache.remove(&key);
             }
         }
-        
+
         // Remove old position cache entries
         if self.position_cache.len() > 5000 {
-            let keys_to_remove: Vec<u32> = self.position_cache.keys()
+            let keys_to_remove: Vec<u32> = self
+                .position_cache
+                .keys()
                 .take(self.position_cache.len() - 4000)
                 .cloned()
                 .collect();
@@ -411,25 +411,36 @@ impl<T: LoadGlyph> LoadShapedGlyph for T {}
 mod tests {
     use super::*;
     use crate::config::font::Font;
-    use crossfont::{Size, Rasterizer, Rasterize};
+    use crossfont::{Rasterize, Rasterizer, Size};
 
     #[test]
     fn test_shaped_glyph_key_equality() {
+        let font_key = FontKey::next();
         let key1 = ShapedGlyphKey {
-            font_key: FontKey::next(),
+            font_key,
             glyph_id: 42,
             size: Size::new(16.0),
             character: Some('a'),
         };
 
         let key2 = ShapedGlyphKey {
-            font_key: FontKey::next(),
+            font_key, // Same font key
             glyph_id: 42,
             size: Size::new(16.0),
             character: Some('a'),
         };
 
         assert_eq!(key1, key2);
+        
+        // Test that different font keys produce different keys
+        let key3 = ShapedGlyphKey {
+            font_key: FontKey::next(),
+            glyph_id: 42,
+            size: Size::new(16.0),
+            character: Some('a'),
+        };
+        
+        assert_ne!(key1, key3);
     }
 
     #[test]

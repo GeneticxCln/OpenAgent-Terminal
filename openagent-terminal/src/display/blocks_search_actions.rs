@@ -1,15 +1,10 @@
 // Blocks search actions menu
 // Provides contextual actions for selected blocks in advanced search mode
 
-#![cfg(feature = "blocks")]
 
-use crate::display::blocks_search_panel::BlocksSearchItem;
-use crate::display::color::Rgb;
-use crate::display::Display;
-use crate::renderer::rects::{RenderLine, RenderLines};
-use crate::renderer::rects::RenderRect;
 use crate::config::theme::ThemeTokens;
-use openagent_terminal_core::grid::Dimensions;
+use crate::display::blocks_search_panel::BlocksSearchItem;
+use crate::display::Display;
 use openagent_terminal_core::index::{Column, Point};
 
 /// Available actions for blocks in search results
@@ -71,7 +66,7 @@ impl BlockAction {
             Self::CreateSnippet => "Create Snippet",
         }
     }
-    
+
     /// Get keyboard shortcut for the action
     pub fn shortcut(&self) -> &'static str {
         match self {
@@ -93,7 +88,7 @@ impl BlockAction {
             Self::CreateSnippet => "N",
         }
     }
-    
+
     /// Get icon for the action
     pub fn icon(&self) -> &'static str {
         match self {
@@ -115,12 +110,12 @@ impl BlockAction {
             Self::CreateSnippet => "✂️",
         }
     }
-    
+
     /// Check if action is destructive (requires confirmation)
     pub fn is_destructive(&self) -> bool {
         matches!(self, Self::DeleteBlock)
     }
-    
+
     /// Check if action is available for the given block
     pub fn is_available_for(&self, block: &BlocksSearchItem) -> bool {
         match self {
@@ -170,13 +165,13 @@ impl ActionsMenuState {
             width: 25,
         }
     }
-    
+
     /// Open actions menu for a specific block
     pub fn open_for_block(&mut self, block: &BlocksSearchItem, position: Point<usize>) {
         self.active = true;
         self.selected = 0;
         self.position = position;
-        
+
         // Build list of available actions
         self.actions = vec![
             BlockAction::CopyCommand,
@@ -195,35 +190,36 @@ impl ActionsMenuState {
             BlockAction::ViewFullOutput,
             BlockAction::CreateSnippet,
             BlockAction::DeleteBlock,
-        ].into_iter()
-            .filter(|action| action.is_available_for(block))
-            .collect();
+        ]
+        .into_iter()
+        .filter(|action| action.is_available_for(block))
+        .collect();
     }
-    
+
     /// Close the actions menu
     pub fn close(&mut self) {
         self.active = false;
         self.actions.clear();
     }
-    
+
     /// Move selection in the menu
     pub fn move_selection(&mut self, delta: isize) {
         if self.actions.is_empty() {
             return;
         }
-        
+
         let len = self.actions.len() as isize;
         let mut new_idx = self.selected as isize + delta;
-        
+
         if new_idx < 0 {
             new_idx = len - 1;
         } else if new_idx >= len {
             new_idx = 0;
         }
-        
+
         self.selected = new_idx as usize;
     }
-    
+
     /// Get currently selected action
     pub fn get_selected_action(&self) -> Option<BlockAction> {
         self.actions.get(self.selected).copied()
@@ -275,8 +271,13 @@ impl ActionsMenuState {
             };
 
             let indicator = if is_selected { "▶ " } else { "  " };
-            let action_text = format!("{}{} {} {}", 
-                indicator, action.icon(), action.shortcut(), action.display_name());
+            let action_text = format!(
+                "{}{} {} {}",
+                indicator,
+                action.icon(),
+                action.shortcut(),
+                action.display_name()
+            );
 
             display.draw_ai_text(
                 Point::new(line, Column(menu_x)),
@@ -312,23 +313,19 @@ pub enum HelpSection {
 
 impl HelpOverlayState {
     pub fn new() -> Self {
-        Self {
-            active: false,
-            section: HelpSection::Overview,
-            scroll: 0,
-        }
+        Self { active: false, section: HelpSection::Overview, scroll: 0 }
     }
-    
+
     pub fn open(&mut self) {
         self.active = true;
         self.section = HelpSection::Overview;
         self.scroll = 0;
     }
-    
+
     pub fn close(&mut self) {
         self.active = false;
     }
-    
+
     pub fn next_section(&mut self) {
         self.section = match self.section {
             HelpSection::Overview => HelpSection::BasicMode,
@@ -340,7 +337,7 @@ impl HelpOverlayState {
         };
         self.scroll = 0;
     }
-    
+
     pub fn prev_section(&mut self) {
         self.section = match self.section {
             HelpSection::Overview => HelpSection::Tips,
@@ -367,7 +364,15 @@ impl HelpOverlayState {
 
         // Draw content based on current section
         let content = get_help_content(self.section);
-        self.draw_help_content(display, &content, panel_x, panel_y, panel_width, panel_height, tokens);
+        self.draw_help_content(
+            display,
+            &content,
+            panel_x,
+            panel_y,
+            panel_width,
+            panel_height,
+            tokens,
+        );
 
         // Draw section navigation
         self.draw_help_navigation(display, panel_x, panel_y, panel_width, tokens);
@@ -601,24 +606,13 @@ fn get_help_content(section: HelpSection) -> Vec<String> {
 /// Here-doc insertion utilities
 pub fn generate_heredoc(output: &str) -> String {
     let delimiter = generate_delimiter(output);
-    format!(
-        "cat << '{}'\n{}\n{}",
-        delimiter,
-        output.trim(),
-        delimiter
-    )
+    format!("cat << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
 }
 
 /// Generate here-doc with custom command prefix
 pub fn generate_heredoc_with_command(output: &str, command_prefix: &str) -> String {
     let delimiter = generate_delimiter(output);
-    format!(
-        "{} << '{}'\n{}\n{}",
-        command_prefix,
-        delimiter,
-        output.trim(),
-        delimiter
-    )
+    format!("{} << '{}'\n{}\n{}", command_prefix, delimiter, output.trim(), delimiter)
 }
 
 /// Generate here-doc delimiter that doesn't conflict with content
@@ -626,20 +620,20 @@ fn generate_delimiter(content: &str) -> String {
     let base = "EOF";
     let mut counter = 0;
     let mut delimiter = base.to_string();
-    
+
     // If the content contains the delimiter, add numbers until unique
     while content.contains(&delimiter) {
         counter += 1;
         delimiter = format!("{}{}", base, counter);
     }
-    
+
     delimiter
 }
 
 /// Format block output as here-doc for insertion
 pub fn format_as_heredoc(command: &str, output: &str) -> String {
     let delimiter = generate_delimiter(output);
-    
+
     format!(
         "cat << '{}' # Output from: {}\n{}\n{}",
         delimiter,
@@ -652,7 +646,7 @@ pub fn format_as_heredoc(command: &str, output: &str) -> String {
 /// Format block output as here-doc with variable assignment
 pub fn format_as_variable_heredoc(var_name: &str, command: &str, output: &str) -> String {
     let delimiter = generate_delimiter(output);
-    
+
     format!(
         "{}=$(cat << '{}'  # Output from: {}\n{}\n{})",
         var_name,
@@ -678,12 +672,7 @@ pub fn format_as_pipe_input(output: &str) -> String {
 /// Format as JSON here-doc for jq processing
 pub fn format_as_json_heredoc(output: &str) -> String {
     let delimiter = generate_delimiter(output);
-    format!(
-        "jq '.' << '{}'\n{}\n{}",
-        delimiter,
-        output.trim(),
-        delimiter
-    )
+    format!("jq '.' << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
 }
 
 /// Format as base64 encoded here-doc
@@ -701,40 +690,27 @@ pub fn format_as_base64_heredoc(output: &str) -> String {
 /// Check if output is likely JSON
 fn is_likely_json(output: &str) -> bool {
     let trimmed = output.trim();
-    (trimmed.starts_with('{') && trimmed.ends_with('}')) ||
-    (trimmed.starts_with('[') && trimmed.ends_with(']'))
+    (trimmed.starts_with('{') && trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
 }
 
 /// Generate here-doc for different shell types
 pub fn format_heredoc_for_shell(output: &str, shell_type: &str) -> String {
     let delimiter = generate_delimiter(output);
-    
+
     match shell_type {
         "fish" => {
             // Fish shell here-doc syntax
-            format!(
-                "cat << '{}'\n{}\n{}",
-                delimiter,
-                output.trim(),
-                delimiter
-            )
+            format!("cat << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
         },
         "powershell" | "pwsh" => {
             // PowerShell here-string syntax
-            format!(
-                "@'\n{}\n'@",
-                output.trim()
-            )
+            format!("@'\n{}\n'@", output.trim())
         },
         "zsh" | "bash" | _ => {
             // Standard POSIX here-doc
-            format!(
-                "cat << '{}'\n{}\n{}",
-                delimiter,
-                output.trim(),
-                delimiter
-            )
-        }
+            format!("cat << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
+        },
     }
 }
 
@@ -764,11 +740,8 @@ mod tests {
         assert!(BlockAction::InsertAsHereDoc.is_available_for(&block));
         assert!(BlockAction::RerunCommand.is_available_for(&block));
 
-        let empty_block = BlocksSearchItem {
-            command: "".to_string(),
-            output: "".to_string(),
-            ..block
-        };
+        let empty_block =
+            BlocksSearchItem { command: "".to_string(), output: "".to_string(), ..block };
 
         assert!(!BlockAction::CopyCommand.is_available_for(&empty_block));
         assert!(!BlockAction::CopyOutput.is_available_for(&empty_block));

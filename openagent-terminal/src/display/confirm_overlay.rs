@@ -1,6 +1,6 @@
 // Confirmation Overlay UI: state and rendering
 
-use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::UiConfig;
 use crate::display::{Display, SizeInfo};
@@ -58,16 +58,34 @@ mod tests {
 
 impl ConfirmOverlayState {
     pub fn new() -> Self {
-        Self { active: false, id: None, title: String::new(), body: String::new(), confirm_label: "Confirm".into(), cancel_label: "Cancel".into() }
+        Self {
+            active: false,
+            id: None,
+            title: String::new(),
+            body: String::new(),
+            confirm_label: "Confirm".into(),
+            cancel_label: "Cancel".into(),
+        }
     }
 
-    pub fn open(&mut self, id: String, title: String, body: String, confirm_label: Option<String>, cancel_label: Option<String>) {
+    pub fn open(
+        &mut self,
+        id: String,
+        title: String,
+        body: String,
+        confirm_label: Option<String>,
+        cancel_label: Option<String>,
+    ) {
         self.active = true;
         self.id = Some(id);
         self.title = title;
         self.body = body;
-        if let Some(c) = confirm_label { self.confirm_label = c; }
-        if let Some(c) = cancel_label { self.cancel_label = c; }
+        if let Some(c) = confirm_label {
+            self.confirm_label = c;
+        }
+        if let Some(c) = cancel_label {
+            self.cancel_label = c;
+        }
     }
 
     pub fn close_if(&mut self, id: &str) {
@@ -82,7 +100,13 @@ impl ConfirmOverlayState {
 
 impl SecurityConfirmOverlayState {
     pub fn new() -> Self {
-        Self { active: false, id: None, command: String::new(), risk_analysis: None, show_details: true }
+        Self {
+            active: false,
+            id: None,
+            command: String::new(),
+            risk_analysis: None,
+            show_details: true,
+        }
     }
 
     pub fn open(&mut self, id: String, command: String, risk_analysis: Option<CommandRisk>) {
@@ -106,13 +130,17 @@ impl SecurityConfirmOverlayState {
 impl Display {
     /// Draw the confirmation overlay (centered modal with backdrop)
     pub fn draw_confirm_overlay(&mut self, config: &UiConfig, state: &ConfirmOverlayState) {
-        if !state.active { return; }
+        if !state.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Backdrop dim
-        let backdrop = RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.25);
+        let backdrop =
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.25);
 
         // Modal sizing: 60% width, min 40 cols; height fits content up to 40% of screen
         let cols = size_info.columns();
@@ -141,7 +169,13 @@ impl Display {
         // Draw title
         let mut line = y_line + 1;
         let title = format!("{}", state.title);
-        self.draw_ai_text(Point::new(line, Column(x_col + 2)), tokens.text, tokens.surface_muted, &title, modal_cols.saturating_sub(4));
+        self.draw_ai_text(
+            Point::new(line, Column(x_col + 2)),
+            tokens.text,
+            tokens.surface_muted,
+            &title,
+            modal_cols.saturating_sub(4),
+        );
         line += 2;
 
         // Draw body wrapped
@@ -154,33 +188,62 @@ impl Display {
                 let mut count = 0;
                 for ch in text.chars() {
                     let w = ch.width().unwrap_or(0);
-                    if count + w > max_width { break; }
+                    if count + w > max_width {
+                        break;
+                    }
                     slice.push(ch);
                     count += w;
-                    if count >= take { break; }
+                    if count >= take {
+                        break;
+                    }
                 }
-                self.draw_ai_text(Point::new(line, Column(x_col + 2)), tokens.text, tokens.surface_muted, &slice, max_width);
+                self.draw_ai_text(
+                    Point::new(line, Column(x_col + 2)),
+                    tokens.text,
+                    tokens.surface_muted,
+                    &slice,
+                    max_width,
+                );
                 line += 1;
                 text.replace_range(..slice.len(), "");
-                if line >= y_line + modal_lines.saturating_sub(3) { break; }
+                if line >= y_line + modal_lines.saturating_sub(3) {
+                    break;
+                }
             }
-            if line >= y_line + modal_lines.saturating_sub(3) { break; }
+            if line >= y_line + modal_lines.saturating_sub(3) {
+                break;
+            }
         }
 
         // Draw footer with instructions
-        let footer = format!("Enter = {}    Esc = {}    (Y/N)", state.confirm_label, state.cancel_label);
-        self.draw_ai_text(Point::new(y_line + modal_lines - 2, Column(x_col + 2)), tokens.text_muted, tokens.surface_muted, &footer, modal_cols.saturating_sub(4));
+        let footer =
+            format!("Enter = {}    Esc = {}    (Y/N)", state.confirm_label, state.cancel_label);
+        self.draw_ai_text(
+            Point::new(y_line + modal_lines - 2, Column(x_col + 2)),
+            tokens.text_muted,
+            tokens.surface_muted,
+            &footer,
+            modal_cols.saturating_sub(4),
+        );
     }
 
     /// Draw the Security Lens confirmation overlay with detailed risk analysis
-    pub fn draw_security_confirm_overlay(&mut self, config: &UiConfig, state: &SecurityConfirmOverlayState) {
-        if !state.active { return; }
+    pub fn draw_security_confirm_overlay(
+        &mut self,
+        config: &UiConfig,
+        state: &SecurityConfirmOverlayState,
+    ) {
+        if !state.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Backdrop dim
-        let backdrop = RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.35);
+        let backdrop =
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.35);
 
         // Modal sizing: 70% width for detailed risk display
         let cols = size_info.columns();
@@ -213,16 +276,34 @@ impl Display {
 
         // Title with security warning icon
         let title = "🛡️ Security Analysis";
-        self.draw_ai_text(Point::new(line, Column(x_col + 2)), tokens.warning, tokens.surface, &title, max_width);
+        self.draw_ai_text(
+            Point::new(line, Column(x_col + 2)),
+            tokens.warning,
+            tokens.surface,
+            &title,
+            max_width,
+        );
         line += 2;
 
         // Command being analyzed
         let cmd_label = "Command:";
-        self.draw_ai_text(Point::new(line, Column(x_col + 2)), tokens.text_muted, tokens.surface, cmd_label, max_width);
+        self.draw_ai_text(
+            Point::new(line, Column(x_col + 2)),
+            tokens.text_muted,
+            tokens.surface,
+            cmd_label,
+            max_width,
+        );
         line += 1;
-        
+
         let command_display = format!("$ {}", state.command);
-        self.draw_ai_text(Point::new(line, Column(x_col + 4)), tokens.text, tokens.surface, &command_display, max_width.saturating_sub(2));
+        self.draw_ai_text(
+            Point::new(line, Column(x_col + 4)),
+            tokens.text,
+            tokens.surface,
+            &command_display,
+            max_width.saturating_sub(2),
+        );
         line += 2;
 
         // Risk analysis details
@@ -233,7 +314,13 @@ impl Display {
         // Footer instructions
         let footer = "Enter = Execute    Esc = Cancel    Tab = Toggle Details    (Y/N)";
         let footer_line = y_line + modal_lines - 2;
-        self.draw_ai_text(Point::new(footer_line, Column(x_col + 2)), tokens.text_muted, tokens.surface, &footer, max_width);
+        self.draw_ai_text(
+            Point::new(footer_line, Column(x_col + 2)),
+            tokens.text_muted,
+            tokens.surface,
+            &footer,
+            max_width,
+        );
     }
 
     /// Draw detailed risk analysis information
@@ -247,7 +334,7 @@ impl Display {
         tokens: crate::config::theme::ThemeTokens,
     ) {
         let max_width = modal_cols.saturating_sub(4);
-        
+
         // Risk level with appropriate color
         let risk_color = match risk.level {
             RiskLevel::Safe => tokens.success,
@@ -255,44 +342,86 @@ impl Display {
             RiskLevel::Warning => tokens.warning,
             RiskLevel::Critical => tokens.error,
         };
-        
+
         let risk_text = format!("Risk Level: {:?}", risk.level);
-        self.draw_ai_text(Point::new(*line, Column(x_col + 2)), risk_color, tokens.surface, &risk_text, max_width);
+        self.draw_ai_text(
+            Point::new(*line, Column(x_col + 2)),
+            risk_color,
+            tokens.surface,
+            &risk_text,
+            max_width,
+        );
         *line += 2;
-        
+
         // Explanation
         if !risk.explanation.is_empty() {
             let explanation_label = "Analysis:";
-            self.draw_ai_text(Point::new(*line, Column(x_col + 2)), tokens.text_muted, tokens.surface, explanation_label, max_width);
+            self.draw_ai_text(
+                Point::new(*line, Column(x_col + 2)),
+                tokens.text_muted,
+                tokens.surface,
+                explanation_label,
+                max_width,
+            );
             *line += 1;
-            
-            self.draw_ai_text(Point::new(*line, Column(x_col + 4)), tokens.text, tokens.surface, &risk.explanation, max_width.saturating_sub(2));
+
+            self.draw_ai_text(
+                Point::new(*line, Column(x_col + 4)),
+                tokens.text,
+                tokens.surface,
+                &risk.explanation,
+                max_width.saturating_sub(2),
+            );
             *line += 2;
         }
-        
+
         // Risk factors
         if !risk.factors.is_empty() {
             let factors_label = "Risk Factors:";
-            self.draw_ai_text(Point::new(*line, Column(x_col + 2)), tokens.text_muted, tokens.surface, factors_label, max_width);
+            self.draw_ai_text(
+                Point::new(*line, Column(x_col + 2)),
+                tokens.text_muted,
+                tokens.surface,
+                factors_label,
+                max_width,
+            );
             *line += 1;
-            
+
             for factor in &risk.factors {
                 let factor_text = format!("• {}: {}", factor.category, factor.description);
-                self.draw_ai_text(Point::new(*line, Column(x_col + 4)), tokens.text, tokens.surface, &factor_text, max_width.saturating_sub(2));
+                self.draw_ai_text(
+                    Point::new(*line, Column(x_col + 4)),
+                    tokens.text,
+                    tokens.surface,
+                    &factor_text,
+                    max_width.saturating_sub(2),
+                );
                 *line += 1;
             }
             *line += 1;
         }
-        
+
         // Mitigations
         if !risk.mitigations.is_empty() {
             let mitigations_label = "Mitigations:";
-            self.draw_ai_text(Point::new(*line, Column(x_col + 2)), tokens.success, tokens.surface, mitigations_label, max_width);
+            self.draw_ai_text(
+                Point::new(*line, Column(x_col + 2)),
+                tokens.success,
+                tokens.surface,
+                mitigations_label,
+                max_width,
+            );
             *line += 1;
-            
+
             for mitigation in &risk.mitigations {
                 let mitigation_text = format!("• {}", mitigation);
-                self.draw_ai_text(Point::new(*line, Column(x_col + 4)), tokens.text, tokens.surface, &mitigation_text, max_width.saturating_sub(2));
+                self.draw_ai_text(
+                    Point::new(*line, Column(x_col + 4)),
+                    tokens.text,
+                    tokens.surface,
+                    &mitigation_text,
+                    max_width.saturating_sub(2),
+                );
                 *line += 1;
             }
         }

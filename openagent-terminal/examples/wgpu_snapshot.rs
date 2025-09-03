@@ -6,4 +6,3 @@ fn main() {
     eprintln!("Use 'cargo run --example snapshot_capture' for OpenGL snapshot testing.");
     std::process::exit(0); // Exit 0 so CI doesn't fail
 }
-

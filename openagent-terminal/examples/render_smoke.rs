@@ -49,11 +49,12 @@ fn main() {
                     backends: wgpu::Backends::all(),
                     ..Default::default()
                 });
-                let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    compatible_surface: None,
-                    force_fallback_adapter: false,
-                }));
+                let adapter =
+                    pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::HighPerformance,
+                        compatible_surface: None,
+                        force_fallback_adapter: false,
+                    }));
 
                 if adapter.is_some() {
                     println!("backend:wgpu");
@@ -74,4 +75,3 @@ fn main() {
         },
     }
 }
-

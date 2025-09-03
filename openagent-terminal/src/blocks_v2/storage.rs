@@ -5,9 +5,12 @@
 use super::{Block, BlockId, ExecutionStatus};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use sqlx::{sqlite::{SqlitePoolOptions, SqliteConnectOptions}, SqlitePool};
-use std::path::Path;
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    SqlitePool,
+};
 use std::fs::File;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -28,8 +31,7 @@ impl BlockStorage {
         }
         let db_url = format!("sqlite://{}", db_path.display());
 
-        let connect_options = SqliteConnectOptions::from_str(&db_url)?
-            .create_if_missing(true);
+        let connect_options = SqliteConnectOptions::from_str(&db_url)?.create_if_missing(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
@@ -250,8 +252,8 @@ impl BlockStorage {
 
     /// Advanced search with FTS and comprehensive filters
     pub async fn search(&self, query: &super::SearchQuery) -> Result<Vec<Arc<Block>>> {
-        use super::{ExitCodeFilter, DurationFilter, SortField, SortOrder};
-        
+        use super::{DurationFilter, ExitCodeFilter, SortField, SortOrder};
+
         // Build dynamic SQL
         let mut sql = String::from("SELECT b.* FROM blocks b\n");
         let mut where_clauses: Vec<String> = Vec::new();
@@ -334,19 +336,19 @@ impl BlockStorage {
             match exit_filter {
                 ExitCodeFilter::Success => {
                     where_clauses.push("b.exit_code = 0".into());
-                }
+                },
                 ExitCodeFilter::Failure => {
                     where_clauses.push("(b.exit_code IS NOT NULL AND b.exit_code != 0)".into());
-                }
+                },
                 ExitCodeFilter::Specific(code) => {
                     where_clauses.push("b.exit_code = ?".into());
                     binds.push(code.to_string());
-                }
+                },
                 ExitCodeFilter::Range(min, max) => {
                     where_clauses.push("(b.exit_code >= ? AND b.exit_code <= ?)".into());
                     binds.push(min.to_string());
                     binds.push(max.to_string());
-                }
+                },
             }
         }
 
@@ -356,16 +358,19 @@ impl BlockStorage {
                 DurationFilter::LessThan(ms) => {
                     where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms < ?)".into());
                     binds.push((ms as i64).to_string());
-                }
+                },
                 DurationFilter::GreaterThan(ms) => {
                     where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms > ?)".into());
                     binds.push((ms as i64).to_string());
-                }
+                },
                 DurationFilter::Range(min_ms, max_ms) => {
-                    where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms >= ? AND b.duration_ms <= ?)".into());
+                    where_clauses.push(
+                        "(b.duration_ms IS NOT NULL AND b.duration_ms >= ? AND b.duration_ms <= ?)"
+                            .into(),
+                    );
                     binds.push((min_ms as i64).to_string());
                     binds.push((max_ms as i64).to_string());
-                }
+                },
             }
         }
 
@@ -521,12 +526,19 @@ mod tests {
         storage.insert(&Arc::new(block)).await.unwrap();
 
         // Search text
-        let q = crate::blocks_v2::SearchQuery { text: Some("test".to_string()), limit: Some(10), ..Default::default() };
+        let q = crate::blocks_v2::SearchQuery {
+            text: Some("test".to_string()),
+            limit: Some(10),
+            ..Default::default()
+        };
         let results = storage.search(&q).await.unwrap();
         assert!(!results.is_empty());
 
         // Search by tag
-        let q2 = crate::blocks_v2::SearchQuery { tags: Some(vec!["tag1".to_string()]), ..Default::default() };
+        let q2 = crate::blocks_v2::SearchQuery {
+            tags: Some(vec!["tag1".to_string()]),
+            ..Default::default()
+        };
         let r2 = storage.search(&q2).await.unwrap();
         assert!(!r2.is_empty());
 

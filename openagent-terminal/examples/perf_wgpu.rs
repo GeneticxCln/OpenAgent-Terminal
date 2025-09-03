@@ -1,4 +1,4 @@
-// Simple WGPU perf example (feature: wgpu). 
+// Simple WGPU perf example (feature: wgpu).
 // NOTE: WGPU backend is not yet fully implemented - this is a placeholder
 
 // For now, we'll create a stub that indicates WGPU is not ready
@@ -11,4 +11,3 @@ fn main() {
     eprintln!("Use 'cargo run --example perf_latency' for OpenGL performance testing.");
     std::process::exit(0); // Exit 0 so CI doesn't fail
 }
-

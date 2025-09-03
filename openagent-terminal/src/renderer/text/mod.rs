@@ -22,7 +22,6 @@ pub use gles2::Gles2Renderer;
 pub use glsl3::Glsl3Renderer;
 pub use glyph_cache::GlyphCache;
 use glyph_cache::{Glyph, LoadGlyph};
-pub use shaped_glyph_cache::{ShapedGlyphCache, LoadedShapedCell, LoadedShapedGlyph, ShapedCacheStats};
 
 // NOTE: These flags must be in sync with their usage in the text.*.glsl shaders.
 bitflags! {

@@ -27,7 +27,7 @@ pub struct WorkspaceConfig {
     pub warp_style: bool,
 
     /// File to store Warp session data (optional)
-    #[config(skip)] 
+    #[config(skip)]
     pub warp_session_file: Option<std::path::PathBuf>,
 }
 

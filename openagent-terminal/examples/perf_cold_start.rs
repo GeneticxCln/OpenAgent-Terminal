@@ -36,7 +36,9 @@ impl ApplicationHandler<()> for ColdStartApp {
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
-        if cause != StartCause::Init { return; }
+        if cause != StartCause::Init {
+            return;
+        }
         let t0 = self.start;
 
         let mut config = UiConfig::default();
@@ -55,9 +57,11 @@ impl ApplicationHandler<()> for ColdStartApp {
             raw_display_handle,
             raw_window_handle,
             config.debug.prefer_egl,
-        ).expect("gl display");
+        )
+        .expect("gl display");
         #[cfg(not(windows))]
-        let gl_config = platform::pick_gl_config(&gl_display, raw_window_handle).expect("gl config");
+        let gl_config =
+            platform::pick_gl_config(&gl_display, raw_window_handle).expect("gl config");
 
         // Create window
         #[cfg(windows)]
@@ -69,10 +73,14 @@ impl ApplicationHandler<()> for ColdStartApp {
         #[cfg(not(windows))]
         let window = {
             let w = Window::new(
-                event_loop, &config, &identity, &mut win_opts,
+                event_loop,
+                &config,
+                &identity,
+                &mut win_opts,
                 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
                 gl_config.x11_visual(),
-            ).expect("window");
+            )
+            .expect("window");
             w
         };
 
@@ -81,11 +89,15 @@ impl ApplicationHandler<()> for ColdStartApp {
             raw_display_handle,
             raw_window_handle,
             config.debug.prefer_egl,
-        ).expect("gl display");
+        )
+        .expect("gl display");
         #[cfg(windows)]
-        let gl_config = platform::pick_gl_config(&gl_display, raw_window_handle).expect("gl config");
+        let gl_config =
+            platform::pick_gl_config(&gl_display, raw_window_handle).expect("gl config");
 
-        let gl_context = platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle())).expect("gl ctx");
+        let gl_context =
+            platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
+                .expect("gl ctx");
 
         let mut display = Display::new(window, gl_context, &config, false).expect("display");
 
@@ -95,8 +107,12 @@ impl ApplicationHandler<()> for ColdStartApp {
         let _ = display.read_frame_rgba();
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-        println!("{{\"platform\":\"{}\",\"cold_start_ms\":{:.2},\"budget_ms\":{:.2}}}",
-                 std::env::consts::OS, elapsed_ms, self.max_ms);
+        println!(
+            "{{\"platform\":\"{}\",\"cold_start_ms\":{:.2},\"budget_ms\":{:.2}}}",
+            std::env::consts::OS,
+            elapsed_ms,
+            self.max_ms
+        );
         self.code = if elapsed_ms <= self.max_ms { 0 } else { 1 };
         event_loop.exit();
     }
@@ -106,7 +122,9 @@ fn main() {
     let mut max_ms = 800.0_f64; // relaxed default budget
     for a in std::env::args() {
         if let Some(v) = a.strip_prefix("--max-ms=") {
-            if let Ok(n) = v.parse::<f64>() { max_ms = n; }
+            if let Ok(n) = v.parse::<f64>() {
+                max_ms = n;
+            }
         }
     }
     let start = Instant::now();
@@ -115,4 +133,3 @@ fn main() {
     let _ = event_loop.run_app(&mut app);
     std::process::exit(app.code);
 }
-

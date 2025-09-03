@@ -3,7 +3,9 @@
 
 use anyhow::{Context, Result};
 use fontdb::{Database, Family, Query};
-use harfbuzz_rs::{Direction, Face, Feature, Font as HbFont, GlyphBuffer, Language, Owned, Tag, UnicodeBuffer};
+use harfbuzz_rs::{
+    Direction, Face, Feature, Font as HbFont, GlyphBuffer, Language, Owned, Tag, UnicodeBuffer,
+};
 use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -269,21 +271,21 @@ impl HarfBuzzShaper {
             // Check for common scripts
             let code = ch as u32;
             if (0x0600..=0x06FF).contains(&code) {
-                return Tag::new('a','r','a','b');
+                return Tag::new('a', 'r', 'a', 'b');
             } else if (0x0900..=0x097F).contains(&code) {
-                return Tag::new('d','e','v','a');
+                return Tag::new('d', 'e', 'v', 'a');
             } else if (0x0E00..=0x0E7F).contains(&code) {
-                return Tag::new('t','h','a','i');
+                return Tag::new('t', 'h', 'a', 'i');
             } else if (0x4E00..=0x9FFF).contains(&code) {
-                return Tag::new('h','a','n','i');
+                return Tag::new('h', 'a', 'n', 'i');
             } else if (0x3040..=0x309F).contains(&code) {
-                return Tag::new('h','i','r','a');
+                return Tag::new('h', 'i', 'r', 'a');
             } else if (0x30A0..=0x30FF).contains(&code) {
-                return Tag::new('k','a','n','a');
+                return Tag::new('k', 'a', 'n', 'a');
             }
         }
 
-        Tag::new('l','a','t','n')
+        Tag::new('l', 'a', 't', 'n')
     }
 
     /// Build HarfBuzz features from config
@@ -291,16 +293,16 @@ impl HarfBuzzShaper {
         let mut features = Vec::new();
 
         if self.config.enable_ligatures {
-            features.push(Feature::new(Tag::new('l','i','g','a'), 1, 0..));
-            features.push(Feature::new(Tag::new('c','l','i','g'), 1, 0..));
+            features.push(Feature::new(Tag::new('l', 'i', 'g', 'a'), 1, 0..));
+            features.push(Feature::new(Tag::new('c', 'l', 'i', 'g'), 1, 0..));
         }
 
         if self.config.enable_kerning {
-            features.push(Feature::new(Tag::new('k','e','r','n'), 1, 0..));
+            features.push(Feature::new(Tag::new('k', 'e', 'r', 'n'), 1, 0..));
         }
 
         if self.config.enable_contextual_alternates {
-            features.push(Feature::new(Tag::new('c','a','l','t'), 1, 0..));
+            features.push(Feature::new(Tag::new('c', 'a', 'l', 't'), 1, 0..));
         }
 
         // Add stylistic sets
@@ -308,7 +310,7 @@ impl HarfBuzzShaper {
             if set_num <= 20 {
                 let tens = ((set_num / 10) % 10) as u8 + b'0';
                 let ones = (set_num % 10) as u8 + b'0';
-                features.push(Feature::new(Tag::new('s','s', tens as char, ones as char), 1, 0..));
+                features.push(Feature::new(Tag::new('s', 's', tens as char, ones as char), 1, 0..));
             }
         }
 
@@ -316,7 +318,11 @@ impl HarfBuzzShaper {
     }
 
     /// Get or load a font
-fn get_or_load_font(&mut self, font_name: &str, size: f32) -> Result<Arc<Owned<HbFont<'static>>>> {
+    fn get_or_load_font(
+        &mut self,
+        font_name: &str,
+        size: f32,
+    ) -> Result<Arc<Owned<HbFont<'static>>>> {
         let key = format!("{}:{}", font_name, size);
 
         if let Some(font) = self.font_cache.get(&key) {
@@ -336,8 +342,9 @@ fn get_or_load_font(&mut self, font_name: &str, size: f32) -> Result<Arc<Owned<H
         // Read font bytes depending on source
         let font_bytes: Vec<u8> = match source {
             fontdb::Source::Binary(data) => data.as_ref().as_ref().to_vec(),
-            fontdb::Source::File(path) => std::fs::read(path)
-                .map_err(|e| anyhow::anyhow!("Failed to read font file: {e}"))?,
+            fontdb::Source::File(path) => {
+                std::fs::read(path).map_err(|e| anyhow::anyhow!("Failed to read font file: {e}"))?
+            },
             fontdb::Source::SharedFile(path, _) => std::fs::read(&*path)
                 .map_err(|e| anyhow::anyhow!("Failed to read shared font file: {e}"))?,
         };

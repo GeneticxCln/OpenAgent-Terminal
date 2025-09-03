@@ -32,8 +32,8 @@ pub mod ui;
 #[cfg(feature = "wgpu")]
 pub mod wgpu;
 
-pub use text::{GlyphCache, LoaderApi};
 pub use text::glyph_cache::LoadGlyph;
+pub use text::{GlyphCache, LoaderApi};
 
 use shader::ShaderVersion;
 use text::{Gles2Renderer, Glsl3Renderer, TextRenderer};

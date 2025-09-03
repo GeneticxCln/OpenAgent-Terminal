@@ -531,5 +531,4 @@ impl Display {
             self.renderer_draw_rects(&size_copy, &metrics, rects);
         }
     }
-
 }

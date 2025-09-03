@@ -2,21 +2,23 @@
 // Bridges the HarfBuzz text shaping system with the existing rendering pipeline
 
 use anyhow::{Context, Result};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use crossfont::{FontKey, GlyphKey};
 use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::cell::Flags;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
+use crate::config::font::Font as FontConfig;
+use crate::config::ui_config::Delta;
+use crate::config::Config;
 use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
-use crate::renderer::text::glyph_cache::{Glyph, GlyphCache, LoadGlyph};
-use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection};
 use crate::renderer::text::builtin_font;
+use crate::renderer::text::glyph_cache::{Glyph, GlyphCache, LoadGlyph};
+use crate::text_shaping::harfbuzz::{
+    HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
+};
 use crossfont::{FontDesc, FontKey, RasterizedGlyph};
-use crate::config::ui_config::Delta;
-use crate::config::font::Font as FontConfig;
-use crate::config::Config;
 
 /// Integrated text shaper that combines HarfBuzz with the existing glyph system
 pub struct IntegratedTextShaper {
@@ -108,8 +110,8 @@ impl IntegratedTextShaper {
             emoji_font: Some("Noto Color Emoji".to_string()),
         };
 
-        let harfbuzz_shaper = HarfBuzzShaper::new(shaping_config)
-            .context("Failed to create HarfBuzz shaper")?;
+        let harfbuzz_shaper =
+            HarfBuzzShaper::new(shaping_config).context("Failed to create HarfBuzz shaper")?;
 
         Ok(Self {
             harfbuzz_shaper,
@@ -129,16 +131,18 @@ impl IntegratedTextShaper {
         I: Iterator<Item = RenderableCell>,
     {
         let cells_vec: Vec<RenderableCell> = cells.collect();
-        
+
         // Extract text content from cells
-        let text = cells_vec.iter()
-            .map(|cell| cell.character)
-            .collect::<String>();
+        let text = cells_vec.iter().map(|cell| cell.character).collect::<String>();
 
         // Check cache if enabled
         let cache_key = if self.config.cache_shaped_lines {
-            Some(format!("{}:{}:{}", text, glyph_cache.font_size.to_bits(), 
-                       self.get_font_name(glyph_cache)))
+            Some(format!(
+                "{}:{}:{}",
+                text,
+                glyph_cache.font_size.to_bits(),
+                self.get_font_name(glyph_cache)
+            ))
         } else {
             None
         };
@@ -166,7 +170,7 @@ impl IntegratedTextShaper {
                 Err(_) if self.config.fallback_to_basic_rendering => {
                     // Fall back to basic shaping
                     return self.shape_line_basic(cells_vec.into_iter(), glyph_cache, size_info);
-                }
+                },
                 Err(e) => return Err(e),
             }
         } else {
@@ -180,7 +184,8 @@ impl IntegratedTextShaper {
                 // Implement LRU eviction
                 if cache.len() >= self.config.max_cached_lines {
                     // Remove oldest entries (simplified LRU)
-                    let keys_to_remove: Vec<String> = cache.keys()
+                    let keys_to_remove: Vec<String> = cache
+                        .keys()
                         .take(cache.len() - self.config.max_cached_lines + 1)
                         .cloned()
                         .collect();
@@ -188,13 +193,16 @@ impl IntegratedTextShaper {
                         cache.remove(&key_to_remove);
                     }
                 }
-                
-                cache.insert(key, ShapedLineInfo {
-                    shaped_text: shaped_text.clone(),
-                    font_name,
-                    font_size,
-                    cell_count: cells_vec.len(),
-                });
+
+                cache.insert(
+                    key,
+                    ShapedLineInfo {
+                        shaped_text: shaped_text.clone(),
+                        font_name,
+                        font_size,
+                        cell_count: cells_vec.len(),
+                    },
+                );
             }
         }
 
@@ -212,7 +220,7 @@ impl IntegratedTextShaper {
     ) -> Result<ShapedLine> {
         let mut shaped_cells = Vec::new();
         let cell_width = size_info.cell_width();
-        
+
         // Group shaped glyphs by cluster (character position)
         let mut cluster_groups: HashMap<u32, Vec<&ShapedGlyph>> = HashMap::new();
         for glyph in &shaped_text.glyphs {
@@ -223,21 +231,13 @@ impl IntegratedTextShaper {
         for (cell_index, cell) in original_cells.iter().enumerate() {
             let cluster = cell_index as u32;
             let shaped_glyphs = if let Some(hb_glyphs) = cluster_groups.get(&cluster) {
-                self.convert_harfbuzz_glyphs_to_cell_glyphs(
-                    hb_glyphs,
-                    cell,
-                    glyph_cache,
-                )?
+                self.convert_harfbuzz_glyphs_to_cell_glyphs(hb_glyphs, cell, glyph_cache)?
             } else {
                 // No shaped glyph for this cell, create a basic one
                 vec![self.create_basic_cell_glyph(cell, glyph_cache)?]
             };
 
-            shaped_cells.push(ShapedCell {
-                cell_index,
-                shaped_glyphs,
-                cell_width,
-            });
+            shaped_cells.push(ShapedCell { cell_index, shaped_glyphs, cell_width });
         }
 
         Ok(ShapedLine {
@@ -255,7 +255,12 @@ impl IntegratedTextShaper {
         glyph_cache: &mut GlyphCache,
         size_info: &SizeInfo,
     ) -> Result<ShapedLine> {
-        self.convert_shaped_text_to_line(shaped_text.clone(), original_cells, glyph_cache, size_info)
+        self.convert_shaped_text_to_line(
+            shaped_text.clone(),
+            original_cells,
+            glyph_cache,
+            size_info,
+        )
     }
 
     /// Convert HarfBuzz glyphs to cell glyphs
@@ -306,7 +311,8 @@ impl IntegratedTextShaper {
         };
 
         // Load the glyph through the existing glyph cache system
-        let glyph = glyph_cache.get(&glyph_key, &mut LoadGlyphImpl)
+        let glyph = glyph_cache
+            .get(&glyph_key, &mut LoadGlyphImpl)
             .map_err(|e| anyhow::anyhow!("Failed to load basic glyph: {:?}", e))?;
 
         Ok(ShapedCellGlyph {
@@ -336,7 +342,7 @@ impl IntegratedTextShaper {
 
         for (index, cell) in cells.enumerate() {
             let shaped_glyph = self.create_basic_cell_glyph(&cell, glyph_cache)?;
-            
+
             shaped_cells.push(ShapedCell {
                 cell_index: index,
                 shaped_glyphs: vec![shaped_glyph],
@@ -360,7 +366,7 @@ impl IntegratedTextShaper {
         // Check for complex scripts, ligatures, or RTL text
         for ch in text.chars() {
             let code = ch as u32;
-            
+
             // Check for non-Latin scripts
             if (0x0600..=0x06FF).contains(&code) ||  // Arabic
                (0x0590..=0x05FF).contains(&code) ||  // Hebrew
@@ -369,7 +375,8 @@ impl IntegratedTextShaper {
                (0x4E00..=0x9FFF).contains(&code) ||  // CJK
                (0x3040..=0x309F).contains(&code) ||  // Hiragana
                (0x30A0..=0x30FF).contains(&code) ||  // Katakana
-               (0xAC00..=0xD7AF).contains(&code)     // Hangul
+               (0xAC00..=0xD7AF).contains(&code)
+            // Hangul
             {
                 return true;
             }
@@ -377,10 +384,16 @@ impl IntegratedTextShaper {
 
         // Check for ligature candidates if ligatures are enabled
         if self.config.enable_ligatures {
-            if text.contains("->") || text.contains("=>") || text.contains("!=") ||
-               text.contains("<=") || text.contains(">=") || text.contains("==") ||
-               text.contains("fi") || text.contains("fl") || text.contains("ffi") ||
-               text.contains("ffl")
+            if text.contains("->")
+                || text.contains("=>")
+                || text.contains("!=")
+                || text.contains("<=")
+                || text.contains(">=")
+                || text.contains("==")
+                || text.contains("fi")
+                || text.contains("fl")
+                || text.contains("ffi")
+                || text.contains("ffl")
             {
                 return true;
             }
@@ -415,7 +428,8 @@ impl IntegratedTextShaper {
     ) -> Result<Glyph> {
         // Use the existing glyph cache system to load glyphs
         // The glyph_key already contains font, size, and character information
-        glyph_cache.get(&glyph_key, &mut LoadGlyphImpl)
+        glyph_cache
+            .get(&glyph_key, &mut LoadGlyphImpl)
             .map_err(|e| anyhow::anyhow!("Failed to load glyph: {:?}", e))
     }
 
@@ -441,12 +455,9 @@ impl LoadGlyph for LoadGlyphImpl {
         glyph_offset: &Delta<i8>,
     ) -> Result<RasterizedGlyph, crossfont::Error> {
         // Check for builtin glyphs first (box drawing, powerline symbols, etc.)
-        if let Some(glyph) = builtin_font::builtin_glyph(
-            glyph_key.character,
-            metrics,
-            offset,
-            glyph_offset,
-        ) {
+        if let Some(glyph) =
+            builtin_font::builtin_glyph(glyph_key.character, metrics, offset, glyph_offset)
+        {
             return Ok(glyph);
         }
 
@@ -458,11 +469,7 @@ impl LoadGlyph for LoadGlyphImpl {
 /// Trait for renderers that support shaped text
 pub trait ShapedTextRenderer {
     /// Render a shaped line of text
-    fn render_shaped_line(
-        &mut self,
-        shaped_line: &ShapedLine,
-        size_info: &SizeInfo,
-    ) -> Result<()>;
+    fn render_shaped_line(&mut self, shaped_line: &ShapedLine, size_info: &SizeInfo) -> Result<()>;
 
     /// Check if the renderer supports shaped text rendering
     fn supports_shaped_text(&self) -> bool {

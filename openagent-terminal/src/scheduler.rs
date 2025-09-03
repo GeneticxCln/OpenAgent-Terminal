@@ -145,14 +145,13 @@ impl Scheduler {
     pub fn unschedule_window(&mut self, window_id: WindowId) {
         self.timers.retain(|timer| timer.id.window_id != Some(window_id));
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration as StdDuration;
     use std::thread::sleep;
+    use std::time::Duration as StdDuration;
 
     #[test]
     fn debounced_event_is_dispatched_after_deadline() {
@@ -183,7 +182,9 @@ mod tests {
         sleep(StdDuration::from_millis(80));
         scheduler.update();
         let events = super::test_take_events();
-        assert!(events.iter().any(|e| matches!(e.payload(), crate::event::EventType::BlocksSearchPerform(_))));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e.payload(), crate::event::EventType::BlocksSearchPerform(_))));
 
         // Integration: when components are missing, BlocksSearchPerform should post empty results
         #[cfg(feature = "blocks")]
@@ -237,8 +238,12 @@ mod tests {
         let mut seen_second = false;
         for e in &events {
             if let crate::event::EventType::BlocksSearchPerform(s) = e.payload() {
-                if s == "first" { seen_first = true; }
-                if s == "second" { seen_second = true; }
+                if s == "first" {
+                    seen_first = true;
+                }
+                if s == "second" {
+                    seen_second = true;
+                }
             }
         }
         assert!(!seen_first, "debounced (first) event should have been canceled");

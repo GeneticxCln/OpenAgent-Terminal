@@ -54,4 +54,3 @@ fn test_render_smoke_wgpu_backend_runs_or_falls_back() {
         );
     }
 }
-
