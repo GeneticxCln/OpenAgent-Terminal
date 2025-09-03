@@ -65,6 +65,18 @@ pub struct AiConfig {
 
     /// Keybinding to trigger AI assistant (e.g., "Ctrl+Shift+A").
     pub trigger_key: Option<String>,
+
+    /// Auto-focus the AI panel when it opens.
+    #[serde(default)]
+    pub auto_focus: bool,
+
+    /// Show animated typing effect for AI responses.
+    #[serde(default)]
+    pub animated_typing: bool,
+
+    /// Animation speed multiplier (1.0 = normal, 2.0 = double speed, 0.5 = half speed).
+    #[serde(default)]
+    pub animation_speed: f32,
 }
 
 impl Default for AiConfig {
@@ -88,6 +100,9 @@ impl Default for AiConfig {
             never_auto_run: true,
             inline_suggestions: false,
             trigger_key: Some("Ctrl+Shift+A".into()),
+            auto_focus: true,
+            animated_typing: true,
+            animation_speed: 1.0,
         }
     }
 }

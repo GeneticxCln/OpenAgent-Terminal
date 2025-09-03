@@ -408,26 +408,56 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Global AI toggle: Ctrl+Shift+A (handle even when panel is active)
+        #[cfg(feature = "ai")]
+        if mods.control_key() && mods.shift_key() {
+            match key.logical_key.as_ref() {
+                Key::Character(c) if c.eq_ignore_ascii_case("a") => {
+                    self.ctx.send_user_event(crate::event::EventType::AiToggle);
+                    return;
+                },
+                _ => {},
+            }
+        }
+        
         // AI panel input handling (if active). Never auto-run; only edit/propose.
         #[cfg(feature = "ai")]
         if self.ctx.ai_active() {
             let mods = self.ctx.modifiers().state();
+            
+            // Handle Ctrl+Shift combinations first
+            if mods.control_key() && mods.shift_key() {
+                match key.logical_key.as_ref() {
+                    // Copy as code (Ctrl+Shift+C)
+                    Key::Character(c) if c.eq_ignore_ascii_case("c") => {
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyCode);
+                        return;
+                    },
+                    // Copy all (Ctrl+Shift+T)
+                    Key::Character(c) if c.eq_ignore_ascii_case("t") => {
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyAll);
+                        return;
+                    },
+                    _ => {},
+                }
+            }
+            
             // Keyboard shortcuts inside AI panel
             if mods.control_key() {
                 match key.logical_key.as_ref() {
                     // Stop/cancel streaming
-                    Key::Character(c) if (c.eq_ignore_ascii_case("c")) => {
+                    Key::Character(c) if c.eq_ignore_ascii_case("c") => {
                         // Ctrl+C maps here reliably across platforms
                         self.ctx.send_user_event(crate::event::EventType::AiStop);
                         return;
                     },
                     // Regenerate
-                    Key::Character(c) if (c.eq_ignore_ascii_case("r")) => {
+                    Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                         self.ctx.send_user_event(crate::event::EventType::AiRegenerate);
                         return;
                     },
                     // Insert to prompt
-                    Key::Character(c) if (c.eq_ignore_ascii_case("i")) => {
+                    Key::Character(c) if c.eq_ignore_ascii_case("i") => {
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
                             if let Some(text) = runtime.insert_to_prompt() {
                                 self.ctx.send_user_event(
@@ -438,69 +468,22 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     },
                     // Apply as command (Safe-run: dry-run by default)
-                    Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
-                        if let Some(runtime) = self.ctx.ai_runtime_ref() {
-                            if let Some((cmd, dry_run)) = runtime.apply_command(true) {
-                                self.ctx.send_user_event(
-                                    crate::event::EventType::AiApplyAsCommand {
-                                        command: cmd,
-                                        dry_run,
-                                    },
-                                );
-                            }
-                        }
-                        return;
-                    },
-                    // Copy as code (Ctrl+Shift+C)
-                    Key::Character(c) if (c.eq_ignore_ascii_case("c") && mods.shift_key()) => {
-                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput {
-                            format: crate::event::AiCopyFormat::Code,
-                        });
-                        return;
-                    },
-                    // Copy all (Ctrl+Shift+A)
-                    Key::Character(c) if (c.eq_ignore_ascii_case("a") && mods.shift_key()) => {
-                        self.ctx.send_user_event(crate::event::EventType::AiCopyOutput {
-                            format: crate::event::AiCopyFormat::Text,
-                        });
+                    Key::Character(c) if c.eq_ignore_ascii_case("e") => {
+                        self.ctx.send_user_event(crate::event::EventType::AiApplyDryRun);
                         return;
                     },
                     // Explain (Ctrl+X)
-                    Key::Character(c) if (c.eq_ignore_ascii_case("x")) => {
-                        // Get selection text first to avoid borrowing conflicts
+                    Key::Character(c) if c.eq_ignore_ascii_case("x") => {
                         let selected_text = self.ctx.terminal().selection_to_string();
-                        let target = selected_text
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or_else(|| {
-                                // Fallback to scratch text if available
-                                self.ctx.ai_runtime_ref()
-                                    .map(|r| r.ui.scratch.clone())
-                                    .unwrap_or_default()
-                            });
-                        
-                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
-                            runtime.propose_explain(target.to_string(), None, None);
-                            self.ctx.mark_dirty();
-                        }
+                        let target = selected_text.filter(|s| !s.is_empty());
+                        self.ctx.send_user_event(crate::event::EventType::AiExplain(target));
                         return;
                     },
                     // Fix (Ctrl+F)
-                    Key::Character(c) if (c.eq_ignore_ascii_case("f")) => {
-                        // Get selection text first to avoid borrowing conflicts
+                    Key::Character(c) if c.eq_ignore_ascii_case("f") => {
                         let selected_text = self.ctx.terminal().selection_to_string();
-                        let error_text = selected_text
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or_else(|| {
-                                // Fallback to scratch text if available
-                                self.ctx.ai_runtime_ref()
-                                    .map(|r| r.ui.scratch.clone())
-                                    .unwrap_or_default()
-                            });
-                        
-                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
-                            runtime.propose_fix(error_text.to_string(), None, None, None);
-                            self.ctx.mark_dirty();
-                        }
+                        let target = selected_text.filter(|s| !s.is_empty());
+                        self.ctx.send_user_event(crate::event::EventType::AiFix(target));
                         return;
                     },
                     _ => {},
@@ -509,21 +492,70 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Enter) => {
-                    self.ctx.ai_propose();
+                    self.ctx.send_user_event(crate::event::EventType::AiSubmit);
                     return;
                 },
                 Key::Named(NamedKey::Escape) => {
-                    self.ctx.close_ai_panel();
+                    self.ctx.send_user_event(crate::event::EventType::AiClose);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowUp) => {
+                    // If we have proposals, navigate them; otherwise navigate history
+                    if let Some(runtime) = self.ctx.ai_runtime_ref() {
+                        if !runtime.ui.proposals.is_empty() {
+                            self.ctx.send_user_event(crate::event::EventType::AiSelectPrev);
+                        } else {
+                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                runtime.history_previous();
+                                self.ctx.mark_dirty();
+                            }
+                        }
+                    }
+                    return;
+                },
+                Key::Named(NamedKey::ArrowDown) => {
+                    // If we have proposals, navigate them; otherwise navigate history
+                    if let Some(runtime) = self.ctx.ai_runtime_ref() {
+                        if !runtime.ui.proposals.is_empty() {
+                            self.ctx.send_user_event(crate::event::EventType::AiSelectNext);
+                        } else {
+                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                runtime.history_next();
+                                self.ctx.mark_dirty();
+                            }
+                        }
+                    }
+                    return;
+                },
+                Key::Named(NamedKey::ArrowLeft) => {
+                    if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                        runtime.cursor_left();
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) => {
+                    if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                        runtime.cursor_right();
+                        self.ctx.mark_dirty();
+                    }
                     return;
                 },
                 Key::Named(NamedKey::Backspace) => {
-                    self.ctx.ai_backspace();
+                    if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                        runtime.backspace();
+                        self.ctx.mark_dirty();
+                    }
                     return;
                 },
                 _ => {},
             }
+            
+            // Only allow printable characters to be input to AI panel
             for ch in text.chars() {
-                self.ctx.ai_input(ch);
+                if !ch.is_control() {
+                    self.ctx.ai_input(ch);
+                }
             }
             return;
         }

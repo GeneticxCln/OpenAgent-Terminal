@@ -8,15 +8,30 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::config::UiConfig;
+use crate::config::{UiConfig, workspace::WorkspaceConfig};
 use crate::display::SizeInfo;
 use openagent_terminal_core::grid::Dimensions;
 
 pub mod split_manager;
 pub mod tab_manager;
+pub mod warp_tab_manager;
+pub mod warp_split_manager;
+pub mod warp_integration;
+pub mod warp_bindings;
+pub mod warp_ui;
+#[cfg(test)]
+mod warp_integration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};
+pub use warp_tab_manager::{WarpTabManager, SplitDirection, WarpSession};
+pub use warp_split_manager::{WarpSplitManager, WarpNavDirection, WarpResizeDirection};
+pub use warp_integration::{
+    WarpIntegration, WarpAction, WarpUiUpdateType, WarpDebugInfo, 
+    WarpIntegrationError, ActionExt
+};
+pub use warp_bindings::{WarpKeyBinding, WarpKeyBindings};
+pub use warp_ui::{WarpUiStyle, WarpTabStyle, WarpSplitStyle, WarpAnimationConfig};
 
 /// Unique identifier for a workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -33,6 +48,9 @@ pub struct WorkspaceManager {
     /// Split manager for handling pane layouts
     pub splits: SplitManager,
 
+    /// Warp-style enhanced functionality (optional)
+    pub warp: Option<WarpIntegration>,
+
     /// Configuration for the workspace
     pub config: Rc<UiConfig>,
 
@@ -43,7 +61,49 @@ pub struct WorkspaceManager {
 impl WorkspaceManager {
     /// Create a new workspace manager
     pub fn new(id: WorkspaceId, config: Rc<UiConfig>, size_info: SizeInfo) -> Self {
-        Self { id, tabs: TabManager::new(), splits: SplitManager::new(), config, size_info }
+        Self { 
+            id, 
+            tabs: TabManager::new(), 
+            splits: SplitManager::new(), 
+            warp: None, 
+            config, 
+            size_info 
+        }
+    }
+
+    /// Create workspace manager with Warp-style functionality enabled
+    pub fn with_warp(id: WorkspaceId, config: Rc<UiConfig>, size_info: SizeInfo, session_file: Option<PathBuf>) -> Self {
+        let warp_integration = WarpIntegration::new(config.clone(), session_file);
+        Self { 
+            id, 
+            tabs: TabManager::new(), 
+            splits: SplitManager::new(), 
+            warp: Some(warp_integration), 
+            config, 
+            size_info 
+        }
+    }
+
+    /// Initialize Warp functionality if enabled
+    pub fn initialize_warp(&mut self, window_context: std::sync::Arc<crate::window_context::WindowContext>, event_proxy: winit::event_loop::EventLoopProxy<crate::event::Event>) -> Result<(), WarpIntegrationError> {
+        if let Some(warp) = &mut self.warp {
+            warp.initialize(window_context, event_proxy)?;
+        }
+        Ok(())
+    }
+
+    /// Execute a Warp action if Warp functionality is enabled
+    pub fn execute_warp_action(&mut self, action: &WarpAction) -> Result<bool, WarpIntegrationError> {
+        if let Some(warp) = &mut self.warp {
+            warp.execute_warp_action(action)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Check if Warp functionality is available
+    pub fn has_warp(&self) -> bool {
+        self.warp.is_some()
     }
 
     fn ratio_step_horizontal(&self) -> f32 {
@@ -195,53 +255,5 @@ pub struct PersistentTabState {
     pub ai_conversation: Option<Vec<String>>,
 }
 
-/// Workspace configuration
-#[derive(Debug, Clone)]
-pub struct WorkspaceConfig {
-    pub enabled: bool,
-    pub tab_bar_position: TabBarPosition,
-    pub show_tab_bar: bool,
-    pub show_tab_close_button: bool,
-    pub show_modified_indicator: bool,
-    pub max_tab_title_length: usize,
-    pub new_tab_action: NewTabAction,
-    pub split_borders: bool,
-    pub border_thickness: f32,
-    pub default_split_ratio: f32,
-    pub minimum_pane_size: usize,
-    pub resize_increment: usize,
-}
-
-impl Default for WorkspaceConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            tab_bar_position: TabBarPosition::Top,
-            show_tab_bar: true,
-            show_tab_close_button: true,
-            show_modified_indicator: true,
-            max_tab_title_length: 20,
-            new_tab_action: NewTabAction::InheritWorkingDir,
-            split_borders: true,
-            border_thickness: 1.0,
-            default_split_ratio: 0.5,
-            minimum_pane_size: 10,
-            resize_increment: 5,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TabBarPosition {
-    Top,
-    Bottom,
-    Hidden,
-}
-
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NewTabAction {
-    InheritWorkingDir,
-    HomeDir,
-    LastUsedDir,
-}
+// WorkspaceConfig is now imported from crate::config::workspace
+pub use crate::config::workspace::{WorkspaceConfig, TabBarPosition, NewTabAction};

@@ -1294,6 +1294,27 @@ pub enum EventType {
     AiCopyOutput {
         format: AiCopyFormat,
     },
+    // New AI panel events
+    #[cfg(feature = "ai")]
+    AiToggle,
+    #[cfg(feature = "ai")]
+    AiSubmit,
+    #[cfg(feature = "ai")]
+    AiClose,
+    #[cfg(feature = "ai")]
+    AiSelectNext,
+    #[cfg(feature = "ai")]
+    AiSelectPrev,
+    #[cfg(feature = "ai")]
+    AiApplyDryRun,
+    #[cfg(feature = "ai")]
+    AiCopyCode,
+    #[cfg(feature = "ai")]
+    AiCopyAll,
+    #[cfg(feature = "ai")]
+    AiExplain(Option<String>),
+    #[cfg(feature = "ai")]
+    AiFix(Option<String>),
     ComponentsInitialized(Arc<InitializedComponents>),
     // Blocks quick actions
     BlocksToggleFoldUnderCursor,
@@ -1340,6 +1361,9 @@ pub enum EventType {
     },
     ConfirmRespond { id: String, accepted: bool },
     ConfirmResolved { id: String, accepted: bool },
+
+    // Warp-style workspace events
+    WarpUiUpdate(crate::workspace::WarpUiUpdateType),
 }
 
 /// Sync IPC event types.
@@ -2989,8 +3013,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[cfg(feature = "ai")]
     fn open_ai_panel(&mut self) {
         if let Some(runtime) = &mut self.ai_runtime {
-            runtime.ui.active = true;
-            runtime.ui.cursor_position = runtime.ui.scratch.len();
+            runtime.toggle_panel();
             *self.dirty = true;
         }
     }
@@ -3821,6 +3844,92 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         if let Some(text) = runtime.copy_output(format) {
                             self.ctx.copy_to_clipboard(text);
                         }
+                    }
+                },
+                // New AI panel events
+                #[cfg(feature = "ai")]
+                EventType::AiToggle => {
+                    self.ctx.open_ai_panel();
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiSubmit => {
+                    self.ctx.ai_propose();
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiClose => {
+                    self.ctx.close_ai_panel();
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiSelectNext => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        runtime.next_proposal();
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiSelectPrev => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        runtime.previous_proposal();
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiApplyDryRun => {
+                    if let Some(runtime) = &self.ctx.ai_runtime {
+                        if let Some((cmd, _)) = runtime.apply_command(true) {
+                            // Show dry run output in confirmation overlay
+                            let id = format!("ai_dry_run_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                            let _ = self.ctx.event_proxy.send_event(Event::new(
+                                EventType::ConfirmOpen {
+                                    id,
+                                    title: "Security Lens - Dry Run".to_string(),
+                                    body: cmd,
+                                    confirm_label: Some("Copy".to_string()),
+                                    cancel_label: Some("Close".to_string()),
+                                },
+                                self.ctx.display.window.id(),
+                            ));
+                        }
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiCopyCode => {
+                    if let Some(runtime) = &self.ctx.ai_runtime {
+                        if let Some(text) = runtime.copy_output(crate::event::AiCopyFormat::Code) {
+                            self.ctx.copy_to_clipboard(text);
+                        }
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiCopyAll => {
+                    if let Some(runtime) = &self.ctx.ai_runtime {
+                        if let Some(text) = runtime.copy_output(crate::event::AiCopyFormat::Text) {
+                            self.ctx.copy_to_clipboard(text);
+                        }
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiExplain(target) => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        let text_to_explain = target.clone().unwrap_or_else(|| {
+                            self.ctx.terminal().selection_to_string()
+                                .filter(|s| !s.trim().is_empty())
+                                .unwrap_or_else(|| "Explain the last command output".to_string())
+                        });
+                        runtime.propose_explain(text_to_explain, None, None);
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiFix(target) => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        let error_text = target.clone().unwrap_or_else(|| {
+                            self.ctx.terminal().selection_to_string()
+                                .filter(|s| !s.trim().is_empty())
+                                .unwrap_or_else(|| "Please suggest a fix for the recent error".to_string())
+                        });
+                        runtime.propose_fix(error_text, None, None, None);
+                        *self.ctx.dirty = true;
                     }
                 },
             },

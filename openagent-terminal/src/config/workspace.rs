@@ -21,6 +21,14 @@ pub struct WorkspaceConfig {
     /// Workspace keybindings (handled by main keybinding system)
     #[config(skip)]
     pub keybindings: WorkspaceKeybindings,
+
+    /// Enable Warp-style enhanced tab and split functionality
+    #[config(default = true)]
+    pub warp_style: bool,
+
+    /// File to store Warp session data (optional)
+    #[config(skip)] 
+    pub warp_session_file: Option<std::path::PathBuf>,
 }
 
 impl Default for WorkspaceConfig {
@@ -30,6 +38,8 @@ impl Default for WorkspaceConfig {
             tab_bar: TabBarConfig::default(),
             splits: SplitConfig::default(),
             keybindings: WorkspaceKeybindings::default(),
+            warp_style: true,
+            warp_session_file: None,
         }
     }
 }

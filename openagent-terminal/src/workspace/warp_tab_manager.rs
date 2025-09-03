@@ -1,0 +1,509 @@
+//! Warp-style Tab Management for OpenAgent Terminal
+//!
+//! This module implements Warp Terminal's tab management patterns:
+//! - Automatic tab naming based on directory/command
+//! - Session persistence and restoration
+//! - Smart tab lifecycle management
+//! - Command-aware tab titles
+
+#![allow(dead_code)]
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+
+use openagent_terminal_core::sync::FairMutex;
+use openagent_terminal_core::term::Term;
+use serde::{Deserialize, Serialize};
+
+use super::split_manager::{PaneId, SplitLayout};
+use super::tab_manager::{TabId, TabContext, PaneContext};
+use crate::event::EventProxy;
+use crate::window_context::WindowContext;
+
+/// Warp-style session data for persistence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WarpSession {
+    pub id: String,
+    pub name: String,
+    pub created_at: SystemTime,
+    pub last_used: SystemTime,
+    pub tabs: Vec<WarpTabSession>,
+    pub active_tab_id: Option<TabId>,
+}
+
+/// Serializable tab session data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WarpTabSession {
+    pub id: TabId,
+    pub title: String,
+    pub working_directory: PathBuf,
+    pub split_layout: WarpSplitLayoutSession,
+    pub active_pane: PaneId,
+    pub panes: HashMap<PaneId, WarpPaneSession>,
+    pub shell_command: Option<String>,
+    pub last_command: Option<String>,
+    pub created_at: SystemTime,
+}
+
+/// Serializable split layout
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WarpSplitLayoutSession {
+    Single(PaneId),
+    Horizontal { left: Box<WarpSplitLayoutSession>, right: Box<WarpSplitLayoutSession>, ratio: f32 },
+    Vertical { top: Box<WarpSplitLayoutSession>, bottom: Box<WarpSplitLayoutSession>, ratio: f32 },
+}
+
+/// Serializable pane session data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WarpPaneSession {
+    pub id: PaneId,
+    pub working_directory: PathBuf,
+    pub shell_command: Option<String>,
+    pub last_command: Option<String>,
+    pub title_override: Option<String>,
+}
+
+/// Enhanced tab manager with Warp-style features
+pub struct WarpTabManager {
+    /// Core tab management
+    tabs: HashMap<TabId, TabContext>,
+    tab_order: Vec<TabId>,
+    active_tab_id: Option<TabId>,
+    next_tab_id: usize,
+    next_pane_id: usize,
+    
+    /// Warp-specific features
+    auto_naming_enabled: bool,
+    session_file_path: Option<PathBuf>,
+    last_session_save: SystemTime,
+    session_auto_save_interval: Duration,
+    
+    /// Smart naming
+    directory_cache: HashMap<PathBuf, String>,
+    command_history: HashMap<TabId, Vec<String>>,
+}
+
+impl WarpTabManager {
+    /// Create a new Warp-style tab manager
+    pub fn new() -> Self {
+        Self {
+            tabs: HashMap::new(),
+            tab_order: Vec::new(),
+            active_tab_id: None,
+            next_tab_id: 1,
+            next_pane_id: 1,
+            
+            auto_naming_enabled: true,
+            session_file_path: None,
+            last_session_save: SystemTime::now(),
+            session_auto_save_interval: Duration::from_secs(30),
+            
+            directory_cache: HashMap::new(),
+            command_history: HashMap::new(),
+        }
+    }
+
+    /// Create with session persistence enabled
+    pub fn with_session_file<P: AsRef<Path>>(session_path: P) -> Self {
+        let mut manager = Self::new();
+        manager.session_file_path = Some(session_path.as_ref().to_path_buf());
+        manager
+    }
+
+    /// Create a new tab with Warp-style automatic naming
+    pub fn create_warp_tab(&mut self, working_dir: Option<PathBuf>) -> TabId {
+        let tab_id = TabId(self.next_tab_id);
+        self.next_tab_id += 1;
+
+        let pane_id = PaneId(self.next_pane_id);
+        self.next_pane_id += 1;
+
+        let working_directory = working_dir
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
+
+        // Generate Warp-style tab title
+        let title = self.generate_smart_tab_name(&working_directory, None);
+
+        let tab_context = TabContext {
+            id: tab_id,
+            title,
+            working_directory: working_directory.clone(),
+            split_layout: SplitLayout::Single(pane_id),
+            active_pane: pane_id,
+            panes: HashMap::new(),
+            #[cfg(feature = "ai")]
+            ai_runtime: None,
+            modified: false,
+            shell_command: None,
+        };
+
+        self.tabs.insert(tab_id, tab_context);
+        self.tab_order.push(tab_id);
+        self.command_history.insert(tab_id, Vec::new());
+
+        // If this is the first tab, make it active
+        if self.active_tab_id.is_none() {
+            self.active_tab_id = Some(tab_id);
+        }
+
+        // Schedule session save
+        self.schedule_session_save();
+
+        tab_id
+    }
+
+    /// Generate smart tab name based on directory and current command (Warp-style)
+    fn generate_smart_tab_name(&mut self, working_dir: &Path, current_command: Option<&str>) -> String {
+        if !self.auto_naming_enabled {
+            return "Terminal".to_string();
+        }
+
+        // Check cache first
+        if let Some(cached_name) = self.directory_cache.get(working_dir) {
+            if current_command.is_none() {
+                return cached_name.clone();
+            }
+        }
+
+        let dir_name = working_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("~");
+
+        let smart_name = if let Some(cmd) = current_command {
+            // Format: "command in directory"
+            let cmd_name = cmd.split_whitespace().next().unwrap_or(cmd);
+            format!("{} in {}", cmd_name, dir_name)
+        } else if self.is_project_directory(working_dir) {
+            // Use project name for recognized project directories
+            self.get_project_name(working_dir)
+                .unwrap_or_else(|| dir_name.to_string())
+        } else {
+            dir_name.to_string()
+        };
+
+        // Cache the result
+        self.directory_cache.insert(working_dir.to_path_buf(), smart_name.clone());
+        smart_name
+    }
+
+    /// Check if directory appears to be a project root
+    fn is_project_directory(&self, dir: &Path) -> bool {
+        let project_files = [
+            "package.json", "Cargo.toml", "pyproject.toml", "requirements.txt",
+            "go.mod", "build.gradle", "pom.xml", ".git", "README.md"
+        ];
+
+        project_files.iter().any(|file| dir.join(file).exists())
+    }
+
+    /// Extract project name from directory
+    fn get_project_name(&self, dir: &Path) -> Option<String> {
+        // Try package.json first
+        if let Ok(package_json) = std::fs::read_to_string(dir.join("package.json")) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&package_json) {
+                if let Some(name) = parsed.get("name").and_then(|n| n.as_str()) {
+                    return Some(name.to_string());
+                }
+            }
+        }
+
+        // Try Cargo.toml
+        if let Ok(cargo_toml) = std::fs::read_to_string(dir.join("Cargo.toml")) {
+            for line in cargo_toml.lines() {
+                if line.starts_with("name = ") {
+                    let name = line.split('=').nth(1)?
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'');
+                    return Some(name.to_string());
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Update tab title when command is executed
+    pub fn update_tab_for_command(&mut self, tab_id: TabId, command: &str) {
+        // Update command history first
+        if let Some(history) = self.command_history.get_mut(&tab_id) {
+            history.push(command.to_string());
+            // Keep only last 10 commands
+            if history.len() > 10 {
+                history.remove(0);
+            }
+        }
+
+        // Update tab title if auto-naming is enabled
+        if self.auto_naming_enabled {
+            if let Some(tab) = self.tabs.get(&tab_id) {
+                let working_dir = tab.working_directory.clone();
+                let new_title = self.generate_smart_tab_name(&working_dir, Some(command));
+                
+                // Now update the tab with the new title
+                if let Some(tab) = self.tabs.get_mut(&tab_id) {
+                    tab.title = new_title;
+                }
+            }
+        }
+
+        self.schedule_session_save();
+    }
+
+    /// Create a new tab and split from existing tab (Warp Cmd+D behavior)
+    pub fn duplicate_tab_as_split(&mut self, source_tab_id: TabId, direction: SplitDirection) -> Option<PaneId> {
+        let source_tab = self.tabs.get(&source_tab_id)?.clone();
+        
+        let new_pane_id = PaneId(self.next_pane_id);
+        self.next_pane_id += 1;
+
+        // Get mutable reference to the tab for splitting
+        if let Some(tab) = self.tabs.get_mut(&source_tab_id) {
+            // Create new split layout based on direction
+            let new_layout = match direction {
+                SplitDirection::Right => SplitLayout::Horizontal {
+                    left: Box::new(tab.split_layout.clone()),
+                    right: Box::new(SplitLayout::Single(new_pane_id)),
+                    ratio: 0.5,
+                },
+                SplitDirection::Down => SplitLayout::Vertical {
+                    top: Box::new(tab.split_layout.clone()),
+                    bottom: Box::new(SplitLayout::Single(new_pane_id)),
+                    ratio: 0.5,
+                },
+            };
+
+            tab.split_layout = new_layout;
+            tab.active_pane = new_pane_id;
+
+            // Note: In real implementation, would create proper PaneContext
+            // For now, just update the layout structure
+
+            self.schedule_session_save();
+            Some(new_pane_id)
+        } else {
+            None
+        }
+    }
+
+    /// Save current session to disk
+    pub fn save_session(&mut self) -> std::io::Result<()> {
+        let Some(session_path) = &self.session_file_path else {
+            return Ok(()); // No session file configured
+        };
+
+        let session = self.create_session_snapshot();
+        let session_json = serde_json::to_string_pretty(&session)?;
+        
+        std::fs::write(session_path, session_json)?;
+        self.last_session_save = SystemTime::now();
+        
+        Ok(())
+    }
+
+    /// Load session from disk
+    pub fn load_session(&mut self) -> std::io::Result<bool> {
+        let Some(session_path) = &self.session_file_path else {
+            return Ok(false); // No session file configured
+        };
+
+        if !session_path.exists() {
+            return Ok(false); // No session to load
+        }
+
+        let session_json = std::fs::read_to_string(session_path)?;
+        let session: WarpSession = serde_json::from_str(&session_json)?;
+
+        self.restore_from_session(session);
+        Ok(true)
+    }
+
+    /// Create session snapshot for persistence
+    fn create_session_snapshot(&self) -> WarpSession {
+        let tabs = self.tab_order.iter()
+            .filter_map(|&tab_id| self.tabs.get(&tab_id))
+            .map(|tab| self.tab_to_session(tab))
+            .collect();
+
+        WarpSession {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "OpenAgent Terminal Session".to_string(),
+            created_at: SystemTime::now(),
+            last_used: SystemTime::now(),
+            tabs,
+            active_tab_id: self.active_tab_id,
+        }
+    }
+
+    /// Convert tab context to session data
+    fn tab_to_session(&self, tab: &TabContext) -> WarpTabSession {
+        WarpTabSession {
+            id: tab.id,
+            title: tab.title.clone(),
+            working_directory: tab.working_directory.clone(),
+            split_layout: self.split_layout_to_session(&tab.split_layout),
+            active_pane: tab.active_pane,
+            panes: tab.panes.iter()
+                .map(|(&id, pane)| (id, self.pane_to_session(id, pane)))
+                .collect(),
+            shell_command: tab.shell_command.clone(),
+            last_command: self.command_history.get(&tab.id)
+                .and_then(|hist| hist.last())
+                .cloned(),
+            created_at: SystemTime::now(),
+        }
+    }
+
+    /// Convert split layout to session format
+    fn split_layout_to_session(&self, layout: &SplitLayout) -> WarpSplitLayoutSession {
+        match layout {
+            SplitLayout::Single(pane_id) => WarpSplitLayoutSession::Single(*pane_id),
+            SplitLayout::Horizontal { left, right, ratio } => WarpSplitLayoutSession::Horizontal {
+                left: Box::new(self.split_layout_to_session(left)),
+                right: Box::new(self.split_layout_to_session(right)),
+                ratio: *ratio,
+            },
+            SplitLayout::Vertical { top, bottom, ratio } => WarpSplitLayoutSession::Vertical {
+                top: Box::new(self.split_layout_to_session(top)),
+                bottom: Box::new(self.split_layout_to_session(bottom)),
+                ratio: *ratio,
+            },
+        }
+    }
+
+    /// Convert pane context to session data
+    fn pane_to_session(&self, pane_id: PaneId, pane: &PaneContext) -> WarpPaneSession {
+        WarpPaneSession {
+            id: pane_id,
+            working_directory: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            shell_command: None,
+            last_command: None,
+            title_override: pane.title_override.clone(),
+        }
+    }
+
+    /// Restore manager state from session
+    fn restore_from_session(&mut self, session: WarpSession) {
+        // Clear current state
+        self.tabs.clear();
+        self.tab_order.clear();
+        self.command_history.clear();
+
+        // Restore tabs
+        for tab_session in session.tabs {
+            self.restore_tab_from_session(tab_session);
+        }
+
+        self.active_tab_id = session.active_tab_id;
+    }
+
+    /// Restore individual tab from session
+    fn restore_tab_from_session(&mut self, tab_session: WarpTabSession) {
+        let tab_context = TabContext {
+            id: tab_session.id,
+            title: tab_session.title,
+            working_directory: tab_session.working_directory,
+            split_layout: self.session_to_split_layout(&tab_session.split_layout),
+            active_pane: tab_session.active_pane,
+            panes: HashMap::new(), // Will be populated separately
+            #[cfg(feature = "ai")]
+            ai_runtime: None,
+            modified: false,
+            shell_command: tab_session.shell_command,
+        };
+
+        self.tabs.insert(tab_session.id, tab_context);
+        self.tab_order.push(tab_session.id);
+
+        // Restore command history
+        if let Some(last_command) = tab_session.last_command {
+            self.command_history.insert(tab_session.id, vec![last_command]);
+        }
+
+        // Update ID counters
+        self.next_tab_id = self.next_tab_id.max(tab_session.id.0 + 1);
+    }
+
+    /// Convert session split layout back to runtime format
+    fn session_to_split_layout(&self, session_layout: &WarpSplitLayoutSession) -> SplitLayout {
+        match session_layout {
+            WarpSplitLayoutSession::Single(pane_id) => SplitLayout::Single(*pane_id),
+            WarpSplitLayoutSession::Horizontal { left, right, ratio } => SplitLayout::Horizontal {
+                left: Box::new(self.session_to_split_layout(left)),
+                right: Box::new(self.session_to_split_layout(right)),
+                ratio: *ratio,
+            },
+            WarpSplitLayoutSession::Vertical { top, bottom, ratio } => SplitLayout::Vertical {
+                top: Box::new(self.session_to_split_layout(top)),
+                bottom: Box::new(self.session_to_split_layout(bottom)),
+                ratio: *ratio,
+            },
+        }
+    }
+
+    /// Schedule session save if enough time has passed
+    fn schedule_session_save(&mut self) {
+        if self.last_session_save.elapsed().unwrap_or(Duration::MAX) > self.session_auto_save_interval {
+            // In a real implementation, this would schedule an async save
+            let _ = self.save_session();
+        }
+    }
+
+    /// Enable/disable automatic tab naming
+    pub fn set_auto_naming(&mut self, enabled: bool) {
+        self.auto_naming_enabled = enabled;
+    }
+
+    /// Get tab count
+    pub fn tab_count(&self) -> usize {
+        self.tabs.len()
+    }
+
+    /// Get active tab
+    pub fn active_tab(&self) -> Option<&TabContext> {
+        self.active_tab_id.and_then(|id| self.tabs.get(&id))
+    }
+
+    /// Close tab with session cleanup
+    pub fn close_warp_tab(&mut self, tab_id: TabId) -> bool {
+        if self.tabs.remove(&tab_id).is_some() {
+            // Remove from order
+            if let Some(pos) = self.tab_order.iter().position(|&id| id == tab_id) {
+                self.tab_order.remove(pos);
+            }
+
+            // Clean up command history
+            self.command_history.remove(&tab_id);
+
+            // Update active tab
+            if self.active_tab_id == Some(tab_id) {
+                self.active_tab_id = if self.tab_order.is_empty() {
+                    None
+                } else {
+                    Some(self.tab_order[0])
+                };
+            }
+
+            self.schedule_session_save();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Direction for splitting panes
+#[derive(Debug, Clone, Copy)]
+pub enum SplitDirection {
+    Right,
+    Down,
+}
+
+impl Default for WarpTabManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
