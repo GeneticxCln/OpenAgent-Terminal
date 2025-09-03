@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Blocks search actions menu
 // Provides contextual actions for selected blocks in advanced search mode
 

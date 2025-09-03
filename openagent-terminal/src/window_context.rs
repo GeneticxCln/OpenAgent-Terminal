@@ -673,15 +673,16 @@ impl WindowContext {
 
     /// Initialize Warp functionality for this window context.
     /// This should be called after the window context is stored in the processor.
+    #[allow(dead_code)]
     pub fn initialize_warp_if_enabled(
         &mut self,
         window_context_weak: std::sync::Weak<std::sync::Mutex<WindowContext>>,
-        event_proxy: EventLoopProxy<Event>,
+        _event_proxy: EventLoopProxy<Event>,
     ) -> Result<(), Box<dyn Error>> {
         if self.config.workspace.warp_style {
             // Create a temporary Arc to pass to the Warp initialization
             // In a real implementation, we'd need a better approach to avoid circular references
-            if let Some(window_context_arc) = window_context_weak.upgrade() {
+            if let Some(_window_context_arc) = window_context_weak.upgrade() {
                 // This is a simplified approach - in production code we'd need a different pattern
                 // to avoid the Arc<Mutex<WindowContext>> dependency
                 info!("Warp-style workspace enabled but initialization requires architectural changes");

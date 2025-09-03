@@ -14,7 +14,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use winit::application::ApplicationHandler;
 use winit::event::StartCause;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
+use winit::raw_window_handle::HasDisplayHandle;
 
 #[cfg(feature = "ai")]
 use openagent_terminal::ai_runtime::AiUiState;
@@ -25,13 +25,10 @@ use openagent_terminal::display::window::Window;
 use openagent_terminal::display::Display;
 use openagent_terminal::message_bar::MessageType;
 use openagent_terminal::renderer::platform;
-use openagent_terminal::renderer::rects::RenderRect;
 
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use glutin::platform::x11::X11GlConfigExt;
 
-#[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-use winit::platform::x11::ActiveEventLoopExtX11;
 
 fn ensure_dirs() -> (PathBuf, PathBuf) {
     let golden = PathBuf::from("tests/golden_images");
@@ -88,7 +85,7 @@ impl ApplicationHandler<()> for SnapshotApp {
         }
 
         // Prepare config and identity
-        let mut config = UiConfig::default();
+        let config = UiConfig::default();
         let mut win_opts = WindowOptions::default();
         let identity = config.window.identity.clone();
 
@@ -155,12 +152,10 @@ impl ApplicationHandler<()> for SnapshotApp {
         let mut display = Display::new(window, gl_context, &config, false).expect("display init");
 
         // Load GL for the gl crate so we can manually clear the background deterministically.
-        unsafe {
-            gl::load_with(|s| {
-                let s = CString::new(s).unwrap();
-                display.gl_context().display().get_proc_address(s.as_c_str()).cast()
-            });
-        }
+        gl::load_with(|s| {
+            let s = CString::new(s).unwrap();
+            display.gl_context().display().get_proc_address(s.as_c_str()).cast()
+        });
 
         // Deterministically clear to the configured background color before drawing overlay.
         let bg = config.colors.primary.background;

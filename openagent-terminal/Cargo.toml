@@ -145,6 +145,8 @@ embed-resource = "3.0.2"
 
 [features]
 default = ["wayland", "x11", "blocks", "workflow", "sync"]
+# Preview-only UI helpers used by examples/demos
+preview_ui = []
 # Optional background component initialization in a separate task
 background-components = []
 # Experimental WGPU rendering backend (NOT recommended for production)
@@ -202,10 +204,12 @@ capabilities = ["internetClient"]
 [[example]]
 name = "snapshot_capture"
 path = "examples/snapshot_capture.rs"
+required-features = ["preview_ui"]
 
 [[example]]
 name = "perf_cold_start"
 path = "examples/perf_cold_start.rs"
+required-features = ["preview_ui"]
 
 [[example]]
 name = "perf_latency"

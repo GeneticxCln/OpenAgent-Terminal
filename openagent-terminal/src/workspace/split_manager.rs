@@ -205,16 +205,16 @@ impl SplitLayout {
             }
         } else {
             match (self, path[0]) {
-                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Left) => {
+                (SplitLayout::Horizontal { left, right: _, .. }, SplitChild::Left) => {
                     left.get_ratio_at_path_internal(&path[1..])
                 },
-                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Right) => {
+                (SplitLayout::Horizontal { left: _, right, .. }, SplitChild::Right) => {
                     right.get_ratio_at_path_internal(&path[1..])
                 },
-                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Top) => {
+                (SplitLayout::Vertical { top, bottom: _, .. }, SplitChild::Top) => {
                     top.get_ratio_at_path_internal(&path[1..])
                 },
-                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Bottom) => {
+                (SplitLayout::Vertical { top: _, bottom, .. }, SplitChild::Bottom) => {
                     bottom.get_ratio_at_path_internal(&path[1..])
                 },
                 _ => None,
@@ -242,16 +242,16 @@ impl SplitLayout {
             }
         } else {
             match (self, path[0]) {
-                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Left) => {
+                (SplitLayout::Horizontal { left, right: _, .. }, SplitChild::Left) => {
                     left.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
                 },
-                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Right) => {
+                (SplitLayout::Horizontal { left: _, right, .. }, SplitChild::Right) => {
                     right.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
                 },
-                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Top) => {
+                (SplitLayout::Vertical { top, bottom: _, .. }, SplitChild::Top) => {
                     top.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
                 },
-                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Bottom) => {
+                (SplitLayout::Vertical { top: _, bottom, .. }, SplitChild::Bottom) => {
                     bottom.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
                 },
                 _ => false,

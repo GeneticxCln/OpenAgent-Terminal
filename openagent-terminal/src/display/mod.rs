@@ -52,6 +52,7 @@ use crate::display::hint::{HintMatch, HintState};
 use crate::display::meter::Meter;
 use crate::display::window::Window;
 use crate::event::{Event, EventType, Mouse, SearchState};
+#[cfg(feature = "preview_ui")]
 use crate::gl;
 use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
@@ -652,7 +653,9 @@ impl Display {
     /// Draw a persistent top toolbar (simple tab strip placeholder): [+] [Tab] [×]
     /// This is a visual affordance; actual multi-tab titles and close buttons
     /// will integrate with the workspace manager in a future pass.
-    pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
+    #[allow(dead_code)]
+#[cfg(feature = "preview_ui")]
+pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let size_info = self.size_info;
         let cols = size_info.columns();
         let lines = size_info.screen_lines();
@@ -2043,7 +2046,9 @@ impl Display {
 
     /// Read the current frame's RGBA pixels from the active GL backbuffer.
     /// Returns (bytes, width, height) on success. For non-GL backends this returns None.
-    pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
+    #[allow(dead_code)]
+#[cfg(feature = "preview_ui")]
+pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
         match &self.backend {
             Backend::Gl { .. } => {
                 let w = self.size_info.width() as u32;
@@ -2362,7 +2367,9 @@ impl Display {
     }
 
     /// Public helper: draw a message bar preview with a single message.
-    pub fn draw_message_bar_preview(&mut self, config: &UiConfig, ty: MessageType, message: &str) {
+    #[allow(dead_code)]
+#[cfg(feature = "preview_ui")]
+pub fn draw_message_bar_preview(&mut self, config: &UiConfig, ty: MessageType, message: &str) {
         let size_info = self.size_info;
         let theme =
             config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
@@ -2414,7 +2421,9 @@ impl Display {
     }
 
     /// Public helper: draw the search bar line and optionally a cursor.
-    pub fn draw_search_preview(&mut self, config: &UiConfig, text: &str, show_cursor: bool) {
+    #[allow(dead_code)]
+#[cfg(feature = "preview_ui")]
+pub fn draw_search_preview(&mut self, config: &UiConfig, text: &str, show_cursor: bool) {
         self.draw_search(config, text);
         if show_cursor {
             // Draw cursor at the end of the search bar
@@ -2438,7 +2447,9 @@ impl Display {
     }
 
     /// Public helper: draw a folded block label line at a given viewport line.
-    pub fn draw_folded_label_preview(
+    #[allow(dead_code)]
+#[cfg(feature = "preview_ui")]
+pub fn draw_folded_label_preview(
         &mut self,
         config: &UiConfig,
         viewport_line: usize,

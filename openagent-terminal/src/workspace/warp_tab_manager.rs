@@ -258,7 +258,7 @@ impl WarpTabManager {
         source_tab_id: TabId,
         direction: SplitDirection,
     ) -> Option<PaneId> {
-        let source_tab = self.tabs.get(&source_tab_id)?;
+        let _source_tab = self.tabs.get(&source_tab_id)?;
 
         let new_pane_id = PaneId(self.next_pane_id);
         self.next_pane_id += 1;

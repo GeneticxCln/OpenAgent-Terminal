@@ -8,8 +8,8 @@ use unicode_width::UnicodeWidthStr;
 use crate::blocks_v2::{
     DurationFilter, ExecutionStatus, ExitCodeFilter, ShellType, SortField, SortOrder,
 };
-use crate::config::theme::ThemeTokens;
 use crate::config::UiConfig;
+use crate::config::theme::ThemeTokens;
 use crate::display::color::Rgb;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
@@ -63,6 +63,7 @@ pub struct FilterState {
 
 /// Enhanced blocks search state with advanced filtering
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct BlocksSearchState {
     pub active: bool,
     pub mode: SearchMode,
@@ -91,6 +92,7 @@ pub struct BlocksSearchState {
     pub filter_suggestions: Vec<String>,
 }
 
+#[allow(dead_code)]
 impl BlocksSearchState {
     pub fn new() -> Self {
         Self {
@@ -454,7 +456,7 @@ impl Display {
         let footer_start = start_line + target_lines - footer_lines;
         let max_result_lines = footer_start.saturating_sub(1);
 
-        line = self.draw_results_list(
+        let _ = self.draw_results_list(
             state,
             line,
             max_result_lines,
@@ -573,7 +575,7 @@ impl Display {
         state: &BlocksSearchState,
         line: usize,
         num_cols: usize,
-        fg: Rgb,
+        _fg: Rgb,
         muted_fg: Rgb,
         accent_fg: Rgb,
         bg: Rgb,
@@ -749,7 +751,7 @@ impl Display {
         &mut self,
         state: &BlocksSearchState,
         footer_start: usize,
-        footer_lines: usize,
+        _footer_lines: usize,
         num_cols: usize,
         muted_fg: Rgb,
         bg: Rgb,
