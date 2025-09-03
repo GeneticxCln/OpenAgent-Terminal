@@ -181,8 +181,184 @@ atlas_eviction_policy = "LruMinOccupancy"
 atlas_report_interval_frames = 0
 
 # Keybindings can be customized here
-# The default Ctrl+Shift+. will toggle the AI panel
+# Command Palette (Linux/Windows default is Ctrl+Shift+P; macOS uses Cmd+P)
+[[keyboard.bindings]]
+key = "p"
+mods = "Control|Shift"
+action = "OpenCommandPalette"
+
+# Blocks Search panel
+[[keyboard.bindings]]
+key = "s"
+mods = "Control|Shift"
+action = "OpenBlocksSearchPanel"
+
+# Workflows panel (requires `workflow` feature)
+[[keyboard.bindings]]
+key = "w"
+mods = "Control|Shift"
+action = "OpenWorkflowsPanel"
+
+# AI panel (optional) — toggle with Ctrl+Shift+A
 [[keyboard.bindings]]
 key = "a"
 mods = "Control|Shift"
 action = "ToggleAiPanel"
+
+# Sample local workflows (appear in Workflows panel and palette)
+[[workflows]]
+name = "Find large files"
+description = "Find files larger than a threshold under a directory"
+command = "find {dir} -type f -size +{size} 2>/dev/null"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+  [[workflows.params]]
+  name = "size"
+  default = "100M"
+
+[[workflows]]
+name = "Git: conventional commit"
+description = "Compose a conventional commit message and commit staged changes"
+command = "git commit -m \"{type}: {subject}\""
+  [[workflows.params]]
+  name = "type"
+  default = "feat"
+  [[workflows.params]]
+  name = "subject"
+  default = "initial commit"
+
+[[workflows]]
+name = "Clean build artifacts"
+description = "Remove common build/target directories"
+command = "rm -rf target dist build .cache"
+
+# High-value, safe workflows
+[[workflows]]
+name = "Find large git repos"
+description = "List .git directories by size (approx. repo size)"
+command = "find {dir} -type d -name .git -prune -exec du -sh {} + | sort -hr | head -n {n}"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+  [[workflows.params]]
+  name = "n"
+  default = "10"
+
+[[workflows]]
+name = "System resource snapshot"
+description = "Print kernel, uptime, memory, disk usage, and top memory processes"
+command = "sh -c 'echo == date ==; date; echo; echo == uname -a ==; uname -a; echo; echo == uptime ==; uptime; echo; echo == free -h ==; free -h || true; echo; echo == df -h ==; df -h; echo; echo == top memory processes ==; ps -eo pid,comm,%mem,%cpu --sort=-%mem | head -n 15'"
+
+[[workflows]]
+name = "List largest node_modules"
+description = "Find node_modules directories and show their sizes"
+command = "find {dir} -type d -name node_modules -prune -exec du -sh {} + | sort -hr | head -n {n}"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+  [[workflows.params]]
+  name = "n"
+  default = "20"
+
+# Additional safe workflows
+[[workflows]]
+name = "Python: create and activate venv"
+description = "Create .venv in target dir and print activation instructions"
+command = "sh -c 'set -e; dir=\"{dir}\"; [ -d \"$dir/.venv\" ] || python3 -m venv \"$dir/.venv\"; echo \"To activate: source $dir/.venv/bin/activate\"'"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+
+[[workflows]]
+name = "Git: clean dry-run"
+description = "Show what git clean would remove (no deletion)"
+command = "sh -c 'flag=\"\"; [ \"{include_ignored}\" = \"yes\" ] && flag=\" -x\"; git clean -fdn$flag'"
+  [[workflows.params]]
+  name = "include_ignored"
+  default = "no"
+
+[[workflows]]
+name = "Docker: dangling images report"
+description = "List dangling (untagged) images"
+command = "docker images --filter dangling=true --format \"{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}\""
+
+[[workflows]]
+name = "Docker: prune (confirm=yes to proceed)"
+description = "Prune unused data (requires confirm=yes; otherwise shows usage)"
+command = "sh -c 'if [ \"{confirm}\" != \"yes\" ]; then echo \"Refusing to prune. Set confirm=yes to proceed.\"; docker system df; else docker system prune -f; fi'"
+  [[workflows.params]]
+  name = "confirm"
+  default = "no"
+
+# Git: largest files in repo history (read-only)
+[[workflows]]
+name = "Git: largest files in history"
+description = "List largest blobs ever committed and their paths"
+command = "sh -c 'git rev-list --objects --all | git cat-file --batch-check=%(objecttype)\ %(objectsize)\ %(rest) | sed -n \"s/^blob \\([0-9][0-9]*\\) \\(.*\\)$/\\1 \\2/p\" | sort -nr | head -n {n}'"
+  [[workflows.params]]
+  name = "n"
+  default = "20"
+
+# Git: merged/unmerged branches relative to base (read-only)
+[[workflows]]
+name = "Git: branches merged/unmerged"
+description = "Show branches merged and not merged into a base branch"
+command = "sh -c 'base=\"{base}\"; echo \"Merged into $base:\"; git branch --merged \"$base\"; echo; echo \"Not merged into $base:\"; git branch --no-merged \"$base\"'"
+  [[workflows.params]]
+  name = "base"
+  default = "main"
+
+# NPM: audit (read-only)
+[[workflows]]
+name = "NPM: audit"
+description = "Run npm audit with a minimum severity level"
+command = "sh -c 'cd \"{dir}\" && npm audit --audit-level={level} || true'"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+  [[workflows.params]]
+  name = "level"
+  default = "moderate"
+
+# NPM: prune dry-run (safe)
+[[workflows]]
+name = "NPM: prune dry-run"
+description = "Show what npm prune would remove (no deletion)"
+command = "sh -c 'cd \"{dir}\" && npm prune --dry-run'"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+
+# Disk: top directories by size (read-only)
+[[workflows]]
+name = "Disk: top directories by size"
+description = "Show largest subdirectories under a path"
+command = "sh -c 'du -xh --max-depth=1 \"{dir}\" | sort -hr | head -n {n}'"
+  [[workflows.params]]
+  name = "dir"
+  default = "."
+  [[workflows.params]]
+  name = "n"
+  default = "20"
+
+# Network: listening ports (read-only)
+[[workflows]]
+name = "Network: listening ports"
+description = "List listening TCP/UDP sockets with owning processes"
+command = "sh -c 'ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null || echo \"ss/netstat not available\"'"
+
+# Pip: cache size (read-only)
+[[workflows]]
+name = "Pip: cache size"
+description = "Show pip cache directory size"
+command = "sh -c 'd=$(python3 -m pip cache dir 2>/dev/null || true); [ -n \"$d\" ] && du -sh \"$d\" || echo \"pip cache dir not found\"'"
+
+# Pip: cache purge (confirm=yes to proceed)
+[[workflows]]
+name = "Pip: cache purge (confirm=yes)"
+description = "Purge pip cache (requires confirm=yes)"
+command = "sh -c 'if [ \"{confirm}\" = \"yes\" ]; then python3 -m pip cache purge; else echo \"Refusing to purge. Set confirm=yes to proceed.\"; fi'"
+  [[workflows.params]]
+  name = "confirm"
+  default = "no"

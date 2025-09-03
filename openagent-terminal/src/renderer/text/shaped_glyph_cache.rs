@@ -416,12 +416,8 @@ mod tests {
     #[test]
     fn test_shaped_glyph_key_equality() {
         let font_key = FontKey::next();
-        let key1 = ShapedGlyphKey {
-            font_key,
-            glyph_id: 42,
-            size: Size::new(16.0),
-            character: Some('a'),
-        };
+        let key1 =
+            ShapedGlyphKey { font_key, glyph_id: 42, size: Size::new(16.0), character: Some('a') };
 
         let key2 = ShapedGlyphKey {
             font_key, // Same font key
@@ -431,7 +427,7 @@ mod tests {
         };
 
         assert_eq!(key1, key2);
-        
+
         // Test that different font keys produce different keys
         let key3 = ShapedGlyphKey {
             font_key: FontKey::next(),
@@ -439,7 +435,7 @@ mod tests {
             size: Size::new(16.0),
             character: Some('a'),
         };
-        
+
         assert_ne!(key1, key3);
     }
 

@@ -29,9 +29,7 @@ mod warp_integration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};
-pub use warp_integration::{
-    WarpAction, WarpIntegration, WarpIntegrationError, WarpUiUpdateType,
-};
+pub use warp_integration::{WarpAction, WarpIntegration, WarpIntegrationError, WarpUiUpdateType};
 
 /// Unique identifier for a workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

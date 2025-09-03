@@ -160,6 +160,66 @@ See `example_config.toml` for complete configuration options.
 - Press `Ctrl+R` to regenerate suggestions
 - Press `Esc` to close panel
 
+## Warp-like UX quick keys (local-only)
+These are enabled by default in this repository build (no cloud required):
+- Command Palette: `Ctrl+Shift+P`
+- Blocks Search panel: `Ctrl+Shift+S`
+- Workflows panel: `Ctrl+Shift+W`
+- Toggle AI panel (optional feature): `Ctrl+Shift+A`
+
+Blocks UI also supports folding and navigation:
+- Toggle fold under cursor: `Alt+f`
+- Next block: `Alt+j`, Previous block: `Alt+k`
+
+Note: Workflow UI is built behind the `workflow` feature and is enabled by default in this repository. If you disable it at build-time, the Workflows panel shortcuts will be no-ops.
+
+## First-run Quick Start (local-only)
+- Build and run with defaults:
+  - cargo run -p openagent-terminal --release
+- Open key UX:
+  - Command Palette: Ctrl+Shift+P
+  - Blocks Search: Ctrl+Shift+S
+  - Workflows Panel: Ctrl+Shift+W
+- Add config and sample workflows:
+  - mkdir -p ~/.config/openagent-terminal
+  - cp ./example_config.toml ~/.config/openagent-terminal/openagent-terminal.toml
+- Run a workflow:
+  - Open the Workflows panel (Ctrl+Shift+W) or Command Palette (Ctrl+Shift+P), then pick a sample like “Find large git repos” or “System resource snapshot”.
+  - Tip: In the Command Palette, prefix with `w:` to filter workflows (e.g., `w:git`)
+- Configuration paths and options:
+  - See the Configuration section below for all supported config locations and details.
+
+## Workflow keybindings (examples)
+You can bind keys to run specific workflows directly. Add entries like these to your config under `[[keyboard.bindings]]`:
+
+```toml
+# Open Workflows panel
+[[keyboard.bindings]]
+key = "w"
+mods = "Control|Shift"
+action = "OpenWorkflowsPanel"
+
+# Run commonly used workflows directly
+[[keyboard.bindings]]
+key = "g"
+mods = "Control|Alt|Shift"
+workflow = "Git: largest files in history"
+
+[[keyboard.bindings]]
+key = "d"
+mods = "Control|Alt|Shift"
+workflow = "Disk: top directories by size"
+
+[[keyboard.bindings]]
+key = ";"
+mods = "Control|Alt|Shift"
+workflow = "Docker: dangling images report"
+```
+Notes:
+- Use the exact workflow `name` as defined in your config.
+- Choose key combos that don’t conflict with your environment. The examples above are suggestions.
+- Guarded workflows (with a `confirm` parameter) will first show a confirmation overlay before execution.
+
 ### Example AI Queries
 ```
 "find all python files modified in the last week"
