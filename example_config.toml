@@ -404,3 +404,30 @@ max_title_length = 20
 # Reserve a terminal row for the tab bar to avoid overlaying content.
 # For now, this hides the top/bottom grid line depending on position.
 reserve_row = true
+
+# Split pane visuals and behavior (Warp-style)
+# These options control the appearance of split dividers and resize handles.
+# All keys are commented out by default for discoverability; uncomment to customize.
+[workspace.splits]
+# Enable split indicators/preview overlay
+# preview_enabled = true
+# Base line width for split indicators (in pixels)
+# indicator_line_width = 2.5
+# Base line alpha (0.0..1.0)
+# indicator_line_alpha = 0.5
+# Line width multiplier when hovering or dragging a divider
+# indicator_hover_scale = 2.0
+# Line alpha when hovering or dragging (0.0..1.0)
+# indicator_hover_alpha = 0.95
+# Resize handle baseline size (in pixels); actual size adapts to divider length
+# handle_size = 8.0
+# Resize handle alpha (0.0..1.0)
+# handle_alpha = 0.95
+# Show resize handle on divider hover
+# show_resize_handles = true
+# Optional explicit colors for line/handle/overlay (override theme tokens when set)
+# indicator_line_color = { r = 180, g = 180, b = 180 }
+# handle_color = { r = 122, g = 162, b = 247 }
+# overlay_color = { r = 0, g = 0, b = 0 }
+# Alpha for the zoom overlay when a pane is zoomed (0.0..1.0)
+# zoom_overlay_alpha = 0.06

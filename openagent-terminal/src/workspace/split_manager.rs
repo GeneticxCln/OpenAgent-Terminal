@@ -112,6 +112,154 @@ pub struct SplitManager {
     default_split_ratio: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitAxis {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitChild {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(Debug, Clone)]
+pub struct SplitDividerHit {
+    pub axis: SplitAxis,
+    /// Path from root to the split node which owns this divider
+    pub path: Vec<SplitChild>,
+    /// Rectangle of the container for this split node
+    pub rect: PaneRect,
+}
+
+impl SplitLayout {
+    fn hit_test_divider_internal(
+        &self,
+        rect: PaneRect,
+        x: f32,
+        y: f32,
+        tol: f32,
+        out_path: &mut Vec<SplitChild>,
+    ) -> Option<SplitDividerHit> {
+        match self {
+            SplitLayout::Horizontal { left, right, ratio } => {
+                let split_x = rect.x + rect.width * ratio;
+                let within_y = y >= rect.y - tol && y <= rect.y + rect.height + tol;
+                let within_x = (x - split_x).abs() <= tol;
+                if within_x && within_y {
+                    return Some(SplitDividerHit { axis: SplitAxis::Horizontal, path: out_path.clone(), rect });
+                }
+                // Recurse
+                let (left_rect, right_rect) = rect.split_horizontal(*ratio);
+                out_path.push(SplitChild::Left);
+                if let Some(hit) = left.hit_test_divider_internal(left_rect, x, y, tol, out_path) {
+                    return Some(hit);
+                }
+                out_path.pop();
+                out_path.push(SplitChild::Right);
+                let hit = right.hit_test_divider_internal(right_rect, x, y, tol, out_path);
+                out_path.pop();
+                hit
+            },
+            SplitLayout::Vertical { top, bottom, ratio } => {
+                let split_y = rect.y + rect.height * ratio;
+                let within_x = x >= rect.x - tol && x <= rect.x + rect.width + tol;
+                let within_y = (y - split_y).abs() <= tol;
+                if within_y && within_x {
+                    return Some(SplitDividerHit { axis: SplitAxis::Vertical, path: out_path.clone(), rect });
+                }
+                // Recurse
+                let (top_rect, bottom_rect) = rect.split_vertical(*ratio);
+                out_path.push(SplitChild::Top);
+                if let Some(hit) = top.hit_test_divider_internal(top_rect, x, y, tol, out_path) {
+                    return Some(hit);
+                }
+                out_path.pop();
+                out_path.push(SplitChild::Bottom);
+                let hit = bottom.hit_test_divider_internal(bottom_rect, x, y, tol, out_path);
+                out_path.pop();
+                hit
+            },
+            SplitLayout::Single(_) => None,
+        }
+    }
+
+    /// Hit test the layout for a divider near (x,y) within tolerance tol (px)
+    pub fn hit_test_divider(&self, container: PaneRect, x: f32, y: f32, tol: f32) -> Option<SplitDividerHit> {
+        let mut path = Vec::new();
+        self.hit_test_divider_internal(container, x, y, tol, &mut path)
+    }
+
+    fn get_ratio_at_path_internal<'a>(
+        &'a self,
+        path: &[SplitChild],
+    ) -> Option<(SplitAxis, &'a f32)> {
+        if path.is_empty() {
+            match self {
+                SplitLayout::Horizontal { ratio, .. } => Some((SplitAxis::Horizontal, ratio)),
+                SplitLayout::Vertical { ratio, .. } => Some((SplitAxis::Vertical, ratio)),
+                SplitLayout::Single(_) => None,
+            }
+        } else {
+            match (self, path[0]) {
+                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Left) => {
+                    left.get_ratio_at_path_internal(&path[1..])
+                },
+                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Right) => {
+                    right.get_ratio_at_path_internal(&path[1..])
+                },
+                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Top) => {
+                    top.get_ratio_at_path_internal(&path[1..])
+                },
+                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Bottom) => {
+                    bottom.get_ratio_at_path_internal(&path[1..])
+                },
+                _ => None,
+            }
+        }
+    }
+
+    pub fn set_ratio_at_path_internal(
+        &mut self,
+        path: &[SplitChild],
+        axis: SplitAxis,
+        new_ratio: f32,
+    ) -> bool {
+        if path.is_empty() {
+            match self {
+                SplitLayout::Horizontal { ratio, .. } if axis == SplitAxis::Horizontal => {
+                    *ratio = new_ratio.clamp(0.1, 0.9);
+                    true
+                },
+                SplitLayout::Vertical { ratio, .. } if axis == SplitAxis::Vertical => {
+                    *ratio = new_ratio.clamp(0.1, 0.9);
+                    true
+                },
+                _ => false,
+            }
+        } else {
+            match (self, path[0]) {
+                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Left) => {
+                    left.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
+                },
+                (SplitLayout::Horizontal { left, right, .. }, SplitChild::Right) => {
+                    right.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
+                },
+                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Top) => {
+                    top.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
+                },
+                (SplitLayout::Vertical { top, bottom, .. }, SplitChild::Bottom) => {
+                    bottom.set_ratio_at_path_internal(&path[1..], axis, new_ratio)
+                },
+                _ => false,
+            }
+        }
+    }
+}
+
 impl SplitManager {
     /// Static convenience: split horizontally without borrowing a SplitManager instance.
     pub fn split_horizontal_static(

@@ -2,6 +2,7 @@
 
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
+use crate::display::color::Rgb;
 
 /// Workspace configuration
 #[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
@@ -114,6 +115,42 @@ pub struct SplitConfig {
     /// Resize increment in cells
     #[config(default = 5)]
     pub resize_increment: usize,
+
+    // --- Visual indicator configuration for Warp-style splits ---
+    /// Enable split preview/indicators overlay
+    #[config(default = true)]
+    pub preview_enabled: bool,
+    /// Base line width for split indicators (px)
+    #[config(default = 2.5)]
+    pub indicator_line_width: f32,
+    /// Base line alpha for split indicators (0..1)
+    #[config(default = 0.5)]
+    pub indicator_line_alpha: f32,
+    /// Multiplier applied to line width when a divider is hovered/dragged
+    #[config(default = 2.0)]
+    pub indicator_hover_scale: f32,
+    /// Line alpha when hovered/dragged (0..1)
+    #[config(default = 0.95)]
+    pub indicator_hover_alpha: f32,
+    /// Handle size baseline (px). Actual size also adapts to divider length.
+    #[config(default = 8.0)]
+    pub handle_size: f32,
+    /// Handle alpha (0..1)
+    #[config(default = 0.95)]
+    pub handle_alpha: f32,
+    /// Whether to show the resize handle on hover
+    #[config(default = true)]
+    pub show_resize_handles: bool,
+    /// Optional explicit colors for split indicators (overrides theme tokens when set)
+    #[serde(default)]
+    pub indicator_line_color: Option<Rgb>,
+    #[serde(default)]
+    pub handle_color: Option<Rgb>,
+    #[serde(default)]
+    pub overlay_color: Option<Rgb>,
+    /// Alpha for the zoom overlay when a pane is zoomed
+    #[config(default = 0.06)]
+    pub zoom_overlay_alpha: f32,
 }
 
 impl Default for SplitConfig {
@@ -124,6 +161,18 @@ impl Default for SplitConfig {
             default_ratio: 0.5,
             minimum_pane_size: 10,
             resize_increment: 5,
+            preview_enabled: true,
+            indicator_line_width: 2.5,
+            indicator_line_alpha: 0.5,
+            indicator_hover_scale: 2.0,
+            indicator_hover_alpha: 0.95,
+            handle_size: 8.0,
+            handle_alpha: 0.95,
+            show_resize_handles: true,
+            indicator_line_color: None,
+            handle_color: None,
+            overlay_color: None,
+            zoom_overlay_alpha: 0.06,
         }
     }
 }

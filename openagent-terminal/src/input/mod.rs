@@ -301,6 +301,25 @@ pub trait ActionContext<T: EventListener> {
     ) -> Option<crate::display::tab_bar::TabBarAction> {
         None
     }
+
+    /// Hit-test split divider (input coords in pixels), returns info if hovering a divider.
+    fn workspace_split_hit(
+        &mut self,
+        _mouse_x_px: f32,
+        _mouse_y_px: f32,
+        _tolerance_px: f32,
+    ) -> Option<crate::workspace::split_manager::SplitDividerHit> {
+        None
+    }
+
+    /// Apply a new split ratio at a divider path
+    fn workspace_set_split_ratio_at_path(
+        &mut self,
+        _path: Vec<crate::workspace::split_manager::SplitChild>,
+        _axis: crate::workspace::split_manager::SplitAxis,
+        _new_ratio: f32,
+    ) {
+    }
 }
 
 impl Action {
@@ -983,6 +1002,34 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         };
 
+        // Split divider drag handling: if dragging, update ratio and set resize cursor
+        if self.ctx.display().split_drag.is_some() {
+            if let Some(hit) = self.ctx.display().split_drag.clone() {
+                let (mx, my) = (x as f32, y as f32);
+                let rect = hit.rect;
+                let mut ratio = match hit.axis {
+                    crate::workspace::split_manager::SplitAxis::Horizontal => {
+                        (mx - rect.x) / rect.width
+                    },
+                    crate::workspace::split_manager::SplitAxis::Vertical => {
+                        (my - rect.y) / rect.height
+                    },
+                };
+                ratio = ratio.clamp(0.1, 0.9);
+                self.ctx.workspace_set_split_ratio_at_path(hit.path.clone(), hit.axis, ratio);
+                // Set appropriate cursor while dragging
+                match hit.axis {
+                    crate::workspace::split_manager::SplitAxis::Horizontal => {
+                        self.ctx.window().set_mouse_cursor(CursorIcon::ColResize)
+                    },
+                    crate::workspace::split_manager::SplitAxis::Vertical => {
+                        self.ctx.window().set_mouse_cursor(CursorIcon::RowResize)
+                    },
+                }
+                return; // Do not process other hover logic while dragging
+            }
+        }
+
         // Tab bar hover: set pointer when hovering on a clickable tab area
         let tab_hover = {
             if self.ctx.config().workspace.tab_bar.show
@@ -997,12 +1044,35 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         };
 
-        // Update mouse state and check for URL change.
-        let mouse_state = self.cursor_state();
-        if ai_hover || tab_hover {
-            self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
+        // Update mouse state with split hover taking precedence for resize cursor
+        if let Some(hit) = self.ctx.display().split_hover.clone() {
+            match hit.axis {
+                crate::workspace::split_manager::SplitAxis::Horizontal => {
+                    self.ctx.window().set_mouse_cursor(CursorIcon::ColResize)
+                },
+                crate::workspace::split_manager::SplitAxis::Vertical => {
+                    self.ctx.window().set_mouse_cursor(CursorIcon::RowResize)
+                },
+            }
         } else {
-            self.ctx.window().set_mouse_cursor(mouse_state);
+            // Update mouse state and check for URL change.
+            let mouse_state = self.cursor_state();
+            if ai_hover || tab_hover {
+                self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
+            } else {
+                self.ctx.window().set_mouse_cursor(mouse_state);
+            }
+        }
+
+        // Update split hover state
+        let split_hover_new = self
+            .ctx
+            .workspace_split_hit(x as f32, y as f32, 6.0 /* px tolerance */);
+        if self.ctx.display().split_hover.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
+            != split_hover_new.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
+        {
+            self.ctx.display().split_hover = split_hover_new;
+            self.ctx.mark_dirty();
         }
 
         // Update tab hover state for visuals and damage tab bar line when it changes
@@ -1304,6 +1374,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
         self.ctx.scheduler_mut().unschedule(timer_id);
+
+        // Stop split drag on mouse release
+        if let MouseButton::Left = button {
+            if self.ctx.display().split_drag.take().is_some() {
+                return;
+            }
+        }
 
         if let MouseButton::Left | MouseButton::Right = button {
             // Copy selection on release, to prevent flooding the display server.
@@ -1607,6 +1684,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else {
             match state {
                 ElementState::Pressed => {
+                    // Start split drag if hovering a divider
+                    if let Some(hit) = self.ctx.display().split_hover.clone() {
+                        self.ctx.display().split_drag = Some(hit);
+                        return;
+                    }
                     // Tab bar click handling (top/bottom)
                     if self.process_tab_bar_click() {
                         return;

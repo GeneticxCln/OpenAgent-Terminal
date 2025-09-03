@@ -83,17 +83,29 @@ pub struct WarpSplitIndicators {
     /// Split line width in pixels
     pub split_line_width: f32,
 
+    /// Base line alpha
+    pub split_line_alpha: f32,
+
     /// Split line color
     pub split_line_color: Rgb,
 
     /// Split handle size for resizing
     pub split_handle_size: f32,
 
+    /// Split handle alpha
+    pub split_handle_alpha: f32,
+
     /// Split handle color (when visible)
     pub split_handle_color: Rgb,
 
     /// Show resize handles on hover
     pub show_resize_handles: bool,
+
+    /// Hover line width scale
+    pub hover_line_scale: f32,
+
+    /// Hover line alpha
+    pub hover_line_alpha: f32,
 
     /// Zoom overlay transparency
     pub zoom_overlay_alpha: f32,
@@ -107,10 +119,14 @@ impl Default for WarpSplitIndicators {
         Self {
             show_split_preview: true,
             split_line_width: 2.0,
+            split_line_alpha: 0.6,
             split_line_color: Rgb::new(200, 200, 200),
             split_handle_size: 6.0,
+            split_handle_alpha: 0.9,
             split_handle_color: Rgb::new(100, 150, 250),
             show_resize_handles: true,
+            hover_line_scale: 1.75,
+            hover_line_alpha: 0.9,
             zoom_overlay_alpha: 0.1,
             zoom_overlay_color: Rgb::new(100, 150, 250),
         }
@@ -146,6 +162,30 @@ pub enum WarpEasing {
 }
 
 impl Display {
+    /// Build Warp split indicators from config and theme
+    pub fn warp_split_indicators_from_config(&self, config: &UiConfig) -> WarpSplitIndicators {
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let s = &config.workspace.splits;
+        let line_color = s.indicator_line_color.unwrap_or(tokens.border);
+        let handle_color = s.handle_color.unwrap_or(tokens.accent);
+        let overlay_color = s.overlay_color.unwrap_or(tokens.overlay);
+        WarpSplitIndicators {
+            show_split_preview: s.preview_enabled,
+            split_line_width: s.indicator_line_width,
+            split_line_alpha: s.indicator_line_alpha,
+            split_line_color: line_color,
+            split_handle_size: s.handle_size,
+            split_handle_alpha: s.handle_alpha,
+            split_handle_color: handle_color,
+            show_resize_handles: s.show_resize_handles,
+            hover_line_scale: s.indicator_hover_scale,
+            hover_line_alpha: s.indicator_hover_alpha,
+            zoom_overlay_alpha: s.zoom_overlay_alpha,
+            zoom_overlay_color: overlay_color,
+        }
+    }
+
     /// Draw Warp-style tab bar with enhanced styling
     pub fn draw_warp_tab_bar(
         &mut self,
@@ -355,6 +395,7 @@ impl Display {
     /// Draw split pane indicators
     pub fn draw_warp_split_indicators(
         &mut self,
+        config: &UiConfig,
         split_layout: &crate::workspace::split_manager::SplitLayout,
         indicators: &WarpSplitIndicators,
     ) {
@@ -362,13 +403,32 @@ impl Display {
             return;
         }
 
-        // Calculate pane boundaries and draw split lines
-        let container = crate::workspace::split_manager::PaneRect::new(
-            0.0,
-            0.0,
-            self.size_info.width(),
-            self.size_info.height(),
-        );
+        // Calculate pane boundaries and draw split lines inside the grid content area,
+        // accounting for window padding and any reserved tab bar row.
+        let si = self.size_info;
+        let mut x0 = si.padding_x();
+        let mut y0 = si.padding_y();
+        let mut w = si.width() - 2.0 * si.padding_x();
+        let mut h = si.height() - 2.0 * si.padding_y();
+        if config.workspace.tab_bar.show
+            && config.workspace.tab_bar.reserve_row
+            && config.workspace.tab_bar.position
+                != crate::workspace::TabBarPosition::Hidden
+        {
+            let ch = si.cell_height();
+            match config.workspace.tab_bar.position {
+                crate::workspace::TabBarPosition::Top => {
+                    y0 += ch;
+                    h = (h - ch).max(0.0);
+                },
+                crate::workspace::TabBarPosition::Bottom => {
+                    h = (h - ch).max(0.0);
+                },
+                crate::workspace::TabBarPosition::Hidden => {},
+            }
+        }
+
+        let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
 
         self.draw_split_lines_recursive(split_layout, container, indicators);
     }
@@ -380,23 +440,68 @@ impl Display {
         rect: crate::workspace::split_manager::PaneRect,
         indicators: &WarpSplitIndicators,
     ) {
+        // Determine current hover/drag target
+        let hover_hit = self
+            .split_drag
+            .as_ref()
+            .or(self.split_hover.as_ref());
+
         match layout {
             crate::workspace::split_manager::SplitLayout::Horizontal { left, right, ratio } => {
                 let split_x = rect.x + rect.width * ratio;
 
+                // Is this divider hovered/dragged?
+                let is_hovered = hover_hit.map_or(false, |hit| {
+                    hit.axis == crate::workspace::split_manager::SplitAxis::Horizontal
+                        && (hit.rect.x - rect.x).abs() < f32::EPSILON
+                        && (hit.rect.y - rect.y).abs() < f32::EPSILON
+                        && (hit.rect.width - rect.width).abs() < f32::EPSILON
+                        && (hit.rect.height - rect.height).abs() < f32::EPSILON
+                });
+
+                let line_width = if is_hovered {
+                    indicators.split_line_width * indicators.hover_line_scale
+                } else {
+                    indicators.split_line_width
+                };
+                let line_alpha = if is_hovered { indicators.hover_line_alpha } else { indicators.split_line_alpha };
+                let line_color = if is_hovered {
+                    indicators.split_handle_color
+                } else {
+                    indicators.split_line_color
+                };
+
                 // Draw vertical split line
                 let split_line = RenderRect::new(
-                    split_x - indicators.split_line_width / 2.0,
+                    split_x - line_width / 2.0,
                     rect.y,
-                    indicators.split_line_width,
+                    line_width,
                     rect.height,
-                    indicators.split_line_color,
-                    0.6,
+                    line_color,
+                    line_alpha,
                 );
 
                 let size_info = self.size_info;
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_info, &metrics, vec![split_line]);
+
+                // Draw grab handle when hovered
+                if is_hovered && indicators.show_resize_handles {
+                    let handle_h = (rect.height * 0.18).clamp(18.0, 48.0);
+                    let handle_w = indicators.split_handle_size.max(line_width + 2.0);
+                    let handle_x = split_x - handle_w / 2.0;
+                    let handle_y = rect.y + (rect.height - handle_h) / 2.0;
+                    let handle = UiRoundedRect::new(
+                        handle_x,
+                        handle_y,
+                        handle_w,
+                        handle_h,
+                        handle_w.min(handle_h) / 3.0,
+                        indicators.split_handle_color,
+                        indicators.split_handle_alpha,
+                    );
+                    self.stage_ui_rounded_rect(handle);
+                }
 
                 // Recursively draw child splits
                 let (left_rect, right_rect) = rect.split_horizontal(*ratio);
@@ -406,19 +511,58 @@ impl Display {
             crate::workspace::split_manager::SplitLayout::Vertical { top, bottom, ratio } => {
                 let split_y = rect.y + rect.height * ratio;
 
+                // Is this divider hovered/dragged?
+                let is_hovered = hover_hit.map_or(false, |hit| {
+                    hit.axis == crate::workspace::split_manager::SplitAxis::Vertical
+                        && (hit.rect.x - rect.x).abs() < f32::EPSILON
+                        && (hit.rect.y - rect.y).abs() < f32::EPSILON
+                        && (hit.rect.width - rect.width).abs() < f32::EPSILON
+                        && (hit.rect.height - rect.height).abs() < f32::EPSILON
+                });
+
+                let line_width = if is_hovered {
+                    indicators.split_line_width * indicators.hover_line_scale
+                } else {
+                    indicators.split_line_width
+                };
+                let line_alpha = if is_hovered { indicators.hover_line_alpha } else { indicators.split_line_alpha };
+                let line_color = if is_hovered {
+                    indicators.split_handle_color
+                } else {
+                    indicators.split_line_color
+                };
+
                 // Draw horizontal split line
                 let split_line = RenderRect::new(
                     rect.x,
-                    split_y - indicators.split_line_width / 2.0,
+                    split_y - line_width / 2.0,
                     rect.width,
-                    indicators.split_line_width,
-                    indicators.split_line_color,
-                    0.6,
+                    line_width,
+                    line_color,
+                    line_alpha,
                 );
 
                 let size_info = self.size_info;
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_info, &metrics, vec![split_line]);
+
+                // Draw grab handle when hovered
+                if is_hovered && indicators.show_resize_handles {
+                    let handle_w = (rect.width * 0.18).clamp(18.0, 48.0);
+                    let handle_h = indicators.split_handle_size.max(line_width + 2.0);
+                    let handle_x = rect.x + (rect.width - handle_w) / 2.0;
+                    let handle_y = split_y - handle_h / 2.0;
+                    let handle = UiRoundedRect::new(
+                        handle_x,
+                        handle_y,
+                        handle_w,
+                        handle_h,
+                        handle_w.min(handle_h) / 3.0,
+                        indicators.split_handle_color,
+                        indicators.split_handle_alpha,
+                    );
+                    self.stage_ui_rounded_rect(handle);
+                }
 
                 // Recursively draw child splits
                 let (top_rect, bottom_rect) = rect.split_vertical(*ratio);
@@ -434,7 +578,7 @@ impl Display {
     /// Draw zoom overlay when a pane is zoomed
     pub fn draw_warp_zoom_overlay(
         &mut self,
-        zoomed_pane_id: crate::workspace::split_manager::PaneId,
+        _zoomed_pane_id: crate::workspace::split_manager::PaneId,
         indicators: &WarpSplitIndicators,
     ) {
         // Draw subtle overlay to indicate zoom state

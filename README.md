@@ -327,6 +327,42 @@ shadow_size_px = 8
 
 Sample themes are available in `extra/themes/`.
 
+### Warp-style splits and tab bar (new)
+
+OpenAgent Terminal can render Warp-style split dividers and a tab bar with an optional reserved
+row. You can customize the divider line width, hover behavior, handle size, and colors via the
+`[workspace.splits]` section in your config. Colors default to your theme tokens but can be
+overridden per-key.
+
+Example (uncomment to customize):
+
+```toml
+[workspace]
+warp_style = true
+
+[workspace.tab_bar]
+position = "Top"      # "Top" | "Bottom" | "Hidden"
+show = true
+reserve_row = true    # reserve one grid row for the tab bar
+
+[workspace.splits]
+# preview_enabled = true
+# indicator_line_width = 2.5
+# indicator_line_alpha = 0.5
+# indicator_hover_scale = 2.0
+# indicator_hover_alpha = 0.95
+# handle_size = 8.0
+# handle_alpha = 0.95
+# show_resize_handles = true
+# Optional explicit colors (override theme tokens when set):
+# indicator_line_color = { r = 180, g = 180, b = 180 }
+# handle_color = { r = 122, g = 162, b = 247 }
+# overlay_color = { r = 0, g = 0, b = 0 }
+# zoom_overlay_alpha = 0.06
+```
+
+See `example_config.toml` for a fully commented block of these options.
+
 ## Troubleshooting
 
 - Wayland vs X11 (Linux)
