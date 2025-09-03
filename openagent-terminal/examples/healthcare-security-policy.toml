@@ -1,0 +1,175 @@
+# Healthcare Organization Security Policy Bundle
+# HIPAA-compliant configuration for healthcare and medical technology environments
+# Includes PHI protection, HITECH compliance, and medical device security patterns
+
+[security_lens]
+enabled = true
+block_critical = true
+docs_base_url = "https://security.healthcare-org.com/hipaa"
+gate_paste_events = true
+
+[security_lens.require_confirmation]
+Safe = false
+Caution = true
+Warning = true
+Critical = true
+
+[security_lens.require_reason]
+Safe = false
+Caution = false
+Warning = true
+Critical = true
+
+# Healthcare environments require careful monitoring
+[security_lens.rate_limit]
+max_detections = 3
+window_seconds = 180  # 3 minutes
+enabled = true
+
+# === HIPAA and PHI Protection Patterns ===
+
+# Direct PHI database access
+[[security_lens.custom_patterns]]
+pattern = "(?i)(mysql|psql|mongo|oracle)\\s+.*-(phi|ehr|emr|patient|medical)"
+risk_level = "Critical"
+message = "Direct database access to PHI systems (HIPAA violation risk)"
+
+# Patient data export
+[[security_lens.custom_patterns]]
+pattern = "(?i)(mysqldump|pg_dump|mongoexport).*\\s+(patient|phi|medical|health)"
+risk_level = "Critical"
+message = "Exporting patient health information (PHI)"
+
+# PHI data movement
+[[security_lens.custom_patterns]]
+pattern = "(?i)(scp|rsync|cp).*\\s+(phi|patient|medical).*\\s+(dev|test|staging)"
+risk_level = "Critical"
+message = "Copying PHI to non-production environment (HIPAA violation)"
+
+# Healthcare audit log tampering
+[[security_lens.custom_patterns]]
+pattern = "(?i)(audit|hipaa|phi).*log.*(delete|truncate|modify|rm)"
+risk_level = "Critical"
+message = "Tampering with HIPAA audit logs"
+
+# Medical device network access
+[[security_lens.custom_patterns]]
+pattern = "(?i)(medical|device|scanner|monitor).*network.*(disable|disconnect)"
+risk_level = "Warning"
+message = "Operation affecting medical device network connectivity"
+
+# === EHR/EMR System Protection ===
+
+# Electronic Health Record system manipulation
+[[security_lens.custom_patterns]]
+pattern = "(?i)(ehr|emr|epic|cerner|allscripts).*(service|process).*(stop|kill|restart)"
+risk_level = "Critical"
+message = "Operation affecting Electronic Health Record systems"
+
+# EHR database operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)(drop|truncate|delete).*\\s+(ehr|emr|patient|medical)"
+risk_level = "Critical"
+message = "Destructive operation on EHR/EMR data"
+
+# Patient portal operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)patient.*portal.*(database|service).*(delete|drop|truncate)"
+risk_level = "Critical"
+message = "Operation affecting patient portal systems"
+
+# === Medical Device Security ===
+
+# Medical device firmware updates
+[[security_lens.custom_patterns]]
+pattern = "(?i)(firmware|flash|update).*(medical|device|monitor|pump|ventilator)"
+risk_level = "Warning"
+message = "Medical device firmware operation (requires validation)"
+
+# Medical device configuration
+[[security_lens.custom_patterns]]
+pattern = "(?i)(medical|device).*(config|setting).*(modify|change|update)"
+risk_level = "Warning"
+message = "Modifying medical device configuration"
+
+# === Healthcare Cloud Operations ===
+
+# AWS HIPAA-compliant storage
+[[security_lens.custom_patterns]]
+pattern = "(?i)aws\\s+s3.*(delete|rm).*\\s+(phi|medical|patient|hipaa)"
+risk_level = "Critical"
+message = "Deleting PHI from AWS S3 (HIPAA compliance risk)"
+
+# Healthcare Azure operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)az\\s+.*delete.*\\s+(medical|patient|phi|hipaa)"
+risk_level = "Critical"
+message = "Azure deletion operation affecting healthcare data"
+
+# GCP healthcare data
+[[security_lens.custom_patterns]]
+pattern = "(?i)gsutil\\s+rm.*\\s+(phi|medical|patient|health)"
+risk_level = "Critical"
+message = "Google Cloud deletion of healthcare data"
+
+# === Backup and Recovery ===
+
+# PHI backup operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)backup.*(delete|remove).*(phi|patient|medical|ehr)"
+risk_level = "Critical"
+message = "Deletion of PHI backup data"
+
+# Disaster recovery testing
+[[security_lens.custom_patterns]]
+pattern = "(?i)(dr|disaster.*recovery).*(test|failover).*prod"
+risk_level = "Warning"
+message = "Disaster recovery operation in production"
+
+# === Compliance and Monitoring ===
+
+# HIPAA compliance monitoring
+[[security_lens.custom_patterns]]
+pattern = "(?i)(hipaa|compliance|phi).*monitor.*(disable|stop|bypass)"
+risk_level = "Critical"
+message = "Disabling HIPAA compliance monitoring"
+
+# Healthcare security tools
+[[security_lens.custom_patterns]]
+pattern = "(?i)(dlp|data.*loss.*prevention).*(disable|bypass).*medical"
+risk_level = "Critical"
+message = "Disabling data loss prevention for medical data"
+
+# Medical data encryption
+[[security_lens.custom_patterns]]
+pattern = "(?i)(encrypt|decrypt).*(phi|patient|medical).*(disable|bypass)"
+risk_level = "Critical"
+message = "Operation affecting PHI encryption"
+
+# === Integration Systems ===
+
+# HL7/FHIR interface manipulation
+[[security_lens.custom_patterns]]
+pattern = "(?i)(hl7|fhir|dicom).*interface.*(stop|disable|modify)"
+risk_level = "Warning"
+message = "Operation affecting healthcare data interfaces"
+
+# Healthcare API operations
+[[security_lens.custom_patterns]]
+pattern = "(?i)(api|service).*(patient|medical|phi).*(delete|truncate|drop)"
+risk_level = "Critical"
+message = "API operation affecting patient data"
+
+# === Research and Analytics ===
+
+# Medical research data
+[[security_lens.custom_patterns]]
+pattern = "(?i)(research|clinical.*trial).*(data|database).*(export|copy|backup)"
+risk_level = "Warning"
+message = "Operation on medical research data (IRB approval may be required)"
+
+# Healthcare analytics
+[[security_lens.custom_patterns]]
+pattern = "(?i)(analytics|warehouse|bi).*(patient|medical).*(truncate|delete)"
+risk_level = "Warning"
+message = "Operation affecting healthcare analytics data"

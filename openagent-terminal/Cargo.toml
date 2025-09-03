@@ -146,9 +146,11 @@ embed-resource = "3.0.2"
 default = ["wayland", "x11", "blocks"]
 # Optional background component initialization in a separate task
 background-components = []
-# Optional non-OpenGL rendering backend. Use with `--features wgpu`.
+# Experimental WGPU rendering backend (NOT recommended for production)
+# Use with `--features wgpu` for testing only. OpenGL is the stable default.
+# WGPU backend is behind feature flag until visual parity is achieved.
 wgpu = ["dep:wgpu", "dep:pollster"]
-# Convenience preset: enable WGPU backend with one flag (alias)
+# Convenience preset: enable experimental WGPU backend with one flag (alias)
 renderer-wgpu = ["wgpu"]
 
 x11 = [

@@ -83,7 +83,9 @@ pub struct Debug {
     /// The renderer OpenAgent Terminal should be using.
     pub renderer: Option<RendererPreference>,
 
-    /// Prefer the WGPU backend when available (falls back to OpenGL if unavailable).
+    /// [EXPERIMENTAL] Prefer the WGPU backend when available (falls back to OpenGL if unavailable).
+    /// WARNING: WGPU backend is experimental and may have visual inconsistencies.
+    /// OpenGL is the stable, recommended renderer.
     pub prefer_wgpu: bool,
 
     /// Use EGL as display API if the current platform allows it.
@@ -149,14 +151,16 @@ impl Default for Debug {
 }
 
 /// The renderer configuration options.
+/// OpenGL variants are stable and recommended for production use.
+/// WGPU backend (if enabled via feature flag) is experimental.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RendererPreference {
-    /// OpenGL 3.3 renderer.
+    /// OpenGL 3.3 renderer (RECOMMENDED - stable, well-tested).
     Glsl3,
 
-    /// GLES 2 renderer, with optional extensions like dual source blending.
+    /// GLES 2 renderer, with optional extensions like dual source blending (stable).
     Gles2,
 
-    /// Pure GLES 2 renderer.
+    /// Pure GLES 2 renderer (stable, maximum compatibility).
     Gles2Pure,
 }
