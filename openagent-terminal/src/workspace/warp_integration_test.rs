@@ -13,15 +13,12 @@ use std::time::Instant;
 use crate::config::UiConfig;
 use crate::display::SizeInfo;
 
-use super::{
-    WarpAction, WarpIntegration,
-    WorkspaceId, WorkspaceManager,
-};
+use super::{WarpAction, WarpIntegration, WorkspaceId, WorkspaceManager};
+use crate::config::workspace::WorkspaceConfig;
 use crate::config::Action;
 use crate::workspace::warp_integration::ActionExt;
-use crate::workspace::warp_tab_manager::SplitDirection;
 use crate::workspace::warp_split_manager::{WarpNavDirection, WarpResizeDirection};
-use crate::config::workspace::WorkspaceConfig;
+use crate::workspace::warp_tab_manager::SplitDirection;
 
 /// Helper to create a test configuration
 fn test_config() -> Rc<UiConfig> {

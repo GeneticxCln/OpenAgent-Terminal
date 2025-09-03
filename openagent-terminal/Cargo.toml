@@ -144,7 +144,7 @@ windows-sys = { version = "0.59", features = [
 embed-resource = "3.0.2"
 
 [features]
-default = ["wayland", "x11", "blocks"]
+default = ["wayland", "x11", "blocks", "workflow", "sync"]
 # Optional background component initialization in a separate task
 background-components = []
 # Experimental WGPU rendering backend (NOT recommended for production)
@@ -198,6 +198,30 @@ description = "AI-enhanced, cross-platform terminal"
 logo_path = "extra/logo/openagent-terminal.png"
 # Keep capability surface minimal
 capabilities = ["internetClient"]
+
+[[example]]
+name = "snapshot_capture"
+path = "examples/snapshot_capture.rs"
+
+[[example]]
+name = "perf_cold_start"
+path = "examples/perf_cold_start.rs"
+
+[[example]]
+name = "perf_latency"
+path = "examples/perf_latency.rs"
+
+[[example]]
+name = "perf_wgpu"
+path = "examples/perf_wgpu.rs"
+
+[[example]]
+name = "render_smoke"
+path = "examples/render_smoke.rs"
+
+[[example]]
+name = "wgpu_snapshot"
+path = "examples/wgpu_snapshot.rs"
 
 [[bench]]
 name = "terminal_startup"

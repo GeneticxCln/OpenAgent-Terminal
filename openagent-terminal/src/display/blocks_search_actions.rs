@@ -1,7 +1,6 @@
 // Blocks search actions menu
 // Provides contextual actions for selected blocks in advanced search mode
 
-
 use crate::config::theme::ThemeTokens;
 use crate::display::blocks_search_panel::BlocksSearchItem;
 use crate::display::Display;

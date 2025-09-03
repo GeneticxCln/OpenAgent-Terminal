@@ -95,26 +95,29 @@ const BELL_CMD_COOLDOWN: Duration = Duration::from_millis(100);
 ///
 /// Stores some state from received events and dispatches actions when they are
 /// triggered.
-pub struct Processor {
-    pub config_monitor: Option<ConfigMonitor>,
+    pub struct Processor {
+        pub config_monitor: Option<ConfigMonitor>,
 
-    clipboard: Clipboard,
-    scheduler: Scheduler,
-    initial_window_options: Option<WindowOptions>,
-    initial_window_error: Option<Box<dyn Error>>,
-    windows: HashMap<WindowId, WindowContext, RandomState>,
-    proxy: EventLoopProxy<Event>,
-    gl_config: Option<GlutinConfig>,
-    components: Option<Arc<InitializedComponents>>,
-    #[cfg(unix)]
-    global_ipc_options: ParsedOptions,
-    cli_options: CliOptions,
-    config: Rc<UiConfig>,
+        clipboard: Clipboard,
+        scheduler: Scheduler,
+        initial_window_options: Option<WindowOptions>,
+        initial_window_error: Option<Box<dyn Error>>,
+        windows: HashMap<WindowId, WindowContext, RandomState>,
+        proxy: EventLoopProxy<Event>,
+        gl_config: Option<GlutinConfig>,
+        components: Option<Arc<InitializedComponents>>,
+        #[cfg(unix)]
+        global_ipc_options: ParsedOptions,
+        cli_options: CliOptions,
+        config: Rc<UiConfig>,
 
-    // Pending security confirmation for AI apply-to-command flow
-    #[cfg(feature = "ai")]
-    pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
-}
+        // Pending security confirmation for AI apply-to-command flow
+        #[cfg(feature = "ai")]
+        pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
+
+        // Pending workflow confirmations (workflow name, window id)
+        pending_workflow_confirms: HashMap<String, (String, WindowId)>,
+    }
 
 impl Processor {
     /// Create a new event processor.
@@ -163,6 +166,7 @@ impl Processor {
             config_monitor,
             #[cfg(feature = "ai")]
             pending_security_ai: Default::default(),
+            pending_workflow_confirms: Default::default(),
         }
     }
 
@@ -187,6 +191,13 @@ impl Processor {
         // Set default window for confirmations (first window)
         crate::ui_confirm::set_default_window_id(window_id);
         self.windows.insert(window_id, window_context);
+
+        // If there was no user config loaded, show a brief onboarding hint in the message bar.
+        if self.config.config_paths.is_empty() {
+            let hint = "Welcome — try Ctrl+Shift+P (Command Palette), Ctrl+Shift+S (Blocks Search), Ctrl+Shift+W (Workflows). Place a config at ~/.config/openagent-terminal/openagent-terminal.toml".to_string();
+            let message = crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
+            let _ = self.proxy.send_event(Event::new(EventType::Message(message), window_id));
+        }
 
         // If components are already initialized, set them on the new window
         if let Some(components) = &self.components {
@@ -958,7 +969,10 @@ impl ApplicationHandler<Event> for Processor {
                         let engine = engine.clone();
                         let proxy = self.proxy.clone();
                         let win = *window_id;
-                        let cfg = self.config.clone();
+                        // Extract workflow info from config before moving into async block
+                        let fallback_workflow = self.config.workflows.iter().find(|w| w.name == name).map(|wf| {
+                            (wf.command.clone(), wf.params.clone())
+                        });
                         let runtime = components.runtime.clone();
                         runtime.spawn(async move {
                             use std::collections::HashMap;
@@ -1103,10 +1117,9 @@ impl ApplicationHandler<Event> for Processor {
                                 },
                                 Err(_e) => {
                                     // Fallback to config command paste
-                                    if let Some(wf) = cfg.workflows.iter().find(|w| w.name == name)
-                                    {
-                                        let mut cmd = wf.command.clone();
-                                        for p in &wf.params {
+                                    if let Some((cmd_template, params)) = fallback_workflow {
+                                        let mut cmd = cmd_template;
+                                        for p in &params {
                                             let placeholder = format!("{{{}}}", p.name);
                                             let val = p.default.clone().unwrap_or_default();
                                             cmd = cmd.replace(&placeholder, &val);
@@ -1131,14 +1144,45 @@ impl ApplicationHandler<Event> for Processor {
                 }
                 // No engine: fallback immediately
                 if let Some(wf) = self.config.workflows.iter().find(|w| w.name == name) {
-                    let mut cmd = wf.command.clone();
-                    for p in &wf.params {
-                        let placeholder = format!("{{{}}}", p.name);
-                        let val = p.default.clone().unwrap_or_default();
-                        cmd = cmd.replace(&placeholder, &val);
+                    // If workflow has a 'confirm' parameter, show confirmation overlay first
+                    let has_confirm = wf.params.iter().any(|p| p.name == "confirm");
+                    if has_confirm {
+                        let id = crate::ui_confirm::generate_id();
+                        // Build a preview with default parameters (without forcing confirm=yes yet)
+                        let mut preview_cmd = wf.command.clone();
+                        for p in &wf.params {
+                            let placeholder = format!("{{{}}}", p.name);
+                            let val = p.default.clone().unwrap_or_default();
+                            preview_cmd = preview_cmd.replace(&placeholder, &val);
+                        }
+                        let body = format!(
+                            "About to run guarded workflow: {}\n\nPreview (with defaults):\n  {}\n\nProceed?",
+                            wf.name, preview_cmd
+                        );
+                        // Track pending workflow confirmation
+                        self.pending_workflow_confirms
+                            .insert(id.clone(), (wf.name.clone(), *window_id));
+                        let _ = self.proxy.send_event(Event::new(
+                            EventType::ConfirmOpen {
+                                id: id.clone(),
+                                title: format!("Confirm workflow: {}", wf.name),
+                                body,
+                                confirm_label: Some("Run".into()),
+                                cancel_label: Some("Cancel".into()),
+                            },
+                            *window_id,
+                        ));
+                    } else {
+                        let mut cmd = wf.command.clone();
+                        for p in &wf.params {
+                            let placeholder = format!("{{{}}}", p.name);
+                            let val = p.default.clone().unwrap_or_default();
+                            cmd = cmd.replace(&placeholder, &val);
+                        }
+                        let _ = self
+                            .proxy
+                            .send_event(Event::new(EventType::PasteCommand(cmd), *window_id));
                     }
-                    let _ =
-                        self.proxy.send_event(Event::new(EventType::PasteCommand(cmd), *window_id));
                 } else {
                     let msg = crate::message_bar::Message::new(
                         format!("Workflow not found: {}", name),
@@ -1183,6 +1227,28 @@ impl ApplicationHandler<Event> for Processor {
                         let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
                     }
                 }
+                // If this is a pending guarded workflow confirmation, handle it
+                if let Some((wf_name, win)) = self.pending_workflow_confirms.remove(&id) {
+                    if accepted {
+                        if let Some(wf) = self.config.workflows.iter().find(|w| w.name == wf_name) {
+                            let mut cmd = wf.command.clone();
+                            for p in &wf.params {
+                                let placeholder = format!("{{{}}}", p.name);
+                                let val = if p.name == "confirm" { Some("yes".to_string()) } else { p.default.clone() };
+                                let val = val.unwrap_or_default();
+                                cmd = cmd.replace(&placeholder, &val);
+                            }
+                            let _ = self.proxy.send_event(Event::new(EventType::PasteCommand(cmd), win));
+                        }
+                    } else {
+                        let message = crate::message_bar::Message::new(
+                            "Workflow canceled".into(),
+                            crate::message_bar::MessageType::Warning,
+                        );
+                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                    }
+                }
+
                 // Resolve for plugin-host waiters if any
                 let _ = crate::ui_confirm::resolve(&id, accepted);
                 // Broadcast resolution to close overlays in all windows
@@ -4191,6 +4257,29 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.propose_fix(error_text, None, None, None);
                         *self.ctx.dirty = true;
                     }
+                },
+                // Workflow panel events
+                #[cfg(feature = "workflow")]
+                EventType::WorkflowsSearchPerform(_) => {
+                    // Workflow search is handled at the processor level
+                },
+                #[cfg(feature = "workflow")]
+                EventType::WorkflowsSearchResults(_) => {
+                    // Workflow search results are handled at the processor level
+                },
+                #[cfg(feature = "workflow")]
+                EventType::WorkflowsExecuteByName(_) => {
+                    // Workflow execution is handled at the processor level
+                },
+                #[cfg(feature = "workflow")]
+                EventType::WorkflowsProgressUpdate { .. } => {
+                    // Workflow progress updates are handled at the processor level
+                    *self.ctx.dirty = true;
+                },
+                #[cfg(feature = "workflow")]
+                EventType::WorkflowsProgressClear(_) => {
+                    // Workflow progress clearing is handled at the processor level
+                    *self.ctx.dirty = true;
                 },
             },
             WinitEvent::WindowEvent { event, .. } => {
