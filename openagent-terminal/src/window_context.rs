@@ -558,6 +558,7 @@ impl WindowContext {
             &mut self.search_state,
             #[cfg(feature = "ai")]
             ai_state_opt,
+            Some(&self.workspace.tabs),
         );
     }
 

@@ -295,7 +295,7 @@ command = "sh -c 'if [ \"{confirm}\" != \"yes\" ]; then echo \"Refusing to prune
 [[workflows]]
 name = "Git: largest files in history"
 description = "List largest blobs ever committed and their paths"
-command = "sh -c 'git rev-list --objects --all | git cat-file --batch-check=%(objecttype)\ %(objectsize)\ %(rest) | sed -n \"s/^blob \\([0-9][0-9]*\\) \\(.*\\)$/\\1 \\2/p\" | sort -nr | head -n {n}'"
+command = "git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1==\"blob\"{size=$2; $1=$2=\"\"; sub(/^ /, \"\", $0); print size, $0}' | sort -nr | head -n {n}"
   [[workflows.params]]
   name = "n"
   default = "20"
@@ -362,3 +362,23 @@ command = "sh -c 'if [ \"{confirm}\" = \"yes\" ]; then python3 -m pip cache purg
   [[workflows.params]]
   name = "confirm"
   default = "no"
+
+# Workspace: tabs and splits configuration
+[workspace]
+# Enable Warp-style visuals and interactions (tabs/splits)
+warp_style = true
+
+[workspace.tab_bar]
+# Position of the tab bar: "Top" | "Bottom" | "Hidden"
+position = "Top"
+# Whether to show the tab bar
+show = true
+# Show close button on tabs
+show_close_button = true
+# Show modified indicator
+show_modified_indicator = true
+# Maximum tab title length
+max_title_length = 20
+# Reserve a terminal row for the tab bar to avoid overlaying content.
+# For now, this hides the top/bottom grid line depending on position.
+reserve_row = true

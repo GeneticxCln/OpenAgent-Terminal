@@ -627,6 +627,102 @@ impl Display {
         })
     }
 
+    /// Draw a persistent Quick Actions bar on the bottom line with clickable entries
+    /// for Workflows, Blocks, Palette, and optional AI. This improves discoverability
+    /// for mouse-first users and reduces reliance on keybindings.
+    /// Draw a persistent top toolbar (simple tab strip placeholder): [+] [Tab] [×]
+    /// This is a visual affordance; actual multi-tab titles and close buttons
+    /// will integrate with the workspace manager in a future pass.
+    pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
+        let size_info = self.size_info;
+        let cols = size_info.columns();
+        let lines = size_info.screen_lines();
+        if lines == 0 {
+            return;
+        }
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+
+        let line = 0usize;
+        let y = line as f32 * size_info.cell_height();
+        let h = 1.0_f32 * size_info.cell_height();
+
+        // Background band with subtle shadow underneath
+        let bg = tokens.surface;
+        let mut rects = Vec::new();
+        rects.push(RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98));
+        // Shadow below
+        rects.push(RenderRect::new(0.0, y + h, size_info.width(), 2.0, tokens.surface_muted, 0.15));
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+
+        let fg = tokens.text;
+        let accent = tokens.accent;
+
+        // Labels: [+] [Tab] [×]
+        let labels = ["[+]", "[Tab]", "[×]"];
+        let mut col = 1usize;
+        for (i, label) in labels.iter().enumerate() {
+            let color = if i == 1 { accent } else { fg };
+            self.draw_ai_text(Point::new(line, Column(col)), color, bg, label, cols.saturating_sub(col));
+            col += label.len() + 2;
+            if col >= cols { break; }
+        }
+    }
+
+    pub fn draw_quick_actions_bar(&mut self, config: &UiConfig) {
+        let size_info = self.size_info;
+        let cols = size_info.columns();
+        let lines = size_info.screen_lines();
+        if lines == 0 {
+            return;
+        }
+
+        // Theme tokens
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+
+        // Bottom line geometry
+        let line = lines.saturating_sub(1);
+        let y = line as f32 * size_info.cell_height();
+        let h = 1.0_f32 * size_info.cell_height();
+
+        // Backdrop strip
+        let bg = tokens.surface_muted;
+        let rects = vec![RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98)];
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+
+        // Labels
+        let fg = tokens.text;
+        let muted = tokens.text_muted;
+
+        let labels = ["[Workflows]", "[Blocks]", "[Palette]", "[AI]"];
+        let mut col = 1usize;
+        for (i, label) in labels.iter().enumerate() {
+            // For AI, dim if the build doesn't enable AI feature
+            let is_ai = i == 3;
+            #[allow(unused_mut)]
+            let mut color = fg;
+            #[cfg(not(feature = "ai"))]
+            if is_ai {
+                color = muted;
+            }
+            self.draw_ai_text(Point::new(line, Column(col)), color, bg, label, cols.saturating_sub(col));
+            col += label.len() + 2;
+            if col >= cols { break; }
+        }
+
+        // Small hint on the far right
+        let hint = "click to open";
+        if hint.len() + 2 < cols {
+            let start = cols.saturating_sub(hint.len() + 2);
+            self.draw_ai_text(Point::new(line, Column(start)), muted, bg, hint, hint.len()+2);
+        }
+    }
+
     #[cfg(feature = "wgpu")]
     pub fn new_wgpu(window: Window, config: &UiConfig, _tabbed: bool) -> Result<Display, Error> {
         let raw_window_handle = window.raw_window_handle();
@@ -1109,6 +1205,7 @@ impl Display {
         config: &UiConfig,
         search_state: &mut SearchState,
         #[cfg(feature = "ai")] ai_state: Option<&crate::ai_runtime::AiUiState>,
+        tab_manager: Option<&crate::workspace::TabManager>,
     ) {
         // Collect renderable content before the terminal is dropped.
         let mut content = RenderableContent::new(config, self, &terminal, search_state);
@@ -1184,11 +1281,36 @@ impl Display {
             let vi_highlighted_hint = &self.vi_highlighted_hint;
             let damage_tracker = &mut self.damage_tracker;
 
-            // Filter out cells belonging to folded regions.
+            // Determine reserved rows for tab bar (hide grid content beneath)
+            let (reserve_top, reserve_bottom) = if config.workspace.tab_bar.show
+                && config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
+                && config.workspace.tab_bar.reserve_row
+            {
+                match config.workspace.tab_bar.position {
+                    crate::config::workspace::TabBarPosition::Top => (1usize, 0usize),
+                    crate::config::workspace::TabBarPosition::Bottom => (0usize, 1usize),
+                    crate::config::workspace::TabBarPosition::Hidden => (0, 0),
+                }
+            } else {
+                (0, 0)
+            };
+
+            // Filter out cells belonging to folded regions or reserved tab bar rows.
             let elide = self.blocks.enabled;
+            let total_lines_vp = self.size_info.screen_lines();
             let cells = grid_cells
                 .into_iter()
                 .filter(|cell| {
+                    // Hide reserved top rows
+                    if reserve_top > 0 && cell.point.line < reserve_top {
+                        return false;
+                    }
+                    // Hide reserved bottom rows
+                    if reserve_bottom > 0
+                        && cell.point.line >= total_lines_vp.saturating_sub(reserve_bottom)
+                    {
+                        return false;
+                    }
                     if elide && self.blocks.is_viewport_line_elided(display_offset, cell.point.line)
                     {
                         // Entire folded region is hidden from rendering (including header content).
@@ -1327,9 +1449,28 @@ impl Display {
             self.draw_line_indicator(config, total_lines, None, display_offset);
         };
 
-        // Draw cursor (skip if inside a folded region).
-        let cursor_elided = self.blocks.enabled
+        // Draw cursor (skip if inside a folded region or reserved tab bar rows).
+        let mut cursor_elided = self.blocks.enabled
             && self.blocks.is_viewport_line_elided(display_offset, cursor.point().line);
+        // Also skip cursor in reserved rows
+        if config.workspace.tab_bar.show
+            && config.workspace.tab_bar.reserve_row
+            && config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
+        {
+            let vp_point = term::point_to_viewport(display_offset, cursor_point);
+            if let Some(vp) = vp_point {
+                let last = self.size_info.screen_lines().saturating_sub(1);
+                if (config.workspace.tab_bar.position
+                    == crate::config::workspace::TabBarPosition::Top
+                    && vp.line == 0)
+                    || (config.workspace.tab_bar.position
+                        == crate::config::workspace::TabBarPosition::Bottom
+                        && vp.line == last)
+                {
+                    cursor_elided = true;
+                }
+            }
+        }
         if !cursor_elided {
             rects.extend(cursor.rects(&size_info, config.cursor.thickness()));
         }
@@ -1620,6 +1761,22 @@ impl Display {
                 }
             }
         }
+
+        // Draw tab strip if enabled
+        if let Some(tm) = tab_manager {
+            if config.workspace.tab_bar.show {
+                // Prefer Warp-style rendering when enabled
+                if config.workspace.warp_style {
+                    let style = crate::display::warp_ui::WarpTabStyle::default();
+                    let _ = self.draw_warp_tab_bar(config, tm, config.workspace.tab_bar.position, &style);
+                } else {
+                    let _ = self.draw_tab_bar(config, tm, config.workspace.tab_bar.position);
+                }
+            }
+        }
+
+        // Draw persistent Quick Actions bar (mouse-first entrypoint)
+        self.draw_quick_actions_bar(config);
 
         // Notify winit that we're about to present.
         self.window.pre_present_notify();

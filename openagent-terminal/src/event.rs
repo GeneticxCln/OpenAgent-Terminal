@@ -192,11 +192,23 @@ impl Processor {
         crate::ui_confirm::set_default_window_id(window_id);
         self.windows.insert(window_id, window_context);
 
-        // If there was no user config loaded, show a brief onboarding hint in the message bar.
+        // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
         if self.config.config_paths.is_empty() {
-            let hint = "Welcome — try Ctrl+Shift+P (Command Palette), Ctrl+Shift+S (Blocks Search), Ctrl+Shift+W (Workflows). Place a config at ~/.config/openagent-terminal/openagent-terminal.toml".to_string();
+            let hint = "Welcome — click the bottom bar or use Ctrl+Shift+P/S/W. Place a config at ~/.config/openagent-terminal/openagent-terminal.toml".to_string();
             let message = crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
             let _ = self.proxy.send_event(Event::new(EventType::Message(message), window_id));
+            // Auto-open Workflows panel and trigger an initial search
+            #[cfg(feature = "workflow")]
+            if let Some(win) = self.windows.get_mut(&window_id) {
+                win.display.workflows_panel.open();
+                win.dirty = true;
+                if win.display.window.has_frame {
+                    win.display.window.request_redraw();
+                }
+                let _ = self
+                    .proxy
+                    .send_event(Event::new(EventType::WorkflowsSearchPerform(String::new()), window_id));
+            }
         }
 
         // If components are already initialized, set them on the new window
@@ -3189,6 +3201,28 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
+    }
+
+    fn workspace_switch_to_tab(&mut self, tab_id: crate::workspace::TabId) {
+        let ok = self.workspace.switch_to_tab(tab_id);
+        let msg = if ok {
+            format!("Switched to tab {:?}", tab_id)
+        } else {
+            "Switch to tab failed".into()
+        };
+        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_tab_bar_hit(
+        &mut self,
+        mouse_x: usize,
+        mouse_y: usize,
+    ) -> Option<crate::display::tab_bar::TabBarAction> {
+        let position = self.config.workspace.tab_bar.position;
+        self.display
+            .handle_tab_bar_click(&self.workspace.tabs, position, mouse_x, mouse_y)
     }
 
     fn copy_to_clipboard(&mut self, text: String) {

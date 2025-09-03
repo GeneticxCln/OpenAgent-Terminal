@@ -21,6 +21,7 @@ Notable changes to the `openagent-terminal-core` crate are documented in its
 - Multi-sequence touch zoom sequences
 - Vi action `Y` keybind, yank to the end of line
 - Add `/etc/openagent-terminal/openagent-terminal.toml` fallback for system wide configuration
+- Config option `workspace.tab_bar.reserve_row` to reserve a terminal row for the tab bar (top or bottom) to avoid overlaying terminal content; the reserved row is hidden from the terminal grid and the cursor is not drawn on that row
 
 ### Changed
 
