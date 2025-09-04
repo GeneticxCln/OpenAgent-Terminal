@@ -255,6 +255,8 @@ pub enum Subcommands {
     #[cfg(unix)]
     Msg(MessageOptions),
     Migrate(MigrateOptions),
+    /// Open a native editor window (Monaco) for a file path
+    WebEdit(WebEditOptions),
 }
 
 /// Send a message to the OpenAgent Terminal socket.
@@ -351,6 +353,14 @@ impl WindowOptions {
     pub fn config_overrides(&self) -> ParsedOptions {
         ParsedOptions::from_options(&self.option)
     }
+}
+
+/// Options for the native WebView editor
+#[derive(Serialize, Deserialize, Args, Default, Debug, Clone, PartialEq, Eq)]
+pub struct WebEditOptions {
+    /// File to open in the editor
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub file: std::path::PathBuf,
 }
 
 /// Parameters to the `config` IPC subcommand.

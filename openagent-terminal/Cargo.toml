@@ -51,8 +51,35 @@ path = "../crates/plugin-loader"
 version = "0.1.0"
 optional = true
 
+# IDE components (optional)
+[dependencies.openagent-terminal-ide-indexer]
+path = "../crates/openagent-terminal-ide-indexer"
+version = "0.1.0"
+optional = true
+
+[dependencies.openagent-terminal-ide-lsp]
+path = "../crates/openagent-terminal-ide-lsp"
+version = "0.1.0"
+optional = true
+
+[dependencies.openagent-terminal-ide-dap]
+path = "../crates/openagent-terminal-ide-dap"
+version = "0.1.0"
+optional = true
+
+[dependencies.openagent-terminal-ide-editor]
+path = "../crates/openagent-terminal-ide-editor"
+version = "0.1.0"
+optional = true
+
+[dependencies.openagent-terminal-web-editors]
+path = "../crates/openagent-terminal-web-editors"
+version = "0.1.0"
+optional = true
+
 [dependencies]
 ahash = { version = "0.8.6", features = ["no-rng"] }
+lsp-types = { version = "0.95.1", optional = true }
 bitflags = "2.2.1"
 clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
@@ -158,6 +185,12 @@ wgpu = ["dep:wgpu", "dep:pollster"]
 renderer-wgpu = ["wgpu"]
 # Experimental always-on completions overlay (gated until stable)
 completions = []
+# IDE features
+editor = ["dep:openagent-terminal-ide-editor"]
+lsp = ["dep:openagent-terminal-ide-lsp", "dep:lsp-types"]
+dap = ["dep:openagent-terminal-ide-dap"]
+indexer = ["dep:openagent-terminal-ide-indexer"]
+ide = ["editor", "lsp", "dap", "indexer"]
 
 x11 = [
     "copypasta/x11",
@@ -186,6 +219,8 @@ plugins = ["dep:plugin-api", "dep:plugin-loader"]
 harfbuzz = ["dep:harfbuzz_rs", "dep:fontdb", "dep:unicode-bidi"]
 # Blocks 2.0 system for command execution tracking
 blocks = ["dep:chrono", "dep:uuid", "dep:sqlx"]
+# Native webview editors (Monaco/CodeMirror)
+webview-editors = ["dep:openagent-terminal-web-editors"]
 
 # Umbrella features for AI backends (one-flag builds)
 # Example: cargo build -p openagent-terminal --features ai-ollama

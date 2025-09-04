@@ -36,6 +36,8 @@ pub struct ComponentConfig {
     pub enable_workflows: bool,
     /// Enable plugin system
     pub enable_plugins: bool,
+    /// Enable IDE features (editor/indexer/LSP/DAP) when compiled with feature flags
+    pub enable_ide: bool,
     /// Data directory for components
     pub data_dir: PathBuf,
     /// Configuration directory
@@ -50,12 +52,13 @@ impl Default for ComponentConfig {
         let config_dir =
             dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
 
-        Self {
+Self {
             enable_wgpu: true,
             enable_harfbuzz: true,
             enable_blocks: true,
             enable_workflows: true,
             enable_plugins: true,
+            enable_ide: true,
             data_dir,
             config_dir,
         }
@@ -72,6 +75,13 @@ pub struct InitializedComponents {
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     #[cfg(feature = "plugins")]
     pub plugin_manager: Option<Arc<PluginManager>>,
+    // IDE components (optional)
+    #[cfg(feature = "indexer")]
+    pub project_index: Option<Arc<openagent_terminal_ide_indexer::ProjectIndex>>,
+    #[cfg(feature = "lsp")]
+    pub lsp_servers: Option<std::collections::HashMap<String, openagent_terminal_ide_lsp::ServerConfig>>,
+    #[cfg(feature = "dap")]
+    pub dap_adapters: Option<std::collections::HashMap<String, openagent_terminal_ide_dap::AdapterConfig>>,
     pub runtime: Arc<Runtime>,
 }
 
@@ -114,7 +124,45 @@ pub async fn initialize_components(
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.config_dir)?;
 
-    // WGPU renderer is initialized as part of the display path; no separate component here.
+// WGPU renderer is initialized as part of the display path; no separate component here.
+
+    // --- IDE components ---
+    #[cfg(feature = "indexer")]
+    let project_index: Option<Arc<openagent_terminal_ide_indexer::ProjectIndex>> = if config.enable_ide {
+        use crate::config::ide::IdeConfig as _; // ensure module is compiled
+        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        match openagent_terminal_ide_indexer::ProjectIndex::build(
+            &openagent_terminal_ide_indexer::ProjectIndexConfig::new(&root),
+        ) {
+            Ok(idx) => {
+                let idx = Arc::new(idx);
+                // Start watcher in background
+                let _ = idx.start_watcher();
+                Some(idx)
+            },
+            Err(e) => {
+                warn!("Failed to build project index: {}", e);
+                None
+            },
+        }
+    } else { None };
+
+    #[cfg(feature = "lsp")]
+    let lsp_servers: Option<std::collections::HashMap<String, openagent_terminal_ide_lsp::ServerConfig>> = if config.enable_ide {
+        // Prepare registry from default config; actual LSP processes are started on-demand per file
+        let mut map = std::collections::HashMap::new();
+        map.insert("rust".into(), openagent_terminal_ide_lsp::ServerConfig { command: "rust-analyzer".into(), args: vec![], initialization_options: None });
+        map.insert("typescript".into(), openagent_terminal_ide_lsp::ServerConfig { command: "typescript-language-server".into(), args: vec!["--stdio".into()], initialization_options: None });
+        map.insert("python".into(), openagent_terminal_ide_lsp::ServerConfig { command: "pyright-langserver".into(), args: vec!["--stdio".into()], initialization_options: None });
+        Some(map)
+    } else { None };
+
+    #[cfg(feature = "dap")]
+    let dap_adapters: Option<std::collections::HashMap<String, openagent_terminal_ide_dap::AdapterConfig>> = if config.enable_ide {
+        let mut map = std::collections::HashMap::new();
+        map.insert("codelldb".into(), openagent_terminal_ide_dap::AdapterConfig { command: "codelldb".into(), args: vec![] });
+        Some(map)
+    } else { None };
 
     // Initialize HarfBuzz text shaper
     #[cfg(feature = "harfbuzz")]
@@ -192,7 +240,7 @@ pub async fn initialize_components(
 
     info!("Component initialization complete");
 
-    Ok(InitializedComponents {
+Ok(InitializedComponents {
         #[cfg(feature = "harfbuzz")]
         text_shaper,
         #[cfg(feature = "blocks")]
@@ -201,6 +249,13 @@ pub async fn initialize_components(
         workflow_engine,
         #[cfg(feature = "plugins")]
         plugin_manager,
+        // IDE components initialized below (may be None)
+        #[cfg(feature = "indexer")]
+        project_index,
+        #[cfg(feature = "lsp")]
+        lsp_servers,
+        #[cfg(feature = "dap")]
+        dap_adapters,
         runtime,
     })
 }

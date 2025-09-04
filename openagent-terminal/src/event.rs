@@ -316,6 +316,7 @@ impl Processor {
             enable_workflows: cfg!(feature = "workflow"),
             // Gate plugin system behind preview flag even when the cargo feature is enabled
             enable_plugins: cfg!(feature = "plugins") && self.config.debug.plugins_preview,
+            enable_ide: cfg!(feature = "ide") || cfg!(feature = "editor") || cfg!(feature = "lsp") || cfg!(feature = "dap") || cfg!(feature = "indexer"),
             ..Default::default()
         };
 
@@ -533,6 +534,16 @@ impl ApplicationHandler<Event> for Processor {
                 self.initial_window_error = Some(err);
                 event_loop.exit();
                 return;
+            }
+
+            // Open editor overlay at startup if requested via env var
+            #[cfg(feature = "editor")]
+            if let Ok(path) = env::var("OPENAGENT_OPEN_FILE") {
+                if let Some((&first_id, _)) = self.windows.iter().next() {
+                    let _ = self.proxy.send_event(Event::new(EventType::OpenEditorOverlay(std::path::PathBuf::from(path)), first_id));
+                }
+                // Clear to avoid reuse
+                let _ = env::remove_var("OPENAGENT_OPEN_FILE");
             }
 
             // Initialize components after the first window is created
@@ -1460,6 +1471,37 @@ impl ApplicationHandler<Event> for Processor {
                 }
             },
             (payload, Some(window_id)) => {
+                // Handle editor overlay events directly on window context
+                #[cfg(feature = "editor")]
+                match &payload {
+                    EventType::OpenEditorOverlay(path) => {
+                        if let Some(window_context) = self.windows.get_mut(window_id) {
+                            window_context.display.editor_overlay.open_path(path.clone());
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        }
+                        return;
+                    },
+                    EventType::CloseEditorOverlay => {
+                        if let Some(window_context) = self.windows.get_mut(window_id) {
+                            window_context.display.editor_overlay.close();
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        }
+                        return;
+                    },
+                    EventType::SaveEditorOverlay => {
+                        if let Some(window_context) = self.windows.get_mut(window_id) {
+                            window_context.display.editor_overlay.save();
+                        }
+                        return;
+                    },
+                    _ => {},
+                }
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.handle_event(
                         #[cfg(target_os = "macos")]
@@ -1696,6 +1738,14 @@ pub enum EventType {
 
     // Warp-style workspace events
     WarpUiUpdate(crate::workspace::WarpUiUpdateType),
+
+    // Editor overlay events (native, Warp-like)
+    #[cfg(feature = "editor")]
+    OpenEditorOverlay(std::path::PathBuf),
+    #[cfg(feature = "editor")]
+    CloseEditorOverlay,
+    #[cfg(feature = "editor")]
+    SaveEditorOverlay,
 }
 
 /// Sync IPC event types.
@@ -2227,6 +2277,27 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.send_user_event(EventType::BlocksSearchPerform(
             self.display.blocks_search.query.clone(),
         ));
+    }
+
+    // File tree overlay implementation
+    fn open_file_tree_panel(&mut self) {
+        self.display.file_tree_open(None);
+        *self.dirty = true;
+    }
+    fn close_file_tree_panel(&mut self) {
+        self.display.file_tree_close();
+        *self.dirty = true;
+    }
+    fn file_tree_active(&self) -> bool {
+        self.display.file_tree.active
+    }
+    fn file_tree_move_selection(&mut self, delta: isize) {
+        self.display.file_tree_move_selection(delta);
+        *self.dirty = true;
+    }
+    fn file_tree_confirm(&mut self) {
+        self.display.file_tree_confirm();
+        *self.dirty = true;
     }
 
     #[cfg(feature = "blocks")]
@@ -4429,6 +4500,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
         match event {
             WinitEvent::UserEvent(Event { payload, .. }) => match payload {
                 EventType::ComponentsInitialized(_) => (),
+                #[cfg(feature = "editor")]
+                EventType::OpenEditorOverlay(_) | EventType::CloseEditorOverlay | EventType::SaveEditorOverlay => (),
                 EventType::SearchNext => self.ctx.goto_match(None),
                 EventType::Scroll(scroll) => self.ctx.scroll(scroll),
                 EventType::BlinkCursor => {

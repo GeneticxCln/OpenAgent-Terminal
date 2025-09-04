@@ -97,6 +97,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(unix)]
         Some(Subcommands::Msg(options)) => msg(options)?,
         Some(Subcommands::Migrate(options)) => migrate::migrate(options),
+        Some(Subcommands::WebEdit(ref opts)) => {
+            // Native overlay editor: set env to request opening after first window init
+            std::env::set_var("OPENAGENT_OPEN_FILE", &opts.file);
+            run_openagent_terminal(options)?;
+        },
         None => run_openagent_terminal(options)?,
     }
 

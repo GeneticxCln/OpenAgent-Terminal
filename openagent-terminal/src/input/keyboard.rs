@@ -78,6 +78,146 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         }
 
+        // File tree overlay: intercept navigation when active
+        if self.ctx.file_tree_active() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Escape) => { self.ctx.close_file_tree_panel(); return; },
+                Key::Named(NamedKey::ArrowUp) => { self.ctx.file_tree_move_selection(-1); return; },
+                Key::Named(NamedKey::ArrowDown) => { self.ctx.file_tree_move_selection(1); return; },
+                Key::Named(NamedKey::PageUp) => { self.ctx.file_tree_move_selection(-10); return; },
+                Key::Named(NamedKey::PageDown) => { self.ctx.file_tree_move_selection(10); return; },
+                Key::Named(NamedKey::Enter) => { self.ctx.file_tree_confirm(); return; },
+                _ => {}
+            }
+        }
+        #[cfg(feature = "dap")]
+        {
+            if self.ctx.display().dap_overlay.active {
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => { self.ctx.display().dap_close(); self.ctx.mark_dirty(); return; },
+                    Key::Character(c) if c.eq_ignore_ascii_case("l") => { self.ctx.display().dap_launch(); self.ctx.mark_dirty(); return; },
+                    Key::Character(c) if c.eq_ignore_ascii_case("c") => { self.ctx.display().dap_continue(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::F9) => { self.ctx.display().dap_toggle_breakpoint_here(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::F5) => { self.ctx.display().dap_continue_current(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::F10) => { self.ctx.display().dap_step_over(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::F11) if mods.shift_key() => { self.ctx.display().dap_step_out(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::F11) => { self.ctx.display().dap_step_in(); self.ctx.mark_dirty(); return; },
+                    _ => {}
+                }
+            }
+        }
+
+        // Editor overlay: when active, intercept keys for editing (native, Warp-like)
+        #[cfg(feature = "editor")]
+        {
+            if self.ctx.display().editor_overlay.active {
+                let mods = self.ctx.modifiers().state();
+
+                // If rename prompt is active, route keys to it first
+                #[cfg(feature = "lsp")]
+                if self.ctx.display().editor_overlay.rename_active {
+                    match key.logical_key.as_ref() {
+                        Key::Named(NamedKey::Escape) => { self.ctx.display().editor_overlay_toggle_rename(); self.ctx.mark_dirty(); return; },
+                        Key::Named(NamedKey::Enter) => { self.ctx.display().editor_overlay_rename_commit(); self.ctx.mark_dirty(); return; },
+                        Key::Named(NamedKey::Backspace) => { self.ctx.display().editor_overlay_rename_backspace(); self.ctx.mark_dirty(); return; },
+                        Key::Character(c) if !mods.control_key() && !mods.alt_key() && !mods.super_key() => {
+                            if let Some(ch) = c.chars().next() { if !ch.is_control() { self.ctx.display().editor_overlay_rename_input(ch); self.ctx.mark_dirty(); return; } }
+                        },
+                        _ => {}
+                    }
+                }
+
+                // If references list is active, handle navigation
+                #[cfg(feature = "lsp")]
+                if self.ctx.display().editor_overlay.references_active {
+                    match key.logical_key.as_ref() {
+                        Key::Named(NamedKey::Escape) => { self.ctx.display().editor_overlay.references_active = false; self.ctx.mark_dirty(); return; },
+                        Key::Named(NamedKey::ArrowUp) => { self.ctx.display().editor_overlay_references_move(-1); self.ctx.mark_dirty(); return; },
+                        Key::Named(NamedKey::ArrowDown) => { self.ctx.display().editor_overlay_references_move(1); self.ctx.mark_dirty(); return; },
+                        Key::Named(NamedKey::Enter) => { self.ctx.display().editor_overlay_references_accept(); self.ctx.mark_dirty(); return; },
+                        _ => {}
+                    }
+                }
+
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => {
+                        self.ctx.display().editor_overlay_close();
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    Key::Named(NamedKey::Enter) => {
+                        self.ctx.display().editor_overlay_insert_char('\n');
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    Key::Named(NamedKey::Backspace) => {
+                        self.ctx.display().editor_overlay_backspace();
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    Key::Named(NamedKey::ArrowLeft) => { self.ctx.display().editor_overlay_move_left(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::ArrowRight) => { self.ctx.display().editor_overlay_move_right(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::ArrowUp) => { self.ctx.display().editor_overlay_move_up(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::ArrowDown) => { self.ctx.display().editor_overlay_move_down(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::PageUp) => { self.ctx.display().editor_overlay_page_up(); self.ctx.mark_dirty(); return; },
+                    Key::Named(NamedKey::PageDown) => { self.ctx.display().editor_overlay_page_down(); self.ctx.mark_dirty(); return; },
+                    Key::Character(c) if (mods.control_key() && c.eq_ignore_ascii_case("s")) => {
+                        self.ctx.display().editor_overlay_save();
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    // LSP: completion
+                    Key::Character(c) if (mods.control_key() && c == " ") => {
+                        #[cfg(feature = "lsp")]
+                        {
+                            self.ctx.display().editor_overlay_request_completion();
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    // LSP: goto definition (F12) and references (Shift+F12)
+                    Key::Named(NamedKey::F12) => {
+                        #[cfg(feature = "lsp")]
+                        {
+                            if mods.shift_key() { self.ctx.display().editor_overlay_show_references(); } else { self.ctx.display().editor_overlay_goto_definition(); }
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    // LSP: rename (F2)
+                    Key::Named(NamedKey::F2) => { #[cfg(feature = "lsp")] { self.ctx.display().editor_overlay_toggle_rename(); self.ctx.mark_dirty(); } return; },
+                    // LSP: format document (Ctrl+Shift+F)
+                    Key::Character(c) if (mods.control_key() && mods.shift_key() && c.eq_ignore_ascii_case("f")) => {
+                        #[cfg(feature = "lsp")]
+                        { self.ctx.display().editor_overlay_format_document(); self.ctx.mark_dirty(); }
+                        return;
+                    },
+                    // LSP: hover (Ctrl+K)
+                    Key::Character(c) if (mods.control_key() && c.eq_ignore_ascii_case("k")) => {
+                        #[cfg(feature = "lsp")]
+                        { self.ctx.display().editor_overlay_show_hover(); self.ctx.mark_dirty(); }
+                        return;
+                    },
+                    Key::Character(c) if !mods.control_key() && !mods.alt_key() && !mods.super_key() => {
+                        // Insert printable characters
+                        if let Some(ch) = c.chars().next() { if !ch.is_control() { self.ctx.display().editor_overlay_insert_char(ch); self.ctx.mark_dirty(); return; } }
+                    },
+                    _ => {
+                        // Completion navigation
+                        if self.ctx.display().editor_overlay_completion_visible() {
+                            match key.logical_key.as_ref() {
+                                Key::Named(NamedKey::ArrowUp) => { self.ctx.display().editor_overlay_completion_move(-1); self.ctx.mark_dirty(); return; },
+                                Key::Named(NamedKey::ArrowDown) => { self.ctx.display().editor_overlay_completion_move(1); self.ctx.mark_dirty(); return; },
+                                Key::Named(NamedKey::Enter) => { self.ctx.display().editor_overlay_completion_accept(); self.ctx.mark_dirty(); return; },
+                                Key::Named(NamedKey::Escape) => { /* hide */ self.ctx.display().editor_overlay_completion_move(0); self.ctx.display().editor_overlay.completion_active = false; self.ctx.mark_dirty(); return; },
+                                _ => {}
+                            }
+                        }
+                    },
+                }
+            }
+        }
+
         // Confirmation overlay handling takes precedence.
         if self.ctx.confirm_overlay_active() {
             match key.logical_key.as_ref() {
