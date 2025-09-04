@@ -96,8 +96,8 @@ pub struct LoadedPlugin {
     /// WASM instance
     #[allow(dead_code)]
     instance: Instance,
-    /// WASM store with context
-    store: Store<PluginContext>,
+    /// WASM store with context wrapped for safe mutation across async calls
+    store: tokio::sync::Mutex<Store<PluginContext>>,
     /// Plugin's exported functions
     exports: PluginExports,
 }
@@ -317,14 +317,14 @@ impl PluginManager {
         }
 
         // Get metadata
-        let metadata = self.get_plugin_metadata(&exports, &mut store)?;
+        let metadata = self.get_plugin_metadata(&instance, &exports, &mut store)?;
 
         // Validate permissions match metadata
         if self.enforce_permissions {
             self.validate_permissions(&metadata.permissions, &permissions)?;
         }
 
-        let loaded_plugin = Arc::new(LoadedPlugin { metadata, instance, store, exports });
+        let loaded_plugin = Arc::new(LoadedPlugin { metadata, instance, store: tokio::sync::Mutex::new(store), exports });
 
         // Store the plugin
         let mut plugins = self.plugins.write().await;
@@ -340,30 +340,18 @@ impl PluginManager {
 
         if let Some(plugin) = plugins.remove(name) {
             // Call cleanup if available
-            if let Some(_cleanup) = &plugin.exports.cleanup {
-                match Arc::try_unwrap(plugin) {
-                    Ok(mut owned) => {
-                        if let Some(cleanup_fn) = owned.exports.cleanup {
-                            // Apply a small epoch deadline around cleanup as well.
-                            owned.store.set_epoch_deadline(CPU_CLEANUP_TICKS);
-                            let call_res = cleanup_fn.call(&mut owned.store, ());
-                            // Reset the deadline far in the future between calls
-                            owned.store.set_epoch_deadline(CPU_FAR_TICKS);
+            if let Some(cleanup_fn) = &plugin.exports.cleanup {
+                let mut store = plugin.store.lock().await;
+                // Apply a small epoch deadline around cleanup as well.
+                store.set_epoch_deadline(CPU_CLEANUP_TICKS);
+                let call_res = cleanup_fn.call(&mut *store, ());
+                // Reset the deadline far in the future between calls
+                store.set_epoch_deadline(CPU_FAR_TICKS);
 
-                            call_res.map_err(|e| PluginError::RuntimeError(e.to_string()))?;
-                        }
-                        info!("Unloaded plugin: {}", name);
-                        Ok(())
-                    },
-                    Err(_arc) => {
-                        warn!("Plugin {} still has outstanding references; skipping cleanup", name);
-                        Ok(())
-                    },
-                }
-            } else {
-                info!("Unloaded plugin: {}", name);
-                Ok(())
+                call_res.map_err(|e| PluginError::RuntimeError(e.to_string()))?;
             }
+            info!("Unloaded plugin: {}", name);
+            Ok(())
         } else {
             Err(PluginError::NotFound(name.to_string()))
         }
@@ -481,6 +469,7 @@ impl PluginManager {
     /// Get plugin metadata using JSON-over-memory ABI
     fn get_plugin_metadata(
         &self,
+        instance: &Instance,
         exports: &PluginExports,
         store: &mut Store<PluginContext>,
     ) -> Result<PluginMetadata, PluginError> {
@@ -491,7 +480,7 @@ impl PluginManager {
             })?;
 
             // Unpack the result: high 32 bits = len, low 32 bits = ptr
-            let ptr = (packed_result & 0xFFFFFFFF) as u32;
+            let ptr = (packed_result & 0xFFFF_FFFF) as u32;
             let len = (packed_result >> 32) as u32;
 
             if ptr == 0 || len == 0 {
@@ -500,21 +489,21 @@ impl PluginManager {
                 ));
             }
 
-            // Get memory export directly from the store context
-            // This will be implemented properly once we have the plugin SDK
-            debug!("Plugin returned metadata at ptr={}, len={}", ptr, len);
+            // Read JSON from the plugin's linear memory
+            let memory = instance
+                .get_export(&mut *store, "memory")
+                .and_then(|e| e.into_memory())
+                .ok_or_else(|| PluginError::RuntimeError("Plugin missing memory export".into()))?;
 
-            // For now, return a placeholder that indicates JSON ABI is working
-            Ok(PluginMetadata {
-                name: "json-abi-plugin".to_string(),
-                version: "1.0.0".to_string(),
-                author: "Plugin SDK".to_string(),
-                description: format!("Plugin using JSON ABI (ptr={}, len={})", ptr, len),
-                license: "MIT".to_string(),
-                homepage: None,
-                capabilities: Default::default(),
-                permissions: Default::default(),
-            })
+            let mut buffer = vec![0u8; len as usize];
+            memory
+                .read(&mut *store, ptr as usize, &mut buffer)
+                .map_err(|_| PluginError::RuntimeError("Failed to read plugin metadata from memory".into()))?;
+
+            let metadata: PluginMetadata = serde_json::from_slice(&buffer)
+                .map_err(|e| PluginError::RuntimeError(format!("Invalid plugin metadata JSON: {}", e)))?;
+
+            Ok(metadata)
         } else {
             // Fallback to default metadata if function not available
             Ok(PluginMetadata {
@@ -727,9 +716,18 @@ impl PluginManager {
             return Err(PluginError::PermissionDenied("Command execution not allowed".into()));
         }
 
-        // Check read access patterns
+        // Helper to sanitize a requested path relative to the plugin_dir and compare to allowed.
+        let mut is_allowed_path = |pattern: &str, allowed_set: &Vec<String>| {
+            if let Some(sanitized) = self.sanitize_plugin_path(pattern) {
+                allowed_set.iter().any(|p| p == &sanitized)
+            } else {
+                false
+            }
+        };
+
+        // Check read access patterns (requested must be a subset of allowed after sanitization)
         for pattern in &requested.read_files {
-            if !allowed.read_files.iter().any(|p| p == pattern) {
+            if !is_allowed_path(pattern, &allowed.read_files) {
                 return Err(PluginError::PermissionDenied(format!(
                     "Read access to {} not allowed",
                     pattern
@@ -739,7 +737,7 @@ impl PluginManager {
 
         // Check write access patterns
         for pattern in &requested.write_files {
-            if !allowed.write_files.iter().any(|p| p == pattern) {
+            if !is_allowed_path(pattern, &allowed.write_files) {
                 return Err(PluginError::PermissionDenied(format!(
                     "Write access to {} not allowed",
                     pattern
@@ -978,23 +976,101 @@ impl PluginManager {
     pub async fn send_event_to_plugin(
         &self,
         plugin_name: &str,
-        _event: &PluginEvent,
+        event: &PluginEvent,
     ) -> Result<PluginEventResponse, PluginError> {
+        // Get plugin
         let plugins = self.plugins.read().await;
         let plugin = plugins
             .get(plugin_name)
             .ok_or_else(|| PluginError::NotFound(plugin_name.to_string()))?;
+        let instance = &plugin.instance;
+        let exports = &plugin.exports;
+        drop(plugins); // Release the read lock early
 
-        let _plugin = Arc::clone(plugin);
-        drop(plugins); // Release the read lock
+        // Ensure event handler exists
+        let handle_event = match &exports.handle_event {
+            Some(f) => f,
+            None => {
+                return Ok(PluginEventResponse {
+                    success: false,
+                    result: None,
+                    error: Some("Plugin does not implement event handler".into()),
+                })
+            }
+        };
 
-        // This would need proper implementation with shared store access
-        // For now, return a placeholder response
-        Ok(PluginEventResponse {
-            success: true,
-            result: Some("Event processed via JSON ABI".to_string()),
-            error: None,
-        })
+        // Serialize event to JSON
+        let event_json = serde_json::to_vec(event)
+            .map_err(|e| PluginError::RuntimeError(format!("Failed to serialize event: {}", e)))?;
+
+        // Lock store for this call
+        let mut store = plugin.store.lock().await;
+
+        // Allocate memory inside plugin if allocator exists
+        let alloc = instance.get_typed_func::<i32, i32>(&mut *store, "plugin_alloc").ok();
+        let memory = instance
+            .get_export(&mut *store, "memory")
+            .and_then(|e| e.into_memory())
+            .ok_or_else(|| PluginError::RuntimeError("Plugin missing memory export".into()))?;
+
+        let (ptr, len) = if let Some(alloc_fn) = alloc {
+            let p = alloc_fn
+                .call(&mut *store, event_json.len() as i32)
+                .map_err(|e| PluginError::RuntimeError(format!("plugin_alloc failed: {}", e)))?;
+            // Write event JSON into plugin memory
+            memory
+                .write(&mut *store, p as usize, &event_json)
+                .map_err(|_| PluginError::RuntimeError("Failed to write event data to plugin memory".into()))?;
+            (p, event_json.len() as i32)
+        } else {
+            // Without an allocator we cannot safely write into plugin memory
+            return Ok(PluginEventResponse {
+                success: false,
+                result: None,
+                error: Some("Plugin allocator not available (plugin_alloc)".into()),
+            });
+        };
+
+        // Apply a small epoch deadline to bound CPU usage during event handling
+        store.set_epoch_deadline(CPU_INIT_TICKS);
+        let rc = handle_event
+            .call(&mut *store, (ptr, len))
+            .map_err(|e| PluginError::RuntimeError(format!("plugin_handle_event failed: {}", e)))?;
+        store.set_epoch_deadline(CPU_FAR_TICKS);
+
+        if rc != 0 {
+            return Ok(PluginEventResponse {
+                success: false,
+                result: None,
+                error: Some(format!("Plugin returned error code: {}", rc)),
+            });
+        }
+
+        // Try to fetch optional last response from plugin
+        let last_resp_fn = instance
+            .get_typed_func::<(), i64>(&mut *store, "plugin_get_last_response")
+            .ok();
+
+        let result = if let Some(get_resp) = last_resp_fn {
+            let packed = get_resp
+                .call(&mut *store, ())
+                .map_err(|e| PluginError::RuntimeError(format!("plugin_get_last_response failed: {}", e)))?;
+            let rptr = (packed & 0xFFFF_FFFF) as u32;
+            let rlen = (packed >> 32) as u32;
+            if rptr != 0 && rlen > 0 {
+                let mut buf = vec![0u8; rlen as usize];
+                memory
+                    .read(&mut *store, rptr as usize, &mut buf)
+                    .map_err(|_| PluginError::RuntimeError("Failed to read plugin response".into()))?;
+                Some(String::from_utf8_lossy(&buf).to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(PluginEventResponse { success: true, result, error: None })
     }
 }
 

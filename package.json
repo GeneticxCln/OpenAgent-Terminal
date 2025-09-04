@@ -13,7 +13,8 @@
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist/",
     "dev": "npm run build:watch",
-    "ci": "npm run type-check && npm run lint && npm run build && npm run test"
+    "ci": "npm run type-check && npm run lint && npm run build && npm run test",
+    "fuzz-ci": "node ci/fuzz.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

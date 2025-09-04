@@ -516,7 +516,7 @@ impl SecurityLens {
             ),
             // Warning: AI/LLM prompt injection attempts
             (
-                Regex::new(r"(echo|cat|printf).*('|\"|`).*\\n.*system\s*\(|exec\s*\(|eval\s*\(").unwrap(),
+                Regex::new(r"(?s)(echo|cat|printf).*['\x22`].*system\s*\(|exec\s*\(|eval\s*\(").unwrap(),
                 RiskFactor {
                     category: "ai_prompt_injection".to_string(),
                     description: "Potential AI/LLM prompt injection pattern".to_string(),
@@ -526,7 +526,7 @@ impl SecurityLens {
             ),
             // Caution: Terminal escape sequences (potential terminal manipulation)
             (
-                Regex::new(r"\\e\[[0-9;]*[mK]|\\033\[[0-9;]*[mK]|printf\s+.*\\e\[").unwrap(),
+Regex::new("\\\\e\\[[0-9;]*[mK]|\\\\033\\[[0-9;]*[mK]|printf\\s+.*\\\\e\\[").unwrap(),
                 RiskFactor {
                     category: "terminal_escape_sequences".to_string(),
                     description: "Terminal escape sequences that may manipulate display".to_string(),
@@ -610,7 +610,7 @@ impl SecurityLens {
             // === REMOTE EXECUTION & SCRIPTS ===
             // Warning: Script execution from remote
             (
-                Regex::new(r"bash\s+<\(curl|sh\s+<\(wget|eval\s+\$\(curl").unwrap(),
+Regex::new("bash\\s+<\\(\\s*curl|sh\\s+<\\(\\s*wget|eval\\s+\\$\\(\\s*curl").unwrap(),
                 RiskFactor {
                     category: "network_remote_script".to_string(),
                     description: "Executing scripts from remote sources".to_string(),
@@ -620,7 +620,7 @@ impl SecurityLens {
             ),
             // Caution: Python eval/exec on user input
             (
-                Regex::new(r"python.*-c.*eval\(|python.*-c.*exec\(").unwrap(),
+Regex::new("python.*-c.*(?:eval|exec)\\(").unwrap(),
                 RiskFactor {
                     category: "script_dynamic_execution".to_string(),
                     description: "Dynamic code execution in Python".to_string(),

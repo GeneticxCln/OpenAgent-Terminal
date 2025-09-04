@@ -314,7 +314,8 @@ impl Processor {
             enable_harfbuzz: cfg!(feature = "harfbuzz"),
             enable_blocks: cfg!(feature = "blocks"),
             enable_workflows: cfg!(feature = "workflow"),
-            enable_plugins: cfg!(feature = "plugins"),
+            // Gate plugin system behind preview flag even when the cargo feature is enabled
+            enable_plugins: cfg!(feature = "plugins") && self.config.debug.plugins_preview,
             ..Default::default()
         };
 
@@ -3617,7 +3618,109 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         mouse_y: usize,
     ) -> Option<crate::display::tab_bar::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
-        self.display.handle_tab_bar_click(&self.workspace.tabs, position, mouse_x, mouse_y)
+        self.display
+            .handle_tab_bar_click(&self.config, &self.workspace.tabs, position, mouse_x, mouse_y)
+    }
+
+    fn workspace_tab_bar_drag_press(
+        &mut self,
+        mouse_x: usize,
+        mouse_y: usize,
+        button: MouseButton,
+    ) -> bool {
+        let position = self.config.workspace.tab_bar.position;
+        if let Some(action) = self
+            .display
+            .handle_tab_bar_mouse_press(&self.config, &self.workspace.tabs, position, mouse_x, mouse_y, button)
+        {
+            use crate::display::tab_bar::TabBarAction as TBA;
+            match action {
+                TBA::SelectTab(id) => {
+                    self.workspace_switch_to_tab(id);
+                    return true;
+                },
+                TBA::CloseTab(id) => {
+                    self.workspace_switch_to_tab(id);
+                    self.workspace_close_tab();
+                    return true;
+                },
+                TBA::CreateTab => {
+                    self.workspace_create_tab();
+                    return true;
+                },
+                TBA::BeginDrag(_) | TBA::DragMove(_, _) | TBA::EndDrag(_) | TBA::CancelDrag(_) => {
+                    // Drag lifecycle is handled by move/release handlers; mark dirty for visuals
+                    self.display.pending_update.dirty = true;
+                    *self.dirty = true;
+                    return true;
+                },
+            }
+        }
+        false
+    }
+
+    fn workspace_tab_bar_drag_move(&mut self, mouse_x: usize, mouse_y: usize) -> bool {
+        if let Some(action) = self
+            .display
+            .handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
+        {
+            use crate::display::tab_bar::TabBarAction as TBA;
+            if let TBA::DragMove(tab_id, new_pos) = action {
+                let moved = self.workspace.tabs.move_tab(tab_id, new_pos);
+                if moved {
+                    // Damage the tab bar line to refresh visuals
+                    let line = match self.config.workspace.tab_bar.position {
+                        crate::workspace::TabBarPosition::Top => 0,
+                        crate::workspace::TabBarPosition::Bottom => {
+                            self.display.size_info.screen_lines().saturating_sub(1)
+                        },
+                        crate::workspace::TabBarPosition::Hidden => 0,
+                    };
+                    let cols = self.display.size_info.columns();
+                    self.display
+                        .damage_tracker
+                        .frame()
+                        .damage_line(openagent_terminal_core::term::LineDamageBounds::new(
+                            line, 0, cols,
+                        ));
+                    self.display.pending_update.dirty = true;
+                    *self.dirty = true;
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    fn workspace_tab_bar_drag_release(&mut self, button: MouseButton) -> bool {
+        if let Some(action) = self.display.handle_tab_bar_mouse_release(button) {
+            use crate::display::tab_bar::TabBarAction as TBA;
+            match action {
+                TBA::EndDrag(_) => {
+                    self.display.pending_update.dirty = true;
+                    *self.dirty = true;
+                    return true;
+                },
+                TBA::SelectTab(id) => {
+                    self.workspace_switch_to_tab(id);
+                    return true;
+                },
+                TBA::CloseTab(id) => {
+                    self.workspace_switch_to_tab(id);
+                    self.workspace_close_tab();
+                    return true;
+                },
+                TBA::CreateTab => {
+                    self.workspace_create_tab();
+                    return true;
+                },
+                TBA::BeginDrag(_) | TBA::DragMove(_, _) | TBA::CancelDrag(_) => {
+                    // Shouldn't happen on release; ignore
+                    return false;
+                },
+            }
+        }
+        false
     }
 
     fn copy_to_clipboard(&mut self, text: String) {

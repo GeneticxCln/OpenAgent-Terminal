@@ -184,6 +184,8 @@ persistent_logging = false
 log_level = "Info"
 # Prefer WGPU backend when available (falls back to OpenGL if initialization fails)
 prefer_wgpu = false
+# Preview: enable plugin system (WASI sandbox) if built with `--features plugins`
+plugins_preview = false
 # Subpixel text rendering for WGPU: "Auto" | "Enabled" | "Disabled"
 subpixel_text = "Auto"
 # sRGB swapchain preference for WGPU: "Auto" | "Enabled" | "Disabled"
