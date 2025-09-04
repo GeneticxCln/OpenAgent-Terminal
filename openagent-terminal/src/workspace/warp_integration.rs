@@ -13,11 +13,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use openagent_terminal_core::tty::pty_manager::{PtyId, PtyManager, PtyManagerCollection, PtyAiContext, ShellConfig};
+use openagent_terminal_core::grid::Dimensions;
 
 use log::{debug, error, info, warn};
 use openagent_terminal_core::sync::FairMutex;
 use openagent_terminal_core::term::Term;
-use openagent_terminal_core::tty::pty_manager::{PtyManagerCollection, ShellConfig};
 use openagent_terminal_core::event::WindowSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
@@ -92,6 +92,12 @@ pub struct WarpIntegration {
     /// PTY managers for each terminal
     pty_managers: PtyManagerCollection,
 
+    /// Explicit bidirectional mapping between pane IDs and PTY IDs
+    pane_to_pty_map: HashMap<PaneId, PtyId>,
+    
+    /// Reverse mapping from PTY ID to pane ID for efficient lookups
+    pty_to_pane_map: HashMap<PtyId, PaneId>,
+
     /// Configuration
     config: Rc<UiConfig>,
 
@@ -136,6 +142,8 @@ impl WarpIntegration {
             split_manager: WarpSplitManager::new(),
             terminals: HashMap::new(),
             pty_managers: PtyManagerCollection::new(),
+            pane_to_pty_map: HashMap::new(),
+            pty_to_pane_map: HashMap::new(),
             config,
             window_id: None,
             size_info: None,
@@ -211,11 +219,14 @@ impl WarpIntegration {
 
         info!("Starting session restoration...");
 
-        // Iterate through all tabs and restore their panes
-        for tab in self.tab_manager.all_tabs() {
-            let tab_id = tab.id;
-            let working_dir = &tab.working_directory;
-            
+        // Snapshot tab info to avoid borrowing self.tab_manager across mutations
+        let tabs_info: Vec<(TabId, PathBuf, String, super::split_manager::SplitLayout)> =
+            self.tab_manager
+                .all_tabs()
+                .map(|t| (t.id, t.working_directory.clone(), t.title.clone(), t.split_layout.clone()))
+                .collect();
+
+        for (tab_id, working_dir, title, split_layout) in tabs_info {
             // Validate working directory is still accessible
             if !working_dir.exists() {
                 let error_msg = format!("Working directory no longer exists: {}", working_dir.display());
@@ -224,24 +235,24 @@ impl WarpIntegration {
                     path: working_dir.to_string_lossy().to_string(),
                     reason: "Directory not found".to_string(),
                 });
-                
+
                 // Try to fallback to home directory
                 let fallback_dir = std::env::var("HOME")
                     .map(PathBuf::from)
                     .unwrap_or_else(|_| PathBuf::from("/"));
-                
+
                 self.tab_manager.update_tab_working_directory(tab_id, fallback_dir);
             }
 
             // Collect all pane IDs from the split layout
-            let pane_ids = tab.split_layout.collect_pane_ids();
+            let pane_ids = split_layout.collect_pane_ids();
             total_panes += pane_ids.len();
-            
-            debug!("Restoring {} panes for tab '{}'...", pane_ids.len(), tab.title);
+
+            debug!("Restoring {} panes for tab '{}'...", pane_ids.len(), title);
 
             // Restore each pane in this tab
             for pane_id in pane_ids {
-                match self.restore_pane_terminal(pane_id, &tab.working_directory, tab_id) {
+                match self.restore_pane_terminal(pane_id, &working_dir, tab_id) {
                     Ok(()) => {
                         restored_panes += 1;
                         debug!("Successfully restored pane {:?}", pane_id);
@@ -361,27 +372,43 @@ impl WarpIntegration {
             Arc::new(FairMutex::new(Term::new(term_config, &size_info, terminal_event_proxy)));
 
         // Store terminal reference
-        self.terminals.insert(pane_id, terminal);
+        self.terminals.insert(pane_id, terminal.clone());
+
+        // Also add initial pane context to the active tab if present
+        if let Some(active_tab) = self.tab_manager.active_tab() {
+            // Only add if this pane belongs to the active tab's layout
+            if active_tab.split_layout.find_pane(pane_id) {
+                let pane_context = super::tab_manager::PaneContext {
+                    terminal: terminal.clone(),
+                    window_context: None,
+                    title_override: None,
+                    focused: active_tab.active_pane == pane_id,
+                };
+                self.tab_manager.add_pane_to_tab(active_tab.id, pane_id, pane_context);
+            }
+        }
 
         // Create and store PTY manager with better error handling
+        // Determine shell executable and args from config.terminal.shell when set
+        let (exec, args) = if let Some(ref prog) = self.config.terminal.shell {
+            (prog.program().to_string(), prog.args().to_vec())
+        } else {
+            #[cfg(target_os = "windows")]
+            {
+                ("powershell.exe".to_string(), vec!["-NoProfile".to_string()])
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                (
+                    std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()),
+                    vec!["-l".to_string()],
+                )
+            }
+        };
+
         let shell_config = ShellConfig {
-            executable: self.config.shell.as_ref()
-                .map(|s| s.program.clone())
-                .unwrap_or_else(|| {
-                    // Platform-specific shell defaults
-                    #[cfg(target_os = "windows")]
-                    { "powershell.exe".to_string() }
-                    #[cfg(not(target_os = "windows"))]
-                    { std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()) }
-                }),
-            args: self.config.shell.as_ref()
-                .map(|s| s.args.clone())
-                .unwrap_or_else(|| {
-                    #[cfg(target_os = "windows")]
-                    { vec!["-NoProfile".to_string()] }
-                    #[cfg(not(target_os = "windows"))]
-                    { vec!["-l".to_string()] }
-                }),
+            executable: exec,
+            args,
             env_vars: HashMap::new(),
             prompt_pattern: None,
         };
@@ -405,6 +432,10 @@ impl WarpIntegration {
             pane_id, 
             reason: e.to_string() 
         })?;
+
+        // Record bidirectional mapping between pane and PTY
+        self.pane_to_pty_map.insert(pane_id, pty_id);
+        self.pty_to_pane_map.insert(pty_id, pane_id);
 
         // Create actual PTY process with window size conversion
         if let Some(manager) = self.pty_managers.get_manager(pty_id) {
@@ -500,6 +531,15 @@ impl WarpIntegration {
         if let Some(active_tab) = self.tab_manager.active_tab() {
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
+
+            // Collect pane IDs before closing the tab
+            let pane_ids = active_tab.split_layout.collect_pane_ids();
+
+            // Clean up each pane's resources
+            for pid in pane_ids {
+                self.cleanup_pane(pid);
+            }
+
             let ok = self.tab_manager.close_warp_tab(tab_id);
 
             let msg = if ok {
@@ -527,19 +567,18 @@ impl WarpIntegration {
 
     /// Handle split right operation
     fn handle_split_right(&mut self) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for split right");
-            return Ok(false);
+        let (tab_id, active_pane_id, working_dir, mut layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane, t.working_directory.clone(), t.split_layout.clone()),
+            None => {
+                info!("No active tab for split right");
+                return Ok(false);
+            }
         };
 
-        let active_pane_id = active_tab.active_pane;
-        let working_dir = active_tab.working_directory.clone();
-        
-        // Generate new pane ID
-        let new_pane_id = self.generate_pane_id();
+        // Generate new pane ID centrally from the tab manager
+        let new_pane_id = self.tab_manager.allocate_pane_id();
         
         // Create split in the layout
-        let mut layout = active_tab.split_layout.clone();
         let split_success = self.split_manager.split_right(
             &mut layout, 
             active_pane_id, 
@@ -548,14 +587,25 @@ impl WarpIntegration {
         
         if split_success {
             // Update the tab with new layout
-            self.tab_manager.update_tab_split_layout(active_tab.id, layout);
+            self.tab_manager.update_tab_split_layout(tab_id, layout);
             
             // Create terminal for new pane
             self.create_terminal_for_pane(new_pane_id, &working_dir)?;
+
+            // Add pane context to the tab
+            if let Some(term) = self.terminals.get(&new_pane_id).cloned() {
+                let pane_context = super::tab_manager::PaneContext {
+                    terminal: term,
+                    window_context: None,
+                    title_override: None,
+                    focused: false,
+                };
+                self.tab_manager.add_pane_to_tab(tab_id, new_pane_id, pane_context);
+            }
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneSplit {
-                tab_id: active_tab.id,
+                tab_id,
                 new_pane_id,
             });
             
@@ -569,19 +619,18 @@ impl WarpIntegration {
 
     /// Handle split down operation
     fn handle_split_down(&mut self) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for split down");
-            return Ok(false);
+        let (tab_id, active_pane_id, working_dir, mut layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane, t.working_directory.clone(), t.split_layout.clone()),
+            None => {
+                info!("No active tab for split down");
+                return Ok(false);
+            }
         };
 
-        let active_pane_id = active_tab.active_pane;
-        let working_dir = active_tab.working_directory.clone();
-        
-        // Generate new pane ID
-        let new_pane_id = self.generate_pane_id();
+        // Generate new pane ID centrally from the tab manager
+        let new_pane_id = self.tab_manager.allocate_pane_id();
         
         // Create split in the layout
-        let mut layout = active_tab.split_layout.clone();
         let split_success = self.split_manager.split_down(
             &mut layout, 
             active_pane_id, 
@@ -590,14 +639,25 @@ impl WarpIntegration {
         
         if split_success {
             // Update the tab with new layout
-            self.tab_manager.update_tab_split_layout(active_tab.id, layout);
+            self.tab_manager.update_tab_split_layout(tab_id, layout);
             
             // Create terminal for new pane
             self.create_terminal_for_pane(new_pane_id, &working_dir)?;
+
+            // Add pane context to the tab
+            if let Some(term) = self.terminals.get(&new_pane_id).cloned() {
+                let pane_context = super::tab_manager::PaneContext {
+                    terminal: term,
+                    window_context: None,
+                    title_override: None,
+                    focused: false,
+                };
+                self.tab_manager.add_pane_to_tab(tab_id, new_pane_id, pane_context);
+            }
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneSplit {
-                tab_id: active_tab.id,
+                tab_id,
                 new_pane_id,
             });
             
@@ -611,27 +671,27 @@ impl WarpIntegration {
 
     /// Handle pane navigation
     fn handle_navigate_pane(&mut self, direction: WarpNavDirection) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for navigate pane");
-            return Ok(false);
+        let (tab_id, mut current_pane, layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane, t.split_layout.clone()),
+            None => {
+                info!("No active tab for navigate pane");
+                return Ok(false);
+            }
         };
 
-        let mut current_pane = active_tab.active_pane;
-        let layout = &active_tab.split_layout;
-        
         let navigation_success = self.split_manager.navigate_pane(
-            layout,
+            &layout,
             &mut current_pane,
             direction
         );
         
         if navigation_success {
             // Update active pane in tab
-            self.tab_manager.set_active_pane(active_tab.id, current_pane);
+            self.tab_manager.set_active_pane(tab_id, current_pane);
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneFocused {
-                tab_id: active_tab.id,
+                tab_id,
                 pane_id: current_pane,
             });
             
@@ -645,14 +705,14 @@ impl WarpIntegration {
 
     /// Handle pane resizing
     fn handle_resize_pane(&mut self, direction: WarpResizeDirection) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for resize pane");
-            return Ok(false);
+        let (tab_id, current_pane, mut layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane, t.split_layout.clone()),
+            None => {
+                info!("No active tab for resize pane");
+                return Ok(false);
+            }
         };
 
-        let current_pane = active_tab.active_pane;
-        let mut layout = active_tab.split_layout.clone();
-        
         let resize_success = self.split_manager.resize_pane(
             &mut layout,
             current_pane,
@@ -661,11 +721,11 @@ impl WarpIntegration {
         
         if resize_success {
             // Update the tab with new layout
-            self.tab_manager.update_tab_split_layout(active_tab.id, layout);
+            self.tab_manager.update_tab_split_layout(tab_id, layout);
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneResized {
-                tab_id: active_tab.id,
+                tab_id,
                 pane_id: current_pane,
             });
             
@@ -679,25 +739,25 @@ impl WarpIntegration {
 
     /// Handle pane zoom toggle
     fn handle_zoom_pane(&mut self) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for zoom pane");
-            return Ok(false);
+        let (tab_id, current_pane, mut layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane, t.split_layout.clone()),
+            None => {
+                info!("No active tab for zoom pane");
+                return Ok(false);
+            }
         };
 
-        let current_pane = active_tab.active_pane;
-        let mut layout = active_tab.split_layout.clone();
-        
         let zoom_success = self.split_manager.toggle_pane_zoom(&mut layout, current_pane);
         
         if zoom_success {
             // Update the tab with new layout
-            self.tab_manager.update_tab_split_layout(active_tab.id, layout);
+            self.tab_manager.update_tab_split_layout(tab_id, layout);
             
             let is_zoomed = self.split_manager.is_pane_zoomed(current_pane);
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneZoomed {
-                tab_id: active_tab.id,
+                tab_id,
                 pane_id: current_pane,
                 zoomed: is_zoomed,
             });
@@ -712,22 +772,23 @@ impl WarpIntegration {
 
     /// Handle recent pane cycling
     fn handle_cycle_recent_panes(&mut self) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for cycle recent panes");
-            return Ok(false);
+        let (tab_id, mut current_pane) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane),
+            None => {
+                info!("No active tab for cycle recent panes");
+                return Ok(false);
+            }
         };
-
-        let mut current_pane = active_tab.active_pane;
         
         let cycle_success = self.split_manager.cycle_recent_panes(&mut current_pane);
         
         if cycle_success {
             // Update active pane in tab
-            self.tab_manager.set_active_pane(active_tab.id, current_pane);
+            self.tab_manager.set_active_pane(tab_id, current_pane);
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneFocused {
-                tab_id: active_tab.id,
+                tab_id,
                 pane_id: current_pane,
             });
             
@@ -741,35 +802,38 @@ impl WarpIntegration {
 
     /// Handle split equalization
     fn handle_equalize_splits(&mut self) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for equalize splits");
-            return Ok(false);
+        let (tab_id, mut layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.split_layout.clone()),
+            None => {
+                info!("No active tab for equalize splits");
+                return Ok(false);
+            }
         };
 
-        let mut layout = active_tab.split_layout.clone();
         self.split_manager.equalize_splits(&mut layout);
         
         // Update the tab with new layout
-        self.tab_manager.update_tab_split_layout(active_tab.id, layout);
+        self.tab_manager.update_tab_split_layout(tab_id, layout);
         
         // Send UI update event
         self.send_ui_update_event(WarpUiUpdateType::SplitsEqualized {
-            tab_id: active_tab.id,
+            tab_id,
         });
         
-        info!("Equalized splits for tab {:?}", active_tab.id);
+        info!("Equalized splits for tab {:?}", tab_id);
         Ok(true)
     }
 
     /// Handle pane closing
     fn handle_close_pane(&mut self) -> WarpResult<bool> {
-        let Some(active_tab) = self.tab_manager.active_tab() else {
-            info!("No active tab for close pane");
-            return Ok(false);
+        let (tab_id, current_pane, mut layout) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane, t.split_layout.clone()),
+            None => {
+                info!("No active tab for close pane");
+                return Ok(false);
+            }
         };
 
-        let current_pane = active_tab.active_pane;
-        let mut layout = active_tab.split_layout.clone();
         let mut active_pane_id = current_pane;
         
         let close_success = self.split_manager.close_pane_smart(
@@ -783,9 +847,9 @@ impl WarpIntegration {
             self.cleanup_pane(current_pane);
             
             // Update the tab with new layout and active pane
-            self.tab_manager.update_tab_split_layout(active_tab.id, layout);
+            self.tab_manager.update_tab_split_layout(tab_id, layout);
             if active_pane_id != current_pane {
-                self.tab_manager.set_active_pane(active_tab.id, active_pane_id);
+                self.tab_manager.set_active_pane(tab_id, active_pane_id);
             }
             
             // Check if this was the last pane in the tab
@@ -800,7 +864,7 @@ impl WarpIntegration {
             
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneClosed {
-                tab_id: active_tab.id,
+                tab_id,
                 closed_pane_id: current_pane,
                 new_active_pane_id: active_pane_id,
             });
@@ -887,10 +951,17 @@ impl WarpIntegration {
             debug!("Cleaned up terminal for pane {:?}", pane_id);
         }
 
-        // Clean up PTY manager - we need to find the PTY ID that corresponds to this pane
-        // For now, we'll do periodic cleanup of inactive PTY managers
-        self.pty_managers.cleanup_inactive();
-        debug!("Cleaned up inactive PTY managers");
+        // Clean up PTY manager associated with this pane - handle bidirectional mapping
+        if let Some(pty_id) = self.pane_to_pty_map.remove(&pane_id) {
+            // Remove reverse mapping
+            self.pty_to_pane_map.remove(&pty_id);
+            
+            if self.pty_managers.remove_manager(pty_id).is_some() {
+                debug!("Removed PTY manager {} for pane {:?}", pty_id, pane_id);
+            } else {
+                debug!("PTY manager {} not found for pane {:?}", pty_id, pane_id);
+            }
+        }
 
         self.perf_stats.active_terminals = self.terminals.len();
     }
@@ -936,6 +1007,26 @@ impl WarpIntegration {
             }
         }
     }
+    
+    /// Get PTY ID for a given pane ID (replaces ad-hoc lookups)
+    pub fn get_pty_id_for_pane(&self, pane_id: PaneId) -> Option<PtyId> {
+        self.pane_to_pty_map.get(&pane_id).copied()
+    }
+    
+    /// Get pane ID for a given PTY ID
+    pub fn get_pane_id_for_pty(&self, pty_id: PtyId) -> Option<PaneId> {
+        self.pty_to_pane_map.get(&pty_id).copied()
+    }
+    
+    /// Get all pane-to-PTY mappings for debugging/monitoring
+    pub fn get_all_pty_mappings(&self) -> Vec<(PaneId, PtyId)> {
+        self.pane_to_pty_map.iter().map(|(&p, &pty)| (p, pty)).collect()
+    }
+    
+    /// Check if a pane has an associated PTY
+    pub fn has_pty_for_pane(&self, pane_id: PaneId) -> bool {
+        self.pane_to_pty_map.contains_key(&pane_id)
+    }
 
     /// Get reference to active terminal for current pane
     pub fn active_terminal(&self) -> Option<&Arc<FairMutex<Term<EventProxy>>>> {
@@ -945,8 +1036,8 @@ impl WarpIntegration {
 
     /// Update command for current tab (for smart tab naming)
     pub fn update_current_command(&mut self, command: &str) {
-        if let Some(active_tab) = self.tab_manager.active_tab() {
-            self.tab_manager.update_tab_for_command(active_tab.id, command);
+        if let Some(tab_id) = self.tab_manager.active_tab().map(|t| t.id) {
+            self.tab_manager.update_tab_for_command(tab_id, command);
             self.update_activity();
         }
     }
@@ -956,12 +1047,9 @@ impl WarpIntegration {
         let active_tab = self.tab_manager.active_tab()?;
         let active_pane_id = active_tab.active_pane;
         
-        // For now, we'll map pane_id to pty_id by searching through our PTY managers
-        // In a real implementation, we'd maintain a pane_id -> pty_id mapping
-        for pty_id in self.pty_managers.active_pty_ids() {
+        // Map pane_id to pty_id using explicit mapping
+        if let Some(&pty_id) = self.pane_to_pty_map.get(&active_pane_id) {
             if let Some(context) = self.pty_managers.get_ai_context(pty_id) {
-                // For now, return the first active context
-                // TODO: Implement proper pane_id -> pty_id mapping
                 return Some(context);
             }
         }
@@ -977,16 +1065,22 @@ impl WarpIntegration {
 
     /// Update command context for the active pane
     pub fn update_command_context(&mut self, command: &str) {
+        // Snapshot active tab data to avoid borrow conflicts
+        let (tab_id, active_pane) = match self.tab_manager.active_tab() {
+            Some(t) => (t.id, t.active_pane),
+            None => {
+                self.update_activity();
+                return;
+            }
+        };
+
         // Update tab for smart naming
-        if let Some(active_tab) = self.tab_manager.active_tab() {
-            self.tab_manager.update_tab_for_command(active_tab.id, command);
-        }
-        
-        // Update PTY manager context
-        for pty_id in self.pty_managers.active_pty_ids() {
+        self.tab_manager.update_tab_for_command(tab_id, command);
+
+        // Update PTY manager context for the active pane using explicit mapping
+        if let Some(&pty_id) = self.pane_to_pty_map.get(&active_pane) {
             if let Some(manager) = self.pty_managers.get_manager(pty_id) {
                 manager.lock().update_last_command(command.to_string());
-                break; // For now, update first active PTY
             }
         }
         
@@ -1003,11 +1097,6 @@ impl WarpIntegration {
         self.last_activity.elapsed() > Duration::from_secs(30)
     }
 
-    /// Generate unique pane ID
-    fn generate_pane_id(&self) -> PaneId {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as PaneId
-    }
 
     /// Get current tab and split layout info for debugging
     pub fn debug_info(&self) -> WarpDebugInfo {

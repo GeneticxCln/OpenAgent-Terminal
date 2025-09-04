@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use sqlx::{Column, Row};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -202,7 +203,7 @@ impl DatabaseIntegration {
             DatabaseType::PostgreSQL => {
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(1)
-                    .connect_timeout(connection.pool_config.connect_timeout)
+                    .acquire_timeout(connection.pool_config.connect_timeout)
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to connect to PostgreSQL: {}", e))?;
@@ -215,7 +216,7 @@ impl DatabaseIntegration {
             DatabaseType::MySQL | DatabaseType::MariaDB => {
                 let pool = sqlx::mysql::MySqlPoolOptions::new()
                     .max_connections(1)
-                    .connect_timeout(connection.pool_config.connect_timeout)
+                    .acquire_timeout(connection.pool_config.connect_timeout)
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to connect to MySQL/MariaDB: {}", e))?;
@@ -228,7 +229,7 @@ impl DatabaseIntegration {
             DatabaseType::SQLite => {
                 let pool = sqlx::sqlite::SqlitePoolOptions::new()
                     .max_connections(1)
-                    .connect_timeout(connection.pool_config.connect_timeout)
+                    .acquire_timeout(connection.pool_config.connect_timeout)
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to connect to SQLite: {}", e))?;
@@ -268,7 +269,7 @@ impl DatabaseIntegration {
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(connection.pool_config.max_connections)
                     .min_connections(connection.pool_config.min_connections)
-                    .connect_timeout(connection.pool_config.connect_timeout)
+                    .acquire_timeout(connection.pool_config.connect_timeout)
                     .idle_timeout(Some(connection.pool_config.idle_timeout))
                     .max_lifetime(Some(connection.pool_config.max_lifetime))
                     .connect(&connection.connection_string)
@@ -281,7 +282,7 @@ impl DatabaseIntegration {
                 let pool = sqlx::mysql::MySqlPoolOptions::new()
                     .max_connections(connection.pool_config.max_connections)
                     .min_connections(connection.pool_config.min_connections)
-                    .connect_timeout(connection.pool_config.connect_timeout)
+                    .acquire_timeout(connection.pool_config.connect_timeout)
                     .idle_timeout(Some(connection.pool_config.idle_timeout))
                     .max_lifetime(Some(connection.pool_config.max_lifetime))
                     .connect(&connection.connection_string)
@@ -294,7 +295,7 @@ impl DatabaseIntegration {
                 let pool = sqlx::sqlite::SqlitePoolOptions::new()
                     .max_connections(connection.pool_config.max_connections)
                     .min_connections(connection.pool_config.min_connections)
-                    .connect_timeout(connection.pool_config.connect_timeout)
+                    .acquire_timeout(connection.pool_config.connect_timeout)
                     .idle_timeout(Some(connection.pool_config.idle_timeout))
                     .max_lifetime(Some(connection.pool_config.max_lifetime))
                     .connect(&connection.connection_string)
@@ -505,7 +506,6 @@ impl DatabaseIntegration {
     }
 
     fn extract_postgres_value(&self, row: &sqlx::postgres::PgRow, index: usize) -> Result<serde_json::Value> {
-        use sqlx::postgres::PgValueRef;
         use sqlx::ValueRef;
 
         let value_ref = row.try_get_raw(index)?;
@@ -533,8 +533,8 @@ impl DatabaseIntegration {
             return Ok(serde_json::Value::Bool(val));
         }
 
-        // Fallback to string representation
-        Ok(serde_json::Value::String(format!("{:?}", value_ref)))
+        // Fallback to unknown value representation
+        Ok(serde_json::Value::String("<unknown>".to_string()))
     }
 
     fn extract_mysql_value(&self, row: &sqlx::mysql::MySqlRow, index: usize) -> Result<serde_json::Value> {
@@ -565,8 +565,8 @@ impl DatabaseIntegration {
             return Ok(serde_json::Value::Bool(val));
         }
 
-        // Fallback to string representation
-        Ok(serde_json::Value::String(format!("{:?}", value_ref)))
+        // Fallback to unknown value representation
+        Ok(serde_json::Value::String("<unknown>".to_string()))
     }
 
     fn extract_sqlite_value(&self, row: &sqlx::sqlite::SqliteRow, index: usize) -> Result<serde_json::Value> {
@@ -597,8 +597,8 @@ impl DatabaseIntegration {
             return Ok(serde_json::Value::Bool(val));
         }
 
-        // Fallback to string representation
-        Ok(serde_json::Value::String(format!("{:?}", value_ref)))
+        // Fallback to unknown value representation
+        Ok(serde_json::Value::String("<unknown>".to_string()))
     }
 
     pub async fn get_database_schema(&self, connection_id: Uuid) -> Result<DatabaseSchema> {

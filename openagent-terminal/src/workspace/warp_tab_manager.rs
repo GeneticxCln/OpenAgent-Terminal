@@ -161,6 +161,18 @@ impl WarpTabManager {
         tab_id
     }
 
+    /// Allocate a new unique PaneId centrally
+    pub fn allocate_pane_id(&mut self) -> PaneId {
+        let pane_id = PaneId(self.next_pane_id);
+        self.next_pane_id += 1;
+        pane_id
+    }
+
+    /// Get all pane IDs for a given tab
+    pub fn get_tab_pane_ids(&self, tab_id: TabId) -> Option<Vec<PaneId>> {
+        self.tabs.get(&tab_id).map(|tab| tab.split_layout.collect_pane_ids())
+    }
+
     /// Generate smart tab name based on directory and current command (Warp-style)
     fn generate_smart_tab_name(
         &mut self,
@@ -333,16 +345,17 @@ impl WarpTabManager {
         let session_json = std::fs::read_to_string(session_path)?;
         
         // First try to parse as current format
-        let session: WarpSession = match serde_json::from_str(&session_json) {
+let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_json) {
             Ok(session) => {
                 // Validate session format version
                 if session.version != SESSION_VERSION {
                     // Attempt migration if needed
+                    let from_version = session.version.clone();
                     match self.migrate_session_format(session) {
                         Ok(migrated) => migrated,
                         Err(e) => {
                             eprintln!("Failed to migrate session from version {} to {}: {}", 
-                                     session.version, SESSION_VERSION, e);
+                                     from_version, SESSION_VERSION, e);
                             return Ok(false);
                         }
                     }

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use reqwest::{Client, Method, Response, StatusCode, Version};
+use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -308,14 +308,14 @@ impl ApiTester {
                 Ok(json_value) => Ok(ResponseBody::JSON(json_value)),
                 Err(_) => {
                     // If JSON parsing fails, treat as text
-                    match String::from_utf8(body) {
+                    match String::from_utf8(body.clone()) {
                         Ok(text) => Ok(ResponseBody::Text(text)),
                         Err(_) => Ok(ResponseBody::Binary(body)),
                     }
                 }
             }
         } else if content_type.starts_with("text/") || content_type.contains("xml") {
-            match String::from_utf8(body) {
+            match String::from_utf8(body.clone()) {
                 Ok(text) => Ok(ResponseBody::Text(text)),
                 Err(_) => Ok(ResponseBody::Binary(body)),
             }
@@ -460,7 +460,7 @@ impl ApiTester {
                                 "Header '{}' expected '{}', got '{}'",
                                 header,
                                 value,
-                                actual_value.unwrap_or("(not set)")
+                                actual_value.map_or("(not set)", |v| v)
                             )
                         },
                     }
@@ -547,7 +547,7 @@ impl ApiTester {
                             format!("Content-Type contains '{}'", expected)
                         } else {
                             format!("Content-Type does not contain '{}', got '{}'", 
-                                expected, actual.unwrap_or("(not set)"))
+                                expected, actual.map_or("(not set)", |v| v))
                         },
                     }
                 }

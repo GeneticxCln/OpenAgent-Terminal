@@ -3,10 +3,10 @@
 //! This module replaces the old log-based system with structured tracing,
 //! providing better observability and compatibility with the tracing ecosystem.
 
-use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::fs::{create_dir_all, File, OpenOptions};
+use std::io;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::{env, process};
 
 use log::LevelFilter;
@@ -14,12 +14,14 @@ use tracing::Subscriber;
 use tracing_log::LogTracer;
 use tracing_subscriber::{
     filter::EnvFilter,
-    fmt::{self, format::FmtSpan, writer::MakeWriter},
+fmt::{self, format::FmtSpan},
     layer::SubscriberExt,
     registry::LookupSpan,
     Layer, Registry,
 };
+use tracing_appender::non_blocking::WorkerGuard;
 use winit::event_loop::EventLoopProxy;
+use chrono::Local;
 
 use crate::cli::Options;
 use crate::logging::tracing_bridge;
@@ -37,6 +39,8 @@ pub fn initialize(
     initialize_with_tracing_bridge(options, event_proxy, false)
 }
 
+static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
+
 /// Initialize tracing with optional tracing bridge to legacy log sink
 pub fn initialize_with_tracing_bridge(
     options: &Options,
@@ -50,23 +54,37 @@ pub fn initialize_with_tracing_bridge(
     // Initialize log bridge for any remaining log crate usage
     LogTracer::init()?;
 
-    let (log_file, log_path) = create_log_file()?;
+    // Create/resolve log directory and current log file path
+    let mut log_dir = env::temp_dir();
+    log_dir.push("OpenAgentTerminal-logs");
+    create_dir_all(&log_dir)?;
 
-    // Set log path as environment variable
+    // Current hour file path (matches tracing_appender hourly naming scheme)
+    let hour_key = Local::now().format("%Y-%m-%d-%H");
+    let log_path = log_dir.join(format!("openagent-terminal.log.{}", hour_key));
+
+    // Expose log file path to the environment
     env::set_var(OPENAGENT_TERMINAL_LOG_ENV, &log_path);
 
     let filter = create_env_filter(options.log_level());
-    let file_writer = Arc::new(Mutex::new(log_file));
+
+    // Rolling (hourly) appender + non-blocking wrapper
+    let rolling = tracing_appender::rolling::hourly(&log_dir, "openagent-terminal.log");
+    let (file_nb, file_guard) = tracing_appender::non_blocking(rolling);
+    // Keep the guard alive for the lifetime of the process
+    let _ = LOG_GUARD.set(file_guard);
+
     let message_bar_layer = MessageBarLayer::new(event_proxy, log_path.clone());
 
-    // Create layered subscriber
+    // Create layered subscriber: file (non-blocking) + stdout + message bar
     let subscriber = Registry::default()
         .with(filter)
         .with(
             fmt::layer()
-                .with_writer(file_writer.clone())
+                .with_writer(file_nb)
+                .json()
                 .with_target(true)
-                .with_thread_ids(true)
+                .with_ansi(false)
                 .with_file(true)
                 .with_line_number(true)
                 .with_span_events(FmtSpan::CLOSE)
@@ -80,22 +98,8 @@ pub fn initialize_with_tracing_bridge(
         )
         .with(message_bar_layer);
 
-    // Set up AI debug logging if enabled
-    if let Some(ai_writer) = create_ai_log_file()? {
-        let ai_filter = EnvFilter::new("openagent_terminal_ai=debug,openagent_terminal::ai_runtime=debug");
-        let subscriber = subscriber.with(
-            fmt::layer()
-                .with_writer(Arc::new(Mutex::new(ai_writer)))
-                .with_target(true)
-                .with_ansi(false)
-                .json()
-                .with_filter(ai_filter)
-        );
-        
-        tracing::subscriber::set_global_default(subscriber)?;
-    } else {
-        tracing::subscriber::set_global_default(subscriber)?;
-    }
+    // Set global subscriber
+    tracing::subscriber::set_global_default(subscriber)?;
 
     println!("Created log file at \"{}\"", log_path.display());
     Ok(Some(log_path))

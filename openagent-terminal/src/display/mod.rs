@@ -525,7 +525,7 @@ pub struct Display {
     /// Animation start for drag operations
     pub tab_drag_anim_start: Option<Instant>,
     /// List of active tab animations (opening, closing, moving)
-    pub tab_animations: Vec<super::tab_bar::TabAnimation>,
+    pub tab_animations: Vec<tab_bar::TabAnimation>,
     /// Workspace animation manager for smooth UI transitions
     pub workspace_animations: workspace_animations::WorkspaceAnimationManager,
     /// Pane drag-and-drop manager
@@ -597,6 +597,17 @@ impl Display {
 
         // Create renderer.
         let mut gl_renderer = Renderer::new(&context, config.debug.renderer)?;
+        // Decide initial sprite filter based on DPI scale factor (prefer NEAREST at ~integer scales or <=1.1x)
+        let sf = window.scale_factor as f64;
+        let frac = sf.fract();
+        let nearest = frac < 0.05 || (1.0 - frac) < 0.05 || sf <= 1.1;
+        gl_renderer.set_sprite_filter_nearest(nearest);
+        info!(
+            "UI sprite filter initialized to {} (scale_factor={:.2}, reason={})",
+            if nearest { "NEAREST" } else { "LINEAR" },
+            sf,
+            if sf <= 1.1 { "low-dpi" } else if frac < 0.05 || (1.0 - frac) < 0.05 { "integer-scale" } else { "fractional-scale" }
+        );
 
         // Load font common glyphs to accelerate rendering.
         debug!("Filling glyph cache with common glyphs");
@@ -1005,7 +1016,7 @@ impl Display {
         }
 
         // WGPU renderer init.
-        let wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
+        let mut wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
             window.winit_window(),
             window.inner_size(),
             config.debug.renderer,
@@ -1016,6 +1027,17 @@ impl Display {
             config.debug.atlas_report_interval_frames,
         ))
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
+        // Initialize WGPU sprite/text sampler filter based on DPI
+        let sf = window.scale_factor as f64;
+        let frac = sf.fract();
+        let nearest = frac < 0.05 || (1.0 - frac) < 0.05 || sf <= 1.1;
+        wgpu_renderer.set_sprite_filter_nearest(nearest);
+        info!(
+            "UI sprite filter initialized (WGPU) to {} (scale_factor={:.2}, reason={})",
+            if nearest { "NEAREST" } else { "LINEAR" },
+            sf,
+            if sf <= 1.1 { "low-dpi" } else if frac < 0.05 || (1.0 - frac) < 0.05 { "integer-scale" } else { "fractional-scale" }
+        );
 
         // Load font common glyphs to accelerate rendering.
         debug!("Filling glyph cache with common glyphs (wgpu)");
@@ -1463,6 +1485,27 @@ impl Display {
             Backend::Wgpu { renderer } => {
                 renderer.dump_atlas_stats();
             },
+        }
+    }
+
+    /// Query detailed atlas metrics (WGPU only). Returns None on GL backend.
+    #[cfg(feature = "wgpu")]
+    #[allow(dead_code)]
+    pub fn atlas_metrics(&self) -> Option<crate::renderer::wgpu::AtlasMetrics> {
+        match &self.backend {
+            Backend::Gl { .. } => None,
+            Backend::Wgpu { renderer } => Some(renderer.get_atlas_metrics()),
+        }
+    }
+
+    /// Request atlas compaction based on a minimum occupancy threshold percentage (WGPU only).
+    /// Returns number of pages scheduled for eviction (0 or 1). No-op on GL backend.
+    #[cfg(feature = "wgpu")]
+    #[allow(dead_code)]
+    pub fn compact_atlas(&mut self, min_occupancy_pct: f64) -> usize {
+        match &mut self.backend {
+            Backend::Gl { .. } => 0,
+            Backend::Wgpu { renderer } => renderer.compact_atlas(min_occupancy_pct),
         }
     }
 
@@ -2447,7 +2490,7 @@ impl Display {
     }
 
     #[allow(dead_code)]
-    fn set_ui_sprite_filter(&mut self, nearest: bool) {
+    pub fn set_ui_sprite_filter(&mut self, nearest: bool) {
         match &mut self.backend {
             Backend::Gl { renderer, .. } => renderer.set_sprite_filter_nearest(nearest),
             #[cfg(feature = "wgpu")]
@@ -2813,16 +2856,23 @@ impl Display {
     pub fn read_frame_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
         match &mut self.backend {
             Backend::Gl { .. } => {
-                let w = self.size_info.width() as u32;
-                let h = self.size_info.height() as u32;
-                let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
-                unsafe {
-                    gl::Finish();
-                    gl::ReadBuffer(gl::BACK);
-                    gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-                    gl::ReadPixels(0, 0, w as i32, h as i32, gl::RGBA, gl::UNSIGNED_BYTE, buf.as_mut_ptr().cast());
+                #[cfg(feature = "preview_ui")]
+                {
+                    let w = self.size_info.width() as u32;
+                    let h = self.size_info.height() as u32;
+                    let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
+                    unsafe {
+                        crate::gl::Finish();
+                        crate::gl::ReadBuffer(crate::gl::BACK);
+                        crate::gl::PixelStorei(crate::gl::PACK_ALIGNMENT, 1);
+                        crate::gl::ReadPixels(0, 0, w as i32, h as i32, crate::gl::RGBA, crate::gl::UNSIGNED_BYTE, buf.as_mut_ptr().cast());
+                    }
+                    Some((buf, w, h))
                 }
-                Some((buf, w, h))
+                #[cfg(not(feature = "preview_ui"))]
+                {
+                    None
+                }
             },
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => renderer.take_screenshot(),

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use log::debug;
+use log::{debug, info};
 use std::borrow::Cow;
 use std::cell::Cell;
 
@@ -49,6 +49,131 @@ fn vs_main(@location(0) pos: vec2<f32>,
   out.color = color;
   out.kind = kind;
   return out;
+}
+
+/// Per-layer atlas metrics used for reporting/debugging.
+#[derive(Debug, Clone)]
+pub struct AtlasLayerMetrics {
+    pub layer: u32,
+    pub width: u32,
+    pub height: u32,
+    pub used: u64,
+    pub reserved: u64,
+    pub occupancy_pct: f64,
+    pub fragmentation_pct: f64,
+    pub last_use: u64,
+}
+
+/// Aggregate atlas metrics across all layers.
+#[derive(Debug, Clone)]
+pub struct AtlasMetrics {
+    pub total_used: u64,
+    pub total_reserved: u64,
+    pub total_capacity: u64,
+    pub total_occupancy_pct: f64,
+    pub average_layer_occupancy_pct: f64,
+    pub inserts: u64,
+    pub insert_misses: u64,
+    pub evictions: u64,
+    pub layers: Vec<AtlasLayerMetrics>,
+}
+
+impl WgpuRenderer {
+    /// Compute atlas metrics including fragmentation/reserved space estimates.
+    pub fn get_atlas_metrics(&self) -> AtlasMetrics {
+        let mut layers: Vec<AtlasLayerMetrics> = Vec::new();
+        let mut total_used = 0u64;
+        let mut total_reserved = 0u64;
+        let mut total_capacity = 0u64;
+        for (i, page) in self.atlas_pages.iter().enumerate() {
+            let cap = (page.width as u64) * (page.height as u64);
+            // Estimate reserved area: completed rows + current row span (row_extent x row_tallest)
+            let reserved_rows = (page.row_baseline as u64) * (page.width as u64);
+            let reserved_current = (page.row_extent.max(0) as u64) * (page.row_tallest.max(0) as u64);
+            let mut reserved = reserved_rows.saturating_add(reserved_current);
+            if reserved > cap {
+                reserved = cap;
+            }
+            let used = page.used_area.min(cap);
+            let occupancy_pct = if reserved > 0 {
+                (used as f64 / reserved as f64) * 100.0
+            } else {
+                0.0
+            };
+            let frag_pct = if reserved > 0 {
+                ((reserved - used) as f64 / reserved as f64) * 100.0
+            } else {
+                0.0
+            };
+            layers.push(AtlasLayerMetrics {
+                layer: i as u32,
+                width: page.width,
+                height: page.height,
+                used,
+                reserved,
+                occupancy_pct,
+                fragmentation_pct: frag_pct,
+                last_use: self.page_meta[i].last_use,
+            });
+            total_used += used;
+            total_reserved += reserved;
+            total_capacity += cap;
+        }
+        let total_occupancy_pct = if total_reserved > 0 {
+            (total_used as f64 / total_reserved as f64) * 100.0
+        } else {
+            0.0
+        };
+        let average_layer_occupancy_pct = if !layers.is_empty() {
+            layers.iter().map(|l| l.occupancy_pct).sum::<f64>() / (layers.len() as f64)
+        } else {
+            0.0
+        };
+        AtlasMetrics {
+            total_used,
+            total_reserved,
+            total_capacity,
+            total_occupancy_pct,
+            average_layer_occupancy_pct,
+            inserts: self.atlas_inserts,
+            insert_misses: self.atlas_insert_misses,
+            evictions: self.atlas_evictions_count,
+            layers,
+        }
+    }
+
+    /// Schedule/perform a simple compaction by evicting a low-occupancy page.
+    /// Returns number of pages scheduled for eviction (0 or 1).
+    pub fn compact_atlas(&mut self, min_occupancy_pct: f64) -> usize {
+        // Pick the lowest-occupancy layer under threshold.
+        let mut candidate: Option<(usize, f64)> = None;
+        for (i, page) in self.atlas_pages.iter().enumerate() {
+            // Estimate reserved area like in metrics
+            let cap = (page.width as u64) * (page.height as u64);
+            let reserved_rows = (page.row_baseline as u64) * (page.width as u64);
+            let reserved_current = (page.row_extent.max(0) as u64) * (page.row_tallest.max(0) as u64);
+            let mut reserved = reserved_rows.saturating_add(reserved_current);
+            if reserved == 0 { continue; }
+            if reserved > cap { reserved = cap; }
+            let used = page.used_area.min(cap);
+            let occ = (used as f64 / reserved as f64) * 100.0;
+            if occ <= min_occupancy_pct {
+                match candidate {
+                    Some((_idx, best)) if occ >= best => {},
+                    _ => candidate = Some((i, occ)),
+                }
+            }
+        }
+        if let Some((idx, occ)) = candidate {
+            // Schedule eviction on next frame; display will reset CPU glyph cache accordingly.
+            self.pending_eviction = Some(idx as u32);
+            self.atlas_evicted.set(true);
+            info!("WGPU atlas compaction scheduled: layer={} occupancy={:.1}% (threshold={:.1}%)", idx, occ, min_occupancy_pct);
+            1
+        } else {
+            0
+        }
+    }
 }
 
 fn draw_undercurl(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
@@ -268,6 +393,7 @@ pub struct WgpuRenderer {
     // Uniforms/bindings
     proj_buffer: wgpu::Buffer,
     text_bind_group: wgpu::BindGroup,
+    text_bgl: wgpu::BindGroupLayout,
     // Preferences/state
     is_srgb_surface: bool,
     subpixel_enabled: bool,
@@ -762,6 +888,7 @@ let mut renderer = Self {
             pending_eviction: None,
             proj_buffer,
             text_bind_group,
+            text_bgl,
             is_srgb_surface,
             subpixel_enabled,
             zero_evicted_layer: false,                    // set below
@@ -1395,6 +1522,42 @@ if let Some(ref vbuf) = vbuf_opt {
         false
     }
     pub fn set_viewport(&self, _size: &SizeInfo) {}
+
+    /// Update the text/sprite sampler filter at runtime. True = NEAREST, False = LINEAR.
+    pub fn set_sprite_filter_nearest(&mut self, nearest: bool) {
+        let filter_mode = if nearest { wgpu::FilterMode::Nearest } else { wgpu::FilterMode::Linear };
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("text-atlas-sampler-dynamic"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: filter_mode,
+            min_filter: filter_mode,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        self.atlas_sampler = sampler;
+        // Rebuild bind group with the new sampler
+        self.text_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("text-bind-group-updated"),
+            layout: &self.text_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.proj_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_sampler),
+                },
+            ],
+        });
+        info!(
+            "WGPU sprite filter set to {}",
+            if nearest { "NEAREST (pixel-crisp)" } else { "LINEAR (smooth)" }
+        );
+    }
 
     pub fn dump_atlas_stats(&self) {
         let mut lines = Vec::new();

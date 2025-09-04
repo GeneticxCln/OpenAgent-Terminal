@@ -121,10 +121,10 @@ impl Display {
         let tab_order = tab_manager.tab_order();
         let active_tab_id = tab_manager.active_tab_id();
         let hover = self.tab_hover;
-        let now = std::time::Instant::now();
+        let _now = std::time::Instant::now();
         
         // Check for active drag state
-        let drag_state = self.tab_drag_active.as_ref();
+        let drag_state = self.tab_drag_active.clone();
         
         // Calculate animation states
         let mut tab_positions = Vec::new();
@@ -141,7 +141,7 @@ impl Display {
             let mut scale = 1.0;
             
             // Apply drag animation effects
-            if let Some(drag) = drag_state {
+            if let Some(drag) = drag_state.as_ref() {
                 if drag.tab_id == tab_id && drag.is_active {
                     // Tab being dragged - apply visual offset
                     visual_x += drag.visual_offset_x;
@@ -160,13 +160,13 @@ impl Display {
                 }
             }
             
-            // Store position for rendering
-            tab_positions.push((tab_id, visual_x, tab_width, alpha, scale));
+            // Store position for rendering (include index for separator logic)
+            tab_positions.push((index, tab_id, visual_x, tab_width, alpha, scale));
             current_x += tab_width + 1; // +1 for separator
         }
         
         // Render tabs with calculated positions and effects
-        for (tab_id, visual_x, tab_width, alpha, scale) in tab_positions {
+        for (index, tab_id, visual_x, tab_width, alpha, scale) in tab_positions {
             let tab = match tab_manager.get_tab(tab_id) {
                 Some(tab) => tab,
                 None => continue,
@@ -220,7 +220,7 @@ impl Display {
                 self.stage_ui_rounded_rect(active_rect);
                 
                 // Add subtle shadow for dragged tabs
-                if let Some(drag) = drag_state {
+                if let Some(drag) = drag_state.as_ref() {
                     if drag.tab_id == tab_id && drag.is_active {
                         let shadow_offset = 3.0;
                         let shadow_rect = UiRoundedRect::new(
@@ -299,7 +299,6 @@ impl Display {
                 }
             }
 
-            current_x += tab_width + 1; // +1 for separator
         }
 
         // Draw new tab button ("[+]") in the remaining area
@@ -404,7 +403,7 @@ impl Display {
         let tab_order = tab_manager.tab_order();
         let mut current_x = 0;
 
-        for &tab_id in tab_order.iter() {
+for &tab_id in tab_order.iter() {
             let tab_width = max_tab_width.min(size_info.columns - current_x);
 
             // Check if click is within this tab
@@ -442,7 +441,7 @@ impl Display {
     ) -> Option<TabBarAction> {
         // Only handle left mouse button for dragging
         if button != MouseButton::Left {
-            return self.handle_tab_bar_click(tab_manager, position, mouse_x, mouse_y);
+            return self.handle_tab_bar_click(config, tab_manager, position, mouse_x, mouse_y);
         }
 
         let size_info = self.size_info;
