@@ -3,7 +3,6 @@
 //! This module contains comprehensive tests for the Warp-style session
 //! restoration system, covering various scenarios and edge cases.
 
-#![cfg(test)]
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -157,7 +156,7 @@ fn test_complex_session_serialization() {
 
 #[test]
 fn test_session_validation() {
-    let mut manager = WarpTabManager::new();
+    let manager = WarpTabManager::new();
     
     // Valid session should pass
     let valid_session = create_test_session();
@@ -229,7 +228,7 @@ fn test_working_directory_fallback() {
         active_tab_id: Some(TabId(1)),
     };
     
-    let mut manager = WarpTabManager::new();
+    let manager = WarpTabManager::new();
     
     // Validation should succeed but with warnings
     let validation_result = manager.validate_session(&session);

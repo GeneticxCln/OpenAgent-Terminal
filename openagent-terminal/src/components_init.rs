@@ -36,8 +36,6 @@ pub struct ComponentConfig {
     pub enable_workflows: bool,
     /// Enable plugin system
     pub enable_plugins: bool,
-    /// Enable IDE features (editor/indexer/LSP/DAP) when compiled with feature flags
-    pub enable_ide: bool,
     /// Data directory for components
     pub data_dir: PathBuf,
     /// Configuration directory
@@ -52,13 +50,12 @@ impl Default for ComponentConfig {
         let config_dir =
             dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
 
-Self {
+        Self {
             enable_wgpu: true,
             enable_harfbuzz: true,
             enable_blocks: true,
             enable_workflows: true,
             enable_plugins: true,
-            enable_ide: true,
             data_dir,
             config_dir,
         }
@@ -75,13 +72,6 @@ pub struct InitializedComponents {
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     #[cfg(feature = "plugins")]
     pub plugin_manager: Option<Arc<PluginManager>>,
-    // IDE components (optional)
-    #[cfg(feature = "indexer")]
-    pub project_index: Option<Arc<openagent_terminal_ide_indexer::ProjectIndex>>,
-    #[cfg(feature = "lsp")]
-    pub lsp_servers: Option<std::collections::HashMap<String, openagent_terminal_ide_lsp::ServerConfig>>,
-    #[cfg(feature = "dap")]
-    pub dap_adapters: Option<std::collections::HashMap<String, openagent_terminal_ide_dap::AdapterConfig>>,
     pub runtime: Arc<Runtime>,
 }
 
@@ -124,45 +114,7 @@ pub async fn initialize_components(
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.config_dir)?;
 
-// WGPU renderer is initialized as part of the display path; no separate component here.
-
-    // --- IDE components ---
-    #[cfg(feature = "indexer")]
-    let project_index: Option<Arc<openagent_terminal_ide_indexer::ProjectIndex>> = if config.enable_ide {
-        use crate::config::ide::IdeConfig as _; // ensure module is compiled
-        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        match openagent_terminal_ide_indexer::ProjectIndex::build(
-            &openagent_terminal_ide_indexer::ProjectIndexConfig::new(&root),
-        ) {
-            Ok(idx) => {
-                let idx = Arc::new(idx);
-                // Start watcher in background
-                let _ = idx.start_watcher();
-                Some(idx)
-            },
-            Err(e) => {
-                warn!("Failed to build project index: {}", e);
-                None
-            },
-        }
-    } else { None };
-
-    #[cfg(feature = "lsp")]
-    let lsp_servers: Option<std::collections::HashMap<String, openagent_terminal_ide_lsp::ServerConfig>> = if config.enable_ide {
-        // Prepare registry from default config; actual LSP processes are started on-demand per file
-        let mut map = std::collections::HashMap::new();
-        map.insert("rust".into(), openagent_terminal_ide_lsp::ServerConfig { command: "rust-analyzer".into(), args: vec![], initialization_options: None });
-        map.insert("typescript".into(), openagent_terminal_ide_lsp::ServerConfig { command: "typescript-language-server".into(), args: vec!["--stdio".into()], initialization_options: None });
-        map.insert("python".into(), openagent_terminal_ide_lsp::ServerConfig { command: "pyright-langserver".into(), args: vec!["--stdio".into()], initialization_options: None });
-        Some(map)
-    } else { None };
-
-    #[cfg(feature = "dap")]
-    let dap_adapters: Option<std::collections::HashMap<String, openagent_terminal_ide_dap::AdapterConfig>> = if config.enable_ide {
-        let mut map = std::collections::HashMap::new();
-        map.insert("codelldb".into(), openagent_terminal_ide_dap::AdapterConfig { command: "codelldb".into(), args: vec![] });
-        Some(map)
-    } else { None };
+    // WGPU renderer is initialized as part of the display path; no separate component here.
 
     // Initialize HarfBuzz text shaper
     #[cfg(feature = "harfbuzz")]
@@ -223,10 +175,30 @@ pub async fn initialize_components(
     #[cfg(feature = "plugins")]
     let plugin_manager = if config.enable_plugins {
         let plugins_dir = config.data_dir.join("plugins");
-        match initialize_plugin_manager(plugins_dir).await {
+        // Plugin policy toggles (Warp-like defaults with env overrides for releases)
+        let enforce_signatures = true;
+        let require_all = std::env::var("OPENAGENT_PLUGINS_REQUIRE_ALL").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        let hot_reload = std::env::var("OPENAGENT_PLUGINS_HOT_RELOAD").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true);
+        let require_system = true;
+        let require_user = std::env::var("OPENAGENT_PLUGINS_USER_REQUIRE_SIGNED").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        let require_project = std::env::var("OPENAGENT_PLUGINS_PROJECT_REQUIRE_SIGNED").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+
+        match initialize_plugin_manager(
+            plugins_dir.clone(), enforce_signatures, require_all, require_system, require_user, require_project, hot_reload,
+        ).await {
             Ok(manager) => {
                 info!("✓ Plugin system initialized");
-                Some(Arc::new(manager))
+                let pm = Arc::new(manager);
+                if hot_reload {
+                    let watcher_dirs = vec![
+                        PathBuf::from("/usr/share/openagent-terminal/plugins"),
+                        dirs::config_dir().map(|d| d.join("openagent-terminal").join("plugins")).unwrap_or_default(),
+                        std::env::current_dir().unwrap_or_default().join("plugins"),
+                        plugins_dir.clone(),
+                    ];
+                    spawn_plugin_watchers(Arc::clone(&pm), watcher_dirs);
+                }
+                Some(pm)
             },
             Err(e) => {
                 error!("Failed to initialize plugin system: {}", e);
@@ -240,7 +212,7 @@ pub async fn initialize_components(
 
     info!("Component initialization complete");
 
-Ok(InitializedComponents {
+    Ok(InitializedComponents {
         #[cfg(feature = "harfbuzz")]
         text_shaper,
         #[cfg(feature = "blocks")]
@@ -249,13 +221,6 @@ Ok(InitializedComponents {
         workflow_engine,
         #[cfg(feature = "plugins")]
         plugin_manager,
-        // IDE components initialized below (may be None)
-        #[cfg(feature = "indexer")]
-        project_index,
-        #[cfg(feature = "lsp")]
-        lsp_servers,
-        #[cfg(feature = "dap")]
-        dap_adapters,
         runtime,
     })
 }
@@ -322,16 +287,55 @@ async fn initialize_workflow_engine(config_dir: &PathBuf) -> Result<WorkflowEngi
 
 /// Initialize plugin manager
 #[cfg(feature = "plugins")]
-async fn initialize_plugin_manager(plugins_dir: PathBuf) -> Result<PluginManager> {
-    // Create plugins directory if it doesn't exist
-    tokio::fs::create_dir_all(&plugins_dir).await?;
+async fn initialize_plugin_manager(plugins_dir: PathBuf, enforce_signatures: bool, require_signatures_for_all: bool, path_require_system: bool, path_require_user: bool, path_require_project: bool, hot_reload: bool) -> Result<PluginManager> {
+    // Compute multi-location plugin directories
+    let mut dirs_vec = Vec::new();
+    // System
+    dirs_vec.push(PathBuf::from("/usr/share/openagent-terminal/plugins"));
+    // User
+    if let Some(cfg) = dirs::config_dir() {
+        let user_dir = cfg.join("openagent-terminal").join("plugins");
+        if let Err(e) = tokio::fs::create_dir_all(&user_dir).await { warn!("Failed to create user plugin dir: {}", e); }
+        dirs_vec.push(user_dir);
+    }
+    // Project
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs_vec.push(cwd.join("plugins"));
+    }
+    // Data dir (legacy default)
+    if let Err(e) = tokio::fs::create_dir_all(&plugins_dir).await { warn!("Failed to create data plugin dir: {}", e); }
+    dirs_vec.push(plugins_dir.clone());
 
-    // Create plugin host
-    let host = Arc::new(TerminalPluginHost::new());
+    // Create plugin host with storage dir
+    let storage_dir = if let Some(data) = dirs::data_dir() { data.join("openagent-terminal").join("plugins").join("storage") } else { PathBuf::from("./.openagent-terminal/plugins/storage") };
+    if let Err(e) = tokio::fs::create_dir_all(&storage_dir).await { warn!("Failed to create storage dir: {}", e); }
+    let host = Arc::new(TerminalPluginHost::new(storage_dir));
 
-    // Create plugin manager with host
-    let manager = PluginManager::with_host(plugins_dir.clone(), Some(host))
+    // Log planned plugin directories and policy
+    info!("Plugin directories under management:");
+    for d in &dirs_vec { info!("  - {:?}", d); }
+    let trusted_keys_dir = dirs::config_dir().map(|d| d.join("openagent-terminal").join("trusted_keys"));
+    let trusted_keys = count_trusted_keys(trusted_keys_dir.clone());
+    info!("Plugin signing policy: enforce_signatures={}, require_signatures_for_all={}, trusted_keys={} (dir: {:?})",
+        enforce_signatures, require_signatures_for_all, trusted_keys, trusted_keys_dir);
+    info!("Per-path signature requirements: system={}, user={}, project={}, hot_reload={}",
+        path_require_system, path_require_user, path_require_project, hot_reload);
+
+    // Create plugin manager with host and directories
+    let mut manager = PluginManager::with_host_and_dirs(dirs_vec, Some(host))
         .context("Failed to create plugin manager")?;
+    manager.set_enforce_signatures(enforce_signatures);
+
+
+    manager.configure_signature_policy(plugin_loader::SignaturePolicy {
+        require_signatures_for_all,
+        require_system: path_require_system,
+        require_user: path_require_user,
+        require_project: path_require_project,
+        system_dir: Some(PathBuf::from("/usr/share/openagent-terminal/plugins")),
+        user_dir: dirs::config_dir().map(|d| d.join("openagent-terminal").join("plugins")),
+        project_dir: std::env::current_dir().ok().map(|d| d.join("plugins")),
+    });
 
     // Discover and load plugins
     match manager.discover_plugins().await {
@@ -349,17 +353,20 @@ async fn initialize_plugin_manager(plugins_dir: PathBuf) -> Result<PluginManager
         },
     }
 
+
     Ok(manager)
 }
 
 /// Terminal plugin host implementation
 #[cfg(feature = "plugins")]
-struct TerminalPluginHost;
+struct TerminalPluginHost {
+    storage_dir: PathBuf,
+}
 
 #[cfg(feature = "plugins")]
 impl TerminalPluginHost {
-    fn new() -> Self {
-        Self
+    fn new(storage_dir: PathBuf) -> Self {
+        Self { storage_dir }
     }
 }
 
@@ -386,8 +393,7 @@ impl PluginHost for TerminalPluginHost {
         // Security Lens gating for plugin-executed commands.
         // Read policy from current UiConfig via confirm broker.
         let policy = crate::ui_confirm::get_security_policy();
-        let lens = crate::security_lens::SecurityLens::new(policy.clone());
-        let mut lens = lens;
+        let mut lens = crate::security_lens::SecurityLens::new(policy.clone());
         let risk = lens.analyze_command(command);
         if lens.should_block(&risk) {
             return Err(PluginError::CommandFailed(format!(
@@ -467,14 +473,20 @@ impl PluginHost for TerminalPluginHost {
         Ok(())
     }
 
-    fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), PluginError> {
-        // TODO: Implement persistent storage
-        Ok(())
+    fn store_data(&self, key: &str, value: &[u8]) -> Result<(), PluginError> {
+        // sanitize key to filesystem-friendly name
+        let file = self.storage_dir.join(sanitize_key_to_filename(key));
+        std::fs::create_dir_all(&self.storage_dir).map_err(|e| PluginError::IoError(e))?;
+        std::fs::write(file, value).map_err(|e| PluginError::IoError(e))
     }
 
-    fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, PluginError> {
-        // TODO: Implement persistent storage
-        Ok(None)
+    fn retrieve_data(&self, key: &str) -> Result<Option<Vec<u8>>, PluginError> {
+        let file = self.storage_dir.join(sanitize_key_to_filename(key));
+        match std::fs::read(file) {
+            Ok(data) => Ok(Some(data)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(PluginError::IoError(e)),
+        }
     }
 
     fn register_command(&self, command: CommandDefinition) -> Result<(), PluginError> {
@@ -550,6 +562,123 @@ impl<'a> ComponentIntegration<'a> {
         }
     }
 }
+
+#[cfg(feature = "plugins")]
+fn count_trusted_keys(dir: Option<PathBuf>) -> usize {
+    if let Some(d) = dir {
+        if let Ok(entries) = std::fs::read_dir(d) {
+            return entries.filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("pub"))
+                .count();
+        }
+    }
+    0
+}
+
+#[cfg(feature = "plugins")]
+fn sanitize_key_to_filename(key: &str) -> String {
+    let mut s = String::with_capacity(key.len());
+    for ch in key.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+            s.push(ch);
+        } else {
+            s.push('_');
+        }
+    }
+    // prevent empty filename
+    if s.is_empty() { s.push('_'); }
+    s
+}
+
+#[cfg(feature = "plugins")]
+fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
+    use notify::{Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
+    use std::sync::mpsc::channel;
+
+    // Spawn a background task to receive events and process async loads/unloads
+    tokio::spawn(async move {
+        let (tx, rx) = channel::<Event>();
+
+        // Watcher lives in this task scope
+        let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
+            move |res: NotifyResult<Event>| {
+                match res {
+                    Ok(ev) => { let _ = tx.send(ev); },
+                    Err(e) => warn!("Plugin watcher error: {}", e),
+                }
+            },
+            NotifyConfig::default(),
+        ).expect("failed to create file watcher");
+
+        for d in dirs {
+            if d.exists() {
+                if let Err(e) = watcher.watch(&d, RecursiveMode::NonRecursive) {
+                    warn!("Failed to watch {:?}: {}", d, e);
+                } else {
+                    debug!("Watching plugin dir: {:?}", d);
+                }
+            }
+        }
+
+        // Helper closures for load/unload
+        let handle_create_or_modify = |p: &PathBuf| {
+            let p = p.clone();
+            let mgr = Arc::clone(&manager);
+            tokio::spawn(async move {
+                if p.extension().and_then(|s| s.to_str()) == Some("wasm") {
+                    // Unload if already loaded (by name) to trigger cleanup
+                    if let Some(name) = p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()) {
+                        let loaded = mgr.loaded_names_and_paths().await;
+                        if loaded.iter().any(|(n, _)| n == &name) {
+                            let _ = mgr.unload_plugin(&name).await;
+                        }
+                    }
+                    match mgr.load_plugin(&p).await {
+                        Ok(name) => info!("(watch) Loaded plugin: {}", name),
+                        Err(e) => debug!("(watch) Load skipped for {:?}: {}", p, e),
+                    }
+                }
+            });
+        };
+
+        let handle_remove = |p: &PathBuf| {
+            let p = p.clone();
+            let mgr = Arc::clone(&manager);
+            tokio::spawn(async move {
+                let loaded = mgr.loaded_names_and_paths().await;
+                for (name, path) in loaded {
+                    if path == p {
+                        match mgr.unload_plugin(&name).await {
+                            Ok(()) => info!("(watch) Unloaded plugin: {}", name),
+                            Err(e) => debug!("(watch) Unload skipped for {}: {}", name, e),
+                        }
+                    }
+                }
+            });
+        };
+
+        // Event loop
+        loop {
+            match rx.recv() {
+                Ok(event) => {
+                    // Prefer to act on each path
+                    for path in &event.paths {
+                        match &event.kind {
+                            EventKind::Create(_) | EventKind::Modify(_) => handle_create_or_modify(path),
+                            EventKind::Remove(_) => handle_remove(path),
+                            _ => {},
+                        }
+                    }
+                },
+                Err(e) => {
+                    warn!("Plugin watcher recv error: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+}
+
 
 #[cfg(test)]
 mod tests {

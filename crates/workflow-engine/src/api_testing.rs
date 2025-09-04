@@ -308,14 +308,14 @@ impl ApiTester {
                 Ok(json_value) => Ok(ResponseBody::JSON(json_value)),
                 Err(_) => {
                     // If JSON parsing fails, treat as text
-                    match String::from_utf8(body.clone()) {
+match String::from_utf8(body.clone()) {
                         Ok(text) => Ok(ResponseBody::Text(text)),
                         Err(_) => Ok(ResponseBody::Binary(body)),
                     }
                 }
             }
         } else if content_type.starts_with("text/") || content_type.contains("xml") {
-            match String::from_utf8(body.clone()) {
+match String::from_utf8(body.clone()) {
                 Ok(text) => Ok(ResponseBody::Text(text)),
                 Err(_) => Ok(ResponseBody::Binary(body)),
             }
@@ -460,7 +460,7 @@ impl ApiTester {
                                 "Header '{}' expected '{}', got '{}'",
                                 header,
                                 value,
-                                actual_value.map_or("(not set)", |v| v)
+                                actual_value.map_or("(not set)".to_string(), |v| v.clone())
                             )
                         },
                     }
@@ -546,8 +546,8 @@ impl ApiTester {
                         message: if passed {
                             format!("Content-Type contains '{}'", expected)
                         } else {
-                            format!("Content-Type does not contain '{}', got '{}'", 
-                                expected, actual.map_or("(not set)", |v| v))
+                            let actual_str = actual.map_or("(not set)".to_string(), |v| v.clone());
+                            format!("Content-Type does not contain '{}', got '{}'", expected, actual_str)
                         },
                     }
                 }
@@ -931,7 +931,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_tester_creation() {
-        let api_tester = ApiTester::new();
+        let _api_tester = ApiTester::new();
         assert!(true); // Basic creation should work
     }
 

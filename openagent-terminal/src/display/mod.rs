@@ -58,6 +58,7 @@ use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
 use crate::renderer::ui::{UiRoundedRect, UiSprite};
 use crate::renderer::{self, platform, GlyphCache, LoaderApi, Renderer};
+use crate::gl;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
 
@@ -1014,6 +1015,51 @@ impl Display {
         }
     }
 
+    // Fallback helper: draw text using the renderer. This is available when the `blocks` feature is
+    // disabled to satisfy calls from overlays/palette that rely on a common text drawing helper.
+    // When `blocks` is enabled, a similar helper exists in the blocks_search_panel module.
+    #[cfg(not(feature = "blocks"))]
+    pub(crate) fn draw_ai_text(
+        &mut self,
+        point: Point<usize>,
+        fg: Rgb,
+        bg: Rgb,
+        text: &str,
+        max_width: usize,
+    ) {
+        use unicode_width::UnicodeWidthStr;
+        let truncated_text: String = if text.width() > max_width {
+            text.chars().take(max_width).collect()
+        } else {
+            text.to_string()
+        };
+
+        let size_info_copy = self.size_info;
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => {
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    truncated_text.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
+            },
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    truncated_text.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
+            },
+        }
+    }
+
     #[cfg(feature = "wgpu")]
     pub fn new_wgpu(window: Window, config: &UiConfig, _tabbed: bool) -> Result<Display, Error> {
         let raw_window_handle = window.raw_window_handle();
@@ -1068,8 +1114,8 @@ impl Display {
                 fn load_glyph(
                     &mut self,
                     _rasterized: &crossfont::RasterizedGlyph,
-                ) -> crate::renderer::Glyph {
-                    crate::renderer::Glyph {
+) -> crate::renderer::Glyph {
+crate::renderer::Glyph {
                         tex_id: 0,
                         multicolor: false,
                         top: 0,
@@ -1248,6 +1294,23 @@ impl Display {
             palette_anim_duration_ms: 0,
             palette_sel_last_index: None,
             palette_sel_anim_start: None,
+            // Additional UI state defaults
+            palette: palette::PaletteState::new(),
+            confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
+            last_mouse_x: 0,
+            last_mouse_y: 0,
+            tab_hover: None,
+            tab_hover_anim_start: None,
+            tab_last_active_id: None,
+            tab_anim_switch_start: None,
+            tab_drag_active: None,
+            tab_drag_anim_start: None,
+            tab_animations: Vec::new(),
+            workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
+            pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
+            split_hover: None,
+            split_drag: None,
+            split_hover_anim_start: None,
         })
     }
 
@@ -1381,8 +1444,8 @@ impl Display {
                     fn load_glyph(
                         &mut self,
                         _rasterized: &crossfont::RasterizedGlyph,
-                    ) -> crate::renderer::Glyph {
-                        crate::renderer::Glyph {
+) -> crate::renderer::Glyph {
+crate::renderer::Glyph {
                             tex_id: 0,
                             multicolor: false,
                             top: 0,

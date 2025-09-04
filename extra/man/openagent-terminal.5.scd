@@ -775,6 +775,62 @@ This section documents the *[workspace]* table of the configuration file.
 
 	Default: _true_
 
+*visibility* = _"Auto"_ | _"Always"_ | _"Hover"_
+
+	Visibility behavior for the tab bar. _Auto_ resolves to _Always_ unless the window is
+	in fullscreen, where it behaves like _Hover_. _Hover_ shows the bar when hovering
+	near its edge or after recent interaction.
+
+	Default: _"Auto"_
+
+*show_close_button* = _true_ | _false_
+
+	Whether to render a close button on tabs.
+
+	Default: _true_
+
+*close_button_on_hover* = _true_ | _false_
+
+	Only render the close button when hovering a tab. Click area remains at the end of the tab.
+
+	Default: _false_
+
+*show_modified_indicator* = _true_ | _false_
+
+	Show a modified indicator on tabs with changes.
+
+	Default: _true_
+
+*show_new_tab_button* = _true_ | _false_
+
+	Show a [+] new-tab button in remaining space on the tab row.
+
+	Default: _true_
+
+*show_tab_numbers* = _true_ | _false_
+
+	Prefix tab titles with their index (e.g. "1:").
+
+	Default: _false_
+
+*max_title_length* = _<int>_
+
+	Maximum number of characters for tab titles before truncation.
+
+	Default: _20_
+
+*min_tab_width* = _<int>_ | _None_
+
+	Minimum width of a tab (cells). When _None_, a built-in default is used.
+
+	Default: _None_
+
+*max_tab_width* = _<int>_ | _None_
+
+	Maximum width of a tab (cells). When _None_, a built-in default is used.
+
+	Default: _None_
+
 *[workspace.splits]*
 
 *preview_enabled* = _true_ | _false_

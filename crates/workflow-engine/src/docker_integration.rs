@@ -235,7 +235,6 @@ impl DockerIntegration {
         let image = parts[2].to_string();
         let status_str = parts[3];
         let ports_str = parts[4];
-        let _created_str = parts[5];
 
         let status = Self::parse_container_status(status_str);
         let ports = Self::parse_port_mappings(ports_str);
@@ -382,10 +381,10 @@ impl DockerIntegration {
                 .map_err(|e| anyhow!("Failed to get container working dir: {}", e))?;
 
             if output.status.success() {
-                let container_wd_raw = String::from_utf8_lossy(&output.stdout);
-                let container_wd = container_wd_raw.trim();
+let wd_raw = String::from_utf8_lossy(&output.stdout).to_string();
+                let container_wd = wd_raw.trim().to_string();
                 let container_working_dir = if !container_wd.is_empty() {
-                    Some(PathBuf::from(container_wd))
+Some(PathBuf::from(&container_wd))
                 } else {
                     None
                 };
@@ -658,10 +657,9 @@ impl DockerIntegration {
         }
         
         args.push(container_id.to_string());
-        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
         let output = Command::new("docker")
-            .args(&args_str)
+            .args(&args)
             .output()
             .map_err(|e| anyhow!("Failed to get container logs: {}", e))?;
 

@@ -186,6 +186,25 @@ log_level = "Info"
 prefer_wgpu = false
 # Preview: enable plugin system (WASI sandbox) if built with `--features plugins`
 plugins_preview = false
+
+# Plugins configuration
+[plugins]
+# Verify signatures (ed25519) when present; invalid signatures fail to load (recommended)
+enforce_signatures = true
+# Require signatures for all plugins (unsigned will be rejected)
+require_signatures_for_all = false
+# Hot reloading of plugins on changes (developer-friendly)
+hot_reload = true
+
+# Path-level signature requirements (dev defaults)
+[plugins.paths.system]
+require_signatures = true
+
+[plugins.paths.user]
+require_signatures = false
+
+[plugins.paths.project]
+require_signatures = false
 # Subpixel text rendering for WGPU: "Auto" | "Enabled" | "Disabled"
 subpixel_text = "Auto"
 # sRGB swapchain preference for WGPU: "Auto" | "Enabled" | "Disabled"
@@ -418,10 +437,22 @@ enable = true
 position = "Top"
 # Whether to show the tab bar
 show = true
+# Visibility behavior: "Auto" | "Always" | "Hover"
+# Auto => Always unless fullscreen (then Hover)
+visibility = "Auto"
 # Show close button on tabs
 show_close_button = true
+# Only render the close button when hovering a tab
+close_button_on_hover = false
 # Show modified indicator
 show_modified_indicator = true
+# Show a [+] button to create new tabs in remaining space
+show_new_tab_button = true
+# Show tab numbering (e.g., "1: title")
+show_tab_numbers = false
+# Per-tab width constraints (cells); unset => built-in defaults
+# min_tab_width = 10
+# max_tab_width = 30
 # Maximum tab title length
 max_title_length = 20
 # Reserve a terminal row for the tab bar to avoid overlaying content.

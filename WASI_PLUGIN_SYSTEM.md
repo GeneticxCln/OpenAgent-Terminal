@@ -64,7 +64,9 @@ The communication protocol between host and plugins uses JSON serialization over
 #### Plugin Exports
 - `plugin_init() -> i32`: Initialize plugin, returns error code
 - `plugin_get_metadata() -> i64`: Returns packed pointer/length for JSON metadata
-- `plugin_handle_event(ptr: i32, len: i32) -> i32`: Process event data, returns error code
+- `plugin_alloc(size: i32) -> i32`: Allocate a buffer inside plugin memory; returns pointer for host to write event JSON
+- `plugin_handle_event(ptr: i32, len: i32) -> i32`: Process event data at `ptr/len`, returns error code (0 = success)
+- `plugin_get_last_response() -> i64`: Returns packed pointer/length for the last JSON response set by the plugin (optional)
 - `plugin_cleanup() -> i32`: Cleanup plugin resources, returns error code
 
 #### Host Imports
@@ -72,6 +74,8 @@ The communication protocol between host and plugins uses JSON serialization over
 - `host_read_file(path_ptr: *const u8, path_len: usize, result_ptr: *mut u8, result_len_ptr: *mut u32) -> i32`: Read file
 - `host_write_file(path_ptr: *const u8, path_len: usize, data_ptr: *const u8, data_len: usize) -> i32`: Write file
 - `host_execute_command(cmd_ptr: *const u8, cmd_len: usize) -> i32`: Execute command
+- `host_store_data(key_ptr: *const u8, key_len: usize, data_ptr: *const u8, data_len: usize) -> i32`: Persist key/value
+- `host_retrieve_data(key_ptr: *const u8, key_len: usize, result_ptr: *mut u8, result_len_ptr: *mut u32) -> i32`: Retrieve key/value
 
 #### Memory Layout
 ```

@@ -2227,10 +2227,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 },
                 PaletteEntry::Workflow(name) => {
                     // Ask processor to execute via engine if available
-                    let _ = self.event_proxy.send_event(Event::new(
-                        EventType::WorkflowsExecuteByName(name),
-                        self.display.window.id(),
-                    ));
+                    #[cfg(feature = "workflow")]
+                    {
+                        let _ = self.event_proxy.send_event(Event::new(
+                            EventType::WorkflowsExecuteByName(name),
+                            self.display.window.id(),
+                        ));
+                    }
+                    #[cfg(not(feature = "workflow"))]
+                    {
+                        // Workflow feature not enabled; ignore selection or surface a small message
+                        // (keeping silent here to avoid extra dependencies in non-workflow builds)
+                    }
                 },
             }
         }
@@ -2957,7 +2965,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.pending_update.dirty = true;
     }
     #[inline]
-
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
         let origin = self.terminal.vi_mode_cursor.point;
 
@@ -5323,7 +5330,7 @@ pub(crate) mod test_posted_events {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "blocks"))]
 impl Processor {
     /// Lightweight event delivery helper for tests to emulate ApplicationHandler::user_event
     /// without requiring an ActiveEventLoop.
@@ -5338,7 +5345,7 @@ impl Processor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "blocks"))]
 pub(crate) fn schedule_blocks_search_for_test(
     scheduler: &mut Scheduler,
     window_id: WindowId,

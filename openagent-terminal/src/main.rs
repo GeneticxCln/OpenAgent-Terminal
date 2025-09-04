@@ -57,7 +57,11 @@ mod window_context;
 // New component modules
 mod blocks_v2;
 mod components_init;
-mod security_lens;
+mod security; // Feature-gated security module wrapper
+#[cfg(feature = "security-lens")]
+pub use security::security_lens as security_lens;
+#[cfg(not(feature = "security-lens"))]
+pub use security::stub as security_lens;
 mod text_shaping;
 mod ui_confirm;
 mod workspace;
