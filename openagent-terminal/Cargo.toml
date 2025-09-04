@@ -56,7 +56,7 @@ ahash = { version = "0.8.6", features = ["no-rng"] }
 bitflags = "2.2.1"
 clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
-crossfont = "0.8.1"
+crossfont = { workspace = true }
 tracing = { workspace = true }
 # OpenGL stack (existing)
 glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"] }
@@ -66,7 +66,6 @@ pollster = { version = "0.3", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 # Text shaping dependencies
 harfbuzz_rs = { workspace = true, optional = true }
-swash = { workspace = true, optional = true }
 fontdb = { workspace = true, optional = true }
 # Component management
 tokio = { workspace = true, features = ["full"] }
@@ -78,7 +77,6 @@ chrono = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["v4"], optional = true }
 sqlx = { workspace = true, optional = true }
 # Text shaping additional dependencies
-ttf-parser = { workspace = true, optional = true }
 unicode-bidi = { workspace = true, optional = true }
 
 home = "0.5.5"
@@ -182,7 +180,7 @@ workflow = ["dep:workflow-engine"]
 # Optional plugin system
 plugins = ["dep:plugin-api", "dep:plugin-loader"]
 # Enhanced text shaping with HarfBuzz
-harfbuzz = ["dep:harfbuzz_rs", "dep:swash", "dep:fontdb", "dep:ttf-parser", "dep:unicode-bidi"]
+harfbuzz = ["dep:harfbuzz_rs", "dep:fontdb", "dep:unicode-bidi"]
 # Blocks 2.0 system for command execution tracking
 blocks = ["dep:chrono", "dep:uuid", "dep:sqlx"]
 

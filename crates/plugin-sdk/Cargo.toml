@@ -9,35 +9,14 @@ repository.workspace = true
 
 [dependencies]
 plugin-api = { path = "../plugin-api" }
-serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# Proc-macro for plugin development
-[dependencies.proc-macro2]
-version = "1.0"
-optional = true
-
-[dependencies.quote]
-version = "1.0"
-optional = true
-
-[dependencies.syn]
-version = "2.0"
-features = ["full", "parsing", "printing"]
-optional = true
 
 [features]
 default = []
-proc-macro = ["proc-macro2", "quote", "syn"]
 
 [lib]
 name = "plugin_sdk"
 path = "src/lib.rs"
-
-[[bin]]
-name = "plugin-sdk-cli"
-path = "src/bin/cli.rs"
-required-features = ["proc-macro"]
 
 [target.wasm32-wasi.dependencies]
 # WASI-specific dependencies
