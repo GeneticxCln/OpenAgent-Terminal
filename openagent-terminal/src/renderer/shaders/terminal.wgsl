@@ -5,12 +5,17 @@ struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) color: vec4<f32>,
+    @location(3) cell_index: u32,
+    @location(4) atlas_layer: u32,
 }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) cell_index: u32,
+    @location(3) atlas_layer: u32,
+    @location(4) world_pos: vec2<f32>,
 }
 
 struct Uniforms {
@@ -20,14 +25,35 @@ struct Uniforms {
     _padding: f32,
 }
 
+struct CursorUniforms {
+    position: vec2<f32>,
+    size: vec2<f32>,
+    color: vec4<f32>,
+    blink_phase: f32,
+    _padding: vec3<f32>,
+}
+
+struct CellData {
+    character: u32,
+    foreground: vec4<f32>,
+    background: vec4<f32>,
+    glyph_coords: vec4<f32>, // UV coordinates in atlas
+}
+
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 
 @group(0) @binding(1)
-var t_diffuse: texture_2d<f32>;
+var<uniform> cursor: CursorUniforms;
 
 @group(0) @binding(2)
-var s_diffuse: sampler;
+var glyph_atlas: texture_2d_array<f32>;
+
+@group(0) @binding(3)
+var atlas_sampler: sampler;
+
+@group(1) @binding(0)
+var<storage, read> cell_data: array<CellData>;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
@@ -42,17 +68,54 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.clip_position = vec4<f32>(normalized_pos, 0.0, 1.0);
     out.tex_coords = in.tex_coords;
     out.color = in.color;
+    out.cell_index = in.cell_index;
+    out.atlas_layer = in.atlas_layer;
+    out.world_pos = in.position;
 
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample texture for glyph rendering
-    let tex_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    // Get cell data for this fragment
+    let cell = cell_data[in.cell_index];
+    
+    // Sample from glyph atlas using proper UV coordinates
+    let glyph_color = textureSample(glyph_atlas, atlas_sampler, 
+                                   cell.glyph_coords.xy + in.tex_coords * cell.glyph_coords.zw, 
+                                   i32(in.atlas_layer));
 
-    // Apply text color
-    var final_color = vec4<f32>(in.color.rgb, in.color.a * tex_color.a);
+    // Determine if this is a background or foreground fragment
+    var final_color: vec4<f32>;
+    
+    if (glyph_color.a < 0.1) {
+        // Background cell
+        final_color = cell.background;
+    } else {
+        // Foreground text - blend glyph with foreground color
+        final_color = vec4<f32>(
+            cell.foreground.rgb,
+            cell.foreground.a * glyph_color.a
+        );
+    }
+    
+    // Check if cursor should be rendered at this position
+    let cursor_bounds = vec4<f32>(
+        cursor.position.x,
+        cursor.position.y,
+        cursor.position.x + cursor.size.x,
+        cursor.position.y + cursor.size.y
+    );
+    
+    let in_cursor = in.world_pos.x >= cursor_bounds.x && 
+                    in.world_pos.x <= cursor_bounds.z &&
+                    in.world_pos.y >= cursor_bounds.y && 
+                    in.world_pos.y <= cursor_bounds.w;
+    
+    if (in_cursor && cursor.blink_phase > 0.5) {
+        // Apply cursor color with blending
+        final_color = mix(final_color, cursor.color, cursor.color.a);
+    }
 
     // Apply gamma correction for better text rendering
     final_color.rgb = pow(final_color.rgb, vec3<f32>(2.2));

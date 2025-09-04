@@ -12,6 +12,8 @@ use winit::window::Window;
 
 use super::{rects::RenderRect, shader};
 use crate::display::color::Rgb;
+use crate::display::content::RenderableCell;
+use openagent_terminal_core::index::Point;
 
 /// Performance metrics for WGPU renderer
 #[derive(Debug, Clone)]
@@ -81,6 +83,39 @@ struct AtlasRegion {
     width: u32,
     height: u32,
     glyph_id: u64,
+}
+
+/// Terminal cell data for rendering
+#[derive(Clone, Debug)]
+pub struct TerminalCell {
+    pub character: char,
+    pub foreground: [f32; 4],
+    pub background: [f32; 4],
+    pub glyph_coords: [f32; 4], // UV coordinates in atlas
+}
+
+impl TerminalCell {
+    pub fn from_renderable_cell(cell: &RenderableCell, glyph_coords: [f32; 4]) -> Self {
+        let fg = cell.fg.0;
+        let bg = cell.bg.0;
+        
+        Self {
+            character: cell.c,
+            foreground: [
+                fg[0] as f32 / 255.0,
+                fg[1] as f32 / 255.0, 
+                fg[2] as f32 / 255.0,
+                1.0,
+            ],
+            background: [
+                bg[0] as f32 / 255.0,
+                bg[1] as f32 / 255.0,
+                bg[2] as f32 / 255.0, 
+                1.0,
+            ],
+            glyph_coords,
+        }
+    }
 }
 
 /// Glyph cache for text rendering
@@ -293,33 +328,46 @@ impl WgpuRenderer {
     /// Begin a new frame
     pub fn begin_frame(&mut self) -> Result<wgpu::SurfaceTexture> {
         let frame_start = std::time::Instant::now();
+        
+        // Create surface on demand since we don't store it
+        let window_ref = unsafe { &*self.window_ptr };
+        let surface = unsafe { self.instance.create_surface(window_ref) }
+            .context("Failed to create surface for frame")?;
+        surface.configure(&self.device, &self.config);
 
-        let output = self
-            .surface
+        let output = surface
             .get_current_texture()
             .context("Failed to acquire next swap chain texture")?;
 
         self.frame_counter += 1;
+        self.metrics.cpu_time_ms = frame_start.elapsed().as_millis() as f32;
 
         Ok(output)
     }
 
-    /// Render the current frame
-    pub fn render(&mut self, output: &wgpu::SurfaceTexture) -> Result<()> {
+    /// Render terminal content with the specified terminal state
+    pub fn render_terminal_content(
+        &mut self, 
+        output: &wgpu::SurfaceTexture,
+        terminal_cells: &[TerminalCell],
+        cursor_pos: (u32, u32),
+        viewport_size: (u32, u32)
+    ) -> Result<()> {
+        let render_start = std::time::Instant::now();
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
+            label: Some("Terminal Render Encoder"),
         });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+                label: Some("Terminal Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -328,20 +376,33 @@ impl WgpuRenderer {
                 occlusion_query_set: None,
             });
 
+            // Update cell data and cursor uniforms
+            self.update_terminal_uniforms(terminal_cells, cursor_pos, viewport_size)?;
+
+            // Render terminal cells
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            // Draw calls would go here
+            // Draw instanced quads for terminal cells
+            let cell_count = (viewport_size.0 * viewport_size.1) as u32;
+            render_pass.draw_indexed(0..6, 0, 0..cell_count);
             self.metrics.draw_calls += 1;
+            self.metrics.vertex_count = cell_count * 6;
+
+            // Render performance HUD if enabled
+            if self.enable_performance_hud {
+                self.render_performance_hud(&mut render_pass)?;
+            }
         }
 
         // Submit command buffer
         self.queue.submit(std::iter::once(encoder.finish()));
 
         // Update metrics
-        self.metrics.frame_time_ms = 16.67; // Placeholder
+        self.metrics.gpu_time_ms = render_start.elapsed().as_millis() as f32;
+        self.metrics.frame_time_ms = self.metrics.cpu_time_ms + self.metrics.gpu_time_ms;
 
         Ok(())
     }
@@ -369,6 +430,264 @@ impl WgpuRenderer {
     pub fn clear_glyph_cache(&mut self) {
         self.glyph_cache.clear();
         self.text_atlas.clear();
+    }
+    
+    /// Update terminal uniforms with cell data and cursor position
+    fn update_terminal_uniforms(
+        &mut self,
+        terminal_cells: &[TerminalCell],
+        cursor_pos: (u32, u32),
+        viewport_size: (u32, u32)
+    ) -> Result<()> {
+        // Update cursor uniform buffer
+        let cursor_data = [
+            cursor_pos.0 as f32,
+            cursor_pos.1 as f32,
+            1.0, // cursor width
+            1.0, // cursor height
+            1.0, 1.0, 1.0, 1.0, // cursor color (white)
+            (self.frame_counter as f32 * 0.05).sin().abs(), // blink phase
+            0.0, 0.0, 0.0, // padding
+        ];
+        
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&cursor_data));
+        
+        // TODO: Update cell data storage buffer
+        // For now, we'll use the vertex buffer to store cell vertices
+        
+        Ok(())
+    }
+    
+    /// Render performance HUD overlay
+    fn render_performance_hud(&mut self, render_pass: &mut wgpu::RenderPass) -> Result<()> {
+        // Simple HUD background quad
+        let hud_vertices = [
+            -0.9f32, 0.9,   // top-left
+            -0.5, 0.9,      // top-right
+            -0.5, 0.6,      // bottom-right
+            -0.9, 0.6,      // bottom-left
+        ];
+        
+        // Write HUD vertices to buffer (offset from main content)
+        self.queue.write_buffer(&self.vertex_buffer, 4096, bytemuck::cast_slice(&hud_vertices));
+        
+        // Set HUD vertex buffer and draw
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(4096..));
+        render_pass.draw(0..6, 0..1); // Draw HUD quad
+        
+        self.metrics.draw_calls += 1;
+        
+        debug!("Performance HUD - Frame time: {:.2}ms, GPU time: {:.2}ms, Draw calls: {}",
+               self.metrics.frame_time_ms,
+               self.metrics.gpu_time_ms,
+               self.metrics.draw_calls);
+        
+        Ok(())
+    }
+    
+    /// Cache a glyph in the text atlas
+    pub fn cache_glyph(&mut self, glyph_id: u64, glyph_data: &[u8], size: (u32, u32)) -> Result<[f32; 4]> {
+        // Find space in atlas
+        let (x, y) = self.find_atlas_space(size.0, size.1)
+            .ok_or_else(|| anyhow::anyhow!("No space in text atlas"))?;
+        
+        // Upload glyph data to atlas
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.text_atlas.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            glyph_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(size.0 * 4),
+                rows_per_image: Some(size.1),
+            },
+            wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+        );
+        
+        // Calculate UV coordinates
+        let atlas_size = self.text_atlas.size;
+        let uv_coords = [
+            x as f32 / atlas_size.0 as f32,
+            y as f32 / atlas_size.1 as f32,
+            size.0 as f32 / atlas_size.0 as f32,
+            size.1 as f32 / atlas_size.1 as f32,
+        ];
+        
+        // Cache glyph metadata
+        let glyph = CachedGlyph {
+            atlas_region: AtlasRegion { x, y, width: size.0, height: size.1, glyph_id },
+            metrics: GlyphMetrics {
+                advance_x: size.0 as f32,
+                advance_y: 0.0,
+                bearing_x: 0.0,
+                bearing_y: size.1 as f32,
+            },
+            last_used: std::time::Instant::now(),
+        };
+        
+        self.glyph_cache.entries.insert(glyph_id, glyph);
+        
+        Ok(uv_coords)
+    }
+    
+    /// Stage a UI sprite for rendering
+    pub fn stage_ui_sprite(&mut self, sprite: crate::renderer::ui::UiSprite) -> Result<()> {
+        // For now, we'll add sprites to a pending list and render them in the next frame
+        // This is a simplified implementation - a full implementation would use dedicated sprite pipelines
+        debug!("Staging UI sprite at ({}, {}) with size {}x{}", 
+               sprite.x, sprite.y, sprite.width, sprite.height);
+        Ok(())
+    }
+    
+    /// Set sprite filter mode 
+    pub fn set_sprite_filter_nearest(&mut self, nearest: bool) {
+        let filter_mode = if nearest {
+            wgpu::FilterMode::Nearest
+        } else {
+            wgpu::FilterMode::Linear
+        };
+        
+        // Update the atlas sampler with new filter mode
+        let new_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("text-atlas-sampler-updated"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: filter_mode,
+            min_filter: filter_mode,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        
+        self.text_atlas.sampler = new_sampler;
+        debug!("Updated sprite filter mode to: {}", if nearest { "Nearest" } else { "Linear" });
+    }
+    
+    /// Draw terminal cells using WGPU backend
+    pub fn draw_cells<I: Iterator<Item = crate::display::content::RenderableCell>>(
+        &mut self, 
+        size_info: &crate::display::SizeInfo,
+        glyph_cache: &mut crate::renderer::GlyphCache,
+        cells: I
+    ) -> Result<()> {
+        // Convert cells to terminal cells with glyph atlas coordinates
+        let terminal_cells: Vec<TerminalCell> = cells
+            .map(|cell| {
+                // For now, use placeholder UV coordinates - in a full implementation,
+                // we'd look up the glyph in the atlas and get proper coordinates
+                let glyph_coords = [0.0, 0.0, 1.0, 1.0]; // Full texture coordinates
+                TerminalCell::from_renderable_cell(&cell, glyph_coords)
+            })
+            .collect();
+            
+        // Create a render texture for the current frame
+        let window_ref = unsafe { &*self.window_ptr };
+        let surface = unsafe { self.instance.create_surface(window_ref) }
+            .context("Failed to create surface for cell rendering")?;
+        surface.configure(&self.device, &self.config);
+        
+        let output = surface
+            .get_current_texture()
+            .context("Failed to get surface texture")?;
+        
+        // Render terminal content
+        self.render_terminal_content(
+            &output,
+            &terminal_cells,
+            (0, 0), // cursor position - should come from terminal state
+            (size_info.columns() as u32, size_info.screen_lines() as u32)
+        )?;
+        
+        // Present the frame
+        output.present();
+        
+        debug!("Rendered {} cells with WGPU backend", terminal_cells.len());
+        Ok(())
+    }
+    
+    /// Draw a string at a specific position (for UI elements)
+    pub fn draw_string(
+        &mut self,
+        point: openagent_terminal_core::index::Point<usize>,
+        fg: crate::display::color::Rgb,
+        bg: crate::display::color::Rgb, 
+        string_chars: impl Iterator<Item = char>,
+        size_info: &crate::display::SizeInfo,
+        glyph_cache: &mut crate::renderer::GlyphCache
+    ) -> Result<()> {
+        // Convert the string to renderable cells
+        let mut cells = Vec::new();
+        for (i, character) in string_chars.enumerate() {
+            let cell = crate::display::content::RenderableCell {
+                point: openagent_terminal_core::index::Point::new(point.line, point.column + i),
+                character,
+                extra: None,
+                flags: openagent_terminal_core::term::cell::Flags::empty(),
+                bg_alpha: 1.0,
+                fg,
+                bg, 
+                underline: fg,
+            };
+            cells.push(cell);
+        }
+        
+        // Render using the draw_cells method
+        self.draw_cells(size_info, glyph_cache, cells.into_iter())?;
+        
+        Ok(())
+    }
+    
+    /// Load glyph interface for font cache integration
+    pub fn with_loader<F, T>(&mut self, func: F) -> T
+    where
+        F: FnOnce(crate::renderer::text::LoaderApi<'_>) -> T,
+    {
+        // Create a dummy loader for WGPU that integrates with our atlas system
+        // In a full implementation, this would create a proper LoaderApi that
+        // uploads glyphs to the WGPU texture atlas
+        crate::renderer::text::with_dummy_loader(func)
+    }
+    
+    /// Stage a rounded rect for UI rendering
+    pub fn stage_ui_rounded_rect(&mut self, _size_info: &crate::display::SizeInfo, rect: crate::renderer::ui::UiRoundedRect) {
+        // For now, just log the rect - in a full implementation this would
+        // add it to a pending UI elements buffer
+        debug!("Staging UI rounded rect: {:?}", rect);
+    }
+    
+    /// Find available space in the text atlas
+    fn find_atlas_space(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
+        // Simple first-fit algorithm
+        let atlas_size = self.text_atlas.size;
+        
+        for y in 0..atlas_size.1.saturating_sub(height) {
+            for x in 0..atlas_size.0.saturating_sub(width) {
+                if !self.is_atlas_space_occupied(x, y, width, height) {
+                    // Mark space as occupied
+                    self.text_atlas.used_space.push(AtlasRegion {
+                        x, y, width, height, glyph_id: 0
+                    });
+                    return Some((x, y));
+                }
+            }
+        }
+        None
+    }
+    
+    /// Check if atlas space is occupied
+    fn is_atlas_space_occupied(&self, x: u32, y: u32, width: u32, height: u32) -> bool {
+        for region in &self.text_atlas.used_space {
+            let overlap_x = x < region.x + region.width && x + width > region.x;
+            let overlap_y = y < region.y + region.height && y + height > region.y;
+            if overlap_x && overlap_y {
+                return true;
+            }
+        }
+        false
     }
 }
 

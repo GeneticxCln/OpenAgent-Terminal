@@ -11,9 +11,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use wasmtime::*;
-use wasmtime_wasi::preview1::Wasi;
-use wasmtime_wasi::preview1::WasiCtxBuilder;
-use cap_std::fs::Dir;
+use wasmtime_wasi::preview1::WasiP1Ctx;
+use wasmtime_wasi::p2::WasiCtxBuilder;
+use wasmtime_wasi::{DirPerms, FilePerms};
 
 /// Enhanced plugin manifest structure for TOML parsing
 #[derive(serde::Deserialize)]
@@ -105,7 +105,7 @@ pub struct LoadedPlugin {
 /// Plugin context stored in WASM store
 struct PluginContext {
     #[allow(dead_code)]
-    wasi: Wasi,
+    wasi: WasiP1Ctx,
     #[allow(dead_code)]
     permissions: PluginPermissions,
     resource_tracker: ResourceTracker,
@@ -279,7 +279,7 @@ impl PluginManager {
         let mut linker = Linker::new(&self.engine);
 
         // Add WASI functions to the linker
-        wasmtime_wasi::preview1::add_to_linker(&mut linker, |ctx: &mut PluginContext| &mut ctx.wasi)
+        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |ctx: &mut PluginContext| &mut ctx.wasi)
             .map_err(|e| {
                 PluginError::InitializationFailed(format!("Failed to add WASI to linker: {}", e))
             })?;
@@ -296,7 +296,7 @@ impl PluginManager {
         let exports = self.get_plugin_exports(&instance, &mut store)?;
 
         // Initialize the plugin
-        if let Some(init) = exports.init {
+        if let Some(ref init) = exports.init {
             // Set a small epoch deadline to cap CPU time for initialization.
             // If the call exceeds the deadline, it will trap.
             store.set_epoch_deadline(CPU_INIT_TICKS);
@@ -420,26 +420,38 @@ impl PluginManager {
         }
 
         // Always preopen the plugin directory as the sandbox root
-        if let Ok(dir) = Dir::open_ambient_dir(&self.plugin_dir, cap_std::ambient_authority())
-        {
-            let _ = wasi_builder.preopened_dir(dir, &self.plugin_dir);
+        if let Err(e) = wasi_builder.preopened_dir(
+            &self.plugin_dir,
+            ".",
+            DirPerms::all(),
+            FilePerms::all()
+        ) {
+            debug!("Failed to preopen plugin directory: {}", e);
         }
 
         // Add file system access limited to subdirectories inside plugin_dir.
         for pattern in permissions.read_files.iter().chain(permissions.write_files.iter()) {
             if let Some(safe_path) = self.sanitize_plugin_path(pattern) {
-                if let Ok(dir) =
-                    Dir::open_ambient_dir(&safe_path, cap_std::ambient_authority())
-                {
-                    let _ = wasi_builder.preopened_dir(dir, &safe_path);
+                // Determine permissions based on whether this is read or write access
+                let is_write = permissions.write_files.contains(pattern);
+                let dir_perms = if is_write { DirPerms::all() } else { DirPerms::READ };
+                let file_perms = if is_write { FilePerms::all() } else { FilePerms::READ };
+                
+                if let Err(e) = wasi_builder.preopened_dir(
+                    &safe_path,
+                    pattern, // Use original pattern as guest path
+                    dir_perms,
+                    file_perms
+                ) {
+                    debug!("Failed to preopen path {}: {}", safe_path, e);
                 }
             } else {
                 debug!("Skipping unsafe preopen path: {}", pattern);
             }
         }
 
-        let wasi = Wasi::new(&self.engine, wasi_builder.build()?)
-            .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
+        // Build WASIp1 context from the WasiCtxBuilder
+        let wasi = wasi_builder.build_p1();
 
         let context =
             PluginContext { wasi, permissions, resource_tracker: ResourceTracker::default() };

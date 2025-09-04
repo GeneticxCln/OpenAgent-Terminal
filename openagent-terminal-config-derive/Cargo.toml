@@ -23,6 +23,6 @@ path = "../openagent-terminal-config"
 version = "0.2.3-dev"
 
 [dev-dependencies]
-log = "0.4.11"
+tracing = { workspace = true }
 serde = { version = "1.0.117", features = ["derive"] }
 toml.workspace = true

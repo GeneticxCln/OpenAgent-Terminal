@@ -7,7 +7,7 @@ members = [
     "openagent-terminal-sync",
     "openagent-terminal-ai",
     "crates/plugin-api",
-    # "crates/plugin-loader", # Temporarily disabled due to wasmtime-wasi API changes
+    "crates/plugin-loader",
     "crates/plugin-sdk",
     "crates/workflow-engine",
     "plugins/git-context",
@@ -37,6 +37,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
 
 # Async runtime
 tokio = { version = "1.47", features = ["full"] }
@@ -61,7 +62,7 @@ sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # AI capabilities
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 async-openai = "0.25"
 
 # Plugin system
@@ -87,3 +88,6 @@ pprof = { version = "0.13", features = ["flamegraph"] }
 metrics = "0.21"
 metrics-exporter-prometheus = "0.13"
 crossfont = "0.8.0"
+
+# Synchronization
+parking_lot = "0.12"

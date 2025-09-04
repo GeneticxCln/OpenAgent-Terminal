@@ -99,6 +99,27 @@ jobs:
       - name: cargo-audit
         run: cargo audit -D warnings
 
+  typescript:
+    name: TypeScript development tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run type-check
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm run test
+
   shellcheck:
     name: Shellcheck (shell-integration and scripts)
     runs-on: ubuntu-latest
@@ -218,9 +239,9 @@ jobs:
           set -euo pipefail
           OUT_JSON=$(xvfb-run -a cargo run -p openagent-terminal -F wgpu --release --example wgpu_snapshot)
           echo "$OUT_JSON"
-          OUT_PATH=$(echo "$OUT_JSON" | sed -n 's/.*"output":"\([^"]*\)".*/\1/p')
-          WIDTH=$(echo "$OUT_JSON" | sed -n 's/.*"width":\([0-9]\+\).*/\1/p')
-          HEIGHT=$(echo "$OUT_JSON" | sed -n 's/.*"height":\([0-9]\+\).*/\1/p')
+          OUT_PATH=$(echo "$OUT_JSON" | sed -n 's/.*\"output\":\"\([^\"]*\)\".*/\1/p')
+          WIDTH=$(echo "$OUT_JSON" | sed -n 's/.*\"width\":\([0-9]\+\).*/\1/p')
+          HEIGHT=$(echo "$OUT_JSON" | sed -n 's/.*\"height\":\([0-9]\+\).*/\1/p')
           test -f "$OUT_PATH"
           test "$WIDTH" = "256" && test "$HEIGHT" = "128"
       - name: Upload WGPU offscreen artifact
@@ -228,3 +249,26 @@ jobs:
         with:
           name: wgpu-offscreen
           path: tests/snapshot_output/wgpu_offscreen.png
+
+  coverage:
+    name: Coverage (llvm-cov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: llvm-tools-preview
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Generate coverage (exclude GUI crate)
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --workspace --exclude openagent-terminal --lcov --output-path lcov.info
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info

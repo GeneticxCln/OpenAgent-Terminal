@@ -907,18 +907,101 @@ impl ApplicationHandler<Event> for Processor {
                     );
                 }
             },
-            // Warp autosave event
-            (
-                EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave),
-                Some(window_id),
-            ) => {
+            // Warp UI update events
+            (EventType::WarpUiUpdate(update_type), Some(window_id)) => {
+                use crate::workspace::WarpUiUpdateType;
+                
                 if let Some(window_context) = self.windows.get_mut(window_id) {
-                    if let Some(warp) = &mut window_context.workspace.warp {
-                        // Save if activity window elapsed or unconditionally (cheap)
-                        if warp.should_auto_save() {
-                            let _ = warp
-                                .execute_warp_action(&crate::workspace::WarpAction::SaveSession);
-                        }
+                    match update_type {
+                        // Autosave session event
+                        WarpUiUpdateType::SessionAutoSave => {
+                            if let Some(warp) = &mut window_context.workspace.warp {
+                                if warp.should_auto_save() {
+                                    let _ = warp.execute_warp_action(&crate::workspace::WarpAction::SaveSession);
+                                }
+                            }
+                        },
+                        
+                        // Tab-related events
+                        WarpUiUpdateType::TabCreated(_tab_id) => {
+                            // Tab created - trigger UI redraw
+                            info!("Warp tab created");
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::TabClosed(_tab_id) => {
+                            // Tab closed - trigger UI redraw
+                            info!("Warp tab closed");
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::TabSwitched { tab_id: _ } => {
+                            // Tab switched - update UI state
+                            info!("Warp tab switched");
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        // Pane-related events
+                        WarpUiUpdateType::PaneSplit { tab_id: _, new_pane_id: _ } => {
+                            // Pane split - major layout change
+                            info!("Warp pane split created");
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::PaneFocused { tab_id: _, pane_id: _ } => {
+                            // Pane focused - update focus indicators
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::PaneResized { tab_id: _, pane_id: _ } => {
+                            // Pane resized - layout change
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::PaneZoomed { tab_id: _, pane_id: _, zoomed } => {
+                            // Pane zoom toggled - major layout change
+                            info!("Warp pane zoom toggled: {}", zoomed);
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::PaneClosed { tab_id: _, closed_pane_id: _, new_active_pane_id: _ } => {
+                            // Pane closed - layout and focus change
+                            info!("Warp pane closed");
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
+                        
+                        WarpUiUpdateType::SplitsEqualized { tab_id: _ } => {
+                            // Splits equalized - layout change
+                            info!("Warp splits equalized");
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        },
                     }
                 }
             },

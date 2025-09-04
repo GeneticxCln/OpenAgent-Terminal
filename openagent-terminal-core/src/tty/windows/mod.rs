@@ -12,9 +12,11 @@ use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Options, Shell};
 mod blocking;
 mod child;
 mod conpty;
+mod pty_lifecycle;
 
 use blocking::{UnblockedReader, UnblockedWriter};
 use conpty::Conpty as Backend;
+use pty_lifecycle::SafePty;
 use miow::pipe::{AnonRead, AnonWrite};
 use polling::{Event, Poller};
 
@@ -25,12 +27,9 @@ type ReadPipe = UnblockedReader<AnonRead>;
 type WritePipe = UnblockedWriter<AnonWrite>;
 
 pub struct Pty {
-    // XXX: Backend is required to be the first field, to ensure correct drop order. Dropping
-    // `conout` before `backend` will cause a deadlock (with Conpty).
-    backend: Backend,
-    conout: ReadPipe,
-    conin: WritePipe,
-    child_watcher: ChildExitWatcher,
+    // Using SafePty which enforces correct drop order through the type system
+    // This eliminates the manual drop order requirement and prevents ConPTY deadlocks
+    safe_pty: SafePty,
 }
 
 pub fn new(config: &Options, window_size: WindowSize, _window_id: u64) -> Result<Pty> {
@@ -44,11 +43,17 @@ impl Pty {
         conin: impl Into<WritePipe>,
         child_watcher: ChildExitWatcher,
     ) -> Self {
-        Self { backend: backend.into(), conout: conout.into(), conin: conin.into(), child_watcher }
+        let safe_pty = SafePty::new(
+            backend.into(),
+            conout.into(),
+            conin.into(),
+            child_watcher,
+        );
+        Self { safe_pty }
     }
 
     pub fn child_watcher(&self) -> &ChildExitWatcher {
-        &self.child_watcher
+        self.safe_pty.child_watcher()
     }
 }
 
@@ -68,9 +73,13 @@ impl EventedReadWrite for Pty {
         interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.conin.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.child_watcher.register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
+        if let Some(conin) = self.safe_pty.writer() {
+            conin.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        }
+        if let Some(conout) = self.safe_pty.reader() {
+            conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        }
+        self.safe_pty.child_watcher().register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
     }
@@ -82,36 +91,44 @@ impl EventedReadWrite for Pty {
         interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.conin.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.child_watcher.register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
+        if let Some(conin) = self.safe_pty.writer() {
+            conin.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        }
+        if let Some(conout) = self.safe_pty.reader() {
+            conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        }
+        self.safe_pty.child_watcher().register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
     }
 
     #[inline]
     fn deregister(&mut self, _poll: &Arc<Poller>) -> io::Result<()> {
-        self.conin.deregister();
-        self.conout.deregister();
-        self.child_watcher.deregister();
+        if let Some(conin) = self.safe_pty.writer() {
+            conin.deregister();
+        }
+        if let Some(conout) = self.safe_pty.reader() {
+            conout.deregister();
+        }
+        self.safe_pty.child_watcher().deregister();
 
         Ok(())
     }
 
     #[inline]
     fn reader(&mut self) -> &mut Self::Reader {
-        &mut self.conout
+        self.safe_pty.reader().expect("PTY should be active during normal operations")
     }
 
     #[inline]
     fn writer(&mut self) -> &mut Self::Writer {
-        &mut self.conin
+        self.safe_pty.writer().expect("PTY should be active during normal operations")
     }
 }
 
 impl EventedPty for Pty {
     fn next_child_event(&mut self) -> Option<ChildEvent> {
-        match self.child_watcher.event_rx().try_recv() {
+        match self.safe_pty.child_watcher().event_rx().try_recv() {
             Ok(ev) => Some(ev),
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => Some(ChildEvent::Exited(None)),
@@ -121,7 +138,9 @@ impl EventedPty for Pty {
 
 impl OnResize for Pty {
     fn on_resize(&mut self, window_size: WindowSize) {
-        self.backend.on_resize(window_size)
+        if let Some(backend) = self.safe_pty.backend_mut() {
+            backend.on_resize(window_size)
+        }
     }
 }
 

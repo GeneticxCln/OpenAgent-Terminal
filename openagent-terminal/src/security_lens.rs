@@ -493,6 +493,67 @@ impl SecurityLens {
                 },
                 RiskLevel::Warning,
             ),
+            // === WARP-SPECIFIC PATTERNS ===
+            // Warning: Terminal multiplexer session killing
+            (
+                Regex::new(r"(tmux|screen)\s+kill-(session|server)").unwrap(),
+                RiskFactor {
+                    category: "terminal_session_kill".to_string(),
+                    description: "Killing terminal multiplexer sessions may lose work".to_string(),
+                    pattern: "tmux/screen kill".to_string(),
+                },
+                RiskLevel::Caution,
+            ),
+            // Caution: History manipulation
+            (
+                Regex::new(r"history\s+(-c|--clear)|>\s*\$HISTFILE|export\s+HISTFILE=/dev/null").unwrap(),
+                RiskFactor {
+                    category: "history_manipulation".to_string(),
+                    description: "Modifying or clearing command history".to_string(),
+                    pattern: "history manipulation".to_string(),
+                },
+                RiskLevel::Caution,
+            ),
+            // Warning: AI/LLM prompt injection attempts
+            (
+                Regex::new(r"(echo|cat|printf).*('|\"|`).*\\n.*system\s*\(|exec\s*\(|eval\s*\(").unwrap(),
+                RiskFactor {
+                    category: "ai_prompt_injection".to_string(),
+                    description: "Potential AI/LLM prompt injection pattern".to_string(),
+                    pattern: "prompt injection".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Caution: Terminal escape sequences (potential terminal manipulation)
+            (
+                Regex::new(r"\\e\[[0-9;]*[mK]|\\033\[[0-9;]*[mK]|printf\s+.*\\e\[").unwrap(),
+                RiskFactor {
+                    category: "terminal_escape_sequences".to_string(),
+                    description: "Terminal escape sequences that may manipulate display".to_string(),
+                    pattern: "terminal escapes".to_string(),
+                },
+                RiskLevel::Caution,
+            ),
+            // Warning: Process monitoring/spying
+            (
+                Regex::new(r"(strace|ltrace|gdb)\s+(-p|--pid)|ps\s+.*axw|lsof\s+(-p|\+D)").unwrap(),
+                RiskFactor {
+                    category: "process_monitoring".to_string(),
+                    description: "Process monitoring/debugging that may expose sensitive data".to_string(),
+                    pattern: "process monitoring".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Warning: Memory dumping
+            (
+                Regex::new(r"(gcore|pmap)\s+\d+|cat\s+/proc/\d+/(maps|mem)|dd\s+if=/dev/mem").unwrap(),
+                RiskFactor {
+                    category: "memory_dumping".to_string(),
+                    description: "Memory dumping operations that may expose sensitive data".to_string(),
+                    pattern: "memory dump".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
             // Warning: Terraform force unlock
             (
                 Regex::new(r"(?i)terraform\s+force-unlock").unwrap(),
@@ -1045,6 +1106,32 @@ impl SecurityLens {
                     mitigations.push("Use virtual environments or user-local installs".to_string());
                     mitigations.push("Review package dependencies before installing".to_string());
                 },
+                
+                // Warp-specific mitigations
+                "terminal_session_kill" => {
+                    mitigations.push("Save your work before killing sessions".to_string());
+                    mitigations.push("Consider detaching rather than killing".to_string());
+                },
+                "history_manipulation" => {
+                    mitigations.push("Consider if history clearing is necessary".to_string());
+                    mitigations.push("Use private shell sessions for sensitive commands".to_string());
+                },
+                "ai_prompt_injection" => {
+                    mitigations.push("Review command for potential AI prompt manipulation".to_string());
+                    mitigations.push("Avoid executing untrusted AI-generated commands".to_string());
+                },
+                "terminal_escape_sequences" => {
+                    mitigations.push("Verify escape sequences are intended".to_string());
+                    mitigations.push("Test in safe environment first".to_string());
+                },
+                "process_monitoring" => {
+                    mitigations.push("Ensure you have permission to monitor processes".to_string());
+                    mitigations.push("Be aware this may expose sensitive information".to_string());
+                },
+                "memory_dumping" => {
+                    mitigations.push("Ensure this is authorized security analysis".to_string());
+                    mitigations.push("Handle memory dumps securely".to_string());
+                },
                 "package_untrusted_source" => {
                     mitigations.push("Verify package sources and signatures".to_string());
                     mitigations.push("Use official package repositories when possible".to_string());
@@ -1490,6 +1577,118 @@ impl SecurityLens {
         }
 
         output
+    }
+    
+    /// Analyze command with Warp-specific context awareness
+    pub fn analyze_command_with_context(
+        &mut self, 
+        command: &str, 
+        context: Option<&openagent_terminal_core::tty::pty_manager::PtyAiContext>
+    ) -> CommandRisk {
+        let mut risk = self.analyze_command(command);
+        
+        // Enhance risk analysis with context
+        if let Some(ctx) = context {
+            self.enhance_risk_with_context(&mut risk, command, ctx);
+        }
+        
+        risk
+    }
+    
+    /// Enhance risk analysis with PTY context
+    fn enhance_risk_with_context(
+        &self,
+        risk: &mut CommandRisk,
+        command: &str,
+        context: &openagent_terminal_core::tty::pty_manager::PtyAiContext
+    ) {
+        let working_dir = &context.working_directory;
+        let shell_kind = context.shell_kind;
+        
+        // Add context-aware risk factors
+        let mut additional_factors = Vec::new();
+        
+        // Risk in sensitive directories
+        if working_dir.starts_with("/etc") || 
+           working_dir.starts_with("/boot") ||
+           working_dir.starts_with("/sys") {
+            if command.contains("rm") || command.contains("mv") || command.contains("cp") {
+                additional_factors.push(RiskFactor {
+                    category: "context_sensitive_directory".to_string(),
+                    description: format!("Executing file operations in sensitive directory: {}", 
+                                       working_dir.display()),
+                    pattern: "sensitive directory operations".to_string(),
+                });
+            }
+        }
+        
+        // Shell-specific risks
+        use openagent_terminal_core::tty::pty_manager::ShellKind;
+        match shell_kind {
+            ShellKind::PowerShell => {
+                if command.contains("Invoke-Expression") || command.contains("IEX") {
+                    additional_factors.push(RiskFactor {
+                        category: "powershell_invoke_expression".to_string(),
+                        description: "PowerShell Invoke-Expression can execute arbitrary code".to_string(),
+                        pattern: "Invoke-Expression".to_string(),
+                    });
+                }
+            },
+            ShellKind::Fish => {
+                if command.contains("eval") {
+                    additional_factors.push(RiskFactor {
+                        category: "fish_eval".to_string(),
+                        description: "Fish eval can execute dynamically generated commands".to_string(),
+                        pattern: "fish eval".to_string(),
+                    });
+                }
+            },
+            _ => {}
+        }
+        
+        // Root directory operations are always high risk
+        if working_dir == std::path::Path::new("/") && 
+           (command.contains("rm") || command.contains("chmod") || command.contains("chown")) {
+            additional_factors.push(RiskFactor {
+                category: "root_directory_operations".to_string(),
+                description: "File operations in root directory".to_string(),
+                pattern: "root directory ops".to_string(),
+            });
+        }
+        
+        // Add additional factors to the risk
+        if !additional_factors.is_empty() {
+            risk.factors.extend(additional_factors);
+            
+            // Potentially upgrade risk level
+            let context_risk = if working_dir.starts_with("/etc") || working_dir == std::path::Path::new("/") {
+                RiskLevel::Warning
+            } else {
+                RiskLevel::Caution
+            };
+            
+            if self.risk_level_value(&context_risk) > self.risk_level_value(&risk.level) {
+                risk.level = context_risk;
+                risk.explanation = format!("{} Additionally, command context increases risk due to working directory.", 
+                                         risk.explanation);
+            }
+        }
+    }
+    
+    /// Quick risk assessment for Warp AI suggestions
+    pub fn quick_assess_ai_suggestion(&mut self, suggestion: &str) -> bool {
+        let risk = self.analyze_command(suggestion);
+        matches!(risk.level, RiskLevel::Safe | RiskLevel::Caution)
+    }
+    
+    /// Check if command should be blocked by policy
+    pub fn should_block_command(&mut self, command: &str) -> bool {
+        if !self.policy.enabled {
+            return false;
+        }
+        
+        let risk = self.analyze_command(command);
+        self.policy.block_critical && matches!(risk.level, RiskLevel::Critical)
     }
 }
 

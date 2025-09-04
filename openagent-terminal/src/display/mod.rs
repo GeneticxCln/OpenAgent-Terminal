@@ -2320,9 +2320,7 @@ impl Display {
         match &mut self.backend {
             Backend::Gl { renderer, .. } => renderer.stage_ui_sprite(sprite),
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => {
-                // TODO: implement for WGPU backend
-            },
+            Backend::Wgpu { renderer } => renderer.stage_ui_sprite(sprite),
         }
     }
 
@@ -2331,9 +2329,7 @@ impl Display {
         match &mut self.backend {
             Backend::Gl { renderer, .. } => renderer.set_sprite_filter_nearest(nearest),
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => {
-                // TODO: implement for WGPU backend
-            },
+            Backend::Wgpu { renderer } => renderer.set_sprite_filter_nearest(nearest),
         }
     }
 

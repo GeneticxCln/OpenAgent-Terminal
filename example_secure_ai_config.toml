@@ -1,0 +1,79 @@
+# OpenAgent Terminal - Secure AI Provider Configuration
+# This example shows the recommended secure approach for configuring AI providers
+# without environment variable pollution or credential leakage.
+
+[ai]
+enabled = true
+# Choose your primary provider
+provider = "openai"
+panel_height_fraction = 0.40
+backdrop_alpha = 0.25
+shadow = true
+shadow_size_px = 8
+shadow_alpha = 0.35
+rounded_corners = true
+corner_radius_px = 12.0
+log_verbosity = "summary"
+scratch_autosave = true
+propose_max_commands = 10
+never_auto_run = true
+inline_suggestions = false
+trigger_key = "Ctrl+Shift+A"
+auto_focus = true
+animated_typing = true
+animation_speed = 1.0
+
+# Secure provider-specific configurations
+# Each provider gets isolated environment variables to prevent credential leakage
+
+[ai.providers.openai]
+api_key_env = "OPENAGENT_OPENAI_API_KEY"
+model_env = "OPENAGENT_OPENAI_MODEL"
+endpoint_env = "OPENAGENT_OPENAI_ENDPOINT"
+default_endpoint = "https://api.openai.com/v1"
+default_model = "gpt-3.5-turbo"
+
+[ai.providers.anthropic]
+api_key_env = "OPENAGENT_ANTHROPIC_API_KEY"
+model_env = "OPENAGENT_ANTHROPIC_MODEL"
+endpoint_env = "OPENAGENT_ANTHROPIC_ENDPOINT"
+default_endpoint = "https://api.anthropic.com/v1"
+default_model = "claude-3-haiku-20240307"
+
+[ai.providers.ollama]
+# Ollama typically doesn't require API keys (local deployment)
+endpoint_env = "OPENAGENT_OLLAMA_ENDPOINT"
+model_env = "OPENAGENT_OLLAMA_MODEL"
+default_endpoint = "http://localhost:11434"
+default_model = "codellama"
+
+# Example: Custom OpenAI-compatible provider
+[ai.providers.custom]
+api_key_env = "OPENAGENT_CUSTOM_API_KEY"
+model_env = "OPENAGENT_CUSTOM_MODEL"
+endpoint_env = "OPENAGENT_CUSTOM_ENDPOINT"
+default_endpoint = "https://your-custom-api.com/v1"
+default_model = "your-custom-model"
+
+# Environment variable setup for secure configuration:
+#
+# For OpenAI:
+# export OPENAGENT_OPENAI_API_KEY="sk-your-openai-key"
+# export OPENAGENT_OPENAI_MODEL="gpt-4"
+# export OPENAGENT_OPENAI_ENDPOINT="https://api.openai.com/v1"  # optional, uses default
+#
+# For Anthropic:
+# export OPENAGENT_ANTHROPIC_API_KEY="sk-ant-your-anthropic-key"
+# export OPENAGENT_ANTHROPIC_MODEL="claude-3-sonnet-20240229"
+# export OPENAGENT_ANTHROPIC_ENDPOINT="https://api.anthropic.com"  # optional, uses default
+#
+# For Ollama (local):
+# export OPENAGENT_OLLAMA_ENDPOINT="http://localhost:11434"  # optional, uses default
+# export OPENAGENT_OLLAMA_MODEL="codellama"
+#
+# Security benefits:
+# - No cross-provider credential pollution
+# - Clear separation of provider configurations
+# - Support for multiple providers simultaneously
+# - No global environment variable mutation
+# - Auditability and traceability of credential usage
