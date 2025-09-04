@@ -58,4 +58,3 @@ allow-registry = [
 # If you need to allow git dependencies, list them explicitly here.
 allow-git = [
 ]
-

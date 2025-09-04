@@ -28,4 +28,3 @@ Principles
 - Zero default telemetry. No background network requests when disabled.
 - Secrets must only be supplied via environment variables. Do not put secrets in config files.
 - The feature can be entirely disabled at build time and at runtime.
-

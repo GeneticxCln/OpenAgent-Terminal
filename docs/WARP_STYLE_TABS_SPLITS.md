@@ -139,7 +139,7 @@ key = \"d\"
 mods = \"Control|Shift\"
 action = \"SplitHorizontal\"
 
-[[keyboard.bindings]] 
+[[keyboard.bindings]]
 key = \"v\"
 mods = \"Control|Shift\"
 action = \"SplitVertical\"
@@ -177,7 +177,7 @@ cd /home/user/my-project
 # 2. Split right for running tests
 # Press Ctrl+D -> creates new pane on right
 
-# 3. Navigate to test pane and run tests  
+# 3. Navigate to test pane and run tests
 # Press Ctrl+Alt+→ to focus right pane
 cargo test
 
@@ -206,7 +206,7 @@ The Warp-style functionality is implemented through several key components:
    - Session persistence and restoration
    - Command history tracking
 
-2. **WarpSplitManager** (`workspace/warp_split_manager.rs`) 
+2. **WarpSplitManager** (`workspace/warp_split_manager.rs`)
    - Intelligent pane navigation algorithms
    - Focus history and recent pane tracking
    - Zoom state management
@@ -229,7 +229,7 @@ Tabs are automatically named using the following priority:
    - Uses project name from configuration files
    - Falls back to directory name
 
-2. **Command-based naming**  
+2. **Command-based naming**
    - Updates title when commands are executed
    - Format: "command in directory" (e.g., "cargo build in my-project")
    - Tracks recent command history
@@ -242,7 +242,7 @@ Tabs are automatically named using the following priority:
 
 Session data includes:
 - Tab order and active tab
-- Split layouts for each tab  
+- Split layouts for each tab
 - Working directories and command history
 - Pane focus states and zoom status
 - Creation timestamps and metadata
@@ -306,7 +306,7 @@ Planned improvements include:
 
 - **Pane swapping** with drag & drop
 - **Tab reordering** by dragging
-- **Split layout templates** for common configurations  
+- **Split layout templates** for common configurations
 - **Cross-window tab moving**
 - **Enhanced session management** with multiple named sessions
 

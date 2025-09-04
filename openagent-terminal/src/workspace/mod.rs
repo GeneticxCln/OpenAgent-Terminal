@@ -275,10 +275,7 @@ impl WorkspaceManager {
 
     /// Check if the active tab is currently zoomed
     pub fn active_tab_zoomed(&self) -> bool {
-        self.tabs
-            .active_tab_id()
-            .map(|id| self.tabs.is_tab_zoomed(id))
-            .unwrap_or(false)
+        self.tabs.active_tab_id().map(|id| self.tabs.is_tab_zoomed(id)).unwrap_or(false)
     }
 
     /// Mark active tab as having last command error (non-zero exit)
@@ -306,7 +303,8 @@ impl WorkspaceManager {
         let mut h = si.height() - 2.0 * si.padding_y();
         if self.config.workspace.tab_bar.show
             && self.config.workspace.tab_bar.reserve_row
-            && self.config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
+            && self.config.workspace.tab_bar.position
+                != crate::config::workspace::TabBarPosition::Hidden
         {
             let ch = si.cell_height();
             match self.config.workspace.tab_bar.position {
@@ -375,7 +373,14 @@ mod tests {
     use crate::config::UiConfig;
     use crate::display::SizeInfo;
 
-    fn make_size_info(width: f32, height: f32, cell_w: f32, cell_h: f32, pad_x: f32, pad_y: f32) -> SizeInfo {
+    fn make_size_info(
+        width: f32,
+        height: f32,
+        cell_w: f32,
+        cell_h: f32,
+        pad_x: f32,
+        pad_y: f32,
+    ) -> SizeInfo {
         // dynamic_padding = false for predictable pixel math in tests
         SizeInfo::new(width, height, cell_w, cell_h, pad_x, pad_y, false)
     }

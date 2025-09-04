@@ -30,26 +30,26 @@ check_terminal_support() {
     if [ "$TERM_PROGRAM" = "openagent-terminal" ]; then
         return 0
     fi
-    
+
     # Check for other known compatible terminals
     case "$TERM_PROGRAM" in
         "vscode"|"iTerm.app"|"WezTerm")
             return 0
             ;;
     esac
-    
+
     # Check TERM variable
     case "$TERM" in
         *-256color|xterm-kitty|alacritty|wezterm)
             return 0
             ;;
     esac
-    
+
     # If force flag is set
     if [ -n "$OPENAGENT_FORCE_OSC133" ]; then
         return 0
     fi
-    
+
     return 1
 }
 
@@ -58,7 +58,7 @@ test_osc133() {
     echo "Testing OSC 133 sequences..."
     echo "The following should create visible command blocks in supported terminals:"
     echo
-    
+
     # Emit a test sequence
     printf '\e]133;A\a'
     printf 'test_prompt> '
@@ -68,7 +68,7 @@ test_osc133() {
     echo "Test command output"
     printf '\e]133;D;0\a'
     echo
-    
+
     echo "If you saw distinct command blocks above, OSC 133 is working!"
     echo "If not, your terminal may not support OSC 133 sequences."
 }
@@ -89,10 +89,10 @@ show_setup_instructions() {
     local shell_type="$1"
     local script_dir
     script_dir="$(cd "$(dirname "$0")" && pwd)"
-    
+
     echo "${BLUE}=== Setup Instructions for $shell_type ===${NC}"
     echo
-    
+
     case "$shell_type" in
         "bash")
             echo "Add this line to your ~/.bashrc:"
@@ -135,11 +135,11 @@ main() {
     echo "${BLUE}OpenAgent Terminal Shell Integration Detector${NC}"
     echo "=================================================="
     echo
-    
+
     # Detect current shell
     current_shell=$(detect_shell)
     echo "${BLUE}Detected shell:${NC} $current_shell"
-    
+
     # Check terminal support
     if check_terminal_support; then
         echo "${GREEN}✓${NC} Terminal supports OSC 133 sequences"
@@ -151,17 +151,17 @@ main() {
         echo "You can force enable OSC 133 by setting:"
         echo "${YELLOW}export OPENAGENT_FORCE_OSC133=1${NC}"
     fi
-    
+
     echo
-    
+
     # Check integration status
     check_integration_status
     echo
-    
+
     # Show setup instructions
     show_setup_instructions "$current_shell"
     echo
-    
+
     # Offer to test OSC 133
     echo "${BLUE}Commands available after setup:${NC}"
     case "$current_shell" in
@@ -176,7 +176,7 @@ main() {
             ;;
     esac
     echo
-    
+
     # Test if we can run a basic test
     if [ "$1" = "--test" ]; then
         echo "${BLUE}Running OSC 133 test...${NC}"

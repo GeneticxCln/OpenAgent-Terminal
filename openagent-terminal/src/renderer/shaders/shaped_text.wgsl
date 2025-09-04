@@ -33,23 +33,23 @@ struct VertexOutput {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    
+
     // Apply glyph offset for proper shaping positioning
     let adjusted_pos = input.position + input.glyph_offset;
-    
+
     // Transform to normalized device coordinates
     let ndc = vec2<f32>(
         proj.offset_x + adjusted_pos.x * proj.scale_x,
         proj.offset_y + adjusted_pos.y * proj.scale_y
     );
-    
+
     out.clip_position = vec4<f32>(ndc, 0.0, 1.0);
     out.uv = input.uv;
     out.color = input.color;
     out.flags = input.flags;
     out.layer = input.layer;
     out.glyph_offset = input.glyph_offset;
-    
+
     return out;
 }
 
@@ -57,15 +57,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Sample the glyph texture
     let glyph_sample = textureSample(glyph_atlas, atlas_sampler, input.uv, i32(input.layer));
-    
+
     // Extract flags
     let is_colored = (input.flags & 1u) != 0u;
     let is_subpixel = (input.flags & 2u) != 0u;
     let is_emoji = (input.flags & 4u) != 0u;
     let is_ligature = (input.flags & 8u) != 0u;
-    
+
     var final_color: vec4<f32>;
-    
+
     if (is_colored) {
         // Colored glyphs (emojis, etc.) - use texture color directly
         final_color = glyph_sample;
@@ -83,10 +83,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             glyph_sample.a * input.color.a
         );
     }
-    
+
     // Apply gamma correction for better text appearance
     final_color.rgb = pow(final_color.rgb, vec3<f32>(1.0 / 2.2));
-    
+
     return final_color;
 }
 
@@ -94,23 +94,23 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 @vertex
 fn vs_outline(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    
+
     // Apply both glyph offset and outline offset
     let outline_offset = vec2<f32>(1.0, 1.0); // Could be uniform
     let adjusted_pos = input.position + input.glyph_offset + outline_offset;
-    
+
     let ndc = vec2<f32>(
         proj.offset_x + adjusted_pos.x * proj.scale_x,
         proj.offset_y + adjusted_pos.y * proj.scale_y
     );
-    
+
     out.clip_position = vec4<f32>(ndc, 0.0, 1.0);
     out.uv = input.uv;
     out.color = vec4<f32>(0.0, 0.0, 0.0, input.color.a * 0.5); // Semi-transparent black
     out.flags = input.flags;
     out.layer = input.layer;
     out.glyph_offset = input.glyph_offset;
-    
+
     return out;
 }
 
@@ -118,7 +118,7 @@ fn vs_outline(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_outline(input: VertexOutput) -> @location(0) vec4<f32> {
     let glyph_sample = textureSample(glyph_atlas, atlas_sampler, input.uv, i32(input.layer));
-    
+
     // Simple outline effect
     return vec4<f32>(
         input.color.rgb,

@@ -15,24 +15,24 @@ OPENAGENT_INTEGRATION_LOADED=1
 _openagent_is_supported_terminal() {
     # Check for OpenAgent Terminal
     [[ "$TERM_PROGRAM" == "openagent-terminal" ]] && return 0
-    
+
     # Check for other terminals that support OSC 133
     case "$TERM_PROGRAM" in
         "vscode"|"iTerm.app"|"WezTerm")
             return 0
             ;;
     esac
-    
+
     # Check TERM variable for compatible terminals
     case "$TERM" in
         *-256color|xterm-kitty|alacritty|wezterm)
             return 0
             ;;
     esac
-    
+
     # If OPENAGENT_FORCE_OSC133 is set, assume support
     [[ -n "$OPENAGENT_FORCE_OSC133" ]] && return 0
-    
+
     return 1
 }
 
@@ -43,7 +43,7 @@ fi
 
 # OSC 133 escape sequences
 _OPENAGENT_OSC133_A=$'\e]133;A\a'    # Prompt start
-_OPENAGENT_OSC133_B=$'\e]133;B\a'    # Prompt end / Command start  
+_OPENAGENT_OSC133_B=$'\e]133;B\a'    # Prompt end / Command start
 _OPENAGENT_OSC133_C=$'\e]133;C\a'    # Command end / Output start
 _OPENAGENT_OSC133_D=$'\e]133;D;%s\a' # Command end with exit code
 
@@ -60,7 +60,7 @@ _openagent_prompt_end() {
     printf '%s' "$_OPENAGENT_OSC133_B"
 }
 
-# Function to emit OSC 133;C (command end, output start) 
+# Function to emit OSC 133;C (command end, output start)
 _openagent_command_end() {
     printf '%s' "$_OPENAGENT_OSC133_C"
 }
@@ -104,7 +104,7 @@ if ! declare -F preexec >/dev/null; then
         _openagent_last_command="$command"
         _openagent_preexec "$command"
     }
-    
+
     # Only set up DEBUG trap if it's not already in use
     if [[ -z "$PROMPT_COMMAND" ]] || [[ "$PROMPT_COMMAND" != *"_openagent_debug_trap"* ]]; then
         trap '_openagent_debug_trap' DEBUG
@@ -161,16 +161,16 @@ openagent_disable_osc133() {
     # Remove from PROMPT_COMMAND
     PROMPT_COMMAND="${PROMPT_COMMAND//_openagent_precmd;/}"
     PROMPT_COMMAND="${PROMPT_COMMAND//_openagent_precmd/}"
-    
+
     # Remove DEBUG trap if we set it
     if [[ "$(trap -p DEBUG)" == *"_openagent_debug_trap"* ]]; then
         trap - DEBUG
     fi
-    
+
     # Clean PS1
     PS1="${PS1//$_OPENAGENT_OSC133_A/}"
     PS1="${PS1//$_OPENAGENT_OSC133_B/}"
-    
+
     echo "OpenAgent OSC 133 integration disabled for this session."
     echo "To permanently disable, remove or comment out the source line in your .bashrc"
 }

@@ -15,11 +15,11 @@ echo "✅ Rust/Cargo found"
 # Check if Ollama is installed and running
 if command -v ollama &> /dev/null; then
     echo "✅ Ollama is installed"
-    
+
     # Check if Ollama is running
     if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
         echo "✅ Ollama is running"
-        
+
         # Check for available models
         echo "📦 Available Ollama models:"
         ollama list 2>/dev/null | head -5 || echo "   No models found. Run: ollama pull codellama"
@@ -65,7 +65,7 @@ use openagent_terminal_ai::{create_provider, AiRequest};
 
 fn main() {
     println!("Testing AI provider...");
-    
+
     // Test with null provider
     match create_provider("null") {
         Ok(provider) => {
@@ -83,11 +83,11 @@ fn main() {
         }
         Err(e) => println!("❌ Failed to create null provider: {}", e),
     }
-    
+
     // Test with Ollama provider
     std::env::set_var("OLLAMA_ENDPOINT", "http://localhost:11434");
     std::env::set_var("OLLAMA_MODEL", "codellama");
-    
+
     match create_provider("ollama") {
         Ok(provider) => {
             println!("✅ Ollama provider created: {}", provider.name());

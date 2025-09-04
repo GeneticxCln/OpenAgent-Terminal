@@ -15,19 +15,19 @@ impl ShapingCache {
             cache: LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(1000).unwrap())),
         }
     }
-    
+
     pub fn get(&mut self, key: &str) -> Option<ShapedText> {
         self.cache.get(key).cloned()
     }
-    
+
     pub fn put(&mut self, key: String, value: ShapedText) {
         self.cache.put(key, value);
     }
-    
+
     pub fn clear(&mut self) {
         self.cache.clear();
     }
-    
+
     pub fn len(&self) -> usize {
         self.cache.len()
     }

@@ -17,4 +17,3 @@ opt-level = "s"  # Optimize for size
 lto = true
 debug = false
 panic = "abort"
-

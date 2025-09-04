@@ -35,7 +35,7 @@ This document outlines planned advanced features for OpenAgent Terminal, focusin
 #### Test Matrix and Profiling Infrastructure
 - **Priority**: Critical
 - **Components**:
-  
+
   **a) GPU Snapshot Testing**
   - Golden image comparisons for rendering accuracy
   - Visual regression detection

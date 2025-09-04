@@ -5,8 +5,8 @@
 //! them based on a config toggle. On macOS, the Command (Super) modifier is used; on other
 //! platforms, Control is used.
 
-use crate::config::{Action, BindingKey, BindingMode, KeyBinding};
 use crate::config::bindings::KeyLocation;
+use crate::config::{Action, BindingKey, BindingMode, KeyBinding};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 /// Create a KeyBinding for a character key.
@@ -92,13 +92,21 @@ fn build_warp_macos_bindings() -> Vec<KeyBinding> {
 /// Today we map Left/Up to Previous and Right/Down to Next. When true directional
 /// focus actions land in Action, switch these to directional variants.
 #[cfg(not(target_os = "macos"))]
-fn nav_action_left() -> Action { Action::FocusPreviousPane }
+fn nav_action_left() -> Action {
+    Action::FocusPreviousPane
+}
 #[cfg(not(target_os = "macos"))]
-fn nav_action_up() -> Action { Action::FocusPreviousPane }
+fn nav_action_up() -> Action {
+    Action::FocusPreviousPane
+}
 #[cfg(not(target_os = "macos"))]
-fn nav_action_right() -> Action { Action::FocusNextPane }
+fn nav_action_right() -> Action {
+    Action::FocusNextPane
+}
 #[cfg(not(target_os = "macos"))]
-fn nav_action_down() -> Action { Action::FocusNextPane }
+fn nav_action_down() -> Action {
+    Action::FocusNextPane
+}
 
 /// Build Warp-style keybindings for non-macOS platforms (Ctrl-based).
 #[cfg(not(target_os = "macos"))]
@@ -140,9 +148,13 @@ fn build_warp_non_macos_bindings(existing: &[KeyBinding]) -> (Vec<KeyBinding>, b
                     | BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. }
                     | BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. }
                     | BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. }
-            ) && matches!(
+            )
+            && matches!(
                 b.action,
-                Action::ResizePaneLeft | Action::ResizePaneRight | Action::ResizePaneUp | Action::ResizePaneDown
+                Action::ResizePaneLeft
+                    | Action::ResizePaneRight
+                    | Action::ResizePaneUp
+                    | Action::ResizePaneDown
             )
     });
 
@@ -184,28 +196,47 @@ pub fn integrate_warp_bindings(existing_bindings: &mut Vec<KeyBinding>) {
     #[cfg(target_os = "macos")]
     {
         let new_bindings = build_warp_macos_bindings();
-        for b in new_bindings { push_unique(existing_bindings, b); }
+        for b in new_bindings {
+            push_unique(existing_bindings, b);
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        let (new_bindings, strip_conflicting_resize) = build_warp_non_macos_bindings(existing_bindings);
+        let (new_bindings, strip_conflicting_resize) =
+            build_warp_non_macos_bindings(existing_bindings);
 
         if strip_conflicting_resize {
             // Remove default Ctrl+Alt+Arrow resize bindings to free them for navigation.
             let ctrl_alt = ModifiersState::CONTROL | ModifiersState::ALT;
             existing_bindings.retain(|b| {
-                if b.mods != ctrl_alt { return true; }
+                if b.mods != ctrl_alt {
+                    return true;
+                }
                 match (&b.trigger, &b.action) {
-                    (BindingKey::Keycode { key: Key::Named(NamedKey::ArrowLeft), .. }, Action::ResizePaneLeft)
-                    | (BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. }, Action::ResizePaneRight)
-                    | (BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. }, Action::ResizePaneUp)
-                    | (BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. }, Action::ResizePaneDown) => false,
+                    (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowLeft), .. },
+                        Action::ResizePaneLeft,
+                    )
+                    | (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. },
+                        Action::ResizePaneRight,
+                    )
+                    | (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. },
+                        Action::ResizePaneUp,
+                    )
+                    | (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. },
+                        Action::ResizePaneDown,
+                    ) => false,
                     _ => true,
                 }
             });
         }
 
-        for b in new_bindings { push_unique(existing_bindings, b); }
+        for b in new_bindings {
+            push_unique(existing_bindings, b);
+        }
     }
 }

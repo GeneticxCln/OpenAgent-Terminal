@@ -102,4 +102,4 @@ drwxr-xr-x  3 kchibisov kchibisov 4.0K Nov 13 20:02 winpty
 [?2004l[10H
 [?2004h[kchibisov@NightLord alacritty]$ echo -e "\p[K[K\e[[[K1-[K0M"
 [?2004l[10M
-[?2004h[kchibisov@NightLord alacritty]$ 
+[?2004h[kchibisov@NightLord alacritty]$

@@ -39,17 +39,17 @@ _openagent_check_frameworks() {
     if [ -n "$ZSH" ] && [ -d "$ZSH" ]; then
         export OPENAGENT_OMZ_DETECTED=1
     fi
-    
+
     # Starship detection
     if command -v starship >/dev/null 2>&1; then
         export OPENAGENT_STARSHIP_DETECTED=1
     fi
-    
+
     # Powerlevel10k detection
     if [ -n "$POWERLEVEL9K_VERSION" ]; then
         export OPENAGENT_P10K_DETECTED=1
     fi
-    
+
     # Prezto detection
     if [ -n "$PREZTO" ]; then
         export OPENAGENT_PREZTO_DETECTED=1
@@ -59,7 +59,7 @@ _openagent_check_frameworks() {
 # Load appropriate integration based on shell and environment
 _openagent_load_integration() {
     local shell_type="$1"
-    
+
     case "$shell_type" in
         "bash")
             # Source bash integration
@@ -107,7 +107,7 @@ _openagent_framework_adjustments() {
         # Starship handles prompts differently, minimal interference mode
         export OPENAGENT_MINIMAL_MODE=1
     fi
-    
+
     # Powerlevel10k compatibility
     if [ -n "$OPENAGENT_P10K_DETECTED" ]; then
         # P10K has complex prompt handling, be extra careful
@@ -122,17 +122,17 @@ _openagent_auto_setup() {
         *i*) ;;
         *) return 0 ;;
     esac
-    
+
     # Detect shell
     local shell_type
     shell_type="$(_openagent_detect_shell)"
-    
+
     # Check for known frameworks
     _openagent_check_frameworks
-    
+
     # Apply framework-specific adjustments
     _openagent_framework_adjustments
-    
+
     # Load appropriate integration
     if _openagent_load_integration "$shell_type"; then
         # Set up universal aliases available across all shells
@@ -148,7 +148,7 @@ _openagent_auto_setup() {
                 alias openagent-disable="openagent_disable_osc133"
                 ;;
         esac
-        
+
         # Success feedback (only in debug mode)
         if [ -n "$OPENAGENT_DEBUG" ]; then
             echo "OpenAgent Terminal auto-setup completed for $shell_type"

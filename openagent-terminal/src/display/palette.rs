@@ -38,7 +38,9 @@ impl PaletteState {
         }
     }
 
-    pub fn active(&self) -> bool { self.active }
+    pub fn active(&self) -> bool {
+        self.active
+    }
 
     pub fn open(&mut self, items: Vec<PaletteItem>) {
         self.items = items;
@@ -48,24 +50,46 @@ impl PaletteState {
         self.refilter();
     }
 
-    pub fn close(&mut self) { self.active = false; }
+    pub fn close(&mut self) {
+        self.active = false;
+    }
 
-    pub fn items(&self) -> &Vec<PaletteItem> { &self.items }
+    pub fn items(&self) -> &Vec<PaletteItem> {
+        &self.items
+    }
 
-    pub fn filter(&self) -> &str { &self.filter }
+    pub fn filter(&self) -> &str {
+        &self.filter
+    }
 
-    pub fn set_filter(&mut self, filter: String) { self.filter = filter; self.refilter(); }
+    pub fn set_filter(&mut self, filter: String) {
+        self.filter = filter;
+        self.refilter();
+    }
 
-    pub fn push_filter_char(&mut self, ch: char) { self.filter.push(ch); self.refilter(); }
+    pub fn push_filter_char(&mut self, ch: char) {
+        self.filter.push(ch);
+        self.refilter();
+    }
 
-    pub fn pop_filter_char(&mut self) { self.filter.pop(); self.refilter(); }
+    pub fn pop_filter_char(&mut self) {
+        self.filter.pop();
+        self.refilter();
+    }
 
     pub fn move_selection(&mut self, delta: isize) {
-        if self.filtered_indices.is_empty() { self.selected = 0; return; }
+        if self.filtered_indices.is_empty() {
+            self.selected = 0;
+            return;
+        }
         let len = self.filtered_indices.len() as isize;
         let mut idx = self.selected as isize + delta;
-        if idx < 0 { idx = 0; }
-        if idx >= len { idx = len - 1; }
+        if idx < 0 {
+            idx = 0;
+        }
+        if idx >= len {
+            idx = len - 1;
+        }
         self.selected = idx as usize;
     }
 
@@ -113,7 +137,8 @@ impl PaletteState {
 
     /// Returns (filter, selected_visible_index, visible_items)
     pub fn view(&self) -> (String, usize, Vec<PaletteItemView>) {
-        let visible = self.filtered_indices
+        let visible = self
+            .filtered_indices
             .iter()
             .filter_map(|&i| self.items.get(i))
             .map(|it| PaletteItemView { title: it.title.clone(), subtitle: it.subtitle.clone() })
@@ -164,22 +189,29 @@ impl PaletteState {
             ranked.push((i, base_score + mru_boost));
         }
         // Sort by score desc, then by title length asc for stability
-        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| {
-            let la = self.items[a.0].title.len();
-            let lb = self.items[b.0].title.len();
-            la.cmp(&lb)
-        }));
+        ranked.sort_by(|a, b| {
+            b.1.cmp(&a.1).then_with(|| {
+                let la = self.items[a.0].title.len();
+                let lb = self.items[b.0].title.len();
+                la.cmp(&lb)
+            })
+        });
         self.filtered_indices.clear();
         self.filtered_indices.extend(ranked.into_iter().map(|(i, _)| i));
-        if self.selected >= self.filtered_indices.len() { self.selected = self.filtered_indices.len().saturating_sub(1); }
+        if self.selected >= self.filtered_indices.len() {
+            self.selected = self.filtered_indices.len().saturating_sub(1);
+        }
     }
-
 }
 
 fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
     // Very small queries: prefer contains to avoid odd ranks
     if query.len() <= 1 {
-        if text.contains(query) { return Some(5); } else { return None; }
+        if text.contains(query) {
+            return Some(5);
+        } else {
+            return None;
+        }
     }
     // Subsequence match with bonuses
     let mut score: i32 = 0;
@@ -188,22 +220,33 @@ fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
     let tbytes = text.as_bytes();
     let mut last_match_pos: i32 = -10;
     for (i, &tb) in tbytes.iter().enumerate() {
-        if qi >= qbytes.len() { break; }
+        if qi >= qbytes.len() {
+            break;
+        }
         let qb = qbytes[qi];
         if qb == tb {
             // Base match
             score += 10;
             // Bonus for consecutive
-            if (i as i32) == last_match_pos + 1 { score += 8; }
+            if (i as i32) == last_match_pos + 1 {
+                score += 8;
+            }
             // Bonus for start-of-word or early match
-            if i == 0 || tbytes.get(i - 1).map(|c| *c == b' ' || *c == b'_' || *c == b'-').unwrap_or(false) {
+            if i == 0
+                || tbytes
+                    .get(i - 1)
+                    .map(|c| *c == b' ' || *c == b'_' || *c == b'-')
+                    .unwrap_or(false)
+            {
                 score += 6;
             }
             last_match_pos = i as i32;
             qi += 1;
         }
     }
-    if qi < qbytes.len() { return None; }
+    if qi < qbytes.len() {
+        return None;
+    }
     // Penalize distance between first and last match lightly (prefer tighter groups)
     // And slightly favor shorter texts
     Some(score - (text.len() as i32 / 16))
@@ -222,13 +265,17 @@ struct PalettePersistentState {
 
 /// Compute indices in `text` that match the subsequence `query` (lowercased inputs).
 fn fuzzy_highlight_positions(query: &str, text: &str) -> Vec<usize> {
-    if query.is_empty() { return Vec::new(); }
+    if query.is_empty() {
+        return Vec::new();
+    }
     let mut positions = Vec::new();
     let mut qi = 0usize;
     let qbytes = query.as_bytes();
     let tbytes = text.as_bytes();
     for (i, &tb) in tbytes.iter().enumerate() {
-        if qi >= qbytes.len() { break; }
+        if qi >= qbytes.len() {
+            break;
+        }
         let qb = qbytes[qi];
         if qb == tb {
             positions.push(i);
@@ -238,15 +285,15 @@ fn fuzzy_highlight_positions(query: &str, text: &str) -> Vec<usize> {
     positions
 }
 
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-use crate::config::{UiConfig, Action as BindingAction, KeyBinding, BindingKey};
+use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
 use crate::renderer::ui::{UiRoundedRect, UiSprite};
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
-use winit::keyboard::{Key, NamedKey, ModifiersState};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 fn binding_to_hint(binding: &KeyBinding) -> Option<String> {
     // Compose modifier names in a consistent order and style per platform
@@ -255,17 +302,33 @@ fn binding_to_hint(binding: &KeyBinding) -> Option<String> {
 
     #[cfg(target_os = "macos")]
     {
-        if mods.contains(ModifiersState::CONTROL) { parts.push("⌃".to_string()); }
-        if mods.contains(ModifiersState::SHIFT) { parts.push("⇧".to_string()); }
-        if mods.contains(ModifiersState::ALT) { parts.push("⌥".to_string()); }
-        if mods.contains(ModifiersState::SUPER) { parts.push("⌘".to_string()); }
+        if mods.contains(ModifiersState::CONTROL) {
+            parts.push("⌃".to_string());
+        }
+        if mods.contains(ModifiersState::SHIFT) {
+            parts.push("⇧".to_string());
+        }
+        if mods.contains(ModifiersState::ALT) {
+            parts.push("⌥".to_string());
+        }
+        if mods.contains(ModifiersState::SUPER) {
+            parts.push("⌘".to_string());
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
-        if mods.contains(ModifiersState::CONTROL) { parts.push("Ctrl".to_string()); }
-        if mods.contains(ModifiersState::SHIFT) { parts.push("Shift".to_string()); }
-        if mods.contains(ModifiersState::ALT) { parts.push("Alt".to_string()); }
-        if mods.contains(ModifiersState::SUPER) { parts.push("Super".to_string()); }
+        if mods.contains(ModifiersState::CONTROL) {
+            parts.push("Ctrl".to_string());
+        }
+        if mods.contains(ModifiersState::SHIFT) {
+            parts.push("Shift".to_string());
+        }
+        if mods.contains(ModifiersState::ALT) {
+            parts.push("Alt".to_string());
+        }
+        if mods.contains(ModifiersState::SUPER) {
+            parts.push("Super".to_string());
+        }
     }
 
     let key_str = match &binding.trigger {
@@ -290,8 +353,12 @@ fn binding_to_hint(binding: &KeyBinding) -> Option<String> {
             },
             Key::Character(s) => {
                 let ss = s.to_string();
-                if ss.chars().count() == 1 { ss.to_uppercase() } else { ss }
-            }
+                if ss.chars().count() == 1 {
+                    ss.to_uppercase()
+                } else {
+                    ss
+                }
+            },
             _ => return None,
         },
         _ => return None,
@@ -301,9 +368,13 @@ fn binding_to_hint(binding: &KeyBinding) -> Option<String> {
 
     // Joiner: macOS uses no joiner (⌘⇧P), others use '+' (Ctrl+Shift+P)
     #[cfg(target_os = "macos")]
-    { Some(parts.join("")) }
+    {
+        Some(parts.join(""))
+    }
     #[cfg(not(target_os = "macos"))]
-    { Some(parts.join("+")) }
+    {
+        Some(parts.join("+"))
+    }
 }
 
 fn action_hints_for(config: &UiConfig, action: &BindingAction, max: usize) -> Vec<String> {
@@ -315,7 +386,9 @@ fn action_hints_for(config: &UiConfig, action: &BindingAction, max: usize) -> Ve
             if let Some(s) = binding_to_hint(kb) {
                 if seen.insert(s.clone()) {
                     out.push(s);
-                    if out.len() >= max { break; }
+                    if out.len() >= max {
+                        break;
+                    }
                 }
             }
         }
@@ -330,7 +403,8 @@ impl Display {
             return;
         }
         let size_info: SizeInfo = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui.clone();
 
@@ -354,7 +428,9 @@ impl Display {
 
         // Geometry: centered panel, ~70% width, ~45% height (min 8 lines, max 16 lines)
         let num_lines = size_info.screen_lines();
-        if num_lines == 0 { return; }
+        if num_lines == 0 {
+            return;
+        }
         let panel_lines = ((num_lines as f32 * 0.45).round() as usize).clamp(8, 16).min(num_lines);
         let cols = size_info.columns();
         let panel_cols = ((cols as f32 * 0.7).round() as usize).clamp(40, cols.saturating_sub(2));
@@ -368,7 +444,8 @@ impl Display {
         let panel_h = panel_lines as f32 * size_info.cell_height();
 
         // Apply scale based on progress (simulate scale from 0.98 -> 1.0 on open)
-        let scale = if self.palette_anim_opening { 0.98 + 0.02 * progress } else { 0.98 + 0.02 * progress };
+        let scale =
+            if self.palette_anim_opening { 0.98 + 0.02 * progress } else { 0.98 + 0.02 * progress };
         let cx = panel_x + panel_w * 0.5;
         let cy = panel_y + panel_h * 0.5;
         let scaled_w = panel_w * scale;
@@ -379,9 +456,23 @@ impl Display {
         // Backdrop, shadow, and panel background
         let mut rects = Vec::new();
         // Fade backdrop with progress
-        rects.push(RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.22 * progress));
+        rects.push(RenderRect::new(
+            0.0,
+            0.0,
+            size_info.width(),
+            size_info.height(),
+            tokens.overlay,
+            0.22 * progress,
+        ));
         // Soft shadow
-        rects.push(RenderRect::new(sx + 3.0, sy + 5.0, scaled_w, scaled_h, tokens.surface, 0.12 * progress));
+        rects.push(RenderRect::new(
+            sx + 3.0,
+            sy + 5.0,
+            scaled_w,
+            scaled_h,
+            tokens.surface,
+            0.12 * progress,
+        ));
         // Panel background
         rects.push(RenderRect::new(sx, sy, scaled_w, scaled_h, tokens.surface_muted, 0.97));
         let metrics = self.glyph_cache.font_metrics();
@@ -390,7 +481,11 @@ impl Display {
 
         // Colors with fade based on animation progress (approximate by blending toward bg)
         let bg = tokens.surface_muted;
-        fn lerp_rgb(a: crate::display::color::Rgb, b: crate::display::color::Rgb, t: f32) -> crate::display::color::Rgb {
+        fn lerp_rgb(
+            a: crate::display::color::Rgb,
+            b: crate::display::color::Rgb,
+            t: f32,
+        ) -> crate::display::color::Rgb {
             let t = t.clamp(0.0, 1.0);
             let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t).round().clamp(0.0, 255.0) as u8;
             let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t).round().clamp(0.0, 255.0) as u8;
@@ -415,7 +510,9 @@ impl Display {
             let elapsed = start.elapsed().as_millis() as f32;
             let dur = 120.0_f32;
             (elapsed / dur).clamp(0.0, 1.0)
-        } else { 1.0 };
+        } else {
+            1.0
+        };
         // Ease-out cubic
         let sel_anim_eased = 1.0 - (1.0 - sel_anim_t).powi(3);
 
@@ -423,8 +520,18 @@ impl Display {
         let mut line = panel_start_line;
 
         // Header (inside panel, inset by 2 cols)
-        let header = if count == 1 { "Command Palette — 1 item".to_string() } else { format!("Command Palette — {} items", count) };
-        self.draw_ai_text(Point::new(line, Column(panel_start_col + 2)), fg, bg, &header, panel_cols.saturating_sub(2));
+        let header = if count == 1 {
+            "Command Palette — 1 item".to_string()
+        } else {
+            format!("Command Palette — {} items", count)
+        };
+        self.draw_ai_text(
+            Point::new(line, Column(panel_start_col + 2)),
+            fg,
+            bg,
+            &header,
+            panel_cols.saturating_sub(2),
+        );
         line += 1;
 
         // Input row background
@@ -434,7 +541,15 @@ impl Display {
         let input_y = (line as f32) * input_ch;
         let input_w = (panel_cols.saturating_sub(2)) as f32 * input_cw;
         let input_radius = ui.palette_pill_radius_px;
-        let input_bg = UiRoundedRect::new(input_x, input_y, input_w, input_ch, input_radius, tokens.surface, 0.12 * progress);
+        let input_bg = UiRoundedRect::new(
+            input_x,
+            input_y,
+            input_w,
+            input_ch,
+            input_radius,
+            tokens.surface,
+            0.12 * progress,
+        );
         self.stage_ui_rounded_rect(input_bg);
 
         // Leading search icon (magnifier)
@@ -443,19 +558,41 @@ impl Display {
         let iy = input_y + ((input_ch - icon_px) * 0.5).max(0.0);
         // Atlas slot 0 = magnifier
         const STEP: f32 = 1.0 / 8.0;
-        let uv_x = 0.0f32; let uv_y = 0.0f32; let uv_w = STEP; let uv_h = 1.0f32;
-        let tint = if ui.palette_icon_tint { accent_fg } else { crate::display::color::Rgb::new(255,255,255) };
+        let uv_x = 0.0f32;
+        let uv_y = 0.0f32;
+        let uv_w = STEP;
+        let uv_h = 1.0f32;
+        let tint = if ui.palette_icon_tint {
+            accent_fg
+        } else {
+            crate::display::color::Rgb::new(255, 255, 255)
+        };
         let icon_filter_nearest = (icon_px - 16.0).abs() < 0.5;
-        self.stage_ui_sprite(UiSprite::new(ix, iy, icon_px, icon_px, uv_x, uv_y, uv_w, uv_h, tint, 1.0, Some(icon_filter_nearest)));
+        self.stage_ui_sprite(UiSprite::new(
+            ix,
+            iy,
+            icon_px,
+            icon_px,
+            uv_x,
+            uv_y,
+            uv_w,
+            uv_h,
+            tint,
+            1.0,
+            Some(icon_filter_nearest),
+        ));
         let icon_cols = ((icon_px / input_cw).ceil() as usize).max(1);
 
         // Optional scope chip from query prefix (a:/w:)
         let lower = filter.to_lowercase();
-        let scope_label: Option<&str> = if lower.starts_with("w:") || lower.starts_with("workflows:") {
-            Some("Workflows")
-        } else if lower.starts_with("a:") || lower.starts_with("actions:") {
-            Some("Actions")
-        } else { None };
+        let scope_label: Option<&str> =
+            if lower.starts_with("w:") || lower.starts_with("workflows:") {
+                Some("Workflows")
+            } else if lower.starts_with("a:") || lower.starts_with("actions:") {
+                Some("Actions")
+            } else {
+                None
+            };
 
         // Compose prompt and draw, reserving space for icon and optional chip
         let prompt_prefix = ""; // no text prefix when icon is present
@@ -477,27 +614,63 @@ impl Display {
             let border_px = ui.palette_hint_border_px.max(0.0);
             if border_px > 0.0 {
                 let stroke_alpha = ui.palette_hint_border_alpha;
-                let outer = UiRoundedRect::new(chip_x - border_px, chip_y, chip_w_px + border_px * 2.0, ch, radius, tokens.border, stroke_alpha);
+                let outer = UiRoundedRect::new(
+                    chip_x - border_px,
+                    chip_y,
+                    chip_w_px + border_px * 2.0,
+                    ch,
+                    radius,
+                    tokens.border,
+                    stroke_alpha,
+                );
                 self.stage_ui_rounded_rect(outer);
             }
-            let pill = UiRoundedRect::new(chip_x, chip_y, chip_w_px, ch, radius, tokens.surface_muted, 0.16 * progress);
+            let pill = UiRoundedRect::new(
+                chip_x,
+                chip_y,
+                chip_w_px,
+                ch,
+                radius,
+                tokens.surface_muted,
+                0.16 * progress,
+            );
             self.stage_ui_rounded_rect(pill);
             let chip_fg = lerp_rgb(bg, accent_fg, 0.8);
-            self.draw_ai_text(Point::new(line, Column(prompt_col)), chip_fg, bg, &chip_text, chip_text.width());
+            self.draw_ai_text(
+                Point::new(line, Column(prompt_col)),
+                chip_fg,
+                bg,
+                &chip_text,
+                chip_text.width(),
+            );
             prompt_col += chip_text.width() + 1; // gap after chip
         }
 
         // Draw the input text
-        self.draw_ai_text(Point::new(line, Column(prompt_col)), fg, bg, &prompt, panel_cols.saturating_sub(prompt_col - panel_start_col));
+        self.draw_ai_text(
+            Point::new(line, Column(prompt_col)),
+            fg,
+            bg,
+            &prompt,
+            panel_cols.saturating_sub(prompt_col - panel_start_col),
+        );
         let mut cursor_col = prompt_col + prompt.width();
-        if cursor_col >= panel_start_col + panel_cols { cursor_col = panel_start_col + panel_cols - 1; }
+        if cursor_col >= panel_start_col + panel_cols {
+            cursor_col = panel_start_col + panel_cols - 1;
+        }
         // Draw cursor block (invert)
         self.draw_ai_text(Point::new(line, Column(cursor_col)), bg, fg, " ", 1);
         line += 1;
 
         // Separator
         let sep = "─".repeat(panel_cols.saturating_sub(2));
-        self.draw_ai_text(Point::new(line, Column(panel_start_col + 1)), muted_fg, bg, &sep, panel_cols.saturating_sub(2));
+        self.draw_ai_text(
+            Point::new(line, Column(panel_start_col + 1)),
+            muted_fg,
+            bg,
+            &sep,
+            panel_cols.saturating_sub(2),
+        );
         line += 1;
 
         // Results list (reserve one line for footer)
@@ -508,10 +681,22 @@ impl Display {
             let msg = "No results";
             let sub = "Try a: for actions    w: for workflows";
             let center_line = (panel_start_line + footer_line) / 2;
-            let start_col = panel_start_col + (panel_cols.saturating_sub(msg.len()))/2;
-            self.draw_ai_text(Point::new(center_line.saturating_sub(1), Column(start_col)), muted_fg, bg, msg, panel_cols);
-            let start_col2 = panel_start_col + (panel_cols.saturating_sub(sub.len()))/2;
-            self.draw_ai_text(Point::new(center_line.saturating_add(1), Column(start_col2)), muted_fg, bg, sub, panel_cols);
+            let start_col = panel_start_col + (panel_cols.saturating_sub(msg.len())) / 2;
+            self.draw_ai_text(
+                Point::new(center_line.saturating_sub(1), Column(start_col)),
+                muted_fg,
+                bg,
+                msg,
+                panel_cols,
+            );
+            let start_col2 = panel_start_col + (panel_cols.saturating_sub(sub.len())) / 2;
+            self.draw_ai_text(
+                Point::new(center_line.saturating_add(1), Column(start_col2)),
+                muted_fg,
+                bg,
+                sub,
+                panel_cols,
+            );
             return;
         }
 
@@ -528,9 +713,15 @@ impl Display {
                 }
             }
             // Budget content width based on hints (approximate: each hint plus 2 spaces)
-            let hints_cols_approx: usize = if hints.is_empty() { 0 } else { hints.iter().map(|h| h.width() + 2).sum::<usize>() + 1 };
+            let hints_cols_approx: usize = if hints.is_empty() {
+                0
+            } else {
+                hints.iter().map(|h| h.width() + 2).sum::<usize>() + 1
+            };
             let content_max_cols = panel_cols.saturating_sub(2).saturating_sub(hints_cols_approx);
-            if line > max_lines { break; }
+            if line > max_lines {
+                break;
+            }
 
             // Selected row background highlight
             if idx == selected_visible {
@@ -557,8 +748,9 @@ impl Display {
                     // Atlas: 8 slots horizontally; step = 1/8
                     const UI_ATLAS_SLOTS: usize = 8;
                     const STEP: f32 = 1.0 / UI_ATLAS_SLOTS as f32;
-                    fn uv_for_slot(slot: usize) -> (f32,f32,f32,f32) {
-                        let x = (slot as f32) * STEP; (x, 0.0, STEP, 1.0)
+                    fn uv_for_slot(slot: usize) -> (f32, f32, f32, f32) {
+                        let x = (slot as f32) * STEP;
+                        (x, 0.0, STEP, 1.0)
                     }
                     let (uv_x, uv_y, uv_w, uv_h) = match &orig_item.entry {
                         PaletteEntry::Workflow(_) => uv_for_slot(1),
@@ -586,7 +778,11 @@ impl Display {
                     let w = icon_px;
                     let h = icon_px;
                     let tint = if ui.palette_icon_tint {
-                        if idx == selected_visible { accent_fg } else { lerp_rgb(bg, accent_fg, 0.6) }
+                        if idx == selected_visible {
+                            accent_fg
+                        } else {
+                            lerp_rgb(bg, accent_fg, 0.6)
+                        }
                     } else {
                         crate::display::color::Rgb::new(255, 255, 255)
                     };
@@ -595,7 +791,19 @@ impl Display {
                     let auto_nearest = (w - 16.0).abs() < 0.5 && (h - 16.0).abs() < 0.5;
                     let filter_nearest = forced.unwrap_or(auto_nearest);
                     // Stage sprite (GL path); if not available, we will draw a text fallback below.
-                    self.stage_ui_sprite(UiSprite::new(x, y, w, h, uv_x, uv_y, uv_w, uv_h, tint, 1.0, Some(filter_nearest)));
+                    self.stage_ui_sprite(UiSprite::new(
+                        x,
+                        y,
+                        w,
+                        h,
+                        uv_x,
+                        uv_y,
+                        uv_w,
+                        uv_h,
+                        tint,
+                        1.0,
+                        Some(filter_nearest),
+                    ));
                     // Reserve text columns equivalent to icon width
                     let icon_cols = ((w / cw).ceil() as usize).max(1);
                     col_cursor += icon_cols;
@@ -608,13 +816,16 @@ impl Display {
             let q = filter.trim().to_lowercase();
             let title = &item.title;
             let title_lower = title.to_lowercase();
-            let hl_positions = if q.is_empty() { Vec::new() } else { fuzzy_highlight_positions(&q, &title_lower) };
+            let hl_positions =
+                if q.is_empty() { Vec::new() } else { fuzzy_highlight_positions(&q, &title_lower) };
             // Compute visible title and width under budget
             let mut visible = String::new();
             let mut visible_w = 0usize;
             for (_i, ch) in title.chars().enumerate() {
                 let cw = ch.width().unwrap_or(1);
-                if visible_w + cw >= content_max_cols.saturating_sub(2) { break; }
+                if visible_w + cw >= content_max_cols.saturating_sub(2) {
+                    break;
+                }
                 visible.push(ch);
                 visible_w += cw;
             }
@@ -658,7 +869,15 @@ impl Display {
                         let x = ((row_start_col + run_start_cols) as f32) * cwpx;
                         let y = (line as f32) * chpx;
                         let w = (run_width_cols as f32) * cwpx;
-                        let pill = UiRoundedRect::new(x, y, w, chpx, ui.palette_pill_radius_px * 0.6, accent_fg, 0.17);
+                        let pill = UiRoundedRect::new(
+                            x,
+                            y,
+                            w,
+                            chpx,
+                            ui.palette_pill_radius_px * 0.6,
+                            accent_fg,
+                            0.17,
+                        );
                         self.stage_ui_rounded_rect(pill);
                         run_active = false;
                         run_width_cols = 0;
@@ -669,7 +888,15 @@ impl Display {
                     let x = ((row_start_col + run_start_cols) as f32) * cwpx;
                     let y = (line as f32) * chpx;
                     let w = (run_width_cols as f32) * cwpx;
-                    let pill = UiRoundedRect::new(x, y, w, chpx, ui.palette_pill_radius_px * 0.6, accent_fg, 0.17);
+                    let pill = UiRoundedRect::new(
+                        x,
+                        y,
+                        w,
+                        chpx,
+                        ui.palette_pill_radius_px * 0.6,
+                        accent_fg,
+                        0.17,
+                    );
                     self.stage_ui_rounded_rect(pill);
                 }
             }
@@ -677,11 +904,25 @@ impl Display {
             // Row-level color dimming + selection brightness animation
             let white = crate::display::color::Rgb::new(255, 255, 255);
             let row_fg_base = if idx == selected_visible { fg } else { lerp_rgb(bg, fg, 0.7) };
-            let row_acc_base = if idx == selected_visible { accent_fg } else { lerp_rgb(bg, accent_fg, 0.7) };
-            let row_mut_base = if idx == selected_visible { muted_fg } else { lerp_rgb(bg, muted_fg, 0.7) };
-            let row_fg = if idx == selected_visible { lerp_rgb(row_fg_base, white, 0.10 * row_sel_p as f32) } else { row_fg_base };
-            let row_acc = if idx == selected_visible { lerp_rgb(row_acc_base, white, 0.12 * row_sel_p as f32) } else { row_acc_base };
-            let row_mut = if idx == selected_visible { lerp_rgb(row_mut_base, white, 0.06 * row_sel_p as f32) } else { row_mut_base };
+            let row_acc_base =
+                if idx == selected_visible { accent_fg } else { lerp_rgb(bg, accent_fg, 0.7) };
+            let row_mut_base =
+                if idx == selected_visible { muted_fg } else { lerp_rgb(bg, muted_fg, 0.7) };
+            let row_fg = if idx == selected_visible {
+                lerp_rgb(row_fg_base, white, 0.10 * row_sel_p as f32)
+            } else {
+                row_fg_base
+            };
+            let row_acc = if idx == selected_visible {
+                lerp_rgb(row_acc_base, white, 0.12 * row_sel_p as f32)
+            } else {
+                row_acc_base
+            };
+            let row_mut = if idx == selected_visible {
+                lerp_rgb(row_mut_base, white, 0.06 * row_sel_p as f32)
+            } else {
+                row_mut_base
+            };
             // Draw title segments with highlights
             let mut seg = String::new();
             let mut seg_color = row_fg;
@@ -691,7 +932,13 @@ impl Display {
                 let ch_color = if is_hl { row_acc } else { row_fg };
                 if ch_color != seg_color && !seg.is_empty() {
                     // flush segment
-                    self.draw_ai_text(Point::new(line, Column(col_cursor)), seg_color, bg, &seg, content_max_cols.saturating_sub(col_used));
+                    self.draw_ai_text(
+                        Point::new(line, Column(col_cursor)),
+                        seg_color,
+                        bg,
+                        &seg,
+                        content_max_cols.saturating_sub(col_used),
+                    );
                     col_cursor += seg.width();
                     col_used += seg.width();
                     seg.clear();
@@ -700,7 +947,13 @@ impl Display {
                 seg_color = ch_color;
             }
             if !seg.is_empty() {
-                self.draw_ai_text(Point::new(line, Column(col_cursor)), seg_color, bg, &seg, content_max_cols.saturating_sub(col_used));
+                self.draw_ai_text(
+                    Point::new(line, Column(col_cursor)),
+                    seg_color,
+                    bg,
+                    &seg,
+                    content_max_cols.saturating_sub(col_used),
+                );
                 col_cursor += seg.width();
             }
 
@@ -729,14 +982,40 @@ impl Display {
                         let border_px = ui.palette_hint_border_px.max(0.0);
                         if border_px > 0.0 {
                             let stroke_alpha = ui.palette_hint_border_alpha;
-                            let outer = UiRoundedRect::new(sx - border_px, y, scaled_w + border_px * 2.0, h, radius, tokens.border, stroke_alpha);
+                            let outer = UiRoundedRect::new(
+                                sx - border_px,
+                                y,
+                                scaled_w + border_px * 2.0,
+                                h,
+                                radius,
+                                tokens.border,
+                                stroke_alpha,
+                            );
                             self.stage_ui_rounded_rect(outer);
                         }
                         let alpha = 0.18 * progress + 0.10 * row_sel_p as f32;
-                        let pill = UiRoundedRect::new(sx, y, scaled_w, h, radius, tokens.surface_muted, alpha);
+                        let pill = UiRoundedRect::new(
+                            sx,
+                            y,
+                            scaled_w,
+                            h,
+                            radius,
+                            tokens.surface_muted,
+                            alpha,
+                        );
                         self.stage_ui_rounded_rect(pill);
-                        let row_chip_fg = if idx == selected_visible { accent_fg } else { lerp_rgb(bg, accent_fg, 0.7) };
-                        self.draw_ai_text(Point::new(line, Column(col_cursor)), row_chip_fg, bg, chip, chip.width());
+                        let row_chip_fg = if idx == selected_visible {
+                            accent_fg
+                        } else {
+                            lerp_rgb(bg, accent_fg, 0.7)
+                        };
+                        self.draw_ai_text(
+                            Point::new(line, Column(col_cursor)),
+                            row_chip_fg,
+                            bg,
+                            chip,
+                            chip.width(),
+                        );
                         col_cursor += chip.width();
                     }
                 }
@@ -746,13 +1025,23 @@ impl Display {
             if let Some(sub) = &item.subtitle {
                 if !sub.is_empty() && col_cursor < row_start_col + content_max_cols - 3 {
                     let sep = " — ";
-                    self.draw_ai_text(Point::new(line, Column(col_cursor)), row_mut, bg, sep, content_max_cols.saturating_sub(col_cursor - row_start_col));
+                    self.draw_ai_text(
+                        Point::new(line, Column(col_cursor)),
+                        row_mut,
+                        bg,
+                        sep,
+                        content_max_cols.saturating_sub(col_cursor - row_start_col),
+                    );
                     col_cursor += sep.width();
                     let avail = (row_start_col + content_max_cols).saturating_sub(col_cursor + 1);
                     if avail > 3 {
                         let q = filter.trim().to_lowercase();
                         let sub_lower = sub.to_lowercase();
-                        let hl_positions = if q.is_empty() { Vec::new() } else { fuzzy_highlight_positions(&q, &sub_lower) };
+                        let hl_positions = if q.is_empty() {
+                            Vec::new()
+                        } else {
+                            fuzzy_highlight_positions(&q, &sub_lower)
+                        };
 
                         // Accent background runs behind subtitle matches
                         let cwpx = size_info.cell_width();
@@ -763,25 +1052,54 @@ impl Display {
                         let mut run_width_cols = 0usize;
                         for (i, ch) in sub.chars().enumerate() {
                             let ccols = ch.width().unwrap_or(1);
-                            if cols_before + ccols >= avail.saturating_sub(3) { break; }
+                            if cols_before + ccols >= avail.saturating_sub(3) {
+                                break;
+                            }
                             let is_hl = hl_positions.binary_search(&i).is_ok();
-                            if is_hl && !run_active { run_active = true; run_start_cols = cols_before; run_width_cols = ccols; }
-                            else if is_hl && run_active { run_width_cols += ccols; }
-                            else if !is_hl && run_active {
-                                let x = ((row_start_col + (col_cursor - row_start_col) + run_start_cols) as f32) * cwpx;
+                            if is_hl && !run_active {
+                                run_active = true;
+                                run_start_cols = cols_before;
+                                run_width_cols = ccols;
+                            } else if is_hl && run_active {
+                                run_width_cols += ccols;
+                            } else if !is_hl && run_active {
+                                let x = ((row_start_col
+                                    + (col_cursor - row_start_col)
+                                    + run_start_cols)
+                                    as f32)
+                                    * cwpx;
                                 let y = (line as f32) * chpx;
                                 let w = (run_width_cols as f32) * cwpx;
-                                let pill = UiRoundedRect::new(x, y, w, chpx, ui.palette_pill_radius_px * 0.6, accent_fg, 0.14);
+                                let pill = UiRoundedRect::new(
+                                    x,
+                                    y,
+                                    w,
+                                    chpx,
+                                    ui.palette_pill_radius_px * 0.6,
+                                    accent_fg,
+                                    0.14,
+                                );
                                 self.stage_ui_rounded_rect(pill);
-                                run_active = false; run_width_cols = 0;
+                                run_active = false;
+                                run_width_cols = 0;
                             }
                             cols_before += ccols;
                         }
                         if run_active && run_width_cols > 0 {
-                            let x = ((row_start_col + (col_cursor - row_start_col) + run_start_cols) as f32) * cwpx;
+                            let x = ((row_start_col + (col_cursor - row_start_col) + run_start_cols)
+                                as f32)
+                                * cwpx;
                             let y = (line as f32) * chpx;
                             let w = (run_width_cols as f32) * cwpx;
-                            let pill = UiRoundedRect::new(x, y, w, chpx, ui.palette_pill_radius_px * 0.6, accent_fg, 0.14);
+                            let pill = UiRoundedRect::new(
+                                x,
+                                y,
+                                w,
+                                chpx,
+                                ui.palette_pill_radius_px * 0.6,
+                                accent_fg,
+                                0.14,
+                            );
                             self.stage_ui_rounded_rect(pill);
                         }
 
@@ -790,13 +1108,20 @@ impl Display {
                         let mut seg_color = row_mut;
                         for (i, ch) in sub.chars().enumerate() {
                             let cw = ch.width().unwrap_or(1);
-                            if used + cw >= avail.saturating_sub(3) { // leave space for ellipsis
+                            if used + cw >= avail.saturating_sub(3) {
+                                // leave space for ellipsis
                                 break;
                             }
                             let is_hl = hl_positions.binary_search(&i).is_ok();
                             let ch_color = if is_hl { row_acc } else { row_mut };
                             if ch_color != seg_color && !seg.is_empty() {
-                                self.draw_ai_text(Point::new(line, Column(col_cursor)), seg_color, bg, &seg, avail.saturating_sub(used));
+                                self.draw_ai_text(
+                                    Point::new(line, Column(col_cursor)),
+                                    seg_color,
+                                    bg,
+                                    &seg,
+                                    avail.saturating_sub(used),
+                                );
                                 col_cursor += seg.width();
                                 used += seg.width();
                                 seg.clear();
@@ -805,14 +1130,25 @@ impl Display {
                             seg_color = ch_color;
                         }
                         if !seg.is_empty() && used < avail {
-                            self.draw_ai_text(Point::new(line, Column(col_cursor)), seg_color, bg, &seg, avail.saturating_sub(used));
+                            self.draw_ai_text(
+                                Point::new(line, Column(col_cursor)),
+                                seg_color,
+                                bg,
+                                &seg,
+                                avail.saturating_sub(used),
+                            );
                             col_cursor += seg.width();
                             used += seg.width();
                         }
                         // Ellipsis if truncated
                         if used < sub.width() && avail >= 3 {
-                            self.draw_ai_text(Point::new(line, Column(col_cursor)), muted_fg, bg, "...", 3);
-                            col_cursor += 3;
+                            self.draw_ai_text(
+                                Point::new(line, Column(col_cursor)),
+                                muted_fg,
+                                bg,
+                                "...",
+                                3,
+                            );
                         }
                     }
                 }
@@ -835,18 +1171,44 @@ impl Display {
                     // Border pill (simulate stroke)
                     if border_px > 0.0 {
                         let stroke_alpha = ui.palette_hint_border_alpha;
-                        let outer = UiRoundedRect::new(start_px - border_px, (line as f32) * ch, full_w_px + border_px * 2.0, ch, radius, tokens.border, stroke_alpha);
+                        let outer = UiRoundedRect::new(
+                            start_px - border_px,
+                            (line as f32) * ch,
+                            full_w_px + border_px * 2.0,
+                            ch,
+                            radius,
+                            tokens.border,
+                            stroke_alpha,
+                        );
                         self.stage_ui_rounded_rect(outer);
                     }
                     // Background pill (use surface_muted to differentiate)
                     let alpha = 0.18 * progress + 0.10 * row_sel_p as f32;
-                    let pill = UiRoundedRect::new(start_px, (line as f32) * ch, full_w_px, ch, radius, tokens.surface_muted, alpha);
+                    let pill = UiRoundedRect::new(
+                        start_px,
+                        (line as f32) * ch,
+                        full_w_px,
+                        ch,
+                        radius,
+                        tokens.surface_muted,
+                        alpha,
+                    );
                     self.stage_ui_rounded_rect(pill);
                     // Text offset by pad columns
                     let pad_cols = (pad_px / cw).floor() as usize;
                     let start_col = ((start_px / cw).floor() as usize).saturating_add(pad_cols);
-                    let row_hint_fg = if idx == selected_visible { muted_fg } else { lerp_rgb(bg, muted_fg, 0.6) };
-                    self.draw_ai_text(Point::new(line, Column(start_col)), row_hint_fg, bg, h, wcols);
+                    let row_hint_fg = if idx == selected_visible {
+                        muted_fg
+                    } else {
+                        lerp_rgb(bg, muted_fg, 0.6)
+                    };
+                    self.draw_ai_text(
+                        Point::new(line, Column(start_col)),
+                        row_hint_fg,
+                        bg,
+                        h,
+                        wcols,
+                    );
                     right_px = start_px - gap_px;
                 }
             }
@@ -857,7 +1219,13 @@ impl Display {
         // Footer hints
         if line <= footer_line {
             let hints = "Enter • Run    Esc • Close    ↑/↓ • Navigate";
-            self.draw_ai_text(Point::new(footer_line, Column(panel_start_col + 2)), muted_fg, bg, hints, panel_cols.saturating_sub(4));
+            self.draw_ai_text(
+                Point::new(footer_line, Column(panel_start_col + 2)),
+                muted_fg,
+                bg,
+                hints,
+                panel_cols.saturating_sub(4),
+            );
         }
     }
 }

@@ -26,4 +26,3 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # Recommended: pre-create cargo target dir to speed up first mount
 RUN mkdir -p /workspaces
 WORKDIR /workspaces
-

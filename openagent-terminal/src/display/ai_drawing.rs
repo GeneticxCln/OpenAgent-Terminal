@@ -420,7 +420,7 @@ impl<'a> AiDrawContext<'a> {
             } else {
                 line_text.push_str("  "); // Indent for non-selected
             }
-            
+
             // Add command
             if let Some(first_cmd) = proposal.proposed_commands.first() {
                 line_text.push_str(&format!("{}{}", self.draw_config.suggestion_prefix, first_cmd));
@@ -441,7 +441,8 @@ impl<'a> AiDrawContext<'a> {
                     let desc_text = format!("    💡 {}", description);
                     let desc_point = Point::new(*current_line, Column(0));
                     let desc_color = Rgb::new(180, 180, 180); // Gray for description
-                    self.display.draw_ai_panel_text(desc_point, desc_color, bg, &desc_text, num_cols);
+                    self.display
+                        .draw_ai_panel_text(desc_point, desc_color, bg, &desc_text, num_cols);
                     *current_line += 1;
                 }
             }
@@ -456,14 +457,22 @@ impl<'a> AiDrawContext<'a> {
     }
 
     /// Draw prompt line with input
-    fn draw_prompt_line(&mut self, ai_state: &crate::ai_runtime::AiUiState, line: usize, fg: Rgb, bg: Rgb, num_cols: usize) {
+    fn draw_prompt_line(
+        &mut self,
+        ai_state: &crate::ai_runtime::AiUiState,
+        line: usize,
+        fg: Rgb,
+        bg: Rgb,
+        num_cols: usize,
+    ) {
         let prefix = "🤖 ";
         let prompt = format!("{}{}", prefix, ai_state.scratch);
         let prompt_point = Point::new(line, Column(0));
         self.display.draw_ai_panel_text(prompt_point, fg, bg, &prompt, num_cols);
-        
+
         // Draw cursor
-        let cursor_col = (prefix.chars().count() + ai_state.cursor_position).min(num_cols.saturating_sub(1));
+        let cursor_col =
+            (prefix.chars().count() + ai_state.cursor_position).min(num_cols.saturating_sub(1));
         let cursor_point = Point::new(line, Column(cursor_col));
         self.display.draw_ai_panel_text(cursor_point, bg, fg, " ", 1);
     }

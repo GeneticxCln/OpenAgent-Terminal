@@ -27,13 +27,13 @@ We will implement a **WebAssembly (WASM)-based plugin system** with the followin
 pub trait TerminalPlugin: Send + Sync {
     /// Plugin metadata
     fn metadata(&self) -> PluginMetadata;
-    
+
     /// Called when plugin is loaded
     fn on_load(&mut self, context: PluginContext) -> Result<(), PluginError>;
-    
+
     /// Called when plugin is unloaded
     fn on_unload(&mut self) -> Result<(), PluginError>;
-    
+
     /// Handle events from the terminal
     fn on_event(&mut self, event: PluginEvent) -> Option<PluginResponse>;
 }
@@ -142,10 +142,10 @@ pub struct PluginManager {
 impl PluginManager {
     /// Load plugin from file
     pub fn load_plugin(&mut self, path: &Path) -> Result<PluginHandle, PluginError>;
-    
+
     /// Discover plugins in standard directories
     pub fn discover_plugins(&mut self) -> Vec<PluginMetadata>;
-    
+
     /// Enable/disable plugin
     pub fn set_enabled(&mut self, plugin_id: &str, enabled: bool);
 }
@@ -322,7 +322,7 @@ impl TerminalPlugin for MyPlugin {
             capabilities: vec![],
         }
     }
-    
+
     fn on_event(&mut self, event: PluginEvent) -> Option<PluginResponse> {
         match event {
             PluginEvent::Command(cmd) => {

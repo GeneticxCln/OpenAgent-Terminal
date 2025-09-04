@@ -64,10 +64,10 @@ The communication protocol between host and plugins uses JSON serialization over
 #### Plugin Exports
 - `plugin_init() -> i32`: Initialize plugin, returns error code
 - `plugin_get_metadata() -> i64`: Returns packed pointer/length for JSON metadata
-- `plugin_handle_event(ptr: i32, len: i32) -> i32`: Process event data, returns error code  
+- `plugin_handle_event(ptr: i32, len: i32) -> i32`: Process event data, returns error code
 - `plugin_cleanup() -> i32`: Cleanup plugin resources, returns error code
 
-#### Host Imports  
+#### Host Imports
 - `host_log(level: i32, ptr: *const u8, len: usize)`: Log message to terminal
 - `host_read_file(path_ptr: *const u8, path_len: usize, result_ptr: *mut u8, result_len_ptr: *mut u32) -> i32`: Read file
 - `host_write_file(path_ptr: *const u8, path_len: usize, data_ptr: *const u8, data_len: usize) -> i32`: Write file
@@ -97,7 +97,7 @@ use plugin_sdk::simple_plugin;
 // Minimal plugin with default implementations
 simple_plugin!(
     "my-plugin",
-    "1.0.0", 
+    "1.0.0",
     "Author Name",
     "Plugin description"
 );
@@ -154,12 +154,12 @@ use plugin_sdk::{log, LogLevel, read_file, write_file, execute_command};
 // Safe logging
 log(LogLevel::Info, "Plugin is working!");
 
-// Safe file operations  
+// Safe file operations
 match read_file("config.toml") {
     Ok(data) => {
         log(LogLevel::Info, &format!("Read {} bytes", data.len()));
         // Process config data...
-        
+
         // Write processed data
         if let Err(e) = write_file("output.json", b"{\"status\": \"ok\"}") {
             log(LogLevel::Error, &format!("Write failed: {:?}", e));
@@ -183,7 +183,7 @@ match execute_command("git status") {
 [plugin]
 name = "my-plugin"
 version = "1.0.0"
-author = "Plugin Developer"  
+author = "Plugin Developer"
 description = "A sample plugin"
 license = "MIT"
 
@@ -223,7 +223,7 @@ The system performs strict validation:
 - Maximum: 200 MB
 - Minimum: > 0 MB
 
-#### Timeout Limits  
+#### Timeout Limits
 - Maximum: 30 seconds
 - Minimum: > 0 ms
 
@@ -241,7 +241,7 @@ The system performs strict validation:
 #### Environment Variables
 **Sensitive prefixes (warned):**
 - `AWS_*`, `GCP_*`, `AZURE_*`
-- `SECRET_*`, `TOKEN_*`, `KEY_*`  
+- `SECRET_*`, `TOKEN_*`, `KEY_*`
 - `PASSWORD_*`, `PASS_*`
 - `SSH_*`, `GPG_*`
 
@@ -321,8 +321,8 @@ fn check_file_access(&self, path: &str, permissions: &PluginPermissions) -> bool
     if self.is_dangerous_file_pattern(path) {
         return false;
     }
-    
-    // 2. Check against plugin's allowed patterns  
+
+    // 2. Check against plugin's allowed patterns
     permissions.read_files.iter().any(|pattern| {
         self.matches_pattern(path, pattern)
     })
@@ -347,7 +347,7 @@ cd crates/plugin-loader
 cargo test
 
 # Test the plugin SDK
-cd crates/plugin-sdk  
+cd crates/plugin-sdk
 cargo test
 
 # Test example plugins
@@ -359,7 +359,7 @@ cargo test --target wasm32-wasi
 
 - ✅ Enhanced manifest parsing and validation
 - ✅ Permission enforcement (file, memory, timeout)
-- ✅ Dangerous pattern detection  
+- ✅ Dangerous pattern detection
 - ✅ Plugin loading/unloading lifecycle
 - ✅ Resource limit enforcement
 - ✅ WASI integration with Linker
@@ -377,7 +377,7 @@ Located in `examples/plugins/hello-wasi/`, demonstrates:
 - Host function integration
 - Error handling
 
-### Simple Demo Plugin  
+### Simple Demo Plugin
 
 Located in `examples/plugins/simple-demo/`, demonstrates:
 - Minimal plugin with `simple_plugin!` macro
@@ -388,7 +388,7 @@ Located in `examples/plugins/simple-demo/`, demonstrates:
 
 ### WASM Optimizations
 - Size optimization (`opt-level = "s"`)
-- Link-time optimization (LTO) enabled  
+- Link-time optimization (LTO) enabled
 - Debug info stripped for release builds
 - Panic handling optimized (`panic = "abort"`)
 
@@ -439,7 +439,7 @@ RUST_LOG=plugin_loader=trace cargo test test_permissions
 ## Future Enhancements
 
 - **Plugin Marketplace**: Central registry for plugin discovery
-- **Hot Reloading**: Update plugins without terminal restart  
+- **Hot Reloading**: Update plugins without terminal restart
 - **Inter-Plugin Communication**: Secure message passing between plugins
 - **Advanced Networking**: HTTP client with domain restrictions
 - **Plugin Signing**: Cryptographic verification of plugin authenticity

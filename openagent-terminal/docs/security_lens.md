@@ -62,4 +62,3 @@ pattern = "(?i)gcloud\s+compute\s+instances\s+delete"
 risk_level = "Warning"
 message = "Deleting a VM instance"
 ```
-

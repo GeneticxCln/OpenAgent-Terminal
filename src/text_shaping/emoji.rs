@@ -18,7 +18,7 @@ impl EmojiDatabase {
             emoji_font_name: emoji_font.to_string(),
         })
     }
-    
+
     /// Check if a codepoint is an emoji
     pub fn is_emoji_codepoint(&self, codepoint: u32) -> bool {
         // Check common emoji ranges
@@ -26,12 +26,12 @@ impl EmojiDatabase {
             codepoint >= *start && codepoint <= *end
         })
     }
-    
+
     /// Get color information for an emoji
     pub fn get_emoji_color(&self, codepoint: u32) -> Option<(u8, u8, u8, u8)> {
         self.emoji_colors.get(&codepoint).copied()
     }
-    
+
     /// Initialize emoji Unicode ranges
     fn init_emoji_ranges() -> Vec<(u32, u32)> {
         vec![
@@ -50,11 +50,11 @@ impl EmojiDatabase {
             (0x1F1E6, 0x1F1FF), // Regional Indicator Symbols
         ]
     }
-    
+
     /// Initialize common emoji colors (for demonstration)
     fn init_emoji_colors() -> HashMap<u32, (u8, u8, u8, u8)> {
         let mut colors = HashMap::new();
-        
+
         // Some common emoji with their typical colors
         colors.insert(0x1F600, (255, 204, 77, 255));  // 😀 Grinning face
         colors.insert(0x1F602, (255, 204, 77, 255));  // 😂 Face with tears of joy
@@ -64,10 +64,10 @@ impl EmojiDatabase {
         colors.insert(0x1F4A9, (139, 69, 19, 255));   // 💩 Pile of poo
         colors.insert(0x1F525, (255, 140, 0, 255));   // 🔥 Fire
         colors.insert(0x1F4AF, (255, 0, 0, 255));     // 💯 100
-        
+
         colors
     }
-    
+
     /// Get the font name for emoji rendering
     pub fn get_emoji_font(&self) -> &str {
         &self.emoji_font_name

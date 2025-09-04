@@ -15,24 +15,24 @@ typeset -g OPENAGENT_INTEGRATION_LOADED=1
 _openagent_is_supported_terminal() {
     # Check for OpenAgent Terminal
     [[ "$TERM_PROGRAM" == "openagent-terminal" ]] && return 0
-    
+
     # Check for other terminals that support OSC 133
     case "$TERM_PROGRAM" in
         "vscode"|"iTerm.app"|"WezTerm")
             return 0
             ;;
     esac
-    
+
     # Check TERM variable for compatible terminals
     case "$TERM" in
         *-256color|xterm-kitty|alacritty|wezterm)
             return 0
             ;;
     esac
-    
+
     # If OPENAGENT_FORCE_OSC133 is set, assume support
     [[ -n "$OPENAGENT_FORCE_OSC133" ]] && return 0
-    
+
     return 1
 }
 
@@ -43,7 +43,7 @@ fi
 
 # OSC 133 escape sequences
 typeset -g _OPENAGENT_OSC133_A=$'\e]133;A\a'    # Prompt start
-typeset -g _OPENAGENT_OSC133_B=$'\e]133;B\a'    # Prompt end / Command start  
+typeset -g _OPENAGENT_OSC133_B=$'\e]133;B\a'    # Prompt end / Command start
 typeset -g _OPENAGENT_OSC133_C=$'\e]133;C\a'    # Command end / Output start
 typeset -g _OPENAGENT_OSC133_D=$'\e]133;D;%s\a' # Command end with exit code
 
@@ -60,7 +60,7 @@ _openagent_prompt_end() {
     print -n "$_OPENAGENT_OSC133_B"
 }
 
-# Function to emit OSC 133;C (command end, output start) 
+# Function to emit OSC 133;C (command end, output start)
 _openagent_command_end() {
     print -n "$_OPENAGENT_OSC133_C"
 }
@@ -123,7 +123,7 @@ if [[ -n "$ZSH_THEME" ]] && [[ "$ZSH_THEME" != "random" ]]; then
             update_terminal_cwd() {
                 # Call original function
                 eval "$_openagent_original_update_terminal_cwd"
-                
+
                 # Ensure our prompt markers are still there
                 if [[ "$PS1" != *"$_OPENAGENT_OSC133_B"* ]]; then
                     PS1="$PS1$_OPENAGENT_OSC133_B"
@@ -131,7 +131,7 @@ if [[ -n "$ZSH_THEME" ]] && [[ "$ZSH_THEME" != "random" ]]; then
             }
         fi
     }
-    
+
     # Defer setup until after oh-my-zsh is fully loaded
     if [[ -n "$ZSH" ]]; then
         _openagent_setup_omz_integration
@@ -164,11 +164,11 @@ openagent_disable_osc133() {
     autoload -Uz add-zsh-hook
     add-zsh-hook -d preexec _openagent_preexec
     add-zsh-hook -d precmd _openagent_precmd
-    
+
     # Clean PS1
     PS1="${PS1//$_OPENAGENT_OSC133_A/}"
     PS1="${PS1//$_OPENAGENT_OSC133_B/}"
-    
+
     echo "OpenAgent OSC 133 integration disabled for this session."
     echo "To permanently disable, remove or comment out the source line in your .zshrc"
 }
@@ -179,7 +179,7 @@ openagent_show_hooks() {
     echo "Preexec hooks:"
     print -l "${preexec_functions[@]}"
     echo
-    echo "Precmd hooks:"  
+    echo "Precmd hooks:"
     print -l "${precmd_functions[@]}"
     echo
     echo "PS1 contains OSC 133;B: $([[ "$PS1" == *"$_OPENAGENT_OSC133_B"* ]] && echo "Yes" || echo "No")"

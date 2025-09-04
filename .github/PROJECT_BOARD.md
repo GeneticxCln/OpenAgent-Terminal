@@ -156,7 +156,7 @@ Which AI providers should support this?
 - [ ] Ollama (local)
 - [ ] OpenAI
 - [ ] Anthropic
-- [ ] Other: 
+- [ ] Other:
 
 **Use Cases**
 Provide example use cases.

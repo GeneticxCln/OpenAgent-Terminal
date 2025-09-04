@@ -138,7 +138,7 @@ cargo run --features "ai ollama"
 ## 📈 Performance
 
 - **Startup Time**: < 100ms overhead
-- **Query Response**: 
+- **Query Response**:
   - Ollama: ~500ms (local)
   - OpenAI: ~1-2s (network)
   - Anthropic: ~1-2s (network)

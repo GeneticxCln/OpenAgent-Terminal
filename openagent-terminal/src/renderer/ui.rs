@@ -255,14 +255,14 @@ impl UiSpriteGlRenderer {
         // Build a multi-icon atlas: 8 slots horizontally, 16x16 each
         // Slot order must match palette mapping
         let icon_names: [&str; 8] = [
-            "action",      // 0 magnifier
-            "workflow",    // 1 branching
-            "tab",         // 2 plus
-            "split_v",     // 3 vertical split
-            "split_h",     // 4 horizontal split
-            "focus",       // 5 target
-            "zoom",        // 6 square
-            "blocks",      // 7 grid
+            "action",   // 0 magnifier
+            "workflow", // 1 branching
+            "tab",      // 2 plus
+            "split_v",  // 3 vertical split
+            "split_h",  // 4 horizontal split
+            "focus",    // 5 target
+            "zoom",     // 6 square
+            "blocks",   // 7 grid
         ];
         let tile = 16usize;
         let atlas_w = icon_names.len() * tile;
@@ -271,7 +271,10 @@ impl UiSpriteGlRenderer {
         // PNG loader with downsample
         fn load_png_rgba(path: &str) -> Option<(u32, u32, Vec<u8>)> {
             #[cfg(target_os = "macos")]
-            { let _ = path; return None; }
+            {
+                let _ = path;
+                return None;
+            }
             #[cfg(not(target_os = "macos"))]
             {
                 let decoder = png::Decoder::new(std::fs::File::open(path).ok()?);
@@ -282,8 +285,12 @@ impl UiSpriteGlRenderer {
             }
         }
         fn downsample_to_16(w: u32, h: u32, rgba: &[u8]) -> Option<Vec<u8>> {
-            if rgba.len() < (w * h * 4) as usize { return None; }
-            if w == 16 && h == 16 { return Some(rgba.to_vec()); }
+            if rgba.len() < (w * h * 4) as usize {
+                return None;
+            }
+            if w == 16 && h == 16 {
+                return Some(rgba.to_vec());
+            }
             let sx = (w / 16).max(1);
             let sy = (h / 16).max(1);
             let mut out = vec![0u8; 16 * 16 * 4];
@@ -299,38 +306,55 @@ impl UiSpriteGlRenderer {
             Some(out)
         }
         // Helpers
-        let mut put = |tx: usize, x: usize, y: usize, rgba: [u8;4]| {
-            if x >= tile || y >= tile { return; }
+        let mut put = |tx: usize, x: usize, y: usize, rgba: [u8; 4]| {
+            if x >= tile || y >= tile {
+                return;
+            }
             let ax = tx * tile + x;
             let idx = (y * atlas_w + ax) * 4;
-            pixels[idx..idx+4].copy_from_slice(&rgba);
+            pixels[idx..idx + 4].copy_from_slice(&rgba);
         };
-        let draw_rect = |tx: usize, x0: usize, y0: usize, w: usize, h: usize, rgba: [u8;4], put: &mut dyn FnMut(usize,usize,usize,[u8;4])| {
-            for yy in y0..(y0+h).min(tile) {
-                for xx in x0..(x0+w).min(tile) {
-                    put(tx, xx, yy, rgba);
+        let draw_rect =
+            |tx: usize,
+             x0: usize,
+             y0: usize,
+             w: usize,
+             h: usize,
+             rgba: [u8; 4],
+             put: &mut dyn FnMut(usize, usize, usize, [u8; 4])| {
+                for yy in y0..(y0 + h).min(tile) {
+                    for xx in x0..(x0 + w).min(tile) {
+                        put(tx, xx, yy, rgba);
+                    }
                 }
-            }
-        };
-        let draw_circle = |tx: usize, cx: f32, cy: f32, r: f32, rgba: [u8;4], put: &mut dyn FnMut(usize,usize,usize,[u8;4])| {
-            let r2 = r*r;
-            for y in 0..tile {
-                for x in 0..tile {
-                    let dx = x as f32 - cx;
-                    let dy = y as f32 - cy;
-                    if dx*dx + dy*dy <= r2 { put(tx, x, y, rgba); }
+            };
+        let draw_circle =
+            |tx: usize,
+             cx: f32,
+             cy: f32,
+             r: f32,
+             rgba: [u8; 4],
+             put: &mut dyn FnMut(usize, usize, usize, [u8; 4])| {
+                let r2 = r * r;
+                for y in 0..tile {
+                    for x in 0..tile {
+                        let dx = x as f32 - cx;
+                        let dy = y as f32 - cy;
+                        if dx * dx + dy * dy <= r2 {
+                            put(tx, x, y, rgba);
+                        }
+                    }
                 }
-            }
-        };
+            };
         // Build each slot
         for (i, name) in icon_names.iter().enumerate() {
             let path = format!("extra/icons/palette_{}.png", name);
-            let loaded = load_png_rgba(&path).and_then(|(w,h,img)| downsample_to_16(w,h,&img));
+            let loaded = load_png_rgba(&path).and_then(|(w, h, img)| downsample_to_16(w, h, &img));
             if let Some(img) = loaded {
                 for y in 0..tile {
                     for x in 0..tile {
                         let src = (y * tile + x) * 4;
-                        put(i, x, y, [img[src], img[src+1], img[src+2], img[src+3]]);
+                        put(i, x, y, [img[src], img[src + 1], img[src + 2], img[src + 3]]);
                     }
                 }
                 continue;
@@ -338,40 +362,62 @@ impl UiSpriteGlRenderer {
             // Procedural fallback
             match *name {
                 "action" => {
-                    draw_circle(i, 7.0, 7.0, 5.0, [255,255,255,255], &mut put);
+                    draw_circle(i, 7.0, 7.0, 5.0, [255, 255, 255, 255], &mut put);
                     // handle
-                    for t in 0..5 { let x = 10+t; let y = 10+t; if x<tile && y<tile { put(i, x, y, [255,255,255,255]); } }
+                    for t in 0..5 {
+                        let x = 10 + t;
+                        let y = 10 + t;
+                        if x < tile && y < tile {
+                            put(i, x, y, [255, 255, 255, 255]);
+                        }
+                    }
                 },
                 "workflow" => {
                     // three nodes
-                    draw_circle(i, 4.0, 4.0, 2.0, [255,255,255,255], &mut put);
-                    draw_circle(i, 12.0,4.0,2.0,[255,255,255,255], &mut put);
-                    draw_circle(i, 8.0, 12.0,2.0,[255,255,255,255], &mut put);
+                    draw_circle(i, 4.0, 4.0, 2.0, [255, 255, 255, 255], &mut put);
+                    draw_circle(i, 12.0, 4.0, 2.0, [255, 255, 255, 255], &mut put);
+                    draw_circle(i, 8.0, 12.0, 2.0, [255, 255, 255, 255], &mut put);
                     // connectors
-                    draw_rect(i, 4, 3, 8, 1, [255,255,255,255], &mut put);
-                    draw_rect(i, 7, 4, 2, 8, [255,255,255,255], &mut put);
+                    draw_rect(i, 4, 3, 8, 1, [255, 255, 255, 255], &mut put);
+                    draw_rect(i, 7, 4, 2, 8, [255, 255, 255, 255], &mut put);
                 },
                 "tab" => {
                     // plus
-                    draw_rect(i, 7, 3, 2, 10, [255,255,255,255], &mut put);
-                    draw_rect(i, 3, 7, 10, 2, [255,255,255,255], &mut put);
+                    draw_rect(i, 7, 3, 2, 10, [255, 255, 255, 255], &mut put);
+                    draw_rect(i, 3, 7, 10, 2, [255, 255, 255, 255], &mut put);
                 },
-                "split_v" => { draw_rect(i, 7, 1, 2, 14, [255,255,255,255], &mut put); },
-                "split_h" => { draw_rect(i, 1, 7, 14, 2, [255,255,255,255], &mut put); },
+                "split_v" => {
+                    draw_rect(i, 7, 1, 2, 14, [255, 255, 255, 255], &mut put);
+                },
+                "split_h" => {
+                    draw_rect(i, 1, 7, 14, 2, [255, 255, 255, 255], &mut put);
+                },
                 "focus" => {
-                    draw_circle(i, 8.0, 8.0, 6.5, [255,255,255,64], &mut put);
-                    draw_rect(i, 0, 7, 16, 2, [255,255,255,255], &mut put);
-                    draw_rect(i, 7, 0, 2, 16, [255,255,255,255], &mut put);
+                    draw_circle(i, 8.0, 8.0, 6.5, [255, 255, 255, 64], &mut put);
+                    draw_rect(i, 0, 7, 16, 2, [255, 255, 255, 255], &mut put);
+                    draw_rect(i, 7, 0, 2, 16, [255, 255, 255, 255], &mut put);
                 },
                 "zoom" => {
                     // square border
-                    draw_rect(i, 3, 3, 10, 2, [255,255,255,255], &mut put);
-                    draw_rect(i, 3, 11, 10, 2, [255,255,255,255], &mut put);
-                    draw_rect(i, 3, 3, 2, 10, [255,255,255,255], &mut put);
-                    draw_rect(i, 11,3, 2, 10, [255,255,255,255], &mut put);
+                    draw_rect(i, 3, 3, 10, 2, [255, 255, 255, 255], &mut put);
+                    draw_rect(i, 3, 11, 10, 2, [255, 255, 255, 255], &mut put);
+                    draw_rect(i, 3, 3, 2, 10, [255, 255, 255, 255], &mut put);
+                    draw_rect(i, 11, 3, 2, 10, [255, 255, 255, 255], &mut put);
                 },
                 "blocks" => {
-                    for by in 0..3 { for bx in 0..3 { draw_rect(i, 3+bx*4, 3+by*4, 2, 2, [255,255,255,255], &mut put); } }
+                    for by in 0..3 {
+                        for bx in 0..3 {
+                            draw_rect(
+                                i,
+                                3 + bx * 4,
+                                3 + by * 4,
+                                2,
+                                2,
+                                [255, 255, 255, 255],
+                                &mut put,
+                            );
+                        }
+                    }
                 },
                 _ => {},
             }
@@ -396,7 +442,17 @@ impl UiSpriteGlRenderer {
             gl::BindTexture(gl::TEXTURE_2D, 0);
         }
 
-        Ok(Self { vao, vbo, program, texture: tex, u_origin, u_size, u_uv_rect, u_tint, u_viewport })
+        Ok(Self {
+            vao,
+            vbo,
+            program,
+            texture: tex,
+            u_origin,
+            u_size,
+            u_uv_rect,
+            u_tint,
+            u_viewport,
+        })
     }
 
     pub fn draw(&mut self, size_info: &SizeInfo, sprites: &[UiSprite]) {
@@ -412,14 +468,7 @@ impl UiSpriteGlRenderer {
             gl::Uniform2f(self.u_viewport, size_info.width(), size_info.height());
         }
         for s in sprites {
-            let quad: [f32; 12] = [
-                0.0, 0.0,
-                0.0, 1.0,
-                1.0, 0.0,
-                1.0, 0.0,
-                0.0, 1.0,
-                1.0, 1.0,
-            ];
+            let quad: [f32; 12] = [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
 
             // Per-sprite filter (default to LINEAR when unspecified)
             self.set_filter_nearest(s.filter_nearest.unwrap_or(false));
@@ -429,7 +478,13 @@ impl UiSpriteGlRenderer {
                 gl::Uniform2f(self.u_size, s.width, s.height);
                 gl::Uniform4f(self.u_uv_rect, s.uv_x, s.uv_y, s.uv_w, s.uv_h);
                 let (r, g, b) = s.tint.as_tuple();
-                gl::Uniform4f(self.u_tint, r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, s.alpha);
+                gl::Uniform4f(
+                    self.u_tint,
+                    r as f32 / 255.0,
+                    g as f32 / 255.0,
+                    b as f32 / 255.0,
+                    s.alpha,
+                );
                 gl::BufferData(
                     gl::ARRAY_BUFFER,
                     (quad.len() * std::mem::size_of::<f32>()) as isize,

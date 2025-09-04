@@ -39,7 +39,7 @@ if [ -n "$OPENAI_API_KEY" ]; then
     echo -e "${GREEN}✓${NC} OPENAI_API_KEY set"
     echo "  Model: ${OPENAI_MODEL:-gpt-3.5-turbo}"
     echo "  Endpoint: ${OPENAI_API_BASE:-https://api.openai.com/v1}"
-    
+
     # Test API connectivity
     if curl -s -H "Authorization: Bearer $OPENAI_API_KEY" \
             https://api.openai.com/v1/models > /dev/null 2>&1; then
@@ -91,16 +91,16 @@ use openagent_terminal_ai::{create_provider, AiRequest};
 
 fn main() {
     println!("Testing AI providers...\n");
-    
+
     let providers = vec!["null", "ollama", "openai", "anthropic"];
-    
+
     for provider_name in providers {
         println!("Provider: {}", provider_name);
         match create_provider(provider_name) {
             Ok(provider) => {
                 println!("  ✓ Created successfully");
                 println!("  Name: {}", provider.name());
-                
+
                 // Test with a simple query
                 let request = AiRequest {
                     scratch_text: "list files".to_string(),
@@ -108,7 +108,7 @@ fn main() {
                     shell_kind: Some("bash".to_string()),
                     context: vec![("test".to_string(), "true".to_string())],
                 };
-                
+
                 match provider.propose(request) {
                     Ok(proposals) => {
                         println!("  ✓ Query successful");

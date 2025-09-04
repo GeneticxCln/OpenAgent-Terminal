@@ -457,4 +457,3 @@ OpenAgent Terminal is built on the solid foundation of [Alacritty](https://githu
 OpenAgent Terminal is released under the [Apache License, Version 2.0].
 
 [Apache License, Version 2.0]: https://github.com/GeneticxCln/OpenAgent-Terminal/blob/main/LICENSE-APACHE
-

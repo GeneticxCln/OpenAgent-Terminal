@@ -34,7 +34,7 @@ pub struct WarpTabStyle {
     /// Active tab background color
     pub active_bg: Rgb,
 
-    /// Inactive tab background color  
+    /// Inactive tab background color
     pub inactive_bg: Rgb,
 
     /// Hover tab background color
@@ -87,7 +87,8 @@ impl Default for WarpTabStyle {
 impl WarpTabStyle {
     /// Build from current theme tokens and ThemeUi parameters
     pub fn from_theme(config: &UiConfig) -> Self {
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui;
         Self {
@@ -196,7 +197,8 @@ pub enum WarpEasing {
 impl Display {
     /// Build Warp split indicators from config and theme
     pub fn warp_split_indicators_from_config(&self, config: &UiConfig) -> WarpSplitIndicators {
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let s = &config.workspace.splits;
         let line_color = s.indicator_line_color.unwrap_or(tokens.border);
@@ -253,11 +255,12 @@ impl Display {
         // Track active tab changes for switch animation
         if self.tab_last_active_id != active_tab_id {
             self.tab_last_active_id = active_tab_id;
-            self.tab_anim_switch_start = if style.animation_duration_ms == 0 || config.theme.reduce_motion {
-                None
-            } else {
-                Some(Instant::now())
-            };
+            self.tab_anim_switch_start =
+                if style.animation_duration_ms == 0 || config.theme.reduce_motion {
+                    None
+                } else {
+                    Some(Instant::now())
+                };
         }
 
         let available_width = size_info.width() - style.tab_padding * 2.0;
@@ -300,7 +303,14 @@ impl Display {
         // Main background with subtle top highlight to simulate gradient
         let bg_rect = RenderRect::new(0.0, y, size_info.width(), height, style.inactive_bg, 1.0);
         // Top highlight strip
-        let highlight = RenderRect::new(0.0, y, size_info.width(), 2.0, lerp_rgb(style.inactive_bg, style.active_bg, 0.12), 0.85);
+        let highlight = RenderRect::new(
+            0.0,
+            y,
+            size_info.width(),
+            2.0,
+            lerp_rgb(style.inactive_bg, style.active_bg, 0.12),
+            0.85,
+        );
         let metrics = self.glyph_cache.font_metrics();
         self.renderer_draw_rects(&size_info, &metrics, vec![bg_rect, highlight]);
 
@@ -339,10 +349,15 @@ impl Display {
                 let elapsed = t0.elapsed().as_millis() as f32;
                 let dur = style.animation_duration_ms.max(1) as f32;
                 (elapsed / dur).clamp(0.0, 1.0)
-            } else { 1.0 }
-        } else { 0.0 };
+            } else {
+                1.0
+            }
+        } else {
+            0.0
+        };
         let base_bg = if is_active { style.active_bg } else { style.inactive_bg };
-        let bg_color = if is_active { base_bg } else { lerp_rgb(base_bg, style.hover_bg, hover_progress) };
+        let bg_color =
+            if is_active { base_bg } else { lerp_rgb(base_bg, style.hover_bg, hover_progress) };
         let corner_radius = if is_active { style.corner_radius } else { style.corner_radius * 0.5 };
 
         let tab_bg = UiRoundedRect::new(x, y, width, height, corner_radius, bg_color, 1.0);
@@ -354,7 +369,9 @@ impl Display {
                 let elapsed = t0.elapsed().as_millis() as f32;
                 let dur = style.animation_duration_ms.max(1) as f32;
                 (elapsed / dur).clamp(0.0, 1.0)
-            } else { 1.0 };
+            } else {
+                1.0
+            };
             let ind_w = width * p;
             let indicator = RenderRect::new(
                 x,
@@ -390,15 +407,7 @@ impl Display {
         if is_active && tab.zoom_saved_layout.is_some() {
             let badge_x = x + 6.0;
             let badge_y = y + height / 2.0 - 3.0;
-            let badge = UiRoundedRect::new(
-                badge_x,
-                badge_y,
-                6.0,
-                6.0,
-                3.0,
-                style.active_fg,
-                0.95,
-            );
+            let badge = UiRoundedRect::new(badge_x, badge_y, 6.0, 6.0, 3.0, style.active_fg, 0.95);
             self.stage_ui_rounded_rect(badge);
         }
 
@@ -406,22 +415,16 @@ impl Display {
         if tab.last_exit_nonzero {
             let dot_x = x + width - 12.0;
             let dot_y = y + height / 2.0 - 3.0;
-            let err_dot = UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, Rgb::new(220, 70, 70), 1.0);
+            let err_dot =
+                UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, Rgb::new(220, 70, 70), 1.0);
             self.stage_ui_rounded_rect(err_dot);
         }
         // Modified indicator (orange)
         if tab.modified {
             let dot_x = x + width - 20.0;
             let dot_y = y + height / 2.0 - 3.0;
-            let modified_dot = UiRoundedRect::new(
-                dot_x,
-                dot_y,
-                6.0,
-                6.0,
-                3.0,
-                Rgb::new(255, 150, 0),
-                1.0,
-            );
+            let modified_dot =
+                UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, Rgb::new(255, 150, 0), 1.0);
             self.stage_ui_rounded_rect(modified_dot);
         }
 
@@ -502,8 +505,7 @@ impl Display {
         let mut h = si.height() - 2.0 * si.padding_y();
         if config.workspace.tab_bar.show
             && config.workspace.tab_bar.reserve_row
-            && config.workspace.tab_bar.position
-                != crate::workspace::TabBarPosition::Hidden
+            && config.workspace.tab_bar.position != crate::workspace::TabBarPosition::Hidden
         {
             let ch = si.cell_height();
             match config.workspace.tab_bar.position {
@@ -531,10 +533,7 @@ impl Display {
         indicators: &WarpSplitIndicators,
     ) {
         // Determine current hover/drag target
-        let hover_hit = self
-            .split_drag
-            .as_ref()
-            .or(self.split_hover.as_ref());
+        let hover_hit = self.split_drag.as_ref().or(self.split_hover.as_ref());
 
         match layout {
             crate::workspace::split_manager::SplitLayout::Horizontal { left, right, ratio } => {
@@ -555,8 +554,12 @@ impl Display {
                         let elapsed = t0.elapsed().as_millis() as f32;
                         let dur = 160.0;
                         (elapsed / dur).clamp(0.0, 1.0)
-                    } else { 1.0 }
-                } else { 0.0 };
+                    } else {
+                        1.0
+                    }
+                } else {
+                    0.0
+                };
                 let base_w = indicators.split_line_width;
                 let target_w = indicators.split_line_width * indicators.hover_line_scale;
                 let line_width = base_w + (target_w - base_w) * p;
@@ -624,8 +627,12 @@ impl Display {
                         let elapsed = t0.elapsed().as_millis() as f32;
                         let dur = 160.0;
                         (elapsed / dur).clamp(0.0, 1.0)
-                    } else { 1.0 }
-                } else { 0.0 };
+                    } else {
+                        1.0
+                    }
+                } else {
+                    0.0
+                };
                 let base_w = indicators.split_line_width;
                 let target_w = indicators.split_line_width * indicators.hover_line_scale;
                 let line_width = base_w + (target_w - base_w) * p;

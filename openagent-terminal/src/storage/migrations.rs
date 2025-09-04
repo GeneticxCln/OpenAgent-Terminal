@@ -44,8 +44,8 @@ const MIGRATIONS: &[Migration] = &[Migration {
 
             -- Full-text search for commands and output
             CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
-                command, 
-                working_directory, 
+                command,
+                working_directory,
                 output_preview,
                 content='blocks',
                 content_rowid='id'

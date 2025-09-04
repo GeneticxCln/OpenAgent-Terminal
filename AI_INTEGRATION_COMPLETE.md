@@ -75,7 +75,7 @@ backdrop_alpha = 0.3
 
 # For real providers, also set:
 # api_key_env = "OPENAI_API_KEY"
-# endpoint_env = "OPENAI_API_BASE" 
+# endpoint_env = "OPENAI_API_BASE"
 # model_env = "OPENAI_MODEL"
 ```
 

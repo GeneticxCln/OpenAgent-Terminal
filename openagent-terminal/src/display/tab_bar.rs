@@ -135,7 +135,8 @@ impl Display {
             // Determine hover state for this tab
             let is_hover_tab = matches!(hover, Some(crate::display::TabHoverTarget::Tab(id)) if id == tab_id)
                 || matches!(hover, Some(crate::display::TabHoverTarget::Close(id)) if id == tab_id);
-            let is_hover_close = matches!(hover, Some(crate::display::TabHoverTarget::Close(id)) if id == tab_id);
+            let is_hover_close =
+                matches!(hover, Some(crate::display::TabHoverTarget::Close(id)) if id == tab_id);
 
             // Draw tab background
             if is_active || is_hover_tab {

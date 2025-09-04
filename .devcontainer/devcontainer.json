@@ -21,4 +21,3 @@
   ],
   "postCreateCommand": "rustup component add clippy rustfmt && cargo fetch"
 }
-

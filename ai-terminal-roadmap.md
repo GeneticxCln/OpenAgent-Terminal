@@ -67,7 +67,7 @@ impl BackpressureManager {
     fn should_flush(&self) -> bool {
         self.last_tick.elapsed() >= Duration::from_millis(16) // 60Hz
     }
-    
+
     fn coalesce_chunks(&mut self) -> Option<CombinedChunk> {
         // Combine buffered chunks for single UI update
     }
@@ -155,7 +155,7 @@ async fn test_openai_streaming_with_backpressure() {
             .header("content-type", "text/event-stream")
             .body_stream(generate_slow_chunks());
     });
-    
+
     // Test backpressure handling
     let client = create_client_with_backpressure();
     let result = client.stream_completion(&mock_server.url()).await;

@@ -63,7 +63,7 @@ pub struct WarpIntegration {
     /// Active terminal instances keyed by pane ID
     terminals: HashMap<PaneId, Arc<FairMutex<Term<EventProxy>>>>,
 
-    /// PTY managers for each terminal  
+    /// PTY managers for each terminal
     // pty_managers: HashMap<PaneId, Arc<PtyManager>>, // TODO: Uncomment when PtyManager is available
 
     /// Configuration
@@ -316,7 +316,7 @@ impl WarpIntegration {
         Ok(false)
     }
 
-    /// Handle split down operation  
+    /// Handle split down operation
     fn handle_split_down(&mut self) -> WarpResult<bool> {
         // TODO: Implement when split functionality is available
         info!("Split down not yet implemented");
@@ -544,13 +544,34 @@ pub enum WarpAction {
 pub enum WarpUiUpdateType {
     TabCreated(TabId),
     TabClosed(TabId),
-    TabSwitched { tab_id: TabId },
-    PaneSplit { tab_id: TabId, new_pane_id: PaneId },
-    PaneFocused { tab_id: TabId, pane_id: PaneId },
-    PaneResized { tab_id: TabId, pane_id: PaneId },
-    PaneZoomed { tab_id: TabId, pane_id: PaneId, zoomed: bool },
-    PaneClosed { tab_id: TabId, closed_pane_id: PaneId, new_active_pane_id: PaneId },
-    SplitsEqualized { tab_id: TabId },
+    TabSwitched {
+        tab_id: TabId,
+    },
+    PaneSplit {
+        tab_id: TabId,
+        new_pane_id: PaneId,
+    },
+    PaneFocused {
+        tab_id: TabId,
+        pane_id: PaneId,
+    },
+    PaneResized {
+        tab_id: TabId,
+        pane_id: PaneId,
+    },
+    PaneZoomed {
+        tab_id: TabId,
+        pane_id: PaneId,
+        zoomed: bool,
+    },
+    PaneClosed {
+        tab_id: TabId,
+        closed_pane_id: PaneId,
+        new_active_pane_id: PaneId,
+    },
+    SplitsEqualized {
+        tab_id: TabId,
+    },
     /// Internal UI update to trigger session autosave
     SessionAutoSave,
 }

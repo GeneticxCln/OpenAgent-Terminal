@@ -38,4 +38,3 @@ palette_icon_px = 16.0
 composer_blink_rate_ms = 600
 composer_word_boundary_style = "Alnum"
 composer_open_mode = "Instant"
-

@@ -15,7 +15,9 @@ pub enum WordBoundaryStyle {
 }
 
 impl Default for WordBoundaryStyle {
-    fn default() -> Self { Self::Alnum }
+    fn default() -> Self {
+        Self::Alnum
+    }
 }
 
 impl SerdeReplace for WordBoundaryStyle {
@@ -35,7 +37,9 @@ pub enum ComposerOpenMode {
 }
 
 impl Default for ComposerOpenMode {
-    fn default() -> Self { Self::Instant }
+    fn default() -> Self {
+        Self::Instant
+    }
 }
 
 impl SerdeReplace for ComposerOpenMode {

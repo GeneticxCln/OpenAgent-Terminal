@@ -18,4 +18,3 @@ conventional_commits = true
 filter_unconventional = true
 # Only pick annotated tags matching vX[.Y[.Z]]
 tag_pattern = "v[0-9]*"
-

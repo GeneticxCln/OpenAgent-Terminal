@@ -31,4 +31,3 @@ Best practices
 - Prefer streaming interfaces for long-running tasks
 
 For detailed design notes see docs/adr/003-plugin-system.md
-
