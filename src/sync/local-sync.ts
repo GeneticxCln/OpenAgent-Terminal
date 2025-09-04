@@ -45,14 +45,22 @@ export interface SyncData {
   checksum: string;
 }
 
+export interface KdfParams {
+  algo: 'argon2id' | 'scrypt' | 'pbkdf2';
+  salt: string; // base64
+  iterations?: number;
+  memory?: number;
+  parallelism?: number;
+}
+
 export interface EncryptedPayload {
   algorithm: string;
-  salt: string;
   iv: string;
   authTag: string;
   ciphertext: string;
   timestamp: number;
   version: number;
+  kdf: KdfParams;
 }
 
 export interface SyncPeer {
@@ -61,19 +69,22 @@ export interface SyncPeer {
   address: string;
   port: number;
   lastSeen: number;
-  publicKey?: string;
+  publicKey?: string; // PEM
 }
 
 export class LocalSync extends EventEmitter {
   private config: SyncConfig;
   private passphrase: string | null = null;
   private derivedKey: Buffer | null = null;
+  private kdfParams: KdfParams | null = null;
   private deviceId: string;
   private syncData: Map<string, SyncData> = new Map();
   private peers: Map<string, SyncPeer> = new Map();
   private discoverySocket: dgram.Socket | null = null;
   private syncServer: net.Server | null = null;
   private fileWatcher: fs.FSWatcher | null = null;
+  private publicKeyPem: string | null = null;
+  private privateKeyPem: string | null = null;
 
   constructor(config: Partial<SyncConfig> = {}) {
     super();
@@ -99,6 +110,7 @@ export class LocalSync extends EventEmitter {
     };
 
     this.deviceId = this.generateDeviceId();
+    this.loadOrCreateKeys();
     this.loadLocalData();
   }
 
@@ -168,28 +180,81 @@ export class LocalSync extends EventEmitter {
     return true;
   }
 
-  private async deriveKey(passphrase: string): Promise<Buffer> {
-    const salt = Buffer.from('OpenAgentTerminalSalt', 'utf-8'); // In production, use random salt per installation
+  private getStateDir(): string {
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    const dir = path.join(home, '.openagent', 'sync');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
 
+  private getSaltPath(): string {
+    return path.join(this.getStateDir(), 'kdf_salt.bin');
+  }
+
+  private getKeyPath(): string {
+    return path.join(this.getStateDir(), 'keys.json');
+  }
+
+  private loadOrCreateKeys(): void {
+    const keyPath = this.getKeyPath();
+    try {
+      if (fs.existsSync(keyPath)) {
+        const { publicKeyPem, privateKeyPem } = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+        this.publicKeyPem = publicKeyPem;
+        this.privateKeyPem = privateKeyPem;
+      } else {
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+        this.publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+        this.privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+        fs.writeFileSync(keyPath, JSON.stringify({ publicKeyPem: this.publicKeyPem, privateKeyPem: this.privateKeyPem }, null, 2));
+      }
+    } catch (e) {
+      this.emit('error', { type: 'keys', error: e });
+    }
+  }
+
+  private async getOrCreateSalt(): Promise<Buffer> {
+    const saltPath = this.getSaltPath();
+    if (fs.existsSync(saltPath)) {
+      return fs.readFileSync(saltPath);
+    }
+    const salt = crypto.randomBytes(32);
+    fs.writeFileSync(saltPath, salt);
+    return salt;
+  }
+
+  private async deriveKey(passphrase: string): Promise<Buffer> {
+    const salt = await this.getOrCreateSalt();
+
+    let key: Buffer;
     switch (this.config.encryption.keyDerivation) {
       case 'argon2id':
-        // In real implementation, would use argon2 library
-        // For now, falling back to scrypt
+        // Placeholder: fallback to scrypt until argon2 library is wired
       case 'scrypt':
-        return await scrypt(passphrase, salt, 32) as Buffer;
-
+        key = (await scrypt(passphrase, salt, 32)) as Buffer;
+        break;
       case 'pbkdf2':
-        return crypto.pbkdf2Sync(
+        key = crypto.pbkdf2Sync(
           passphrase,
           salt,
           this.config.encryption.iterations || 100000,
           32,
           'sha256'
         );
-
+        break;
       default:
         throw new Error(`Unsupported key derivation: ${this.config.encryption.keyDerivation}`);
     }
+
+    // Capture KDF params for payload embedding
+    this.kdfParams = {
+      algo: this.config.encryption.keyDerivation,
+      salt: salt.toString('base64'),
+      iterations: this.config.encryption.keyDerivation === 'pbkdf2' || this.config.encryption.keyDerivation === 'scrypt'
+        ? (this.config.encryption.iterations || 100000) : undefined,
+    };
+
+    return key;
   }
 
   // Encryption/Decryption
@@ -200,7 +265,6 @@ export class LocalSync extends EventEmitter {
     }
 
     const algorithm = this.config.encryption.algorithm;
-    const salt = crypto.randomBytes(32);
     const iv = crypto.randomBytes(16);
 
     let cipher: crypto.CipherGCM;
@@ -226,12 +290,12 @@ export class LocalSync extends EventEmitter {
 
     return {
       algorithm,
-      salt: salt.toString('base64'),
       iv: iv.toString('base64'),
       authTag: authTag.toString('base64'),
       ciphertext: ciphertext.toString('base64'),
       timestamp: Date.now(),
       version: 1,
+      kdf: this.kdfParams || { algo: this.config.encryption.keyDerivation, salt: (await this.getOrCreateSalt()).toString('base64'), iterations: this.config.encryption.iterations },
     };
   }
 
@@ -245,14 +309,38 @@ export class LocalSync extends EventEmitter {
     const authTag = Buffer.from(payload.authTag, 'base64');
     const ciphertext = Buffer.from(payload.ciphertext, 'base64');
 
+    // If payload carries KDF params, derive a per-payload key using passphrase
+    let effectiveKey = decryptionKey;
+    if (payload.kdf && this.passphrase) {
+      const salt = Buffer.from(payload.kdf.salt, 'base64');
+      switch (payload.kdf.algo) {
+        case 'argon2id':
+          // Fallback to scrypt until argon2 is wired
+        case 'scrypt':
+          effectiveKey = (await scrypt(this.passphrase, salt, 32)) as Buffer;
+          break;
+        case 'pbkdf2':
+          effectiveKey = crypto.pbkdf2Sync(
+            this.passphrase,
+            salt,
+            payload.kdf.iterations || 100000,
+            32,
+            'sha256'
+          );
+          break;
+        default:
+          throw new Error(`Unsupported KDF in payload: ${payload.kdf.algo}`);
+      }
+    }
+
     let decipher: crypto.DecipherGCM;
 
     switch (payload.algorithm) {
       case 'aes-256-gcm':
-        decipher = crypto.createDecipheriv('aes-256-gcm', decryptionKey, iv) as crypto.DecipherGCM;
+        decipher = crypto.createDecipheriv('aes-256-gcm', effectiveKey, iv) as crypto.DecipherGCM;
         break;
       case 'chacha20-poly1305':
-        decipher = crypto.createDecipheriv('chacha20-poly1305', decryptionKey, iv) as crypto.DecipherGCM;
+        decipher = crypto.createDecipheriv('chacha20-poly1305', effectiveKey, iv) as crypto.DecipherGCM;
         break;
       default:
         throw new Error(`Unsupported algorithm: ${payload.algorithm}`);
@@ -335,6 +423,24 @@ export class LocalSync extends EventEmitter {
           return; // Ignore our own announcements
         }
 
+        // Verify signature
+        if (!announcement.sig || !announcement.publicKey) {
+          return; // ignore unauthenticated
+        }
+        const verify = crypto.createVerify('SHA256');
+        const signedFields = {
+          deviceId: announcement.deviceId,
+          name: announcement.name,
+          syncPort: announcement.syncPort,
+          timestamp: announcement.timestamp,
+          version: announcement.version,
+        };
+        const payloadStr = JSON.stringify(signedFields);
+        verify.update(payloadStr);
+        verify.end();
+        const isValid = verify.verify(announcement.publicKey, Buffer.from(announcement.sig, 'base64'));
+        if (!isValid) return;
+
         const peer: SyncPeer = {
           id: announcement.deviceId,
           name: announcement.name,
@@ -378,12 +484,28 @@ export class LocalSync extends EventEmitter {
   private announcePresence(): void {
     if (!this.discoverySocket) return;
 
-    const announcement = {
+    const base = {
       deviceId: this.deviceId,
       name: require('os').hostname(),
       syncPort: 42425,
       timestamp: Date.now(),
       version: 1,
+    };
+
+    // Sign announcement
+    let sigB64 = '';
+    if (this.privateKeyPem) {
+      const sign = crypto.createSign('SHA256');
+      sign.update(JSON.stringify(base));
+      sign.end();
+      const signature = sign.sign(this.privateKeyPem);
+      sigB64 = signature.toString('base64');
+    }
+
+    const announcement = {
+      ...base,
+      publicKey: this.publicKeyPem,
+      sig: sigB64,
     };
 
     const message = Buffer.from(JSON.stringify(announcement));
@@ -425,20 +547,27 @@ export class LocalSync extends EventEmitter {
 
   private async handleSyncRequest(socket: net.Socket, request: any): Promise<void> {
     // Send all our encrypted data to the requesting peer
-    const response = {
+    const base = {
       type: 'sync-response',
       deviceId: this.deviceId,
       data: Array.from(this.syncData.entries()),
       timestamp: Date.now(),
     };
 
-    socket.write(JSON.stringify(response));
+    const signed = this.signMessage(base);
+    socket.write(JSON.stringify(signed));
   }
 
   private async handleDataPush(socket: net.Socket, request: any): Promise<void> {
     // Receive and merge data from peer
     try {
-      const { data, deviceId } = request;
+      const { data, deviceId, sig, publicKey } = request;
+
+      // Verify signature
+      if (!this.verifyMessage(request, publicKey)) {
+        socket.write(JSON.stringify({ type: 'ack', success: false, error: 'invalid signature' }));
+        return;
+      }
 
       for (const [id, encryptedData] of data) {
         // Only accept newer data
@@ -467,11 +596,13 @@ export class LocalSync extends EventEmitter {
   }
 
   private async broadcastToPeers(data: EncryptedPayload): Promise<void> {
-    const message = {
+    const base = {
       type: 'data-push',
       deviceId: this.deviceId,
       data: [[`temp-${Date.now()}`, data]],
+      timestamp: Date.now(),
     };
+    const message = this.signMessage(base);
 
     for (const peer of this.peers.values()) {
       this.sendToPeer(peer, message).catch(error => {
@@ -753,12 +884,40 @@ export class LocalSync extends EventEmitter {
       isEncrypted: !!this.derivedKey,
       peers: Array.from(this.peers.values()),
       dataCount: this.syncData.size,
+      publicKey: this.publicKeyPem,
       dataTypes: Object.keys(this.config.dataTypes).filter(k => this.config.dataTypes[k as keyof typeof this.config.dataTypes]),
     };
   }
 
   public getPeers(): SyncPeer[] {
     return Array.from(this.peers.values());
+  }
+  private signMessage<T extends Record<string, any>>(obj: T): T & { sig: string; publicKey: string | null } {
+    if (!this.privateKeyPem || !this.publicKeyPem) {
+      return { ...(obj as any), sig: '', publicKey: null };
+    }
+    const sign = crypto.createSign('SHA256');
+    const payload = { ...obj };
+    const payloadStr = JSON.stringify(payload);
+    sign.update(payloadStr);
+    sign.end();
+    const signature = sign.sign(this.privateKeyPem).toString('base64');
+    return { ...(obj as any), sig: signature, publicKey: this.publicKeyPem };
+  }
+
+  private verifyMessage<T extends Record<string, any>>(msg: T, pubKey?: string): boolean {
+    try {
+      const { sig, publicKey, ...rest } = msg as any;
+      const key = pubKey || publicKey;
+      if (!sig || !key) return false;
+      const verify = crypto.createVerify('SHA256');
+      const payloadStr = JSON.stringify(rest);
+      verify.update(payloadStr);
+      verify.end();
+      return verify.verify(key, Buffer.from(sig, 'base64'));
+    } catch {
+      return false;
+    }
   }
 }
 

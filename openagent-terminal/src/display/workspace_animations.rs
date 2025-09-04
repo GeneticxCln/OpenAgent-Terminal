@@ -206,7 +206,7 @@ impl WorkspaceAnimationManager {
             };
 
             // Update animation data based on progress
-            self.update_animation_data(animation);
+            Self::update_animation_data(animation);
 
             animations_updated = true;
 
@@ -233,7 +233,7 @@ impl WorkspaceAnimationManager {
     }
 
     /// Update animation-specific data based on current progress
-    fn update_animation_data(&self, animation: &mut TabAnimationState) {
+    fn update_animation_data(animation: &mut TabAnimationState) {
         let progress = animation.progress;
 
         match &mut animation.data {

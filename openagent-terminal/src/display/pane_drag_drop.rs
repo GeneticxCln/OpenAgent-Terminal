@@ -9,7 +9,8 @@ use crate::display::color::Rgb;
 use crate::display::workspace_animations::{
     WorkspaceAnimationManager, TabAnimationType, TabAnimationData
 };
-use crate::workspace::{TabId, SplitId};
+use crate::workspace::TabId;
+use crate::workspace::split_manager::PaneId;
 
 /// Different types of pane drag operations
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,7 +44,7 @@ pub enum PaneDropZone {
         tab_id: TabId,
         direction: SplitDirection,
         /// Target split to attach to
-        target_split: Option<SplitId>,
+        target_split: Option<PaneId>,
         /// Position within the split (before/after)
         before: bool,
     },
@@ -59,7 +60,7 @@ pub enum PaneDropZone {
 pub struct PaneDragState {
     /// The pane being dragged
     pub source_tab: TabId,
-    pub source_split: SplitId,
+pub source_split: PaneId,
     
     /// Drag operation details
     pub drag_type: PaneDragType,
@@ -85,7 +86,7 @@ impl PaneDragState {
     /// Create new pane drag state
     pub fn new(
         source_tab: TabId,
-        source_split: SplitId,
+source_split: PaneId,
         start_pos: (f32, f32),
         drag_type: PaneDragType,
     ) -> Self {
@@ -154,7 +155,7 @@ impl PaneDragManager {
     pub fn start_drag(
         &mut self,
         source_tab: TabId,
-        source_split: SplitId,
+source_split: PaneId,
         start_pos: (f32, f32),
         drag_type: PaneDragType,
     ) {
@@ -268,7 +269,7 @@ impl PaneDragManager {
         &self,
         mouse_pos: (f32, f32),
         tab_positions: &[(TabId, f32, f32)], // (tab_id, x, width)
-        split_areas: &[(TabId, SplitId, f32, f32, f32, f32)], // (tab_id, split_id, x, y, w, h)
+split_areas: &[(TabId, PaneId, f32, f32, f32, f32)], // (tab_id, split_id, x, y, w, h)
     ) -> Option<PaneDropZone> {
         let (mouse_x, mouse_y) = mouse_pos;
         
@@ -373,7 +374,7 @@ impl Default for PaneDragManager {
 #[derive(Debug, Clone)]
 pub struct PaneDragVisualEffects {
     pub source_tab: TabId,
-    pub source_split: SplitId,
+pub source_split: PaneId,
     pub current_pos: (f32, f32),
     pub drag_preview_alpha: f32,
     pub drag_preview_scale: f32,
@@ -397,7 +398,7 @@ mod tests {
     fn test_start_drag() {
         let mut manager = PaneDragManager::new();
         let tab_id = TabId(1);
-        let split_id = SplitId(1);
+let split_id = PaneId(1);
         
         manager.start_drag(tab_id, split_id, (0.0, 0.0), PaneDragType::MoveToTab);
         assert!(manager.current_drag().is_some());
@@ -412,7 +413,7 @@ mod tests {
     fn test_drag_activation() {
         let mut manager = PaneDragManager::new();
         let tab_id = TabId(1);
-        let split_id = SplitId(1);
+let split_id = PaneId(1);
         
         manager.start_drag(tab_id, split_id, (0.0, 0.0), PaneDragType::MoveToTab);
         

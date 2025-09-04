@@ -1,7 +1,19 @@
+#[cfg(feature = "ai")]
 use super::ai::ProviderConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, warn};
+
+#[cfg(not(feature = "ai"))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub api_key_env: Option<String>,
+    pub endpoint_env: Option<String>,
+    pub model_env: Option<String>,
+    pub default_endpoint: Option<String>,
+    pub default_model: Option<String>,
+    pub extra: HashMap<String, String>,
+}
 
 /// Secure provider credentials container that never mutates global environment
 #[derive(Debug, Clone)]

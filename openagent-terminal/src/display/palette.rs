@@ -171,13 +171,34 @@ impl PaletteState {
             // Base score (0 if no term)
             let mut base_score: i32 = 0;
             if !term.is_empty() {
+                let title_lower = it.title.to_lowercase();
                 let hay = format!(
                     "{} {}",
-                    it.title.to_lowercase(),
+                    title_lower,
                     it.subtitle.as_deref().unwrap_or("").to_lowercase()
                 );
                 if let Some(score) = fuzzy_score(&term, &hay) {
                     base_score = score;
+                    // Small boosts for title-preferring matches
+                    if title_lower == term {
+                        // Exact title match
+                        base_score += 120;
+                    } else {
+                        // Exact prefix on title
+                        if title_lower.starts_with(&term) {
+                            base_score += 45;
+                        } else if title_lower.contains(&term) {
+                            // Contiguous substring in title (not necessarily at start)
+                            base_score += 15;
+                        }
+                        // Any word in title starts with term (split on non-alnum)
+                        let word_prefix = title_lower
+                            .split(|c: char| !c.is_alphanumeric())
+                            .any(|w| !w.is_empty() && w.starts_with(&term));
+                        if word_prefix {
+                            base_score += 20;
+                        }
+                    }
                 } else {
                     // Skip items that don't match at all when term is provided
                     continue;

@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::fs;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerInfo {
@@ -236,7 +235,7 @@ impl DockerIntegration {
         let image = parts[2].to_string();
         let status_str = parts[3];
         let ports_str = parts[4];
-        let created_str = parts[5];
+        let _created_str = parts[5];
 
         let status = Self::parse_container_status(status_str);
         let ports = Self::parse_port_mappings(ports_str);
@@ -383,7 +382,8 @@ impl DockerIntegration {
                 .map_err(|e| anyhow!("Failed to get container working dir: {}", e))?;
 
             if output.status.success() {
-                let container_wd = String::from_utf8_lossy(&output.stdout).trim();
+                let container_wd_raw = String::from_utf8_lossy(&output.stdout);
+                let container_wd = container_wd_raw.trim();
                 let container_working_dir = if !container_wd.is_empty() {
                     Some(PathBuf::from(container_wd))
                 } else {
@@ -650,17 +650,18 @@ impl DockerIntegration {
     }
 
     pub async fn get_container_logs(&self, container_id: &str, lines: Option<usize>) -> Result<String> {
-        let mut args = vec!["logs"];
+        let mut args: Vec<String> = vec!["logs".to_string()];
         
         if let Some(n) = lines {
-            args.push("--tail");
-            args.push(&n.to_string());
+            args.push("--tail".to_string());
+            args.push(n.to_string());
         }
         
-        args.push(container_id);
+        args.push(container_id.to_string());
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
         let output = Command::new("docker")
-            .args(&args)
+            .args(&args_str)
             .output()
             .map_err(|e| anyhow!("Failed to get container logs: {}", e))?;
 

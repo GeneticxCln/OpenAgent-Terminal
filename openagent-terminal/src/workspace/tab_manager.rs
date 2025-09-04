@@ -74,7 +74,7 @@ pub struct PaneContext {
     pub focused: bool,
 }
 
-/// Tab manager handles multiple tabs
+/// Tab manager handles multiple tabs and centralizes ID allocation
 pub struct TabManager {
     /// All tabs indexed by ID
     tabs: HashMap<TabId, TabContext>,
@@ -88,7 +88,7 @@ pub struct TabManager {
     /// Counter for generating unique tab IDs
     next_tab_id: usize,
 
-    /// Counter for generating unique pane IDs
+    /// Counter for generating unique pane IDs (centralized allocation)
     next_pane_id: usize,
 }
 
@@ -302,11 +302,33 @@ impl TabManager {
         self.tabs.contains_key(&tab_id)
     }
 
-    /// Create a new pane ID
-    pub fn create_pane_id(&mut self) -> PaneId {
+    /// Allocate a new unique PaneId centrally
+    pub fn allocate_pane_id(&mut self) -> PaneId {
         let pane_id = PaneId(self.next_pane_id);
         self.next_pane_id += 1;
         pane_id
+    }
+    
+    /// Create a new pane ID (legacy method - forwards to allocate_pane_id)
+    pub fn create_pane_id(&mut self) -> PaneId {
+        self.allocate_pane_id()
+    }
+    
+    /// Allocate multiple PaneIds at once for batch operations
+    pub fn allocate_pane_ids(&mut self, count: usize) -> Vec<PaneId> {
+        let mut pane_ids = Vec::with_capacity(count);
+        for _ in 0..count {
+            pane_ids.push(self.allocate_pane_id());
+        }
+        pane_ids
+    }
+    
+    /// Get all pane IDs for a specific tab
+    pub fn get_tab_pane_ids(&self, tab_id: TabId) -> Vec<PaneId> {
+        self.tabs
+            .get(&tab_id)
+            .map(|tab| tab.split_layout.collect_pane_ids())
+            .unwrap_or_default()
     }
 }
 

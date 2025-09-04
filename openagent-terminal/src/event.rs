@@ -5003,6 +5003,17 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                         let font = self.ctx.config.font.clone();
                         display_update_pending.set_font(font.with_size(self.ctx.display.font_size));
+
+                        // Update UI sprite filtering decision based on new DPI scale.
+                        let sf = scale_factor as f64;
+                        let frac = sf.fract();
+                        let nearest = frac < 0.05 || (1.0 - frac) < 0.05 || sf <= 1.1;
+                        self.ctx.display.set_ui_sprite_filter(nearest);
+                        log::info!(
+                            "DPI changed to {:.2}: UI sprite filter -> {}",
+                            sf,
+                            if nearest { "NEAREST" } else { "LINEAR" }
+                        );
                     },
                     WindowEvent::Resized(size) => {
                         // Ignore resize events to zero in any dimension, to avoid issues with Winit

@@ -109,6 +109,9 @@ struct PluginContext {
     #[allow(dead_code)]
     permissions: PluginPermissions,
     resource_tracker: ResourceTracker,
+    // Compiled globsets for permissions
+    read_glob: Option<globset::GlobSet>,
+    write_glob: Option<globset::GlobSet>,
 }
 
 /// Exported functions from a plugin
@@ -441,8 +444,16 @@ impl PluginManager {
         // Build WASIp1 context from the WasiCtxBuilder
         let wasi = wasi_builder.build_p1();
 
-        let context =
-            PluginContext { wasi, permissions, resource_tracker: ResourceTracker::default() };
+        // Build globsets from permissions
+        let (read_glob, write_glob) = self.compile_globs(&permissions);
+
+        let context = PluginContext {
+            wasi,
+            permissions,
+            resource_tracker: ResourceTracker::default(),
+            read_glob,
+            write_glob,
+        };
 
         let mut store = Store::new(&self.engine, context);
 
@@ -561,7 +572,7 @@ impl PluginManager {
 
         // Default: sandboxed to plugin_dir only
         let default = PluginPermissions {
-            read_files: vec![self.plugin_dir.to_string_lossy().to_string()],
+            read_files: vec![format!("{}/**", self.plugin_dir.to_string_lossy())],
             write_files: vec![],
             ..Default::default()
         };
@@ -822,12 +833,18 @@ impl PluginManager {
 
                     let path = String::from_utf8_lossy(&path_buffer);
 
-                    // Check permissions
+                    // Check permissions with normalized path and glob match
                     let ctx = caller.data();
-                    let can_read = ctx.permissions.read_files.iter().any(|pattern| {
-                        // Simple pattern matching - in production use proper glob
-                        path.starts_with(pattern.trim_end_matches('*'))
-                    });
+                    let norm_path = match dunce::canonicalize(&*path) {
+                        Ok(p) => p,
+                        Err(_) => std::path::PathBuf::from(&*path),
+                    };
+                    let norm_str = norm_path.to_string_lossy();
+                    let can_read = ctx
+                        .read_glob
+                        .as_ref()
+                        .map(|gs| gs.is_match(&*norm_str))
+                        .unwrap_or(false);
 
                     if !can_read {
                         return Ok(-1); // Permission denied
@@ -894,13 +911,18 @@ impl PluginManager {
 
                     let path = String::from_utf8_lossy(&path_buffer);
 
-                    // Check permissions
+                    // Check permissions with normalized path and glob match
                     let ctx = caller.data();
+                    let norm_path = match dunce::canonicalize(&*path) {
+                        Ok(p) => p,
+                        Err(_) => std::path::PathBuf::from(&*path),
+                    };
+                    let norm_str = norm_path.to_string_lossy();
                     let can_write = ctx
-                        .permissions
-                        .write_files
-                        .iter()
-                        .any(|pattern| path.starts_with(pattern.trim_end_matches('*')));
+                        .write_glob
+                        .as_ref()
+                        .map(|gs| gs.is_match(&*norm_str))
+                        .unwrap_or(false);
 
                     if !can_write {
                         return Ok(-1); // Permission denied
@@ -923,7 +945,7 @@ impl PluginManager {
                 PluginError::InitializationFailed(format!("Failed to add host_write_file: {}", e))
             })?;
 
-        // Host execute command function
+        // Host execute command function (legacy)
         let host_clone = self.host.clone();
         linker
             .func_wrap(
@@ -954,7 +976,7 @@ impl PluginManager {
                     // Execute command through host if available
                     if let Some(ref host) = host_clone {
                         match host.execute_command(&command) {
-                            Ok(_output) => Ok(0), // Success - output handling would need memory management
+                            Ok(_output) => Ok(0), // Success
                             Err(_) => Ok(-2),     // Execution failed
                         }
                     } else {
@@ -969,6 +991,81 @@ impl PluginManager {
                 ))
             })?;
 
+        // Host execute command function with memory copyouts
+        let host_clone2 = self.host.clone();
+        linker
+            .func_wrap(
+                "env",
+                "host_execute_command_ex",
+                move |mut caller: Caller<'_, PluginContext>,
+                      cmd_ptr: i32,
+                      cmd_len: i32,
+                      out_ptr_ptr: i32,
+                      out_len_ptr: i32,
+                      err_ptr_ptr: i32,
+                      err_len_ptr: i32,
+                      exit_code_ptr: i32|
+                      -> Result<i32, anyhow::Error> {
+                    let memory = caller
+                        .get_export("memory")
+                        .and_then(|e| e.into_memory())
+                        .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+
+                    // Read command from memory
+                    let mut cmd_buffer = vec![0u8; cmd_len as usize];
+                    memory.read(&caller, cmd_ptr as usize, &mut cmd_buffer)
+                        .map_err(|_| anyhow::anyhow!("Failed to read command from plugin memory"))?;
+                    let command = String::from_utf8_lossy(&cmd_buffer).to_string();
+
+                    // Check permission
+                    let ctx = caller.data();
+                    if !ctx.permissions.execute_commands {
+                        return Ok(-1); // permission denied
+                    }
+
+                    // Execute via host
+                    let output = if let Some(ref host) = host_clone2 {
+                        host.execute_command(&command).map_err(|_| anyhow::anyhow!("exec failed"))?
+                    } else {
+                        return Ok(-3); // host not available
+                    };
+
+                    // Get plugin allocator
+                    let alloc = caller
+                        .get_export("plugin_alloc")
+                        .and_then(|e| e.into_func())
+                        .ok_or_else(|| anyhow::anyhow!("Plugin allocator (plugin_alloc) not found"))?;
+                    let mut alloc = alloc.typed::<i32, i32>(&caller)?;
+
+                    // Write stdout
+                    let out_bytes = output.stdout.as_bytes();
+                    let out_ptr = alloc.call(&mut caller, out_bytes.len() as i32)?;
+                    memory.write(&mut caller, out_ptr as usize, out_bytes)
+                        .map_err(|_| anyhow::anyhow!("Failed to write stdout"))?;
+                    memory.write(&mut caller, out_ptr_ptr as usize, &(out_ptr as u32).to_le_bytes())
+                        .map_err(|_| anyhow::anyhow!("Failed to write out_ptr"))?;
+                    memory.write(&mut caller, out_len_ptr as usize, &((out_bytes.len() as u32).to_le_bytes()))
+                        .map_err(|_| anyhow::anyhow!("Failed to write out_len"))?;
+
+                    // Write stderr
+                    let err_bytes = output.stderr.as_bytes();
+                    let err_ptr = alloc.call(&mut caller, err_bytes.len() as i32)?;
+                    memory.write(&mut caller, err_ptr as usize, err_bytes)
+                        .map_err(|_| anyhow::anyhow!("Failed to write stderr"))?;
+                    memory.write(&mut caller, err_ptr_ptr as usize, &(err_ptr as u32).to_le_bytes())
+                        .map_err(|_| anyhow::anyhow!("Failed to write err_ptr"))?;
+                    memory.write(&mut caller, err_len_ptr as usize, &((err_bytes.len() as u32).to_le_bytes()))
+                        .map_err(|_| anyhow::anyhow!("Failed to write err_len"))?;
+
+                    // Write exit code
+                    memory.write(&mut caller, exit_code_ptr as usize, &((output.exit_code as i32).to_le_bytes()))
+                        .map_err(|_| anyhow::anyhow!("Failed to write exit code"))?;
+
+                    Ok(0)
+                },
+            )
+            .map_err(|e| PluginError::InitializationFailed(format!("Failed to add host_execute_command_ex: {}", e)))?;
+
         Ok(())
     }
 
@@ -982,10 +1079,12 @@ impl PluginManager {
         let plugins = self.plugins.read().await;
         let plugin = plugins
             .get(plugin_name)
+            .cloned()
             .ok_or_else(|| PluginError::NotFound(plugin_name.to_string()))?;
+        // Clone Arc out of the map to release the read lock early
+        drop(plugins);
         let instance = &plugin.instance;
         let exports = &plugin.exports;
-        drop(plugins); // Release the read lock early
 
         // Ensure event handler exists
         let handle_event = match &exports.handle_event {
@@ -1107,6 +1206,25 @@ impl PluginManager {
             return None;
         }
         Some(resolved.to_string_lossy().to_string())
+    }
+
+    fn compile_globs(&self, perms: &PluginPermissions) -> (Option<globset::GlobSet>, Option<globset::GlobSet>) {
+        use globset::{Glob, GlobSetBuilder};
+        let mut build = |patterns: &Vec<String>| -> Option<globset::GlobSet> {
+            if patterns.is_empty() {
+                return None;
+            }
+            let mut builder = GlobSetBuilder::new();
+            for pat in patterns {
+                // Ensure patterns are absolute under plugin_dir, append /** if ends with directory
+                let pat = if pat.ends_with('/') { format!("{}**", pat) } else { pat.clone() };
+                if let Ok(glob) = Glob::new(&pat) {
+                    builder.add(glob);
+                }
+            }
+            builder.build().ok()
+        };
+        (build(&perms.read_files), build(&perms.write_files))
     }
 }
 

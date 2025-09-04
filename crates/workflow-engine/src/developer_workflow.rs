@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::api_testing::{ApiTester, ApiRequest, ApiCollection, TestSuite};
-use crate::database_integration::{DatabaseIntegration, DatabaseConnection, QueryResult};
-use crate::docker_integration::{DockerIntegration, DockerContext, ContainerInfo};
+use crate::api_testing::{ApiTester, ApiCollection};
+use crate::database_integration::{DatabaseIntegration, DatabaseConnection};
+use crate::docker_integration::{DockerIntegration, DockerContext};
 use crate::git_integration::{GitIntegration, GitRepository, ConflictResolution};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +45,7 @@ pub enum ProjectType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProgrammingLanguage {
     Rust,
     JavaScript,
@@ -557,14 +557,14 @@ impl DeveloperWorkflow {
     }
 
     pub async fn execute_workflow(&self, workflow_name: &str, inputs: HashMap<String, String>) -> Result<WorkflowResult> {
-        let workflow = {
+        let _workflow = {
             let workflows = self.available_workflows.lock().await;
             workflows.get(workflow_name).cloned()
                 .ok_or_else(|| anyhow!("Workflow '{}' not found", workflow_name))?
         };
 
         let start_time = std::time::Instant::now();
-        let mut outputs = HashMap::new();
+        let mut outputs = HashMap::<String, String>::new();
 
         match workflow_name {
             "git_resolve_conflicts" => {

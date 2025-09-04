@@ -6,11 +6,11 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::Arc;
 use tera::{Context, Tera};
 use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
+use tokio::task::JoinSet;
 
 pub mod executor;
 pub mod parser;
@@ -30,7 +30,7 @@ pub use api_testing::ApiTester;
 
 use validator::WorkflowValidator;
 
-/// Main workflow definition structure
+/// Main workflow definition structure with enhanced controls
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
     pub name: String,
@@ -45,6 +45,8 @@ pub struct WorkflowDefinition {
     pub hooks: WorkflowHooks,
     pub outputs: Vec<Output>,
     pub ai_context: Option<AiContext>,
+    /// Global execution limits for this workflow
+    pub execution_limits: Option<WorkflowExecutionLimits>,
 }
 
 /// Workflow metadata
@@ -186,6 +188,32 @@ pub struct AiContext {
     pub parameter_suggestions: Option<HashMap<String, String>>,
 }
 
+/// Workflow-level execution limits
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowExecutionLimits {
+    /// Maximum execution time for the entire workflow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_workflow_duration: Option<String>,
+    /// Maximum concurrent parallel steps
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_parallel_steps: Option<usize>,
+    /// Maximum output size per step
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_step_output_bytes: Option<usize>,
+    /// Maximum log message size
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_log_message_bytes: Option<usize>,
+    /// Whether to truncate at word boundaries
+    #[serde(default)]
+    pub truncate_at_word_boundary: bool,
+    /// Maximum memory usage for the workflow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_memory_mb: Option<usize>,
+    /// Default timeout for steps without explicit timeout
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_step_timeout: Option<String>,
+}
+
 /// Workflow execution state
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowState {
@@ -258,6 +286,16 @@ impl WorkflowEngine {
             event_sender,
             template_engine,
         })
+    }
+
+    /// Create a shallow clone that shares state but uses a fresh template engine
+    fn shallow_clone(&self) -> Self {
+        Self {
+            workflows: self.workflows.clone(),
+            states: self.states.clone(),
+            event_sender: self.event_sender.clone(),
+            template_engine: Tera::default(),
+        }
     }
 
     /// Load a workflow from YAML file
@@ -368,14 +406,98 @@ impl WorkflowEngine {
         if let Some(pre_hooks) = &workflow.hooks.pre_workflow {
             for command in pre_hooks {
                 let _ = self
-                    .execute_command(&execution_id, command, &context, &workflow.environment, None)
+                    .execute_command_with_controls(&execution_id, command, &context, &workflow.environment, None, None)
                     .await;
             }
         }
 
-        // Execute steps
+        // Execute steps (support parallel groups)
         let mut overall_success = true;
-        for step in &workflow.steps {
+        let mut i = 0usize;
+        while i < workflow.steps.len() {
+            let step = &workflow.steps[i];
+
+            if step.parallel {
+                // Gather consecutive parallel steps
+                let mut j = i;
+                let mut parallel_steps: Vec<&WorkflowStep> = Vec::new();
+                while j < workflow.steps.len() && workflow.steps[j].parallel {
+                    parallel_steps.push(&workflow.steps[j]);
+                    j += 1;
+                }
+
+                // Execute in parallel with JoinSet
+                let mut set = JoinSet::new();
+                for pstep in parallel_steps.iter() {
+                    let exec_id = execution_id.clone();
+                    let ctx_clone = context.clone();
+                    let env = pstep.environment.clone().unwrap_or_else(|| workflow.environment.clone());
+                    let secrets = pstep.secrets.clone();
+                    let name = pstep.name.clone();
+                    let id = pstep.id.clone();
+                    let cmds = pstep.commands.clone();
+                    let timeout = pstep.timeout.clone();
+                    let continue_on_error = pstep.continue_on_error;
+                    let engine = self.shallow_clone();
+                    set.spawn(async move {
+                        let engine = engine; // lightweight instance sharing state
+                        engine.log(&exec_id, Some(&id), LogLevel::Info, format!("Executing parallel step: {}", name)).await;
+                        // Recreate context and run commands sequentially within this step
+                        let mut ok = true;
+                        for cmd in cmds {
+                            let res = engine
+                                .execute_command_with_controls(
+                                    &exec_id,
+                                    &cmd,
+                                    &ctx_clone,
+                                    &env,
+                                    secrets.as_deref(),
+                                    timeout.as_deref(),
+                                )
+                                .await;
+                            if let Err(e) = res {
+                                engine.log(&exec_id, Some(&id), LogLevel::Error, format!("Command failed: {}", e)).await;
+                                ok = false;
+                                if !continue_on_error { break; }
+                            }
+                        }
+                        Ok::<(String, bool), anyhow::Error>((id, ok))
+                    });
+                }
+
+                // Collect results and aggregate errors
+                let mut group_success = true;
+                let mut failed_steps: Vec<String> = Vec::new();
+                while let Some(res) = set.join_next().await {
+                    match res {
+                        Ok(Ok((sid, ok))) => {
+                            if ok { self.mark_step_completed(&execution_id, &sid).await?; }
+                            else { self.mark_step_failed(&execution_id, &sid).await?; group_success = false; failed_steps.push(sid); }
+                        }
+                        Ok(Err(e)) => {
+                            group_success = false;
+                            self.log(&execution_id, None, LogLevel::Error, format!("Parallel step error: {}", e)).await;
+                        }
+                        Err(e) => {
+                            group_success = false;
+                            self.log(&execution_id, None, LogLevel::Error, format!("Join error: {}", e)).await;
+                        }
+                    }
+                }
+
+                if !group_success && !parallel_steps.iter().any(|s| s.allow_failure) {
+                    overall_success = false;
+                    if !failed_steps.is_empty() {
+                        self.log(&execution_id, None, LogLevel::Error, format!("Parallel group failures: {:?}", failed_steps)).await;
+                    }
+                    break;
+                }
+
+                i = j;
+                continue;
+            }
+
+            // Non-parallel step path
             // Check condition
             if let Some(condition) = &step.condition {
                 if !self.evaluate_condition(condition, &context).await? {
@@ -386,6 +508,7 @@ impl WorkflowEngine {
                         "Skipping step due to condition".to_string(),
                     )
                     .await;
+                    i += 1;
                     continue;
                 }
             }
@@ -422,12 +545,13 @@ impl WorkflowEngine {
                     let rendered_command = self.render_template(command, &context)?;
 
                     let result = self
-                        .execute_command(
+                        .execute_command_with_controls(
                             &execution_id,
                             &rendered_command,
                             &context,
                             step.environment.as_ref().unwrap_or(&workflow.environment),
                             step.secrets.as_deref(),
+                            step.timeout.as_deref(),
                         )
                         .await;
 
@@ -461,6 +585,8 @@ impl WorkflowEngine {
                     break;
                 }
             }
+
+            i += 1;
         }
 
         // Execute post-workflow hooks
@@ -468,11 +594,12 @@ impl WorkflowEngine {
             if let Some(success_hooks) = &workflow.hooks.on_success {
                 for command in success_hooks {
                     let _ = self
-                        .execute_command(
+                        .execute_command_with_controls(
                             &execution_id,
                             command,
                             &context,
                             &workflow.environment,
+                            None,
                             None,
                         )
                         .await;
@@ -481,7 +608,7 @@ impl WorkflowEngine {
         } else if let Some(failure_hooks) = &workflow.hooks.on_failure {
             for command in failure_hooks {
                 let _ = self
-                    .execute_command(&execution_id, command, &context, &workflow.environment, None)
+                    .execute_command_with_controls(&execution_id, command, &context, &workflow.environment, None, None)
                     .await;
             }
         }
@@ -489,7 +616,7 @@ impl WorkflowEngine {
         if let Some(post_hooks) = &workflow.hooks.post_workflow {
             for command in post_hooks {
                 let _ = self
-                    .execute_command(&execution_id, command, &context, &workflow.environment, None)
+                    .execute_command_with_controls(&execution_id, command, &context, &workflow.environment, None, None)
                     .await;
             }
         }
@@ -655,13 +782,14 @@ impl WorkflowEngine {
     }
 
     /// Execute a shell command
-    async fn execute_command(
+    async fn execute_command_with_controls(
         &self,
         execution_id: &str,
         command: &str,
         context: &Context,
         environment: &HashMap<String, String>,
         secrets: Option<&[Secret]>,
+        timeout: Option<&str>,
     ) -> Result<()> {
         let rendered_command = self.render_template(command, context)?;
 
@@ -675,7 +803,7 @@ impl WorkflowEngine {
         let mut cmd = Command::new(program);
         cmd.args(args);
 
-        // Set environment variables
+        // Set environment variables (redact when logging)
         for (key, value) in environment {
             let rendered_value = self.render_template(value, context)?;
             cmd.env(key, rendered_value);
@@ -694,16 +822,60 @@ impl WorkflowEngine {
         cmd.env("WORKFLOW_ID", execution_id);
         cmd.env("WORKFLOW_STATUS", "running");
 
-        let output = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output().await?;
+        // Spawn to allow timeout control
+        let child = cmd.spawn()?;
+        let output = if let Some(t) = timeout { 
+            let dur = parse_duration(t)?;
+            match tokio::time::timeout(dur, child.wait_with_output()).await {
+                Ok(res) => res?,
+                Err(_) => {
+                    // Timeout occurred - child is no longer accessible after wait_with_output
+                    return Err(anyhow!("Command timed out after {}", t));
+                }
+            }
+        } else {
+            child.wait_with_output().await?
+        };
+
+        // Truncate outputs
+        const MAX_OUTPUT_BYTES: usize = 64 * 1024; // 64KB per step
+        let mut stdout = output.stdout;
+        let mut stderr = output.stderr;
+        let mut truncated = false;
+        if stdout.len() > MAX_OUTPUT_BYTES { stdout = stdout[..MAX_OUTPUT_BYTES].to_vec(); truncated = true; }
+        if stderr.len() > MAX_OUTPUT_BYTES { stderr = stderr[..MAX_OUTPUT_BYTES].to_vec(); truncated = true; }
+
+        // Enhanced secret redaction in logs
+        let redact = |s: &[u8]| -> String {
+            let mut text = String::from_utf8_lossy(s).to_string();
+            
+            // Redact explicit secrets from workflow definition
+            if let Some(sec_list) = secrets {
+                for secret in sec_list {
+                    if let Ok(val) = std::env::var(&secret.source) {
+                        if !val.is_empty() && val.len() > 3 {
+                            // Replace secret value with masked version
+                            text = text.replace(&val, &format!("[REDACTED:{}]", secret.name));
+                        }
+                    }
+                }
+            }
+            
+            // Redact common secret patterns from templated environment values
+            text = self.redact_common_secrets(&text);
+            
+            text
+        };
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("Command failed: {}", stderr));
+            let msg = redact(&stderr);
+            return Err(anyhow!("Command failed: {}", msg));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if !stdout.is_empty() {
-            self.log(execution_id, None, LogLevel::Info, stdout.to_string()).await;
+        let out_str = redact(&stdout);
+        if !out_str.is_empty() {
+            let msg = if truncated { format!("{}\n[truncated]", out_str) } else { out_str };
+            self.log(execution_id, None, LogLevel::Info, msg).await;
         }
 
         Ok(())
@@ -717,7 +889,7 @@ impl WorkflowEngine {
         Ok(rendered == "true" || rendered == "1")
     }
 
-    /// Render a template string
+    /// Render a template string with secret-aware handling
     fn render_template(&self, template: &str, context: &Context) -> Result<String> {
         // Replace simple placeholders
         let mut result = template.to_string();
@@ -739,6 +911,58 @@ impl WorkflowEngine {
         }
 
         Ok(result)
+    }
+    
+    /// Render template for logging (with secret redaction)
+    fn render_template_for_logging(&self, template: &str, context: &Context) -> Result<String> {
+        let rendered = self.render_template(template, context)?;
+        Ok(self.redact_common_secrets(&rendered))
+    }
+    
+    /// Redact common secret patterns from text
+    fn redact_common_secrets(&self, text: &str) -> String {
+        let mut result = text.to_string();
+        
+        // Common secret patterns with regex
+        let secret_patterns = [
+            // API keys
+            (r"(?i)(api[_-]?key\s*[=:]\s*)([a-zA-Z0-9+/=]{20,})", "$1[REDACTED:API_KEY]"),
+            // Bearer tokens
+            (r"(?i)(bearer\s+)([a-zA-Z0-9_\-\.+/=]{20,})", "$1[REDACTED:TOKEN]"),
+            // AWS access keys
+            (r"(AKIA[0-9A-Z]{16})", "[REDACTED:AWS_ACCESS_KEY]"),
+            // JWT tokens (simplified pattern)
+            (r"([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)", "[REDACTED:JWT]"),
+            // Generic password patterns
+            (r"(?i)(password\s*[=:]\s*)([^\s\n]{8,})", "$1[REDACTED:PASSWORD]"),
+            (r"(?i)(passwd\s*[=:]\s*)([^\s\n]{8,})", "$1[REDACTED:PASSWORD]"),
+            // Generic secret patterns
+            (r"(?i)(secret\s*[=:]\s*)([^\s\n]{8,})", "$1[REDACTED:SECRET]"),
+            // Database connection strings
+            (r"(?i)(://[^:]+:)([^@]+)(@)", "$1[REDACTED:DB_PASSWORD]$3"),
+            // SSH private key headers (partial redaction)
+            (r"(-----BEGIN [A-Z ]+PRIVATE KEY-----)", "[REDACTED:PRIVATE_KEY]"),
+        ];
+        
+        for (pattern, replacement) in &secret_patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                result = re.replace_all(&result, *replacement).to_string();
+            }
+        }
+        
+        // Also redact environment variables that look like secrets
+        let env_secret_patterns = [
+            r"(?i)(export\s+\w*(?:key|secret|token|password|passwd)\w*\s*=\s*)([^\s\n]+)",
+            r"(?i)(\w*(?:key|secret|token|password|passwd)\w*\s*=\s*)([^\s\n]{8,})",
+        ];
+        
+        for pattern in &env_secret_patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                result = re.replace_all(&result, "$1[REDACTED:ENV_SECRET]").to_string();
+            }
+        }
+        
+        result
     }
 
     /// Update workflow status
@@ -777,8 +1001,21 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    /// Add output value
+    /// Add output value with secret redaction
     async fn add_output(&self, execution_id: &str, name: &str, value: &str) -> Result<()> {
+        // Apply secret redaction to output values that might be logged
+        let redacted_value = self.redact_common_secrets(value);
+        
+        let mut states = self.states.write().await;
+        if let Some(state) = states.get_mut(execution_id) {
+            // Store the redacted version to prevent accidental logging of secrets
+            state.outputs.insert(name.to_string(), redacted_value);
+        }
+        Ok(())
+    }
+    
+    /// Add output value without redaction (for internal use when secrets need to be preserved)
+    async fn add_output_raw(&self, execution_id: &str, name: &str, value: &str) -> Result<()> {
         let mut states = self.states.write().await;
         if let Some(state) = states.get_mut(execution_id) {
             state.outputs.insert(name.to_string(), value.to_string());
@@ -795,8 +1032,37 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    /// Add log entry
+    /// Add log entry with automatic secret redaction
     async fn log(
+        &self,
+        execution_id: &str,
+        step_id: Option<&str>,
+        level: LogLevel,
+        message: String,
+    ) {
+        // Apply secret redaction to log messages
+        let redacted_message = self.redact_common_secrets(&message);
+        
+        let mut states = self.states.write().await;
+        if let Some(state) = states.get_mut(execution_id) {
+            state.logs.push(LogEntry {
+                timestamp: Utc::now(),
+                step_id: step_id.map(String::from),
+                level,
+                message: redacted_message.clone(),
+            });
+        }
+
+        // Emit event with redacted message
+        let _ = self.event_sender.send(WorkflowEvent::Log {
+            execution_id: execution_id.to_string(),
+            step_id: step_id.map(String::from),
+            message: redacted_message,
+        });
+    }
+    
+    /// Add log entry without redaction (for internal use)
+    async fn log_internal(
         &self,
         execution_id: &str,
         step_id: Option<&str>,
@@ -813,7 +1079,7 @@ impl WorkflowEngine {
             });
         }
 
-        // Emit event
+        // Emit event without redaction for internal logging
         let _ = self.event_sender.send(WorkflowEvent::Log {
             execution_id: execution_id.to_string(),
             step_id: step_id.map(String::from),
