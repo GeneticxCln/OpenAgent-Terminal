@@ -47,6 +47,7 @@ use crate::event::{
 };
 use crate::message_bar::{self, Message};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+use crate::security_lens::{SecurityLens, RiskLevel};
 
 pub mod keyboard;
 
@@ -335,6 +336,18 @@ pub trait ActionContext<T: EventListener> {
     ) -> Option<crate::workspace::split_manager::SplitDividerHit> {
         None
     }
+
+    // Tab bar drag-and-drop helpers (handled in event::ActionContext)
+    fn workspace_tab_bar_drag_press(
+        &mut self,
+        _mouse_x: usize,
+        _mouse_y: usize,
+        _button: MouseButton,
+    ) -> bool {
+        false
+    }
+    fn workspace_tab_bar_drag_move(&mut self, _mouse_x: usize, _mouse_y: usize) -> bool { false }
+    fn workspace_tab_bar_drag_release(&mut self, _button: MouseButton) -> bool { false }
 
     /// Apply a new split ratio at a divider path
     fn workspace_set_split_ratio_at_path(
@@ -669,10 +682,156 @@ impl<T: EventListener> Execute<T> for Action {
             Action::ClearSelection => ctx.clear_selection(),
             Action::Paste => {
                 let text = ctx.clipboard_mut().load(ClipboardType::Clipboard);
+                if !text.is_empty() && ctx.config().security.gate_paste_events {
+                    // Analyze paste content with Security Lens
+                    let policy = ctx.config().security.clone();
+                    let mut lens = SecurityLens::new(policy.clone());
+                    if let Some(risk) = lens.analyze_paste_content(&text) {
+                        // Block if policy requires blocking critical
+                        if lens.should_block(&risk) {
+                            let message = message_bar::Message::new(
+                                format!("Blocked risky paste ({}). {}",
+                                    match risk.level { RiskLevel::Critical => "CRITICAL", RiskLevel::Warning => "WARNING", RiskLevel::Caution => "CAUTION", RiskLevel::Safe => "SAFE" },
+                                    risk.explanation
+                                ),
+                                message_bar::MessageType::Error,
+                            );
+                            ctx.send_user_event(crate::event::EventType::Message(message));
+                            return;
+                        }
+
+                        // Require confirmation if policy says so
+                        let requires_confirmation = policy
+                            .require_confirmation
+                            .get(&risk.level)
+                            .copied()
+                            .unwrap_or(false);
+
+                        if requires_confirmation {
+                            // Prepare confirmation body
+                            let mut body = String::new();
+                            body.push_str(&format!("{}\n\n", risk.explanation));
+                            if !risk.mitigations.is_empty() {
+                                body.push_str("Suggested mitigations:\n");
+                                for m in &risk.mitigations {
+                                    body.push_str(&format!("  • {}\n", m));
+                                }
+                                body.push('\n');
+                            }
+                            // Show only first few lines of pasted content for safety
+                            let preview: String = text
+                                .lines()
+                                .take(10)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            body.push_str(&format!("Pasted content (preview):\n{}", preview));
+
+                            let title = match risk.level {
+                                RiskLevel::Critical => "CRITICAL: Confirm paste".into(),
+                                RiskLevel::Warning => "Warning: Confirm paste".into(),
+                                RiskLevel::Caution => "Caution: Confirm paste".into(),
+                                RiskLevel::Safe => "Confirm paste".into(),
+                            };
+
+                            match crate::ui_confirm::request_confirm(
+                                title,
+                                body,
+                                Some("Paste".into()),
+                                Some("Cancel".into()),
+                                Some(30_000),
+                            ) {
+                                Ok(true) => {
+                                    ctx.paste(&text, true);
+                                },
+                                Ok(false) => {
+                                    // User canceled: do nothing
+                                },
+                                Err(e) => {
+                                    // On error, surface a message and do not paste
+                                    let message = message_bar::Message::new(
+                                        format!("Paste confirmation failed: {}", e),
+                                        message_bar::MessageType::Warning,
+                                    );
+                                    ctx.send_user_event(crate::event::EventType::Message(message));
+                                },
+                            }
+                            return;
+                        }
+                    }
+                }
+                // Default path: paste directly
                 ctx.paste(&text, true);
             },
             Action::PasteSelection => {
                 let text = ctx.clipboard_mut().load(ClipboardType::Selection);
+                if !text.is_empty() && ctx.config().security.gate_paste_events {
+                    // Analyze paste content with Security Lens
+                    let policy = ctx.config().security.clone();
+                    let mut lens = SecurityLens::new(policy.clone());
+                    if let Some(risk) = lens.analyze_paste_content(&text) {
+                        if lens.should_block(&risk) {
+                            let message = message_bar::Message::new(
+                                format!("Blocked risky paste ({}). {}",
+                                    match risk.level { RiskLevel::Critical => "CRITICAL", RiskLevel::Warning => "WARNING", RiskLevel::Caution => "CAUTION", RiskLevel::Safe => "SAFE" },
+                                    risk.explanation
+                                ),
+                                message_bar::MessageType::Error,
+                            );
+                            ctx.send_user_event(crate::event::EventType::Message(message));
+                            return;
+                        }
+                        let requires_confirmation = policy
+                            .require_confirmation
+                            .get(&risk.level)
+                            .copied()
+                            .unwrap_or(false);
+                        if requires_confirmation {
+                            let mut body = String::new();
+                            body.push_str(&format!("{}\n\n", risk.explanation));
+                            if !risk.mitigations.is_empty() {
+                                body.push_str("Suggested mitigations:\n");
+                                for m in &risk.mitigations {
+                                    body.push_str(&format!("  • {}\n", m));
+                                }
+                                body.push('\n');
+                            }
+                            let preview: String = text
+                                .lines()
+                                .take(10)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            body.push_str(&format!("Pasted content (preview):\n{}", preview));
+
+                            let title = match risk.level {
+                                RiskLevel::Critical => "CRITICAL: Confirm paste".into(),
+                                RiskLevel::Warning => "Warning: Confirm paste".into(),
+                                RiskLevel::Caution => "Caution: Confirm paste".into(),
+                                RiskLevel::Safe => "Confirm paste".into(),
+                            };
+
+                            match crate::ui_confirm::request_confirm(
+                                title,
+                                body,
+                                Some("Paste".into()),
+                                Some("Cancel".into()),
+                                Some(30_000),
+                            ) {
+                                Ok(true) => {
+                                    ctx.paste(&text, true);
+                                },
+                                Ok(false) => {},
+                                Err(e) => {
+                                    let message = message_bar::Message::new(
+                                        format!("Paste confirmation failed: {}", e),
+                                        message_bar::MessageType::Warning,
+                                    );
+                                    ctx.send_user_event(crate::event::EventType::Message(message));
+                                },
+                            }
+                            return;
+                        }
+                    }
+                }
                 ctx.paste(&text, true);
             },
             Action::ToggleFullscreen => ctx.window().toggle_fullscreen(),
@@ -915,6 +1074,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 TabBarAction::CreateTab => {
                     self.ctx.workspace_create_tab();
                 },
+                // Drag-related actions are handled by dedicated handlers; treat as handled here
+                TabBarAction::BeginDrag(_) | TabBarAction::DragMove(_, _) | TabBarAction::EndDrag(_) | TabBarAction::CancelDrag(_) => {
+                    // no-op: considered handled
+                },
             }
             return true;
         }
@@ -1146,6 +1309,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             self.ctx.mark_dirty();
         }
 
+        // If a tab drag is active, process drag move to update potential reorder target
+        if self.ctx.display().tab_drag_active.is_some() {
+            let size_info = self.ctx.size_info();
+            let display_offset = self.ctx.terminal().grid().display_offset();
+            let p = self.ctx.mouse().point(&size_info, display_offset);
+            let _ = self.ctx.workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
+        }
+
         // Update tab hover state for visuals and damage tab bar line when it changes
         let new_hover = if self.ctx.config().workspace.tab_bar.show
             && self.ctx.config().workspace.tab_bar.position
@@ -1159,6 +1330,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     TabBarAction::SelectTab(id) => Some(crate::display::TabHoverTarget::Tab(id)),
                     TabBarAction::CloseTab(id) => Some(crate::display::TabHoverTarget::Close(id)),
                     TabBarAction::CreateTab => Some(crate::display::TabHoverTarget::Create),
+                    // Drag actions don't map to a static hover target
+                    TabBarAction::BeginDrag(_) | TabBarAction::DragMove(_, _) | TabBarAction::EndDrag(_) | TabBarAction::CancelDrag(_) => None,
                 }
             } else {
                 None
@@ -1765,8 +1938,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.display().split_drag = Some(hit);
                             return;
                         }
-                        // Tab bar click handling (top/bottom)
-                        if self.process_tab_bar_click() {
+                        // Tab bar drag/click handling (top/bottom)
+                        // Compute current grid coordinates
+                        let size_info = self.ctx.size_info();
+                        let display_offset = self.ctx.terminal().grid().display_offset();
+                        let point = self.ctx.mouse().point(&size_info, display_offset);
+                        let mouse_x = point.column.0;
+                        let mouse_y = point.line.0 as usize;
+                        if self.ctx.workspace_tab_bar_drag_press(mouse_x, mouse_y, button) {
                             return;
                         }
                         // Bottom composer click handling (opens AI panel)
@@ -1783,7 +1962,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.on_mouse_press(button);
                     self.process_mouse_bindings(button);
                 },
-                ElementState::Released => self.on_mouse_release(button),
+                ElementState::Released => {
+                    // Finish any active tab drag operation if present
+                    if self.ctx.workspace_tab_bar_drag_release(button) {
+                        return;
+                    }
+                    self.on_mouse_release(button)
+                },
             }
         }
     }

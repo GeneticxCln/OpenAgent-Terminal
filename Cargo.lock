@@ -3445,6 +3445,7 @@ dependencies = [
  "openagent-terminal-sync",
  "parking_lot",
  "plugin-api",
+ "plugin-loader",
  "png",
  "pollster",
  "regex",

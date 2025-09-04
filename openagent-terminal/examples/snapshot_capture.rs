@@ -16,6 +16,10 @@ use winit::event::StartCause;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::raw_window_handle::HasDisplayHandle;
 
+use openagent_terminal::display::TabHoverTarget;
+use openagent_terminal::display::TabDragState;
+use openagent_terminal::workspace::split_manager::{PaneId, SplitLayout};
+
 #[cfg(feature = "ai")]
 use openagent_terminal::ai_runtime::AiUiState;
 use openagent_terminal::cli::WindowOptions;
@@ -88,7 +92,10 @@ impl ApplicationHandler<()> for SnapshotApp {
         let mut win_opts = WindowOptions::default();
         let identity = config.window.identity.clone();
 
-        // Create GL display first on non-Windows to extract X11 visual before window creation.
+        // Determine backend
+        let backend = std::env::var("SNAPSHOT_BACKEND").unwrap_or_else(|_| "gl".into());
+
+        // Create display handle
         let raw_display_handle = event_loop.display_handle().unwrap().as_raw();
 
         #[cfg(not(windows))]
@@ -96,6 +103,7 @@ impl ApplicationHandler<()> for SnapshotApp {
         #[cfg(windows)]
         let mut raw_window_handle = None;
 
+        // We still pick an X11 visual for consistent window creation on Linux/X11.
         #[cfg(not(windows))]
         let gl_display = platform::create_gl_display(
             raw_display_handle,
@@ -110,8 +118,7 @@ impl ApplicationHandler<()> for SnapshotApp {
         // Create window
         #[cfg(windows)]
         let window = {
-            let w =
-                Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window");
+            let w = Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window");
             raw_window_handle = Some(w.raw_window_handle());
             w
         };
@@ -142,33 +149,39 @@ impl ApplicationHandler<()> for SnapshotApp {
         let gl_config =
             platform::pick_gl_config(&gl_display, raw_window_handle).expect("pick gl config");
 
-        // Create GL context
-        let gl_context =
-            platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
+        // Initialize Display based on backend
+        let mut display = if backend == "wgpu" {
+            Display::new_wgpu(window, &config, false).expect("wgpu display init")
+        } else {
+            // Create GL context
+            let gl_context = platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
                 .expect("create gl context");
-
-        // Initialize Display (OpenGL backend)
-        let mut display = Display::new(window, gl_context, &config, false).expect("display init");
-
-        // Load GL for the gl crate so we can manually clear the background deterministically.
-        gl::load_with(|s| {
-            let s = CString::new(s).unwrap();
-            display.gl_context().display().get_proc_address(s.as_c_str()).cast()
-        });
-
-        // Deterministically clear to the configured background color before drawing overlay.
-        let bg = config.colors.primary.background;
-        let size = display.size_info;
-        unsafe {
-            gl::Viewport(0, 0, size.width() as i32, size.height() as i32);
-            gl::ClearColor(bg.r as f32 / 255.0, bg.g as f32 / 255.0, bg.b as f32 / 255.0, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-            gl::Finish();
-        }
+            let mut d = Display::new(window, gl_context, &config, false).expect("display init");
+            // Load GL for the gl crate so we can manually clear the background deterministically.
+            gl::load_with(|s| {
+                let s = CString::new(s).unwrap();
+                d.gl_context().display().get_proc_address(s.as_c_str()).cast()
+            });
+            // Deterministic clear to configured background before drawing overlay
+            let bg = config.colors.primary.background;
+            let size = d.size_info;
+            unsafe {
+                gl::Viewport(0, 0, size.width() as i32, size.height() as i32);
+                gl::ClearColor(bg.r as f32 / 255.0, bg.g as f32 / 255.0, bg.b as f32 / 255.0, 1.0);
+                gl::Clear(gl::COLOR_BUFFER_BIT);
+                gl::Finish();
+            }
+            d
+        };
 
         // Scenario selection
         let scenario =
             std::env::var("SNAPSHOT_SCENARIO").unwrap_or_else(|_| "confirm_overlay".into());
+
+        // Prepare WGPU screenshot capture prior to drawing, if applicable
+        if backend == "wgpu" {
+            display.begin_screenshot();
+        }
 
         match scenario.as_str() {
             "confirm_overlay" => {
@@ -200,6 +213,13 @@ impl ApplicationHandler<()> for SnapshotApp {
                 draw_ai_overlay_state(&mut display, &config, AiOverlayScenario::Proposals)
             },
             "split_panes" => draw_split_panes(&mut display, &config),
+            "split_overlay" => draw_split_overlay(&mut display, &config),
+            "tab_bar" => draw_tab_bar_preview(&mut display, &config),
+            "tab_bar_hover" => draw_tab_bar_hover(&mut display, &config),
+            "tab_bar_drag" => draw_tab_bar_drag(&mut display, &config),
+            "tab_bar_overflow" => draw_tab_bar_overflow(&mut display, &config),
+            "tab_bar_bottom" => draw_tab_bar_bottom(&mut display, &config),
+            "tab_bar_reduce_motion" => draw_tab_bar_reduce_motion(&mut display, &config),
             _ => {
                 // Default to confirm overlay
                 let mut st = ConfirmOverlayState::new();
@@ -215,8 +235,8 @@ impl ApplicationHandler<()> for SnapshotApp {
             },
         }
 
-        // Read framebuffer via public API (GL backend only)
-        let (bytes, w, h) = display.read_frame_rgba().expect("GL readback not available");
+        // Read framebuffer via backend-specific path
+        let (bytes, w, h) = display.read_frame_rgba().expect("frame readback failed");
 
         // Optional: print raw hash JSON for CI assertions
         if std::env::var("RAW_HASH").ok().as_deref() == Some("1") {
@@ -234,10 +254,22 @@ impl ApplicationHandler<()> for SnapshotApp {
 
         let snapshot = to_image(bytes, w, h);
 
-        if self.update || !Path::new(&self.golden_path).exists() {
+        if self.update {
             snapshot.save(&self.golden_path).expect("failed to save golden image");
             println!("Wrote golden: {}", self.golden_path.display());
             self.exit_code = 0;
+        } else if !Path::new(&self.golden_path).exists() {
+            // Golden image is missing; save the actual snapshot for inspection and fail.
+            let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+            let out_dir = self.out_dir.join(format!("{}_{}_missing", scenario, ts));
+            let _ = fs::create_dir_all(&out_dir);
+            let _ = snapshot.save(out_dir.join("snapshot.png"));
+            eprintln!(
+                "MISSING GOLDEN: {} (saved snapshot to {}). Run with --update-golden to create the golden.",
+                self.golden_path.display(),
+                out_dir.display()
+            );
+            self.exit_code = 1;
         } else {
             let golden = image::open(&self.golden_path).expect("failed to open golden image");
             let (sim, diff) = compare_images(&golden, &snapshot);
@@ -308,6 +340,108 @@ fn draw_split_panes(display: &mut Display, config: &UiConfig) {
     display.draw_confirm_overlay(config, &st);
 }
 
+fn draw_split_overlay(display: &mut Display, config: &UiConfig) {
+    // Build a simple split layout: (Left | (Top / Bottom))
+    let layout = SplitLayout::Horizontal {
+        left: Box::new(SplitLayout::Single(PaneId(1))),
+        right: Box::new(SplitLayout::Vertical {
+            top: Box::new(SplitLayout::Single(PaneId(2))),
+            bottom: Box::new(SplitLayout::Single(PaneId(3))),
+            ratio: 0.55,
+        }),
+        ratio: 0.5,
+    };
+    let indicators = openagent_terminal::workspace::warp_ui::WarpSplitIndicators::default();
+    display.draw_warp_split_indicators(config, &layout, &indicators);
+}
+
+fn draw_tab_bar_preview(display: &mut Display, config: &UiConfig) {
+    use openagent_terminal::workspace::{TabBarPosition, TabManager};
+
+    // Create a synthetic TabManager with a few tabs
+    let mut tm = TabManager::new();
+    let t1 = tm.create_tab("main".to_string(), None);
+    let t2 = tm.create_tab("server".to_string(), None);
+    let t3 = tm.create_tab("experiments".to_string(), None);
+    let _ = tm.switch_to_tab(t2);
+    let _ = tm.mark_tab_modified(t3, true);
+
+    // Draw top tab bar
+    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+}
+
+fn draw_tab_bar_hover(display: &mut Display, config: &UiConfig) {
+    use openagent_terminal::workspace::TabBarPosition;
+    use openagent_terminal::workspace::TabManager;
+    let mut tm = TabManager::new();
+    let t1 = tm.create_tab("main".to_string(), None);
+    let t2 = tm.create_tab("server".to_string(), None);
+    let t3 = tm.create_tab("experiments".to_string(), None);
+    let _ = tm.switch_to_tab(t2);
+    let _ = tm.mark_tab_modified(t3, true);
+    // Simulate hover over close button of active tab
+    display.tab_hover = Some(TabHoverTarget::Close(t2));
+    display.tab_hover_anim_start = Some(std::time::Instant::now());
+    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+}
+
+fn draw_tab_bar_drag(display: &mut Display, config: &UiConfig) {
+    use openagent_terminal::workspace::TabBarPosition;
+    use openagent_terminal::workspace::TabManager;
+    let mut tm = TabManager::new();
+    let t1 = tm.create_tab("main".to_string(), None);
+    let t2 = tm.create_tab("server".to_string(), None);
+    let t3 = tm.create_tab("experiments".to_string(), None);
+    let _ = tm.switch_to_tab(t1);
+    let drag = TabDragState {
+        tab_id: t2,
+        original_position: 1,
+        current_position: 2,
+        target_position: Some(2),
+        start_mouse_x: 100,
+        start_mouse_y: 8,
+        current_mouse_x: 140,
+        current_mouse_y: 8,
+        visual_offset_x: 24.0,
+        visual_offset_y: 0.0,
+        is_active: true,
+        drag_threshold: 5.0,
+    };
+    display.tab_drag_active = Some(drag);
+    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+}
+
+fn draw_tab_bar_overflow(display: &mut Display, config: &UiConfig) {
+    use openagent_terminal::workspace::TabBarPosition;
+    use openagent_terminal::workspace::TabManager;
+    let mut tm = TabManager::new();
+    for i in 0..12 {
+        let _ = tm.create_tab(format!("tab-{}", i + 1), None);
+    }
+    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+}
+
+fn draw_tab_bar_bottom(display: &mut Display, config: &UiConfig) {
+    use openagent_terminal::workspace::TabBarPosition;
+    use openagent_terminal::workspace::TabManager;
+    let mut tm = TabManager::new();
+    let t1 = tm.create_tab("one".to_string(), None);
+    let t2 = tm.create_tab("two".to_string(), None);
+    let _ = tm.switch_to_tab(t2);
+    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Bottom);
+}
+
+fn draw_tab_bar_reduce_motion(display: &mut Display, config: &UiConfig) {
+    use openagent_terminal::workspace::TabBarPosition;
+    use openagent_terminal::workspace::TabManager;
+    display.set_reduce_motion(true);
+    let mut tm = TabManager::new();
+    let t1 = tm.create_tab("stable".to_string(), None);
+    let t2 = tm.create_tab("no-anim".to_string(), None);
+    let _ = tm.switch_to_tab(t1);
+    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+}
+
 #[cfg(feature = "ai")]
 fn draw_ai_overlay_state(display: &mut Display, config: &UiConfig, which: AiOverlayScenario) {
     let mut ui = AiUiState::default();
@@ -354,6 +488,7 @@ fn main() {
     // Scenario: confirm_overlay (default), folded_blocks, message_bar_error, message_bar_warning,
     // search_bar_cursor, ai_loading, ai_error, ai_proposals
     let mut scenario = String::from("confirm_overlay");
+    let mut backend = std::env::var("SNAPSHOT_BACKEND").unwrap_or_else(|_| "gl".into());
     for a in &args {
         if let Some(val) = a.strip_prefix("--threshold=") {
             if let Ok(v) = val.parse::<f64>() {
@@ -363,15 +498,26 @@ fn main() {
         if let Some(val) = a.strip_prefix("--scenario=") {
             scenario = val.to_string();
         }
+        if let Some(val) = a.strip_prefix("--backend=") {
+            backend = val.to_string();
+        }
     }
 
     let (golden_dir, out_dir) = ensure_dirs();
     let platform = std::env::consts::OS;
-    let golden = golden_dir.join(format!("{}_{}.png", scenario, platform));
+    // Prefer per-backend golden, fall back to legacy name if not present (when not updating)
+    let mut golden = golden_dir.join(format!("{}_{}_{}.png", scenario, platform, backend));
+    if !update && !golden.exists() {
+        let legacy = golden_dir.join(format!("{}_{}.png", scenario, platform));
+        if legacy.exists() {
+            golden = legacy;
+        }
+    }
 
     let mut app = SnapshotApp { update, golden_path: golden, out_dir, threshold, exit_code: 1 };
     // Store scenario name in env for the handler
     std::env::set_var("SNAPSHOT_SCENARIO", &scenario);
+    std::env::set_var("SNAPSHOT_BACKEND", &backend);
     let event_loop = EventLoop::<()>::new().expect("event loop");
     let _ = event_loop.run_app(&mut app);
     std::process::exit(app.exit_code);

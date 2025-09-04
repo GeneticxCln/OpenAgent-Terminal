@@ -88,6 +88,11 @@ pub struct Debug {
     /// OpenGL is the stable, recommended renderer.
     pub prefer_wgpu: bool,
 
+    /// Preview: Enable plugin system (WASI sandbox) integration.
+    /// This is gated behind this preview flag even when the `plugins` cargo feature is enabled.
+    /// Default is false; set to true to turn on plugin loading.
+    pub plugins_preview: bool,
+
     /// Use EGL as display API if the current platform allows it.
     pub prefer_egl: bool,
 
@@ -140,6 +145,7 @@ impl Default for Debug {
             ref_test: Default::default(),
             renderer: Default::default(),
             prefer_wgpu: Default::default(),
+            plugins_preview: false,
             prefer_egl: Default::default(),
             blocks: true,
             subpixel_text: Default::default(),
