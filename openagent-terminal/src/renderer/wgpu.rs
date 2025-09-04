@@ -23,22 +23,110 @@ use super::ui::UiRoundedRect;
 use super::{Glyph, GlyphCache, LoadGlyph, LoaderApi};
 
 const RECT_SHADER_WGSL: &str = r#"
+// Uniforms for rect/underline rendering (mirrors GL rect.f.glsl intent)
+struct RectUniforms {
+  cell_size: vec2<f32>,        // (cellWidth, cellHeight)
+  padding: vec2<f32>,          // (paddingX, paddingY)
+  underline_position: f32,     // distance from baseline to underline center (pixels)
+  underline_thickness: f32,    // thickness in pixels
+  undercurl_position: f32,     // amplitude parameter for undercurl (approx half descent)
+  _pad: f32,
+};
+@group(0) @binding(0) var<uniform> ru: RectUniforms;
+
 struct VsOut {
   @builtin(position) pos: vec4<f32>,
   @location(0) color: vec4<f32>,
+  @location(1) kind: u32,
 };
 
 @vertex
-fn vs_main(@location(0) pos: vec2<f32>, @location(1) color: vec4<f32>) -> VsOut {
+fn vs_main(@location(0) pos: vec2<f32>,
+           @location(1) color: vec4<f32>,
+           @location(2) kind: u32) -> VsOut {
   var out: VsOut;
   out.pos = vec4<f32>(pos, 0.0, 1.0);
   out.color = color;
+  out.kind = kind;
   return out;
 }
 
+fn draw_undercurl(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
+  // Use cos wave with amplitude based on undercurl_position
+  let pi = 3.1415926538;
+  let undercurl = ru.undercurl_position / 2.0 * cos((x + 0.5) * 2.0 * pi / ru.cell_size.x)
+                + ru.undercurl_position - 1.0;
+  let top = undercurl + max((ru.underline_thickness - 1.0), 0.0) / 2.0;
+  let bottom = undercurl - max((ru.underline_thickness - 1.0), 0.0) / 2.0;
+  // Distance from curve boundary; keep positive for AA mask
+  let dst = max(y - top, max(bottom - y, 0.0));
+  // Simple AA-like falloff to preserve thickness
+  let alpha = max(0.0, 1.0 - dst * dst);
+  return vec4<f32>(color.rgb, alpha);
+}
+
+fn draw_dotted_single_px(x: f32, y: f32, color: vec4<f32>, frag_pos: vec4<f32>) -> vec4<f32> {
+  var cell_even: f32 = 0.0;
+  if (i32(ru.cell_size.x) % 2 != 0) {
+    cell_even = f32(i32(floor((frag_pos.x - ru.padding.x) / ru.cell_size.x)) % 2);
+  }
+  var alpha = 1.0 - abs(floor(ru.underline_position) - y);
+  if (i32(x) % 2 != i32(cell_even)) {
+    alpha = 0.0;
+  }
+  return vec4<f32>(color.rgb, alpha);
+}
+
+fn draw_dotted_aa(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
+  let dot_number = floor(x / ru.underline_thickness);
+  let radius = ru.underline_thickness / 2.0;
+  let center_y = ru.underline_position - 1.0;
+  let left_center = (dot_number - (dot_number % 2.0)) * ru.underline_thickness + radius;
+  let right_center = left_center + 2.0 * ru.underline_thickness;
+  let dist_left = distance(vec2<f32>(x, y), vec2<f32>(left_center, center_y));
+  let dist_right = distance(vec2<f32>(x, y), vec2<f32>(right_center, center_y));
+  let d = min(dist_left, dist_right);
+  let alpha = max(0.0, 1.0 - (d - radius));
+  return vec4<f32>(color.rgb, alpha);
+}
+
+fn draw_dashed(x: f32, color: vec4<f32>) -> vec4<f32> {
+  let half_dash = floor(ru.cell_size.x / 4.0 + 0.5);
+  var alpha = 1.0;
+  if (x > half_dash - 1.0 && x < ru.cell_size.x - half_dash) {
+    alpha = 0.0;
+  }
+  return vec4<f32>(color.rgb, alpha);
+}
+
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-  return in.color;
+fn fs_main(in: VsOut, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+  // Compute pixel coordinates within a cell (x,y)
+  let x = floor(f32(mod((frag_pos.x - ru.padding.x), ru.cell_size.x)));
+  let y = floor(f32(mod((frag_pos.y - ru.padding.y), ru.cell_size.y)));
+
+  switch (in.kind) {
+    case 1u: { // undercurl
+      let col = draw_undercurl(x, y, in.color);
+      return vec4<f32>(col.rgb, col.a * in.color.a);
+    }
+    case 2u: { // dotted underline
+      if (ru.underline_thickness < 2.0) {
+        let col = draw_dotted_single_px(x, y, in.color, frag_pos);
+        return vec4<f32>(col.rgb, col.a * in.color.a);
+      } else {
+        let col = draw_dotted_aa(x, y, in.color);
+        return vec4<f32>(col.rgb, col.a * in.color.a);
+      }
+    }
+    case 3u: { // dashed underline
+      let col = draw_dashed(x, in.color);
+      return vec4<f32>(col.rgb, col.a * in.color.a);
+    }
+    default: {
+      return in.color;
+    }
+  }
 }
 "#;
 
@@ -165,6 +253,9 @@ pub struct WgpuRenderer {
     rect_pipeline: wgpu::RenderPipeline,
     ui_pipeline: wgpu::RenderPipeline,
     text_pipeline: wgpu::RenderPipeline,
+    // Rect uniforms/bindings
+    rect_uniform_buffer: wgpu::Buffer,
+    rect_bind_group: wgpu::BindGroup,
     // Atlas resources
     atlas_texture: wgpu::Texture,
     atlas_view: wgpu::TextureView,
@@ -197,6 +288,9 @@ pub struct WgpuRenderer {
     pending_bg: Vec<RenderRect>,
     pending_ui: Vec<UiVertex>,
     atlas_evicted: Cell<bool>,
+    // Screenshot capture state
+    screenshot_request: bool,
+    screenshot_result: Option<(Vec<u8>, u32, u32)>,
 }
 
 impl From<String> for Error {
@@ -210,6 +304,7 @@ impl From<String> for Error {
 struct RectVertex {
     pos: [f32; 2],
     color: [u8; 4],
+    kind: u32,
 }
 
 #[repr(C)]
@@ -401,18 +496,44 @@ impl WgpuRenderer {
             SubpixelPreference::Auto => is_srgb_surface,
         };
 
-        // Build rectangle pipeline.
+// Build rectangle pipeline.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(RECT_SHADER_WGSL)),
+        });
+        // Rect uniforms/bindings
+        let rect_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rect-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        // Initialize with zeros; will be populated per-draw
+        let rect_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rect-uniform-buffer"),
+            size: 32, // 8 f32 values (2 vec2 + 4 scalars) = 32 bytes
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let rect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rect-bind-group"),
+            layout: &rect_bgl,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: rect_uniform_buffer.as_entire_binding() }],
         });
         let ui_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ui-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER_WGSL)),
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect-pipeline-layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[&rect_bgl],
             push_constant_ranges: &[],
         });
         let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -424,7 +545,7 @@ impl WgpuRenderer {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RectVertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Unorm8x4],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Unorm8x4, 2 => Uint32],
                 }],
             },
             primitive: wgpu::PrimitiveState {
@@ -619,7 +740,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         // Prepare zero scratch buffer for optional layer clearing.
         let zero_scratch = vec![0u8; (ATLAS_SIZE as usize) * (ATLAS_SIZE as usize) * 4];
 
-        let mut renderer = Self {
+let mut renderer = Self {
             instance,
             device,
             queue,
@@ -629,6 +750,8 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             rect_pipeline,
             ui_pipeline,
             text_pipeline,
+            rect_uniform_buffer,
+            rect_bind_group,
             atlas_texture,
             atlas_view,
             atlas_sampler,
@@ -654,6 +777,8 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             pending_bg: Vec::new(),
             pending_ui: Vec::new(),
             atlas_evicted: Cell::new(false),
+            screenshot_request: false,
+            screenshot_result: None,
         };
         // Apply constructor preferences that depend on caller config.
         renderer.zero_evicted_layer = zero_evicted_layer;
@@ -689,10 +814,10 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         // No-op for wgpu; presentation happens in draw paths.
     }
 
-    pub fn draw_rects(
+pub fn draw_rects(
         &mut self,
         size_info: &SizeInfo,
-        _metrics: &Metrics,
+        metrics: &Metrics,
         rects_in: Vec<RenderRect>,
     ) {
         // Acquire frame.
@@ -728,7 +853,27 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             ..Default::default()
         });
 
-        // Build vertices for all rects in NDC coordinates, including staged backgrounds.
+        // Optional: create offscreen color target for screenshot mirroring
+        let mut screenshot_tex: Option<wgpu::Texture> = None;
+        let mut screenshot_view: Option<wgpu::TextureView> = None;
+        if self.screenshot_request {
+            let width = self.size.width.max(1);
+            let height = self.size.height.max(1);
+            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("wgpu-screenshot-rt"),
+                size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            screenshot_view = Some(tex.create_view(&wgpu::TextureViewDescriptor::default()));
+            screenshot_tex = Some(tex);
+        }
+
+// Build vertices for all rects in NDC coordinates, including staged backgrounds.
         let half_w = size_info.width() / 2.0;
         let half_h = size_info.height() / 2.0;
         let mut all_rects = Vec::with_capacity(self.pending_bg.len() + rects_in.len());
@@ -743,11 +888,12 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
 
             let a = (rect.alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
             let color = [rect.color.r, rect.color.g, rect.color.b, a];
+            let kind = rect.kind as u32;
 
-            let v0 = RectVertex { pos: [x, y], color };
-            let v1 = RectVertex { pos: [x, y - h], color };
-            let v2 = RectVertex { pos: [x + w, y], color };
-            let v3 = RectVertex { pos: [x + w, y - h], color };
+            let v0 = RectVertex { pos: [x, y], color, kind };
+            let v1 = RectVertex { pos: [x, y - h], color, kind };
+            let v2 = RectVertex { pos: [x + w, y], color, kind };
+            let v3 = RectVertex { pos: [x + w, y - h], color, kind };
 
             // Two triangles: (0,1,2) and (2,3,1)
             vertices.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
@@ -757,13 +903,33 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             label: Some("rects-encoder"),
         });
 
-        // Clear color from pending state if present.
+// Clear color from pending state if present.
         let clear = if let Some(c) = self.pending_clear.get() {
             self.pending_clear.set(None);
             wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] }
         } else {
             wgpu::Color::TRANSPARENT
         };
+
+        // Update rect uniforms for this frame (cell metrics and underline params)
+        // Match GL logic for padding_y to align lines with integral cell rows.
+        let viewport_height = size_info.height() - size_info.padding_y();
+        let padding_y = viewport_height
+            - (viewport_height / size_info.cell_height()).floor() * size_info.cell_height();
+        let underline_position = metrics.descent.abs() - metrics.underline_position.abs();
+        let underline_thickness = metrics.underline_thickness;
+        let undercurl_position = (0.5 * metrics.descent).abs();
+        let rect_uniforms: [f32; 8] = [
+            size_info.cell_width(),
+            size_info.cell_height(),
+            size_info.padding_x(),
+            padding_y,
+            underline_position,
+            underline_thickness,
+            undercurl_position,
+            0.0,
+        ];
+        self.queue.write_buffer(&self.rect_uniform_buffer, 0, bytemuck::cast_slice(&rect_uniforms));
 
         // Create vertex buffer before beginning the pass so it outlives the pass borrow.
         let vbuf_opt = (!vertices.is_empty()).then(|| {
@@ -799,8 +965,9 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 occlusion_query_set: None,
             });
 
-            if let Some(ref vbuf) = vbuf_opt {
+if let Some(ref vbuf) = vbuf_opt {
                 pass.set_pipeline(&self.rect_pipeline);
+                pass.set_bind_group(0, &self.rect_bind_group, &[]);
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 pass.draw(0..vertices.len() as u32, 0..1);
             }
@@ -810,6 +977,35 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 pass.set_pipeline(&self.ui_pipeline);
                 pass.set_vertex_buffer(0, ui_buf.slice(..));
                 pass.draw(0..self.pending_ui.len() as u32, 0..1);
+            }
+        }
+
+        // Mirror the rects/UI to the offscreen screenshot target if requested.
+        if self.screenshot_request {
+            if let Some(ref sview) = screenshot_view {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("rects-pass-screenshot"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: sview,
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+if let Some(ref vbuf) = vbuf_opt {
+                    pass.set_pipeline(&self.rect_pipeline);
+                    pass.set_bind_group(0, &self.rect_bind_group, &[]);
+                    pass.set_vertex_buffer(0, vbuf.slice(..));
+                    pass.draw(0..vertices.len() as u32, 0..1);
+                }
+                if let Some(ref ui_buf) = ui_buf_opt {
+                    pass.set_pipeline(&self.ui_pipeline);
+                    pass.set_vertex_buffer(0, ui_buf.slice(..));
+                    pass.draw(0..self.pending_ui.len() as u32, 0..1);
+                }
             }
         }
 
@@ -846,7 +1042,86 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 pass.set_vertex_buffer(0, text_vbuf.slice(..));
                 pass.draw(0..self.pending_text.len() as u32, 0..1);
             }
+
+            // Mirror text to screenshot target if requested
+            if self.screenshot_request {
+                if let Some(ref sview) = screenshot_view {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("text-pass-screenshot"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: sview,
+                            resolve_target: None,
+                            ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    pass.set_pipeline(&self.text_pipeline);
+                    pass.set_bind_group(0, &self.text_bind_group, &[]);
+                    pass.set_vertex_buffer(0, text_vbuf.slice(..));
+                    pass.draw(0..self.pending_text.len() as u32, 0..1);
+                }
+            }
+
             self.pending_text.clear();
+        }
+
+        // If a screenshot was requested, copy the offscreen texture to a mapped buffer and store it.
+        if self.screenshot_request {
+            if let Some(tex) = screenshot_tex.take() {
+                let width = self.size.width.max(1);
+                let height = self.size.height.max(1);
+                let bytes_per_pixel = 4u32;
+                let bytes_per_row = bytes_per_pixel * width;
+                let padded_bpr = ((bytes_per_row + 255) / 256) * 256;
+                let output_size = (padded_bpr * height) as wgpu::BufferAddress;
+                let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("wgpu-screenshot-readback"),
+                    size: output_size,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+
+                encoder.copy_texture_to_buffer(
+                    wgpu::ImageCopyTexture {
+                        texture: &tex,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::ImageCopyBuffer {
+                        buffer: &readback,
+                        layout: wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(padded_bpr),
+                            rows_per_image: Some(height),
+                        },
+                    },
+                    wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+                );
+
+                // Submit the encoder so the copy occurs
+                self.queue.submit([encoder.finish()]);
+
+                // Map and read
+                let slice = readback.slice(..);
+                slice.map_async(wgpu::MapMode::Read, |_| {});
+                self.device.poll(wgpu::Maintain::Wait);
+                let data = slice.get_mapped_range();
+                let mut pixels = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
+                for row in data.chunks(padded_bpr as usize) {
+                    pixels.extend_from_slice(&row[..bytes_per_row as usize]);
+                }
+                drop(data);
+                readback.unmap();
+
+                self.screenshot_result = Some((pixels, width, height));
+                self.screenshot_request = false;
+                frame.present();
+                // Early return since we've already submitted the work and presented
+                return;
+            }
         }
 
         self.queue.submit([encoder.finish()]);
@@ -859,6 +1134,15 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 self.dump_atlas_stats();
             }
         }
+    }
+
+    pub fn request_screenshot(&mut self) {
+        self.screenshot_request = true;
+        self.screenshot_result = None;
+    }
+
+    pub fn take_screenshot(&mut self) -> Option<(Vec<u8>, u32, u32)> {
+        self.screenshot_result.take()
     }
 
     pub fn stage_ui_rounded_rect(&mut self, size_info: &SizeInfo, rect: UiRoundedRect) {

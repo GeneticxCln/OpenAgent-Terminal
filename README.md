@@ -369,9 +369,19 @@ Example (uncomment to customize):
 warp_style = true
 
 [workspace.tab_bar]
-position = "Top"      # "Top" | "Bottom" | "Hidden"
 show = true
-reserve_row = true    # reserve one grid row for the tab bar
+position = "Top"                 # "Top" | "Bottom" | "Hidden"
+visibility = "Auto"              # "Auto" | "Always" | "Hover" (Auto => Always unless fullscreen)
+reserve_row = true               # reserve a grid row only when effectively Always
+show_close_button = true
+close_button_on_hover = false
+show_modified_indicator = true
+show_new_tab_button = true
+show_tab_numbers = false
+# Width constraints per tab (cells); unset => built-in defaults
+# min_tab_width = 10
+# max_tab_width = 30
+max_title_length = 20
 
 [workspace.splits]
 # preview_enabled = true
@@ -416,6 +426,33 @@ See `example_config.toml` for a fully commented block of these options.
 
 - Hybrid/discrete GPUs (Linux)
   - To run on the discrete GPU: `DRI_PRIME=1 openagent-terminal`
+
+## Visual GPU snapshot tests (GL/WGPU)
+
+We use image-based visual regression tests to keep the UI stable across changes. Snapshots are rendered via the `snapshot_capture` example and compared against committed golden images under `tests/golden_images/`.
+
+- Backend selection: `--backend=gl` (default) or `--backend=wgpu` (requires `-F wgpu`)
+- Platform-specific goldens: files are named `<scenario>_<platform>_<backend>.png`, e.g. `confirm_overlay_linux_wgpu.png`.
+- On CI: Ubuntu uses `xvfb-run` for headless rendering. Missing goldens cause failures.
+
+Generate/update goldens locally on Linux:
+
+```bash path=null start=null
+scripts/gen-goldens.sh wgpu confirm_overlay tab_bar
+# or generate for both backends and all default scenarios
+scripts/gen-goldens.sh both
+```
+
+Compare locally without updating (fails on mismatch/missing):
+
+```bash path=null start=null
+# GL
+SNAPSHOT_BACKEND=gl xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --threshold=0.995 --scenario=confirm_overlay --backend=gl
+# WGPU
+SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu --release --example snapshot_capture -- --threshold=0.995 --scenario=confirm_overlay --backend=wgpu
+```
+
+If a golden is missing, the run will save a snapshot under `tests/snapshot_output/<scenario>_<timestamp>_missing/snapshot.png` and exit non-zero. To create the missing golden, rerun with `--update-golden` (or use the script above) and commit the resulting `tests/golden_images/*.png` files.
 
 ## Contributing
 

@@ -308,16 +308,35 @@ impl WorkspaceManager {
             && self.config.workspace.tab_bar.position
                 != crate::config::workspace::TabBarPosition::Hidden
         {
-            let ch = si.cell_height();
-            match self.config.workspace.tab_bar.position {
-                crate::config::workspace::TabBarPosition::Top => {
-                    y0 += ch;
-                    h = (h - ch).max(0.0);
+            // Only reserve a row when the tab bar is effectively visible (Always). Hover overlays content.
+            let is_fs = false; // WorkspaceManager doesn't know window fullscreen; assume non-FS for now
+            let eff_vis = match self.config.workspace.tab_bar.visibility {
+                crate::config::workspace::TabBarVisibility::Always => {
+                    crate::config::workspace::TabBarVisibility::Always
                 },
-                crate::config::workspace::TabBarPosition::Bottom => {
-                    h = (h - ch).max(0.0);
+                crate::config::workspace::TabBarVisibility::Hover => {
+                    crate::config::workspace::TabBarVisibility::Hover
                 },
-                _ => {},
+                crate::config::workspace::TabBarVisibility::Auto => {
+                    if is_fs {
+                        crate::config::workspace::TabBarVisibility::Hover
+                    } else {
+                        crate::config::workspace::TabBarVisibility::Always
+                    }
+                },
+            };
+            if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
+                let ch = si.cell_height();
+                match self.config.workspace.tab_bar.position {
+                    crate::config::workspace::TabBarPosition::Top => {
+                        y0 += ch;
+                        h = (h - ch).max(0.0);
+                    },
+                    crate::config::workspace::TabBarPosition::Bottom => {
+                        h = (h - ch).max(0.0);
+                    },
+                    _ => {},
+                }
             }
         }
         let container = split_manager::PaneRect::new(x0, y0, w, h);
