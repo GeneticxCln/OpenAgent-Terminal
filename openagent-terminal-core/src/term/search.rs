@@ -3,7 +3,7 @@ use std::error::Error;
 use std::mem;
 use std::ops::RangeInclusive;
 
-use log::{debug, warn};
+use tracing::{debug, warn};
 use regex_automata::hybrid::dfa::{Builder, Cache, Config, DFA};
 pub use regex_automata::hybrid::BuildError;
 use regex_automata::nfa::thompson::Config as ThompsonConfig;

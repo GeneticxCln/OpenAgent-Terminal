@@ -1,0 +1,30 @@
+{
+  "name": "openagent-terminal-tools",
+  "version": "1.0.0",
+  "description": "Development and testing tools for OpenAgent Terminal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "node --test dist/**/*.test.js",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist/",
+    "dev": "npm run build:watch",
+    "ci": "npm run type-check && npm run lint && npm run build && npm run test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "OpenAgent Terminal Contributors",
+  "license": "Apache-2.0"
+}

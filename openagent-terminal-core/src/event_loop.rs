@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-use log::error;
+use tracing::error;
 use polling::{Event as PollingEvent, Events, PollMode};
 
 use crate::event::{self, Event, EventListener, WindowSize};

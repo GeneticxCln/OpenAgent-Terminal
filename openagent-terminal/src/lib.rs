@@ -8,6 +8,8 @@ pub use openagent_terminal_config::SerdeReplace;
 
 #[cfg(feature = "ai")]
 pub mod ai_runtime;
+#[cfg(feature = "ai")]
+pub mod ai_context_provider;
 pub mod cli;
 pub mod clipboard;
 pub mod config;

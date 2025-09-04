@@ -20,7 +20,7 @@ examples = []
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-reqwest = { version = "0.11", features = ["json", "blocking", "stream"], optional = true }
+reqwest = { workspace = true, optional = true }
 tokio = { version = "1", features = ["rt", "macros", "time"], optional = true }
 futures-util = { version = "0.3", optional = true }
 eventsource-stream = { version = "0.2", optional = true }

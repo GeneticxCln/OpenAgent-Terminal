@@ -17,6 +17,9 @@ pub mod windows;
 #[cfg(windows)]
 pub use self::windows::*;
 
+pub mod pty_manager;
+pub use pty_manager::*;
+
 /// Configuration for the `Pty` interface.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Options {

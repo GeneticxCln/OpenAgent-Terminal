@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::{env, ptr};
 
 use libc::{c_int, fcntl, F_GETFL, F_SETFL, O_NONBLOCK, TIOCSCTTY};
-use log::error;
+use tracing::error;
 use polling::{Event, PollMode, Poller};
 use rustix_openpty::openpty;
 use rustix_openpty::rustix::termios::Winsize;

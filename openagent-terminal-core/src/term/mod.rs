@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use base64::engine::general_purpose::STANDARD as Base64;
 use base64::Engine;
 use bitflags::bitflags;
-use log::{debug, trace};
+use tracing::{debug, trace};
 use unicode_width::UnicodeWidthChar;
 
 use crate::event::{Event, EventListener};

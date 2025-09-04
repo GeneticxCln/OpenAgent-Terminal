@@ -12,6 +12,7 @@ use toml::{Table, Value};
 
 #[cfg(feature = "ai")]
 pub mod ai;
+pub mod ai_providers;
 pub mod bell;
 pub mod color;
 pub mod cursor;

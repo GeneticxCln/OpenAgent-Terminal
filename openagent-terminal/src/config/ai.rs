@@ -1,6 +1,7 @@
 use clap::ValueEnum;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// AI integration configuration (build- and run-time opt-in).
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
@@ -77,6 +78,10 @@ pub struct AiConfig {
     /// Animation speed multiplier (1.0 = normal, 2.0 = double speed, 0.5 = half speed).
     #[serde(default)]
     pub animation_speed: f32,
+
+    /// Provider-specific configurations (secure, isolated)
+    #[serde(default)]
+    pub providers: HashMap<String, ProviderConfig>,
 }
 
 impl Default for AiConfig {
@@ -103,6 +108,43 @@ impl Default for AiConfig {
             auto_focus: true,
             animated_typing: true,
             animation_speed: 1.0,
+            providers: HashMap::new(),
+        }
+    }
+}
+
+/// Secure provider-specific configuration.
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct ProviderConfig {
+    /// Environment variable name holding the API key/secret. Never printed.
+    pub api_key_env: Option<String>,
+
+    /// Environment variable name holding the remote endpoint (if any).
+    pub endpoint_env: Option<String>,
+
+    /// Environment variable name holding the model identifier.
+    pub model_env: Option<String>,
+
+    /// Default model if environment variable is not set.
+    pub default_model: Option<String>,
+
+    /// Default endpoint if environment variable is not set.
+    pub default_endpoint: Option<String>,
+
+    /// Additional provider-specific configuration.
+    #[serde(default)]
+    pub extra: HashMap<String, String>,
+}
+
+impl Default for ProviderConfig {
+    fn default() -> Self {
+        Self {
+            api_key_env: None,
+            endpoint_env: None,
+            model_env: None,
+            default_model: None,
+            default_endpoint: None,
+            extra: HashMap::new(),
         }
     }
 }

@@ -18,7 +18,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::{env, fs};
 
-use log::info;
+use tracing::info;
 #[cfg(windows)]
 use windows_sys::Win32::System::Console::{AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS};
 use winit::event_loop::EventLoop;
@@ -42,6 +42,7 @@ mod input;
 #[cfg(unix)]
 mod ipc;
 mod logging;
+mod logging_v2;
 #[cfg(target_os = "macos")]
 mod macos;
 mod message_bar;
@@ -148,9 +149,9 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Setup winit event loop.
     let window_event_loop = EventLoop::<Event>::with_user_event().build()?;
 
-    // Initialize the logger as soon as possible as to capture output from other subsystems.
-    let log_file = logging::initialize(&options, window_event_loop.create_proxy())
-        .expect("Unable to initialize logger");
+    // Initialize the tracing-based logger as soon as possible.
+    let log_file = logging_v2::initialize(&options, window_event_loop.create_proxy())
+        .expect("Unable to initialize tracing");
 
     info!("Welcome to OpenAgent Terminal");
     info!("Version {}", env!("VERSION"));
@@ -180,18 +181,17 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
         let prefer_wgpu = config.debug.prefer_wgpu;
         let selector = BackendSelector::new(prefer_wgpu, config.debug.renderer);
         let chosen = selector.select_backend();
-        log::info!("Render backend selected: {}", chosen);
+        tracing::info!("Render backend selected: {}", chosen);
     }
 
-    // Update the log level from config.
-    log::set_max_level(config.debug.log_level);
+    // Log level is managed by tracing-subscriber filters
 
     // Set tty environment variables.
     tty::setup_env();
 
     // Set env vars from config.
     for (key, value) in config.env.iter() {
-        unsafe { env::set_var(key, value) };
+        env::set_var(key, value);
     }
 
     // Switch to home directory.

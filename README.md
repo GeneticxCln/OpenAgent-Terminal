@@ -229,6 +229,34 @@ Notes:
 "setup a python virtual environment"
 ```
 
+## Development Tools
+
+### TypeScript Utilities
+OpenAgent Terminal includes a suite of TypeScript-based development and testing tools located in the `src/` directory:
+
+- **Security Lens** (`src/security/`) - Command risk assessment system for analyzing shell commands
+- **Fuzz Testing** (`src/testing/fuzz-tester.ts`) - Terminal input sequence fuzzing framework  
+- **GPU Snapshot Testing** (`src/testing/gpu-snapshot.ts`) - Visual regression testing with golden images
+- **Local Sync** (`src/sync/`) - Privacy-first encrypted synchronization between devices
+- **Workspace Manager** (`src/workspace/`) - Split panes and project-specific configurations
+
+To use these tools:
+```bash
+# Install Node.js dependencies
+npm install
+
+# Build TypeScript tools
+npm run build
+
+# Run security analysis example
+node dist/security/security-lens.js
+
+# Run fuzz tests
+node dist/testing/fuzz-tester.js
+```
+
+See [`src/README.md`](src/README.md) for detailed documentation and usage examples.
+
 ## Architecture & Documentation
 
 ### Security Lens (Command Safety)
