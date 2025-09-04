@@ -119,6 +119,8 @@ jobs:
         run: npm run build
       - name: Test
         run: npm run test
+      - name: Input fuzzing (CI smoke)
+        run: npm run fuzz-ci
 
   shellcheck:
     name: Shellcheck (shell-integration and scripts)
@@ -174,13 +176,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Generate/update goldens (first run)
-          for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks; do
-            xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --update-golden --scenario=$scenario
+# Generate/update goldens (first run)
+for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks split_panes split_overlay tab_bar tab_bar_hover tab_bar_drag tab_bar_overflow tab_bar_bottom tab_bar_reduce_motion; do
+            SNAPSHOT_BACKEND=gl xvfb-run -a cargo run -p openagent-terminal --release -F preview_ui --example snapshot_capture -- --update-golden --scenario=$scenario --backend=gl
           done
-          # Compare against goldens with per-platform threshold
-          for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks; do
-            xvfb-run -a cargo run -p openagent-terminal --release --example snapshot_capture -- --threshold=0.995 --scenario=$scenario
+# Compare against goldens with per-platform threshold
+for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks split_panes split_overlay tab_bar tab_bar_hover tab_bar_drag tab_bar_overflow tab_bar_bottom tab_bar_reduce_motion; do
+            SNAPSHOT_BACKEND=gl xvfb-run -a cargo run -p openagent-terminal --release -F preview_ui --example snapshot_capture -- --threshold=0.995 --scenario=$scenario --backend=gl
           done
 
       - name: GPU snapshots (AI overlays)
@@ -190,8 +192,8 @@ jobs:
           set -euo pipefail
           # Build with ai feature for overlay rendering (no provider needed)
           for scenario in ai_loading ai_error ai_proposals; do
-            xvfb-run -a cargo run -p openagent-terminal --release -F ai --example snapshot_capture -- --update-golden --scenario=$scenario
-            xvfb-run -a cargo run -p openagent-terminal --release -F ai --example snapshot_capture -- --threshold=0.995 --scenario=$scenario
+            xvfb-run -a cargo run -p openagent-terminal --release -F ai,preview_ui --example snapshot_capture -- --update-golden --scenario=$scenario
+            xvfb-run -a cargo run -p openagent-terminal --release -F ai,preview_ui --example snapshot_capture -- --threshold=0.995 --scenario=$scenario
           done
 
       - name: Perf cold start check (<= 800ms)
@@ -249,6 +251,24 @@ jobs:
         with:
           name: wgpu-offscreen
           path: tests/snapshot_output/wgpu_offscreen.png
+
+      - name: WGPU GPU snapshots (scenes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Compare against committed goldens for a subset of scenarios
+          for scenario in confirm_overlay tab_bar; do
+            SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.995 --scenario=$scenario --backend=wgpu
+          done
+
+      - name: WGPU GPU snapshots (extended - optional)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in split_overlay; do
+            SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.995 --scenario=$scenario --backend=wgpu
+          done
 
   coverage:
     name: Coverage (llvm-cov)

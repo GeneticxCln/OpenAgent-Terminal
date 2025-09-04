@@ -2229,7 +2229,42 @@ impl Display {
                         let _ = self.draw_warp_tab_bar(config, tm, tab_cfg.position, &style);
                     }
                 } else {
-                    let _ = self.draw_tab_bar(config, tm, config.workspace.tab_bar.position);
+                    // Respect tab bar visibility for the non-warp path as well
+                    let tab_cfg = &config.workspace.tab_bar;
+                    let is_fs = self.window.is_fullscreen();
+                    let visibility = match tab_cfg.visibility {
+                        crate::config::workspace::TabBarVisibility::Always => {
+                            crate::config::workspace::TabBarVisibility::Always
+                        },
+                        crate::config::workspace::TabBarVisibility::Hover => {
+                            crate::config::workspace::TabBarVisibility::Hover
+                        },
+                        crate::config::workspace::TabBarVisibility::Auto => {
+                            if is_fs {
+                                crate::config::workspace::TabBarVisibility::Hover
+                            } else {
+                                crate::config::workspace::TabBarVisibility::Always
+                            }
+                        },
+                    };
+                    let hover_recent = self
+                        .tab_hover_anim_start
+                        .map(|t0| t0.elapsed().as_millis() < 900)
+                        .unwrap_or(false);
+                    let near_top = tab_cfg.position == crate::workspace::TabBarPosition::Top
+                        && (self.last_mouse_y as f32) < 8.0;
+                    let near_bottom = tab_cfg.position == crate::workspace::TabBarPosition::Bottom
+                        && (self.last_mouse_y as f32) > (self.size_info.height() - 8.0);
+                    let should_draw = match visibility {
+                        crate::config::workspace::TabBarVisibility::Always => true,
+                        crate::config::workspace::TabBarVisibility::Hover => {
+                            self.tab_hover.is_some() || hover_recent || near_top || near_bottom
+                        },
+                        crate::config::workspace::TabBarVisibility::Auto => true, // handled above
+                    };
+                    if should_draw {
+                        let _ = self.draw_tab_bar(config, tm, config.workspace.tab_bar.position);
+                    }
                 }
             }
         }
@@ -2760,36 +2795,37 @@ impl Display {
         }
     }
 
-    /// Read the current frame's RGBA pixels from the active GL backbuffer.
-    /// Returns (bytes, width, height) on success. For non-GL backends this returns None.
-    #[allow(dead_code)]
-    #[cfg(any())]
-    pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
-        match &self.backend {
+    /// Prepare the renderer to capture a screenshot of the next frame.
+    /// For GL this is a no-op. For WGPU this will mirror the next render to an offscreen target.
+    pub fn begin_screenshot(&mut self) {
+        match &mut self.backend {
+            Backend::Gl { .. } => {},
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.request_screenshot();
+            },
+        }
+    }
+
+    /// Read the current frame's RGBA pixels. Returns (bytes, width, height) on success.
+    /// For GL this reads the backbuffer. For WGPU this returns the last captured screenshot
+    /// if begin_screenshot() was called before the last draw.
+    pub fn read_frame_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
+        match &mut self.backend {
             Backend::Gl { .. } => {
                 let w = self.size_info.width() as u32;
                 let h = self.size_info.height() as u32;
                 let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
                 unsafe {
-                    // Ensure GL commands are finished before readback.
                     gl::Finish();
-                    // Read from back buffer which contains the most recent draws before swap.
                     gl::ReadBuffer(gl::BACK);
                     gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-                    gl::ReadPixels(
-                        0,
-                        0,
-                        w as i32,
-                        h as i32,
-                        gl::RGBA,
-                        gl::UNSIGNED_BYTE,
-                        buf.as_mut_ptr().cast(),
-                    );
+                    gl::ReadPixels(0, 0, w as i32, h as i32, gl::RGBA, gl::UNSIGNED_BYTE, buf.as_mut_ptr().cast());
                 }
                 Some((buf, w, h))
             },
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => None,
+            Backend::Wgpu { renderer } => renderer.take_screenshot(),
         }
     }
 

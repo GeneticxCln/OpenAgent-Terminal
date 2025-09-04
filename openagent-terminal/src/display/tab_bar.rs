@@ -72,6 +72,9 @@ impl Display {
         let tokens = theme.tokens;
         let tui = theme.ui;
 
+        // Tab bar config
+        let tab_cfg = &config.workspace.tab_bar;
+
         // Tab bar colors
         let bg = tokens.surface;
         let fg = tokens.text;
@@ -237,16 +240,19 @@ impl Display {
             // Prepare tab title
             let mut tab_text = String::new();
 
-            // Add modified indicator if needed
-            if tab.modified {
+            // Add modified indicator if enabled and needed
+            let show_modified = tab_cfg.show_modified_indicator && tab.modified;
+            if show_modified {
                 tab_text.push_str(MODIFIED_INDICATOR);
                 tab_text.push(' ');
             }
 
             // Add tab title (truncate if necessary)
-            let title_space = tab_width.saturating_sub(
-                if tab.modified { 2 } else { 0 } + 2, // Close button space
-            );
+            let reserved_for_close = if tab_cfg.show_close_button { 2 } else { 0 };
+            let reserved_for_modified = if show_modified { 2 } else { 0 };
+            let mut title_space = tab_width.saturating_sub(reserved_for_close + reserved_for_modified);
+            // Also respect configured max title length
+            title_space = title_space.min(tab_cfg.max_title_length);
 
             if tab.title.width() > title_space {
                 let truncated: String =
@@ -269,18 +275,19 @@ impl Display {
             self.draw_tab_text(text_point, text_color, bg, &tab_text, tab_width.saturating_sub(2));
 
             // Draw close button (if enabled in config)
-            // TODO: Check config for show_tab_close_button
-            let close_x = current_x + tab_width.saturating_sub(2);
-            if close_x > current_x {
-                let close_point = Point::new(start_line, Column(close_x));
-                let close_color = if is_hover_close {
-                    tokens.accent
-                } else if is_active {
-                    active_fg
-                } else {
-                    tokens.text_muted
-                };
-                self.draw_tab_text(close_point, close_color, bg, CLOSE_BUTTON, 1);
+            if tab_cfg.show_close_button {
+                let close_x = current_x + tab_width.saturating_sub(2);
+                if close_x > current_x {
+                    let close_point = Point::new(start_line, Column(close_x));
+                    let close_color = if is_hover_close {
+                        tokens.accent
+                    } else if is_active {
+                        active_fg
+                    } else {
+                        tokens.text_muted
+                    };
+                    self.draw_tab_text(close_point, close_color, bg, CLOSE_BUTTON, 1);
+                }
             }
 
             // Draw separator (except after last tab)
@@ -365,6 +372,7 @@ impl Display {
     /// Handle mouse click on tab bar
     pub fn handle_tab_bar_click(
         &self,
+        config: &UiConfig,
         tab_manager: &TabManager,
         position: TabBarPosition,
         mouse_x: usize,
@@ -401,13 +409,14 @@ impl Display {
 
             // Check if click is within this tab
             if mouse_x >= current_x && mouse_x < current_x + tab_width {
-                // Check if close button was clicked
-                let close_x = current_x + tab_width.saturating_sub(2);
-                if mouse_x >= close_x && mouse_x < close_x + 2 {
-                    return Some(TabBarAction::CloseTab(tab_id));
-                } else {
-                    return Some(TabBarAction::SelectTab(tab_id));
+                // Check if close button was clicked (only if enabled)
+                if config.workspace.tab_bar.show_close_button {
+                    let close_x = current_x + tab_width.saturating_sub(2);
+                    if mouse_x >= close_x && mouse_x < close_x + 2 {
+                        return Some(TabBarAction::CloseTab(tab_id));
+                    }
                 }
+                return Some(TabBarAction::SelectTab(tab_id));
             }
 
             current_x += tab_width + 1; // +1 for separator
@@ -424,6 +433,7 @@ impl Display {
     /// Handle mouse press (potential drag start) on tab bar
     pub fn handle_tab_bar_mouse_press(
         &mut self,
+        config: &UiConfig,
         tab_manager: &TabManager,
         position: TabBarPosition,
         mouse_x: usize,
@@ -452,7 +462,9 @@ impl Display {
         // Find which tab was pressed
         if let Some(tab_id) = self.get_tab_at_position(tab_manager, mouse_x) {
             // Check if close button was clicked
-            if self.is_close_button_at_position(tab_manager, tab_id, mouse_x) {
+            if config.workspace.tab_bar.show_close_button
+                && self.is_close_button_at_position(config, tab_manager, tab_id, mouse_x)
+            {
                 return Some(TabBarAction::CloseTab(tab_id));
             } else {
                 // Initialize potential drag operation
@@ -513,7 +525,17 @@ impl Display {
 
             // If drag is active, calculate new position
             if drag_state.is_active {
-                let new_position = self.calculate_drop_position(tab_manager, mouse_x);
+                // Compute drop position locally to avoid borrowing conflicts
+                let new_position = {
+                    let size_info = self.size_info;
+                    let tab_count = tab_manager.tab_count();
+                    if tab_count == 0 { 0 } else {
+                        let available_width = size_info.columns;
+                        let max_tab_width = (available_width / tab_count).clamp(MIN_TAB_WIDTH, MAX_TAB_WIDTH);
+                        let pos = (mouse_x + max_tab_width / 2) / (max_tab_width + 1);
+                        pos.min(tab_count.saturating_sub(1))
+                    }
+                };
                 if new_position != drag_state.current_position {
                     drag_state.target_position = Some(new_position);
                     return Some(TabBarAction::DragMove(drag_state.tab_id, new_position));
@@ -580,10 +602,11 @@ impl Display {
 
     /// Check if mouse position is over close button for given tab
     fn is_close_button_at_position(
-        &self, 
-        tab_manager: &TabManager, 
-        tab_id: crate::workspace::TabId, 
-        mouse_x: usize
+        &self,
+        _config: &UiConfig,
+        tab_manager: &TabManager,
+        tab_id: crate::workspace::TabId,
+        mouse_x: usize,
     ) -> bool {
         // Get tab bounds and check if close button area
         if let Some(tab_bounds) = self.get_tab_bounds(tab_manager, tab_id) {
