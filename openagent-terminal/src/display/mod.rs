@@ -85,6 +85,11 @@ pub mod window;
 pub mod workspace_animations;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
+#[cfg(feature = "editor")]
+pub mod editor_overlay;
+pub mod file_tree_overlay;
+#[cfg(feature = "dap")]
+pub mod dap_overlay;
 
 mod bell;
 mod damage;
@@ -500,6 +505,16 @@ pub struct Display {
     /// Command Palette state.
     pub palette: palette::PaletteState,
 
+    /// Native editor overlay (Warp-like), feature-gated
+    #[cfg(feature = "editor")]
+    pub editor_overlay: editor_overlay::EditorOverlayState,
+
+    /// Native file tree overlay (Warp-like)
+    pub file_tree: file_tree_overlay::FileTreeOverlayState,
+    /// DAP overlay (minimal)
+    #[cfg(feature = "dap")]
+    pub dap_overlay: dap_overlay::DapOverlayState,
+
     /// Always-on completions state (experimental).
     #[cfg(feature = "completions")]
     pub completions: completions::CompletionsState,
@@ -751,6 +766,11 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            #[cfg(feature = "editor")]
+            editor_overlay: editor_overlay::EditorOverlayState::new(),
+            file_tree: file_tree_overlay::FileTreeOverlayState::new(),
+            #[cfg(feature = "dap")]
+            dap_overlay: dap_overlay::DapOverlayState::new(),
             tab_hover: None,
             tab_hover_anim_start: None,
             tab_last_active_id: None,
@@ -2100,6 +2120,32 @@ impl Display {
         if self.workflows_progress.active {
             let st = self.workflows_progress.clone();
             self.draw_workflows_progress_overlay(config, &st);
+        }
+
+        // File Tree overlay (draw first so editor overlay can sit above if both open)
+        if self.file_tree.active {
+            let st = self.file_tree.clone();
+            self.draw_file_tree_overlay(config, &st);
+        }
+        // Editor overlay
+        #[cfg(feature = "editor")]
+        {
+            // Poll LSP notifications for diagnostics, etc.
+            #[cfg(feature = "lsp")]
+            self.editor_overlay_poll_lsp();
+            if self.editor_overlay.active {
+                let st = self.editor_overlay.clone();
+                self.draw_editor_overlay(config, &st);
+            }
+        }
+        // DAP overlay
+        #[cfg(feature = "dap")]
+        {
+            self.dap_poll_events();
+            if self.dap_overlay.active {
+                let st = self.dap_overlay.clone();
+                self.draw_dap_overlay(config, &st);
+            }
         }
 
         // Command Palette overlay: draw when active or during animation

@@ -17,6 +17,12 @@ members = [
     "crates/openagent-terminal-migrate",
     "crates/openagent-terminal-themes",
     "crates/openagent-terminal-snippets",
+    # IDE components
+    "crates/openagent-terminal-ide-indexer",
+    "crates/openagent-terminal-ide-lsp",
+    "crates/openagent-terminal-ide-dap",
+    "crates/openagent-terminal-ide-editor",
+    "crates/openagent-terminal-web-editors",
 ]
 resolver = "2"
 
@@ -42,6 +48,14 @@ serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-log = "0.2"
+# Web editor server stack
+axum = "0.7"
+hyper = { version = "1.4", features = ["http1", "http2", "server"] }
+tokio-tungstenite = "0.24"
+tungstenite = "0.21"
+open = "5.3"
+urlencoding = "2.1"
+wry = "0.44"
 
 # Async runtime
 tokio = { version = "1.47", features = ["full"] }

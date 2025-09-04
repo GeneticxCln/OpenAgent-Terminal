@@ -280,6 +280,9 @@ pub enum Action {
     /// Open the Workflows panel.
     OpenWorkflowsPanel,
 
+    /// Open the File Tree overlay.
+    OpenFileTree,
+
     /// Execute a named workflow from the config.
     #[config(skip)]
     RunWorkflow(String),
@@ -327,6 +330,9 @@ pub enum Action {
 
     /// Toggle synchronized panes/tabs input (Warp-like)
     TogglePaneSync,
+
+    /// Open Debug panel
+    OpenDebugPanel,
 
     /// Resize pane left.
     ResizePaneLeft,
@@ -533,12 +539,16 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         // AI keybindings added conditionally below when the `ai` feature is enabled.
         // Open Workflows panel (feature `workflow`): Ctrl+Shift+W
         "w",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenWorkflowsPanel;
+        // Open File Tree: Ctrl+Shift+O
+        "o",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenFileTree;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;
         // Workspace pane controls (default shortcuts)
         "v",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::SplitVertical;
         // Toggle pane zoom (Ctrl+Shift+Enter)
         Enter,   ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleZoom;
+        // Open Debug panel: Ctrl+Shift+D
+        "d",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenDebugPanel;
         "h",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::SplitHorizontal;
         "]",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusNextPane;
         "[",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPreviousPane;

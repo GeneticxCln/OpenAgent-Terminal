@@ -1,0 +1,23 @@
+[package]
+name = "openagent-terminal-web-editors"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Browser-based web editor (CodeMirror) for OpenAgent Terminal with WS bridge to LSP and filesystem."
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+wry = { workspace = true }
+parking_lot = { workspace = true }
+open = { workspace = true }
+urlencoding = { workspace = true }
+openagent-terminal-ide-lsp = { path = "../openagent-terminal-ide-lsp", version = "0.1.0", optional = true }
+
+[features]
+default = []
+lsp = ["dep:openagent-terminal-ide-lsp"]
+

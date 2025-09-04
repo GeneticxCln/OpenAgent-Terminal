@@ -29,6 +29,7 @@ pub mod theme;
 pub mod ui_config;
 pub mod window;
 pub mod workspace;
+pub mod ide;
 
 mod bindings;
 mod mouse;

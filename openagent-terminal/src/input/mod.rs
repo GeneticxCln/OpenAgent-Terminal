@@ -184,6 +184,13 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_active(&self) -> bool {
         false
     }
+
+    // File Tree overlay controls
+    fn open_file_tree_panel(&mut self) {}
+    fn close_file_tree_panel(&mut self) {}
+    fn file_tree_active(&self) -> bool { false }
+    fn file_tree_move_selection(&mut self, _delta: isize) {}
+    fn file_tree_confirm(&mut self) {}
     fn blocks_search_input(&mut self, _c: char) {}
     fn blocks_search_backspace(&mut self) {}
     fn blocks_search_move_selection(&mut self, _delta: isize) {}
@@ -632,7 +639,21 @@ impl<T: EventListener> Execute<T> for Action {
                     ctx.open_workflows_panel();
                 }
             },
+            Action::OpenFileTree => {
+                if ctx.file_tree_active() { ctx.close_file_tree_panel(); } else { ctx.open_file_tree_panel(); }
+            },
             Action::ToggleAiPanel => ctx.open_ai_panel(),
+            Action::OpenDebugPanel => {
+                // Toggle DAP overlay
+                #[cfg(feature = "dap")]
+                {
+                    // If already open, close
+                    if cfg!(feature = "dap") {
+                        if ctx.display().dap_overlay.active { ctx.display().dap_close(); } else { ctx.display().dap_open(None); }
+                        ctx.mark_dirty();
+                    }
+                }
+            },
             #[cfg(feature = "ai")]
             Action::AiExplain => {
                 // Get selected text or last command output for explanation
