@@ -373,7 +373,7 @@ fn get_search_directories() -> Result<Vec<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    
 
     #[test]
     fn test_alacritty_locations() {

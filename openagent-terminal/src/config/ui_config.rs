@@ -40,7 +40,7 @@ use crate::config::theme::{ResolvedTheme, ThemeConfig};
 use crate::config::window::WindowConfig;
 use crate::config::workspace::WorkspaceConfig;
 use crate::config::LOG_TARGET_CONFIG;
-use crate::security_lens::SecurityPolicy;
+use crate::security::SecurityPolicy;
 
 /// Regex used for the default URL hint.
 #[rustfmt::skip]
@@ -51,6 +51,10 @@ const URL_REGEX: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https:
 pub struct UiConfig {
     /// Miscellaneous configuration options.
     pub general: General,
+
+    /// Plugins configuration.
+    #[serde(default)]
+    pub plugins: PluginsConfig,
 
     /// User-defined workflows (local-only) for reusable commands.
     #[serde(default)]
@@ -155,6 +159,71 @@ pub struct UiConfig {
     #[cfg(unix)]
     #[config(deprecated = "use general.ipc_socket instead")]
     pub ipc_socket: Option<bool>,
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct PluginsConfig {
+    /// When true, verify signatures if present; invalid signatures fail to load.
+    /// Default: true (recommended). Set to false to disable verification failures.
+    #[serde(default)]
+    pub enforce_signatures: bool,
+
+    /// When true, require signatures for all plugins. Unsigned plugins will be rejected.
+    /// Default: false (developer-friendly). Recommended true for official releases.
+    #[serde(default)]
+    pub require_signatures_for_all: bool,
+
+    /// Enable hot reloading of plugins on file changes (developer-friendly).
+    /// Default: true for local builds.
+    #[serde(default)]
+    pub hot_reload: bool,
+
+    /// Per-path signature requirements.
+    #[serde(default)]
+    pub paths: PluginsPaths,
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct PluginsPaths {
+    #[serde(default)]
+    pub system: PluginsPathPolicy,
+    #[serde(default)]
+    pub user: PluginsPathPolicy,
+    #[serde(default)]
+    pub project: PluginsPathPolicy,
+}
+
+impl Default for PluginsPaths {
+    fn default() -> Self {
+        Self {
+            system: PluginsPathPolicy { require_signatures: true },
+            user: PluginsPathPolicy { require_signatures: false },
+            project: PluginsPathPolicy { require_signatures: false },
+        }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct PluginsPathPolicy {
+    #[serde(default)]
+    pub require_signatures: bool,
+}
+
+impl Default for PluginsPathPolicy {
+    fn default() -> Self {
+        Self { require_signatures: false }
+    }
+}
+
+impl Default for PluginsConfig {
+    fn default() -> Self {
+        Self {
+            enforce_signatures: true,
+            require_signatures_for_all: false,
+            hot_reload: true,
+            paths: Default::default(),
+        }
+    }
 }
 
 impl UiConfig {

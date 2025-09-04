@@ -6,7 +6,7 @@ use std::time::Duration;
 use winit::event_loop::EventLoopProxy;
 
 use crate::event::{Event, EventType};
-use crate::security_lens::SecurityPolicy;
+use crate::security::SecurityPolicy;
 
 #[cfg(test)]
 mod test_helpers {

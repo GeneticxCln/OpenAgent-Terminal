@@ -2,9 +2,12 @@
 // Renders a solid color to an offscreen texture and writes a PNG file.
 // Prints a JSON summary with output path and dimensions for CI parsing.
 
+#[cfg(feature = "wgpu")]
 use std::fs;
+#[cfg(feature = "wgpu")]
 use std::path::PathBuf;
 
+#[cfg(feature = "wgpu")]
 use image::{ImageBuffer, Rgba};
 
 #[cfg(feature = "wgpu")]
@@ -150,11 +153,3 @@ fn main() {
     }
 }
 
-fn main() {
-    // WGPU snapshot example is not yet implemented
-    // This example will be enabled once WGPU renderer reaches parity with OpenGL
-    eprintln!("WGPU snapshot example is not yet implemented.");
-    eprintln!("The WGPU backend is still under development.");
-    eprintln!("Use 'cargo run --example snapshot_capture' for OpenGL snapshot testing.");
-    std::process::exit(0); // Exit 0 so CI doesn't fail
-}

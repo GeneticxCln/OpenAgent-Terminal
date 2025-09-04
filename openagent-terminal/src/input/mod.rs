@@ -47,7 +47,7 @@ use crate::event::{
 };
 use crate::message_bar::{self, Message};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::security_lens::{SecurityLens, RiskLevel};
+use crate::security::{SecurityLens, RiskLevel};
 
 pub mod keyboard;
 

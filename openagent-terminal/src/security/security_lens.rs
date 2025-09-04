@@ -7,7 +7,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RiskLevel {
     Safe,
@@ -953,6 +952,30 @@ Regex::new("python.*-c.*(?:eval|exec)\\(").unwrap(),
                 if self.risk_level_value(&RiskLevel::Warning) > self.risk_level_value(&highest_risk)
                 {
                     highest_risk = RiskLevel::Warning;
+                }
+            }
+        }
+
+        // Heuristic: detect exporting of sensitive env var names (e.g., SECRET_TOKEN, API_KEY)
+        if let Some(rest) = command.trim_start().strip_prefix("export ") {
+            if let Some(eq_pos) = rest.find('=') {
+                let var_name = rest[..eq_pos].trim();
+                let var_lower = var_name.to_lowercase();
+                if var_lower.contains("secret")
+                    || var_lower.contains("token")
+                    || var_lower.contains("key")
+                    || var_lower.contains("password")
+                {
+                    risk_factors.push(RiskFactor {
+                        category: "env_sensitive_export".to_string(),
+                        description: "Exporting potentially sensitive environment variable".to_string(),
+                        pattern: "sensitive env var name".to_string(),
+                    });
+                    if self.risk_level_value(&RiskLevel::Warning)
+                        > self.risk_level_value(&highest_risk)
+                    {
+                        highest_risk = RiskLevel::Warning;
+                    }
                 }
             }
         }

@@ -45,7 +45,7 @@ pub enum ProjectType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ProgrammingLanguage {
     Rust,
     JavaScript,
@@ -557,35 +557,35 @@ impl DeveloperWorkflow {
     }
 
     pub async fn execute_workflow(&self, workflow_name: &str, inputs: HashMap<String, String>) -> Result<WorkflowResult> {
-        let _workflow = {
+        // Ensure the workflow exists to provide a clear error if not found
+        {
             let workflows = self.available_workflows.lock().await;
-            workflows.get(workflow_name).cloned()
-                .ok_or_else(|| anyhow!("Workflow '{}' not found", workflow_name))?
-        };
+            if !workflows.contains_key(workflow_name) {
+                return Err(anyhow!("Workflow '{}' not found", workflow_name));
+            }
+        }
 
         let start_time = std::time::Instant::now();
-        let mut outputs = HashMap::<String, String>::new();
-
-        match workflow_name {
+        let outputs = match workflow_name {
             "git_resolve_conflicts" => {
-                outputs = self.execute_git_conflict_resolution(inputs).await?;
+                self.execute_git_conflict_resolution(inputs).await?
             }
             "git_branch_visualization" => {
-                outputs = self.execute_git_branch_visualization(inputs).await?;
+                self.execute_git_branch_visualization(inputs).await?
             }
             "docker_context_switch" => {
-                outputs = self.execute_docker_context_switch(inputs).await?;
+                self.execute_docker_context_switch(inputs).await?
             }
             "db_query_builder" => {
-                outputs = self.execute_database_query(inputs).await?;
+                self.execute_database_query(inputs).await?
             }
             "api_test_suite" => {
-                outputs = self.execute_api_test_suite(inputs).await?;
+                self.execute_api_test_suite(inputs).await?
             }
             _ => {
                 return Err(anyhow!("Unknown workflow: {}", workflow_name));
             }
-        }
+        };
 
         let execution_time = start_time.elapsed();
 

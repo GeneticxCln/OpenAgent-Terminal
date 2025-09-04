@@ -17,16 +17,34 @@ warp_style = true
 
 
 # Tab bar configuration
-tab_bar_position = "top"  # "top", "bottom", or "hidden"
-show_tab_bar = true
-show_tab_close_button = true
+[workspace.tab_bar]
+# Whether to show the tab bar, and where to place it
+show = true
+position = "Top"                # "Top" | "Bottom" | "Hidden"
+# Visibility behavior: Auto => Always unless fullscreen (then Hover)
+visibility = "Auto"             # "Auto" | "Always" | "Hover"
+# Reserve a terminal row to avoid overlaying terminal content
+reserve_row = true
+
+# Button/indicators
+show_close_button = true
+close_button_on_hover = false   # Only render the close button when hovering
 show_modified_indicator = true
-max_tab_title_length = 25
-new_tab_action = "inherit_working_dir"  # "inherit_working_dir", "home_dir", "last_used_dir"
+show_new_tab_button = true
+show_tab_numbers = false        # Prefix titles with "1:", "2:", ...
+
+# Width constraints per tab (cells); unset => built-in defaults
+# min_tab_width = 10
+# max_tab_width = 30
+# Title truncation limit (characters)
+max_title_length = 25
+
+# Behavior when creating a new tab
+new_tab_action = "inherit_working_dir"  # "inherit_working_dir" | "home_dir" | "last_used_dir" | "custom_dir"
 
 # Split pane configuration
 [workspace.splits]
-split_borders = true
+borders = true
 border_thickness = 1.0
 default_ratio = 0.5
 minimum_pane_size = 10

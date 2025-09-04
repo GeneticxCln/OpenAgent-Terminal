@@ -109,8 +109,17 @@ warp_style = true
 
 [workspace.tab_bar]
 show = true
-position = "Top"
-reserve_row = true
+position = "Top"                 # or "Bottom" / "Hidden"
+visibility = "Auto"              # Auto | Always | Hover
+reserve_row = true               # reserves only when effectively Always
+show_close_button = true
+close_button_on_hover = false
+show_modified_indicator = true
+show_new_tab_button = true
+show_tab_numbers = false
+# min_tab_width = 10
+# max_tab_width = 30
+max_title_length = 20
 ```
 
 Keyboard shortcuts (example):

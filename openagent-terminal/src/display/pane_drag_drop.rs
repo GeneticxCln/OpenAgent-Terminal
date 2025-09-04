@@ -9,8 +9,7 @@ use crate::display::color::Rgb;
 use crate::display::workspace_animations::{
     WorkspaceAnimationManager, TabAnimationType, TabAnimationData
 };
-use crate::workspace::TabId;
-use crate::workspace::split_manager::PaneId;
+use crate::workspace::{TabId, PaneId};
 
 /// Different types of pane drag operations
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,7 +43,7 @@ pub enum PaneDropZone {
         tab_id: TabId,
         direction: SplitDirection,
         /// Target split to attach to
-        target_split: Option<PaneId>,
+target_split: Option<PaneId>,
         /// Position within the split (before/after)
         before: bool,
     },
@@ -60,7 +59,7 @@ pub enum PaneDropZone {
 pub struct PaneDragState {
     /// The pane being dragged
     pub source_tab: TabId,
-pub source_split: PaneId,
+    pub source_split: PaneId,
     
     /// Drag operation details
     pub drag_type: PaneDragType,
@@ -86,7 +85,7 @@ impl PaneDragState {
     /// Create new pane drag state
     pub fn new(
         source_tab: TabId,
-source_split: PaneId,
+        source_split: PaneId,
         start_pos: (f32, f32),
         drag_type: PaneDragType,
     ) -> Self {
@@ -155,7 +154,7 @@ impl PaneDragManager {
     pub fn start_drag(
         &mut self,
         source_tab: TabId,
-source_split: PaneId,
+        source_split: PaneId,
         start_pos: (f32, f32),
         drag_type: PaneDragType,
     ) {
@@ -278,7 +277,8 @@ split_areas: &[(TabId, PaneId, f32, f32, f32, f32)], // (tab_id, split_id, x, y,
             if mouse_x >= x && mouse_x < x + width {
                 // Determine position within tab
                 let relative_x = (mouse_x - x) / width;
-                let position = if relative_x < 0.5 { 0 } else { 1 };
+                // Treat the exact midpoint as the beginning to match expected UX
+                let position = if relative_x <= 0.5 { 0 } else { 1 };
                 
                 return Some(PaneDropZone::Tab { tab_id, position });
             }
@@ -374,7 +374,7 @@ impl Default for PaneDragManager {
 #[derive(Debug, Clone)]
 pub struct PaneDragVisualEffects {
     pub source_tab: TabId,
-pub source_split: PaneId,
+    pub source_split: PaneId,
     pub current_pos: (f32, f32),
     pub drag_preview_alpha: f32,
     pub drag_preview_scale: f32,
@@ -398,7 +398,7 @@ mod tests {
     fn test_start_drag() {
         let mut manager = PaneDragManager::new();
         let tab_id = TabId(1);
-let split_id = PaneId(1);
+        let split_id = PaneId(1);
         
         manager.start_drag(tab_id, split_id, (0.0, 0.0), PaneDragType::MoveToTab);
         assert!(manager.current_drag().is_some());
@@ -413,7 +413,7 @@ let split_id = PaneId(1);
     fn test_drag_activation() {
         let mut manager = PaneDragManager::new();
         let tab_id = TabId(1);
-let split_id = PaneId(1);
+        let split_id = PaneId(1);
         
         manager.start_drag(tab_id, split_id, (0.0, 0.0), PaneDragType::MoveToTab);
         

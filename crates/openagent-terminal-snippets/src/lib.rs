@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "async")]
     async fn test_async_snippet_expansion() {
-        let system = SnippetSystem::new().unwrap();
+        let _system = SnippetSystem::new().unwrap();
         // Test async snippet expansion
         // This would test actual async template processing
     }
