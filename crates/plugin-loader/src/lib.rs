@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use wasmtime::*;
 use wasmtime_wasi::preview1::WasiP1Ctx;
-use wasmtime_wasi::p2::WasiCtxBuilder;
+use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::{DirPerms, FilePerms};
 
 /// Enhanced plugin manifest structure for TOML parsing

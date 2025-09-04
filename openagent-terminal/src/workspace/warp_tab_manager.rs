@@ -19,12 +19,22 @@ use super::tab_manager::{PaneContext, TabContext, TabId};
 /// Warp-style session data for persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WarpSession {
+    /// Session format version for migration support
+    #[serde(default = "default_session_version")]
+    pub version: String,
     pub id: String,
     pub name: String,
     pub created_at: SystemTime,
     pub last_used: SystemTime,
     pub tabs: Vec<WarpTabSession>,
     pub active_tab_id: Option<TabId>,
+}
+
+/// Current session format version
+const SESSION_VERSION: &str = "1.0.0";
+
+fn default_session_version() -> String {
+    SESSION_VERSION.to_string()
 }
 
 /// Serializable tab session data
@@ -309,7 +319,7 @@ impl WarpTabManager {
         Ok(())
     }
 
-    /// Load session from disk
+    /// Load session from disk with validation and migration support
     pub fn load_session(&mut self) -> std::io::Result<bool> {
         let Some(session_path) = &self.session_file_path else {
             return Ok(false); // No session file configured
@@ -319,8 +329,44 @@ impl WarpTabManager {
             return Ok(false); // No session to load
         }
 
+        // Read and validate session file
         let session_json = std::fs::read_to_string(session_path)?;
-        let session: WarpSession = serde_json::from_str(&session_json)?;
+        
+        // First try to parse as current format
+        let session: WarpSession = match serde_json::from_str(&session_json) {
+            Ok(session) => {
+                // Validate session format version
+                if session.version != SESSION_VERSION {
+                    // Attempt migration if needed
+                    match self.migrate_session_format(session) {
+                        Ok(migrated) => migrated,
+                        Err(e) => {
+                            eprintln!("Failed to migrate session from version {} to {}: {}", 
+                                     session.version, SESSION_VERSION, e);
+                            return Ok(false);
+                        }
+                    }
+                } else {
+                    session
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to parse session file {}: {}", session_path.display(), e);
+                
+                // Try to create backup and return false
+                if let Err(backup_err) = self.backup_corrupted_session(session_path) {
+                    eprintln!("Failed to backup corrupted session: {}", backup_err);
+                }
+                
+                return Ok(false);
+            }
+        };
+
+        // Validate session data integrity
+        if let Err(e) = self.validate_session(&session) {
+            eprintln!("Session validation failed: {}", e);
+            return Ok(false);
+        }
 
         self.restore_from_session(session);
         Ok(true)
@@ -336,6 +382,7 @@ impl WarpTabManager {
             .collect();
 
         WarpSession {
+            version: SESSION_VERSION.to_string(),
             id: uuid::Uuid::new_v4().to_string(),
             name: "OpenAgent Terminal Session".to_string(),
             created_at: SystemTime::now(),
@@ -469,6 +516,69 @@ impl WarpTabManager {
         self.auto_naming_enabled = enabled;
     }
 
+    /// Validate session data integrity
+    fn validate_session(&self, session: &WarpSession) -> Result<(), String> {
+        // Check if session has any tabs
+        if session.tabs.is_empty() {
+            return Err("Session contains no tabs".to_string());
+        }
+
+        // Validate each tab
+        for (idx, tab) in session.tabs.iter().enumerate() {
+            // Check working directory exists or can be recovered
+            if !tab.working_directory.exists() && !tab.working_directory.parent().map_or(false, |p| p.exists()) {
+                println!("Warning: Tab {} working directory {} is not accessible", idx, tab.working_directory.display());
+            }
+
+            // Validate split layout has at least one pane
+            let pane_count = match &tab.split_layout {
+                WarpSplitLayoutSession::Single(_) => 1,
+                WarpSplitLayoutSession::Horizontal { .. } => 2, // Simplified validation
+                WarpSplitLayoutSession::Vertical { .. } => 2,   // Simplified validation
+            };
+            
+            if pane_count == 0 {
+                return Err(format!("Tab {} has no panes", idx));
+            }
+        }
+
+        // Validate active tab ID exists
+        if let Some(active_id) = session.active_tab_id {
+            if !session.tabs.iter().any(|tab| tab.id == active_id) {
+                return Err("Active tab ID not found in tabs list".to_string());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Migrate session from older format versions
+    fn migrate_session_format(&self, mut session: WarpSession) -> Result<WarpSession, String> {
+        match session.version.as_str() {
+            "1.0.0" => {
+                // Current version, no migration needed
+                Ok(session)
+            },
+            "" | "0.9.0" => {
+                // Migrate from pre-version or 0.9.0
+                session.version = SESSION_VERSION.to_string();
+                println!("Migrated session from version 0.9.0 to {}", SESSION_VERSION);
+                Ok(session)
+            },
+            _ => {
+                Err(format!("Unsupported session version: {}", session.version))
+            }
+        }
+    }
+
+    /// Create backup of corrupted session file
+    fn backup_corrupted_session(&self, session_path: &Path) -> std::io::Result<()> {
+        let backup_path = session_path.with_extension("json.backup");
+        std::fs::copy(session_path, backup_path)?;
+        println!("Backed up corrupted session file");
+        Ok(())
+    }
+
     /// Get tab count
     pub fn tab_count(&self) -> usize {
         self.tabs.len()
@@ -521,6 +631,52 @@ impl WarpTabManager {
             }
 
             self.schedule_session_save();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get all tabs for session restoration
+    pub fn all_tabs(&self) -> impl Iterator<Item = &TabContext> {
+        self.tab_order.iter().filter_map(|&id| self.tabs.get(&id))
+    }
+
+    /// Update tab split layout (for session restoration)
+    pub fn update_tab_split_layout(&mut self, tab_id: TabId, new_layout: SplitLayout) -> bool {
+        if let Some(tab) = self.tabs.get_mut(&tab_id) {
+            tab.split_layout = new_layout;
+            self.schedule_session_save();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set active pane for a tab (for session restoration)
+    pub fn set_active_pane(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
+        if let Some(tab) = self.tabs.get_mut(&tab_id) {
+            tab.active_pane = pane_id;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Add pane context to a tab (for session restoration)
+    pub fn add_pane_to_tab(&mut self, tab_id: TabId, pane_id: PaneId, pane_context: PaneContext) -> bool {
+        if let Some(tab) = self.tabs.get_mut(&tab_id) {
+            tab.panes.insert(pane_id, pane_context);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Update working directory for a tab (for session restoration fallback)
+    pub fn update_tab_working_directory(&mut self, tab_id: TabId, new_dir: PathBuf) -> bool {
+        if let Some(tab) = self.tabs.get_mut(&tab_id) {
+            tab.working_directory = new_dir;
             true
         } else {
             false

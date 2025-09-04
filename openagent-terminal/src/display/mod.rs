@@ -78,9 +78,11 @@ pub mod content;
 pub mod cursor;
 pub mod hint;
 pub mod palette;
+pub mod pane_drag_drop;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
+pub mod workspace_animations;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
 
@@ -94,6 +96,32 @@ pub enum TabHoverTarget {
     Tab(crate::workspace::TabId),
     Close(crate::workspace::TabId),
     Create,
+}
+
+/// State for active tab drag operations
+#[derive(Debug, Clone)]
+pub struct TabDragState {
+    /// The tab being dragged
+    pub tab_id: crate::workspace::TabId,
+    /// Original position of the tab
+    pub original_position: usize,
+    /// Current position during drag
+    pub current_position: usize,
+    /// Target position for drop
+    pub target_position: Option<usize>,
+    /// Mouse position when drag started
+    pub start_mouse_x: usize,
+    pub start_mouse_y: usize,
+    /// Current mouse position
+    pub current_mouse_x: usize,
+    pub current_mouse_y: usize,
+    /// Visual offset for drag preview
+    pub visual_offset_x: f32,
+    pub visual_offset_y: f32,
+    /// Whether the drag is currently active
+    pub is_active: bool,
+    /// Minimum distance needed to start drag (to distinguish from clicks)
+    pub drag_threshold: f32,
 }
 
 /// Label for the forward terminal search bar.
@@ -491,6 +519,17 @@ pub struct Display {
     pub tab_last_active_id: Option<crate::workspace::TabId>,
     /// Animation start for tab switch indicator
     pub tab_anim_switch_start: Option<Instant>,
+    
+    /// Tab drag-and-drop state
+    pub tab_drag_active: Option<TabDragState>,
+    /// Animation start for drag operations
+    pub tab_drag_anim_start: Option<Instant>,
+    /// List of active tab animations (opening, closing, moving)
+    pub tab_animations: Vec<super::tab_bar::TabAnimation>,
+    /// Workspace animation manager for smooth UI transitions
+    pub workspace_animations: workspace_animations::WorkspaceAnimationManager,
+    /// Pane drag-and-drop manager
+    pub pane_drag_manager: pane_drag_drop::PaneDragManager,
 
     /// Hovered split divider (if any)
     pub split_hover: Option<crate::workspace::split_manager::SplitDividerHit>,
@@ -705,6 +744,13 @@ impl Display {
             tab_hover_anim_start: None,
             tab_last_active_id: None,
             tab_anim_switch_start: None,
+            // Tab drag-and-drop initialization
+            tab_drag_active: None,
+            tab_drag_anim_start: None,
+            tab_animations: Vec::new(),
+            // Workspace animation systems
+            workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
+            pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
@@ -716,6 +762,47 @@ impl Display {
             palette_sel_last_index: None,
             palette_sel_anim_start: None,
         })
+    }
+
+    /// Update all workspace animations and return whether any updates occurred
+    pub fn update_workspace_animations(&mut self) -> bool {
+        let mut needs_redraw = false;
+        
+        // Update workspace-level animations (tabs, etc.)
+        if self.workspace_animations.update_animations() {
+            needs_redraw = true;
+        }
+        
+        // Update pane drag animations
+        if self.pane_drag_manager.update_animations() {
+            needs_redraw = true;
+        }
+        
+        // Legacy tab animation updates (will be migrated to workspace_animations)
+        let now = Instant::now();
+        let mut completed_animations = Vec::new();
+        
+        for (i, anim) in self.tab_animations.iter().enumerate() {
+            let elapsed = now.duration_since(anim.start_time).as_millis() as u32;
+            if elapsed >= anim.duration_ms {
+                completed_animations.push(i);
+            } else {
+                needs_redraw = true;
+            }
+        }
+        
+        // Remove completed animations (in reverse order to maintain indices)
+        for &i in completed_animations.iter().rev() {
+            self.tab_animations.remove(i);
+        }
+        
+        needs_redraw
+    }
+    
+    /// Enable or disable reduced motion for accessibility
+    pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
+        self.workspace_animations.set_reduce_motion(reduce_motion);
+        self.pane_drag_manager.set_reduce_motion(reduce_motion);
     }
 
     /// Draw a persistent Quick Actions bar on the bottom line with clickable entries

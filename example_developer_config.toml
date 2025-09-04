@@ -1,0 +1,221 @@
+# OpenAgent Terminal Configuration with Advanced Developer Workflow Integration
+# This example shows how to configure the advanced developer features including
+# Git integration, Docker awareness, database connections, and API testing
+
+[workspace]
+enabled = true
+warp_style = true
+
+[workspace.developer_workflow]
+enabled = true
+auto_refresh_context = true
+refresh_interval_seconds = 30
+
+[workspace.developer_workflow.git]
+enabled = true
+auto_detect_signing_key = true
+show_branch_signatures = true
+conflict_resolution_ui = true
+max_branches_in_visualization = 25
+
+[workspace.developer_workflow.docker]
+enabled = true
+auto_detect_environment = true
+show_container_context = true
+enable_context_switching = true
+compose_service_monitoring = true
+
+[workspace.developer_workflow.database]
+enabled = true
+auto_discover_local_databases = true
+connection_timeout_seconds = 30
+max_query_history = 1000
+enable_schema_introspection = true
+
+# Database connection templates
+[[workspace.developer_workflow.database.connections]]
+name = "Local PostgreSQL"
+type = "postgresql"
+host = "localhost"
+port = 5432
+database = "postgres"
+username = "postgres"
+ssl_mode = "prefer"
+max_connections = 10
+
+[[workspace.developer_workflow.database.connections]]
+name = "Development MySQL"
+type = "mysql"
+host = "localhost"
+port = 3306
+database = "dev_db"
+username = "dev_user"
+ssl_mode = "prefer"
+max_connections = 5
+
+[workspace.developer_workflow.api_testing]
+enabled = true
+default_timeout_seconds = 30
+max_response_history = 1000
+auto_format_json_responses = true
+postman_import_enabled = true
+
+# AI integration for developer workflows
+[ai.developer_context]
+include_git_status = true
+include_docker_context = true
+include_database_connections = true
+include_api_collections = true
+include_project_analysis = true
+suggest_workflows = true
+
+# Keyboard shortcuts for developer workflows
+[[keyboard.bindings]]
+key = "g"
+mods = "Control|Shift"
+action = "OpenGitBranchVisualization"
+
+[[keyboard.bindings]]
+key = "d"
+mods = "Control|Shift"
+action = "OpenDockerContextSwitcher"
+
+[[keyboard.bindings]]
+key = "q"
+mods = "Control|Shift"
+action = "OpenDatabaseQueryBuilder"
+
+[[keyboard.bindings]]
+key = "r"
+mods = "Control|Shift"
+action = "OpenApiTester"
+
+[[keyboard.bindings]]
+key = "c"
+mods = "Control|Alt|Shift"
+action = "ResolveGitConflicts"
+
+# Workflow definitions - built-in developer workflows
+[workflows.git_branch_viz]
+name = "Git: Branch Visualization"
+description = "Show detailed branch information with commit signatures"
+category = "git"
+icon = "🌳"
+
+[[workflows.git_branch_viz.steps]]
+command = "git-branches"
+parameters = { max_branches = 20, show_signatures = true }
+
+[workflows.docker_dev_env]
+name = "Docker: Setup Development Environment"
+description = "Initialize development environment with Docker Compose"
+category = "docker"
+icon = "🐳"
+
+[[workflows.docker_dev_env.steps]]
+command = "docker-compose"
+parameters = { action = "up", detached = true, services = ["db", "redis", "app"] }
+
+[workflows.db_schema_explore]
+name = "Database: Schema Explorer"
+description = "Explore database schema with intelligent suggestions"
+category = "database"
+icon = "🗄️"
+
+[[workflows.db_schema_explore.steps]]
+command = "db-schema"
+parameters = { include_relationships = true, format = "tree" }
+
+[workflows.api_health_check]
+name = "API: Health Check Suite"
+description = "Run health checks on all API endpoints"
+category = "api"
+icon = "🌐"
+
+[[workflows.api_health_check.steps]]
+command = "api-test"
+parameters = { collection = "health_checks", parallel = true }
+
+# Security patterns for developer workflows
+[security.developer_patterns]
+# Git patterns
+[[security.developer_patterns.git]]
+pattern = "git push.*--force"
+risk_level = "Warning"
+message = "Force push can overwrite remote history"
+
+[[security.developer_patterns.git]]
+pattern = "git reset.*--hard.*HEAD~[0-9]+"
+risk_level = "Caution"
+message = "Hard reset will lose uncommitted changes"
+
+# Docker patterns
+[[security.developer_patterns.docker]]
+pattern = "docker.*--privileged"
+risk_level = "Warning"
+message = "Privileged containers have elevated access"
+
+[[security.developer_patterns.docker]]
+pattern = "docker.*rm.*-f.*\\$\\(docker.*ps.*-q\\)"
+risk_level = "Critical"
+message = "This will remove all Docker containers"
+
+# Database patterns
+[[security.developer_patterns.database]]
+pattern = "DROP DATABASE|DROP SCHEMA"
+risk_level = "Critical"
+message = "This will permanently delete database/schema"
+
+[[security.developer_patterns.database]]
+pattern = "TRUNCATE TABLE|DELETE FROM.*WHERE.*1.*=.*1"
+risk_level = "Warning"
+message = "This will delete all data from table(s)"
+
+# Theme customization for developer UI components
+[theme.developer_workflow]
+git_conflict_highlight = "#ff6b6b"
+git_branch_current = "#51cf66"
+git_branch_remote = "#74c0fc"
+git_signature_verified = "#51cf66"
+git_signature_invalid = "#ff6b6b"
+
+docker_container_running = "#51cf66"
+docker_container_stopped = "#868e96"
+docker_container_error = "#ff6b6b"
+
+database_connected = "#51cf66"
+database_error = "#ff6b6b"
+database_query_success = "#51cf66"
+database_query_error = "#ff8787"
+
+api_status_success = "#51cf66"
+api_status_client_error = "#ffd43b"
+api_status_server_error = "#ff6b6b"
+api_response_time_good = "#51cf66"
+api_response_time_slow = "#ffd43b"
+
+# Notification settings for developer events
+[notifications.developer_workflow]
+git_conflicts_detected = true
+docker_container_health_changes = true
+database_connection_issues = true
+api_test_failures = true
+long_running_queries = true
+
+[notifications.developer_workflow.thresholds]
+slow_query_ms = 5000
+slow_api_response_ms = 3000
+large_git_repo_mb = 500
+
+# Performance monitoring for developer features
+[performance.developer_workflow]
+track_git_operations = true
+track_docker_operations = true
+track_database_queries = true
+track_api_requests = true
+
+[performance.developer_workflow.limits]
+max_concurrent_db_connections = 20
+max_concurrent_api_requests = 10
+git_operation_timeout_seconds = 60
+docker_operation_timeout_seconds = 120
