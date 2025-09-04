@@ -3,6 +3,47 @@ use serde::{Deserialize, Serialize};
 use openagent_terminal_config_derive::ConfigDeserialize;
 
 use crate::display::color::Rgb;
+use openagent_terminal_config::SerdeReplace;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WordBoundaryStyle {
+    /// Letters, numbers and underscore are treated as word characters; punctuation separates words.
+    Alnum,
+    /// Treat most symbols and punctuation as separate words; jumps stop at transitions of unicode categories.
+    Unicode,
+}
+
+impl Default for WordBoundaryStyle {
+    fn default() -> Self { Self::Alnum }
+}
+
+impl SerdeReplace for WordBoundaryStyle {
+    fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
+        *self = Self::deserialize(value)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComposerOpenMode {
+    /// Warp-like: click opens panel immediately; any keystroke seeds and opens panel
+    Instant,
+    /// Buffered in composer and committed on Enter
+    Commit,
+}
+
+impl Default for ComposerOpenMode {
+    fn default() -> Self { Self::Instant }
+}
+
+impl SerdeReplace for ComposerOpenMode {
+    fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
+        *self = Self::deserialize(value)?;
+        Ok(())
+    }
+}
 
 /// UI tokens for theming (colors only). These are mapped to renderer/UI roles.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,6 +89,30 @@ pub struct ThemeUi {
     pub shadow_alpha: f32,
     pub shadow_size_px: u32,
     pub reduce_motion: bool,
+
+    // Palette UI metrics (Warp-like defaults)
+    pub palette_pill_radius_px: f32,
+    pub palette_title_pad_px: f32,
+    pub palette_chip_pad_px: f32,
+    pub palette_hint_pad_px: f32,
+    pub palette_hint_gap_px: f32,
+    pub palette_selection_scale: f32,
+    pub palette_hint_border_px: f32,
+    pub palette_hint_border_alpha: f32,
+
+    /// Whether to tint palette icons with accent color (true) or use native sprite colors (false)
+    pub palette_icon_tint: bool,
+    /// Use nearest-neighbor filter for icon sprites (crisper 1x); false uses linear filtering
+    pub palette_icon_filter_nearest: bool,
+    /// Icon pixel size for palette entries (autofilter: NEAREST at 16px, LINEAR when scaled)
+    pub palette_icon_px: f32,
+
+    /// Caret blink rate in milliseconds for the bottom composer. Set to 0 to disable blinking.
+    pub composer_blink_rate_ms: u32,
+    /// Word-boundary style for word-wise navigation/deletion in the composer.
+    pub composer_word_boundary_style: WordBoundaryStyle,
+    /// Composer open behavior: "instant" (Warp-like) or "commit"
+    pub composer_open_mode: ComposerOpenMode,
 }
 
 impl Default for ThemeUi {
@@ -59,6 +124,20 @@ impl Default for ThemeUi {
             shadow_alpha: 0.35,
             shadow_size_px: 8,
             reduce_motion: false,
+            palette_pill_radius_px: 10.0,
+            palette_title_pad_px: 10.0,
+            palette_chip_pad_px: 8.0,
+            palette_hint_pad_px: 8.0,
+            palette_hint_gap_px: 6.0,
+            palette_selection_scale: 0.06,
+            palette_hint_border_px: 1.0,
+            palette_hint_border_alpha: 0.40,
+            palette_icon_tint: true,
+            palette_icon_filter_nearest: true,
+            palette_icon_px: 16.0,
+            composer_blink_rate_ms: 600,
+            composer_word_boundary_style: WordBoundaryStyle::Alnum,
+            composer_open_mode: ComposerOpenMode::Instant,
         }
     }
 }
@@ -106,6 +185,22 @@ pub struct ThemeConfig {
     pub shadow_alpha: f32,
     #[serde(default)]
     pub shadow_size_px: u32,
+
+    /// Optional overrides for sprite rendering (when set, override theme file values)
+    #[serde(default)]
+    pub palette_icon_tint: Option<bool>,
+    #[serde(default)]
+    pub palette_icon_filter_nearest: Option<bool>,
+    #[serde(default)]
+    pub palette_icon_px: Option<f32>,
+
+    /// Optional overrides for composer behavior
+    #[serde(default)]
+    pub composer_blink_rate_ms: Option<u32>,
+    #[serde(default)]
+    pub composer_word_boundary_style: Option<WordBoundaryStyle>,
+    #[serde(default)]
+    pub composer_open_mode: Option<ComposerOpenMode>,
 }
 
 impl Default for ThemeConfig {
@@ -119,6 +214,12 @@ impl Default for ThemeConfig {
             shadow: true,
             shadow_alpha: 0.35,
             shadow_size_px: 8,
+            palette_icon_tint: None,
+            palette_icon_filter_nearest: None,
+            palette_icon_px: None,
+            composer_blink_rate_ms: None,
+            composer_word_boundary_style: None,
+            composer_open_mode: None,
         }
     }
 }
@@ -161,6 +262,28 @@ impl ThemeConfig {
         }
         if self.shadow_size_px > 0 {
             resolved.ui.shadow_size_px = self.shadow_size_px;
+        }
+        // Optional sprite overrides
+        if let Some(tint) = self.palette_icon_tint {
+            resolved.ui.palette_icon_tint = tint;
+        }
+        if let Some(nearest) = self.palette_icon_filter_nearest {
+            resolved.ui.palette_icon_filter_nearest = nearest;
+        }
+        if let Some(px) = self.palette_icon_px {
+            if px > 0.0 {
+                resolved.ui.palette_icon_px = px;
+            }
+        }
+        // Composer-specific overrides
+        if let Some(ms) = self.composer_blink_rate_ms {
+            resolved.ui.composer_blink_rate_ms = ms;
+        }
+        if let Some(style) = self.composer_word_boundary_style.clone() {
+            resolved.ui.composer_word_boundary_style = style;
+        }
+        if let Some(mode) = self.composer_open_mode.clone() {
+            resolved.ui.composer_open_mode = mode;
         }
         resolved
     }

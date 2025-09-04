@@ -58,6 +58,10 @@ pub enum Topic {
     WorkflowsSearchTyping,
     // Retain workflows progress overlay briefly after completion
     WorkflowsProgressRetain,
+    // Autosave workspace sessions periodically
+    WorkspaceSessionAutosave,
+    // Debounced AI inline suggestion trigger
+    AiInlineTyping,
 }
 
 /// Event scheduled to be emitted at a specific time.

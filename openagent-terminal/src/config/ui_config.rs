@@ -158,6 +158,14 @@ pub struct UiConfig {
 }
 
 impl UiConfig {
+    /// Integrate Warp-style keybindings if enabled via config toggle.
+    pub fn integrate_warp_style_bindings_if_enabled(&mut self) {
+        if self.workspace.warp_style_bindings.enable {
+            // Within the same module, direct access to private fields is allowed.
+            crate::config::warp_bindings::integrate_warp_bindings(&mut self.keyboard.bindings.0);
+        }
+    }
+
     /// Derive [`TermConfig`] from the config.
     pub fn term_options(&self) -> TermConfig {
         TermConfig {

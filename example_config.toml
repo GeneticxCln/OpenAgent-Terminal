@@ -40,6 +40,21 @@ shadow = true
 shadow_alpha = 0.35
 shadow_size_px = 8
 
+# Optional UI sprite overrides
+# Tint icons in the UI sprite atlas with the accent color (set false to use native icon colors)
+# palette_icon_tint = true
+# Sprite filtering: true = NEAREST (crisp 1x), false = LINEAR (smoother when scaled)
+# palette_icon_filter_nearest = false
+# Palette icon pixel size (auto: crisp at 16px, smooth when scaled)
+# palette_icon_px = 16.0
+# Composer caret blink rate in ms (0 disables blink)
+# composer_blink_rate_ms = 600
+# Word-boundary style: "Alnum" | "Unicode"
+# composer_word_boundary_style = "Alnum"
+# Composer open mode: "Instant" (Warp-like) opens the AI panel on click/first keystroke,
+# or "Commit" to type in the composer and press Enter to open
+# composer_open_mode = "Instant"
+
 # Per-user reduce motion override (takes precedence over theme and [theme].reduce_motion)
 # Uncomment and set to true/false to force the behavior regardless of theme
 # reduce_motion_override = true
@@ -55,7 +70,7 @@ model_env = "OPENAGENT_AI_MODEL"
 scratch_autosave = true
 propose_max_commands = 10
 never_auto_run = true
-inline_suggestions = false
+inline_suggestions = false  # inline suggestions (prototype). Tab/Right to accept, Esc to dismiss
 trigger_key = "Ctrl+Shift+A"
 # AI logging verbosity: "off" for errors only, "summary" for start/finish, "verbose" for per-chunk
 log_verbosity = "summary"
@@ -389,6 +404,12 @@ command = "sh -c 'if [ \"{confirm}\" = \"yes\" ]; then python3 -m pip cache purg
 [workspace]
 # Enable Warp-style visuals and interactions (tabs/splits)
 warp_style = true
+
+# Warp-style keybindings toggle
+[workspace.warp_style_bindings]
+# When true (default), integrate Warp-like keybindings at config load.
+# On macOS: Cmd-based shortcuts; elsewhere: Ctrl-based. Conflicting defaults are deconflicted.
+enable = true
 
 [workspace.tab_bar]
 # Position of the tab bar: "Top" | "Bottom" | "Hidden"

@@ -286,7 +286,7 @@ impl WindowContext {
             display.size_info.columns()
         );
 
-        let event_proxy = EventProxy::new(proxy, display.window.id());
+        let event_proxy = EventProxy::new(proxy.clone(), display.window.id());
 
         // Create the terminal.
         //
@@ -335,12 +335,27 @@ impl WindowContext {
         }
 
         // Initialize workspace manager for this window (tabs and panes)
+        let session_file_path = if config.workspace.sessions.enabled {
+            config
+                .workspace
+                .sessions
+                .file_path
+                .clone()
+                .or(config.workspace.warp_session_file.clone())
+                .or_else(|| {
+                    dirs::config_dir()
+                        .map(|p| p.join("openagent-terminal").join("warp-session.json"))
+                })
+        } else {
+            None
+        };
+
         let mut workspace = if config.workspace.warp_style {
             crate::workspace::WorkspaceManager::with_warp(
                 crate::workspace::WorkspaceId(0),
                 config.clone(),
                 display.size_info,
-                config.workspace.warp_session_file.clone(),
+                session_file_path,
             )
         } else {
             crate::workspace::WorkspaceManager::new(
@@ -349,6 +364,15 @@ impl WindowContext {
                 display.size_info,
             )
         };
+
+        // Initialize Warp functionality immediately (creates default tab or restores session)
+        if config.workspace.warp_style {
+            let _ = workspace.initialize_warp(
+                display.window.id(),
+                proxy.clone(),
+                config.workspace.sessions.restore_on_startup,
+            );
+        }
 
         // For non-Warp mode, create an initial tab
         if !config.workspace.warp_style {

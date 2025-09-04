@@ -6,6 +6,7 @@ use winit::keyboard::ModifiersKeyState;
 use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::OptionAsAlt;
+use std::time::Instant;
 
 use openagent_terminal_core::event::EventListener;
 use openagent_terminal_core::term::TermMode;
@@ -100,6 +101,352 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
             // Swallow other keys while confirm overlay is active
             return;
+        }
+
+        // Bottom composer: click-to-focus + rich text editing while palette is inactive
+        if self.ctx.display().composer_focused && self.ctx.palette_active() == false {
+            use openagent_terminal_core::term::ClipboardType;
+            let mods = self.ctx.modifiers().state();
+            let is_mac = cfg!(target_os = "macos");
+            let theme = self
+                .ctx
+                .config()
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.ctx.config().theme.resolve());
+            let open_mode = theme.ui.composer_open_mode.clone();
+
+            if matches!(open_mode, crate::config::theme::ComposerOpenMode::Instant) {
+                // Allow Enter or Paste (Ctrl/Cmd+V) to open the AI panel as well
+                let ctrl_or_cmd = mods.control_key() || mods.super_key();
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => {
+                        self.ctx.display().composer_focused = false;
+                        self.ctx.display().composer_sel_anchor = None;
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    Key::Named(NamedKey::Enter) => {
+                        #[cfg(feature = "ai")]
+                        {
+                            self.ctx.open_ai_panel();
+                            // Empty seed is fine; user starts typing in panel
+                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                runtime.ui.cursor_position = runtime.ui.scratch.len();
+                            }
+                            self.ctx.display().composer_text.clear();
+                            self.ctx.display().composer_cursor = 0;
+                            self.ctx.display().composer_sel_anchor = None;
+                            self.ctx.display().composer_view_col_offset = 0;
+                            self.ctx.display().composer_focused = false;
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    Key::Named(NamedKey::Backspace) => {
+                        #[cfg(feature = "ai")]
+                        {
+                            self.ctx.open_ai_panel();
+                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                // Perform backspace in the panel if there is any text
+                                runtime.backspace();
+                            }
+                            self.ctx.display().composer_text.clear();
+                            self.ctx.display().composer_cursor = 0;
+                            self.ctx.display().composer_sel_anchor = None;
+                            self.ctx.display().composer_view_col_offset = 0;
+                            self.ctx.display().composer_focused = false;
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    Key::Named(NamedKey::Delete) => {
+                        #[cfg(feature = "ai")]
+                        {
+                            // Open panel on Delete too; perform forward delete in panel
+                            self.ctx.open_ai_panel();
+                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                runtime.delete_forward();
+                            }
+                            self.ctx.display().composer_text.clear();
+                            self.ctx.display().composer_cursor = 0;
+                            self.ctx.display().composer_sel_anchor = None;
+                            self.ctx.display().composer_view_col_offset = 0;
+                            self.ctx.display().composer_focused = false;
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    Key::Character(c) if ctrl_or_cmd && c.eq_ignore_ascii_case("v") => {
+                        use openagent_terminal_core::term::ClipboardType;
+                        let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
+                        #[cfg(feature = "ai")]
+                        {
+                            if !clip.is_empty() {
+                                self.ctx.open_ai_panel();
+                                if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                    runtime.ui.scratch = clip;
+                                    runtime.ui.cursor_position = runtime.ui.scratch.len();
+                                }
+                                self.ctx.display().composer_text.clear();
+                                self.ctx.display().composer_cursor = 0;
+                                self.ctx.display().composer_sel_anchor = None;
+                                self.ctx.display().composer_view_col_offset = 0;
+                                self.ctx.display().composer_focused = false;
+                                self.ctx.mark_dirty();
+                            }
+                        }
+                        return;
+                    },
+                    _ => {},
+                }
+                if !text.is_empty() {
+                    #[cfg(feature = "ai")]
+                    {
+                        self.ctx.open_ai_panel();
+                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                            runtime.ui.scratch = text.clone();
+                            runtime.ui.cursor_position = runtime.ui.scratch.len();
+                        }
+                        // Reset composer state
+                        self.ctx.display().composer_text.clear();
+                        self.ctx.display().composer_cursor = 0;
+                        self.ctx.display().composer_sel_anchor = None;
+                        self.ctx.display().composer_view_col_offset = 0;
+                        self.ctx.display().composer_focused = false;
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                }
+                // Other keys in instant mode are ignored (click-to-open already available)
+                return;
+            }
+
+            // Commit mode: full text editing and commit on Enter
+            let word_mod = if is_mac { mods.alt_key() } else { mods.control_key() };
+            let shift = mods.shift_key();
+            let ctrl_or_cmd = mods.control_key() || mods.super_key();
+
+            // Helper closures operating on the composer buffer
+            let ensure_caret_visible = |ctx: &mut A| {
+                // Reset blink so caret is shown immediately after edits/moves
+                ctx.display().composer_caret_visible = true;
+                ctx.display().composer_caret_last_toggle = Some(Instant::now());
+            };
+            let clear_selection = |ctx: &mut A| { ctx.display().composer_sel_anchor = None; };
+            let has_selection = |ctx: &mut A| -> bool {
+                ctx.display().composer_sel_anchor.map(|a| a != ctx.display().composer_cursor).unwrap_or(false)
+            };
+            let selection_range = |ctx: &mut A| -> Option<(usize, usize)> {
+                ctx.display().composer_sel_anchor.map(|a| {
+                    let c = ctx.display().composer_cursor; if a < c { (a, c) } else { (c, a) }
+                }).filter(|(s,e)| e > s)
+            };
+            let delete_selection = |ctx: &mut A| {
+                if let Some((s, e)) = selection_range(ctx) {
+                    ctx.display().composer_text.replace_range(s..e, "");
+                    ctx.display().composer_cursor = s;
+                    clear_selection(ctx);
+                    ensure_caret_visible(ctx);
+                }
+            };
+            let prev_char = |s: &str, idx: usize| composer_prev_char_boundary(s, idx);
+            let next_char = |s: &str, idx: usize| composer_next_char_boundary(s, idx);
+            let word_style = theme.ui.composer_word_boundary_style.clone();
+            let prev_word = |s: &str, idx: usize| composer_prev_word_boundary(s, idx, &word_style);
+            let next_word = |s: &str, idx: usize| composer_next_word_boundary(s, idx, &word_style);
+
+            // Handle command-style shortcuts (copy/cut/paste, select all, line-home/end)
+            if ctrl_or_cmd {
+                match key.logical_key.as_ref() {
+                    Key::Character(c) if c.eq_ignore_ascii_case("c") => {
+                        if let Some((s, e)) = selection_range(&mut self.ctx) {
+                            let text = self.ctx.display().composer_text[s..e].to_string();
+                            self.ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
+                        }
+                        return;
+                    },
+                    Key::Character(c) if c.eq_ignore_ascii_case("x") => {
+                        if let Some((s, e)) = selection_range(&mut self.ctx) {
+                            let text = self.ctx.display().composer_text[s..e].to_string();
+                            self.ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
+                            delete_selection(&mut self.ctx);
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    Key::Character(c) if c.eq_ignore_ascii_case("v") => {
+                        let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
+                        if !clip.is_empty() {
+                            if has_selection(&mut self.ctx) { delete_selection(&mut self.ctx); }
+                            let cur = self.ctx.display().composer_cursor;
+                            self.ctx.display().composer_text.insert_str(cur, &clip);
+                            self.ctx.display().composer_cursor = cur + clip.len();
+                            ensure_caret_visible(&mut self.ctx);
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    Key::Character(c) if c.eq_ignore_ascii_case("a") => {
+                        // Select all
+                        if !self.ctx.display().composer_text.is_empty() {
+                            self.ctx.display().composer_sel_anchor = Some(0);
+                            self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
+                            ensure_caret_visible(&mut self.ctx);
+                            self.ctx.mark_dirty();
+                        }
+                        return;
+                    },
+                    Key::Character(c) if c.eq_ignore_ascii_case("e") => {
+                        // End of line
+                        if shift && self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                        }
+                        self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
+                        if !shift { clear_selection(&mut self.ctx); }
+                        ensure_caret_visible(&mut self.ctx);
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    Key::Character(c) if c.eq_ignore_ascii_case("h") => {
+                        // Home (common in shells)
+                        if shift && self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                        }
+                        self.ctx.display().composer_cursor = 0;
+                        if !shift { clear_selection(&mut self.ctx); }
+                        ensure_caret_visible(&mut self.ctx);
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    _ => {}
+                }
+            }
+
+            // Route keys to composer text buffer
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.display().composer_focused = false;
+                    // Preserve current buffer; clear selection
+                    clear_selection(&mut self.ctx);
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                Key::Named(NamedKey::Enter) => {
+                    #[cfg(feature = "ai")]
+                    {
+                        let text_to_send = self.ctx.display().composer_text.clone();
+                        self.ctx.open_ai_panel();
+                        if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                            if !text_to_send.is_empty() {
+                                runtime.ui.scratch = text_to_send;
+                                runtime.ui.cursor_position = runtime.ui.scratch.len();
+                            }
+                        }
+                        // Reset composer state after commit
+                        self.ctx.display().composer_text.clear();
+                        self.ctx.display().composer_cursor = 0;
+                        self.ctx.display().composer_sel_anchor = None;
+                        self.ctx.display().composer_view_col_offset = 0;
+                        self.ctx.display().composer_focused = false;
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                },
+                Key::Named(NamedKey::Backspace) => {
+                    if has_selection(&mut self.ctx) {
+                        delete_selection(&mut self.ctx);
+                        self.ctx.mark_dirty();
+                    } else if self.ctx.display().composer_cursor > 0 {
+                        let cur = self.ctx.display().composer_cursor;
+                        let prev = if word_mod { prev_word(&self.ctx.display().composer_text, cur) } else { prev_char(&self.ctx.display().composer_text, cur) };
+                        self.ctx.display().composer_text.replace_range(prev..cur, "");
+                        self.ctx.display().composer_cursor = prev;
+                        ensure_caret_visible(&mut self.ctx);
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                },
+                Key::Named(NamedKey::Delete) => {
+                    if has_selection(&mut self.ctx) {
+                        delete_selection(&mut self.ctx);
+                        self.ctx.mark_dirty();
+                    } else {
+                        let cur = self.ctx.display().composer_cursor;
+                        if cur < self.ctx.display().composer_text.len() {
+                            let next = if word_mod { next_word(&self.ctx.display().composer_text, cur) } else { next_char(&self.ctx.display().composer_text, cur) };
+                            self.ctx.display().composer_text.replace_range(cur..next, "");
+                            ensure_caret_visible(&mut self.ctx);
+                            self.ctx.mark_dirty();
+                        }
+                    }
+                    return;
+                },
+                Key::Named(NamedKey::ArrowLeft) => {
+                    if shift && self.ctx.display().composer_sel_anchor.is_none() {
+                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                    }
+                    let cur = self.ctx.display().composer_cursor;
+                    if cur > 0 {
+                        let new_cur = if word_mod { prev_word(&self.ctx.display().composer_text, cur) } else { prev_char(&self.ctx.display().composer_text, cur) };
+                        self.ctx.display().composer_cursor = new_cur;
+                    }
+                    if !shift { clear_selection(&mut self.ctx); }
+                    ensure_caret_visible(&mut self.ctx);
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) => {
+                    if shift && self.ctx.display().composer_sel_anchor.is_none() {
+                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                    }
+                    let cur = self.ctx.display().composer_cursor;
+                    let len = self.ctx.display().composer_text.len();
+                    if cur < len {
+                        let new_cur = if word_mod { next_word(&self.ctx.display().composer_text, cur) } else { next_char(&self.ctx.display().composer_text, cur) };
+                        self.ctx.display().composer_cursor = new_cur;
+                    }
+                    if !shift { clear_selection(&mut self.ctx); }
+                    ensure_caret_visible(&mut self.ctx);
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                Key::Named(NamedKey::Home) => {
+                    if shift && self.ctx.display().composer_sel_anchor.is_none() {
+                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                    }
+                    self.ctx.display().composer_cursor = 0;
+                    if !shift { clear_selection(&mut self.ctx); }
+                    ensure_caret_visible(&mut self.ctx);
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                Key::Named(NamedKey::End) => {
+                    if shift && self.ctx.display().composer_sel_anchor.is_none() {
+                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                    }
+                    self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
+                    if !shift { clear_selection(&mut self.ctx); }
+                    ensure_caret_visible(&mut self.ctx);
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                _ => {},
+            }
+
+            // Insert printable text (replace selection when active)
+            if !text.is_empty() {
+                if has_selection(&mut self.ctx) {
+                    delete_selection(&mut self.ctx);
+                }
+                let cur = self.ctx.display().composer_cursor;
+                self.ctx.display().composer_text.insert_str(cur, &text);
+                self.ctx.display().composer_cursor = cur + text.len();
+                ensure_caret_visible(&mut self.ctx);
+                self.ctx.mark_dirty();
+                return;
+            }
         }
 
         // Command Palette handling takes precedence.
@@ -423,6 +770,30 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Inline AI suggestions: accept/dismiss when visible and panel not active
+        #[cfg(feature = "ai")]
+        if !self.ctx.ai_active() && self.ctx.inline_suggestion_visible() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Tab) => {
+                    self.ctx.accept_inline_suggestion();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) if mods.alt_key() || mods.control_key() => {
+                    self.ctx.accept_inline_suggestion_word();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.ctx.accept_inline_suggestion_char();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.dismiss_inline_suggestion();
+                    return;
+                },
+                _ => {},
+            }
+        }
+
         // Global AI toggle: Ctrl+Shift+A (handle even when panel is active)
         #[cfg(feature = "ai")]
         if mods.control_key() && mods.shift_key() {
@@ -563,6 +934,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     }
                     return;
                 },
+                Key::Named(NamedKey::Delete) => {
+                    if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                        runtime.delete_forward();
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                },
                 _ => {},
             }
 
@@ -640,6 +1018,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 self.ctx.on_terminal_input_start();
             }
             self.ctx.write_to_pty(bytes);
+
+            // Schedule AI inline suggestion after typing (debounced), and clear any stale suggestion
+            #[cfg(feature = "ai")]
+            {
+                if !self.ctx.ai_active() {
+                    self.ctx.clear_inline_suggestion();
+                    self.ctx.schedule_inline_suggest();
+                }
+            }
         }
     }
 
@@ -1256,4 +1643,85 @@ fn is_control_character(text: &str) -> bool {
     // does not match the reported text (`^H`), despite not technically being part of C0 or C1.
     let codepoint = text.bytes().next().unwrap();
     text.len() == 1 && (codepoint < 0x20 || (0x7f..=0x9f).contains(&codepoint))
+}
+
+// === Composer text editing helpers ===
+use crate::config::theme::WordBoundaryStyle;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+fn composer_prev_char_boundary(s: &str, idx: usize) -> usize {
+    if idx == 0 { return 0; }
+    let mut i = idx;
+    while i > 0 {
+        i -= 1;
+        if s.is_char_boundary(i) { return i; }
+    }
+    0
+}
+
+fn composer_next_char_boundary(s: &str, idx: usize) -> usize {
+    if idx >= s.len() { return s.len(); }
+    let mut i = idx;
+    // Advance to next char boundary by taking current char
+    if let Some(ch) = s[idx..].chars().next() {
+        i += ch.len_utf8();
+    } else {
+        i = s.len();
+    }
+    i
+}
+
+fn is_word_char(ch: char, style: &WordBoundaryStyle) -> bool {
+    match style {
+        WordBoundaryStyle::Alnum => ch.is_alphanumeric() || ch == '_',
+        WordBoundaryStyle::Unicode => ch.is_alphanumeric(),
+    }
+}
+
+fn composer_prev_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyle) -> usize {
+    if idx == 0 { return 0; }
+    // Skip initial whitespace
+    while idx > 0 {
+        let j = composer_prev_char_boundary(s, idx);
+        let ch = s[j..].chars().next().unwrap();
+        if ch.is_whitespace() { idx = j; } else { break; }
+    }
+    if idx == 0 { return 0; }
+    // Determine class of the run to skip
+    let mut i = idx;
+    let j = composer_prev_char_boundary(s, i);
+    let ch = s[j..].chars().next().unwrap();
+    let target_is_word = is_word_char(ch, style);
+    i = j;
+    while i > 0 {
+        let k = composer_prev_char_boundary(s, i);
+        let ch2 = s[k..].chars().next().unwrap();
+        if ch2.is_whitespace() { break; }
+        if is_word_char(ch2, style) != target_is_word { break; }
+        i = k;
+    }
+    i
+}
+
+fn composer_next_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyle) -> usize {
+    let len = s.len();
+    if idx >= len { return len; }
+    // Skip initial whitespace
+    while idx < len {
+        if let Some(ch) = s[idx..].chars().next() {
+            if ch.is_whitespace() { idx = composer_next_char_boundary(s, idx); } else { break; }
+        } else { return len; }
+    }
+    if idx >= len { return len; }
+    // Determine class of the run to skip
+    let ch = s[idx..].chars().next().unwrap();
+    let target_is_word = is_word_char(ch, style);
+    let mut i = idx;
+    while i < len {
+        let ch2 = s[i..].chars().next().unwrap();
+        if ch2.is_whitespace() { break; }
+        if is_word_char(ch2, style) != target_is_word { break; }
+        i = composer_next_char_boundary(s, i);
+    }
+    i
 }

@@ -132,6 +132,8 @@ impl WarpTabManager {
             modified: false,
             shell_command: None,
             zoom_saved_layout: None,
+            last_exit_nonzero: false,
+            panes_synced: false,
         };
 
         self.tabs.insert(tab_id, tab_context);
@@ -419,6 +421,8 @@ impl WarpTabManager {
             modified: false,
             shell_command: tab_session.shell_command,
             zoom_saved_layout: None,
+            last_exit_nonzero: false,
+            panes_synced: false,
         };
 
         self.tabs.insert(tab_session.id, tab_context);

@@ -15,6 +15,7 @@ warp_style = true
 # If not specified, sessions will be stored in the default location
 # warp_session_file = "~/.config/openagent-terminal/warp-session.json"
 
+
 # Tab bar configuration
 tab_bar_position = "top"  # "top", "bottom", or "hidden"
 show_tab_bar = true
@@ -94,9 +95,6 @@ zoom_pane = { key = "z", mods = "cmd+shift" }         # Cmd+Shift+Z / Ctrl+Shift
 cycle_recent_panes = { key = "semicolon", mods = "cmd" } # Cmd+; / Ctrl+;
 equalize_splits = { key = "e", mods = "cmd+alt" }     # Cmd+Alt+E / Ctrl+Alt+E
 
-# Session management
-save_session = { key = "s", mods = "cmd+shift" }      # Cmd+Shift+S / Ctrl+Shift+S
-load_session = { key = "o", mods = "cmd+shift" }      # Cmd+Shift+O / Ctrl+Shift+O
 
 # Notes on usage:
 #
@@ -124,8 +122,6 @@ load_session = { key = "o", mods = "cmd+shift" }      # Cmd+Shift+O / Ctrl+Shift
 #
 # 5. Session Management:
 #    - Sessions automatically save tab layout and working directories
-#    - Cmd+Shift+S: Manually save current session
-#    - Cmd+Shift+O: Load saved session
 #    - Sessions restore on terminal restart
 #
 # 6. Visual Enhancements:

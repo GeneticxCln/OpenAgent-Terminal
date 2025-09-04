@@ -141,7 +141,7 @@ animated_typing = true      # animate AI responses
 animation_speed = 1.0       # animation speed multiplier
 propose_max_commands = 10   # max suggestions per query
 never_auto_run = true       # safety: never auto-execute
-inline_suggestions = false  # show suggestions as you type
+inline_suggestions = false  # show inline suggestions as you type (Tab/→ accept, Esc dismiss)
 
 # Logging
 log_verbosity = "summary"    # "off", "summary", "verbose"

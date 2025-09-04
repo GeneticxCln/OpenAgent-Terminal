@@ -25,8 +25,8 @@ OpenAgent Terminal now supports Warp-style tab and split pane management, provid
 | `Ctrl+W` / `Cmd+W` | Close Tab/Pane | Close current tab or pane |
 | `Ctrl+D` / `Cmd+D` | Split Right | Split current pane to the right |
 | `Ctrl+Shift+D` / `Cmd+Shift+D` | Split Down | Split current pane downward |
-| `Ctrl+Alt+←→↑↓` / `Cmd+Alt+←→↑↓` | Navigate Panes | Move focus between panes |
-| `Ctrl+Shift+←→↑↓` / `Cmd+Ctrl+←→↑↓` | Resize Panes | Resize current pane |
+| `Ctrl+Alt+←→↑↓` / `Cmd+Alt+←→↑↓` | Navigate Panes | Move focus between panes; on Linux/Windows this uses Left/Up as Previous, Right/Down as Next until directional focus actions are available |
+| `Ctrl+Shift+←→↑↓` / `Cmd+Ctrl+←→↑↓` | Resize Panes | Resize current pane; on Linux/Windows this is used automatically if Ctrl+Alt+Arrows were previously bound to resizing |
 | `Ctrl+Shift+Enter` / `Cmd+Shift+Enter` | Toggle Zoom | Zoom/unzoom current pane |
 | `Ctrl+;` / `Cmd+;` | Cycle Recent | Cycle through recently used panes |
 | `Ctrl+Shift+]` / `Cmd+Shift+]` | Next Tab | Switch to next tab |
@@ -42,7 +42,7 @@ OpenAgent Terminal now supports Warp-style tab and split pane management, provid
 
 To enable Warp-style visuals and the tab bar with a reserved row so it doesn’t overlap terminal content, add this to your config:
 
-```toml path=null start=null
+```toml
 [workspace]
 warp_style = true
 
@@ -50,6 +50,17 @@ warp_style = true
 show = true
 position = "Top"   # or "Bottom"
 reserve_row = true
+```
+
+Enable the Warp-style keyboard mappings with this toggle (on by default):
+
+```toml
+[workspace.warp_style_bindings]
+# When true, integrate Warp-like keybindings at config load.
+# macOS uses Cmd-based shortcuts; Linux/Windows use Ctrl-based.
+# If defaults use Ctrl+Alt+Arrows for resizing, they are moved to Ctrl+Shift+Arrows
+# and Ctrl+Alt+Arrows are used for pane navigation.
+enable = true
 ```
 
 Split indicators and resize handles are configurable via the [workspace.splits] section (wired). Colors come from your theme unless explicitly overridden. See below for the keys.
@@ -263,6 +274,7 @@ The Warp-style functionality integrates seamlessly with existing OpenAgent Termi
 **Keyboard shortcuts not working**
 - Verify no conflicting bindings in config
 - Check if vim mode or search mode is active
+- Ensure `[workspace.warp_style_bindings].enable = true` (it defaults to true)
 
 **Split navigation feels unresponsive**
 - Adjust `pane_resize_step` for smaller increments

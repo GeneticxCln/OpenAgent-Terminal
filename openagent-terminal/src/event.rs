@@ -51,6 +51,9 @@ use crate::clipboard::Clipboard;
 use crate::components_init::{ComponentConfig, InitializedComponents};
 use crate::config::ui_config::{HintAction, HintInternalAction};
 use crate::config::{self, UiConfig};
+use crate::config::Action as BindingAction;
+use crate::display::palette::{PaletteEntry, PaletteItem};
+use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 #[cfg(not(windows))]
 use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
@@ -81,6 +84,10 @@ pub const WORKFLOWS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Retention time for workflows progress overlay after completion.
 #[cfg(feature = "workflow")]
 pub const WORKFLOWS_OVERLAY_RETAIN: Duration = Duration::from_millis(3000);
+
+/// Debounce for AI inline suggestions after typing
+#[cfg(feature = "ai")]
+pub const AI_INLINE_SUGGEST_DEBOUNCE: Duration = Duration::from_millis(200);
 
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
@@ -192,6 +199,21 @@ impl Processor {
         crate::ui_confirm::set_default_window_id(window_id);
         self.windows.insert(window_id, window_context);
 
+        // Schedule session autosave if enabled and using Warp mode
+        if self.config.workspace.warp_style
+            && self.config.workspace.sessions.enabled
+            && self.config.workspace.sessions.autosave_interval_secs > 0
+        {
+            let tid = TimerId::new(Topic::WorkspaceSessionAutosave, window_id);
+            self.scheduler.unschedule(tid);
+            let evt = Event::new(
+                EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave),
+                window_id,
+            );
+            let interval = Duration::from_secs(self.config.workspace.sessions.autosave_interval_secs);
+            self.scheduler.schedule(evt, interval, true, tid);
+        }
+
         // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
         if self.config.config_paths.is_empty() {
             let hint = "Welcome — click the bottom bar or use Ctrl+Shift+P/S/W. Place a config at ~/.config/openagent-terminal/openagent-terminal.toml".to_string();
@@ -247,6 +269,21 @@ impl Processor {
 
         let window_id = window_context.id();
         self.windows.insert(window_id, window_context);
+
+        // Schedule session autosave if enabled and using Warp mode
+        if self.config.workspace.warp_style
+            && self.config.workspace.sessions.enabled
+            && self.config.workspace.sessions.autosave_interval_secs > 0
+        {
+            let tid = TimerId::new(Topic::WorkspaceSessionAutosave, window_id);
+            self.scheduler.unschedule(tid);
+            let evt = Event::new(
+                EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave),
+                window_id,
+            );
+            let interval = Duration::from_secs(self.config.workspace.sessions.autosave_interval_secs);
+            self.scheduler.schedule(evt, interval, true, tid);
+        }
 
         // If components are already initialized, set them on the new window
         if let Some(components) = &self.components {
@@ -866,6 +903,17 @@ impl ApplicationHandler<Event> for Processor {
                     );
                 }
             },
+            // Warp autosave event
+            (EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    if let Some(warp) = &mut window_context.workspace.warp {
+                        // Save if activity window elapsed or unconditionally (cheap)
+                        if warp.should_auto_save() {
+                            let _ = warp.execute_warp_action(&crate::workspace::WarpAction::SaveSession);
+                        }
+                    }
+                }
+            },
             // Blocks search events handled at processor level
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
@@ -1483,6 +1531,11 @@ pub enum EventType {
     AiCopyCode,
     #[cfg(feature = "ai")]
     AiCopyAll,
+    // Inline AI suggestions
+    #[cfg(feature = "ai")]
+    AiInlineDebounced,
+    #[cfg(feature = "ai")]
+    AiInlineSuggestionReady(String),
     #[cfg(feature = "ai")]
     AiExplain(Option<String>),
     #[cfg(feature = "ai")]
@@ -1869,9 +1922,131 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display
     }
 
+    // Command Palette controls
+    fn open_command_palette(&mut self) {
+        // Build minimal core actions list
+        let mut items: Vec<PaletteItem> = Vec::new();
+        // Start open animation for palette
+        self.display.palette_anim_opening = true;
+        self.display.palette_anim_start = Some(std::time::Instant::now());
+        // Use theme reduce_motion to adjust duration
+        let theme = self.config.resolved_theme.as_ref().cloned().unwrap_or_else(|| self.config.theme.resolve());
+        self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 140 };
+
+        // Core actions: tabs, splits, focus, zoom
+        items.push(PaletteItem { key: "action:CreateTab".to_string(), title: "New Tab".to_string(), subtitle: Some("Create a new tab".to_string()), entry: PaletteEntry::Action(BindingAction::CreateTab) });
+        items.push(PaletteItem { key: "action:SplitVertical".to_string(), title: "Split: Vertical".to_string(), subtitle: Some("Split current pane vertically".to_string()), entry: PaletteEntry::Action(BindingAction::SplitVertical) });
+        items.push(PaletteItem { key: "action:SplitHorizontal".to_string(), title: "Split: Horizontal".to_string(), subtitle: Some("Split current pane horizontally".to_string()), entry: PaletteEntry::Action(BindingAction::SplitHorizontal) });
+        items.push(PaletteItem { key: "action:FocusNextPane".to_string(), title: "Focus Next Pane".to_string(), subtitle: Some("Move focus to next pane".to_string()), entry: PaletteEntry::Action(BindingAction::FocusNextPane) });
+        items.push(PaletteItem { key: "action:FocusPreviousPane".to_string(), title: "Focus Previous Pane".to_string(), subtitle: Some("Move focus to previous pane".to_string()), entry: PaletteEntry::Action(BindingAction::FocusPreviousPane) });
+        items.push(PaletteItem { key: "action:ToggleZoom".to_string(), title: "Toggle Zoom".to_string(), subtitle: Some("Toggle zoom on active pane".to_string()), entry: PaletteEntry::Action(BindingAction::ToggleZoom) });
+
+        // Panels
+        items.push(PaletteItem { key: "action:OpenBlocksSearchPanel".to_string(), title: "Open Blocks Search".to_string(), subtitle: Some("Search recent command blocks".to_string()), entry: PaletteEntry::Action(BindingAction::OpenBlocksSearchPanel) });
+        items.push(PaletteItem { key: "action:OpenWorkflowsPanel".to_string(), title: "Open Workflows Panel".to_string(), subtitle: Some("Browse and run configured workflows".to_string()), entry: PaletteEntry::Action(BindingAction::OpenWorkflowsPanel) });
+        // Sync toggle
+        items.push(PaletteItem { key: "action:TogglePaneSync".to_string(), title: "Toggle Pane Sync".to_string(), subtitle: Some("Synchronize input across panes in this tab".to_string()), entry: PaletteEntry::Action(BindingAction::TogglePaneSync) });
+
+        // Workflows from config (if any)
+        if !self.config.workflows.is_empty() {
+            for wf in &self.config.workflows {
+                let title = format!("Workflow: {}", wf.name);
+                let subtitle = wf.description.clone();
+                items.push(PaletteItem { key: format!("workflow:{}", wf.name), title, subtitle, entry: PaletteEntry::Workflow(wf.name.clone()) });
+            }
+        }
+
+        // Persist MRU counts after a selection
+        self.display.palette.save_mru_to_config(&self.config);
+        self.display.palette.close();
+        self.mark_dirty();
+    }
+
+    fn palette_active(&self) -> bool { self.display.palette.active() }
+
+    fn palette_input(&mut self, c: char) {
+        self.display.palette.push_filter_char(c);
+        self.mark_dirty();
+    }
+
+    fn palette_backspace(&mut self) {
+        self.display.palette.pop_filter_char();
+        self.mark_dirty();
+    }
+
+    fn palette_move_selection(&mut self, delta: isize) {
+        self.display.palette.move_selection(delta);
+        self.mark_dirty();
+    }
+
+    fn palette_confirm(&mut self) {
+        use BindingAction as BA;
+        // Note usage for MRU boost
+        if let Some(key) = self.display.palette.selected_item_key().map(|s| s.to_string()) {
+            self.display.palette.note_used(&key);
+        }
+        if let Some(entry) = self.display.palette.selected_entry().cloned() {
+            match entry {
+                PaletteEntry::Action(action) => {
+                    match action {
+                        BA::CreateTab => self.workspace_create_tab(),
+                        BA::SplitVertical => self.workspace_split_vertical(),
+                        BA::SplitHorizontal => self.workspace_split_horizontal(),
+                        BA::FocusNextPane => self.workspace_focus_next_pane(),
+                        BA::FocusPreviousPane => self.workspace_focus_previous_pane(),
+                        BA::ToggleZoom => self.workspace_toggle_zoom(),
+                        BA::OpenBlocksSearchPanel => {
+                            if self.blocks_search_active() { self.blocks_search_cancel() } else { self.open_blocks_search_panel() }
+                        },
+                        BA::OpenWorkflowsPanel => {
+                            if self.workflows_panel_active() { self.workflows_panel_cancel() } else { self.open_workflows_panel() }
+                        },
+                        BA::TogglePaneSync => {
+                            self.workspace_toggle_sync();
+                        },
+                        _ => {
+                            // Unsupported action here; fall back to sending a message
+                        },
+                    }
+                },
+                PaletteEntry::Workflow(name) => {
+                    // Ask processor to execute via engine if available
+                    let _ = self.event_proxy.send_event(Event::new(
+                        EventType::WorkflowsExecuteByName(name),
+                        self.display.window.id(),
+                    ));
+                },
+            }
+        }
+        // Start close animation before hiding
+        self.display.palette.close();
+        self.display.palette_anim_opening = false;
+        self.display.palette_anim_start = Some(std::time::Instant::now());
+        let theme = self.config.resolved_theme.as_ref().cloned().unwrap_or_else(|| self.config.theme.resolve());
+        self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 120 };
+        self.mark_dirty();
+    }
+
+    fn palette_cancel(&mut self) {
+        // Persist MRU on cancel as well
+        self.display.palette.save_mru_to_config(&self.config);
+        self.display.palette.close();
+        // Trigger closing animation
+        self.display.palette_anim_opening = false;
+        self.display.palette_anim_start = Some(std::time::Instant::now());
+        let theme = self.config.resolved_theme.as_ref().cloned().unwrap_or_else(|| self.config.theme.resolve());
+        self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 120 };
+        self.mark_dirty();
+    }
+
+
     // Blocks Search panel controls
     #[cfg(feature = "blocks")]
     fn open_blocks_search_panel(&mut self) {
+        if self.palette_active() {
+            self.display.palette.save_mru_to_config(&self.config);
+            self.display.palette.close();
+        }
         self.display.blocks_search.open();
         self.mark_dirty();
         self.send_user_event(EventType::BlocksSearchPerform(
@@ -2251,6 +2426,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     // Workflows panel controls
     #[cfg(feature = "workflow")]
     fn open_workflows_panel(&mut self) {
+        if self.palette_active() {
+            self.display.palette.save_mru_to_config(&self.config);
+            self.display.palette.close();
+        }
         self.display.workflows_panel.open();
         self.mark_dirty();
         // Trigger initial search with current query (may be empty)
@@ -3073,7 +3252,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Workspace / panes: wire to real WorkspaceManager
-    fn workspace_split_horizontal(&mut self) {
+fn workspace_split_horizontal(&mut self) {
         let ratio = self.config.workspace.splits.default_ratio;
         let res = self.workspace.split_horizontal(ratio);
         let msg = if let Some(id) = res {
@@ -3215,11 +3394,24 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
-    fn workspace_toggle_zoom(&mut self) {
+fn workspace_toggle_zoom(&mut self) {
         let ok = self.workspace.toggle_zoom();
         let msg = if ok { "Toggled pane zoom" } else { "Toggle zoom failed" };
         self.message_buffer
             .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_mark_active_tab_error(&mut self, non_zero: bool) {
+        self.workspace.mark_active_tab_error(non_zero);
+        *self.dirty = true;
+    }
+
+    fn workspace_toggle_sync(&mut self) {
+        let ok = self.workspace.toggle_active_tab_sync();
+        let msg = if ok { "Toggled pane sync" } else { "Toggle pane sync failed" };
+        self.message_buffer.push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -3284,6 +3476,108 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             crate::message_bar::MessageType::Warning,
         );
         let _ = self.event_proxy.send_event(Event::new(EventType::Message(message), None));
+    }
+
+    // Inline AI suggestions integration
+    #[cfg(feature = "ai")]
+    fn inline_suggestion_visible(&self) -> bool {
+        self.ai_runtime.as_ref().map(|rt| rt.ui.inline_suggestion.is_some()).unwrap_or(false)
+    }
+
+    #[cfg(feature = "ai")]
+    fn accept_inline_suggestion(&mut self) {
+        if let Some(rt) = &mut self.ai_runtime {
+            if let Some(text) = rt.ui.inline_suggestion.take() {
+                // Insert suggestion into the prompt via paste
+                self.paste(&text, true);
+                *self.dirty = true;
+            }
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn accept_inline_suggestion_word(&mut self) {
+        if let Some(rt) = &mut self.ai_runtime {
+            if let Some(suf) = rt.ui.inline_suggestion.take() {
+                let (accept, rest) = next_word(&suf);
+                if !accept.is_empty() {
+                    self.paste(&accept, true);
+                }
+                rt.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
+                *self.dirty = true;
+            }
+        }
+
+        // Extract next word from suffix up to whitespace boundary
+        fn next_word(s: &str) -> (String, String) {
+            let mut iter = s.char_indices();
+            let mut end = 0usize;
+            for (i, ch) in &mut iter {
+                end = i + ch.len_utf8();
+                if ch.is_whitespace() {
+                    break;
+                }
+            }
+            // If first segment is empty (starts with whitespace), accept that whitespace first
+            if s.chars().next().map_or(false, |c| c.is_whitespace()) {
+                let mut j = 0usize;
+                for (i, ch) in s.char_indices() {
+                    j = i + ch.len_utf8();
+                    if !ch.is_whitespace() { break; }
+                }
+                let (a, r) = s.split_at(j);
+                return (a.to_string(), r.to_string());
+            }
+            let (a, r) = s.split_at(end.min(s.len()));
+            (a.to_string(), r.to_string())
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn accept_inline_suggestion_char(&mut self) {
+        if let Some(rt) = &mut self.ai_runtime {
+            if let Some(mut suf) = rt.ui.inline_suggestion.take() {
+                if let Some(first) = suf.chars().next() {
+                    let mut buf = [0u8; 4];
+                    let s = first.encode_utf8(&mut buf);
+                    self.paste(s, true);
+                    suf.drain(..first.len_utf8());
+                    rt.ui.inline_suggestion = if suf.is_empty() { None } else { Some(suf) };
+                    *self.dirty = true;
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn dismiss_inline_suggestion(&mut self) {
+        if let Some(rt) = &mut self.ai_runtime {
+            if rt.ui.inline_suggestion.take().is_some() {
+                *self.dirty = true;
+            }
+        }
+    }
+
+    #[cfg(feature = "ai")]
+    fn schedule_inline_suggest(&mut self) {
+        // Debounce scheduling
+        if !(self.config.ai.enabled && self.config.ai.inline_suggestions) {
+            return;
+        }
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::AiInlineTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let evt = Event::new(EventType::AiInlineDebounced, window_id);
+        self.scheduler.schedule(evt, AI_INLINE_SUGGEST_DEBOUNCE, false, timer_id);
+    }
+
+    #[cfg(feature = "ai")]
+    fn clear_inline_suggestion(&mut self) {
+        if let Some(rt) = &mut self.ai_runtime {
+            if rt.ui.inline_suggestion.take().is_some() {
+                *self.dirty = true;
+            }
+        }
     }
 
     // Command palette has been removed; placeholder methods were deleted.
@@ -3890,6 +4184,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         self.ctx.display().blocks.enabled = true;
                         let total_lines = { self.ctx.terminal().grid().total_lines() };
                         self.ctx.display().blocks.on_event(total_lines, &ev);
+                        // Update active tab error indicator when a command ends
+                        if let CoreCommandBlockEvent::CommandEnd { exit, .. } = ev {
+                            let non_zero = exit.map(|c| c != 0).unwrap_or(false);
+                            self.ctx.workspace_mark_active_tab_error(non_zero);
+                        }
                         *self.ctx.dirty = true;
                     },
                     TerminalEvent::ResetTitle => {
@@ -4288,6 +4587,64 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                 },
                 #[cfg(feature = "ai")]
+                EventType::AiInlineDebounced => {
+                    // Only compute when inline suggestions are enabled and panel is not active
+                    let can_offer = self.ctx.config.ai.enabled
+                        && self.ctx.config.ai.inline_suggestions
+                        && !self.ctx.ai_active()
+                        && !self.ctx.search_active()
+                        && !self.ctx.palette_active()
+                        && !self.ctx.confirm_overlay_active()
+                        && {
+                            #[cfg(feature = "workflow")]
+                            {
+                                !self.ctx.workflows_panel_active()
+                            }
+                            #[cfg(not(feature = "workflow"))]
+                            {
+                                true
+                            }
+                        };
+                    let term = self.ctx.terminal();
+                    let not_altscreen = !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
+                    let ime_off = self.ctx.display.ime.preedit().is_none();
+
+                    if can_offer && not_altscreen && ime_off {
+                        if let Some(runtime) = &mut self.ctx.ai_runtime {
+                            // Extract current line prefix up to the cursor
+                            let point = term.grid().cursor.point;
+                            // Collect characters from start of line to cursor (skipping spacer flags)
+                            use openagent_terminal_core::index::Column as Col;
+                            use openagent_terminal_core::term::cell::Flags as CellFlags;
+                            let row = &term.grid()[point.line];
+                            let mut prefix = String::new();
+                            for x in 0..point.column.0 {
+                                let cell = &row[Col(x)];
+                                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { continue; }
+                                let ch = cell.c;
+                                if ch != '\u{0}' {
+                                    prefix.push(ch);
+                                }
+                            }
+                            let proxy = self.ctx.event_proxy.clone();
+                            let window_id = self.ctx.display.window.id();
+                            runtime.start_inline_suggest(prefix, proxy, window_id);
+                            *self.ctx.dirty = true;
+                        }
+                    }
+                },
+                #[cfg(feature = "ai")]
+                EventType::AiInlineSuggestionReady(suffix) => {
+                    if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        if suffix.trim().is_empty() {
+                            runtime.ui.inline_suggestion = None;
+                        } else {
+                            runtime.ui.inline_suggestion = Some(suffix);
+                        }
+                        *self.ctx.dirty = true;
+                    }
+                },
+                #[cfg(feature = "ai")]
                 EventType::AiExplain(target) => {
                     // Extract selection before mutable borrow
                     let text_to_explain = target.clone().unwrap_or_else(|| {
@@ -4424,6 +4781,47 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     },
                     WindowEvent::Ime(ime) => match ime {
                         Ime::Commit(text) => {
+                            // If composer is focused, route IME commit according to composer_open_mode
+                            let theme = self
+                                .ctx
+                                .config
+                                .resolved_theme
+                                .as_ref()
+                                .cloned()
+                                .unwrap_or_else(|| self.ctx.config.theme.resolve());
+                            let open_mode = theme.ui.composer_open_mode.clone();
+                            if self.ctx.display.composer_focused && !self.ctx.palette_active() {
+                                match open_mode {
+                                    crate::config::theme::ComposerOpenMode::Instant => {
+                                        #[cfg(feature = "ai")]
+                                        {
+                                            self.ctx.open_ai_panel();
+                                            if let Some(runtime) = &mut self.ctx.ai_runtime {
+                                                runtime.ui.scratch = text.clone();
+                                                runtime.ui.cursor_position = runtime.ui.scratch.len();
+                                            }
+                                        }
+                                        // Reset composer state
+                                        self.ctx.display.composer_text.clear();
+                                        self.ctx.display.composer_cursor = 0;
+                                        self.ctx.display.composer_sel_anchor = None;
+                                        self.ctx.display.composer_view_col_offset = 0;
+                                        self.ctx.display.composer_focused = false;
+                                        *self.ctx.dirty = true;
+                                        self.ctx.update_cursor_blinking();
+                                        return;
+                                    },
+                                    crate::config::theme::ComposerOpenMode::Commit => {
+                                        // Insert committed text into composer buffer at cursor
+                                        let cur = self.ctx.display.composer_cursor;
+                                        self.ctx.display.composer_text.insert_str(cur, &text);
+                                        self.ctx.display.composer_cursor = cur + text.len();
+                                        *self.ctx.dirty = true;
+                                        self.ctx.update_cursor_blinking();
+                                        return;
+                                    },
+                                }
+                            }
                             *self.ctx.dirty = true;
                             // Don't use bracketed paste for single char input.
                             self.ctx.paste(&text, text.chars().count() > 1);
