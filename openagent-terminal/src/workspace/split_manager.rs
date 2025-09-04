@@ -150,7 +150,11 @@ impl SplitLayout {
                 let within_y = y >= rect.y - tol && y <= rect.y + rect.height + tol;
                 let within_x = (x - split_x).abs() <= tol;
                 if within_x && within_y {
-                    return Some(SplitDividerHit { axis: SplitAxis::Horizontal, path: out_path.clone(), rect });
+                    return Some(SplitDividerHit {
+                        axis: SplitAxis::Horizontal,
+                        path: out_path.clone(),
+                        rect,
+                    });
                 }
                 // Recurse
                 let (left_rect, right_rect) = rect.split_horizontal(*ratio);
@@ -169,7 +173,11 @@ impl SplitLayout {
                 let within_x = x >= rect.x - tol && x <= rect.x + rect.width + tol;
                 let within_y = (y - split_y).abs() <= tol;
                 if within_y && within_x {
-                    return Some(SplitDividerHit { axis: SplitAxis::Vertical, path: out_path.clone(), rect });
+                    return Some(SplitDividerHit {
+                        axis: SplitAxis::Vertical,
+                        path: out_path.clone(),
+                        rect,
+                    });
                 }
                 // Recurse
                 let (top_rect, bottom_rect) = rect.split_vertical(*ratio);
@@ -188,7 +196,13 @@ impl SplitLayout {
     }
 
     /// Hit test the layout for a divider near (x,y) within tolerance tol (px)
-    pub fn hit_test_divider(&self, container: PaneRect, x: f32, y: f32, tol: f32) -> Option<SplitDividerHit> {
+    pub fn hit_test_divider(
+        &self,
+        container: PaneRect,
+        x: f32,
+        y: f32,
+        tol: f32,
+    ) -> Option<SplitDividerHit> {
         let mut path = Vec::new();
         self.hit_test_divider_internal(container, x, y, tol, &mut path)
     }

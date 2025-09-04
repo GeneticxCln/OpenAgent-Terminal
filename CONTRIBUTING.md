@@ -170,4 +170,3 @@ the last release yet.
 
 If there are any outstanding questions about contributing to OpenAgent Terminal, they can be asked on the
 [OpenAgent Terminal issue tracker](https://github.com/GeneticxCln/OpenAgent-Terminal/issues).
-

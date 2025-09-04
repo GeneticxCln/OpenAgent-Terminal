@@ -6,29 +6,29 @@ use plugin_sdk::{define_plugin, log, LogLevel, PluginError};
 /// Plugin initialization function
 fn init_plugin() -> Result<(), PluginError> {
     log(LogLevel::Info, "Hello WASI plugin starting up!");
-    
+
     // Test environment variable access
     let hello = std::env::var("HELLO_PLUGIN_MESSAGE")
         .unwrap_or_else(|_| "<missing>".to_string());
     log(LogLevel::Info, &format!("HELLO_PLUGIN_MESSAGE={}", hello));
-    
+
     // Test for forbidden environment variable (should not be visible)
     let forbidden = std::env::var("FORBIDDEN_SECRET")
         .unwrap_or_else(|_| "<not available>".to_string());
     log(LogLevel::Info, &format!("FORBIDDEN_SECRET={}", forbidden));
-    
+
     // Test file access (should be denied for system files)
     match std::fs::read_to_string("/etc/passwd") {
         Ok(_) => log(LogLevel::Warning, "/etc/passwd: unexpectedly readable!"),
         Err(_) => log(LogLevel::Info, "/etc/passwd: access denied (expected)"),
     }
-    
+
     // Test SDK host function wrappers
     match plugin_sdk::read_file("plugin-test.txt") {
         Ok(data) => log(LogLevel::Info, &format!("Read {} bytes from plugin-test.txt", data.len())),
         Err(e) => log(LogLevel::Info, &format!("Failed to read plugin-test.txt: {:?}", e)),
     }
-    
+
     log(LogLevel::Info, "Hello WASI plugin initialized successfully!");
     Ok(())
 }
@@ -71,4 +71,3 @@ define_plugin! {
     event_handler: handle_event,
     cleanup: cleanup_plugin,
 }
-

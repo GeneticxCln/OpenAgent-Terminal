@@ -1,0 +1,23 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+#
+# Type should be one of:
+# - feat: A new feature
+# - fix: A bug fix
+# - docs: Documentation only changes
+# - style: Changes that do not affect the meaning of the code
+# - refactor: A code change that neither fixes a bug nor adds a feature
+# - perf: A code change that improves performance
+# - test: Adding missing tests or correcting existing tests
+# - build: Changes that affect the build system or external dependencies
+# - ci: Changes to our CI configuration files and scripts
+# - chore: Other changes that don't modify src or test files
+# - revert: Reverts a previous commit
+#
+# Scope is optional and should be the area of change (ai, config, ui, etc.)
+# Subject should use imperative mood ("add feature" not "added feature")
+# Body should explain what and why vs. how
+# Footer should contain breaking changes and issue references

@@ -21,4 +21,3 @@ Getting started
 Changelog
 
 - See the repository-level CHANGELOG.md for updates affecting the plugin API
-

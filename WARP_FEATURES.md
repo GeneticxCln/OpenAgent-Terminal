@@ -178,11 +178,11 @@ enable_animations = true
    Tab 1: Editor (~/project) | nvim src/main.rs
    ├─ Pane 1: nvim src/main.rs
    └─ Pane 2: ~/project | cargo watch -x test
-   
+
    Tab 2: Git (~/project) | git status
    ├─ Pane 1: git log --oneline
    └─ Pane 2: git diff HEAD~1
-   
+
    Tab 3: Services (~/project)
    ├─ Pane 1: docker-compose up
    └─ Pane 2: tail -f logs/app.log
@@ -255,8 +255,8 @@ Access debug information about the Warp system:
 ```rust
 // In development/debugging
 let debug_info = workspace.warp.as_ref().unwrap().debug_info();
-println!("Tabs: {}, Active terminals: {}", 
-         debug_info.tab_count, 
+println!("Tabs: {}, Active terminals: {}",
+         debug_info.tab_count,
          debug_info.terminal_count);
 ```
 

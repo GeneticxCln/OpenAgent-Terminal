@@ -366,7 +366,7 @@ RUST_LOG=debug cargo run
 
 We welcome contributions! Priority areas:
 1. AI provider implementations
-2. Sync provider implementations  
+2. Sync provider implementations
 3. Platform-specific optimizations
 4. Documentation improvements
 5. Testing coverage

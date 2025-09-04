@@ -15,7 +15,7 @@ use tracing_subscriber::{
 /// Initialize the global tracing subscriber with default settings
 pub fn init_tracing() {
     let subscriber = create_subscriber(None, false);
-    
+
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set global tracing subscriber");
 }
@@ -23,7 +23,7 @@ pub fn init_tracing() {
 /// Initialize tracing with custom configuration
 pub fn init_tracing_with_config(filter: Option<String>, json_output: bool) {
     let subscriber = create_subscriber(filter, json_output);
-    
+
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set global tracing subscriber");
 }
@@ -143,7 +143,7 @@ pub fn setup_log_bridge() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
-    
+
     // Bridge log crate to tracing
     tracing_log::LogTracer::init()
         .expect("Failed to initialize log bridge");
@@ -206,7 +206,7 @@ mod tests {
 /// Before (using log crate):
 /// ```ignore
 /// use log::{info, debug, error};
-/// 
+///
 /// info!("Processing request");
 /// debug!("Request details: {:?}", request);
 /// error!("Failed to process: {}", err);
@@ -215,7 +215,7 @@ mod tests {
 /// After (using tracing):
 /// ```ignore
 /// use tracing::{info, debug, error};
-/// 
+///
 /// info!(event = "request_processing", "Processing request");
 /// debug!(request = ?request, "Request details");
 /// error!(error = %err, "Failed to process");

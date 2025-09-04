@@ -48,4 +48,3 @@ Where to look next
 Notes
 - Windows requires ConPTY (Win10 1809+); Wayland/X11 auto-detection on Linux, can be forced via env.
 - This file supersedes conflicting statements elsewhere. If you find a conflict, treat this file as authoritative and open an issue to fix the outdated document.
-

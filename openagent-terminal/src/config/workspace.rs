@@ -1,9 +1,9 @@
 //! Workspace configuration for tabs and split panes
 
+use crate::display::color::Rgb;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::display::color::Rgb;
 
 /// Workspace configuration
 #[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
@@ -146,7 +146,9 @@ pub enum TabBarVisibility {
 }
 
 impl Default for TabBarVisibility {
-    fn default() -> Self { Self::Auto }
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 impl Default for TabBarConfig {
@@ -267,7 +269,12 @@ pub struct SessionConfig {
 
 impl Default for SessionConfig {
     fn default() -> Self {
-        Self { enabled: true, restore_on_startup: true, autosave_interval_secs: 30, file_path: None }
+        Self {
+            enabled: true,
+            restore_on_startup: true,
+            autosave_interval_secs: 30,
+            file_path: None,
+        }
     }
 }
 

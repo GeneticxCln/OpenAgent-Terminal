@@ -87,7 +87,7 @@ The integration is designed to work with popular shell frameworks:
 
 - **Oh-My-Zsh** (all themes)
 - **Starship** prompt
-- **Powerlevel10k** 
+- **Powerlevel10k**
 - **Prezto**
 - Custom prompt configurations
 
@@ -219,7 +219,7 @@ If you have a highly customized prompt, you may need to manually adjust the inte
 ### Detection Variables
 
 - `OPENAGENT_OMZ_DETECTED=1` - Oh-My-Zsh detected
-- `OPENAGENT_STARSHIP_DETECTED=1` - Starship prompt detected  
+- `OPENAGENT_STARSHIP_DETECTED=1` - Starship prompt detected
 - `OPENAGENT_P10K_DETECTED=1` - Powerlevel10k detected
 - `OPENAGENT_PREZTO_DETECTED=1` - Prezto detected
 

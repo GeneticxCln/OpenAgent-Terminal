@@ -71,18 +71,18 @@ pub mod blocks;
 pub mod blocks_search_actions;
 pub mod blocks_search_panel;
 pub mod color;
+#[cfg(feature = "completions")]
+pub mod completions;
 pub mod confirm_overlay;
 pub mod content;
 pub mod cursor;
 pub mod hint;
+pub mod palette;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
-pub mod palette;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
-#[cfg(feature = "completions")]
-pub mod completions;
 
 mod bell;
 mod damage;
@@ -500,6 +500,7 @@ pub struct Display {
     pub split_hover_anim_start: Option<Instant>,
 
     /// Palette animation state
+    #[allow(dead_code)]
     pub(crate) palette_last_active: bool,
     pub(crate) palette_anim_start: Option<Instant>,
     pub(crate) palette_anim_opening: bool,
@@ -724,15 +725,16 @@ impl Display {
     /// This is a visual affordance; actual multi-tab titles and close buttons
     /// will integrate with the workspace manager in a future pass.
     #[allow(dead_code)]
-#[cfg(feature = "preview_ui")]
-pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
+    #[cfg(feature = "preview_ui")]
+    pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let size_info = self.size_info;
         let cols = size_info.columns();
         let lines = size_info.screen_lines();
         if lines == 0 {
             return;
         }
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         let line = 0usize;
@@ -757,9 +759,17 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let mut col = 1usize;
         for (i, label) in labels.iter().enumerate() {
             let color = if i == 1 { accent } else { fg };
-            self.draw_ai_text(Point::new(line, Column(col)), color, bg, label, cols.saturating_sub(col));
+            self.draw_ai_text(
+                Point::new(line, Column(col)),
+                color,
+                bg,
+                label,
+                cols.saturating_sub(col),
+            );
             col += label.len() + 2;
-            if col >= cols { break; }
+            if col >= cols {
+                break;
+            }
         }
     }
 
@@ -772,7 +782,8 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         }
 
         // Theme tokens
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Determine reserved rows for tab bar using effective visibility
@@ -780,11 +791,19 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let is_fs = self.window.is_fullscreen();
         // Effective mode for visibility: Auto -> Always unless fullscreen
         let effective_visibility = match tab_cfg.visibility {
-            crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
-            crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+            crate::config::workspace::TabBarVisibility::Always => {
+                crate::config::workspace::TabBarVisibility::Always
+            },
+            crate::config::workspace::TabBarVisibility::Hover => {
+                crate::config::workspace::TabBarVisibility::Hover
+            },
             crate::config::workspace::TabBarVisibility::Auto => {
-                if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
-            }
+                if is_fs {
+                    crate::config::workspace::TabBarVisibility::Hover
+                } else {
+                    crate::config::workspace::TabBarVisibility::Always
+                }
+            },
         };
         // Reserve a row only when showing Always; Hover overlays content
         let reserve_top = tab_cfg.show
@@ -799,18 +818,32 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         // Determine line based on quick actions position
         let mut line = match config.workspace.quick_actions.position {
             crate::config::workspace::QuickActionsPosition::Top => {
-                if reserve_top { 1 } else { 0 }
+                if reserve_top {
+                    1
+                } else {
+                    0
+                }
             },
             crate::config::workspace::QuickActionsPosition::Bottom => {
                 let base = lines.saturating_sub(1);
-                if reserve_bottom { base.saturating_sub(1) } else { base }
+                if reserve_bottom {
+                    base.saturating_sub(1)
+                } else {
+                    base
+                }
             },
             crate::config::workspace::QuickActionsPosition::Auto => {
                 let base = lines.saturating_sub(1);
-                if reserve_bottom { base.saturating_sub(1) } else { base }
+                if reserve_bottom {
+                    base.saturating_sub(1)
+                } else {
+                    base
+                }
             },
         };
-        if line >= lines { line = lines.saturating_sub(1); }
+        if line >= lines {
+            line = lines.saturating_sub(1);
+        }
         let y = line as f32 * size_info.cell_height();
         let h = 1.0_f32 * size_info.cell_height();
 
@@ -842,16 +875,24 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             if is_ai {
                 color = muted;
             }
-            self.draw_ai_text(Point::new(line, Column(col)), color, bg, label, cols.saturating_sub(col));
+            self.draw_ai_text(
+                Point::new(line, Column(col)),
+                color,
+                bg,
+                label,
+                cols.saturating_sub(col),
+            );
             col += label.len() + 2;
-            if col >= cols { break; }
+            if col >= cols {
+                break;
+            }
         }
 
         // Small hint on the far right
         let hint = "click to open";
         if hint.len() + 2 < cols {
             let start = cols.saturating_sub(hint.len() + 2);
-            self.draw_ai_text(Point::new(line, Column(start)), muted, bg, hint, hint.len()+2);
+            self.draw_ai_text(Point::new(line, Column(start)), muted, bg, hint, hint.len() + 2);
         }
     }
 
@@ -1375,9 +1416,13 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             let mut p = String::new();
             for x in 0..cursor_point.column.0 {
                 let cell = &row[Col(x)];
-                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { continue; }
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
                 let ch = cell.c;
-                if ch != '\u{0}' { p.push(ch); }
+                if ch != '\u{0}' {
+                    p.push(ch);
+                }
             }
             p
         };
@@ -1450,17 +1495,27 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             let tab_cfg = &config.workspace.tab_bar;
             let is_fs = self.window.is_fullscreen();
             let effective_visibility = match tab_cfg.visibility {
-                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
-                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Always => {
+                    crate::config::workspace::TabBarVisibility::Always
+                },
+                crate::config::workspace::TabBarVisibility::Hover => {
+                    crate::config::workspace::TabBarVisibility::Hover
+                },
                 crate::config::workspace::TabBarVisibility::Auto => {
-                    if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
-                }
+                    if is_fs {
+                        crate::config::workspace::TabBarVisibility::Hover
+                    } else {
+                        crate::config::workspace::TabBarVisibility::Always
+                    }
+                },
             };
             let (reserve_top, reserve_bottom) = if tab_cfg.show
                 && tab_cfg.position != crate::config::workspace::TabBarPosition::Hidden
                 && tab_cfg.reserve_row
-                && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
-            {
+                && matches!(
+                    effective_visibility,
+                    crate::config::workspace::TabBarVisibility::Always
+                ) {
                 match tab_cfg.position {
                     crate::config::workspace::TabBarPosition::Top => (1usize, 0usize),
                     crate::config::workspace::TabBarPosition::Bottom => (0usize, 1usize),
@@ -1622,11 +1677,19 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             let tab_cfg = &config.workspace.tab_bar;
             let is_fs = self.window.is_fullscreen();
             let eff_vis = match tab_cfg.visibility {
-                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
-                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Always => {
+                    crate::config::workspace::TabBarVisibility::Always
+                },
+                crate::config::workspace::TabBarVisibility::Hover => {
+                    crate::config::workspace::TabBarVisibility::Hover
+                },
                 crate::config::workspace::TabBarVisibility::Auto => {
-                    if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
-                }
+                    if is_fs {
+                        crate::config::workspace::TabBarVisibility::Hover
+                    } else {
+                        crate::config::workspace::TabBarVisibility::Always
+                    }
+                },
             };
             let top_reserved = tab_cfg.show
                 && tab_cfg.reserve_row
@@ -1651,18 +1714,28 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             // Only elide when effectively reserving a row
             let tab_cfg = &config.workspace.tab_bar;
             let eff_vis = match tab_cfg.visibility {
-                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
-                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Always => {
+                    crate::config::workspace::TabBarVisibility::Always
+                },
+                crate::config::workspace::TabBarVisibility::Hover => {
+                    crate::config::workspace::TabBarVisibility::Hover
+                },
                 crate::config::workspace::TabBarVisibility::Auto => {
-                    if self.window.is_fullscreen() { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
-                }
+                    if self.window.is_fullscreen() {
+                        crate::config::workspace::TabBarVisibility::Hover
+                    } else {
+                        crate::config::workspace::TabBarVisibility::Always
+                    }
+                },
             };
             if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
                 let vp_point = term::point_to_viewport(display_offset, cursor_point);
                 if let Some(vp) = vp_point {
                     let last = self.size_info.screen_lines().saturating_sub(1);
-                    if (tab_cfg.position == crate::config::workspace::TabBarPosition::Top && vp.line == 0)
-                        || (tab_cfg.position == crate::config::workspace::TabBarPosition::Bottom && vp.line == last)
+                    if (tab_cfg.position == crate::config::workspace::TabBarPosition::Top
+                        && vp.line == 0)
+                        || (tab_cfg.position == crate::config::workspace::TabBarPosition::Bottom
+                            && vp.line == last)
                     {
                         cursor_elided = true;
                     }
@@ -1893,7 +1966,7 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             self.draw_workflows_panel_overlay(config, &st);
         }
         // Workflows progress overlay if active
-            #[cfg(feature = "workflow")]
+        #[cfg(feature = "workflow")]
         if self.workflows_progress.active {
             let st = self.workflows_progress.clone();
             self.draw_workflows_progress_overlay(config, &st);
@@ -2032,11 +2105,19 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
                     let tab_cfg = &config.workspace.tab_bar;
                     let is_fs = self.window.is_fullscreen();
                     let visibility = match tab_cfg.visibility {
-                        crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
-                        crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                        crate::config::workspace::TabBarVisibility::Always => {
+                            crate::config::workspace::TabBarVisibility::Always
+                        },
+                        crate::config::workspace::TabBarVisibility::Hover => {
+                            crate::config::workspace::TabBarVisibility::Hover
+                        },
                         crate::config::workspace::TabBarVisibility::Auto => {
-                            if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
-                        }
+                            if is_fs {
+                                crate::config::workspace::TabBarVisibility::Hover
+                            } else {
+                                crate::config::workspace::TabBarVisibility::Always
+                            }
+                        },
                     };
 
                     let hover_recent = self
@@ -2052,7 +2133,7 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
                         crate::config::workspace::TabBarVisibility::Always => true,
                         crate::config::workspace::TabBarVisibility::Hover => {
                             self.tab_hover.is_some() || hover_recent || near_top || near_bottom
-                        }
+                        },
                         crate::config::workspace::TabBarVisibility::Auto => true, // handled above
                     };
 
@@ -2071,7 +2152,11 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let has_search = search_state.regex().is_some();
         let has_message = message_buffer.message().is_some();
         // Warp doesn't show a bottom quick actions bar; suppress when warp_style is enabled
-        if !config.workspace.warp_style && config.workspace.quick_actions.show && !has_search && !has_message {
+        if !config.workspace.warp_style
+            && config.workspace.quick_actions.show
+            && !has_search
+            && !has_message
+        {
             self.draw_quick_actions_bar(config);
         }
 
@@ -2109,7 +2194,7 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         self.damage_tracker.swap_damage();
     }
 
-/// Update to a new configuration.
+    /// Update to a new configuration.
     pub fn update_config(&mut self, config: &UiConfig) {
         self.damage_tracker.debug = config.debug.highlight_damage;
         self.visual_bell.update_config(&config.bell);
@@ -2253,17 +2338,27 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
     }
 
     fn draw_warp_bottom_composer(&mut self, config: &UiConfig) {
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui.clone();
         let cw = self.size_info.cell_width();
         let ch = self.size_info.cell_height();
         let cols = self.size_info.columns();
         let lines = self.size_info.screen_lines();
-        if cols == 0 || lines == 0 { return; }
+        if cols == 0 || lines == 0 {
+            return;
+        }
         // Band background on bottom
         let y_band = (lines.saturating_sub(1)) as f32 * ch;
-        let rects = vec![RenderRect::new(0.0, y_band, self.size_info.width(), ch, tokens.surface_muted, 0.98)];
+        let rects = vec![RenderRect::new(
+            0.0,
+            y_band,
+            self.size_info.width(),
+            ch,
+            tokens.surface_muted,
+            0.98,
+        )];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);
@@ -2275,25 +2370,41 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let h = ch - 4.0_f32;
         // Focus ring / stronger bg when focused
         if self.composer_focused {
-            let ring = UiRoundedRect::new(x-1.0, y-1.0, w+2.0, h+2.0, ui.palette_pill_radius_px+1.0, tokens.accent, 0.10);
+            let ring = UiRoundedRect::new(
+                x - 1.0,
+                y - 1.0,
+                w + 2.0,
+                h + 2.0,
+                ui.palette_pill_radius_px + 1.0,
+                tokens.accent,
+                0.10,
+            );
             self.stage_ui_rounded_rect(ring);
         }
         let bg_alpha = if self.composer_focused { 0.20 } else { 0.14 };
-        let pill = UiRoundedRect::new(x, y, w, h, ui.palette_pill_radius_px, tokens.surface, bg_alpha);
+        let pill =
+            UiRoundedRect::new(x, y, w, h, ui.palette_pill_radius_px, tokens.surface, bg_alpha);
         self.stage_ui_rounded_rect(pill);
 
         // Placeholder text
-        let placeholder = "Warp anything e.g. Help me optimize my SQL queries that are running slowly";
+        let placeholder =
+            "Warp anything e.g. Help me optimize my SQL queries that are running slowly";
         let mut start_col = 2usize;
         // Sparkle/star glyph to hint AI
         let star = "✦ ";
         let star_color = if self.composer_focused { tokens.accent } else { tokens.accent };
-        self.draw_ai_text(Point::new(lines.saturating_sub(1), Column(start_col)), star_color, tokens.surface_muted, star, cols.saturating_sub(start_col));
+        self.draw_ai_text(
+            Point::new(lines.saturating_sub(1), Column(start_col)),
+            star_color,
+            tokens.surface_muted,
+            star,
+            cols.saturating_sub(start_col),
+        );
         start_col += star.len();
         let available = cols.saturating_sub(start_col + 2);
 
-        use unicode_width::UnicodeWidthStr;
         use unicode_width::UnicodeWidthChar;
+        use unicode_width::UnicodeWidthStr;
 
         // Update caret blink state
         if self.composer_focused {
@@ -2353,7 +2464,8 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             for (i, ch) in text.char_indices() {
                 let wch = ch.width().unwrap_or(1);
                 if col_acc + wch > offset {
-                    start_byte = i; break;
+                    start_byte = i;
+                    break;
                 }
                 col_acc += wch;
                 start_byte = i + ch.len_utf8();
@@ -2363,7 +2475,9 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             let mut end_byte = start_byte;
             for (i, ch) in text[start_byte..].char_indices() {
                 let wch = ch.width().unwrap_or(1);
-                if used_cols + wch > available { break; }
+                if used_cols + wch > available {
+                    break;
+                }
                 used_cols += wch;
                 end_byte = start_byte + i + ch.len_utf8();
             }
@@ -2408,24 +2522,38 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
                 if anchor != self.composer_cursor {
                     let sel_lo = anchor.min(self.composer_cursor);
                     let sel_hi = anchor.max(self.composer_cursor);
-                    let vis_sel_start_cols = text[..sel_lo].width().saturating_sub(offset).min(available);
-                    let vis_sel_end_cols = text[..sel_hi].width().saturating_sub(offset).min(available);
+                    let vis_sel_start_cols =
+                        text[..sel_lo].width().saturating_sub(offset).min(available);
+                    let vis_sel_end_cols =
+                        text[..sel_hi].width().saturating_sub(offset).min(available);
                     // Compute byte indices for segment boundaries within visible range
-                    let vis_sel_start_byte = if vis_sel_start_cols == 0 { start_byte } else {
-                        let mut cacc = 0usize; let mut b = start_byte;
+                    let vis_sel_start_byte = if vis_sel_start_cols == 0 {
+                        start_byte
+                    } else {
+                        let mut cacc = 0usize;
+                        let mut b = start_byte;
                         for (i, ch) in text[start_byte..].char_indices() {
                             let wch = ch.width().unwrap_or(1);
-                            if cacc + wch > vis_sel_start_cols { break; }
-                            cacc += wch; b = start_byte + i + ch.len_utf8();
+                            if cacc + wch > vis_sel_start_cols {
+                                break;
+                            }
+                            cacc += wch;
+                            b = start_byte + i + ch.len_utf8();
                         }
                         b
                     };
-                    let vis_sel_end_byte = if vis_sel_end_cols <= 0 { start_byte } else {
-                        let mut cacc = 0usize; let mut b = start_byte;
+                    let vis_sel_end_byte = if vis_sel_end_cols <= 0 {
+                        start_byte
+                    } else {
+                        let mut cacc = 0usize;
+                        let mut b = start_byte;
                         for (i, ch) in text[start_byte..].char_indices() {
                             let wch = ch.width().unwrap_or(1);
-                            if cacc + wch > vis_sel_end_cols { break; }
-                            cacc += wch; b = start_byte + i + ch.len_utf8();
+                            if cacc + wch > vis_sel_end_cols {
+                                break;
+                            }
+                            cacc += wch;
+                            b = start_byte + i + ch.len_utf8();
                         }
                         b
                     };
@@ -2445,7 +2573,10 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
                         let sel_vis = &text[vis_sel_start_byte..vis_sel_end_byte];
                         let sel_offset_cols = vis_sel_start_cols;
                         self.draw_ai_text(
-                            Point::new(lines.saturating_sub(1), Column(start_col + sel_offset_cols)),
+                            Point::new(
+                                lines.saturating_sub(1),
+                                Column(start_col + sel_offset_cols),
+                            ),
                             tokens.text,
                             tokens.surface_muted,
                             sel_vis,
@@ -2457,7 +2588,10 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
                         let after = &text[vis_sel_end_byte..end_byte];
                         let after_offset_cols = vis_sel_end_cols;
                         self.draw_ai_text(
-                            Point::new(lines.saturating_sub(1), Column(start_col + after_offset_cols)),
+                            Point::new(
+                                lines.saturating_sub(1),
+                                Column(start_col + after_offset_cols),
+                            ),
                             tokens.text,
                             tokens.surface_muted,
                             after,
@@ -2546,8 +2680,8 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
     /// Read the current frame's RGBA pixels from the active GL backbuffer.
     /// Returns (bytes, width, height) on success. For non-GL backends this returns None.
     #[allow(dead_code)]
-#[cfg(any())]
-pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
+    #[cfg(any())]
+    pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
         match &self.backend {
             Backend::Gl { .. } => {
                 let w = self.size_info.width() as u32;
@@ -2864,7 +2998,6 @@ pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
             }
         }
     }
-
 
     /// Draw render timer.
     #[inline(never)]

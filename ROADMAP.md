@@ -225,13 +225,13 @@ include_env_vars = false
   name = "git-helper"
   version = "1.0.0"
   author = "example"
-  
+
   [permissions]
   read_files = ["*.git"]
   network = false
   max_memory_mb = 50
   timeout_ms = 5000
-  
+
   [capabilities]
   completions = true
   context_provider = true

@@ -35,4 +35,3 @@ timeout_ms = 5000
 # Additional metadata for the plugin system
 tags = ["example", "wasi", "demo"]
 required_host_version = ">=0.3.0"
-

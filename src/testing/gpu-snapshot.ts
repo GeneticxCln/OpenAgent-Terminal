@@ -115,7 +115,7 @@ export class GPUSnapshotTester extends EventEmitter {
 
   private loadBaselines(): void {
     const baselineFile = path.join(this.config.outputDir, 'benchmarks', 'baseline.json');
-    
+
     if (fs.existsSync(baselineFile)) {
       try {
         const data = JSON.parse(fs.readFileSync(baselineFile, 'utf-8'));
@@ -143,17 +143,17 @@ export class GPUSnapshotTester extends EventEmitter {
 
       // Capture the rendered image
       const actualImage = await this.gpuContext.capture();
-      
+
       // Get render metrics
       const metrics = this.gpuContext.getMetrics();
 
       // Compare with golden image
       const golden = this.goldenImages.get(name);
-      
+
       if (!golden) {
         // No golden image, save current as golden
         await this.saveGoldenImage(name, actualImage);
-        
+
         return {
           name,
           passed: true,
@@ -166,7 +166,7 @@ export class GPUSnapshotTester extends EventEmitter {
 
       // Perform image comparison
       const comparison = await this.compareImages(actualImage, golden);
-      
+
       const result: SnapshotResult = {
         name,
         passed: comparison.similarity >= this.config.threshold,
@@ -217,9 +217,9 @@ export class GPUSnapshotTester extends EventEmitter {
       samples.push(metrics);
 
       if (i % 10 === 0) {
-        this.emit('benchmark:progress', { 
-          name, 
-          progress: i / this.config.benchmarkIterations 
+        this.emit('benchmark:progress', {
+          name,
+          progress: i / this.config.benchmarkIterations
         });
       }
     }
@@ -243,7 +243,7 @@ export class GPUSnapshotTester extends EventEmitter {
 
   private async measureRenderPerformance(scene: any): Promise<RenderMetrics> {
     const startTime = performance.now();
-    
+
     // Simulate input event
     const inputStart = performance.now();
     await this.gpuContext!.measureInputLatency({ type: 'keypress', key: 'a' });
@@ -251,7 +251,7 @@ export class GPUSnapshotTester extends EventEmitter {
 
     // Render frame
     await this.gpuContext!.render(scene);
-    
+
     const frameTime = performance.now() - startTime;
     const metrics = this.gpuContext!.getMetrics();
 
@@ -331,7 +331,7 @@ export class GPUSnapshotTester extends EventEmitter {
     // - FPS drops by more than 10%
     // - Input latency increases by more than 20%
     // - Frame time increases by more than 15%
-    
+
     const fpsRegression = current.metrics.p90.fps < baseline.metrics.p90.fps * 0.9;
     const latencyRegression = current.metrics.p90.inputLatency > baseline.metrics.p90.inputLatency * 1.2;
     const frameTimeRegression = current.metrics.p90.frameTime > baseline.metrics.p90.frameTime * 1.15;
@@ -369,7 +369,7 @@ export class GPUSnapshotTester extends EventEmitter {
       const aDiff = Math.abs(actual.data[i + 3] - golden.data[i + 3]);
 
       const maxDiff = Math.max(rDiff, gDiff, bDiff, aDiff);
-      
+
       if (maxDiff > 5) { // Threshold for pixel difference
         diffPixels++;
         // Highlight diff in red
@@ -452,7 +452,7 @@ export class GPUSnapshotTester extends EventEmitter {
     const width = this.config.resolution.width;
     const height = this.config.resolution.height;
     const data = new Uint8ClampedArray(width * height * 4);
-    
+
     // Fill with random data for testing
     for (let i = 0; i < data.length; i++) {
       data[i] = Math.floor(Math.random() * 256);
@@ -524,7 +524,7 @@ export class GPUSnapshotTester extends EventEmitter {
     <h1>GPU Snapshot Test Report</h1>
     <p>${report.timestamp}</p>
   </div>
-  
+
   <div class="summary">
     <h2>Summary</h2>
     <p>Platform: ${report.platform} | GPU: ${report.gpuType}</p>
@@ -542,8 +542,8 @@ export class GPUSnapshotTester extends EventEmitter {
       <p>Similarity: ${(r.similarity * 100).toFixed(2)}%</p>
       <p>Diff Pixels: ${r.diffPixels} / ${r.totalPixels}</p>
       <div class="metrics">
-        FPS: ${r.metrics.fps.toFixed(1)} | 
-        Frame Time: ${r.metrics.frameTime.toFixed(2)}ms | 
+        FPS: ${r.metrics.fps.toFixed(1)} |
+        Frame Time: ${r.metrics.frameTime.toFixed(2)}ms |
         Input Latency: ${r.metrics.inputLatency.toFixed(2)}ms
       </div>
       ${r.diffImagePath ? `<p>Diff Image: ${r.diffImagePath}</p>` : ''}
@@ -564,14 +564,14 @@ export const runGPUTests = async (config: SnapshotConfig, scenes: Map<string, an
   for (const [name, scene] of scenes) {
     const result = await tester.captureSnapshot(name, scene);
     results.push(result);
-    
+
     if (config.benchmarkIterations > 0) {
       await tester.runBenchmark(name, scene);
     }
   }
 
   await tester.generateReport(results);
-  
+
   return {
     passed: results.every(r => r.passed),
     results,

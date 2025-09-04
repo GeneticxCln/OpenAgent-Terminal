@@ -50,15 +50,14 @@ use crate::cli::{Options as CliOptions, WindowOptions};
 use crate::clipboard::Clipboard;
 use crate::components_init::{ComponentConfig, InitializedComponents};
 use crate::config::ui_config::{HintAction, HintInternalAction};
-use crate::config::{self, UiConfig};
 use crate::config::Action as BindingAction;
-use crate::display::palette::{PaletteEntry, PaletteItem};
-use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
+use crate::config::{self, UiConfig};
 #[cfg(not(windows))]
 use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
 use crate::display::color::Rgb;
 use crate::display::hint::HintMatch;
+use crate::display::palette::{PaletteEntry, PaletteItem};
 use crate::display::window::Window;
 use crate::display::{Display, Preedit, SizeInfo};
 use crate::input::{self, ActionContext as _, FONT_SIZE_STEP};
@@ -70,6 +69,7 @@ use crate::scheduler::{Scheduler, TimerId, Topic};
 #[cfg(feature = "ai")]
 use crate::security_lens::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
+use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 
 /// Duration after the last user input until an unlimited search is performed.
 pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
@@ -102,29 +102,29 @@ const BELL_CMD_COOLDOWN: Duration = Duration::from_millis(100);
 ///
 /// Stores some state from received events and dispatches actions when they are
 /// triggered.
-    pub struct Processor {
-        pub config_monitor: Option<ConfigMonitor>,
+pub struct Processor {
+    pub config_monitor: Option<ConfigMonitor>,
 
-        clipboard: Clipboard,
-        scheduler: Scheduler,
-        initial_window_options: Option<WindowOptions>,
-        initial_window_error: Option<Box<dyn Error>>,
-        windows: HashMap<WindowId, WindowContext, RandomState>,
-        proxy: EventLoopProxy<Event>,
-        gl_config: Option<GlutinConfig>,
-        components: Option<Arc<InitializedComponents>>,
-        #[cfg(unix)]
-        global_ipc_options: ParsedOptions,
-        cli_options: CliOptions,
-        config: Rc<UiConfig>,
+    clipboard: Clipboard,
+    scheduler: Scheduler,
+    initial_window_options: Option<WindowOptions>,
+    initial_window_error: Option<Box<dyn Error>>,
+    windows: HashMap<WindowId, WindowContext, RandomState>,
+    proxy: EventLoopProxy<Event>,
+    gl_config: Option<GlutinConfig>,
+    components: Option<Arc<InitializedComponents>>,
+    #[cfg(unix)]
+    global_ipc_options: ParsedOptions,
+    cli_options: CliOptions,
+    config: Rc<UiConfig>,
 
-        // Pending security confirmation for AI apply-to-command flow
-        #[cfg(feature = "ai")]
-        pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
+    // Pending security confirmation for AI apply-to-command flow
+    #[cfg(feature = "ai")]
+    pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
 
-        // Pending workflow confirmations (workflow name, window id)
-        pending_workflow_confirms: HashMap<String, (String, WindowId)>,
-    }
+    // Pending workflow confirmations (workflow name, window id)
+    pending_workflow_confirms: HashMap<String, (String, WindowId)>,
+}
 
 impl Processor {
     /// Create a new event processor.
@@ -210,14 +210,16 @@ impl Processor {
                 EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave),
                 window_id,
             );
-            let interval = Duration::from_secs(self.config.workspace.sessions.autosave_interval_secs);
+            let interval =
+                Duration::from_secs(self.config.workspace.sessions.autosave_interval_secs);
             self.scheduler.schedule(evt, interval, true, tid);
         }
 
         // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
         if self.config.config_paths.is_empty() {
             let hint = "Welcome — click the bottom bar or use Ctrl+Shift+P/S/W. Place a config at ~/.config/openagent-terminal/openagent-terminal.toml".to_string();
-            let message = crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
+            let message =
+                crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
             let _ = self.proxy.send_event(Event::new(EventType::Message(message), window_id));
             // Auto-open Workflows panel and trigger an initial search
             #[cfg(feature = "workflow")]
@@ -227,9 +229,10 @@ impl Processor {
                 if win.display.window.has_frame {
                     win.display.window.request_redraw();
                 }
-                let _ = self
-                    .proxy
-                    .send_event(Event::new(EventType::WorkflowsSearchPerform(String::new()), window_id));
+                let _ = self.proxy.send_event(Event::new(
+                    EventType::WorkflowsSearchPerform(String::new()),
+                    window_id,
+                ));
             }
         }
 
@@ -281,7 +284,8 @@ impl Processor {
                 EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave),
                 window_id,
             );
-            let interval = Duration::from_secs(self.config.workspace.sessions.autosave_interval_secs);
+            let interval =
+                Duration::from_secs(self.config.workspace.sessions.autosave_interval_secs);
             self.scheduler.schedule(evt, interval, true, tid);
         }
 
@@ -904,12 +908,16 @@ impl ApplicationHandler<Event> for Processor {
                 }
             },
             // Warp autosave event
-            (EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave), Some(window_id)) => {
+            (
+                EventType::WarpUiUpdate(crate::workspace::WarpUiUpdateType::SessionAutoSave),
+                Some(window_id),
+            ) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     if let Some(warp) = &mut window_context.workspace.warp {
                         // Save if activity window elapsed or unconditionally (cheap)
                         if warp.should_auto_save() {
-                            let _ = warp.execute_warp_action(&crate::workspace::WarpAction::SaveSession);
+                            let _ = warp
+                                .execute_warp_action(&crate::workspace::WarpAction::SaveSession);
                         }
                     }
                 }
@@ -1030,9 +1038,12 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         // Extract workflow info from config before moving into async block
-                        let fallback_workflow = self.config.workflows.iter().find(|w| w.name == name).map(|wf| {
-                            (wf.command.clone(), wf.params.clone())
-                        });
+                        let fallback_workflow = self
+                            .config
+                            .workflows
+                            .iter()
+                            .find(|w| w.name == name)
+                            .map(|wf| (wf.command.clone(), wf.params.clone()));
                         let runtime = components.runtime.clone();
                         runtime.spawn(async move {
                             use std::collections::HashMap;
@@ -1294,11 +1305,17 @@ impl ApplicationHandler<Event> for Processor {
                             let mut cmd = wf.command.clone();
                             for p in &wf.params {
                                 let placeholder = format!("{{{}}}", p.name);
-                                let val = if p.name == "confirm" { Some("yes".to_string()) } else { p.default.clone() };
+                                let val = if p.name == "confirm" {
+                                    Some("yes".to_string())
+                                } else {
+                                    p.default.clone()
+                                };
                                 let val = val.unwrap_or_default();
                                 cmd = cmd.replace(&placeholder, &val);
                             }
-                            let _ = self.proxy.send_event(Event::new(EventType::PasteCommand(cmd), win));
+                            let _ = self
+                                .proxy
+                                .send_event(Event::new(EventType::PasteCommand(cmd), win));
                         }
                     } else {
                         let message = crate::message_bar::Message::new(
@@ -1930,29 +1947,84 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.palette_anim_opening = true;
         self.display.palette_anim_start = Some(std::time::Instant::now());
         // Use theme reduce_motion to adjust duration
-        let theme = self.config.resolved_theme.as_ref().cloned().unwrap_or_else(|| self.config.theme.resolve());
+        let theme = self
+            .config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| self.config.theme.resolve());
         self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 140 };
 
         // Core actions: tabs, splits, focus, zoom
-        items.push(PaletteItem { key: "action:CreateTab".to_string(), title: "New Tab".to_string(), subtitle: Some("Create a new tab".to_string()), entry: PaletteEntry::Action(BindingAction::CreateTab) });
-        items.push(PaletteItem { key: "action:SplitVertical".to_string(), title: "Split: Vertical".to_string(), subtitle: Some("Split current pane vertically".to_string()), entry: PaletteEntry::Action(BindingAction::SplitVertical) });
-        items.push(PaletteItem { key: "action:SplitHorizontal".to_string(), title: "Split: Horizontal".to_string(), subtitle: Some("Split current pane horizontally".to_string()), entry: PaletteEntry::Action(BindingAction::SplitHorizontal) });
-        items.push(PaletteItem { key: "action:FocusNextPane".to_string(), title: "Focus Next Pane".to_string(), subtitle: Some("Move focus to next pane".to_string()), entry: PaletteEntry::Action(BindingAction::FocusNextPane) });
-        items.push(PaletteItem { key: "action:FocusPreviousPane".to_string(), title: "Focus Previous Pane".to_string(), subtitle: Some("Move focus to previous pane".to_string()), entry: PaletteEntry::Action(BindingAction::FocusPreviousPane) });
-        items.push(PaletteItem { key: "action:ToggleZoom".to_string(), title: "Toggle Zoom".to_string(), subtitle: Some("Toggle zoom on active pane".to_string()), entry: PaletteEntry::Action(BindingAction::ToggleZoom) });
+        items.push(PaletteItem {
+            key: "action:CreateTab".to_string(),
+            title: "New Tab".to_string(),
+            subtitle: Some("Create a new tab".to_string()),
+            entry: PaletteEntry::Action(BindingAction::CreateTab),
+        });
+        items.push(PaletteItem {
+            key: "action:SplitVertical".to_string(),
+            title: "Split: Vertical".to_string(),
+            subtitle: Some("Split current pane vertically".to_string()),
+            entry: PaletteEntry::Action(BindingAction::SplitVertical),
+        });
+        items.push(PaletteItem {
+            key: "action:SplitHorizontal".to_string(),
+            title: "Split: Horizontal".to_string(),
+            subtitle: Some("Split current pane horizontally".to_string()),
+            entry: PaletteEntry::Action(BindingAction::SplitHorizontal),
+        });
+        items.push(PaletteItem {
+            key: "action:FocusNextPane".to_string(),
+            title: "Focus Next Pane".to_string(),
+            subtitle: Some("Move focus to next pane".to_string()),
+            entry: PaletteEntry::Action(BindingAction::FocusNextPane),
+        });
+        items.push(PaletteItem {
+            key: "action:FocusPreviousPane".to_string(),
+            title: "Focus Previous Pane".to_string(),
+            subtitle: Some("Move focus to previous pane".to_string()),
+            entry: PaletteEntry::Action(BindingAction::FocusPreviousPane),
+        });
+        items.push(PaletteItem {
+            key: "action:ToggleZoom".to_string(),
+            title: "Toggle Zoom".to_string(),
+            subtitle: Some("Toggle zoom on active pane".to_string()),
+            entry: PaletteEntry::Action(BindingAction::ToggleZoom),
+        });
 
         // Panels
-        items.push(PaletteItem { key: "action:OpenBlocksSearchPanel".to_string(), title: "Open Blocks Search".to_string(), subtitle: Some("Search recent command blocks".to_string()), entry: PaletteEntry::Action(BindingAction::OpenBlocksSearchPanel) });
-        items.push(PaletteItem { key: "action:OpenWorkflowsPanel".to_string(), title: "Open Workflows Panel".to_string(), subtitle: Some("Browse and run configured workflows".to_string()), entry: PaletteEntry::Action(BindingAction::OpenWorkflowsPanel) });
+        items.push(PaletteItem {
+            key: "action:OpenBlocksSearchPanel".to_string(),
+            title: "Open Blocks Search".to_string(),
+            subtitle: Some("Search recent command blocks".to_string()),
+            entry: PaletteEntry::Action(BindingAction::OpenBlocksSearchPanel),
+        });
+        items.push(PaletteItem {
+            key: "action:OpenWorkflowsPanel".to_string(),
+            title: "Open Workflows Panel".to_string(),
+            subtitle: Some("Browse and run configured workflows".to_string()),
+            entry: PaletteEntry::Action(BindingAction::OpenWorkflowsPanel),
+        });
         // Sync toggle
-        items.push(PaletteItem { key: "action:TogglePaneSync".to_string(), title: "Toggle Pane Sync".to_string(), subtitle: Some("Synchronize input across panes in this tab".to_string()), entry: PaletteEntry::Action(BindingAction::TogglePaneSync) });
+        items.push(PaletteItem {
+            key: "action:TogglePaneSync".to_string(),
+            title: "Toggle Pane Sync".to_string(),
+            subtitle: Some("Synchronize input across panes in this tab".to_string()),
+            entry: PaletteEntry::Action(BindingAction::TogglePaneSync),
+        });
 
         // Workflows from config (if any)
         if !self.config.workflows.is_empty() {
             for wf in &self.config.workflows {
                 let title = format!("Workflow: {}", wf.name);
                 let subtitle = wf.description.clone();
-                items.push(PaletteItem { key: format!("workflow:{}", wf.name), title, subtitle, entry: PaletteEntry::Workflow(wf.name.clone()) });
+                items.push(PaletteItem {
+                    key: format!("workflow:{}", wf.name),
+                    title,
+                    subtitle,
+                    entry: PaletteEntry::Workflow(wf.name.clone()),
+                });
             }
         }
 
@@ -1962,7 +2034,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    fn palette_active(&self) -> bool { self.display.palette.active() }
+    fn palette_active(&self) -> bool {
+        self.display.palette.active()
+    }
 
     fn palette_input(&mut self, c: char) {
         self.display.palette.push_filter_char(c);
@@ -1996,10 +2070,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         BA::FocusPreviousPane => self.workspace_focus_previous_pane(),
                         BA::ToggleZoom => self.workspace_toggle_zoom(),
                         BA::OpenBlocksSearchPanel => {
-                            if self.blocks_search_active() { self.blocks_search_cancel() } else { self.open_blocks_search_panel() }
+                            if self.blocks_search_active() {
+                                self.blocks_search_cancel()
+                            } else {
+                                self.open_blocks_search_panel()
+                            }
                         },
                         BA::OpenWorkflowsPanel => {
-                            if self.workflows_panel_active() { self.workflows_panel_cancel() } else { self.open_workflows_panel() }
+                            if self.workflows_panel_active() {
+                                self.workflows_panel_cancel()
+                            } else {
+                                self.open_workflows_panel()
+                            }
                         },
                         BA::TogglePaneSync => {
                             self.workspace_toggle_sync();
@@ -2022,7 +2104,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.palette.close();
         self.display.palette_anim_opening = false;
         self.display.palette_anim_start = Some(std::time::Instant::now());
-        let theme = self.config.resolved_theme.as_ref().cloned().unwrap_or_else(|| self.config.theme.resolve());
+        let theme = self
+            .config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| self.config.theme.resolve());
         self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 120 };
         self.mark_dirty();
     }
@@ -2034,11 +2121,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         // Trigger closing animation
         self.display.palette_anim_opening = false;
         self.display.palette_anim_start = Some(std::time::Instant::now());
-        let theme = self.config.resolved_theme.as_ref().cloned().unwrap_or_else(|| self.config.theme.resolve());
+        let theme = self
+            .config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| self.config.theme.resolve());
         self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 120 };
         self.mark_dirty();
     }
-
 
     // Blocks Search panel controls
     #[cfg(feature = "blocks")]
@@ -2711,7 +2802,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.pending_update.dirty = true;
     }
     #[inline]
-    
+
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
         let origin = self.terminal.vi_mode_cursor.point;
 
@@ -3252,7 +3343,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Workspace / panes: wire to real WorkspaceManager
-fn workspace_split_horizontal(&mut self) {
+    fn workspace_split_horizontal(&mut self) {
         let ratio = self.config.workspace.splits.default_ratio;
         let res = self.workspace.split_horizontal(ratio);
         let msg = if let Some(id) = res {
@@ -3394,7 +3485,7 @@ fn workspace_split_horizontal(&mut self) {
         *self.dirty = true;
     }
 
-fn workspace_toggle_zoom(&mut self) {
+    fn workspace_toggle_zoom(&mut self) {
         let ok = self.workspace.toggle_zoom();
         let msg = if ok { "Toggled pane zoom" } else { "Toggle zoom failed" };
         self.message_buffer
@@ -3411,7 +3502,8 @@ fn workspace_toggle_zoom(&mut self) {
     fn workspace_toggle_sync(&mut self) {
         let ok = self.workspace.toggle_active_tab_sync();
         let msg = if ok { "Toggled pane sync" } else { "Toggle pane sync failed" };
-        self.message_buffer.push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        self.message_buffer
+            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -3442,8 +3534,7 @@ fn workspace_toggle_zoom(&mut self) {
         mouse_y: usize,
     ) -> Option<crate::display::tab_bar::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
-        self.display
-            .handle_tab_bar_click(&self.workspace.tabs, position, mouse_x, mouse_y)
+        self.display.handle_tab_bar_click(&self.workspace.tabs, position, mouse_x, mouse_y)
     }
 
     fn copy_to_clipboard(&mut self, text: String) {
@@ -3523,7 +3614,9 @@ fn workspace_toggle_zoom(&mut self) {
                 let mut j = 0usize;
                 for (i, ch) in s.char_indices() {
                     j = i + ch.len_utf8();
-                    if !ch.is_whitespace() { break; }
+                    if !ch.is_whitespace() {
+                        break;
+                    }
                 }
                 let (a, r) = s.split_at(j);
                 return (a.to_string(), r.to_string());
@@ -4606,7 +4699,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             }
                         };
                     let term = self.ctx.terminal();
-                    let not_altscreen = !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
+                    let not_altscreen =
+                        !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
                     let ime_off = self.ctx.display.ime.preedit().is_none();
 
                     if can_offer && not_altscreen && ime_off {
@@ -4620,7 +4714,9 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             let mut prefix = String::new();
                             for x in 0..point.column.0 {
                                 let cell = &row[Col(x)];
-                                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { continue; }
+                                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                                    continue;
+                                }
                                 let ch = cell.c;
                                 if ch != '\u{0}' {
                                     prefix.push(ch);
@@ -4798,7 +4894,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                             self.ctx.open_ai_panel();
                                             if let Some(runtime) = &mut self.ctx.ai_runtime {
                                                 runtime.ui.scratch = text.clone();
-                                                runtime.ui.cursor_position = runtime.ui.scratch.len();
+                                                runtime.ui.cursor_position =
+                                                    runtime.ui.scratch.len();
                                             }
                                         }
                                         // Reset composer state

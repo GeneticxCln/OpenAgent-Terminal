@@ -144,6 +144,7 @@ impl Window {
 
     /// Return true if the window is currently maximized.
     #[inline]
+    #[allow(dead_code)]
     pub fn is_maximized(&self) -> bool {
         self.window.is_maximized()
     }

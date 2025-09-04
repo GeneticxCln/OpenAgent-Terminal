@@ -44,7 +44,7 @@ default_language = "en"
 # Fallback fonts for missing glyphs
 fallback_fonts = [
     "Noto Sans",
-    "DejaVu Sans", 
+    "DejaVu Sans",
     "Liberation Sans",
     "Arial"
 ]

@@ -17,32 +17,32 @@ jobs:
   benchmark:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           # Fetch enough history for baseline comparison
           fetch-depth: 50
-      
+
       - name: Install Rust toolchain (1.79.0)
         uses: dtolnay/rust-toolchain@1.79.0
-        
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           key: perf-benchmarks-${{ runner.os }}
-      
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libegl1-mesa-dev libgl1-mesa-dev libxcb-shape0-dev libxcb-xfixes0-dev
-      
+
       # Performance smoke tests (existing)
       - name: Performance smoke tests
         run: |
           set -euo pipefail
           cargo test --release --test perf_smoke
-      
+
       # Cold start performance (existing)
       - name: Cold start performance check (≤800ms)
         run: |
@@ -53,8 +53,8 @@ jobs:
           # Extract timing for reporting
           COLD_START_MS=$(echo "$RESULT" | jq -r '.cold_start_ms')
           echo "::notice title=Cold Start Performance::Cold start: ${COLD_START_MS}ms (target: ≤800ms)"
-      
-      # Render latency performance (existing) 
+
+      # Render latency performance (existing)
       - name: Render latency check (≤16ms)
         run: |
           set -euo pipefail
@@ -64,26 +64,26 @@ jobs:
           # Extract average latency
           AVG_MS=$(echo "$RESULT" | grep "avg_ms:" | awk '{print $2}')
           echo "::notice title=Render Latency::Average render: ${AVG_MS}ms (target: ≤16ms)"
-      
+
       # Criterion benchmarks (new systematic benchmarking)
       - name: Terminal startup benchmarks
         run: |
           set -euo pipefail
           echo "Running terminal startup benchmarks..."
           cargo bench --bench terminal_startup -- --output-format json | tee startup_bench.json
-      
-      - name: Render performance benchmarks  
+
+      - name: Render performance benchmarks
         run: |
           set -euo pipefail
           echo "Running render performance benchmarks..."
           cargo bench --bench render_performance -- --output-format json | tee render_bench.json
-      
+
       - name: Security analysis benchmarks
         run: |
           set -euo pipefail
           echo "Running security analysis benchmarks..."
           cargo bench --bench security_analysis -- --output-format json | tee security_bench.json
-      
+
       # Memory usage validation
       - name: Memory usage validation
         run: |
@@ -91,24 +91,24 @@ jobs:
           echo "Checking memory usage patterns..."
           # Run a basic memory check (existing test covers this)
           cargo test --release idle_memory_usage_under_targets --test perf_smoke
-      
+
       # Performance regression detection
       - name: Performance regression detection
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           echo "Analyzing performance regression..."
-          
+
           # Install criterion for analysis
           cargo install cargo-criterion --locked || echo "cargo-criterion install failed, continuing..."
-          
+
           # Compare with baseline (main branch) - simplified approach
           git fetch origin main:main-baseline || true
-          
+
           # For now, just report current performance without deep comparison
           echo "::notice title=Performance Status::Benchmarks completed successfully"
           echo "Current performance results available in artifacts"
-      
+
       # Store benchmark results as artifacts
       - name: Upload performance results
         uses: actions/upload-artifact@v4
@@ -119,27 +119,27 @@ jobs:
             *_bench.json
             target/criterion/
           retention-days: 30
-      
+
       # Performance report for PRs
       - name: Performance report
         if: github.event_name == 'pull_request'
         run: |
           cat > performance_report.md << 'EOF'
           ## 🚀 Performance Benchmark Results
-          
+
           ### Key Metrics
           - **Cold Start**: ≤800ms target
-          - **Render Latency**: ≤16ms target  
+          - **Render Latency**: ≤16ms target
           - **Memory Usage**: ≤150MB idle target
-          
+
           ### Benchmark Categories
           - **Terminal Startup**: Core terminal initialization across different sizes
           - **Render Performance**: Text processing, grid operations, selection handling
           - **Security Analysis**: Command risk assessment, pattern matching efficiency
-          
+
           Detailed results available in the artifacts section.
           EOF
-          
+
           # Add as step summary
           cat performance_report.md >> $GITHUB_STEP_SUMMARY
 
@@ -148,43 +148,43 @@ jobs:
     name: Nightly Performance Tracking
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust toolchain (1.79.0)
         uses: dtolnay/rust-toolchain@1.79.0
-        
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libegl1-mesa-dev libgl1-mesa-dev libxcb-shape0-dev libxcb-xfixes0-dev jq
-      
+
       - name: Run comprehensive benchmarks
         run: |
           set -euo pipefail
-          
+
           # Timestamp for tracking
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT=$(git rev-parse HEAD)
-          
+
           echo "Running nightly performance tracking at $TIMESTAMP"
           echo "Commit: $COMMIT"
-          
+
           # Cold start timing
           COLD_START=$(xvfb-run -a cargo run --release --example perf_cold_start -- --max-ms=800)
           COLD_START_MS=$(echo "$COLD_START" | jq -r '.cold_start_ms')
-          
+
           # Render latency
           RENDER_RESULT=$(xvfb-run -a cargo run --release --example perf_latency -- --max-ms=16.0)
           RENDER_MS=$(echo "$RENDER_RESULT" | grep "avg_ms:" | awk '{print $2}')
-          
+
           # Memory usage test
           cargo test --release idle_memory_usage_under_targets --test perf_smoke
-          
+
           # Generate nightly report
           cat > nightly_perf_report.json << EOF
           {
@@ -202,9 +202,9 @@ jobs:
             }
           }
           EOF
-          
+
           cat nightly_perf_report.json
-      
+
       - name: Store nightly results
         uses: actions/upload-artifact@v4
         with:
@@ -217,29 +217,29 @@ jobs:
     name: Memory Profiling
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust toolchain (1.79.0)
         uses: dtolnay/rust-toolchain@1.79.0
-        
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y valgrind xvfb libegl1-mesa-dev libgl1-mesa-dev
-      
+
       - name: Memory leak detection
         run: |
           set -euo pipefail
           echo "Running memory leak detection..."
-          
+
           # Build debug version for better valgrind output
           cargo build --example perf_cold_start
-          
+
           # Run with valgrind to detect leaks (short run to avoid timeout)
           timeout 60s xvfb-run -a valgrind \
             --tool=memcheck \
@@ -249,7 +249,7 @@ jobs:
             --error-exitcode=1 \
             ./target/debug/examples/perf_cold_start --max-ms=2000 \
             || echo "::warning title=Memory Check::Valgrind detected potential issues or timed out"
-          
+
           echo "::notice title=Memory Check::Memory leak detection completed"
 
   # AI performance (if AI feature enabled)
@@ -257,33 +257,33 @@ jobs:
     name: AI Performance Tests
     runs-on: ubuntu-latest
     if: contains(github.event.head_commit.message, '[test-ai]') || github.event_name == 'schedule'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust toolchain (1.79.0)
         uses: dtolnay/rust-toolchain@1.79.0
-        
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libegl1-mesa-dev libgl1-mesa-dev
-      
+
       - name: AI integration performance
         run: |
           set -euo pipefail
           echo "Testing AI integration performance..."
-          
+
           # Build with AI features
           cargo build --release --features ai
-          
+
           # Test AI runtime initialization
           cargo test --release --features ai ai_runtime
-          
+
           # Security lens integration performance
           cargo bench --bench security_analysis --features ai
-          
+
           echo "::notice title=AI Performance::AI integration performance tests completed"

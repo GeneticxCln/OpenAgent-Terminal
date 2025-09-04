@@ -23,6 +23,7 @@ struct EnhancedPluginManifest {
 }
 
 #[derive(serde::Deserialize)]
+#[allow(dead_code)]
 struct PluginManifestInfo {
     name: Option<String>,
     version: Option<String>,
@@ -36,6 +37,7 @@ struct PluginManifestInfo {
 }
 
 #[derive(serde::Deserialize)]
+#[allow(dead_code)]
 struct PluginCapabilitiesManifest {
     #[serde(default)]
     completions: bool,
@@ -50,6 +52,7 @@ struct PluginCapabilitiesManifest {
 }
 
 #[derive(serde::Deserialize)]
+#[allow(dead_code)]
 struct PluginAdditionalMetadata {
     #[serde(default)]
     tags: Vec<String>,
@@ -110,6 +113,7 @@ struct PluginContext {
 struct PluginExports {
     init: Option<TypedFunc<(), i32>>,
     get_metadata: Option<TypedFunc<(), i64>>, // Returns ptr:u32 | len:u32 packed as i64
+    #[allow(dead_code)]
     handle_event: Option<TypedFunc<(i32, i32), i32>>, // Takes (ptr, len) returns error code
     cleanup: Option<TypedFunc<(), i32>>,
 }
@@ -689,7 +693,7 @@ impl PluginManager {
             ["HOME", "USER", "USERNAME", "PATH", "LD_LIBRARY_PATH", "SUDO_USER", "LOGNAME"];
 
         sensitive_prefixes.iter().any(|&prefix| env_var.starts_with(prefix))
-            || sensitive_exact.iter().any(|&exact| env_var == exact)
+            || sensitive_exact.contains(&env_var)
     }
 
     /// Validate that requested permissions match allowed permissions
@@ -818,7 +822,7 @@ impl PluginManager {
                     let file_result = if let Some(ref host) = host_clone {
                         host.read_file(&path)
                     } else {
-                        std::fs::read(&*path).map_err(|e| ApiPluginError::IoError(e))
+                        std::fs::read(&*path).map_err(ApiPluginError::IoError)
                     };
 
                     match file_result {
@@ -891,7 +895,7 @@ impl PluginManager {
                     let write_result = if let Some(ref host) = host_clone {
                         host.write_file(&path, &data_buffer)
                     } else {
-                        std::fs::write(&*path, &data_buffer).map_err(|e| ApiPluginError::IoError(e))
+                        std::fs::write(&*path, &data_buffer).map_err(ApiPluginError::IoError)
                     };
 
                     match write_result {
@@ -957,14 +961,14 @@ impl PluginManager {
     pub async fn send_event_to_plugin(
         &self,
         plugin_name: &str,
-        event: &PluginEvent,
+        _event: &PluginEvent,
     ) -> Result<PluginEventResponse, PluginError> {
         let plugins = self.plugins.read().await;
         let plugin = plugins
             .get(plugin_name)
             .ok_or_else(|| PluginError::NotFound(plugin_name.to_string()))?;
 
-        let plugin = Arc::clone(plugin);
+        let _plugin = Arc::clone(plugin);
         drop(plugins); // Release the read lock
 
         // This would need proper implementation with shared store access

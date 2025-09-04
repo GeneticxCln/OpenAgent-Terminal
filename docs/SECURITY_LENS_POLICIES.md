@@ -225,7 +225,7 @@ Before deploying Security Lens policies:
    ```bash
    # Test with known safe commands
    echo "ls -la" | openagent-terminal --test-security-lens
-   
+
    # Test with risky patterns
    echo "rm -rf /" | openagent-terminal --test-security-lens
    ```

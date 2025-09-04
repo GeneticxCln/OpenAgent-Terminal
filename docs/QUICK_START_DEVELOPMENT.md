@@ -60,7 +60,7 @@ impl OllamaProvider {
     pub fn new(endpoint: String, model: String) -> Self {
         Self { endpoint, model }
     }
-    
+
     pub fn from_env() -> Result<Self, String> {
         let endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
@@ -86,7 +86,7 @@ impl AiProvider for OllamaProvider {
     fn name(&self) -> &'static str {
         "ollama"
     }
-    
+
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
         // For now, return a mock response
         // TODO: Implement actual HTTP client
@@ -97,7 +97,7 @@ impl AiProvider for OllamaProvider {
                 "echo 'This is a placeholder command'".to_string()
             ],
         };
-        
+
         Ok(vec![proposal])
     }
 }
@@ -258,10 +258,10 @@ use thiserror::Error;
 pub enum AiError {
     #[error("Provider error: {0}")]
     Provider(String),
-    
+
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
-    
+
     #[error("Configuration error: {0}")]
     Config(String),
 }

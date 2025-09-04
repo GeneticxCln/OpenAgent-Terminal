@@ -35,15 +35,15 @@ if [[ -n "$ZSH_VERSION" ]] && [[ -n "$ZSH" ]]; then
                 ;;
         esac
     }
-    
+
     # Override the theme compatibility check
     add-zsh-hook precmd _openagent_omz_theme_compatibility
-    
+
     # Provide oh-my-zsh specific commands
     alias openagent-status="openagent_show_hooks"
     alias openagent-test="openagent_test_osc133"
     alias openagent-disable="openagent_disable_osc133"
-    
+
     # Add to oh-my-zsh plugin list tracking (if available)
     if typeset -p plugins >/dev/null 2>&1; then
         # Mark this plugin as loaded

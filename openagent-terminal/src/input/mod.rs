@@ -149,7 +149,9 @@ pub trait ActionContext<T: EventListener> {
 
     // Inline AI suggestions (feature = "ai")
     #[cfg(feature = "ai")]
-    fn inline_suggestion_visible(&self) -> bool { false }
+    fn inline_suggestion_visible(&self) -> bool {
+        false
+    }
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion(&mut self) {}
     #[cfg(feature = "ai")]
@@ -925,7 +927,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let size_info = self.ctx.size_info();
         let ch = size_info.cell_height();
         let lines = size_info.screen_lines();
-        if lines == 0 { return false; }
+        if lines == 0 {
+            return false;
+        }
         // Compute composer pill rectangle in pixels (must mirror draw_warp_bottom_composer)
         let y_band = (lines.saturating_sub(1)) as f32 * ch;
         let margin_px = 6.0_f32;
@@ -1125,15 +1129,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Derive hover tolerance from configuration so users can tune indicator/handle sizes.
         let splits = &self.ctx.config().workspace.splits;
         let base_line = splits.indicator_line_width.max(1.0);
-        let base_handle = if splits.show_resize_handles { splits.handle_size.max(1.0) } else { 0.0 };
+        let base_handle =
+            if splits.show_resize_handles { splits.handle_size.max(1.0) } else { 0.0 };
         // Use half of the larger visual element as tolerance, with sane bounds.
         let mut tol = (base_line.max(base_handle)) * 0.5;
         // Slightly increase tolerance to ease hover acquisition, but clamp to reasonable range.
         tol = (tol + 2.0).clamp(3.0, 12.0);
 
-        let split_hover_new = self
-            .ctx
-            .workspace_split_hit(x as f32, y as f32, tol);
+        let split_hover_new = self.ctx.workspace_split_hit(x as f32, y as f32, tol);
         if self.ctx.display().split_hover.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
             != split_hover_new.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
         {
@@ -1181,9 +1184,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 .display()
                 .damage_tracker
                 .frame()
-                .damage_line(openagent_terminal_core::term::LineDamageBounds::new(
-                    line, 0, cols,
-                ));
+                .damage_line(openagent_terminal_core::term::LineDamageBounds::new(line, 0, cols));
             self.ctx.mark_dirty();
         }
 

@@ -1,5 +1,5 @@
 # OpenAgent Terminal Configuration with Warp-style Features
-# 
+#
 # This example configuration shows how to enable and configure the new
 # Warp Terminal-inspired tab and split pane functionality in OpenAgent Terminal.
 
@@ -11,7 +11,7 @@ enabled = true
 # Enable Warp-style enhanced tab and split functionality
 warp_style = true
 
-# Optional: specify a custom session file location 
+# Optional: specify a custom session file location
 # If not specified, sessions will be stored in the default location
 # warp_session_file = "~/.config/openagent-terminal/warp-session.json"
 
@@ -24,7 +24,7 @@ show_modified_indicator = true
 max_tab_title_length = 25
 new_tab_action = "inherit_working_dir"  # "inherit_working_dir", "home_dir", "last_used_dir"
 
-# Split pane configuration  
+# Split pane configuration
 [workspace.splits]
 split_borders = true
 border_thickness = 1.0
@@ -37,7 +37,7 @@ resize_increment = 5
 # Tab styling
 [workspace.warp_ui.tabs]
 active_bg = "#2d3748"       # Active tab background
-inactive_bg = "#4a5568"     # Inactive tab background  
+inactive_bg = "#4a5568"     # Inactive tab background
 hover_bg = "#718096"        # Tab background on hover
 text_active = "#f7fafc"     # Active tab text color
 text_inactive = "#a0aec0"   # Inactive tab text color
@@ -51,7 +51,7 @@ indicator_size = 8          # Size of modification indicator
 # Split pane styling
 [workspace.warp_ui.splits]
 border_color = "#4a5568"           # Split border color
-border_active_color = "#63b3ed"    # Active split border color  
+border_active_color = "#63b3ed"    # Active split border color
 border_width = 2                   # Split border width
 resize_indicator_color = "#ed8936" # Color when resizing splits
 resize_indicator_width = 4         # Width of resize indicator
@@ -59,7 +59,7 @@ resize_indicator_width = 4         # Width of resize indicator
 # Animation settings
 [workspace.warp_ui.animations]
 tab_switch_duration_ms = 150       # Tab switch animation duration
-split_resize_duration_ms = 100     # Split resize animation duration  
+split_resize_duration_ms = 100     # Split resize animation duration
 focus_transition_duration_ms = 80  # Focus transition animation duration
 enable_animations = true           # Whether to enable animations
 
@@ -73,24 +73,24 @@ close_tab = { key = "w", mods = "cmd" }            # Cmd+W / Ctrl+W
 next_tab = { key = "RightBracket", mods = "cmd" }  # Cmd+] / Ctrl+]
 previous_tab = { key = "LeftBracket", mods = "cmd" } # Cmd+[ / Ctrl+[
 
-# Split management  
+# Split management
 split_right = { key = "d", mods = "cmd" }          # Cmd+D / Ctrl+D
 split_down = { key = "d", mods = "cmd+shift" }     # Cmd+Shift+D / Ctrl+Shift+D
 close_pane = { key = "w", mods = "cmd+shift" }     # Cmd+Shift+W / Ctrl+Shift+W
 
 # Pane navigation
 nav_left = { key = "LeftArrow", mods = "cmd+alt" }    # Cmd+Alt+← / Ctrl+Alt+←
-nav_right = { key = "RightArrow", mods = "cmd+alt" }  # Cmd+Alt+→ / Ctrl+Alt+→  
+nav_right = { key = "RightArrow", mods = "cmd+alt" }  # Cmd+Alt+→ / Ctrl+Alt+→
 nav_up = { key = "UpArrow", mods = "cmd+alt" }        # Cmd+Alt+↑ / Ctrl+Alt+↑
 nav_down = { key = "DownArrow", mods = "cmd+alt" }    # Cmd+Alt+↓ / Ctrl+Alt+↓
 
 # Pane resizing
 resize_left = { key = "LeftArrow", mods = "cmd+shift+alt" }  # Cmd+Shift+Alt+←
 resize_right = { key = "RightArrow", mods = "cmd+shift+alt" } # Cmd+Shift+Alt+→
-resize_up = { key = "UpArrow", mods = "cmd+shift+alt" }      # Cmd+Shift+Alt+↑  
+resize_up = { key = "UpArrow", mods = "cmd+shift+alt" }      # Cmd+Shift+Alt+↑
 resize_down = { key = "DownArrow", mods = "cmd+shift+alt" }   # Cmd+Shift+Alt+↓
 
-# Advanced pane operations  
+# Advanced pane operations
 zoom_pane = { key = "z", mods = "cmd+shift" }         # Cmd+Shift+Z / Ctrl+Shift+Z
 cycle_recent_panes = { key = "semicolon", mods = "cmd" } # Cmd+; / Ctrl+;
 equalize_splits = { key = "e", mods = "cmd+alt" }     # Cmd+Alt+E / Ctrl+Alt+E
@@ -101,7 +101,7 @@ equalize_splits = { key = "e", mods = "cmd+alt" }     # Cmd+Alt+E / Ctrl+Alt+E
 # 1. Tab Management:
 #    - Cmd+T: Create new tab (inherits current directory)
 #    - Cmd+W: Close current tab
-#    - Cmd+]: Next tab  
+#    - Cmd+]: Next tab
 #    - Cmd+[: Previous tab
 #    - Tabs auto-name based on current directory and running command
 #
@@ -132,14 +132,14 @@ equalize_splits = { key = "e", mods = "cmd+alt" }     # Cmd+Alt+E / Ctrl+Alt+E
 #    - Recent pane highlighting
 
 # Example additional configuration sections:
-# You can customize colors, fonts, and other appearance settings 
+# You can customize colors, fonts, and other appearance settings
 # as usual - the Warp styling integrates with your existing theme
 
 [colors.primary]
 background = "#1a202c"
 foreground = "#f7fafc"
 
-[colors.normal]  
+[colors.normal]
 black = "#2d3748"
 red = "#f56565"
 green = "#48bb78"
@@ -168,7 +168,7 @@ blink_interval = 750
 
 # With these settings, you'll get:
 # - Warp-style tab management with smart naming
-# - Intuitive split pane system with visual feedback  
+# - Intuitive split pane system with visual feedback
 # - Session persistence across restarts
 # - Modern, clean UI styling
 # - Familiar keyboard shortcuts matching Warp Terminal

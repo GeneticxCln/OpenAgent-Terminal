@@ -48,7 +48,7 @@ The actions are already defined in the configuration system and can be bound to 
 
 ### Integration Points
 - Input processor routes actions to workspace methods ✓
-- Workspace manager handles tab lifecycle ✓ 
+- Workspace manager handles tab lifecycle ✓
 - Warp integration provides enhanced tab features ✓
 - UI events trigger redraws and state updates ✓
 

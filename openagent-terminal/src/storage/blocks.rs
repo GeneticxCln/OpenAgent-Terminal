@@ -190,8 +190,8 @@ impl BlockStorage {
             // Use FTS for full-text search
             query_builder.push(
                 r#"
-                SELECT blocks.* FROM blocks 
-                JOIN blocks_fts ON blocks.id = blocks_fts.rowid 
+                SELECT blocks.* FROM blocks
+                JOIN blocks_fts ON blocks.id = blocks_fts.rowid
                 WHERE blocks_fts MATCH ?
                 "#
                 .to_string(),
@@ -276,8 +276,8 @@ impl BlockStorage {
         // Base query with common filtering
         let query = if let Some(search_query) = &filter.query {
             sqlx::query_as::<Sqlite, PersistedBlock>(
-                "SELECT blocks.* FROM blocks 
-                 JOIN blocks_fts ON blocks.id = blocks_fts.rowid 
+                "SELECT blocks.* FROM blocks
+                 JOIN blocks_fts ON blocks.id = blocks_fts.rowid
                  WHERE blocks_fts MATCH ?
                  ORDER BY started_at DESC LIMIT ?",
             )

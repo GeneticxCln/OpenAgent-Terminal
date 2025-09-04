@@ -27,7 +27,7 @@ pub trait RenderBackend: Send + Sync {
     type TextCache: TextCache;
     type Surface: Surface;
     type CommandBuffer: CommandBuffer;
-    
+
     fn create_surface(&mut self, config: SurfaceConfig) -> Result<Self::Surface>;
     fn begin_frame(&mut self) -> Self::CommandBuffer;
     fn submit(&mut self, commands: Self::CommandBuffer) -> Result<()>;
@@ -37,7 +37,7 @@ pub trait RenderBackend: Send + Sync {
 // Shared Text Cache Interface
 pub trait TextCache: Send + Sync {
     type Handle: Copy + Clone + Debug;
-    
+
     fn insert(&mut self, text: &str, style: TextStyle) -> Self::Handle;
     fn get(&self, handle: Self::Handle) -> Option<&CachedText>;
     fn invalidate(&mut self, handle: Self::Handle);
@@ -76,21 +76,21 @@ pub struct WgpuTextCache {
 
 impl TextCache for WgpuTextCache {
     type Handle = TextHandle;
-    
+
     fn insert(&mut self, text: &str, style: TextStyle) -> Self::Handle {
         let key = CacheKey::from_text(text, style);
-        
+
         if let Some(entry) = self.entries.get(&key) {
             self.lru.touch(&key);
             return entry.handle;
         }
-        
+
         // Rasterize text
         let glyphs = self.rasterize(text, style);
-        
+
         // Pack into atlas
         let coords = self.atlas.pack(&glyphs)?;
-        
+
         // Create entry
         let entry = CachedEntry {
             handle: TextHandle::new(),
@@ -99,26 +99,26 @@ impl TextCache for WgpuTextCache {
             style,
             last_used: Instant::now(),
         };
-        
+
         self.entries.insert(key.clone(), entry);
         self.lru.insert(key, entry.handle);
-        
+
         self.metrics.insertions += 1;
         entry.handle
     }
-    
+
     fn invalidate_style(&mut self, style: TextStyle) {
         let keys_to_remove: Vec<_> = self.entries
             .iter()
             .filter(|(_, entry)| entry.style == style)
             .map(|(key, _)| key.clone())
             .collect();
-        
+
         for key in keys_to_remove {
             self.entries.remove(&key);
             self.lru.remove(&key);
         }
-        
+
         self.metrics.invalidations += keys_to_remove.len();
     }
 }
@@ -134,16 +134,16 @@ impl TextureAtlas {
     fn pack(&mut self, glyphs: &[Glyph]) -> Result<AtlasCoords> {
         // Find space using rect packing algorithm
         let rect = self.allocator.pack(glyphs.bounding_box())?;
-        
+
         // Mark region as dirty for upload
         self.dirty_regions.push(DirtyRegion {
             rect,
             data: glyphs.to_texture_data(),
         });
-        
+
         Ok(AtlasCoords { rect, texture_id: self.texture.id() })
     }
-    
+
     fn upload_dirty_regions(&mut self, queue: &wgpu::Queue) {
         for region in self.dirty_regions.drain(..) {
             queue.write_texture(
@@ -185,10 +185,10 @@ mod cache_tests {
     fn test_cache_insertion_and_retrieval() {
         let mut cache = WgpuTextCache::new();
         let style = TextStyle::default();
-        
+
         let handle1 = cache.insert("Hello", style);
         let handle2 = cache.insert("Hello", style); // Should return same handle
-        
+
         assert_eq!(handle1, handle2);
         assert_eq!(cache.metrics.insertions, 1);
     }
@@ -198,13 +198,13 @@ mod cache_tests {
         let mut cache = WgpuTextCache::new();
         let style1 = TextStyle { size: 12.0, ..Default::default() };
         let style2 = TextStyle { size: 14.0, ..Default::default() };
-        
+
         cache.insert("Text1", style1);
         cache.insert("Text2", style1);
         cache.insert("Text3", style2);
-        
+
         cache.invalidate_style(style1);
-        
+
         assert!(cache.get(handle1).is_none());
         assert!(cache.get(handle2).is_none());
         assert!(cache.get(handle3).is_some());
@@ -213,11 +213,11 @@ mod cache_tests {
     #[test]
     fn test_lru_eviction() {
         let mut cache = WgpuTextCache::with_capacity(2);
-        
+
         let h1 = cache.insert("First", TextStyle::default());
         let h2 = cache.insert("Second", TextStyle::default());
         let h3 = cache.insert("Third", TextStyle::default()); // Should evict "First"
-        
+
         assert!(cache.get(h1).is_none());
         assert!(cache.get(h2).is_some());
         assert!(cache.get(h3).is_some());
@@ -251,14 +251,14 @@ impl WgpuRectTransfer {
             usage: wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: true,
         });
-        
+
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Rect Vertex Buffer"),
             size: capacity as u64 * std::mem::size_of::<RectVertex>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         Self {
             staging_buffer,
             vertex_buffer,
@@ -266,16 +266,16 @@ impl WgpuRectTransfer {
             pending_transfers: Vec::new(),
         }
     }
-    
+
     pub fn transfer_rects(&mut self, rects: &[Rect]) -> TransferHandle {
         // Get mapped buffer slice
         let buffer_slice = self.staging_buffer.slice(
             self.current_offset as u64..
         );
-        
+
         // Map buffer for writing (zero-copy)
         buffer_slice.map_async(wgpu::MapMode::Write, |_| {});
-        
+
         // Write rect data directly to mapped memory
         {
             let mut view = buffer_slice.get_mapped_mut();
@@ -285,33 +285,33 @@ impl WgpuRectTransfer {
                     rects.len() * 6, // 6 vertices per rect (2 triangles)
                 )
             };
-            
+
             for (i, rect) in rects.iter().enumerate() {
                 let base = i * 6;
                 rect_data[base..base + 6].copy_from_slice(&rect.to_vertices());
             }
         }
-        
+
         // Unmap and prepare for GPU transfer
         self.staging_buffer.unmap();
-        
+
         let handle = TransferHandle {
             offset: self.current_offset,
             count: rects.len(),
             buffer_id: self.staging_buffer.id(),
         };
-        
+
         self.pending_transfers.push(PendingTransfer {
             src_offset: self.current_offset as u64,
             dst_offset: self.current_offset as u64,
             size: (rects.len() * 6 * std::mem::size_of::<RectVertex>()) as u64,
         });
-        
+
         self.current_offset += rects.len() * 6 * std::mem::size_of::<RectVertex>();
-        
+
         handle
     }
-    
+
     pub fn flush(&mut self, encoder: &mut wgpu::CommandEncoder) {
         for transfer in self.pending_transfers.drain(..) {
             encoder.copy_buffer_to_buffer(
@@ -322,7 +322,7 @@ impl WgpuRectTransfer {
                 transfer.size,
             );
         }
-        
+
         self.current_offset = 0;
     }
 }
@@ -347,25 +347,25 @@ impl Rect {
             border_width: self.border_width,
             corner_radius: self.corner_radius,
         };
-        
+
         let tr = RectVertex {
             position: [self.x + self.width, self.y],
             tex_coords: [1.0, 0.0],
             ..tl
         };
-        
+
         let bl = RectVertex {
             position: [self.x, self.y + self.height],
             tex_coords: [0.0, 1.0],
             ..tl
         };
-        
+
         let br = RectVertex {
             position: [self.x + self.width, self.y + self.height],
             tex_coords: [1.0, 1.0],
             ..tl
         };
-        
+
         // Two triangles: TL-TR-BL and TR-BR-BL
         [tl, tr, bl, tr, br, bl]
     }
@@ -397,32 +397,32 @@ impl RenderBackend for WgpuBackend {
     type TextCache = WgpuTextCache;
     type Surface = WgpuSurface;
     type CommandBuffer = WgpuCommandBuffer;
-    
+
     fn begin_frame(&mut self) -> Self::CommandBuffer {
         let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Frame Encoder"),
         });
-        
+
         WgpuCommandBuffer {
             encoder,
             render_pass: None,
             current_pipeline: None,
         }
     }
-    
+
     fn submit(&mut self, mut commands: Self::CommandBuffer) -> Result<()> {
         // Flush any pending rect transfers
         self.rect_transfer.flush(&mut commands.encoder);
-        
+
         // Upload dirty texture regions
         self.text_cache.atlas.upload_dirty_regions(&self.queue);
-        
+
         // Submit commands
         self.queue.submit(std::iter::once(commands.encoder.finish()));
-        
+
         // Update frame stats
         self.frame_stats.frames_rendered += 1;
-        
+
         Ok(())
     }
 }
@@ -439,20 +439,20 @@ impl Pipelines {
         let rect_pipeline = Self::create_rect_pipeline(device);
         let text_pipeline = Self::create_text_pipeline(device);
         let image_pipeline = Self::create_image_pipeline(device);
-        
+
         Self {
             rect_pipeline,
             text_pipeline,
             image_pipeline,
         }
     }
-    
+
     fn create_rect_pipeline(device: &wgpu::Device) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Rect Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/rect.wgsl")),
         });
-        
+
         // ... pipeline creation
     }
 }
@@ -479,7 +479,7 @@ impl RenderOptimizer {
     pub fn optimize_draw_calls(&mut self, primitives: &[Primitive]) -> Vec<DrawCall> {
         let mut draw_calls = Vec::new();
         let mut current_batch = DrawBatch::new();
-        
+
         for primitive in primitives {
             if self.can_batch(&current_batch, primitive) {
                 current_batch.add(primitive);
@@ -491,17 +491,17 @@ impl RenderOptimizer {
                 current_batch.add(primitive);
             }
         }
-        
+
         if !current_batch.is_empty() {
             draw_calls.push(current_batch.to_draw_call());
         }
-        
+
         self.metrics.draw_calls = draw_calls.len();
         self.metrics.primitives_batched = primitives.len();
-        
+
         draw_calls
     }
-    
+
     fn can_batch(&self, batch: &DrawBatch, primitive: &Primitive) -> bool {
         // Check if primitive can be added to current batch
         batch.pipeline == primitive.required_pipeline() &&
@@ -527,14 +527,14 @@ impl InstancedRenderer {
                 color_offset: transform.color_offset,
             });
         }
-        
+
         // Upload to GPU
         self.queue.write_buffer(
             &self.instance_buffer,
             0,
             bytemuck::cast_slice(&self.instance_data),
         );
-        
+
         // Single draw call for all instances
         render_pass.draw_indexed(
             0..base_primitive.index_count,
@@ -562,10 +562,10 @@ impl WgpuTestHarness {
         // Render with both backends
         let wgpu_output = self.backend.render_to_texture(&scene).await?;
         let gl_output = self.reference_backend.render_to_texture(&scene)?;
-        
+
         // Compare outputs
         let diff = image_diff(&wgpu_output, &gl_output);
-        
+
         if diff.max_pixel_difference > self.comparison_tolerance {
             return TestResult::Failed {
                 name: name.to_string(),
@@ -574,28 +574,28 @@ impl WgpuTestHarness {
                 gl_output,
             };
         }
-        
+
         TestResult::Passed {
             name: name.to_string(),
             render_time_ms: wgpu_output.render_time_ms,
         }
     }
-    
+
     pub async fn run_performance_test(&mut self, name: &str, workload: Workload) -> PerfResult {
         let mut frame_times = Vec::new();
-        
+
         // Warmup
         for _ in 0..10 {
             self.backend.render_frame(&workload.generate_frame()).await?;
         }
-        
+
         // Measure
         for _ in 0..100 {
             let start = Instant::now();
             self.backend.render_frame(&workload.generate_frame()).await?;
             frame_times.push(start.elapsed());
         }
-        
+
         PerfResult {
             name: name.to_string(),
             avg_frame_time: average(&frame_times),
@@ -615,7 +615,7 @@ mod benchmarks {
 
     fn bench_text_cache(c: &mut Criterion) {
         let mut cache = WgpuTextCache::new();
-        
+
         c.bench_function("text_cache_insert", |b| {
             b.iter(|| {
                 cache.insert(
@@ -624,7 +624,7 @@ mod benchmarks {
                 )
             });
         });
-        
+
         c.bench_function("text_cache_lookup", |b| {
             let handle = cache.insert("Test", TextStyle::default());
             b.iter(|| {
@@ -635,14 +635,14 @@ mod benchmarks {
 
     fn bench_rect_transfer(c: &mut Criterion) {
         let mut transfer = WgpuRectTransfer::new(&device, 10000);
-        
+
         c.bench_function("rect_transfer_small", |b| {
             let rects = generate_rects(10);
             b.iter(|| {
                 transfer.transfer_rects(black_box(&rects))
             });
         });
-        
+
         c.bench_function("rect_transfer_large", |b| {
             let rects = generate_rects(1000);
             b.iter(|| {
@@ -704,15 +704,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let half_size = vec2<f32>(0.5, 0.5);
     let p = abs(input.tex_coords - half_size);
     let d = length(max(p - half_size + input.corner_radius, vec2<f32>(0.0))) - input.corner_radius;
-    
+
     // Border
     let border_alpha = smoothstep(-1.0, 0.0, d);
     let fill_alpha = smoothstep(-1.0, 0.0, d - input.border_width);
-    
+
     // Mix border and fill colors
     let border_color = vec4<f32>(input.color.rgb * 0.7, input.color.a);
     let final_color = mix(input.color, border_color, border_alpha * (1.0 - fill_alpha));
-    
+
     return final_color;
 }
 ```
@@ -753,16 +753,16 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let alpha = textureSample(atlas_texture, atlas_sampler, input.tex_coords).r;
-    
+
     // Subpixel antialiasing
     let dx = dpdx(input.tex_coords.x);
     let dy = dpdy(input.tex_coords.y);
     let grad_length = length(vec2<f32>(dx, dy));
-    
+
     let edge_distance = 0.5;
     let smoothing = grad_length * 0.7;
     let final_alpha = smoothstep(edge_distance - smoothing, edge_distance + smoothing, alpha);
-    
+
     return vec4<f32>(input.color.rgb, input.color.a * final_alpha);
 }
 ```

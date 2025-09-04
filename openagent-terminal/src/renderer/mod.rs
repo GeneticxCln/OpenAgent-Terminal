@@ -187,7 +187,15 @@ impl Renderer {
             .or_else(|_| ui::UiSpriteGlRenderer::new(ShaderVersion::Gles2))
             .map_err(|e| Error::Other(format!("sprite renderer init failed: {:?}", e)))?;
 
-        Ok(Self { text_renderer, rect_renderer, ui_renderer, ui_sprite_renderer, pending_ui: Vec::new(), pending_sprites: Vec::new(), robustness })
+        Ok(Self {
+            text_renderer,
+            rect_renderer,
+            ui_renderer,
+            ui_sprite_renderer,
+            pending_ui: Vec::new(),
+            pending_sprites: Vec::new(),
+            robustness,
+        })
     }
 
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(

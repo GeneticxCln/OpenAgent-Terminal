@@ -134,7 +134,7 @@ export class LocalSync extends EventEmitter {
   public async changePassphrase(oldPassphrase: string, newPassphrase: string): Promise<boolean> {
     // Verify old passphrase
     const oldKey = await this.deriveKey(oldPassphrase);
-    
+
     // Try to decrypt existing data with old key
     const testData = this.syncData.values().next().value;
     if (testData) {
@@ -177,7 +177,7 @@ export class LocalSync extends EventEmitter {
         // For now, falling back to scrypt
       case 'scrypt':
         return await scrypt(passphrase, salt, 32) as Buffer;
-      
+
       case 'pbkdf2':
         return crypto.pbkdf2Sync(
           passphrase,
@@ -186,7 +186,7 @@ export class LocalSync extends EventEmitter {
           32,
           'sha256'
         );
-      
+
       default:
         throw new Error(`Unsupported key derivation: ${this.config.encryption.keyDerivation}`);
     }
@@ -202,9 +202,9 @@ export class LocalSync extends EventEmitter {
     const algorithm = this.config.encryption.algorithm;
     const salt = crypto.randomBytes(32);
     const iv = crypto.randomBytes(16);
-    
+
     let cipher: crypto.CipherGCM;
-    
+
     switch (algorithm) {
       case 'aes-256-gcm':
         cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey, iv) as crypto.CipherGCM;
@@ -259,7 +259,7 @@ export class LocalSync extends EventEmitter {
     }
 
     decipher.setAuthTag(authTag);
-    
+
     const plaintext = Buffer.concat([
       decipher.update(ciphertext),
       decipher.final(),
@@ -288,10 +288,10 @@ export class LocalSync extends EventEmitter {
 
     const encrypted = await this.encryptData(syncData);
     const id = `${type}-${syncData.timestamp}-${this.deviceId}`;
-    
+
     this.syncData.set(id, encrypted as any);
     await this.saveLocalData();
-    
+
     this.emit('data:added', { type, id });
 
     // Propagate to peers if in network mode
@@ -330,7 +330,7 @@ export class LocalSync extends EventEmitter {
     this.discoverySocket.on('message', (msg, rinfo) => {
       try {
         const announcement = JSON.parse(msg.toString());
-        
+
         if (announcement.deviceId === this.deviceId) {
           return; // Ignore our own announcements
         }
@@ -354,7 +354,7 @@ export class LocalSync extends EventEmitter {
 
     this.discoverySocket.bind(port, () => {
       this.discoverySocket!.addMembership(multicastAddress);
-      
+
       // Announce ourselves periodically
       setInterval(() => {
         this.announcePresence();
@@ -387,7 +387,7 @@ export class LocalSync extends EventEmitter {
     };
 
     const message = Buffer.from(JSON.stringify(announcement));
-    
+
     this.discoverySocket.send(
       message,
       this.config.discovery!.port,
@@ -400,7 +400,7 @@ export class LocalSync extends EventEmitter {
       socket.on('data', async (data) => {
         try {
           const request = JSON.parse(data.toString());
-          
+
           switch (request.type) {
             case 'sync-request':
               await this.handleSyncRequest(socket, request);
@@ -439,7 +439,7 @@ export class LocalSync extends EventEmitter {
     // Receive and merge data from peer
     try {
       const { data, deviceId } = request;
-      
+
       for (const [id, encryptedData] of data) {
         // Only accept newer data
         const existing = this.syncData.get(id);
@@ -449,19 +449,19 @@ export class LocalSync extends EventEmitter {
       }
 
       await this.saveLocalData();
-      
-      socket.write(JSON.stringify({ 
-        type: 'ack', 
-        success: true 
+
+      socket.write(JSON.stringify({
+        type: 'ack',
+        success: true
       }));
 
       this.emit('sync:received', { from: deviceId, items: data.length });
 
     } catch (error) {
-      socket.write(JSON.stringify({ 
-        type: 'ack', 
+      socket.write(JSON.stringify({
+        type: 'ack',
         success: false,
-        error: error.message 
+        error: error.message
       }));
     }
   }
@@ -483,7 +483,7 @@ export class LocalSync extends EventEmitter {
   private async sendToPeer(peer: SyncPeer, message: any): Promise<void> {
     return new Promise((resolve, reject) => {
       const client = new net.Socket();
-      
+
       client.connect(peer.port, peer.address, () => {
         client.write(JSON.stringify(message));
       });
@@ -504,7 +504,7 @@ export class LocalSync extends EventEmitter {
       });
 
       client.on('error', reject);
-      
+
       setTimeout(() => {
         client.destroy();
         reject(new Error('Timeout'));
@@ -554,7 +554,7 @@ export class LocalSync extends EventEmitter {
           const filePath = path.join(syncPath, file);
           const content = fs.readFileSync(filePath, 'utf-8');
           const encrypted = JSON.parse(content) as EncryptedPayload;
-          
+
           // Verify we can decrypt it
           if (this.derivedKey) {
             await this.decryptData(encrypted);
@@ -582,12 +582,12 @@ export class LocalSync extends EventEmitter {
   // Local Data Persistence
   private loadLocalData(): void {
     const dataPath = this.getLocalDataPath();
-    
+
     if (fs.existsSync(dataPath)) {
       try {
         const content = fs.readFileSync(dataPath, 'utf-8');
         const data = JSON.parse(content);
-        
+
         for (const [id, encrypted] of Object.entries(data)) {
           this.syncData.set(id, encrypted as any);
         }
@@ -693,7 +693,7 @@ export class LocalSync extends EventEmitter {
     // Encrypt the entire bundle
     const encrypted = await this.encryptData(bundle);
     fs.writeFileSync(outputPath, JSON.stringify(encrypted, null, 2));
-    
+
     this.emit('bundle:exported', { path: outputPath });
   }
 
@@ -703,7 +703,7 @@ export class LocalSync extends EventEmitter {
 
     // Use provided passphrase or current one
     const key = passphrase ? await this.deriveKey(passphrase) : this.derivedKey;
-    
+
     if (!key) {
       throw new Error('Passphrase required for import');
     }
@@ -737,7 +737,7 @@ export class LocalSync extends EventEmitter {
     }
 
     await this.saveLocalData();
-    
+
     if (this.config.mode === 'file-based' || this.config.mode === 'usb') {
       await this.saveToSyncPath();
     }

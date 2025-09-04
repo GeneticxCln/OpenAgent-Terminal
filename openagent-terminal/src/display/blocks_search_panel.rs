@@ -8,8 +8,8 @@ use unicode_width::UnicodeWidthStr;
 use crate::blocks_v2::{
     DurationFilter, ExecutionStatus, ExitCodeFilter, ShellType, SortField, SortOrder,
 };
-use crate::config::UiConfig;
 use crate::config::theme::ThemeTokens;
+use crate::config::UiConfig;
 use crate::display::color::Rgb;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;

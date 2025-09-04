@@ -65,7 +65,7 @@ export class FuzzTester extends EventEmitter {
     this.corpus.add('\x1b[F'); // End
     this.corpus.add('\x1b[3~'); // Delete
     this.corpus.add('\x1b[2~'); // Insert
-    
+
     // Control sequences
     this.corpus.add('\x03'); // Ctrl+C
     this.corpus.add('\x04'); // Ctrl+D
@@ -75,38 +75,38 @@ export class FuzzTester extends EventEmitter {
     this.corpus.add('\r'); // Enter
     this.corpus.add('\n'); // Newline
     this.corpus.add('\t'); // Tab
-    
+
     // ANSI color codes
     this.corpus.add('\x1b[31m'); // Red
     this.corpus.add('\x1b[0m'); // Reset
     this.corpus.add('\x1b[1m'); // Bold
     this.corpus.add('\x1b[4m'); // Underline
-    
+
     // Cursor positioning
     this.corpus.add('\x1b[10;20H'); // Move cursor
     this.corpus.add('\x1b[2J'); // Clear screen
     this.corpus.add('\x1b[K'); // Clear line
-    
+
     // Pathological sequences
     this.corpus.add('\x1b[999999999A'); // Huge cursor movement
     this.corpus.add('\x1b[;' + 'A'.repeat(1000)); // Long parameter
     this.corpus.add('\x1b' + '['.repeat(100)); // Nested escapes
     this.corpus.add('\x00'.repeat(100)); // Null bytes
     this.corpus.add('\xff'.repeat(100)); // High bytes
-    
+
     // Unicode edge cases
     this.corpus.add('𝕳𝖊𝖑𝖑𝖔'); // Mathematical bold
     this.corpus.add('🔥💀🎉'); // Emojis
     this.corpus.add('\u200b'); // Zero-width space
     this.corpus.add('\ufeff'); // BOM
     this.corpus.add('А'.repeat(100)); // Cyrillic that looks like Latin
-    
+
     // Shell-specific dangerous patterns
     this.corpus.add('$(yes)'); // Command substitution infinite loop
     this.corpus.add('`yes`'); // Backtick substitution
     this.corpus.add('$((10**10**10))'); // Arithmetic explosion
     this.corpus.add('${x:="${x}${x}"}'); // Variable expansion bomb
-    
+
     // Load seeds if provided
     if (this.config.seedPath && fs.existsSync(this.config.seedPath)) {
       const seeds = fs.readFileSync(this.config.seedPath, 'utf-8').split('\n');
@@ -130,7 +130,7 @@ export class FuzzTester extends EventEmitter {
       for (let i = 0; i < this.config.iterations; i++) {
         const input = this.generateInput();
         const result = await this.testInput(shell, input);
-        
+
         this.updateStats(result);
         this.emit('iteration', { iteration: i, result });
 
@@ -160,7 +160,7 @@ export class FuzzTester extends EventEmitter {
 
     const strategy = strategies[Math.floor(Math.random() * strategies.length)];
     const input = strategy();
-    
+
     return input.substring(0, this.config.maxInputLength);
   }
 
@@ -220,7 +220,7 @@ export class FuzzTester extends EventEmitter {
       () => `\x1b[${Math.floor(Math.random() * 10)}A`,
       () => `\x1b]0;${'A'.repeat(Math.floor(Math.random() * 1000))}\x07`,
     ];
-    
+
     const generator = structures[Math.floor(Math.random() * structures.length)];
     return generator();
   }
@@ -253,7 +253,7 @@ export class FuzzTester extends EventEmitter {
       proc.stdin.end();
 
       const output = await this.waitForProcess(proc, this.config.timeoutMs);
-      
+
       clearInterval(memoryInterval);
       result.executionTimeMs = Date.now() - startTime;
       result.memoryUsageMB = memoryUsage;
@@ -327,7 +327,7 @@ export class FuzzTester extends EventEmitter {
 
   private isInteresting(result: FuzzResult): boolean {
     // Result is interesting if it's a new type of failure or near-failure
-    return result.outcome !== 'pass' || 
+    return result.outcome !== 'pass' ||
            result.executionTimeMs > this.config.timeoutMs * 0.5 ||
            result.memoryUsageMB > this.config.memoryLimitMB * 0.7;
   }
@@ -421,7 +421,7 @@ ${Array.from(this.crashingInputs.entries())
 // Export for use in CI/testing
 export const runFuzzTests = async (config?: Partial<FuzzConfig>) => {
   const fuzzer = new FuzzTester(config);
-  
+
   fuzzer.on('iteration', ({ iteration, result }) => {
     if (iteration % 100 === 0) {
       console.log(`Iteration ${iteration}: ${result.outcome}`);

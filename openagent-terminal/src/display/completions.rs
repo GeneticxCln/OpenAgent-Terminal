@@ -1,7 +1,7 @@
-use std::time::{Duration, Instant};
-use std::path::PathBuf;
 use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::{self, Term};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crate::config::UiConfig;
 use crate::renderer::rects::RenderRect;
@@ -63,7 +63,9 @@ impl super::Display {
             } else {
                 streak = 0.0;
             }
-            if qi == q.len() { break; }
+            if qi == q.len() {
+                break;
+            }
         }
         if qi < q.len() {
             return 0.0;
@@ -82,7 +84,8 @@ impl super::Display {
         // Tokenize to get current token and first word (command)
         let tokens: Vec<&str> = prefix.split_whitespace().collect();
         let first = tokens.get(0).copied().unwrap_or("");
-        let cur_token = if prefix.ends_with(' ') { "" } else { tokens.last().copied().unwrap_or("") };
+        let cur_token =
+            if prefix.ends_with(' ') { "" } else { tokens.last().copied().unwrap_or("") };
         let is_flag_context = cur_token.starts_with('-');
 
         // 1) Flags: minimal spec for a few common commands, else generic
@@ -90,7 +93,10 @@ impl super::Display {
             let cmd = first;
             let known = Self::known_flags_for_command(cmd);
             for (flag, desc) in known {
-                let score = Self::fuzzy_score(cur_token.trim_start_matches('-'), flag.trim_start_matches('-'));
+                let score = Self::fuzzy_score(
+                    cur_token.trim_start_matches('-'),
+                    flag.trim_start_matches('-'),
+                );
                 if score > 0.0 {
                     out.push(CompletionItem {
                         label: flag.to_string(),
@@ -119,7 +125,11 @@ impl super::Display {
                         if score > 0.0 {
                             out.push(CompletionItem {
                                 label,
-                                kind: if is_dir { CompletionKind::Dir } else { CompletionKind::File },
+                                kind: if is_dir {
+                                    CompletionKind::Dir
+                                } else {
+                                    CompletionKind::File
+                                },
                                 details: None,
                                 icon: if is_dir { "📁" } else { "📄" },
                                 score,
@@ -131,7 +141,11 @@ impl super::Display {
         }
 
         // 3) Git branches (very naive default suggestions if looks like git checkout)
-        if first == "git" && (prefix.contains(" checkout") || prefix.ends_with(" switch") || prefix.contains(" switch ")) {
+        if first == "git"
+            && (prefix.contains(" checkout")
+                || prefix.ends_with(" switch")
+                || prefix.contains(" switch "))
+        {
             for b in ["main", "master", "develop", "release", "feature/"] {
                 let score = Self::fuzzy_score(cur_token, b);
                 if score > 0.0 {
@@ -199,7 +213,9 @@ impl super::Display {
         }
         // Debounce recompute
         let now = Instant::now();
-        if prefix != self.completions.last_prefix || now.duration_since(self.completions.last_compute) > self.completions.debounce {
+        if prefix != self.completions.last_prefix
+            || now.duration_since(self.completions.last_compute) > self.completions.debounce
+        {
             let cwd = None::<PathBuf>; // Future: track via shell integration/OSC
             self.completions.items = Self::compute_completions_for_prefix(prefix, cwd);
             self.completions.last_prefix = prefix.to_string();
@@ -216,11 +232,8 @@ impl super::Display {
         };
 
         // Theme tokens
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let fg = tokens.text;
         let bg = tokens.surface_muted;
@@ -233,7 +246,11 @@ impl super::Display {
         let box_width_cols = cols.min(48);
         let max_rows = 8usize;
         let needed_rows = self.completions.items.len().min(max_rows);
-        let start_line = if vp.line + 2 + needed_rows >= lines { vp.line.saturating_sub(needed_rows + 1) } else { vp.line + 1 };
+        let start_line = if vp.line + 2 + needed_rows >= lines {
+            vp.line.saturating_sub(needed_rows + 1)
+        } else {
+            vp.line + 1
+        };
         let start_col = vp.column.0.min(cols.saturating_sub(box_width_cols));
         let x = start_col as f32 * self.size_info.cell_width();
         let y = start_line as f32 * self.size_info.cell_height();
@@ -248,9 +265,16 @@ impl super::Display {
 
         // Header row: shows context icon and prefix
         let mut header = String::new();
-        header.push('→'); header.push(' ');
+        header.push('→');
+        header.push(' ');
         header.push_str(prefix.trim());
-        self.draw_ai_text(Point::new(start_line, Column(start_col)), muted, tokens.surface, &header, box_width_cols);
+        self.draw_ai_text(
+            Point::new(start_line, Column(start_col)),
+            muted,
+            tokens.surface,
+            &header,
+            box_width_cols,
+        );
 
         // Items
         let mut line = start_line + 1;
@@ -272,22 +296,30 @@ impl super::Display {
                 let cmd = prefix.split_whitespace().next().unwrap_or("");
                 let spec = Self::known_flags_for_command(cmd);
                 if let Some((_, desc)) = spec.into_iter().find(|(f, _)| *f == tok) {
-                    let tooltip_cols = 40usize.min(cols.saturating_sub(start_col + box_width_cols + 1));
+                    let tooltip_cols =
+                        40usize.min(cols.saturating_sub(start_col + box_width_cols + 1));
                     if tooltip_cols > 10 {
-                        let tx = (start_col + box_width_cols + 1) as f32 * self.size_info.cell_width();
+                        let tx =
+                            (start_col + box_width_cols + 1) as f32 * self.size_info.cell_width();
                         let ty = y;
                         let tw = tooltip_cols as f32 * self.size_info.cell_width();
                         let th = 2.0 * self.size_info.cell_height();
-                        let rects = vec![RenderRect::new(tx, ty, tw, th, tokens.surface_muted, 0.98)];
+                        let rects =
+                            vec![RenderRect::new(tx, ty, tw, th, tokens.surface_muted, 0.98)];
                         let metrics = self.glyph_cache.font_metrics();
                         let size_copy = self.size_info;
                         self.renderer_draw_rects(&size_copy, &metrics, rects);
                         let text = format!("{}", desc);
-                        self.draw_ai_text(Point::new(start_line, Column(start_col + box_width_cols + 2)), accent, tokens.surface_muted, &text, tooltip_cols - 2);
+                        self.draw_ai_text(
+                            Point::new(start_line, Column(start_col + box_width_cols + 2)),
+                            accent,
+                            tokens.surface_muted,
+                            &text,
+                            tooltip_cols - 2,
+                        );
                     }
                 }
             }
         }
     }
 }
-

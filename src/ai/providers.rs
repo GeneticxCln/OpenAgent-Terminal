@@ -15,24 +15,24 @@ use anyhow::{Result, anyhow};
 pub trait AiProvider: Send + Sync {
     /// Get provider name
     fn name(&self) -> &str;
-    
+
     /// Complete a prompt with streaming response
     async fn complete_stream(
         &self,
         prompt: &str,
         options: CompletionOptions,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>>;
-    
+
     /// Complete a prompt with full response
     async fn complete(
         &self,
         prompt: &str,
         options: CompletionOptions,
     ) -> Result<String>;
-    
+
     /// Check if provider is available
     async fn health_check(&self) -> Result<bool>;
-    
+
     /// Get usage statistics
     async fn get_usage(&self) -> Result<UsageStats>;
 }
@@ -98,7 +98,7 @@ impl OpenAIProvider {
             })),
         }
     }
-    
+
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
@@ -110,7 +110,7 @@ impl AiProvider for OpenAIProvider {
     fn name(&self) -> &str {
         "OpenAI"
     }
-    
+
     async fn complete_stream(
         &self,
         prompt: &str,
@@ -126,7 +126,7 @@ impl AiProvider for OpenAIProvider {
                 "content": prompt
             })
         ];
-        
+
         let request_body = serde_json::json!({
             "model": options.model,
             "messages": messages,
@@ -138,7 +138,7 @@ impl AiProvider for OpenAIProvider {
             "stop": options.stop_sequences,
             "stream": true
         });
-        
+
         let response = self.client
             .post(format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -146,12 +146,12 @@ impl AiProvider for OpenAIProvider {
             .json(&request_body)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow!("OpenAI API error: {}", error_text));
         }
-        
+
         let stream = response.bytes_stream();
         let stream = stream.map(move |chunk| {
             match chunk {
@@ -163,7 +163,7 @@ impl AiProvider for OpenAIProvider {
                         if json_str.trim() == "[DONE]" {
                             return Ok(String::new());
                         }
-                        
+
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
                             if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
                                 return Ok(content.to_string());
@@ -175,14 +175,14 @@ impl AiProvider for OpenAIProvider {
                 Err(e) => Err(anyhow!("Stream error: {}", e))
             }
         });
-        
+
         // Update usage stats
         let mut usage = self.usage.write().await;
         usage.requests_count += 1;
-        
+
         Ok(Box::pin(stream))
     }
-    
+
     async fn complete(
         &self,
         prompt: &str,
@@ -190,24 +190,24 @@ impl AiProvider for OpenAIProvider {
     ) -> Result<String> {
         let mut stream = self.complete_stream(prompt, options).await?;
         let mut result = String::new();
-        
+
         while let Some(chunk) = stream.next().await {
             result.push_str(&chunk?);
         }
-        
+
         Ok(result)
     }
-    
+
     async fn health_check(&self) -> Result<bool> {
         let response = self.client
             .get(format!("{}/models", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await?;
-        
+
         Ok(response.status().is_success())
     }
-    
+
     async fn get_usage(&self) -> Result<UsageStats> {
         Ok(self.usage.read().await.clone())
     }
@@ -243,7 +243,7 @@ impl AiProvider for AnthropicProvider {
     fn name(&self) -> &str {
         "Anthropic"
     }
-    
+
     async fn complete_stream(
         &self,
         prompt: &str,
@@ -259,7 +259,7 @@ impl AiProvider for AnthropicProvider {
             "temperature": options.temperature,
             "stream": true
         });
-        
+
         let response = self.client
             .post(format!("{}/messages", self.base_url))
             .header("x-api-key", &self.api_key)
@@ -268,12 +268,12 @@ impl AiProvider for AnthropicProvider {
             .json(&request_body)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow!("Anthropic API error: {}", error_text));
         }
-        
+
         let stream = response.bytes_stream();
         let stream = stream.map(move |chunk| {
             match chunk {
@@ -293,13 +293,13 @@ impl AiProvider for AnthropicProvider {
                 Err(e) => Err(anyhow!("Stream error: {}", e))
             }
         });
-        
+
         let mut usage = self.usage.write().await;
         usage.requests_count += 1;
-        
+
         Ok(Box::pin(stream))
     }
-    
+
     async fn complete(
         &self,
         prompt: &str,
@@ -307,19 +307,19 @@ impl AiProvider for AnthropicProvider {
     ) -> Result<String> {
         let mut stream = self.complete_stream(prompt, options).await?;
         let mut result = String::new();
-        
+
         while let Some(chunk) = stream.next().await {
             result.push_str(&chunk?);
         }
-        
+
         Ok(result)
     }
-    
+
     async fn health_check(&self) -> Result<bool> {
         // Anthropic doesn't have a specific health endpoint
         Ok(true)
     }
-    
+
     async fn get_usage(&self) -> Result<UsageStats> {
         Ok(self.usage.read().await.clone())
     }
@@ -346,7 +346,7 @@ impl OllamaProvider {
             })),
         }
     }
-    
+
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
@@ -358,7 +358,7 @@ impl AiProvider for OllamaProvider {
     fn name(&self) -> &str {
         "Ollama"
     }
-    
+
     async fn complete_stream(
         &self,
         prompt: &str,
@@ -373,17 +373,17 @@ impl AiProvider for OllamaProvider {
                 "num_predict": options.max_tokens,
             }
         });
-        
+
         let response = self.client
             .post(format!("{}/api/generate", self.base_url))
             .json(&request_body)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             return Err(anyhow!("Ollama API error"));
         }
-        
+
         let stream = response.bytes_stream();
         let stream = stream.map(move |chunk| {
             match chunk {
@@ -399,13 +399,13 @@ impl AiProvider for OllamaProvider {
                 Err(e) => Err(anyhow!("Stream error: {}", e))
             }
         });
-        
+
         let mut usage = self.usage.write().await;
         usage.requests_count += 1;
-        
+
         Ok(Box::pin(stream))
     }
-    
+
     async fn complete(
         &self,
         prompt: &str,
@@ -413,23 +413,23 @@ impl AiProvider for OllamaProvider {
     ) -> Result<String> {
         let mut stream = self.complete_stream(prompt, options).await?;
         let mut result = String::new();
-        
+
         while let Some(chunk) = stream.next().await {
             result.push_str(&chunk?);
         }
-        
+
         Ok(result)
     }
-    
+
     async fn health_check(&self) -> Result<bool> {
         let response = self.client
             .get(format!("{}/api/tags", self.base_url))
             .send()
             .await?;
-        
+
         Ok(response.status().is_success())
     }
-    
+
     async fn get_usage(&self) -> Result<UsageStats> {
         Ok(self.usage.read().await.clone())
     }
@@ -461,13 +461,13 @@ pub struct ProviderConfig {
 impl AiProviderManager {
     pub fn new(config: AiConfig) -> Result<Self> {
         let mut providers: HashMap<String, Box<dyn AiProvider>> = HashMap::new();
-        
+
         // Initialize enabled providers
         for (name, provider_config) in &config.providers {
             if !provider_config.enabled {
                 continue;
             }
-            
+
             let provider: Box<dyn AiProvider> = match name.as_str() {
                 "openai" => {
                     let api_key = provider_config.api_key.as_ref()
@@ -492,32 +492,32 @@ impl AiProviderManager {
                 }
                 _ => continue,
             };
-            
+
             providers.insert(name.clone(), provider);
         }
-        
+
         if providers.is_empty() {
             return Err(anyhow!("No AI providers configured"));
         }
-        
+
         let active_provider = if providers.contains_key(&config.default_provider) {
             config.default_provider.clone()
         } else {
             providers.keys().next().unwrap().clone()
         };
-        
+
         Ok(Self {
             providers,
             active_provider,
             config,
         })
     }
-    
+
     /// Get active provider
     pub fn active_provider(&self) -> &dyn AiProvider {
         self.providers[&self.active_provider].as_ref()
     }
-    
+
     /// Switch active provider
     pub fn switch_provider(&mut self, name: &str) -> Result<()> {
         if !self.providers.contains_key(name) {
@@ -526,13 +526,13 @@ impl AiProviderManager {
         self.active_provider = name.to_string();
         Ok(())
     }
-    
+
     /// Complete with active provider
     pub async fn complete(&self, prompt: &str, options: Option<CompletionOptions>) -> Result<String> {
         let options = options.unwrap_or_else(|| self.config.default_options.clone());
         self.active_provider().complete(prompt, options).await
     }
-    
+
     /// Stream completion with active provider
     pub async fn complete_stream(
         &self,
@@ -542,21 +542,21 @@ impl AiProviderManager {
         let options = options.unwrap_or_else(|| self.config.default_options.clone());
         self.active_provider().complete_stream(prompt, options).await
     }
-    
+
     /// Get all provider names
     pub fn list_providers(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
-    
+
     /// Health check all providers
     pub async fn health_check_all(&self) -> HashMap<String, bool> {
         let mut results = HashMap::new();
-        
+
         for (name, provider) in &self.providers {
             let is_healthy = provider.health_check().await.unwrap_or(false);
             results.insert(name.clone(), is_healthy);
         }
-        
+
         results
     }
 }
@@ -564,7 +564,7 @@ impl AiProviderManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_provider_manager() {
         let config = AiConfig {
@@ -582,7 +582,7 @@ mod tests {
             },
             default_options: CompletionOptions::default(),
         };
-        
+
         let manager = AiProviderManager::new(config).unwrap();
         assert_eq!(manager.active_provider().name(), "Ollama");
     }

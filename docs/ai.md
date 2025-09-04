@@ -33,4 +33,3 @@ UX principles
 - Commands are authored in a scratch buffer, not in the shell line.
 - The AI produces proposals shown in a side panel. The UI must never auto-run them.
 - The feature can be entirely disabled at build time and at runtime.
-

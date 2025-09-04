@@ -55,4 +55,3 @@ jobs:
             - Bumped workspace crate versions
             - Updated CHANGELOG with a stub section (please fill in)
           labels: ["release"]
-

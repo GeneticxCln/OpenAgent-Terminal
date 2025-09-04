@@ -206,7 +206,7 @@ If you have conflicts with other prompt tools:
 
 1. **Load integration last:** Place the integration line after other prompt modifications
 2. **Use minimal mode:** Some frameworks automatically enable this
-3. **Try different integration method:** 
+3. **Try different integration method:**
    - Switch between standalone and plugin versions (zsh)
    - Try universal auto-setup instead of shell-specific scripts
 
@@ -235,7 +235,7 @@ openagent_disable_osc133
 
 1. **Remove from shell config:**
    - Remove or comment out the integration line from your shell configuration file
-   
+
 2. **Remove oh-my-zsh plugin (if used):**
    ```bash
    rm -rf $ZSH/plugins/openagent

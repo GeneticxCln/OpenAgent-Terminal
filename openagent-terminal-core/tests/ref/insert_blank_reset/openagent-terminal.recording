@@ -2,4 +2,4 @@
 [?2004l[31;1;4;9mTEST asd
 [?2004h[kchibisov@NightLord alacritty]$ printf "\e[31;1;4;9mTEST asd\n"reset[Kprintf "\e[41;1;4;9mTEST asd\n"reset[Kecho -e "\033[100;@"
 [?2004l[100;@
-[?2004h[kchibisov@NightLord alacritty]$ 
+[?2004h[kchibisov@NightLord alacritty]$

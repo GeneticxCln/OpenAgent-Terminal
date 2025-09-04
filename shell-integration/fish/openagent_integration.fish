@@ -18,24 +18,24 @@ function _openagent_is_supported_terminal
     if test "$TERM_PROGRAM" = "openagent-terminal"
         return 0
     end
-    
+
     # Check for other terminals that support OSC 133
     switch "$TERM_PROGRAM"
         case "vscode" "iTerm.app" "WezTerm"
             return 0
     end
-    
-    # Check TERM variable for compatible terminals  
+
+    # Check TERM variable for compatible terminals
     switch "$TERM"
         case "*-256color" "xterm-kitty" "alacritty" "wezterm"
             return 0
     end
-    
+
     # If OPENAGENT_FORCE_OSC133 is set, assume support
     if set -q OPENAGENT_FORCE_OSC133
         return 0
     end
-    
+
     return 1
 end
 
@@ -46,7 +46,7 @@ end
 
 # OSC 133 escape sequences
 set -g _OPENAGENT_OSC133_A \e\]133\;A\a    # Prompt start
-set -g _OPENAGENT_OSC133_B \e\]133\;B\a    # Prompt end / Command start  
+set -g _OPENAGENT_OSC133_B \e\]133\;B\a    # Prompt end / Command start
 set -g _OPENAGENT_OSC133_C \e\]133\;C\a    # Command end / Output start
 set -g _OPENAGENT_OSC133_D \e\]133\;D\;%s\a # Command end with exit code
 
@@ -104,12 +104,12 @@ end
 if functions -q fish_prompt
     # Backup the original prompt
     functions -c fish_prompt _openagent_original_fish_prompt
-    
+
     # Create a new prompt function that includes our marker
     function fish_prompt
         # Call the original prompt
         set -l original_prompt (_openagent_original_fish_prompt)
-        
+
         # Add our marker just before the end
         # Look for common prompt endings and insert before them
         if string match -q "*\$ " "$original_prompt"
@@ -122,7 +122,7 @@ if functions -q fish_prompt
             # Fallback: just append to the end
             set original_prompt "$original_prompt$_OPENAGENT_OSC133_B"
         end
-        
+
         echo -n "$original_prompt"
     end
 else
@@ -152,15 +152,15 @@ end
 function openagent_disable_osc133
     # Remove event handlers
     functions -e _openagent_preexec
-    functions -e _openagent_postexec  
+    functions -e _openagent_postexec
     functions -e _openagent_precmd
-    
+
     # Restore original prompt if we backed it up
     if functions -q _openagent_original_fish_prompt
         functions -c _openagent_original_fish_prompt fish_prompt
         functions -e _openagent_original_fish_prompt
     end
-    
+
     echo "OpenAgent OSC 133 integration disabled for this session."
     echo "To permanently disable, remove or comment out the source line in your config.fish"
 end

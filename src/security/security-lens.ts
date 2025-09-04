@@ -55,7 +55,7 @@ const CRITICAL_PATTERNS: Array<{pattern: RegExp, factor: RiskFactor}> = [
   {
     pattern: /rm\s+.*\*.*\/(?:\s|$)/,
     factor: {
-      type: 'destructive', 
+      type: 'destructive',
       description: 'Wildcard deletion from root path',
     }
   },
@@ -251,12 +251,12 @@ export class SecurityLens {
 
   private detectSecrets(command: string): RiskFactor[] {
     const factors: RiskFactor[] = [];
-    
+
     for (const pattern of SECRET_PATTERNS) {
       const matches = command.matchAll(pattern);
       for (const match of matches) {
         const secretHash = this.hashSecret(match[0]);
-        
+
         if (!this.secretCache.has(secretHash)) {
           this.secretCache.add(secretHash);
           factors.push({
@@ -298,7 +298,7 @@ export class SecurityLens {
 
   private createRiskResult(level: RiskLevel, factors: RiskFactor[], command: string): CommandRisk {
     const policySettings = this.policy.riskLevels[level] || {};
-    
+
     const mitigations = this.generateMitigations(factors, command);
     const explanation = this.generateExplanation(level, factors);
 
@@ -376,13 +376,13 @@ export class SecurityLens {
   // Method to sanitize commands by removing detected secrets
   public sanitizeCommand(command: string): string {
     let sanitized = command;
-    
+
     for (const pattern of SECRET_PATTERNS) {
       sanitized = sanitized.replace(pattern, (match) => {
         return match.substring(0, 5) + '[REDACTED]';
       });
     }
-    
+
     return sanitized;
   }
 }

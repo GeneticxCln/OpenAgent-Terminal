@@ -8,37 +8,37 @@ use serde::{Deserialize, Serialize};
 pub struct TextShapingConfig {
     /// Enable HarfBuzz text shaping
     pub enabled: bool,
-    
+
     /// Enable ligatures (programming fonts, etc.)
     pub ligatures: bool,
-    
+
     /// Enable kerning adjustments
     pub kerning: bool,
-    
+
     /// Enable contextual alternates
     pub contextual_alternates: bool,
-    
+
     /// Enable stylistic sets (comma-separated list like "1,2,5")
     pub stylistic_sets: Vec<u32>,
-    
+
     /// Enable bidirectional text support
     pub bidi_support: bool,
-    
+
     /// Default language for text shaping (ISO 639-1 code)
     pub default_language: String,
-    
+
     /// Fallback fonts for missing glyphs
     pub fallback_fonts: Vec<String>,
-    
+
     /// Emoji font name
     pub emoji_font: Option<String>,
-    
+
     /// Enable complex script support (Arabic, Thai, Devanagari, etc.)
     pub complex_scripts: bool,
-    
+
     /// Cache settings
     pub cache: TextShapingCacheConfig,
-    
+
     /// Performance settings
     pub performance: TextShapingPerformanceConfig,
 }
@@ -48,16 +48,16 @@ pub struct TextShapingConfig {
 pub struct TextShapingCacheConfig {
     /// Enable caching of shaped text runs
     pub enable_line_cache: bool,
-    
+
     /// Maximum number of cached shaped lines
     pub max_cached_lines: usize,
-    
+
     /// Maximum number of cached shaped glyphs
     pub max_cached_glyphs: usize,
-    
+
     /// Maximum number of cached BiDi analysis results
     pub max_cached_bidi: usize,
-    
+
     /// Enable glyph position caching for ligatures
     pub cache_ligature_positions: bool,
 }
@@ -67,16 +67,16 @@ pub struct TextShapingCacheConfig {
 pub struct TextShapingPerformanceConfig {
     /// Fallback to basic rendering for performance
     pub fallback_on_error: bool,
-    
+
     /// Use HarfBuzz shaping only when necessary
     pub lazy_shaping: bool,
-    
+
     /// Batch size for shaped glyph rendering
     pub batch_size: usize,
-    
+
     /// Enable subpixel rendering for shaped text
     pub subpixel_rendering: bool,
-    
+
     /// Enable GPU-accelerated text rendering
     pub gpu_acceleration: bool,
 }
@@ -140,12 +140,12 @@ impl TextShapingConfig {
             self.complex_scripts
         )
     }
-    
+
     /// Check if BiDi support should be enabled
     pub fn needs_bidi_analysis(&self) -> bool {
         self.enabled && self.bidi_support
     }
-    
+
     /// Get HarfBuzz shaping configuration
     pub fn to_harfbuzz_config(&self) -> crate::text_shaping::harfbuzz::ShapingConfig {
         crate::text_shaping::harfbuzz::ShapingConfig {
@@ -158,7 +158,7 @@ impl TextShapingConfig {
             emoji_font: self.emoji_font.clone(),
         }
     }
-    
+
     /// Get integration configuration for the text shaper
     pub fn to_integration_config(&self) -> crate::text_shaping::integration::ShapingIntegrationConfig {
         crate::text_shaping::integration::ShapingIntegrationConfig {
@@ -170,38 +170,38 @@ impl TextShapingConfig {
             fallback_to_basic_rendering: self.performance.fallback_on_error,
         }
     }
-    
+
     /// Validate configuration and return any issues
     pub fn validate(&self) -> Vec<String> {
         let mut issues = Vec::new();
-        
+
         if self.cache.max_cached_lines == 0 {
             issues.push("max_cached_lines must be greater than 0".to_string());
         }
-        
+
         if self.cache.max_cached_glyphs == 0 {
             issues.push("max_cached_glyphs must be greater than 0".to_string());
         }
-        
+
         if self.performance.batch_size == 0 {
             issues.push("batch_size must be greater than 0".to_string());
         }
-        
+
         // Check if language code is valid (basic check)
         if self.default_language.len() != 2 {
             issues.push("default_language should be a 2-letter ISO 639-1 code".to_string());
         }
-        
+
         // Validate stylistic sets (should be in range 1-20)
         for &set in &self.stylistic_sets {
             if !(1..=20).contains(&set) {
                 issues.push(format!("Stylistic set {} is out of range (1-20)", set));
             }
         }
-        
+
         issues
     }
-    
+
     /// Create a minimal configuration for better performance
     pub fn minimal() -> Self {
         Self {
@@ -231,7 +231,7 @@ impl TextShapingConfig {
             },
         }
     }
-    
+
     /// Create a configuration optimized for programming
     pub fn programming() -> Self {
         Self {
@@ -253,7 +253,7 @@ impl TextShapingConfig {
             performance: TextShapingPerformanceConfig::default(),
         }
     }
-    
+
     /// Create a configuration optimized for multilingual text
     pub fn multilingual() -> Self {
         Self {
@@ -285,7 +285,7 @@ impl TextShapingConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_default_config() {
         let config = TextShapingConfig::default();
@@ -294,7 +294,7 @@ mod tests {
         assert!(config.has_advanced_features());
         assert!(config.needs_bidi_analysis());
     }
-    
+
     #[test]
     fn test_minimal_config() {
         let config = TextShapingConfig::minimal();
@@ -303,7 +303,7 @@ mod tests {
         assert!(!config.has_advanced_features());
         assert!(!config.needs_bidi_analysis());
     }
-    
+
     #[test]
     fn test_programming_config() {
         let config = TextShapingConfig::programming();
@@ -312,7 +312,7 @@ mod tests {
         assert!(!config.bidi_support);
         assert_eq!(config.stylistic_sets, vec![1, 2]);
     }
-    
+
     #[test]
     fn test_multilingual_config() {
         let config = TextShapingConfig::multilingual();
@@ -321,18 +321,18 @@ mod tests {
         assert!(config.complex_scripts);
         assert!(config.fallback_fonts.len() > 3);
     }
-    
+
     #[test]
     fn test_config_validation() {
         let mut config = TextShapingConfig::default();
         assert!(config.validate().is_empty());
-        
+
         config.cache.max_cached_lines = 0;
         let issues = config.validate();
         assert!(!issues.is_empty());
         assert!(issues[0].contains("max_cached_lines"));
     }
-    
+
     #[test]
     fn test_stylistic_set_validation() {
         let mut config = TextShapingConfig::default();

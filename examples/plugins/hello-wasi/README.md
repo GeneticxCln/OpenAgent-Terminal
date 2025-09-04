@@ -34,4 +34,3 @@ Expected output in logs when the plugin is loaded:
 - [hello-wasi] HELLO_PLUGIN_MESSAGE=Hello from host!
 - [hello-wasi] FORBIDDEN_SECRET=<not available>
 - [hello-wasi] /etc/passwd: access denied (expected)
-

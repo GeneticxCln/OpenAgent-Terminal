@@ -140,7 +140,7 @@ impl TerminalLineCache {
     pub fn get_stats(&self) -> TerminalLineCacheStats {
         let total_hits = self.stats.line_hits + self.stats.fragment_hits;
         let total_requests = total_hits + self.stats.line_misses + self.stats.fragment_misses;
-        
+
         TerminalLineCacheStats {
             line_cache_size: self.line_cache.len(),
             fragment_cache_size: self.fragment_cache.len(),
@@ -187,13 +187,13 @@ pub struct TerminalLineCacheStats {
 pub struct ShapedTextCache {
     /// Primary LRU cache for shaped text
     primary_cache: Arc<RwLock<LruCache<ShapedTextCacheKey, CachedShapedText, RandomState>>>,
-    
+
     /// Secondary cache optimized for terminal line patterns
     terminal_cache: Arc<RwLock<TerminalLineCache>>,
-    
+
     /// Cache configuration
     config: ShapedTextCacheConfig,
-    
+
     /// Global cache statistics
     stats: Arc<RwLock<GlobalCacheStats>>,
 }
@@ -286,13 +286,13 @@ impl ShapedTextCache {
                     if let Ok(mut stats) = self.stats.write() {
                         stats.primary_hits += 1;
                     }
-                    
+
                     // Update access info
                     let mut updated_entry = entry.clone();
                     updated_entry.last_accessed = now;
                     updated_entry.access_count += 1;
                     cache.put(key.clone(), updated_entry);
-                    
+
                     return Some(entry.shaped_text.clone());
                 } else {
                     // Entry expired, remove it
@@ -316,7 +316,7 @@ impl ShapedTextCache {
     /// Store shaped text in cache
     pub fn put(&self, key: ShapedTextCacheKey, shaped_text: ShapedText) {
         let now = Instant::now();
-        
+
         // Store in terminal cache if appropriate
         if self.config.enable_terminal_cache && self.is_terminal_like(&key.text) {
             if let Ok(mut cache) = self.terminal_cache.write() {
@@ -342,7 +342,7 @@ impl ShapedTextCache {
         // 1. Contain mostly printable ASCII
         // 2. Have common patterns (prompts, commands, paths)
         // 3. Are not too long (reasonable terminal width)
-        
+
         if text.len() > 500 {
             return false; // Too long for typical terminal line
         }
@@ -350,7 +350,7 @@ impl ShapedTextCache {
         let ascii_printable_count = text.chars()
             .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
             .count();
-        
+
         // At least 80% ASCII printable characters
         ascii_printable_count as f64 / text.len() as f64 >= 0.8
     }
@@ -358,30 +358,30 @@ impl ShapedTextCache {
     /// Get comprehensive cache statistics
     pub fn get_stats(&self) -> ComprehensiveCacheStats {
         let mut stats = ComprehensiveCacheStats::default();
-        
+
         if let Ok(global_stats) = self.stats.read() {
             stats.primary_hits = global_stats.primary_hits;
             stats.primary_misses = global_stats.primary_misses;
             stats.terminal_hits = global_stats.terminal_hits;
             stats.terminal_misses = global_stats.terminal_misses;
             stats.total_evictions = global_stats.total_evictions;
-            
+
             if let Some(creation_time) = global_stats.cache_creation_time {
                 stats.uptime_seconds = Instant::now().duration_since(creation_time).as_secs();
             }
         }
-        
+
         if let Ok(primary) = self.primary_cache.read() {
             stats.primary_cache_size = primary.len();
         }
-        
+
         if let Ok(terminal) = self.terminal_cache.read() {
             let terminal_stats = terminal.get_stats();
             stats.terminal_line_cache_size = terminal_stats.line_cache_size;
             stats.terminal_fragment_cache_size = terminal_stats.fragment_cache_size;
             stats.terminal_hit_ratio = terminal_stats.overall_hit_ratio;
         }
-        
+
         // Calculate overall hit ratio
         let total_hits = stats.primary_hits + stats.terminal_hits;
         let total_requests = total_hits + stats.primary_misses + stats.terminal_misses;
@@ -390,7 +390,7 @@ impl ShapedTextCache {
         } else {
             0.0
         };
-        
+
         stats
     }
 
@@ -399,11 +399,11 @@ impl ShapedTextCache {
         if let Ok(mut cache) = self.primary_cache.write() {
             cache.clear();
         }
-        
+
         if let Ok(mut cache) = self.terminal_cache.write() {
             cache.clear();
         }
-        
+
         if let Ok(mut stats) = self.stats.write() {
             *stats = GlobalCacheStats::default();
             stats.cache_creation_time = Some(Instant::now());
@@ -413,7 +413,7 @@ impl ShapedTextCache {
     /// Perform cache maintenance (cleanup expired entries, etc.)
     pub fn maintenance(&self) {
         let now = Instant::now();
-        
+
         if let Ok(mut cache) = self.primary_cache.write() {
             // Remove expired entries (this is a simplified approach)
             let expired_keys: Vec<ShapedTextCacheKey> = cache
@@ -423,7 +423,7 @@ impl ShapedTextCache {
                 })
                 .map(|(key, _)| key.clone())
                 .collect();
-            
+
             for key in expired_keys {
                 cache.pop(&key);
                 if let Ok(mut stats) = self.stats.write() {
@@ -489,10 +489,10 @@ mod tests {
     #[test]
     fn test_terminal_line_cache() {
         let mut cache = TerminalLineCache::new(10, 20);
-        
+
         // Test cache miss
         assert!(cache.get_line("$ ls").is_none());
-        
+
         // Test cache hit after insertion
         let shaped_text = Arc::new(ShapedText {
             glyphs: vec![],
@@ -501,10 +501,10 @@ mod tests {
             baseline: 16.0,
             direction: TextDirection::LeftToRight,
         });
-        
+
         cache.cache_line("$ ls".to_string(), shaped_text.clone());
         assert!(cache.get_line("$ ls").is_some());
-        
+
         let stats = cache.get_stats();
         assert_eq!(stats.line_cache_size, 1);
         assert!(stats.line_hit_ratio > 0.0);

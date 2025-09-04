@@ -45,4 +45,3 @@ void main() {
 
   FRAG_COLOR = vec4(uColor.rgb, uColor.a * alpha);
 }
-

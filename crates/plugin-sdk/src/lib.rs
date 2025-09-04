@@ -27,12 +27,12 @@ pub mod result_codes {
     pub const ERROR_TIMEOUT: i32 = -5;
 }
 
-/// Host function imports - these are provided by the runtime
+// Host function imports - these are provided by the runtime
 extern "C" {
-    /// Log a message to the host
+    // Log a message to the host
     fn host_log(level: i32, ptr: *const u8, len: usize);
 
-    /// Read a file from the host filesystem
+    // Read a file from the host filesystem
     fn host_read_file(
         path_ptr: *const u8,
         path_len: usize,
@@ -40,7 +40,7 @@ extern "C" {
         result_len_ptr: *mut u32,
     ) -> i32;
 
-    /// Write a file to the host filesystem
+    // Write a file to the host filesystem
     fn host_write_file(
         path_ptr: *const u8,
         path_len: usize,
@@ -48,7 +48,7 @@ extern "C" {
         data_len: usize,
     ) -> i32;
 
-    /// Execute a command on the host
+    // Execute a command on the host
     fn host_execute_command(cmd_ptr: *const u8, cmd_len: usize) -> i32;
 }
 
@@ -100,10 +100,7 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, PluginError> {
             if read_result == 0 {
                 Ok(buffer)
             } else {
-                Err(PluginError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Failed to read file data",
-                )))
+                Err(PluginError::IoError(std::io::Error::other("Failed to read file data")))
             }
         },
         -1 => Err(PluginError::PermissionDenied("File read not permitted".into())),
@@ -115,17 +112,14 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, PluginError> {
     }
 }
 
-/// Safe wrapper for file writing  
+/// Safe wrapper for file writing
 pub fn write_file(path: &str, data: &[u8]) -> Result<(), PluginError> {
     let result = unsafe { host_write_file(path.as_ptr(), path.len(), data.as_ptr(), data.len()) };
 
     match result {
         0 => Ok(()),
         -1 => Err(PluginError::PermissionDenied("File write not permitted".into())),
-        -2 => Err(PluginError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Failed to write file",
-        ))),
+        -2 => Err(PluginError::IoError(std::io::Error::other("Failed to write file"))),
         _ => Err(PluginError::Unknown("Unknown file write error".into())),
     }
 }
@@ -154,7 +148,7 @@ pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
 
 /// Set the plugin metadata (called during initialization)
 pub fn set_plugin_metadata(metadata: &PluginMetadata) -> Result<(), PluginError> {
-    let json = serde_json::to_vec(metadata).map_err(|e| PluginError::SerializationError(e))?;
+    let json = serde_json::to_vec(metadata).map_err(PluginError::SerializationError)?;
 
     unsafe {
         PLUGIN_METADATA_JSON = Some(json);
@@ -200,7 +194,7 @@ pub extern "C" fn plugin_init() -> i32 {
     result_codes::SUCCESS
 }
 
-/// Export: Cleanup plugin (default implementation)  
+/// Export: Cleanup plugin (default implementation)
 #[no_mangle]
 pub extern "C" fn plugin_cleanup() -> i32 {
     log(LogLevel::Info, "Plugin cleaned up via SDK");

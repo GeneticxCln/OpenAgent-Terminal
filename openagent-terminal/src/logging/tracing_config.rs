@@ -53,13 +53,13 @@ impl TracingConfig {
     /// Create configuration from environment variables and CLI options.
     pub fn from_env() -> Self {
         let mut config = Self::default();
-        
+
         // Check if AI debug logging is enabled.
         config.ai_debug_log = env::var(OPENAGENT_AI_DEBUG_LOG_ENV)
             .ok()
             .map(|v| v == "1" || v.to_lowercase() == "true")
             .unwrap_or(false);
-        
+
         // Set AI debug log path.
         if config.ai_debug_log {
             config.ai_debug_log_path = env::var(OPENAGENT_AI_DEBUG_LOG_PATH_ENV)
@@ -71,38 +71,38 @@ impl TracingConfig {
                     Some(path)
                 });
         }
-        
+
         // Add default module filters.
         config.module_filters = vec![
             // Core modules at info level.
             "openagent_terminal=info".to_string(),
             "openagent_terminal_core=info".to_string(),
             "openagent_terminal_config=info".to_string(),
-            
+
             // AI module at debug level if AI debug is enabled.
             if config.ai_debug_log {
                 "openagent_terminal_ai=debug".to_string()
             } else {
                 "openagent_terminal_ai=info".to_string()
             },
-            
+
             // External dependencies at warn level to reduce noise.
             "winit=warn".to_string(),
             "glutin=warn".to_string(),
             "mio=warn".to_string(),
             "notify=warn".to_string(),
         ];
-        
+
         config
     }
-    
+
     /// Build the environment filter string.
     pub fn build_filter(&self) -> String {
         let mut filters = self.module_filters.clone();
-        
+
         // Add base level as fallback.
         filters.push(format!("{}", self.base_level));
-        
+
         filters.join(",")
     }
 }
@@ -122,11 +122,11 @@ impl ConditionalFileWriter {
             enabled: Arc::new(AtomicBool::new(enabled)),
         }
     }
-    
+
     fn enable(&self) {
         self.enabled.store(true, Ordering::SeqCst);
     }
-    
+
     fn disable(&self) {
         self.enabled.store(false, Ordering::SeqCst);
     }
@@ -137,7 +137,7 @@ impl Write for ConditionalFileWriter {
         if !self.enabled.load(Ordering::SeqCst) {
             return Ok(buf.len());
         }
-        
+
         if self.file.is_none() {
             self.file = Some(
                 OpenOptions::new()
@@ -147,10 +147,10 @@ impl Write for ConditionalFileWriter {
             );
             eprintln!("Created AI debug log at: {}", self.path.display());
         }
-        
+
         self.file.as_mut().unwrap().write(buf)
     }
-    
+
     fn flush(&mut self) -> io::Result<()> {
         if let Some(ref mut file) = self.file {
             file.flush()
@@ -179,13 +179,13 @@ impl SensitiveFieldRedactor {
         "access_token",
         "refresh_token",
     ];
-    
+
     /// Check if a field name is sensitive.
     pub fn is_sensitive(field_name: &str) -> bool {
         let lower = field_name.to_lowercase();
         Self::SENSITIVE_FIELDS.iter().any(|&s| lower.contains(s))
     }
-    
+
     /// Redact a value if the field is sensitive.
     pub fn redact_if_sensitive(field_name: &str, value: &str) -> String {
         if Self::is_sensitive(field_name) {
@@ -200,11 +200,11 @@ impl SensitiveFieldRedactor {
 pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::error::Error>> {
     // Create base subscriber.
     let subscriber = Registry::default();
-    
+
     // Add environment filter layer.
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(config.build_filter()));
-    
+
     // Create stdout layer with formatting.
     let stdout_layer = fmt::layer()
         .with_target(true)
@@ -215,12 +215,12 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
         .with_span_events(FmtSpan::NONE)
         .with_ansi(true)
         .compact();
-    
+
     // Build the subscriber with layers.
     let subscriber = subscriber
         .with(env_filter)
         .with(stdout_layer);
-    
+
     // Add AI debug log layer if enabled.
     if config.ai_debug_log {
         if let Some(path) = config.ai_debug_log_path {
@@ -239,7 +239,7 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
                     // Only log AI-related modules to the debug file.
                     metadata.target().starts_with("openagent_terminal_ai")
                 });
-            
+
             subscriber.with(ai_layer).try_init()?;
         } else {
             subscriber.try_init()?;
@@ -247,7 +247,7 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
     } else {
         subscriber.try_init()?;
     }
-    
+
     Ok(())
 }
 
@@ -273,7 +273,7 @@ macro_rules! log_with_redaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_sensitive_field_detection() {
         assert!(SensitiveFieldRedactor::is_sensitive("api_key"));
@@ -283,7 +283,7 @@ mod tests {
         assert!(!SensitiveFieldRedactor::is_sensitive("username"));
         assert!(!SensitiveFieldRedactor::is_sensitive("email"));
     }
-    
+
     #[test]
     fn test_field_redaction() {
         assert_eq!(

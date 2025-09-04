@@ -20,19 +20,19 @@ pub struct WgpuRenderer {
     queue: Arc<Queue>,
     surface: Surface,
     config: SurfaceConfiguration,
-    
+
     // Performance tracking
     metrics: GpuMetrics,
     frame_times: Vec<f32>,
     show_perf_hud: bool,
-    
+
     // Render pipeline
     pipeline: wgpu::RenderPipeline,
-    
+
     // Platform-specific
     #[cfg(target_os = "linux")]
     wayland_display: Option<*mut std::ffi::c_void>,
-    
+
     #[cfg(target_os = "macos")]
     metal_layer: Option<metal::MetalLayer>,
 }
@@ -47,19 +47,19 @@ impl WgpuRenderer {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             #[cfg(target_os = "linux")]
             backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
-            
+
             #[cfg(target_os = "macos")]
             backends: wgpu::Backends::METAL,
-            
+
             #[cfg(target_os = "windows")]
             backends: wgpu::Backends::DX12 | wgpu::Backends::VULKAN,
-            
+
             ..Default::default()
         });
-        
+
         // Create surface
         let surface = unsafe { instance.create_surface(window)? };
-        
+
         // Request adapter
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -69,7 +69,7 @@ impl WgpuRenderer {
             })
             .await
             .ok_or(RendererError::NoAdapter)?;
-        
+
         // Create device and queue
         let (device, queue) = adapter
             .request_device(
@@ -82,10 +82,10 @@ impl WgpuRenderer {
                 None,
             )
             .await?;
-        
+
         let device = Arc::new(device);
         let queue = Arc::new(queue);
-        
+
         // Configure surface
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -94,7 +94,7 @@ impl WgpuRenderer {
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
-        
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -104,12 +104,12 @@ impl WgpuRenderer {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
-        
+
         surface.configure(&device, &config);
-        
+
         // Create render pipeline
         let pipeline = Self::create_pipeline(&device, surface_format)?;
-        
+
         Ok(Self {
             device,
             queue,
@@ -119,15 +119,15 @@ impl WgpuRenderer {
             frame_times: Vec::with_capacity(60),
             show_perf_hud: false,
             pipeline,
-            
+
             #[cfg(target_os = "linux")]
             wayland_display: None,
-            
+
             #[cfg(target_os = "macos")]
             metal_layer: None,
         })
     }
-    
+
     /// Create the render pipeline
     fn create_pipeline(
         device: &Device,
@@ -138,7 +138,7 @@ impl WgpuRenderer {
             label: Some("Terminal Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/terminal.wgsl")),
         });
-        
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Terminal Pipeline Layout"),
             bind_group_layouts: &[],
@@ -149,7 +149,7 @@ impl WgpuRenderer {
                 },
             ],
         });
-        
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Terminal Pipeline"),
             layout: Some(&pipeline_layout),
@@ -184,22 +184,22 @@ impl WgpuRenderer {
             },
             multiview: None,
         });
-        
+
         Ok(pipeline)
     }
-    
+
     /// Render a frame
     pub fn render(&mut self, terminal_state: &TerminalState) -> Result<(), RendererError> {
         let start_time = std::time::Instant::now();
-        
+
         // Get next frame
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Terminal Render Encoder"),
         });
-        
+
         {
             // Begin render pass with GPU markers
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -221,17 +221,17 @@ impl WgpuRenderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            
+
             // Add debug group for profiling
             render_pass.push_debug_group("Terminal Content");
-            
+
             render_pass.set_pipeline(&self.pipeline);
-            
+
             // Render terminal content
             self.render_terminal_content(&mut render_pass, terminal_state);
-            
+
             render_pass.pop_debug_group();
-            
+
             // Render performance HUD if enabled
             if self.show_perf_hud {
                 render_pass.push_debug_group("Performance HUD");
@@ -239,18 +239,18 @@ impl WgpuRenderer {
                 render_pass.pop_debug_group();
             }
         }
-        
+
         // Submit commands
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-        
+
         // Update metrics
         let frame_time = start_time.elapsed().as_secs_f32() * 1000.0;
         self.update_metrics(frame_time);
-        
+
         Ok(())
     }
-    
+
     /// Render terminal content
     fn render_terminal_content(
         &self,
@@ -262,36 +262,36 @@ impl WgpuRenderer {
         // - Cell-based grid rendering
         // - Cursor rendering
         // - Selection highlighting
-        
+
         self.metrics.draw_calls += 1;
     }
-    
+
     /// Render performance HUD overlay
     fn render_performance_hud(&self, render_pass: &mut wgpu::RenderPass) {
         // TODO: Implement HUD rendering
         // - Frame time graph
         // - GPU/CPU metrics
         // - Memory usage
-        
+
         self.metrics.draw_calls += 1;
     }
-    
+
     /// Update performance metrics
     fn update_metrics(&mut self, frame_time: f32) {
         self.metrics.frame_time_ms = frame_time;
-        
+
         // Keep last 60 frame times for graph
         self.frame_times.push(frame_time);
         if self.frame_times.len() > 60 {
             self.frame_times.remove(0);
         }
     }
-    
+
     /// Toggle performance HUD visibility
     pub fn toggle_perf_hud(&mut self) {
         self.show_perf_hud = !self.show_perf_hud;
     }
-    
+
     /// Resize the surface
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
@@ -300,14 +300,14 @@ impl WgpuRenderer {
             self.surface.configure(&self.device, &self.config);
         }
     }
-    
+
     /// Platform-specific: Setup Wayland surface
     #[cfg(target_os = "linux")]
     pub fn setup_wayland(&mut self, display: *mut std::ffi::c_void) {
         self.wayland_display = Some(display);
         // Additional Wayland-specific setup
     }
-    
+
     /// Platform-specific: Setup Metal layer
     #[cfg(target_os = "macos")]
     pub fn setup_metal(&mut self, layer: metal::MetalLayer) {
@@ -327,11 +327,11 @@ impl Renderer for WgpuRenderer {
     fn render(&mut self, state: &TerminalState) -> Result<(), RendererError> {
         self.render(state)
     }
-    
+
     fn resize(&mut self, width: u32, height: u32) {
         self.resize(width, height)
     }
-    
+
     fn toggle_perf_hud(&mut self) {
         self.toggle_perf_hud()
     }
@@ -342,13 +342,13 @@ impl Renderer for WgpuRenderer {
 pub enum RendererError {
     #[error("No suitable GPU adapter found")]
     NoAdapter,
-    
+
     #[error("Surface error: {0}")]
     Surface(#[from] wgpu::SurfaceError),
-    
+
     #[error("Device request failed: {0}")]
     DeviceRequest(#[from] wgpu::RequestDeviceError),
-    
+
     #[error("Surface creation failed: {0}")]
     SurfaceCreation(#[from] wgpu::CreateSurfaceError),
 }
@@ -397,12 +397,12 @@ pub struct Viewport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_metrics_update() {
         let mut metrics = GpuMetrics::default();
         assert_eq!(metrics.frame_time_ms, 0.0);
-        
+
         metrics.frame_time_ms = 16.67;
         assert!((metrics.frame_time_ms - 16.67).abs() < 0.01);
     }

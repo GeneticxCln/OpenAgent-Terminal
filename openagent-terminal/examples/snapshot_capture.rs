@@ -29,7 +29,6 @@ use openagent_terminal::renderer::platform;
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use glutin::platform::x11::X11GlConfigExt;
 
-
 fn ensure_dirs() -> (PathBuf, PathBuf) {
     let golden = PathBuf::from("tests/golden_images");
     let out = PathBuf::from("tests/snapshot_output");

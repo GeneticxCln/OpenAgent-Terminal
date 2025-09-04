@@ -67,7 +67,7 @@ impl BlockStorage {
                 exit_code INTEGER,
                 duration_ms INTEGER
             );
-            
+
             CREATE INDEX IF NOT EXISTS idx_blocks_created_at ON blocks(created_at);
             CREATE INDEX IF NOT EXISTS idx_blocks_starred ON blocks(starred);
             CREATE INDEX IF NOT EXISTS idx_blocks_parent_id ON blocks(parent_id);
@@ -88,19 +88,19 @@ impl BlockStorage {
                 content=blocks,
                 content_rowid=rowid
             );
-            
+
             -- Maintain FTS index with external content table semantics
             CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN
                 INSERT INTO blocks_fts(rowid, id, command, output, tags)
                 VALUES (new.rowid, new.id, new.command, new.output, new.tags);
             END;
-            
+
             CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN
                 INSERT INTO blocks_fts(blocks_fts, rowid) VALUES('delete', old.rowid);
                 INSERT INTO blocks_fts(rowid, id, command, output, tags)
                 VALUES (new.rowid, new.id, new.command, new.output, new.tags);
             END;
-            
+
             CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN
                 INSERT INTO blocks_fts(blocks_fts, rowid) VALUES('delete', old.rowid);
             END;
@@ -259,7 +259,8 @@ impl BlockStorage {
         let mut where_clauses: Vec<String> = Vec::new();
         let mut binds: Vec<String> = Vec::new();
         // Join the FTS table once if any FTS field is used
-        let need_fts = query.text.is_some() || query.command_text.is_some() || query.output_text.is_some();
+        let need_fts =
+            query.text.is_some() || query.command_text.is_some() || query.output_text.is_some();
         if need_fts {
             sql.push_str("JOIN blocks_fts f ON f.rowid = b.rowid\n");
         }

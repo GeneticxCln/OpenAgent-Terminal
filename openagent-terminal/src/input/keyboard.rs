@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
+use std::time::Instant;
 use winit::event::{ElementState, KeyEvent};
 #[cfg(target_os = "macos")]
 use winit::keyboard::ModifiersKeyState;
 use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::OptionAsAlt;
-use std::time::Instant;
 
 use openagent_terminal_core::event::EventListener;
 use openagent_terminal_core::term::TermMode;
@@ -179,10 +179,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     },
                     Key::Character(c) if ctrl_or_cmd && c.eq_ignore_ascii_case("v") => {
-                        use openagent_terminal_core::term::ClipboardType;
-                        let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
                         #[cfg(feature = "ai")]
                         {
+                            use openagent_terminal_core::term::ClipboardType;
+                            let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
                             if !clip.is_empty() {
                                 self.ctx.open_ai_panel();
                                 if let Some(runtime) = self.ctx.ai_runtime_mut() {
@@ -234,14 +234,27 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 ctx.display().composer_caret_visible = true;
                 ctx.display().composer_caret_last_toggle = Some(Instant::now());
             };
-            let clear_selection = |ctx: &mut A| { ctx.display().composer_sel_anchor = None; };
+            let clear_selection = |ctx: &mut A| {
+                ctx.display().composer_sel_anchor = None;
+            };
             let has_selection = |ctx: &mut A| -> bool {
-                ctx.display().composer_sel_anchor.map(|a| a != ctx.display().composer_cursor).unwrap_or(false)
+                ctx.display()
+                    .composer_sel_anchor
+                    .map(|a| a != ctx.display().composer_cursor)
+                    .unwrap_or(false)
             };
             let selection_range = |ctx: &mut A| -> Option<(usize, usize)> {
-                ctx.display().composer_sel_anchor.map(|a| {
-                    let c = ctx.display().composer_cursor; if a < c { (a, c) } else { (c, a) }
-                }).filter(|(s,e)| e > s)
+                ctx.display()
+                    .composer_sel_anchor
+                    .map(|a| {
+                        let c = ctx.display().composer_cursor;
+                        if a < c {
+                            (a, c)
+                        } else {
+                            (c, a)
+                        }
+                    })
+                    .filter(|(s, e)| e > s)
             };
             let delete_selection = |ctx: &mut A| {
                 if let Some((s, e)) = selection_range(ctx) {
@@ -279,7 +292,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if c.eq_ignore_ascii_case("v") => {
                         let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
                         if !clip.is_empty() {
-                            if has_selection(&mut self.ctx) { delete_selection(&mut self.ctx); }
+                            if has_selection(&mut self.ctx) {
+                                delete_selection(&mut self.ctx);
+                            }
                             let cur = self.ctx.display().composer_cursor;
                             self.ctx.display().composer_text.insert_str(cur, &clip);
                             self.ctx.display().composer_cursor = cur + clip.len();
@@ -292,7 +307,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Select all
                         if !self.ctx.display().composer_text.is_empty() {
                             self.ctx.display().composer_sel_anchor = Some(0);
-                            self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
+                            self.ctx.display().composer_cursor =
+                                self.ctx.display().composer_text.len();
                             ensure_caret_visible(&mut self.ctx);
                             self.ctx.mark_dirty();
                         }
@@ -301,10 +317,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if c.eq_ignore_ascii_case("e") => {
                         // End of line
                         if shift && self.ctx.display().composer_sel_anchor.is_none() {
-                            self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                            self.ctx.display().composer_sel_anchor =
+                                Some(self.ctx.display().composer_cursor);
                         }
                         self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
-                        if !shift { clear_selection(&mut self.ctx); }
+                        if !shift {
+                            clear_selection(&mut self.ctx);
+                        }
                         ensure_caret_visible(&mut self.ctx);
                         self.ctx.mark_dirty();
                         return;
@@ -312,15 +331,18 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if c.eq_ignore_ascii_case("h") => {
                         // Home (common in shells)
                         if shift && self.ctx.display().composer_sel_anchor.is_none() {
-                            self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                            self.ctx.display().composer_sel_anchor =
+                                Some(self.ctx.display().composer_cursor);
                         }
                         self.ctx.display().composer_cursor = 0;
-                        if !shift { clear_selection(&mut self.ctx); }
+                        if !shift {
+                            clear_selection(&mut self.ctx);
+                        }
                         ensure_caret_visible(&mut self.ctx);
                         self.ctx.mark_dirty();
                         return;
                     },
-                    _ => {}
+                    _ => {},
                 }
             }
 
@@ -360,7 +382,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.mark_dirty();
                     } else if self.ctx.display().composer_cursor > 0 {
                         let cur = self.ctx.display().composer_cursor;
-                        let prev = if word_mod { prev_word(&self.ctx.display().composer_text, cur) } else { prev_char(&self.ctx.display().composer_text, cur) };
+                        let prev = if word_mod {
+                            prev_word(&self.ctx.display().composer_text, cur)
+                        } else {
+                            prev_char(&self.ctx.display().composer_text, cur)
+                        };
                         self.ctx.display().composer_text.replace_range(prev..cur, "");
                         self.ctx.display().composer_cursor = prev;
                         ensure_caret_visible(&mut self.ctx);
@@ -375,7 +401,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     } else {
                         let cur = self.ctx.display().composer_cursor;
                         if cur < self.ctx.display().composer_text.len() {
-                            let next = if word_mod { next_word(&self.ctx.display().composer_text, cur) } else { next_char(&self.ctx.display().composer_text, cur) };
+                            let next = if word_mod {
+                                next_word(&self.ctx.display().composer_text, cur)
+                            } else {
+                                next_char(&self.ctx.display().composer_text, cur)
+                            };
                             self.ctx.display().composer_text.replace_range(cur..next, "");
                             ensure_caret_visible(&mut self.ctx);
                             self.ctx.mark_dirty();
@@ -385,49 +415,69 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 },
                 Key::Named(NamedKey::ArrowLeft) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
-                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                        self.ctx.display().composer_sel_anchor =
+                            Some(self.ctx.display().composer_cursor);
                     }
                     let cur = self.ctx.display().composer_cursor;
                     if cur > 0 {
-                        let new_cur = if word_mod { prev_word(&self.ctx.display().composer_text, cur) } else { prev_char(&self.ctx.display().composer_text, cur) };
+                        let new_cur = if word_mod {
+                            prev_word(&self.ctx.display().composer_text, cur)
+                        } else {
+                            prev_char(&self.ctx.display().composer_text, cur)
+                        };
                         self.ctx.display().composer_cursor = new_cur;
                     }
-                    if !shift { clear_selection(&mut self.ctx); }
+                    if !shift {
+                        clear_selection(&mut self.ctx);
+                    }
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
                 },
                 Key::Named(NamedKey::ArrowRight) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
-                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                        self.ctx.display().composer_sel_anchor =
+                            Some(self.ctx.display().composer_cursor);
                     }
                     let cur = self.ctx.display().composer_cursor;
                     let len = self.ctx.display().composer_text.len();
                     if cur < len {
-                        let new_cur = if word_mod { next_word(&self.ctx.display().composer_text, cur) } else { next_char(&self.ctx.display().composer_text, cur) };
+                        let new_cur = if word_mod {
+                            next_word(&self.ctx.display().composer_text, cur)
+                        } else {
+                            next_char(&self.ctx.display().composer_text, cur)
+                        };
                         self.ctx.display().composer_cursor = new_cur;
                     }
-                    if !shift { clear_selection(&mut self.ctx); }
+                    if !shift {
+                        clear_selection(&mut self.ctx);
+                    }
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
                 },
                 Key::Named(NamedKey::Home) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
-                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                        self.ctx.display().composer_sel_anchor =
+                            Some(self.ctx.display().composer_cursor);
                     }
                     self.ctx.display().composer_cursor = 0;
-                    if !shift { clear_selection(&mut self.ctx); }
+                    if !shift {
+                        clear_selection(&mut self.ctx);
+                    }
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
                 },
                 Key::Named(NamedKey::End) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
-                        self.ctx.display().composer_sel_anchor = Some(self.ctx.display().composer_cursor);
+                        self.ctx.display().composer_sel_anchor =
+                            Some(self.ctx.display().composer_cursor);
                     }
                     self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
-                    if !shift { clear_selection(&mut self.ctx); }
+                    if !shift {
+                        clear_selection(&mut self.ctx);
+                    }
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
@@ -1647,20 +1697,25 @@ fn is_control_character(text: &str) -> bool {
 
 // === Composer text editing helpers ===
 use crate::config::theme::WordBoundaryStyle;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 fn composer_prev_char_boundary(s: &str, idx: usize) -> usize {
-    if idx == 0 { return 0; }
+    if idx == 0 {
+        return 0;
+    }
     let mut i = idx;
     while i > 0 {
         i -= 1;
-        if s.is_char_boundary(i) { return i; }
+        if s.is_char_boundary(i) {
+            return i;
+        }
     }
     0
 }
 
 fn composer_next_char_boundary(s: &str, idx: usize) -> usize {
-    if idx >= s.len() { return s.len(); }
+    if idx >= s.len() {
+        return s.len();
+    }
     let mut i = idx;
     // Advance to next char boundary by taking current char
     if let Some(ch) = s[idx..].chars().next() {
@@ -1679,14 +1734,22 @@ fn is_word_char(ch: char, style: &WordBoundaryStyle) -> bool {
 }
 
 fn composer_prev_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyle) -> usize {
-    if idx == 0 { return 0; }
+    if idx == 0 {
+        return 0;
+    }
     // Skip initial whitespace
     while idx > 0 {
         let j = composer_prev_char_boundary(s, idx);
         let ch = s[j..].chars().next().unwrap();
-        if ch.is_whitespace() { idx = j; } else { break; }
+        if ch.is_whitespace() {
+            idx = j;
+        } else {
+            break;
+        }
     }
-    if idx == 0 { return 0; }
+    if idx == 0 {
+        return 0;
+    }
     // Determine class of the run to skip
     let mut i = idx;
     let j = composer_prev_char_boundary(s, i);
@@ -1696,8 +1759,12 @@ fn composer_prev_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyl
     while i > 0 {
         let k = composer_prev_char_boundary(s, i);
         let ch2 = s[k..].chars().next().unwrap();
-        if ch2.is_whitespace() { break; }
-        if is_word_char(ch2, style) != target_is_word { break; }
+        if ch2.is_whitespace() {
+            break;
+        }
+        if is_word_char(ch2, style) != target_is_word {
+            break;
+        }
         i = k;
     }
     i
@@ -1705,22 +1772,36 @@ fn composer_prev_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyl
 
 fn composer_next_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyle) -> usize {
     let len = s.len();
-    if idx >= len { return len; }
+    if idx >= len {
+        return len;
+    }
     // Skip initial whitespace
     while idx < len {
         if let Some(ch) = s[idx..].chars().next() {
-            if ch.is_whitespace() { idx = composer_next_char_boundary(s, idx); } else { break; }
-        } else { return len; }
+            if ch.is_whitespace() {
+                idx = composer_next_char_boundary(s, idx);
+            } else {
+                break;
+            }
+        } else {
+            return len;
+        }
     }
-    if idx >= len { return len; }
+    if idx >= len {
+        return len;
+    }
     // Determine class of the run to skip
     let ch = s[idx..].chars().next().unwrap();
     let target_is_word = is_word_char(ch, style);
     let mut i = idx;
     while i < len {
         let ch2 = s[i..].chars().next().unwrap();
-        if ch2.is_whitespace() { break; }
-        if is_word_char(ch2, style) != target_is_word { break; }
+        if ch2.is_whitespace() {
+            break;
+        }
+        if is_word_char(ch2, style) != target_is_word {
+            break;
+        }
         i = composer_next_char_boundary(s, i);
     }
     i

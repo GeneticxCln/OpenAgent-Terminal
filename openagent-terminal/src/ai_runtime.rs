@@ -60,31 +60,30 @@ impl AiRuntime {
             ],
         };
 
-        let _ = std::thread::Builder::new()
-            .name("ai-inline".into())
-            .spawn(move || {
-                // Non-streaming, single-shot proposal
-                let result = provider.propose(req);
-                let suggestion = match result {
-                    Ok(mut props) => {
-                        // Take the first command from the first proposal, if any
-                        if let Some(prop) = props.first_mut() {
-                            if let Some(cmd) = prop.proposed_commands.first() {
-                                // Compute suffix to suggest (only the part not already typed)
-                                Some(compute_suffix(cmd, &prefix))
-                            } else {
-                                None
-                            }
+        let _ = std::thread::Builder::new().name("ai-inline".into()).spawn(move || {
+            // Non-streaming, single-shot proposal
+            let result = provider.propose(req);
+            let suggestion = match result {
+                Ok(mut props) => {
+                    // Take the first command from the first proposal, if any
+                    if let Some(prop) = props.first_mut() {
+                        if let Some(cmd) = prop.proposed_commands.first() {
+                            // Compute suffix to suggest (only the part not already typed)
+                            Some(compute_suffix(cmd, &prefix))
                         } else {
                             None
                         }
-                    },
-                    Err(_) => None,
-                };
+                    } else {
+                        None
+                    }
+                },
+                Err(_) => None,
+            };
 
-                let payload = crate::event::EventType::AiInlineSuggestionReady(suggestion.unwrap_or_default());
-                let _ = event_proxy.send_event(Event::new(payload, window_id));
-            });
+            let payload =
+                crate::event::EventType::AiInlineSuggestionReady(suggestion.unwrap_or_default());
+            let _ = event_proxy.send_event(Event::new(payload, window_id));
+        });
 
         // Helper to compute the suffix not yet typed
         fn compute_suffix(candidate: &str, typed: &str) -> String {

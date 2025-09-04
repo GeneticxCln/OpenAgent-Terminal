@@ -6,7 +6,7 @@ use plugin_sdk::{simple_plugin, log, LogLevel};
 // Define a minimal plugin with just metadata - all functions use defaults
 simple_plugin!(
     "simple-demo",
-    "1.0.0", 
+    "1.0.0",
     "OpenAgent Terminal Team",
     "A very simple plugin demonstrating the simple_plugin macro"
 );

@@ -6,4 +6,3 @@ IDI_ICON ICON "openagent-terminal.ico"
 #define APP_MANIFEST 1
 
 APP_MANIFEST RT_MANIFEST openagent-terminal.manifest
-

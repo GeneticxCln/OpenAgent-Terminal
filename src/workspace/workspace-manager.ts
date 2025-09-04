@@ -119,7 +119,7 @@ export class WorkspaceManager extends EventEmitter {
 
   public loadWorkspace(id: string): WorkspaceConfig | null {
     const workspacePath = path.join(this.configPath, `workspace-${id}.json`);
-    
+
     if (!fs.existsSync(workspacePath)) {
       return null;
     }
@@ -127,10 +127,10 @@ export class WorkspaceManager extends EventEmitter {
     try {
       const data = fs.readFileSync(workspacePath, 'utf-8');
       const workspace = JSON.parse(data) as WorkspaceConfig;
-      
+
       this.activeWorkspace = workspace;
       this.panes.clear();
-      
+
       workspace.panes.forEach(pane => {
         this.panes.set(pane.id, pane);
       });
@@ -145,7 +145,7 @@ export class WorkspaceManager extends EventEmitter {
 
   public saveWorkspace(workspace: WorkspaceConfig): void {
     const workspacePath = path.join(this.configPath, `workspace-${workspace.id}.json`);
-    
+
     try {
       workspace.lastModified = Date.now();
       fs.writeFileSync(workspacePath, JSON.stringify(workspace, null, 2));
@@ -190,7 +190,7 @@ export class WorkspaceManager extends EventEmitter {
     };
 
     this.panes.set(pane.id, pane);
-    
+
     if (this.activeWorkspace) {
       this.activeWorkspace.panes.push(pane);
       this.activeWorkspace.lastModified = Date.now();
@@ -210,7 +210,7 @@ export class WorkspaceManager extends EventEmitter {
     if (!sourcePane) return null;
 
     const newPosition = this.calculateSplitPosition(sourcePane.position, direction);
-    
+
     // Adjust source pane size
     if (direction === 'horizontal') {
       sourcePane.position.width /= 2;
@@ -259,7 +259,7 @@ export class WorkspaceManager extends EventEmitter {
     if (!pane) return false;
 
     this.panes.delete(paneId);
-    
+
     if (this.activeWorkspace) {
       this.activeWorkspace.panes = this.activeWorkspace.panes.filter(p => p.id !== paneId);
       this.redistributePaneSpace(pane.position);
@@ -292,14 +292,14 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   private isAdjacent(pos1: PaneConfig['position'], pos2: PaneConfig['position']): boolean {
-    const horizontallyAdjacent = 
+    const horizontallyAdjacent =
       (pos1.x + pos1.width === pos2.x || pos2.x + pos2.width === pos1.x) &&
       pos1.y === pos2.y && pos1.height === pos2.height;
-    
-    const verticallyAdjacent = 
+
+    const verticallyAdjacent =
       (pos1.y + pos1.height === pos2.y || pos2.y + pos2.height === pos1.y) &&
       pos1.x === pos2.x && pos1.width === pos2.width;
-    
+
     return horizontallyAdjacent || verticallyAdjacent;
   }
 
@@ -319,7 +319,7 @@ export class WorkspaceManager extends EventEmitter {
     // Trim history based on project config
     const projectConfig = this.getProjectConfig(pane.projectPath);
     const maxHistory = projectConfig?.aiSettings?.maxHistorySize || 100;
-    
+
     if (pane.aiContext.history.length > maxHistory) {
       pane.aiContext.history = pane.aiContext.history.slice(-maxHistory);
     }
@@ -351,7 +351,7 @@ export class WorkspaceManager extends EventEmitter {
   // Project Configuration
   public loadProjectConfig(projectPath: string): ProjectConfig | null {
     const configFile = path.join(projectPath, '.openagent', 'project.json');
-    
+
     if (!fs.existsSync(configFile)) {
       return null;
     }
@@ -360,10 +360,10 @@ export class WorkspaceManager extends EventEmitter {
       const data = fs.readFileSync(configFile, 'utf-8');
       const config = JSON.parse(data) as ProjectConfig;
       config.path = projectPath;
-      
+
       this.projectConfigs.set(projectPath, config);
       this.emit('project:config-loaded', config);
-      
+
       return config;
     } catch (error) {
       this.emit('error', { type: 'project-config', error });
@@ -374,7 +374,7 @@ export class WorkspaceManager extends EventEmitter {
   public saveProjectConfig(config: ProjectConfig): void {
     const configDir = path.join(config.path, '.openagent');
     const configFile = path.join(configDir, 'project.json');
-    
+
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
     }
@@ -408,7 +408,7 @@ export class WorkspaceManager extends EventEmitter {
         ...pane.aiContext.contextFiles,
         ...projectConfig.aiSettings.contextFiles,
       ];
-      
+
       if (projectConfig.aiSettings.customPrompt) {
         pane.aiContext.customPrompt = projectConfig.aiSettings.customPrompt;
       }
@@ -459,8 +459,8 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   public exportWorkspace(workspaceId: string): string | null {
-    const workspace = this.activeWorkspace?.id === workspaceId 
-      ? this.activeWorkspace 
+    const workspace = this.activeWorkspace?.id === workspaceId
+      ? this.activeWorkspace
       : this.listWorkspaces().find(w => w.id === workspaceId);
 
     if (!workspace) return null;
@@ -473,7 +473,7 @@ export class WorkspaceManager extends EventEmitter {
       const workspace = JSON.parse(data) as WorkspaceConfig;
       workspace.id = this.generateId(); // Generate new ID to avoid conflicts
       workspace.lastModified = Date.now();
-      
+
       this.saveWorkspace(workspace);
       return workspace;
     } catch (error) {

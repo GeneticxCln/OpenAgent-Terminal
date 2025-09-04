@@ -212,10 +212,7 @@ impl TabManager {
 
     /// Return whether the given tab is zoomed (has a saved layout)
     pub fn is_tab_zoomed(&self, tab_id: TabId) -> bool {
-        self.tabs
-            .get(&tab_id)
-            .map(|t| t.zoom_saved_layout.is_some())
-            .unwrap_or(false)
+        self.tabs.get(&tab_id).map(|t| t.zoom_saved_layout.is_some()).unwrap_or(false)
     }
 
     /// Get a tab by ID
