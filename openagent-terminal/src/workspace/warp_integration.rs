@@ -19,8 +19,8 @@ use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
 use crate::config::{Action, UiConfig};
+use crate::display::SizeInfo;
 use crate::event::{Event, EventProxy, EventType};
-use crate::window_context::WindowContext;
 
 use super::split_manager::PaneId;
 use super::tab_manager::TabId;
@@ -69,8 +69,11 @@ pub struct WarpIntegration {
     /// Configuration
     config: Rc<UiConfig>,
 
-    /// Window context for creating terminals
-    window_context: Option<Arc<WindowContext>>,
+    /// Window ID for event routing
+    window_id: Option<WindowId>,
+
+    /// Cached size info for terminal creation
+    size_info: Option<SizeInfo>,
 
     /// Event proxy for sending events
     event_proxy: Option<EventLoopProxy<Event>>,
@@ -108,7 +111,8 @@ impl WarpIntegration {
             terminals: HashMap::new(),
             // pty_managers: HashMap::new(), // TODO: Uncomment when available
             config,
-            window_context: None,
+            window_id: None,
+            size_info: None,
             event_proxy: None,
             last_activity: Instant::now(),
             perf_stats: WarpPerformanceStats::default(),
@@ -118,26 +122,34 @@ impl WarpIntegration {
     /// Initialize with window context and event proxy
     pub fn initialize(
         &mut self,
-        window_context: Arc<WindowContext>,
+        window_id: WindowId,
         event_proxy: EventLoopProxy<Event>,
+        size_info: SizeInfo,
+        restore_on_startup: bool,
     ) -> WarpResult<()> {
-        self.window_context = Some(window_context);
+        self.window_id = Some(window_id);
+        self.size_info = Some(size_info);
         self.event_proxy = Some(event_proxy);
 
-        // Try to load previous session
-        match self.tab_manager.load_session() {
-            Ok(true) => {
-                info!("Loaded Warp session successfully");
-                self.restore_session_terminals()?;
-            },
-            Ok(false) => {
-                info!("No previous Warp session found, creating default tab");
-                self.create_default_tab()?;
-            },
-            Err(e) => {
-                warn!("Failed to load Warp session: {}, creating default tab", e);
-                self.create_default_tab()?;
-            },
+        // Try to load previous session based on setting
+        if restore_on_startup {
+            match self.tab_manager.load_session() {
+                Ok(true) => {
+                    info!("Loaded Warp session successfully");
+                    self.restore_session_terminals()?;
+                },
+                Ok(false) => {
+                    info!("No previous Warp session found, creating default tab");
+                    self.create_default_tab()?;
+                },
+                Err(e) => {
+                    warn!("Failed to load Warp session: {}, creating default tab", e);
+                    self.create_default_tab()?;
+                },
+            }
+        } else {
+            info!("Session restore disabled; creating default tab");
+            self.create_default_tab()?;
         }
 
         Ok(())
@@ -173,9 +185,15 @@ impl WarpIntegration {
 
     /// Create actual terminal instance for a pane
     fn create_terminal_for_pane(&mut self, pane_id: PaneId, working_dir: &Path) -> WarpResult<()> {
-        let Some(window_context) = &self.window_context else {
+        let Some(window_id) = &self.window_id else {
             return Err(WarpIntegrationError::TerminalCreation(
-                "Window context not initialized".to_string(),
+                "Window id not initialized".to_string(),
+            ));
+        };
+
+        let Some(size_info) = &self.size_info else {
+            return Err(WarpIntegrationError::TerminalCreation(
+                "SizeInfo not initialized".to_string(),
             ));
         };
 
@@ -186,11 +204,11 @@ impl WarpIntegration {
         };
 
         // Create EventProxy for this terminal
-        let terminal_event_proxy = EventProxy::new(event_proxy.clone(), window_context.id());
+        let terminal_event_proxy = EventProxy::new(event_proxy.clone(), *window_id);
 
         // Create terminal configuration
         let term_config = openagent_terminal_core::term::Config::default();
-        let size_info = window_context.display.size_info;
+        let size_info = *size_info;
 
         // Create terminal instance
         let terminal =
@@ -445,11 +463,10 @@ impl WarpIntegration {
     /// Send UI update event through the event proxy
     fn send_ui_update_event(&self, update_type: WarpUiUpdateType) {
         if let Some(proxy) = &self.event_proxy {
-            let event = Event::new(
-                EventType::WarpUiUpdate(update_type),
-                self.window_context.as_ref().unwrap().id(),
-            );
-            let _ = proxy.send_event(event);
+            if let Some(wid) = self.window_id {
+                let event = Event::new(EventType::WarpUiUpdate(update_type), wid);
+                let _ = proxy.send_event(event);
+            }
         }
     }
 
@@ -534,6 +551,8 @@ pub enum WarpUiUpdateType {
     PaneZoomed { tab_id: TabId, pane_id: PaneId, zoomed: bool },
     PaneClosed { tab_id: TabId, closed_pane_id: PaneId, new_active_pane_id: PaneId },
     SplitsEqualized { tab_id: TabId },
+    /// Internal UI update to trigger session autosave
+    SessionAutoSave,
 }
 
 /// Debug information for troubleshooting

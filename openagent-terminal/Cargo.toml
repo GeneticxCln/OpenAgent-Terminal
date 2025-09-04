@@ -155,6 +155,8 @@ background-components = []
 wgpu = ["dep:wgpu", "dep:pollster"]
 # Convenience preset: enable experimental WGPU backend with one flag (alias)
 renderer-wgpu = ["wgpu"]
+# Experimental always-on completions overlay (gated until stable)
+completions = []
 
 x11 = [
     "copypasta/x11",

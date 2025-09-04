@@ -325,6 +325,9 @@ pub enum Action {
     /// Toggle zoom on the active pane
     ToggleZoom,
 
+    /// Toggle synchronized panes/tabs input (Warp-like)
+    TogglePaneSync,
+
     /// Resize pane left.
     ResizePaneLeft,
 

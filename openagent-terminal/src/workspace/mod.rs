@@ -92,11 +92,13 @@ impl WorkspaceManager {
     /// Initialize Warp functionality if enabled
     pub fn initialize_warp(
         &mut self,
-        window_context: std::sync::Arc<crate::window_context::WindowContext>,
+        window_id: winit::window::WindowId,
         event_proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
+        restore_on_startup: bool,
     ) -> Result<(), WarpIntegrationError> {
         if let Some(warp) = &mut self.warp {
-            warp.initialize(window_context, event_proxy)?;
+            let size_info = self.size_info;
+            warp.initialize(window_id, event_proxy, size_info, restore_on_startup)?;
         }
         Ok(())
     }
@@ -277,6 +279,15 @@ impl WorkspaceManager {
             .active_tab_id()
             .map(|id| self.tabs.is_tab_zoomed(id))
             .unwrap_or(false)
+    }
+
+    /// Mark active tab as having last command error (non-zero exit)
+    pub fn mark_active_tab_error(&mut self, non_zero: bool) {
+        self.tabs.set_active_tab_last_exit(non_zero);
+    }
+
+    pub fn toggle_active_tab_sync(&mut self) -> bool {
+        self.tabs.toggle_active_tab_sync()
     }
 
     /// Hit test for split divider given mouse position (in pixels)

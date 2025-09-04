@@ -21,3 +21,21 @@ shadow_alpha = 0.0
 shadow_size_px = 0
 reduce_motion = false
 
+# Warp-aligned palette metrics and sprite settings (match dark)
+palette_pill_radius_px = 9.0
+palette_title_pad_px = 12.0
+palette_chip_pad_px = 6.0
+palette_hint_pad_px = 6.0
+palette_hint_gap_px = 8.0
+palette_selection_scale = 0.06
+palette_hint_border_px = 1.0
+palette_hint_border_alpha = 0.10
+# Icons: tint with accent by default; default to LINEAR for smoother scaling (auto NEAREST at 16px)
+palette_icon_tint = true
+palette_icon_filter_nearest = false
+palette_icon_px = 16.0
+# Composer behavior
+composer_blink_rate_ms = 600
+composer_word_boundary_style = "Alnum"
+composer_open_mode = "Instant"
+

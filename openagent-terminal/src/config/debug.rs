@@ -122,6 +122,10 @@ pub struct Debug {
 
     /// Use theme tokens to style selection highlight instead of terminal colors.
     pub theme_selection: bool,
+
+    /// Enable always-on completions overlay (experimental; gated by cargo feature `completions`).
+    #[cfg(feature = "completions")]
+    pub completions: bool,
 }
 
 impl Default for Debug {
@@ -146,6 +150,8 @@ impl Default for Debug {
             theme_block_cursor: false,
             theme_text_cursors: false,
             theme_selection: false,
+            #[cfg(feature = "completions")]
+            completions: false,
         }
     }
 }

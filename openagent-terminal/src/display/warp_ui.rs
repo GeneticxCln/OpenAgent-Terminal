@@ -56,20 +56,52 @@ pub struct WarpTabStyle {
     pub animation_duration_ms: u32,
 }
 
+/// Linear interpolation between two RGB colors
+fn lerp_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
+    let t = t.clamp(0.0, 1.0);
+    let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t).round().clamp(0.0, 255.0) as u8;
+    Rgb::new(r, g, bb)
+}
+
 impl Default for WarpTabStyle {
     fn default() -> Self {
+        // Fallback defaults (theme-aware builder provided by from_theme)
         Self {
             tab_height: 36.0,
             corner_radius: 8.0,
             tab_padding: 12.0,
-            active_bg: Rgb::new(255, 255, 255),
-            inactive_bg: Rgb::new(240, 240, 240),
-            hover_bg: Rgb::new(250, 250, 250),
-            active_fg: Rgb::new(0, 0, 0),
-            inactive_fg: Rgb::new(128, 128, 128),
-            separator_color: Rgb::new(200, 200, 200),
+            active_bg: Rgb::new(30, 30, 30),
+            inactive_bg: Rgb::new(24, 24, 24),
+            hover_bg: Rgb::new(40, 40, 40),
+            active_fg: Rgb::new(230, 230, 230),
+            inactive_fg: Rgb::new(160, 160, 160),
+            separator_color: Rgb::new(60, 60, 60),
             drop_shadow: true,
-            animation_duration_ms: 200,
+            animation_duration_ms: 180,
+        }
+    }
+}
+
+impl WarpTabStyle {
+    /// Build from current theme tokens and ThemeUi parameters
+    pub fn from_theme(config: &UiConfig) -> Self {
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let ui = theme.ui;
+        Self {
+            tab_height: 36.0,
+            corner_radius: if ui.rounded_corners { ui.corner_radius_px } else { 0.0 },
+            tab_padding: 12.0,
+            active_bg: tokens.surface,
+            inactive_bg: tokens.surface_muted,
+            hover_bg: tokens.surface_muted,
+            active_fg: tokens.accent,
+            inactive_fg: tokens.text,
+            separator_color: tokens.border,
+            drop_shadow: ui.shadow,
+            animation_duration_ms: if ui.reduce_motion { 0 } else { 180 },
         }
     }
 }
@@ -189,7 +221,7 @@ impl Display {
     /// Draw Warp-style tab bar with enhanced styling
     pub fn draw_warp_tab_bar(
         &mut self,
-        _config: &UiConfig,
+        config: &UiConfig,
         tab_manager: &TabManager,
         position: TabBarPosition,
         style: &WarpTabStyle,
@@ -218,6 +250,15 @@ impl Display {
         // Draw tabs with Warp styling
         let tab_order = tab_manager.tab_order();
         let active_tab_id = tab_manager.active_tab_id();
+        // Track active tab changes for switch animation
+        if self.tab_last_active_id != active_tab_id {
+            self.tab_last_active_id = active_tab_id;
+            self.tab_anim_switch_start = if style.animation_duration_ms == 0 || config.theme.reduce_motion {
+                None
+            } else {
+                Some(Instant::now())
+            };
+        }
 
         let available_width = size_info.width() - style.tab_padding * 2.0;
         let tab_width = (available_width / tab_count as f32).min(200.0).max(120.0);
@@ -256,10 +297,12 @@ impl Display {
     fn draw_warp_tab_background(&mut self, y: f32, height: f32, style: &WarpTabStyle) {
         let size_info = self.size_info;
 
-        // Main background
+        // Main background with subtle top highlight to simulate gradient
         let bg_rect = RenderRect::new(0.0, y, size_info.width(), height, style.inactive_bg, 1.0);
+        // Top highlight strip
+        let highlight = RenderRect::new(0.0, y, size_info.width(), 2.0, lerp_rgb(style.inactive_bg, style.active_bg, 0.12), 0.85);
         let metrics = self.glyph_cache.font_metrics();
-        self.renderer_draw_rects(&size_info, &metrics, vec![bg_rect]);
+        self.renderer_draw_rects(&size_info, &metrics, vec![bg_rect, highlight]);
 
         // Drop shadow if enabled
         if style.drop_shadow {
@@ -288,8 +331,18 @@ impl Display {
     ) {
         let height = style.tab_height;
 
-        // Tab background
-        let bg_color = if is_active { style.active_bg } else { style.inactive_bg };
+        // Tab background with hover animation
+        let is_hover_tab = matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Tab(id)) if id == tab.id)
+            || matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Close(id)) if id == tab.id);
+        let hover_progress = if is_hover_tab {
+            if let Some(t0) = self.tab_hover_anim_start {
+                let elapsed = t0.elapsed().as_millis() as f32;
+                let dur = style.animation_duration_ms.max(1) as f32;
+                (elapsed / dur).clamp(0.0, 1.0)
+            } else { 1.0 }
+        } else { 0.0 };
+        let base_bg = if is_active { style.active_bg } else { style.inactive_bg };
+        let bg_color = if is_active { base_bg } else { lerp_rgb(base_bg, style.hover_bg, hover_progress) };
         let corner_radius = if is_active { style.corner_radius } else { style.corner_radius * 0.5 };
 
         let tab_bg = UiRoundedRect::new(x, y, width, height, corner_radius, bg_color, 1.0);
@@ -297,10 +350,16 @@ impl Display {
 
         // Active tab indicator (bottom border)
         if is_active {
+            let p = if let Some(t0) = self.tab_anim_switch_start {
+                let elapsed = t0.elapsed().as_millis() as f32;
+                let dur = style.animation_duration_ms.max(1) as f32;
+                (elapsed / dur).clamp(0.0, 1.0)
+            } else { 1.0 };
+            let ind_w = width * p;
             let indicator = RenderRect::new(
                 x,
                 y + height - 3.0,
-                width,
+                ind_w,
                 3.0,
                 Rgb::new(100, 150, 250), // Accent color
                 1.0,
@@ -327,7 +386,30 @@ impl Display {
         let text_point = Point::new(text_y, Column(text_x));
         self.draw_warp_tab_text(text_point, text_color, bg_color, &title, max_chars);
 
-        // Modified indicator
+        // Zoom indicator badge (Warp-style) on active tab when zoomed
+        if is_active && tab.zoom_saved_layout.is_some() {
+            let badge_x = x + 6.0;
+            let badge_y = y + height / 2.0 - 3.0;
+            let badge = UiRoundedRect::new(
+                badge_x,
+                badge_y,
+                6.0,
+                6.0,
+                3.0,
+                style.active_fg,
+                0.95,
+            );
+            self.stage_ui_rounded_rect(badge);
+        }
+
+        // Error indicator (red) if last command exited non-zero
+        if tab.last_exit_nonzero {
+            let dot_x = x + width - 12.0;
+            let dot_y = y + height / 2.0 - 3.0;
+            let err_dot = UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, Rgb::new(220, 70, 70), 1.0);
+            self.stage_ui_rounded_rect(err_dot);
+        }
+        // Modified indicator (orange)
         if tab.modified {
             let dot_x = x + width - 20.0;
             let dot_y = y + height / 2.0 - 3.0;
@@ -337,10 +419,18 @@ impl Display {
                 6.0,
                 6.0,
                 3.0,
-                Rgb::new(255, 150, 0), // Orange for modified
+                Rgb::new(255, 150, 0),
                 1.0,
             );
             self.stage_ui_rounded_rect(modified_dot);
+        }
+
+        // Sync indicator (accent) if panes are synced
+        if tab.panes_synced {
+            let dot_x = x + width - 28.0;
+            let dot_y = y + height / 2.0 - 3.0;
+            let sync_dot = UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, style.active_fg, 1.0);
+            self.stage_ui_rounded_rect(sync_dot);
         }
 
         // Close button (when hovering)
@@ -459,12 +549,20 @@ impl Display {
                         && (hit.rect.height - rect.height).abs() < f32::EPSILON
                 });
 
-                let line_width = if is_hovered {
-                    indicators.split_line_width * indicators.hover_line_scale
-                } else {
-                    indicators.split_line_width
-                };
-                let line_alpha = if is_hovered { indicators.hover_line_alpha } else { indicators.split_line_alpha };
+                // Animate hover transitions for split line
+                let p = if is_hovered {
+                    if let Some(t0) = self.split_hover_anim_start {
+                        let elapsed = t0.elapsed().as_millis() as f32;
+                        let dur = 160.0;
+                        (elapsed / dur).clamp(0.0, 1.0)
+                    } else { 1.0 }
+                } else { 0.0 };
+                let base_w = indicators.split_line_width;
+                let target_w = indicators.split_line_width * indicators.hover_line_scale;
+                let line_width = base_w + (target_w - base_w) * p;
+                let base_a = indicators.split_line_alpha;
+                let target_a = indicators.hover_line_alpha;
+                let line_alpha = base_a + (target_a - base_a) * p;
                 let line_color = if is_hovered {
                     indicators.split_handle_color
                 } else {
@@ -520,12 +618,20 @@ impl Display {
                         && (hit.rect.height - rect.height).abs() < f32::EPSILON
                 });
 
-                let line_width = if is_hovered {
-                    indicators.split_line_width * indicators.hover_line_scale
-                } else {
-                    indicators.split_line_width
-                };
-                let line_alpha = if is_hovered { indicators.hover_line_alpha } else { indicators.split_line_alpha };
+                // Animate hover transitions for split line
+                let p = if is_hovered {
+                    if let Some(t0) = self.split_hover_anim_start {
+                        let elapsed = t0.elapsed().as_millis() as f32;
+                        let dur = 160.0;
+                        (elapsed / dur).clamp(0.0, 1.0)
+                    } else { 1.0 }
+                } else { 0.0 };
+                let base_w = indicators.split_line_width;
+                let target_w = indicators.split_line_width * indicators.hover_line_scale;
+                let line_width = base_w + (target_w - base_w) * p;
+                let base_a = indicators.split_line_alpha;
+                let target_a = indicators.hover_line_alpha;
+                let line_alpha = base_a + (target_a - base_a) * p;
                 let line_color = if is_hovered {
                     indicators.split_handle_color
                 } else {

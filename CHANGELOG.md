@@ -22,6 +22,11 @@ Notable changes to the `openagent-terminal-core` crate are documented in its
 - Vi action `Y` keybind, yank to the end of line
 - Add `/etc/openagent-terminal/openagent-terminal.toml` fallback for system wide configuration
 - Config option `workspace.tab_bar.reserve_row` to reserve a terminal row for the tab bar (top or bottom) to avoid overlaying terminal content; the reserved row is hidden from the terminal grid and the cursor is not drawn on that row
+- Config toggle `workspace.warp_style_bindings.enable` (default `true`) to integrate Warp-style keyboard shortcuts:
+  - macOS uses Cmd-based shortcuts (e.g., Cmd+T new tab, Cmd+D split right, Cmd+Alt+Arrows navigate panes, Cmd+Ctrl+Arrows resize panes, Cmd+Shift+Enter zoom)
+  - Linux/Windows use Ctrl-based shortcuts (e.g., Ctrl+T new tab, Ctrl+D split right, Ctrl+Alt+Arrows navigate panes, Ctrl+Shift+Arrows resize panes when Ctrl+Alt+Arrows were previously bound to resizing)
+  - Conflict handling: if defaults bind Ctrl+Alt+Arrows to resize, those are moved to Ctrl+Shift+Arrows and Ctrl+Alt+Arrows are used for navigation
+  - Note: On Linux/Windows, pane navigation currently approximates directional focus (Left/Up = Previous, Right/Down = Next) and will switch to true directional focus once directional actions are available
 
 ### Changed
 

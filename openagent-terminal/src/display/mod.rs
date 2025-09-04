@@ -56,7 +56,7 @@ use crate::event::{Event, EventType, Mouse, SearchState};
 use crate::gl;
 use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
-use crate::renderer::ui::UiRoundedRect;
+use crate::renderer::ui::{UiRoundedRect, UiSprite};
 use crate::renderer::{self, platform, GlyphCache, LoaderApi, Renderer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
@@ -78,8 +78,11 @@ pub mod hint;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
+pub mod palette;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
+#[cfg(feature = "completions")]
+pub mod completions;
 
 mod bell;
 mod damage;
@@ -419,6 +422,18 @@ pub struct Display {
     /// The renderer update that takes place only once before the actual rendering.
     pub pending_renderer_update: Option<RendererUpdate>,
 
+    /// Focus state for Warp-like bottom composer.
+    pub composer_focused: bool,
+    pub composer_text: String,
+    pub composer_cursor: usize,
+    /// Optional selection anchor for the composer (cursor is active end). None => no selection
+    pub composer_sel_anchor: Option<usize>,
+    /// Horizontal scroll offset in character columns for the composer text view
+    pub composer_view_col_offset: usize,
+    /// Caret blink state for composer
+    pub composer_caret_visible: bool,
+    pub composer_caret_last_toggle: Option<Instant>,
+
     /// The ime on the given display.
     pub ime: Ime,
 
@@ -433,6 +448,10 @@ pub struct Display {
 
     // Mouse point position when highlighting hints.
     hint_mouse_point: Option<Point>,
+
+    /// Last mouse position in window pixels (for hover-only tab bar, near-edge detection)
+    pub last_mouse_x: usize,
+    pub last_mouse_y: usize,
 
     backend: Backend,
     renderer_preference: Option<RendererPreference>,
@@ -450,6 +469,13 @@ pub struct Display {
     /// Confirmation overlay state.
     pub confirm_overlay: confirm_overlay::ConfirmOverlayState,
 
+    /// Command Palette state.
+    pub palette: palette::PaletteState,
+
+    /// Always-on completions state (experimental).
+    #[cfg(feature = "completions")]
+    pub completions: completions::CompletionsState,
+
     /// Workflows panel state.
     #[cfg(feature = "workflow")]
     pub workflows_panel: workflow_panel::WorkflowsPanelState,
@@ -459,11 +485,28 @@ pub struct Display {
 
     /// Hover state for tab bar interactions
     pub tab_hover: Option<TabHoverTarget>,
+    /// Animation start for tab hover transitions
+    pub tab_hover_anim_start: Option<Instant>,
+    /// Last active tab id for switch animation tracking
+    pub tab_last_active_id: Option<crate::workspace::TabId>,
+    /// Animation start for tab switch indicator
+    pub tab_anim_switch_start: Option<Instant>,
 
     /// Hovered split divider (if any)
     pub split_hover: Option<crate::workspace::split_manager::SplitDividerHit>,
     /// Active split drag (if any)
     pub split_drag: Option<crate::workspace::split_manager::SplitDividerHit>,
+    /// Animation start for split hover transitions
+    pub split_hover_anim_start: Option<Instant>,
+
+    /// Palette animation state
+    pub(crate) palette_last_active: bool,
+    pub(crate) palette_anim_start: Option<Instant>,
+    pub(crate) palette_anim_opening: bool,
+    pub(crate) palette_anim_duration_ms: u32,
+    /// Palette selection animation state
+    pub(crate) palette_sel_last_index: Option<usize>,
+    pub(crate) palette_sel_anim_start: Option<Instant>,
 }
 
 enum Backend {
@@ -613,11 +656,20 @@ impl Display {
             font_size,
             window,
             pending_renderer_update: Default::default(),
+            composer_focused: false,
+            composer_text: String::new(),
+            composer_cursor: 0,
+            composer_sel_anchor: None,
+            composer_view_col_offset: 0,
+            composer_caret_visible: true,
+            composer_caret_last_toggle: None,
             vi_highlighted_hint_age: Default::default(),
             highlighted_hint_age: Default::default(),
             vi_highlighted_hint: Default::default(),
             highlighted_hint: Default::default(),
             hint_mouse_point: Default::default(),
+            last_mouse_x: 0,
+            last_mouse_y: 0,
             pending_update: Default::default(),
             cursor_hidden: Default::default(),
             meter: Default::default(),
@@ -637,13 +689,31 @@ impl Display {
             #[cfg(feature = "ai")]
             ai_hover_control: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
+            palette: {
+                let mut p = palette::PaletteState::default();
+                p.load_mru_from_config(config);
+                p
+            },
+            #[cfg(feature = "completions")]
+            completions: completions::CompletionsState::new(),
             #[cfg(feature = "workflow")]
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
             tab_hover: None,
+            tab_hover_anim_start: None,
+            tab_last_active_id: None,
+            tab_anim_switch_start: None,
             split_hover: None,
             split_drag: None,
+            split_hover_anim_start: None,
+            // Palette animation init
+            palette_last_active: false,
+            palette_anim_start: None,
+            palette_anim_opening: false,
+            palette_anim_duration_ms: 0,
+            palette_sel_last_index: None,
+            palette_sel_anim_start: None,
         })
     }
 
@@ -705,13 +775,26 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
-        // Determine reserved rows for tab bar
-        let reserve_top = config.workspace.tab_bar.show
-            && config.workspace.tab_bar.reserve_row
-            && config.workspace.tab_bar.position == crate::workspace::TabBarPosition::Top;
-        let reserve_bottom = config.workspace.tab_bar.show
-            && config.workspace.tab_bar.reserve_row
-            && config.workspace.tab_bar.position == crate::workspace::TabBarPosition::Bottom;
+        // Determine reserved rows for tab bar using effective visibility
+        let tab_cfg = &config.workspace.tab_bar;
+        let is_fs = self.window.is_fullscreen();
+        // Effective mode for visibility: Auto -> Always unless fullscreen
+        let effective_visibility = match tab_cfg.visibility {
+            crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+            crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+            crate::config::workspace::TabBarVisibility::Auto => {
+                if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+            }
+        };
+        // Reserve a row only when showing Always; Hover overlays content
+        let reserve_top = tab_cfg.show
+            && tab_cfg.reserve_row
+            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && tab_cfg.position == crate::workspace::TabBarPosition::Top;
+        let reserve_bottom = tab_cfg.show
+            && tab_cfg.reserve_row
+            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && tab_cfg.position == crate::workspace::TabBarPosition::Bottom;
 
         // Determine line based on quick actions position
         let mut line = match config.workspace.quick_actions.position {
@@ -742,11 +825,17 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let fg = tokens.text;
         let muted = tokens.text_muted;
 
-        let labels = ["[Workflows]", "[Blocks]", "[Palette]", "[AI]"];
+        // Build labels dynamically to respect configuration
+        let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
+        if config.workspace.quick_actions.show_palette {
+            labels.push("[Palette]");
+        }
+        labels.push("[AI]");
+
         let mut col = 1usize;
-        for (i, label) in labels.iter().enumerate() {
+        for label in labels.iter() {
             // For AI, dim if the build doesn't enable AI feature
-            let is_ai = i == 3;
+            let is_ai = *label == "[AI]";
             #[allow(unused_mut)]
             let mut color = fg;
             #[cfg(not(feature = "ai"))]
@@ -899,6 +988,13 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             font_size,
             window,
             pending_renderer_update: Default::default(),
+            composer_focused: false,
+            composer_text: String::new(),
+            composer_cursor: 0,
+            composer_sel_anchor: None,
+            composer_view_col_offset: 0,
+            composer_caret_visible: true,
+            composer_caret_last_toggle: None,
             vi_highlighted_hint_age: Default::default(),
             highlighted_hint_age: Default::default(),
             vi_highlighted_hint: Default::default(),
@@ -926,6 +1022,13 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            // Palette animation init (wgpu)
+            palette_last_active: false,
+            palette_anim_start: None,
+            palette_anim_opening: false,
+            palette_anim_duration_ms: 0,
+            palette_sel_last_index: None,
+            palette_sel_anim_start: None,
         })
     }
 
@@ -1263,6 +1366,24 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         let cursor = content.cursor();
 
         let cursor_point = terminal.grid().cursor.point;
+        // Extract prompt prefix up to cursor for completions (before releasing terminal lock)
+        #[cfg(feature = "completions")]
+        let completions_prefix: String = {
+            use openagent_terminal_core::index::Column as Col;
+            use openagent_terminal_core::term::cell::Flags as CellFlags;
+            let row = &terminal.grid()[cursor_point.line];
+            let mut p = String::new();
+            for x in 0..cursor_point.column.0 {
+                let cell = &row[Col(x)];
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { continue; }
+                let ch = cell.c;
+                if ch != '\u{0}' { p.push(ch); }
+            }
+            p
+        };
+        #[cfg(feature = "completions")]
+        let completions_alt_screen = terminal.mode().contains(TermMode::ALT_SCREEN);
+
         let total_lines = terminal.grid().total_lines();
         let metrics = self.glyph_cache.font_metrics();
         let size_info = self.size_info;
@@ -1325,11 +1446,22 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             let damage_tracker = &mut self.damage_tracker;
 
             // Determine reserved rows for tab bar (hide grid content beneath)
-            let (reserve_top, reserve_bottom) = if config.workspace.tab_bar.show
-                && config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
-                && config.workspace.tab_bar.reserve_row
+            // Determine reserved rows for tab bar using effective visibility
+            let tab_cfg = &config.workspace.tab_bar;
+            let is_fs = self.window.is_fullscreen();
+            let effective_visibility = match tab_cfg.visibility {
+                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Auto => {
+                    if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                }
+            };
+            let (reserve_top, reserve_bottom) = if tab_cfg.show
+                && tab_cfg.position != crate::config::workspace::TabBarPosition::Hidden
+                && tab_cfg.reserve_row
+                && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
             {
-                match config.workspace.tab_bar.position {
+                match tab_cfg.position {
                     crate::config::workspace::TabBarPosition::Top => (1usize, 0usize),
                     crate::config::workspace::TabBarPosition::Bottom => (0usize, 1usize),
                     crate::config::workspace::TabBarPosition::Hidden => (0, 0),
@@ -1486,18 +1618,27 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             let obstructed_column = Some(vi_cursor_point)
                 .filter(|point| point.line == -(display_offset as i32))
                 .map(|point| point.column);
-            // Suppress vi-mode line indicator when the top row is reserved for the tab bar.
-            let top_reserved = config.workspace.tab_bar.show
-                && config.workspace.tab_bar.reserve_row
-                && config.workspace.tab_bar.position
-                    == crate::config::workspace::TabBarPosition::Top;
+            // Suppress vi-mode line indicator when the top row is effectively reserved for the tab bar.
+            let tab_cfg = &config.workspace.tab_bar;
+            let is_fs = self.window.is_fullscreen();
+            let eff_vis = match tab_cfg.visibility {
+                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Auto => {
+                    if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                }
+            };
+            let top_reserved = tab_cfg.show
+                && tab_cfg.reserve_row
+                && matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always)
+                && tab_cfg.position == crate::config::workspace::TabBarPosition::Top;
             if !top_reserved {
                 self.draw_line_indicator(config, total_lines, obstructed_column, line);
             }
         } else if search_state.regex().is_some() {
             // Show current display offset in vi-less search to indicate match position.
             self.draw_line_indicator(config, total_lines, None, display_offset);
-        };
+        }
 
         // Draw cursor (skip if inside a folded region or reserved tab bar rows).
         let mut cursor_elided = self.blocks.enabled
@@ -1507,17 +1648,24 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             && config.workspace.tab_bar.reserve_row
             && config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
         {
-            let vp_point = term::point_to_viewport(display_offset, cursor_point);
-            if let Some(vp) = vp_point {
-                let last = self.size_info.screen_lines().saturating_sub(1);
-                if (config.workspace.tab_bar.position
-                    == crate::config::workspace::TabBarPosition::Top
-                    && vp.line == 0)
-                    || (config.workspace.tab_bar.position
-                        == crate::config::workspace::TabBarPosition::Bottom
-                        && vp.line == last)
-                {
-                    cursor_elided = true;
+            // Only elide when effectively reserving a row
+            let tab_cfg = &config.workspace.tab_bar;
+            let eff_vis = match tab_cfg.visibility {
+                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Auto => {
+                    if self.window.is_fullscreen() { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                }
+            };
+            if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
+                let vp_point = term::point_to_viewport(display_offset, cursor_point);
+                if let Some(vp) = vp_point {
+                    let last = self.size_info.screen_lines().saturating_sub(1);
+                    if (tab_cfg.position == crate::config::workspace::TabBarPosition::Top && vp.line == 0)
+                        || (tab_cfg.position == crate::config::workspace::TabBarPosition::Bottom && vp.line == last)
+                    {
+                        cursor_elided = true;
+                    }
                 }
             }
         }
@@ -1658,6 +1806,35 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             self.renderer_draw_rects(&size_info, &metrics, rects);
         }
 
+        // Draw inline AI suggestion as subtle ghost text at the prompt (when enabled)
+        #[cfg(feature = "ai")]
+        if let Some(ai) = ai_state {
+            if !ai.active {
+                if let Some(suffix) = ai.inline_suggestion.as_ref() {
+                    if !suffix.is_empty() {
+                        if let Some(vp) = term::point_to_viewport(display_offset, cursor_point) {
+                            // Compute available width from cursor to end of line
+                            let start_col = vp.column.0;
+                            let cols = self.size_info.columns();
+                            if vp.line < self.size_info.screen_lines() && start_col < cols {
+                                let avail = cols - start_col;
+                                // Theme colors: use muted text color
+                                let theme = config
+                                    .resolved_theme
+                                    .as_ref()
+                                    .cloned()
+                                    .unwrap_or_else(|| config.theme.resolve());
+                                let fg = theme.tokens.text_muted;
+                                // Draw at cursor position (ghost text)
+                                let point = Point::new(vp.line, Column(start_col));
+                                self.draw_ai_panel_text(point, fg, background_color, suffix, avail);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Draw AI panel using unified drawing system.
         #[cfg(feature = "ai")]
         if let Some(ai) = ai_state {
@@ -1674,6 +1851,20 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         if self.blocks_search.active {
             let bs_state = self.blocks_search.clone();
             self.draw_blocks_search_overlay(config, &bs_state);
+        }
+
+        // Draw always-on completions overlay (experimental) when enabled and applicable.
+        #[cfg(feature = "completions")]
+        {
+            if config.debug.completions {
+                self.draw_completions_overlay_with_context(
+                    config,
+                    &completions_prefix,
+                    cursor_point,
+                    display_offset,
+                    completions_alt_screen,
+                );
+            }
         }
 
         // Draw split indicators for Warp-style splits (visual only)
@@ -1702,10 +1893,15 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             self.draw_workflows_panel_overlay(config, &st);
         }
         // Workflows progress overlay if active
-        #[cfg(feature = "workflow")]
+            #[cfg(feature = "workflow")]
         if self.workflows_progress.active {
             let st = self.workflows_progress.clone();
             self.draw_workflows_progress_overlay(config, &st);
+        }
+
+        // Command Palette overlay: draw when active or during animation
+        if self.palette.active() || self.palette_anim_start.is_some() {
+            self.draw_palette_overlay(config);
         }
 
         // Debug split overlay preview (temporary until full pane implementation is wired)
@@ -1736,6 +1932,9 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         }
 
         self.draw_render_timer(config);
+
+        // Warp-like bottom composer bar (visual only)
+        self.draw_warp_bottom_composer(config);
 
         // Draw hyperlink uri preview.
         if has_highlighted_hint {
@@ -1830,8 +2029,37 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
             if config.workspace.tab_bar.show {
                 // Prefer Warp-style rendering when enabled
                 if config.workspace.warp_style {
-                    let style = crate::display::warp_ui::WarpTabStyle::default();
-                    let _ = self.draw_warp_tab_bar(config, tm, config.workspace.tab_bar.position, &style);
+                    let tab_cfg = &config.workspace.tab_bar;
+                    let is_fs = self.window.is_fullscreen();
+                    let visibility = match tab_cfg.visibility {
+                        crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                        crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                        crate::config::workspace::TabBarVisibility::Auto => {
+                            if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                        }
+                    };
+
+                    let hover_recent = self
+                        .tab_hover_anim_start
+                        .map(|t0| t0.elapsed().as_millis() < 900)
+                        .unwrap_or(false);
+                    let near_top = tab_cfg.position == crate::workspace::TabBarPosition::Top
+                        && (self.last_mouse_y as f32) < 8.0;
+                    let near_bottom = tab_cfg.position == crate::workspace::TabBarPosition::Bottom
+                        && (self.last_mouse_y as f32) > (self.size_info.height() - 8.0);
+
+                    let should_draw = match visibility {
+                        crate::config::workspace::TabBarVisibility::Always => true,
+                        crate::config::workspace::TabBarVisibility::Hover => {
+                            self.tab_hover.is_some() || hover_recent || near_top || near_bottom
+                        }
+                        crate::config::workspace::TabBarVisibility::Auto => true, // handled above
+                    };
+
+                    if should_draw {
+                        let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+                        let _ = self.draw_warp_tab_bar(config, tm, tab_cfg.position, &style);
+                    }
                 } else {
                     let _ = self.draw_tab_bar(config, tm, config.workspace.tab_bar.position);
                 }
@@ -1842,7 +2070,8 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         // Avoid overlap with reserved bottom tab row and with active search/footer bars
         let has_search = search_state.regex().is_some();
         let has_message = message_buffer.message().is_some();
-        if config.workspace.quick_actions.show && !has_search && !has_message {
+        // Warp doesn't show a bottom quick actions bar; suppress when warp_style is enabled
+        if !config.workspace.warp_style && config.workspace.quick_actions.show && !has_search && !has_message {
             self.draw_quick_actions_bar(config);
         }
 
@@ -1880,7 +2109,7 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
         self.damage_tracker.swap_damage();
     }
 
-    /// Update to a new configuration.
+/// Update to a new configuration.
     pub fn update_config(&mut self, config: &UiConfig) {
         self.damage_tracker.debug = config.debug.highlight_damage;
         self.visual_bell.update_config(&config.bell);
@@ -2002,6 +2231,276 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
     }
 
     #[allow(dead_code)]
+    fn stage_ui_sprite(&mut self, sprite: UiSprite) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.stage_ui_sprite(sprite),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => {
+                // TODO: implement for WGPU backend
+            },
+        }
+    }
+
+    #[allow(dead_code)]
+    fn set_ui_sprite_filter(&mut self, nearest: bool) {
+        match &mut self.backend {
+            Backend::Gl { renderer, .. } => renderer.set_sprite_filter_nearest(nearest),
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => {
+                // TODO: implement for WGPU backend
+            },
+        }
+    }
+
+    fn draw_warp_bottom_composer(&mut self, config: &UiConfig) {
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let ui = theme.ui.clone();
+        let cw = self.size_info.cell_width();
+        let ch = self.size_info.cell_height();
+        let cols = self.size_info.columns();
+        let lines = self.size_info.screen_lines();
+        if cols == 0 || lines == 0 { return; }
+        // Band background on bottom
+        let y_band = (lines.saturating_sub(1)) as f32 * ch;
+        let rects = vec![RenderRect::new(0.0, y_band, self.size_info.width(), ch, tokens.surface_muted, 0.98)];
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+        // Rounded composer pill
+        let margin_px = 6.0_f32;
+        let x = margin_px;
+        let y = y_band + 2.0_f32;
+        let w = self.size_info.width() - margin_px * 2.0;
+        let h = ch - 4.0_f32;
+        // Focus ring / stronger bg when focused
+        if self.composer_focused {
+            let ring = UiRoundedRect::new(x-1.0, y-1.0, w+2.0, h+2.0, ui.palette_pill_radius_px+1.0, tokens.accent, 0.10);
+            self.stage_ui_rounded_rect(ring);
+        }
+        let bg_alpha = if self.composer_focused { 0.20 } else { 0.14 };
+        let pill = UiRoundedRect::new(x, y, w, h, ui.palette_pill_radius_px, tokens.surface, bg_alpha);
+        self.stage_ui_rounded_rect(pill);
+
+        // Placeholder text
+        let placeholder = "Warp anything e.g. Help me optimize my SQL queries that are running slowly";
+        let mut start_col = 2usize;
+        // Sparkle/star glyph to hint AI
+        let star = "✦ ";
+        let star_color = if self.composer_focused { tokens.accent } else { tokens.accent };
+        self.draw_ai_text(Point::new(lines.saturating_sub(1), Column(start_col)), star_color, tokens.surface_muted, star, cols.saturating_sub(start_col));
+        start_col += star.len();
+        let available = cols.saturating_sub(start_col + 2);
+
+        use unicode_width::UnicodeWidthStr;
+        use unicode_width::UnicodeWidthChar;
+
+        // Update caret blink state
+        if self.composer_focused {
+            let rate = ui.composer_blink_rate_ms;
+            if rate == 0 || ui.reduce_motion {
+                self.composer_caret_visible = true;
+                self.composer_caret_last_toggle = Some(std::time::Instant::now());
+            } else if let Some(t0) = self.composer_caret_last_toggle {
+                if t0.elapsed().as_millis() as u64 >= rate as u64 {
+                    self.composer_caret_visible = !self.composer_caret_visible;
+                    self.composer_caret_last_toggle = Some(std::time::Instant::now());
+                }
+            } else {
+                self.composer_caret_visible = true;
+                self.composer_caret_last_toggle = Some(std::time::Instant::now());
+            }
+        } else {
+            self.composer_caret_visible = false;
+            self.composer_caret_last_toggle = None;
+        }
+
+        if available > 0 {
+            let text = self.composer_text.clone();
+            if text.is_empty() && !self.composer_focused {
+                let ph_color = tokens.text_muted;
+                self.draw_ai_text(
+                    Point::new(lines.saturating_sub(1), Column(start_col)),
+                    ph_color,
+                    tokens.surface_muted,
+                    placeholder,
+                    available,
+                );
+                return;
+            }
+
+            // Compute total width cols and cursor col
+            let total_cols = text.width();
+            let cursor_cols = text[..self.composer_cursor.min(text.len())].width();
+
+            // Ensure cursor stays visible by adjusting view offset
+            let mut offset = self.composer_view_col_offset.min(total_cols);
+            if cursor_cols < offset {
+                offset = cursor_cols;
+            } else if cursor_cols.saturating_sub(offset) >= available {
+                let target = cursor_cols.saturating_sub(available.saturating_sub(1));
+                offset = target.min(total_cols);
+            } else if total_cols.saturating_sub(offset) < available {
+                // Shift back when there's slack at the end
+                let slack = available.saturating_sub(total_cols.saturating_sub(offset));
+                offset = offset.saturating_sub(slack);
+            }
+            self.composer_view_col_offset = offset;
+
+            // Map from col offset -> byte index into text
+            let mut col_acc = 0usize;
+            let mut start_byte = 0usize;
+            for (i, ch) in text.char_indices() {
+                let wch = ch.width().unwrap_or(1);
+                if col_acc + wch > offset {
+                    start_byte = i; break;
+                }
+                col_acc += wch;
+                start_byte = i + ch.len_utf8();
+            }
+            // Collect visible slice within available cols
+            let mut used_cols = 0usize;
+            let mut end_byte = start_byte;
+            for (i, ch) in text[start_byte..].char_indices() {
+                let wch = ch.width().unwrap_or(1);
+                if used_cols + wch > available { break; }
+                used_cols += wch;
+                end_byte = start_byte + i + ch.len_utf8();
+            }
+            let visible = &text[start_byte..end_byte];
+
+            // Draw selection background if any intersects visible
+            if let Some(anchor) = self.composer_sel_anchor {
+                if anchor != self.composer_cursor {
+                    let sel_lo = anchor.min(self.composer_cursor);
+                    let sel_hi = anchor.max(self.composer_cursor);
+                    let sel_left_cols = text[..sel_lo].width();
+                    let sel_width_cols = text[sel_lo..sel_hi].width();
+                    // Visible intersection in columns
+                    let vis_lo = sel_left_cols.saturating_sub(offset);
+                    let vis_hi = sel_left_cols + sel_width_cols;
+                    let vis_hi = vis_hi.saturating_sub(offset);
+                    let start_in_vis = vis_lo.min(available);
+                    if vis_hi > 0 && start_in_vis < available {
+                        let end_in_vis = vis_hi.min(available);
+                        let width_cols = end_in_vis.saturating_sub(start_in_vis);
+                        if width_cols > 0 {
+                            let x_px = ((start_col + start_in_vis) as f32) * cw;
+                            let y_px = (lines.saturating_sub(1) as f32) * ch;
+                            let w_px = (width_cols as f32) * cw;
+                            let rect = UiRoundedRect::new(
+                                x_px,
+                                y_px,
+                                w_px,
+                                ch,
+                                ui.palette_pill_radius_px * 0.35,
+                                tokens.selection,
+                                0.9,
+                            );
+                            self.stage_ui_rounded_rect(rect);
+                        }
+                    }
+                }
+            }
+
+            // Draw text segments (before selection / selection / after selection)
+            if let Some(anchor) = self.composer_sel_anchor {
+                if anchor != self.composer_cursor {
+                    let sel_lo = anchor.min(self.composer_cursor);
+                    let sel_hi = anchor.max(self.composer_cursor);
+                    let vis_sel_start_cols = text[..sel_lo].width().saturating_sub(offset).min(available);
+                    let vis_sel_end_cols = text[..sel_hi].width().saturating_sub(offset).min(available);
+                    // Compute byte indices for segment boundaries within visible range
+                    let vis_sel_start_byte = if vis_sel_start_cols == 0 { start_byte } else {
+                        let mut cacc = 0usize; let mut b = start_byte;
+                        for (i, ch) in text[start_byte..].char_indices() {
+                            let wch = ch.width().unwrap_or(1);
+                            if cacc + wch > vis_sel_start_cols { break; }
+                            cacc += wch; b = start_byte + i + ch.len_utf8();
+                        }
+                        b
+                    };
+                    let vis_sel_end_byte = if vis_sel_end_cols <= 0 { start_byte } else {
+                        let mut cacc = 0usize; let mut b = start_byte;
+                        for (i, ch) in text[start_byte..].char_indices() {
+                            let wch = ch.width().unwrap_or(1);
+                            if cacc + wch > vis_sel_end_cols { break; }
+                            cacc += wch; b = start_byte + i + ch.len_utf8();
+                        }
+                        b
+                    };
+                    // Draw 'before'
+                    if vis_sel_start_byte > start_byte {
+                        let before = &text[start_byte..vis_sel_start_byte];
+                        self.draw_ai_text(
+                            Point::new(lines.saturating_sub(1), Column(start_col)),
+                            tokens.text,
+                            tokens.surface_muted,
+                            before,
+                            available,
+                        );
+                    }
+                    // Draw selection text
+                    if vis_sel_end_byte > vis_sel_start_byte {
+                        let sel_vis = &text[vis_sel_start_byte..vis_sel_end_byte];
+                        let sel_offset_cols = vis_sel_start_cols;
+                        self.draw_ai_text(
+                            Point::new(lines.saturating_sub(1), Column(start_col + sel_offset_cols)),
+                            tokens.text,
+                            tokens.surface_muted,
+                            sel_vis,
+                            available.saturating_sub(sel_offset_cols),
+                        );
+                    }
+                    // Draw 'after'
+                    if end_byte > vis_sel_end_byte {
+                        let after = &text[vis_sel_end_byte..end_byte];
+                        let after_offset_cols = vis_sel_end_cols;
+                        self.draw_ai_text(
+                            Point::new(lines.saturating_sub(1), Column(start_col + after_offset_cols)),
+                            tokens.text,
+                            tokens.surface_muted,
+                            after,
+                            available.saturating_sub(after_offset_cols),
+                        );
+                    }
+                } else {
+                    // No selection
+                    self.draw_ai_text(
+                        Point::new(lines.saturating_sub(1), Column(start_col)),
+                        tokens.text,
+                        tokens.surface_muted,
+                        visible,
+                        available,
+                    );
+                }
+            } else {
+                // No selection
+                self.draw_ai_text(
+                    Point::new(lines.saturating_sub(1), Column(start_col)),
+                    tokens.text,
+                    tokens.surface_muted,
+                    visible,
+                    available,
+                );
+            }
+
+            // Draw caret when focused and visible
+            if self.composer_focused && self.composer_caret_visible {
+                let caret_cols_in_vis = cursor_cols.saturating_sub(offset).min(available);
+                let caret_col = start_col + caret_cols_in_vis.min(available.saturating_sub(1));
+                self.draw_ai_text(
+                    Point::new(lines.saturating_sub(1), Column(caret_col)),
+                    tokens.surface_muted,
+                    tokens.text,
+                    " ",
+                    1,
+                );
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     fn renderer_draw_cells<I: Iterator<Item = RenderableCell>>(
         &mut self,
         size_info: &SizeInfo,
@@ -2047,7 +2546,7 @@ pub fn draw_top_toolbar(&mut self, config: &UiConfig) {
     /// Read the current frame's RGBA pixels from the active GL backbuffer.
     /// Returns (bytes, width, height) on success. For non-GL backends this returns None.
     #[allow(dead_code)]
-#[cfg(feature = "preview_ui")]
+#[cfg(any())]
 pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
         match &self.backend {
             Backend::Gl { .. } => {
@@ -2366,125 +2865,6 @@ pub fn read_frame_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
         }
     }
 
-    /// Public helper: draw a message bar preview with a single message.
-    #[allow(dead_code)]
-#[cfg(feature = "preview_ui")]
-pub fn draw_message_bar_preview(&mut self, config: &UiConfig, ty: MessageType, message: &str) {
-        let size_info = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
-        let bg = match ty {
-            MessageType::Error => theme.tokens.error,
-            MessageType::Warning => theme.tokens.warning,
-        };
-        let fg = theme.tokens.surface;
-
-        // Draw background panel occupying the footer area (below search bar if present).
-        let search_offset = 0usize; // preview only
-        let start_line = size_info.screen_lines() + search_offset;
-        let y = size_info.cell_height().mul_add(start_line as f32, size_info.padding_y());
-        let x = 0;
-        let width = size_info.width() as i32;
-        let height = (size_info.height() - y) as i32;
-        let rect = RenderRect::new(x as f32, y, width as f32, height as f32, bg, 1.0);
-        let metrics = self.glyph_cache.font_metrics();
-        let mut rects = vec![rect];
-        self.renderer_draw_rects(&size_info, &metrics, rects.drain(..).collect());
-
-        // Draw the single-line message text.
-        let text = message.to_string();
-        let point = Point::new(start_line, Column(0));
-        let size_copy = self.size_info;
-        match &mut self.backend {
-            Backend::Gl { renderer, .. } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    text.chars(),
-                    &size_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    text.chars(),
-                    &size_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-        }
-    }
-
-    /// Public helper: draw the search bar line and optionally a cursor.
-    #[allow(dead_code)]
-#[cfg(feature = "preview_ui")]
-pub fn draw_search_preview(&mut self, config: &UiConfig, text: &str, show_cursor: bool) {
-        self.draw_search(config, text);
-        if show_cursor {
-            // Draw cursor at the end of the search bar
-            let label_len = text.chars().count();
-            let line = self.size_info.screen_lines();
-            let column = Column(label_len.saturating_sub(1));
-            let theme =
-                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
-            let fg = theme.tokens.text;
-            let cursor = RenderableCursor::new(
-                Point::new(line, column),
-                CursorShape::Underline,
-                fg,
-                NonZeroU32::new(1).unwrap(),
-            );
-            let rects = cursor.rects(&self.size_info, config.cursor.thickness());
-            let metrics = self.glyph_cache.font_metrics();
-            let size_info = self.size_info;
-            self.renderer_draw_rects(&size_info, &metrics, rects.collect());
-        }
-    }
-
-    /// Public helper: draw a folded block label line at a given viewport line.
-    #[allow(dead_code)]
-#[cfg(feature = "preview_ui")]
-pub fn draw_folded_label_preview(
-        &mut self,
-        config: &UiConfig,
-        viewport_line: usize,
-        label: &str,
-    ) {
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
-        let fg = theme.tokens.text;
-        let bg = theme.tokens.surface_muted;
-        let point = Point::new(viewport_line, Column(0));
-        let size_copy = self.size_info;
-        match &mut self.backend {
-            Backend::Gl { renderer, .. } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    label.chars(),
-                    &size_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    label.chars(),
-                    &size_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-        }
-    }
 
     /// Draw render timer.
     #[inline(never)]

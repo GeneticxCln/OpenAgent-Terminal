@@ -147,6 +147,22 @@ pub trait ActionContext<T: EventListener> {
     fn spawn_shell_command_in_cwd(&mut self, _cmd: String, _cwd: String) {}
     fn prompt_and_export_block_output(&mut self, _text: String) {}
 
+    // Inline AI suggestions (feature = "ai")
+    #[cfg(feature = "ai")]
+    fn inline_suggestion_visible(&self) -> bool { false }
+    #[cfg(feature = "ai")]
+    fn accept_inline_suggestion(&mut self) {}
+    #[cfg(feature = "ai")]
+    fn accept_inline_suggestion_word(&mut self) {}
+    #[cfg(feature = "ai")]
+    fn accept_inline_suggestion_char(&mut self) {}
+    #[cfg(feature = "ai")]
+    fn dismiss_inline_suggestion(&mut self) {}
+    #[cfg(feature = "ai")]
+    fn schedule_inline_suggest(&mut self) {}
+    #[cfg(feature = "ai")]
+    fn clear_inline_suggestion(&mut self) {}
+
     // Command palette API
     fn open_command_palette(&mut self) {}
     fn palette_active(&self) -> bool {
@@ -292,6 +308,12 @@ pub trait ActionContext<T: EventListener> {
 
     // Toggle zoom of active pane in active tab
     fn workspace_toggle_zoom(&mut self) {}
+
+    // Workspace tab helpers
+    fn workspace_mark_active_tab_error(&mut self, _non_zero: bool) {}
+
+    // Toggle sync for active tab
+    fn workspace_toggle_sync(&mut self) {}
 
     // Workspace tab bar hit testing (handled in event::ActionContext)
     fn workspace_tab_bar_hit(
@@ -849,6 +871,7 @@ impl<T: EventListener> Execute<T> for Action {
             Action::PreviousTab => ctx.workspace_previous_tab(),
             // Pane zoom
             Action::ToggleZoom => ctx.workspace_toggle_zoom(),
+            Action::TogglePaneSync => ctx.workspace_toggle_sync(),
             _ => (),
         }
     }
@@ -896,6 +919,35 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         false
     }
 
+    /// Handle clicks on the Warp-like bottom composer pill (visual-only -> opens AI panel)
+    #[cfg_attr(test, allow(dead_code))]
+    fn process_bottom_composer_click(&mut self) -> bool {
+        let size_info = self.ctx.size_info();
+        let ch = size_info.cell_height();
+        let lines = size_info.screen_lines();
+        if lines == 0 { return false; }
+        // Compute composer pill rectangle in pixels (must mirror draw_warp_bottom_composer)
+        let y_band = (lines.saturating_sub(1)) as f32 * ch;
+        let margin_px = 6.0_f32;
+        let x = margin_px;
+        let y = y_band + 2.0_f32;
+        let w = size_info.width() - margin_px * 2.0;
+        let h = ch - 4.0_f32;
+        let mx = self.ctx.display().last_mouse_x as f32;
+        let my = self.ctx.display().last_mouse_y as f32;
+        let inside = mx >= x && mx <= x + w && my >= y && my <= y + h;
+        // Set focus state based on hit test
+        self.ctx.display().composer_focused = inside;
+        if inside {
+            #[cfg(feature = "ai")]
+            {
+                self.ctx.open_ai_panel();
+                return true;
+            }
+        }
+        false
+    }
+
     /// Handle clicks on the persistent Quick Actions bar at the bottom
     #[cfg_attr(test, allow(dead_code))]
     fn process_quick_actions_click(&mut self) -> bool {
@@ -907,49 +959,49 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return false;
         }
 
-        // Compute label hitboxes
-        let labels = ["[Workflows]", "[Blocks]", "[Palette]", "[AI]"];
+        // Compute label hitboxes; build dynamically to match drawing logic
+        let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
+        if self.ctx.config().workspace.quick_actions.show_palette {
+            labels.push("[Palette]");
+        }
+        labels.push("[AI]");
+
         let mut start = 1usize;
         let col = point.column.0;
 
-        // Workflows
-        let wf_end = start + labels[0].len();
-        if col >= start && col < wf_end {
-            #[cfg(feature = "workflow")]
-            {
-                self.ctx.open_workflows_panel();
+        for label in labels {
+            let end = start + label.len();
+            if col >= start && col < end {
+                match label {
+                    "[Workflows]" => {
+                        #[cfg(feature = "workflow")]
+                        {
+                            self.ctx.open_workflows_panel();
+                        }
+                        return true;
+                    },
+                    "[Blocks]" => {
+                        #[cfg(feature = "blocks")]
+                        {
+                            self.ctx.open_blocks_search_panel();
+                        }
+                        return true;
+                    },
+                    "[Palette]" => {
+                        self.ctx.open_command_palette();
+                        return true;
+                    },
+                    "[AI]" => {
+                        #[cfg(feature = "ai")]
+                        {
+                            self.ctx.open_ai_panel();
+                        }
+                        return true;
+                    },
+                    _ => {},
+                }
             }
-            return true;
-        }
-        start = wf_end + 2;
-
-        // Blocks
-        let bl_end = start + labels[1].len();
-        if col >= start && col < bl_end {
-            #[cfg(feature = "blocks")]
-            {
-                self.ctx.open_blocks_search_panel();
-            }
-            return true;
-        }
-        start = bl_end + 2;
-
-        // Palette
-        let pa_end = start + labels[2].len();
-        if col >= start && col < pa_end {
-            self.ctx.open_command_palette();
-            return true;
-        }
-        start = pa_end + 2;
-
-        // AI (optional)
-        let ai_end = start + labels[3].len();
-        if col >= start && col < ai_end {
-            #[cfg(feature = "ai")]
-            {
-                self.ctx.open_ai_panel();
-            }
-            return true;
+            start = end + 2;
         }
 
         false
@@ -974,6 +1026,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let y = y.clamp(0, size_info.height() as i32 - 1) as usize;
         self.ctx.mouse_mut().x = x;
         self.ctx.mouse_mut().y = y;
+        // Track raw mouse position on the display for near-edge hover detection
+        self.ctx.display().last_mouse_x = x;
+        self.ctx.display().last_mouse_y = y;
 
         let inside_text_area = size_info.contains_point(x, y);
         let cell_side = self.cell_side(x);
@@ -1083,6 +1138,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             != split_hover_new.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
         {
             self.ctx.display().split_hover = split_hover_new;
+            // Start hover animation timestamp for split indicators
+            self.ctx.display().split_hover_anim_start = Some(std::time::Instant::now());
             self.ctx.mark_dirty();
         }
 
@@ -1109,6 +1166,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         if self.ctx.display().tab_hover != new_hover {
             self.ctx.display().tab_hover = new_hover;
+            // Start hover animation timestamp for tabs
+            self.ctx.display().tab_hover_anim_start = Some(std::time::Instant::now());
             // Damage the tab bar line
             let line = match self.ctx.config().workspace.tab_bar.position {
                 crate::workspace::TabBarPosition::Top => 0,
@@ -1707,6 +1766,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                         // Tab bar click handling (top/bottom)
                         if self.process_tab_bar_click() {
+                            return;
+                        }
+                        // Bottom composer click handling (opens AI panel)
+                        if self.process_bottom_composer_click() {
                             return;
                         }
                         // Quick Actions bar click handling (bottom line)

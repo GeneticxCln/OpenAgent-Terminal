@@ -2,6 +2,7 @@
 
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use crate::display::color::Rgb;
 
 /// Workspace configuration
@@ -27,13 +28,22 @@ pub struct WorkspaceConfig {
     #[config(skip)]
     pub keybindings: WorkspaceKeybindings,
 
-    /// Enable Warp-style enhanced functionality (optional)
+    /// Enable Warp-style enhanced visuals/UX
     #[config(default = true)]
     pub warp_style: bool,
 
     /// File to store Warp session data (optional)
-    #[config(skip)]
-    pub warp_session_file: Option<std::path::PathBuf>,
+    /// Deprecated in favor of [workspace.sessions.file_path] but still supported.
+    #[serde(default)]
+    pub warp_session_file: Option<PathBuf>,
+
+    /// Session persistence settings
+    #[config(default)]
+    pub sessions: SessionConfig,
+
+    /// Warp-style keybindings toggle and options
+    #[config(default)]
+    pub warp_style_bindings: WarpStyleBindingsConfig,
 }
 
 impl Default for WorkspaceConfig {
@@ -46,6 +56,8 @@ impl Default for WorkspaceConfig {
             keybindings: WorkspaceKeybindings::default(),
             warp_style: true,
             warp_session_file: None,
+            sessions: SessionConfig::default(),
+            warp_style_bindings: WarpStyleBindingsConfig::default(),
         }
     }
 }
@@ -60,6 +72,13 @@ pub struct TabBarConfig {
     /// Whether to show the tab bar
     #[config(default = true)]
     pub show: bool,
+
+    /// Visibility behavior
+    /// - Auto: Windowed/Maximized -> Always, Fullscreen -> Hover
+    /// - Always: Always visible
+    /// - Hover: Only show on hover (near edge or recent hover)
+    #[config(default = "TabBarVisibility::Auto")]
+    pub visibility: TabBarVisibility,
 
     /// Show close button on tabs
     #[config(default = true)]
@@ -93,11 +112,14 @@ pub struct QuickActionsConfig {
     /// Position of the bar: Auto chooses bottom/top intelligently, Top/Bottom force a side
     #[config(default = "QuickActionsPosition::Auto")]
     pub position: QuickActionsPosition,
+    /// Show the Palette label in the Quick Actions bar
+    #[config(default = true)]
+    pub show_palette: bool,
 }
 
 impl Default for QuickActionsConfig {
     fn default() -> Self {
-        Self { show: true, position: QuickActionsPosition::Auto }
+        Self { show: true, position: QuickActionsPosition::Auto, show_palette: true }
     }
 }
 
@@ -115,11 +137,24 @@ impl Default for QuickActionsPosition {
     }
 }
 
+/// Tab bar visibility behavior
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TabBarVisibility {
+    Auto,
+    Always,
+    Hover,
+}
+
+impl Default for TabBarVisibility {
+    fn default() -> Self { Self::Auto }
+}
+
 impl Default for TabBarConfig {
     fn default() -> Self {
         Self {
             position: TabBarPosition::Top,
             show: true,
+            visibility: TabBarVisibility::Auto,
             show_close_button: true,
             show_modified_indicator: true,
             max_title_length: 20,
@@ -213,6 +248,29 @@ impl Default for SplitConfig {
     }
 }
 
+/// Session persistence configuration
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct SessionConfig {
+    /// Enable session persistence features
+    #[config(default = true)]
+    pub enabled: bool,
+    /// Restore previous session on startup
+    #[config(default = true)]
+    pub restore_on_startup: bool,
+    /// Autosave interval in seconds (0 disables autosave)
+    #[config(default = 30)]
+    pub autosave_interval_secs: u64,
+    /// Optional explicit session file path
+    #[serde(default)]
+    pub file_path: Option<PathBuf>,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self { enabled: true, restore_on_startup: true, autosave_interval_secs: 30, file_path: None }
+    }
+}
+
 /// Tab bar position
 #[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum TabBarPosition {
@@ -274,5 +332,19 @@ impl Default for WorkspaceKeybindings {
             focus_previous_pane: "Ctrl+Shift+Left".to_string(),
             close_pane: "Ctrl+Shift+Q".to_string(),
         }
+    }
+}
+
+/// Warp-style keybindings configuration (toggle)
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct WarpStyleBindingsConfig {
+    /// Enable integrating Warp-like keybindings during config load
+    #[config(default = true)]
+    pub enable: bool,
+}
+
+impl Default for WarpStyleBindingsConfig {
+    fn default() -> Self {
+        Self { enable: true }
     }
 }

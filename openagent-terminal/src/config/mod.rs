@@ -169,6 +169,11 @@ fn after_loading(config: &mut UiConfig, options: &mut Options) {
     // Override config with CLI options.
     options.override_config(config);
 
+    // Integrate Warp-style keybindings when enabled via config toggle.
+    // This augments (and where necessary, deconflicts) existing default bindings.
+// Integrate Warp-style keybindings if enabled via config toggle.
+    config.integrate_warp_style_bindings_if_enabled();
+
     // Resolve theme after overrides so runtime has computed tokens available.
     // Failures fall back to built-in defaults.
     let mut resolved = config.theme.resolve();

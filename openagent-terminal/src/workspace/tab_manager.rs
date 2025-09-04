@@ -51,6 +51,12 @@ pub struct TabContext {
 
     /// Saved split layout when zoom is active; None when not zoomed
     pub zoom_saved_layout: Option<SplitLayout>,
+
+    /// True when the last completed command in this tab exited non-zero (for error badge)
+    pub last_exit_nonzero: bool,
+
+    /// True when panes/tabs are synchronized (placeholder for sync indicator)
+    pub panes_synced: bool,
 }
 
 /// Context for a single pane within a tab
@@ -121,6 +127,8 @@ impl TabManager {
             modified: false,
             shell_command: None,
             zoom_saved_layout: None,
+            last_exit_nonzero: false,
+            panes_synced: false,
         };
 
         self.tabs.insert(tab_id, tab_context);
@@ -220,6 +228,15 @@ impl TabManager {
         self.tabs.get_mut(&tab_id)
     }
 
+    /// Set last exit status flag on active tab
+    pub fn set_active_tab_last_exit(&mut self, non_zero: bool) {
+        if let Some(id) = self.active_tab_id {
+            if let Some(tab) = self.tabs.get_mut(&id) {
+                tab.last_exit_nonzero = non_zero;
+            }
+        }
+    }
+
     /// Get the number of tabs
     pub fn tab_count(&self) -> usize {
         self.tabs.len()
@@ -233,6 +250,17 @@ impl TabManager {
     /// Get the active tab ID
     pub fn active_tab_id(&self) -> Option<TabId> {
         self.active_tab_id
+    }
+
+    /// Toggle sync flag on active tab
+    pub fn toggle_active_tab_sync(&mut self) -> bool {
+        if let Some(id) = self.active_tab_id {
+            if let Some(tab) = self.tabs.get_mut(&id) {
+                tab.panes_synced = !tab.panes_synced;
+                return true;
+            }
+        }
+        false
     }
 
     /// Move a tab to a new position

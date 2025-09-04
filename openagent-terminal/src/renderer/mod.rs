@@ -95,7 +95,9 @@ pub struct Renderer {
     text_renderer: TextRendererProvider,
     rect_renderer: RectRenderer,
     ui_renderer: ui::UiGlRenderer,
+    ui_sprite_renderer: ui::UiSpriteGlRenderer,
     pending_ui: Vec<ui::UiRoundedRect>,
+    pending_sprites: Vec<ui::UiSprite>,
     robustness: bool,
 }
 
@@ -180,7 +182,12 @@ impl Renderer {
             }
         }
 
-        Ok(Self { text_renderer, rect_renderer, ui_renderer, pending_ui: Vec::new(), robustness })
+        // Initialize sprite renderer with current viewport
+        let ui_sprite_renderer = ui::UiSpriteGlRenderer::new(ShaderVersion::Glsl3)
+            .or_else(|_| ui::UiSpriteGlRenderer::new(ShaderVersion::Gles2))
+            .map_err(|e| Error::Other(format!("sprite renderer init failed: {:?}", e)))?;
+
+        Ok(Self { text_renderer, rect_renderer, ui_renderer, ui_sprite_renderer, pending_ui: Vec::new(), pending_sprites: Vec::new(), robustness })
     }
 
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(
@@ -269,6 +276,10 @@ impl Renderer {
             self.ui_renderer.draw(size_info, &self.pending_ui);
             self.pending_ui.clear();
         }
+        if !self.pending_sprites.is_empty() {
+            self.ui_sprite_renderer.draw(size_info, &self.pending_sprites);
+            self.pending_sprites.clear();
+        }
 
         // Activate regular state again.
         unsafe {
@@ -283,6 +294,15 @@ impl Renderer {
     /// Fill the window with `color` and `alpha`.
     pub fn stage_ui_rounded_rect(&mut self, rect: ui::UiRoundedRect) {
         self.pending_ui.push(rect);
+    }
+
+    pub fn stage_ui_sprite(&mut self, sprite: ui::UiSprite) {
+        self.pending_sprites.push(sprite);
+    }
+
+    /// Configure sprite atlas filtering. True = NEAREST, False = LINEAR.
+    pub fn set_sprite_filter_nearest(&mut self, nearest: bool) {
+        self.ui_sprite_renderer.set_filter_nearest(nearest);
     }
 
     pub fn clear(&self, color: Rgb, alpha: f32) {

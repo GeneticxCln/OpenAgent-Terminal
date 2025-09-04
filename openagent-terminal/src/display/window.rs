@@ -128,6 +128,26 @@ impl Window {
     pub fn inner(&self) -> &WinitWindow {
         &self.window
     }
+
+    /// Return true if the window is currently fullscreen.
+    #[inline]
+    pub fn is_fullscreen(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            // Treat either native or simple fullscreen as fullscreen.
+            if self.window.simple_fullscreen() {
+                return true;
+            }
+        }
+        self.window.fullscreen().is_some()
+    }
+
+    /// Return true if the window is currently maximized.
+    #[inline]
+    pub fn is_maximized(&self) -> bool {
+        self.window.is_maximized()
+    }
+
     /// Create a new window.
     ///
     /// This creates a window and fully initializes a window.
