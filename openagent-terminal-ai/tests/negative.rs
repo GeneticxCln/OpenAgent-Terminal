@@ -23,8 +23,10 @@ fn privacy_sanitizes_paths_and_secrets() {
 #[cfg(feature = "ai-openai")]
 mod http_tests {
     use super::*;
-    use httpmock::prelude::*;
     use openagent_terminal_ai::providers::OpenAiProvider;
+    use openagent_terminal_ai::AiProvider;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn base_req() -> AiRequest {
         AiRequest {

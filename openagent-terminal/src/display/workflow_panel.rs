@@ -1,8 +1,6 @@
 // Workflows Panel UI: state and rendering
 // Feature-gated under `workflow`
 
-#![cfg(feature = "workflow")]
-
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::UiConfig;

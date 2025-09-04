@@ -1,11 +1,13 @@
 #![cfg(feature = "ai-anthropic")]
 #[cfg(test)]
 mod anthropic_provider_tests {
-    use httpmock::prelude::*;
     use openagent_terminal_ai::providers::AnthropicProvider;
     use openagent_terminal_ai::{AiProvider, AiRequest};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::Request;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn create_test_request() -> AiRequest {
         AiRequest {

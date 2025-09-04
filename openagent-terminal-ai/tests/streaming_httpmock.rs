@@ -1,10 +1,11 @@
 #![cfg(any(feature = "ai-openai", feature = "ai-anthropic"))]
 #[cfg(test)]
 mod tests {
-    use httpmock::prelude::*;
     use openagent_terminal_ai::providers::{AnthropicProvider, OpenAiProvider};
     use openagent_terminal_ai::{AiProvider, AiRequest};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn base_req() -> AiRequest {
         AiRequest {

@@ -63,29 +63,6 @@ impl AiProvider for NullProvider {
 #[cfg(any(feature = "ai-ollama", feature = "ai-openai", feature = "ai-anthropic"))]
 pub mod providers;
 
-#[cfg(test)]
-mod tests {
-
-    #[cfg(feature = "ai-openai")]
-    #[test]
-    fn openai_from_env_fails_without_model() {
-        // Ensure model var is not set
-        std::env::remove_var("OPENAI_MODEL");
-        // Set a fake key so only the model check fails
-        std::env::set_var("OPENAI_API_KEY", "x");
-        let res = crate::providers::OpenAiProvider::from_env();
-        assert!(res.is_err());
-    }
-
-    #[cfg(feature = "ai-ollama")]
-    #[test]
-    fn ollama_from_env_fails_without_model() {
-        std::env::remove_var("OLLAMA_MODEL");
-        let res = crate::providers::OllamaProvider::from_env();
-        assert!(res.is_err());
-    }
-}
-
 /// Factory function for creating providers
 pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError> {
     use error::AiError;
@@ -127,5 +104,28 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
             message: format!("Unknown provider: {}", name),
             suggestion: Some("Available providers: null, ollama, openai, anthropic".to_string()),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[cfg(feature = "ai-openai")]
+    #[test]
+    fn openai_from_env_fails_without_model() {
+        // Ensure model var is not set
+        std::env::remove_var("OPENAI_MODEL");
+        // Set a fake key so only the model check fails
+        std::env::set_var("OPENAI_API_KEY", "x");
+        let res = crate::providers::OpenAiProvider::from_env();
+        assert!(res.is_err());
+    }
+
+    #[cfg(feature = "ai-ollama")]
+    #[test]
+    fn ollama_from_env_fails_without_model() {
+        std::env::remove_var("OLLAMA_MODEL");
+        let res = crate::providers::OllamaProvider::from_env();
+        assert!(res.is_err());
     }
 }

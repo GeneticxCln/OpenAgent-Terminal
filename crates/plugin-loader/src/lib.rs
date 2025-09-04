@@ -11,7 +11,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use wasmtime::*;
-use wasmtime_wasi::{Dir, WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::preview1::Wasi;
+use wasmtime_wasi::preview1::WasiCtxBuilder;
+use cap_std::fs::Dir;
 
 /// Enhanced plugin manifest structure for TOML parsing
 #[derive(serde::Deserialize)]
@@ -103,7 +105,7 @@ pub struct LoadedPlugin {
 /// Plugin context stored in WASM store
 struct PluginContext {
     #[allow(dead_code)]
-    wasi: WasiCtx,
+    wasi: Wasi,
     #[allow(dead_code)]
     permissions: PluginPermissions,
     resource_tracker: ResourceTracker,
@@ -277,7 +279,7 @@ impl PluginManager {
         let mut linker = Linker::new(&self.engine);
 
         // Add WASI functions to the linker
-        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut PluginContext| &mut ctx.wasi)
+        wasmtime_wasi::preview1::add_to_linker(&mut linker, |ctx: &mut PluginContext| &mut ctx.wasi)
             .map_err(|e| {
                 PluginError::InitializationFailed(format!("Failed to add WASI to linker: {}", e))
             })?;
@@ -338,16 +340,18 @@ impl PluginManager {
 
         if let Some(plugin) = plugins.remove(name) {
             // Call cleanup if available
-            if let Some(cleanup) = plugin.exports.cleanup {
+            if let Some(_cleanup) = &plugin.exports.cleanup {
                 match Arc::try_unwrap(plugin) {
                     Ok(mut owned) => {
-                        // Apply a small epoch deadline around cleanup as well.
-                        owned.store.set_epoch_deadline(CPU_CLEANUP_TICKS);
-                        let call_res = cleanup.call(&mut owned.store, ());
-                        // Reset the deadline far in the future between calls
-                        owned.store.set_epoch_deadline(CPU_FAR_TICKS);
+                        if let Some(cleanup_fn) = owned.exports.cleanup {
+                            // Apply a small epoch deadline around cleanup as well.
+                            owned.store.set_epoch_deadline(CPU_CLEANUP_TICKS);
+                            let call_res = cleanup_fn.call(&mut owned.store, ());
+                            // Reset the deadline far in the future between calls
+                            owned.store.set_epoch_deadline(CPU_FAR_TICKS);
 
-                        call_res.map_err(|e| PluginError::RuntimeError(e.to_string()))?;
+                            call_res.map_err(|e| PluginError::RuntimeError(e.to_string()))?;
+                        }
                         info!("Unloaded plugin: {}", name);
                         Ok(())
                     },
@@ -416,7 +420,7 @@ impl PluginManager {
         }
 
         // Always preopen the plugin directory as the sandbox root
-        if let Ok(dir) = Dir::open_ambient_dir(&self.plugin_dir, wasmtime_wasi::ambient_authority())
+        if let Ok(dir) = Dir::open_ambient_dir(&self.plugin_dir, cap_std::ambient_authority())
         {
             let _ = wasi_builder.preopened_dir(dir, &self.plugin_dir);
         }
@@ -425,7 +429,7 @@ impl PluginManager {
         for pattern in permissions.read_files.iter().chain(permissions.write_files.iter()) {
             if let Some(safe_path) = self.sanitize_plugin_path(pattern) {
                 if let Ok(dir) =
-                    Dir::open_ambient_dir(&safe_path, wasmtime_wasi::ambient_authority())
+                    Dir::open_ambient_dir(&safe_path, cap_std::ambient_authority())
                 {
                     let _ = wasi_builder.preopened_dir(dir, &safe_path);
                 }
@@ -434,7 +438,8 @@ impl PluginManager {
             }
         }
 
-        let wasi = wasi_builder.build();
+        let wasi = Wasi::new(&self.engine, wasi_builder.build()?)
+            .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
         let context =
             PluginContext { wasi, permissions, resource_tracker: ResourceTracker::default() };
@@ -1037,11 +1042,11 @@ impl ResourceLimiter for ResourceTracker {
 
     fn table_growing(
         &mut self,
-        _current: u32,
-        desired: u32,
-        _maximum: Option<u32>,
+        _current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
-        const MAX_TABLES: u32 = 10;
+        const MAX_TABLES: usize = 10;
         Ok(desired <= MAX_TABLES)
     }
 }

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio::time::{interval, timeout};
+use tokio::time::interval;
 
 // ============================================================================
 // Core Types
