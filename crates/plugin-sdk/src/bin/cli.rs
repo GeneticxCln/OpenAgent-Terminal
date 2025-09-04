@@ -171,7 +171,7 @@ fn build_plugin() {
     println!("Building plugin for WebAssembly...");
 
     let output = std::process::Command::new("cargo")
-        .args(&["build", "--target", "wasm32-wasi", "--release"])
+        .args(["build", "--target", "wasm32-wasi", "--release"])
         .output()
         .unwrap_or_else(|err| {
             eprintln!("Failed to execute cargo build: {}", err);

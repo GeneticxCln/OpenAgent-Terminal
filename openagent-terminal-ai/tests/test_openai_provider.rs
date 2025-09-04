@@ -1,11 +1,13 @@
 #![cfg(feature = "ai-openai")]
 #[cfg(test)]
 mod openai_provider_tests {
-    use httpmock::prelude::*;
     use openagent_terminal_ai::providers::OpenAiProvider;
     use openagent_terminal_ai::{AiProvider, AiRequest};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::Request;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn create_test_request() -> AiRequest {
         AiRequest {
@@ -40,13 +42,17 @@ mod openai_provider_tests {
             "data: [DONE]\n\n"
         );
 
-        let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions")
-                .header("authorization", "Bearer test_key")
-                .header("content-type", "application/json");
-            then.status(200).header("content-type", "text/event-stream").body(stream_data);
-        });
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(header("authorization", "Bearer test_key"))
+            .and(header("content-type", "application/json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(stream_data)
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
 
         let provider =
             OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())

@@ -46,10 +46,10 @@ path = "../crates/plugin-api"
 version = "0.1.0"
 optional = true
 
-[dependencies.plugin-loader]
-path = "../crates/plugin-loader"
-version = "0.1.0"
-optional = true
+# [dependencies.plugin-loader]
+# path = "../crates/plugin-loader"
+# version = "0.1.0"
+# optional = true
 
 [dependencies]
 ahash = { version = "0.8.6", features = ["no-rng"] }
@@ -61,7 +61,7 @@ tracing = { workspace = true }
 # OpenGL stack (existing)
 glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"] }
 # Optional WGPU stack (feature-gated)
-wgpu = { version = "0.19", optional = true }
+wgpu = { version = "26.0", optional = true }
 pollster = { version = "0.3", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 # Text shaping dependencies
@@ -177,8 +177,8 @@ ai = ["dep:openagent-terminal-ai"]
 sync = ["dep:openagent-terminal-sync"]
 # Optional workflow engine for automated task execution
 workflow = ["dep:workflow-engine"]
-# Optional plugin system
-plugins = ["dep:plugin-api", "dep:plugin-loader"]
+# Optional plugin system (plugin-loader temporarily disabled)
+plugins = ["dep:plugin-api"] # , "dep:plugin-loader"]
 # Enhanced text shaping with HarfBuzz
 harfbuzz = ["dep:harfbuzz_rs", "dep:fontdb", "dep:unicode-bidi"]
 # Blocks 2.0 system for command execution tracking

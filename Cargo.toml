@@ -7,7 +7,7 @@ members = [
     "openagent-terminal-sync",
     "openagent-terminal-ai",
     "crates/plugin-api",
-    "crates/plugin-loader",
+    # "crates/plugin-loader", # Temporarily disabled due to wasmtime-wasi API changes
     "crates/plugin-sdk",
     "crates/workflow-engine",
     "plugins/git-context",
@@ -44,7 +44,7 @@ async-trait = "0.1"
 futures = "0.3"
 
 # Rendering - WGPU
-wgpu = "0.19"
+wgpu = "26.0"
 raw-window-handle = "0.6"
 winit = { version = "0.30.11", default-features = false, features = ["rwh_06"] }
 
@@ -57,7 +57,7 @@ unicode-bidi = "0.3"
 ab-glyph = "0.2"
 
 # Database
-sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite"] }
+sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # AI capabilities
