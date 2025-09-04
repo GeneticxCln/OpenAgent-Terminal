@@ -13,6 +13,9 @@ members = [
     "plugins/git-context",
     "plugins/docker-helper",
     "plugins/dev-tools",
+    "crates/openagent-terminal-migrate",
+    "crates/openagent-terminal-themes",
+    "crates/openagent-terminal-snippets",
 ]
 resolver = "2"
 
@@ -52,7 +55,7 @@ winit = { version = "0.30.11", default-features = false, features = ["rwh_06"] }
 # Text shaping and fonts (core requirement)
 swash = "0.1"
 harfbuzz_rs = "2.0"
-fontdb = "0.16"
+fontdb = "0.23"
 ttf-parser = "0.20"
 unicode-bidi = "0.3"
 ab-glyph = "0.2"
@@ -66,8 +69,8 @@ reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 async-openai = "0.25"
 
 # Plugin system
-wasmtime = "34.0"
-wasmtime-wasi = "34.0"
+wasmtime = "36.0"
+wasmtime-wasi = "36.0"
 jsonrpc-core = "18.0"
 jsonrpc-ipc-server = "18.0"
 

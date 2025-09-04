@@ -22,12 +22,15 @@ _openagent_detect_shell() {
         echo "bash"
     elif [ -n "$FISH_VERSION" ]; then
         echo "fish"
+    elif [ -n "$PSVersionTable" ] || command -v pwsh >/dev/null 2>&1; then
+        echo "pwsh"
     else
         # Try to detect from $0 or process name
         case "$(basename "$SHELL" 2>/dev/null)" in
             *zsh*) echo "zsh" ;;
             *bash*) echo "bash" ;;
             *fish*) echo "fish" ;;
+            *pwsh*) echo "pwsh" ;;
             *) echo "unknown" ;;
         esac
     fi
@@ -92,9 +95,23 @@ _openagent_load_integration() {
                 return 1
             fi
             ;;
+        "pwsh")
+            if [ -f "$SCRIPT_DIR/../pwsh/openagent_integration.ps1" ]; then
+                # PowerShell requires different handling
+                # This would typically be imported in the PowerShell profile
+                echo "PowerShell integration detected. Please add the following to your PowerShell profile:"
+                echo "  Import-Module '$SCRIPT_DIR/../pwsh/OpenAgent.psd1'"
+                echo "Or source directly:"
+                echo "  . '$SCRIPT_DIR/../pwsh/openagent_integration.ps1'"
+                return 0
+            else
+                echo "Warning: PowerShell integration script not found"
+                return 1
+            fi
+            ;;
         *)
             echo "Unsupported shell: $shell_type"
-            echo "OpenAgent Terminal OSC 133 integration supports: bash, zsh, fish"
+            echo "OpenAgent Terminal OSC 133 integration supports: bash, zsh, fish, pwsh"
             return 1
             ;;
     esac

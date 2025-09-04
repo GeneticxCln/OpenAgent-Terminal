@@ -28,6 +28,8 @@ pub mod warp_ui {
 }
 #[cfg(test)]
 mod warp_integration_test;
+#[cfg(test)]
+mod session_restoration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};

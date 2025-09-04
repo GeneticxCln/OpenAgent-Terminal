@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
+use std::fs::File;
 
 use crate::tty::{ChildEvent, EventedPty, Options, Shell};
 use crate::event::WindowSize;
@@ -67,8 +68,10 @@ pub struct PtyContext {
     /// Shell-specific configuration
     pub shell_config: ShellConfig,
     /// Creation time
+    #[serde(skip, default = "Instant::now")]
     pub created_at: Instant,
     /// Last activity time
+    #[serde(skip, default = "Instant::now")]
     pub last_activity: Instant,
 }
 
@@ -105,7 +108,7 @@ pub struct PtyManager {
     /// Process status
     pub status: PtyStatus,
     /// PTY interface (boxed to avoid generic complications)
-    pty: Option<Box<dyn EventedPty + Send>>,
+    pty: Option<Box<dyn EventedPty<Reader = File, Writer = File> + Send>>,
     /// Performance metrics
     metrics: PtyMetrics,
 }
@@ -184,6 +187,7 @@ impl PtyManager {
             working_directory: Some(self.context.working_directory.clone()),
             env: self.context.environment.clone(),
             drain_on_exit: true,
+            #[cfg(target_os = "windows")]
             escape_args: true,
         };
 
@@ -234,9 +238,9 @@ impl PtyManager {
         matches!(self.status, PtyStatus::Active)
     }
 
-    /// Get PTY reference if available
-    pub fn pty(&mut self) -> Option<&mut dyn EventedPty> {
-        self.pty.as_deref_mut()
+    /// Check if PTY is available
+    pub fn has_pty(&self) -> bool {
+        self.pty.is_some()
     }
 
     /// Poll for child events (process exit, etc.)

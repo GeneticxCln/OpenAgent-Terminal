@@ -15,6 +15,18 @@ use tokio::sync::{broadcast, RwLock};
 pub mod executor;
 pub mod parser;
 pub mod validator;
+pub mod git_integration;
+pub mod docker_integration;
+pub mod database_integration;
+pub mod api_testing;
+pub mod developer_workflow;
+
+// Re-export main developer workflow components
+pub use developer_workflow::{DeveloperWorkflow, DeveloperContext, WorkflowResult};
+pub use git_integration::GitIntegration;
+pub use docker_integration::DockerIntegration;
+pub use database_integration::DatabaseIntegration;
+pub use api_testing::ApiTester;
 
 use validator::WorkflowValidator;
 

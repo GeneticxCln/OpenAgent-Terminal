@@ -17,6 +17,8 @@ use openagent_terminal_core::tty::pty_manager::{PtyId, PtyManager, PtyManagerCol
 use log::{debug, error, info, warn};
 use openagent_terminal_core::sync::FairMutex;
 use openagent_terminal_core::term::Term;
+use openagent_terminal_core::tty::pty_manager::{PtyManagerCollection, ShellConfig};
+use openagent_terminal_core::event::WindowSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
@@ -49,6 +51,28 @@ pub enum WarpIntegrationError {
 
     #[error("Window context not found for ID: {0:?}")]
     WindowNotFound(WindowId),
+
+    // Session restoration specific errors
+    #[error("Session restoration failed: {0}")]
+    SessionRestore(String),
+
+    #[error("Invalid session format version: expected {expected}, found {actual}")]
+    SessionVersion { expected: String, actual: String },
+
+    #[error("PTY creation failed for pane {pane_id:?}: {reason}")]
+    PtyCreation { pane_id: PaneId, reason: String },
+
+    #[error("Working directory not accessible: {path} - {reason}")]
+    WorkingDirectoryError { path: String, reason: String },
+
+    #[error("Partial session restore: {restored} of {total} panes restored successfully")]
+    PartialRestore { restored: usize, total: usize },
+
+    #[error("Session file corrupted: {0}")]
+    SessionCorrupted(String),
+
+    #[error("PTY manager error: {0}")]
+    PtyManager(#[from] openagent_terminal_core::tty::pty_manager::PtyManagerError),
 }
 
 /// Result type for Warp integration operations
@@ -180,8 +204,128 @@ impl WarpIntegration {
 
     /// Restore terminals from loaded session
     fn restore_session_terminals(&mut self) -> WarpResult<()> {
-        // TODO: Implement session restoration when tab_manager methods are available
-        info!("Session restoration not yet implemented");
+        let start = Instant::now();
+        let mut restored_panes = 0;
+        let mut total_panes = 0;
+        let mut errors = Vec::new();
+
+        info!("Starting session restoration...");
+
+        // Iterate through all tabs and restore their panes
+        for tab in self.tab_manager.all_tabs() {
+            let tab_id = tab.id;
+            let working_dir = &tab.working_directory;
+            
+            // Validate working directory is still accessible
+            if !working_dir.exists() {
+                let error_msg = format!("Working directory no longer exists: {}", working_dir.display());
+                warn!("{}", error_msg);
+                errors.push(WarpIntegrationError::WorkingDirectoryError {
+                    path: working_dir.to_string_lossy().to_string(),
+                    reason: "Directory not found".to_string(),
+                });
+                
+                // Try to fallback to home directory
+                let fallback_dir = std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from("/"));
+                
+                self.tab_manager.update_tab_working_directory(tab_id, fallback_dir);
+            }
+
+            // Collect all pane IDs from the split layout
+            let pane_ids = tab.split_layout.collect_pane_ids();
+            total_panes += pane_ids.len();
+            
+            debug!("Restoring {} panes for tab '{}'...", pane_ids.len(), tab.title);
+
+            // Restore each pane in this tab
+            for pane_id in pane_ids {
+                match self.restore_pane_terminal(pane_id, &tab.working_directory, tab_id) {
+                    Ok(()) => {
+                        restored_panes += 1;
+                        debug!("Successfully restored pane {:?}", pane_id);
+                    },
+                    Err(e) => {
+                        error!("Failed to restore pane {:?}: {}", pane_id, e);
+                        errors.push(e);
+                    },
+                }
+            }
+        }
+
+        let elapsed = start.elapsed();
+        self.perf_stats.session_save_time_ms = elapsed.as_millis() as u64;
+
+        // Report restoration results
+        if restored_panes == total_panes {
+            info!(
+                "Session restoration completed successfully: {} panes restored in {}ms",
+                restored_panes,
+                elapsed.as_millis()
+            );
+            Ok(())
+        } else if restored_panes > 0 {
+            warn!(
+                "Partial session restoration: {}/{} panes restored in {}ms",
+                restored_panes, total_panes, elapsed.as_millis()
+            );
+            // Return partial restore error but don't fail completely
+            Err(WarpIntegrationError::PartialRestore {
+                restored: restored_panes,
+                total: total_panes,
+            })
+        } else {
+            error!(
+                "Session restoration failed completely: 0/{} panes restored",
+                total_panes
+            );
+            Err(WarpIntegrationError::SessionRestore(
+                format!(
+                    "Failed to restore any panes. Errors: {}",
+                    errors.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            ))
+        }
+    }
+
+    /// Restore terminal for a specific pane (used during session restoration)
+    fn restore_pane_terminal(
+        &mut self, 
+        pane_id: PaneId, 
+        working_dir: &Path, 
+        tab_id: TabId
+    ) -> WarpResult<()> {
+        // Check if terminal already exists for this pane (avoid duplicates)
+        if self.terminals.contains_key(&pane_id) {
+            debug!("Terminal already exists for pane {:?}, skipping", pane_id);
+            return Ok(());
+        }
+
+        // Create the terminal and PTY
+        self.create_terminal_for_pane(pane_id, working_dir)?;
+
+        // Create a minimal pane context for the restored pane
+        let pane_context = super::tab_manager::PaneContext {
+            terminal: self.terminals.get(&pane_id).unwrap().clone(),
+            window_context: None, // Will be set up later during window management
+            title_override: None,
+            focused: false, // Will be updated based on active pane
+        };
+
+        // Add the pane to the tab
+        if !self.tab_manager.add_pane_to_tab(tab_id, pane_id, pane_context) {
+            return Err(WarpIntegrationError::InvalidTabId(tab_id));
+        }
+
+        debug!(
+            "Successfully restored terminal for pane {:?} in tab {:?}", 
+            pane_id, tab_id
+        );
+
         Ok(())
     }
 
@@ -219,29 +363,78 @@ impl WarpIntegration {
         // Store terminal reference
         self.terminals.insert(pane_id, terminal);
 
-        // Create and store PTY manager
+        // Create and store PTY manager with better error handling
         let shell_config = ShellConfig {
             executable: self.config.shell.as_ref()
                 .map(|s| s.program.clone())
-                .unwrap_or_else(|| "bash".to_string()),
+                .unwrap_or_else(|| {
+                    // Platform-specific shell defaults
+                    #[cfg(target_os = "windows")]
+                    { "powershell.exe".to_string() }
+                    #[cfg(not(target_os = "windows"))]
+                    { std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()) }
+                }),
             args: self.config.shell.as_ref()
                 .map(|s| s.args.clone())
-                .unwrap_or_else(|| vec!["-l".to_string()]),
+                .unwrap_or_else(|| {
+                    #[cfg(target_os = "windows")]
+                    { vec!["-NoProfile".to_string()] }
+                    #[cfg(not(target_os = "windows"))]
+                    { vec!["-l".to_string()] }
+                }),
             env_vars: HashMap::new(),
             prompt_pattern: None,
         };
 
+        // Build environment variables
+        let mut environment = HashMap::new();
+        
+        // Set working directory in environment
+        environment.insert("PWD".to_string(), working_dir.to_string_lossy().to_string());
+        
+        // Add shell integration environment if available
+        if let Some(integration_path) = self.get_shell_integration_path() {
+            environment.insert("OPENAGENT_TERMINAL_SHELL_INTEGRATION".to_string(), integration_path);
+        }
+
         let pty_id = self.pty_managers.create_pty_manager(
             working_dir.to_path_buf(),
             shell_config,
-            HashMap::new(), // Environment variables
-        ).map_err(|e| WarpIntegrationError::TerminalCreation(e.to_string()))?;
+            environment,
+        ).map_err(|e| WarpIntegrationError::PtyCreation { 
+            pane_id, 
+            reason: e.to_string() 
+        })?;
 
-        // Create actual PTY process
+        // Create actual PTY process with window size conversion
         if let Some(manager) = self.pty_managers.get_manager(pty_id) {
             let mut manager_guard = manager.lock();
-            manager_guard.create_pty(*size_info, (*window_id).into())
-                .map_err(|e| WarpIntegrationError::TerminalCreation(e.to_string()))?;
+            
+            // Convert SizeInfo to WindowSize
+            let window_size = WindowSize {
+                num_lines: size_info.screen_lines() as u16,
+                num_cols: size_info.columns() as u16,
+                cell_width: size_info.cell_width() as u16,
+                cell_height: size_info.cell_height() as u16,
+            };
+            
+            manager_guard.create_pty(window_size, (*window_id).into())
+                .map_err(|e| WarpIntegrationError::PtyCreation { 
+                    pane_id, 
+                    reason: e.to_string() 
+                })?;
+                
+            debug!(
+                "Created PTY for pane {:?} with shell: {} in {}", 
+                pane_id, 
+                manager_guard.context.shell_config.executable,
+                working_dir.display()
+            );
+        } else {
+            return Err(WarpIntegrationError::PtyCreation {
+                pane_id,
+                reason: "PTY manager not found after creation".to_string(),
+            });
         }
 
         self.perf_stats.active_terminals = self.terminals.len();
@@ -713,6 +906,25 @@ impl WarpIntegration {
     /// Update activity timestamp
     fn update_activity(&mut self) {
         self.last_activity = Instant::now();
+    }
+
+    /// Get shell integration path if available
+    fn get_shell_integration_path(&self) -> Option<String> {
+        // Look for shell integration scripts in common locations
+        let integration_paths = [
+            "shell-integration/bash/openagent_integration.bash",
+            "shell-integration/zsh/openagent_integration.zsh",
+            "shell-integration/fish/openagent_integration.fish",
+        ];
+
+        for path in &integration_paths {
+            let full_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path);
+            if full_path.exists() {
+                return Some(full_path.to_string_lossy().to_string());
+            }
+        }
+
+        None
     }
 
     /// Send UI update event through the event proxy
