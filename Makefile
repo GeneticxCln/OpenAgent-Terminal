@@ -97,3 +97,14 @@ $(INSTALL)-%: $(DMG_NAME)-%
 
 clean: ## Remove all build artifacts
 	@cargo clean
+
+# IDE feature build to match GitHub CI (editor + LSP + DAP + indexer)
+ide-build: ## Build with IDE features (same as CI: --features "ide")
+	cargo build -p openagent-terminal --release --features "ide"
+
+ide-clippy: ## Clippy with IDE features (treat warnings as errors)
+	cargo clippy -p openagent-terminal --features "ide" -- -D warnings
+
+ide-all: ## Run IDE build + clippy (matches GitHub CI ide-build job)
+	$(MAKE) ide-build
+	$(MAKE) ide-clippy

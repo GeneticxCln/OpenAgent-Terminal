@@ -78,6 +78,45 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         }
 
+        // DAP overlay key handling (Warp-like): intercept F-keys when panel is active
+        #[cfg(feature = "dap")]
+        if self.ctx.display().dap_overlay.active {
+            use winit::keyboard::NamedKey;
+            let mods = self.ctx.modifiers().state();
+            match key.logical_key.as_ref() {
+                winit::keyboard::Key::Named(NamedKey::F5) => {
+                    self.ctx.display().dap_continue_current();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                winit::keyboard::Key::Named(NamedKey::F9) => {
+                    self.ctx.display().dap_toggle_breakpoint_here();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                winit::keyboard::Key::Named(NamedKey::F10) => {
+                    self.ctx.display().dap_step_over();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                winit::keyboard::Key::Named(NamedKey::F11) => {
+                    if mods.shift_key() {
+                        self.ctx.display().dap_step_out();
+                    } else {
+                        self.ctx.display().dap_step_in();
+                    }
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                winit::keyboard::Key::Named(NamedKey::Escape) => {
+                    self.ctx.display().dap_close();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                _ => {}
+            }
+        }
+
         // Confirmation overlay handling takes precedence.
         if self.ctx.confirm_overlay_active() {
             match key.logical_key.as_ref() {

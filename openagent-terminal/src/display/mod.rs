@@ -77,6 +77,9 @@ pub mod content;
 pub mod cursor;
 pub mod hint;
 pub mod palette;
+pub mod editor_overlay;
+pub mod dap_overlay;
+pub mod file_tree_overlay;
 pub mod pane_drag_drop;
 pub mod tab_bar;
 pub mod warp_ui;
@@ -510,6 +513,14 @@ pub struct Display {
     #[cfg(feature = "workflow")]
     pub workflows_progress: workflow_panel::WorkflowProgressState,
 
+    /// Native editor overlay state.
+    pub editor_overlay: editor_overlay::EditorOverlayState,
+    /// Debug Adapter Protocol (DAP) overlay state.
+    pub dap_overlay: dap_overlay::DapOverlayState,
+
+    /// File Tree overlay state.
+    pub file_tree: file_tree_overlay::FileTreeOverlayState,
+
     /// Hover state for tab bar interactions
     pub tab_hover: Option<TabHoverTarget>,
     /// Animation start for tab hover transitions
@@ -739,6 +750,10 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            // Overlays
+            editor_overlay: editor_overlay::EditorOverlayState::new(),
+            dap_overlay: dap_overlay::DapOverlayState::new(),
+            file_tree: file_tree_overlay::FileTreeOverlayState::new(),
             tab_hover: None,
             tab_hover_anim_start: None,
             tab_last_active_id: None,
@@ -1182,6 +1197,10 @@ crate::renderer::Glyph {
             #[cfg(feature = "completions")]
             completions: completions::CompletionsState::new(),
             debug_split_overlay: None,
+            // Overlays
+            editor_overlay: editor_overlay::EditorOverlayState::new(),
+            dap_overlay: dap_overlay::DapOverlayState::new(),
+            file_tree: file_tree_overlay::FileTreeOverlayState::new(),
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
             #[cfg(feature = "ai")]
@@ -2067,6 +2086,32 @@ crate::renderer::Glyph {
                 let size_info_copy = self.size_info;
                 self.renderer_draw_rects(&size_info_copy, &metrics, ai_rects);
             }
+        }
+
+        // Draw Editor overlay if active (and poll LSP when enabled)
+        if self.editor_overlay.active {
+            #[cfg(feature = "lsp")]
+            {
+                self.editor_overlay_poll_lsp();
+            }
+            let st = self.editor_overlay.clone();
+            self.draw_editor_overlay(config, &st);
+        }
+
+        // Draw File Tree overlay if active (left drawer)
+        if self.file_tree.active {
+            let st = self.file_tree.clone();
+            self.draw_file_tree_overlay(config, &st);
+        }
+
+        // Draw DAP overlay if active (and poll DAP events when enabled)
+        if self.dap_overlay.active {
+            #[cfg(feature = "dap")]
+            {
+                self.dap_poll_events();
+            }
+            let st = self.dap_overlay.clone();
+            self.draw_dap_overlay(config, &st);
         }
 
         // Draw Blocks Search panel overlay if active.

@@ -2090,6 +2090,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             subtitle: Some("Browse and run configured workflows".to_string()),
             entry: PaletteEntry::Action(BindingAction::OpenWorkflowsPanel),
         });
+        items.push(PaletteItem {
+            key: "action:OpenDebugPanel".to_string(),
+            title: "Open Debug Panel".to_string(),
+            subtitle: Some("Start or control a debug session (DAP)".to_string()),
+            entry: PaletteEntry::Action(BindingAction::OpenDebugPanel),
+        });
+        items.push(PaletteItem {
+            key: "action:OpenFileTree".to_string(),
+            title: "Open File Tree".to_string(),
+            subtitle: Some("Browse project files and open in editor".to_string()),
+            entry: PaletteEntry::Action(BindingAction::OpenFileTree),
+        });
         // Sync toggle
         items.push(PaletteItem {
             key: "action:TogglePaneSync".to_string(),
@@ -2121,6 +2133,19 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn palette_active(&self) -> bool {
         self.display.palette.active()
     }
+
+    // File Tree overlay controls wired into Display (Warp-like left drawer)
+    fn open_file_tree_panel(&mut self) {
+        self.display.file_tree_open(None);
+        self.mark_dirty();
+    }
+    fn close_file_tree_panel(&mut self) {
+        self.display.file_tree_close();
+        self.mark_dirty();
+    }
+    fn file_tree_active(&self) -> bool { self.display.file_tree.active }
+    fn file_tree_move_selection(&mut self, delta: isize) { self.display.file_tree_move_selection(delta); }
+    fn file_tree_confirm(&mut self) { self.display.file_tree_confirm(); }
 
     fn palette_input(&mut self, c: char) {
         self.display.palette.push_filter_char(c);
@@ -2170,8 +2195,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         BA::TogglePaneSync => {
                             self.workspace_toggle_sync();
                         },
+                        BA::OpenDebugPanel => {
+                            // Toggle debug panel
+                            if self.display.dap_overlay.active {
+                                self.display.dap_close();
+                            } else {
+                                self.display.dap_open(None);
+                            }
+                            self.mark_dirty();
+                        },
+                        BA::OpenFileTree => {
+                            // Toggle file tree overlay
+                            if self.display.file_tree.active {
+                                self.display.file_tree_close();
+                            } else {
+                                self.display.file_tree_open(None);
+                            }
+                        },
                         _ => {
-                            // Unsupported action here; fall back to sending a message
+                            // Unsupported action here; ignore
                         },
                     }
                 },
