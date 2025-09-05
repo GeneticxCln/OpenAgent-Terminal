@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{Column, Row};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -396,7 +395,7 @@ impl DatabaseIntegration {
         pool: &sqlx::PgPool,
         query: &str,
     ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
-        use sqlx::Row;
+        use sqlx::{Row, Column};
 
         if query.trim().to_lowercase().starts_with("select") {
             let rows = sqlx::query(query).fetch_all(pool).await
@@ -434,7 +433,7 @@ impl DatabaseIntegration {
         pool: &sqlx::MySqlPool,
         query: &str,
     ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
-        use sqlx::Row;
+        use sqlx::{Row, Column};
 
         if query.trim().to_lowercase().starts_with("select") {
             let rows = sqlx::query(query).fetch_all(pool).await
@@ -472,7 +471,7 @@ impl DatabaseIntegration {
         pool: &sqlx::SqlitePool,
         query: &str,
     ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
-        use sqlx::Row;
+        use sqlx::{Row, Column};
 
         if query.trim().to_lowercase().starts_with("select") {
             let rows = sqlx::query(query).fetch_all(pool).await
@@ -506,99 +505,138 @@ impl DatabaseIntegration {
     }
 
     fn extract_postgres_value(&self, row: &sqlx::postgres::PgRow, index: usize) -> Result<serde_json::Value> {
-        use sqlx::ValueRef;
+        use sqlx::Row;
 
-        let value_ref = row.try_get_raw(index)?;
-        
-        if value_ref.is_null() {
-            return Ok(serde_json::Value::Null);
+        // Try different types with null handling
+        if let Ok(val) = row.try_get::<Option<String>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::String(v),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<i32>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Number(v.into()),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<i64>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Number(v.into()),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<f64>, _>(index) {
+            return Ok(match val {
+                Some(v) => {
+                    if let Some(num) = serde_json::Number::from_f64(v) {
+                        serde_json::Value::Number(num)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                }
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<bool>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Bool(v),
+                None => serde_json::Value::Null,
+            });
         }
 
-        // Try different types
-        if let Ok(val) = row.try_get::<String, _>(index) {
-            return Ok(serde_json::Value::String(val));
-        }
-        if let Ok(val) = row.try_get::<i32, _>(index) {
-            return Ok(serde_json::Value::Number(val.into()));
-        }
-        if let Ok(val) = row.try_get::<i64, _>(index) {
-            return Ok(serde_json::Value::Number(val.into()));
-        }
-        if let Ok(val) = row.try_get::<f64, _>(index) {
-            if let Some(num) = serde_json::Number::from_f64(val) {
-                return Ok(serde_json::Value::Number(num));
-            }
-        }
-        if let Ok(val) = row.try_get::<bool, _>(index) {
-            return Ok(serde_json::Value::Bool(val));
-        }
-
-        // Fallback to unknown value representation
-        Ok(serde_json::Value::String("<unknown>".to_string()))
+        // Fallback to string placeholder
+        Ok(serde_json::Value::String("(unrepresentable)".to_string()))
     }
 
     fn extract_mysql_value(&self, row: &sqlx::mysql::MySqlRow, index: usize) -> Result<serde_json::Value> {
-        use sqlx::ValueRef;
+        use sqlx::Row;
 
-        let value_ref = row.try_get_raw(index)?;
-        
-        if value_ref.is_null() {
-            return Ok(serde_json::Value::Null);
+        // Try different types with null handling
+        if let Ok(val) = row.try_get::<Option<String>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::String(v),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<i32>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Number(v.into()),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<i64>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Number(v.into()),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<f64>, _>(index) {
+            return Ok(match val {
+                Some(v) => {
+                    if let Some(num) = serde_json::Number::from_f64(v) {
+                        serde_json::Value::Number(num)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                }
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<bool>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Bool(v),
+                None => serde_json::Value::Null,
+            });
         }
 
-        // Try different types
-        if let Ok(val) = row.try_get::<String, _>(index) {
-            return Ok(serde_json::Value::String(val));
-        }
-        if let Ok(val) = row.try_get::<i32, _>(index) {
-            return Ok(serde_json::Value::Number(val.into()));
-        }
-        if let Ok(val) = row.try_get::<i64, _>(index) {
-            return Ok(serde_json::Value::Number(val.into()));
-        }
-        if let Ok(val) = row.try_get::<f64, _>(index) {
-            if let Some(num) = serde_json::Number::from_f64(val) {
-                return Ok(serde_json::Value::Number(num));
-            }
-        }
-        if let Ok(val) = row.try_get::<bool, _>(index) {
-            return Ok(serde_json::Value::Bool(val));
-        }
-
-        // Fallback to unknown value representation
-        Ok(serde_json::Value::String("<unknown>".to_string()))
+        // Fallback to string placeholder
+        Ok(serde_json::Value::String("(unrepresentable)".to_string()))
     }
 
     fn extract_sqlite_value(&self, row: &sqlx::sqlite::SqliteRow, index: usize) -> Result<serde_json::Value> {
-        use sqlx::ValueRef;
+        use sqlx::Row;
 
-        let value_ref = row.try_get_raw(index)?;
-        
-        if value_ref.is_null() {
-            return Ok(serde_json::Value::Null);
+        // Try different types with null handling
+        if let Ok(val) = row.try_get::<Option<String>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::String(v),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<i32>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Number(v.into()),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<i64>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Number(v.into()),
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<f64>, _>(index) {
+            return Ok(match val {
+                Some(v) => {
+                    if let Some(num) = serde_json::Number::from_f64(v) {
+                        serde_json::Value::Number(num)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                }
+                None => serde_json::Value::Null,
+            });
+        }
+        if let Ok(val) = row.try_get::<Option<bool>, _>(index) {
+            return Ok(match val {
+                Some(v) => serde_json::Value::Bool(v),
+                None => serde_json::Value::Null,
+            });
         }
 
-        // Try different types
-        if let Ok(val) = row.try_get::<String, _>(index) {
-            return Ok(serde_json::Value::String(val));
-        }
-        if let Ok(val) = row.try_get::<i32, _>(index) {
-            return Ok(serde_json::Value::Number(val.into()));
-        }
-        if let Ok(val) = row.try_get::<i64, _>(index) {
-            return Ok(serde_json::Value::Number(val.into()));
-        }
-        if let Ok(val) = row.try_get::<f64, _>(index) {
-            if let Some(num) = serde_json::Number::from_f64(val) {
-                return Ok(serde_json::Value::Number(num));
-            }
-        }
-        if let Ok(val) = row.try_get::<bool, _>(index) {
-            return Ok(serde_json::Value::Bool(val));
-        }
-
-        // Fallback to unknown value representation
-        Ok(serde_json::Value::String("<unknown>".to_string()))
+        // Fallback to string placeholder
+        Ok(serde_json::Value::String("(unrepresentable)".to_string()))
     }
 
     pub async fn get_database_schema(&self, connection_id: Uuid) -> Result<DatabaseSchema> {
@@ -981,7 +1019,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_database_integration_creation() {
-        let db_integration = DatabaseIntegration::new();
+        let _db_integration = DatabaseIntegration::new();
         assert!(true); // Basic creation should work
     }
 

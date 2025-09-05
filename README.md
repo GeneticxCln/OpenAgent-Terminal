@@ -289,6 +289,33 @@ See full docs and UX flow: docs/security_lens.md
 - **Security Lens & Confirmations**: [docs/security_lens.md](docs/security_lens.md)
 - **Plugins & Workflows**: [docs/plugins.md](docs/plugins.md), [docs/workflows.md](docs/workflows.md)
 
+Plugins security (Warp-like) and environment toggles
+
+- Default behavior (dev): verify signatures when present; invalid signatures fail to load; hot reload enabled.
+- Strict release profile: use example_release_config.toml to require signatures for all and disable hot reload.
+- Environment toggles (take precedence at runtime; useful for CI/releases):
+  - OPENAGENT_PLUGINS_REQUIRE_ALL=1|true — require signatures for all plugins (reject unsigned)
+  - OPENAGENT_PLUGINS_HOT_RELOAD=0|false — disable hot reload (recommended for releases)
+  - OPENAGENT_PLUGINS_USER_REQUIRE_SIGNED=1|true — require signatures in user plugins dir
+  - OPENAGENT_PLUGINS_PROJECT_REQUIRE_SIGNED=1|true — require signatures in project ./plugins
+
+See docs/plugins_signing.md for signing/verification and strict policy details.
+
+Quick start: strict mode (like Warp)
+
+Option A — config file (recommended for releases):
+- Copy example_release_config.toml to your config path as openagent-terminal.toml
+  Linux user: ~/.config/openagent-terminal/openagent-terminal.toml
+  System-wide: /etc/openagent-terminal/openagent-terminal.toml
+
+Option B — one-off via environment (CI/runtime override):
+- OPENAGENT_PLUGINS_REQUIRE_ALL=1 OPENAGENT_PLUGINS_HOT_RELOAD=0 openagent-terminal
+
+Trusted keys and signatures:
+- Place trusted publisher keys in ~/.config/openagent-terminal/trusted_keys/*.pub (hex ed25519 pubkeys)
+- Verify a plugin manually: plugin-sdk-cli verify path/to/plugin.wasm
+- Sign a plugin (publisher): plugin-sdk-cli sign <priv_hex|file> path/to/plugin.wasm
+
 ## Further information
 
 - Releases: https://github.com/GeneticxCln/OpenAgent-Terminal/releases

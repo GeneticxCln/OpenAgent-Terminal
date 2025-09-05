@@ -154,9 +154,9 @@ mod tests {
         
         // This would normally connect to a real marketplace
         // In tests, we'd mock this or use a test server
-        let results = theme_system.search_themes("dark").await.unwrap_or_default();
+        let _results = theme_system.search_themes("dark").await.unwrap_or_default();
         
         // Just verify the search doesn't crash
-        assert!(results.len() >= 0);
+        // No assertion on length; reaching here without panic is success
     }
 }

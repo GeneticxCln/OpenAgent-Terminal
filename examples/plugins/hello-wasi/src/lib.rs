@@ -40,6 +40,13 @@ fn handle_event(ptr: i32, len: i32) -> Result<(), PluginError> {
     // 1. Read JSON event data from WASM memory at ptr/len
     // 2. Deserialize and process the event
     // 3. Generate and return a response
+
+    // For demo purposes, set a small JSON response the host can read back
+    let _ = plugin_sdk::set_last_response_json(&serde_json::json!({
+        "ok": true,
+        "received_len": len,
+    }));
+
     Ok(())
 }
 

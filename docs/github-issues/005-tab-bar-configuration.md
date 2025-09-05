@@ -7,17 +7,11 @@
 The tab bar implementation has a TODO comment indicating missing configuration for the close button display. This should be part of a broader effort to make the tab bar more configurable.
 
 ## Current Status
-Currently missing configuration options for tab bar behavior and appearance.
+Implemented in codebase (tab bar config and rendering updated). TODO comment removed and config respected for close button, modified indicator, numbering, new-tab button, and width constraints.
 
 ### Location with TODO
 - **File**: `openagent-terminal/src/display/tab_bar.rs`
-- **Line**: 200
-- **Code context**:
-```rust
-// Draw close button (if enabled in config)
-// TODO: Check config for show_tab_close_button
-let close_x = current_x + tab_width.saturating_sub(2);
-```
+- Status: TODO removed; rendering now checks `workspace.tab_bar.show_close_button` and `close_button_on_hover`.
 
 ## Proposed Configuration Options
 
@@ -347,11 +341,11 @@ workspace:
 - `component/tabs`
 
 ## Definition of Done
-- [ ] TODO comment resolved
-- [ ] Configuration structure implemented
-- [ ] All configuration options functional
-- [ ] Theme integration working
-- [ ] Click handling enhanced
-- [ ] Tests passing
-- [ ] Documentation updated with configuration examples
-- [ ] Default configuration provides good UX
+- [x] TODO comment resolved
+- [x] Configuration structure implemented (close_button_on_hover, show_new_tab_button, show_tab_numbers, min/max tab widths)
+- [x] Tab bar config options functional in rendering and click/drag
+- [ ] Theme integration working (advanced style/color overrides pending)
+- [ ] Click handling enhanced (middle/double click actions pending)
+- [ ] Tests passing (integration tests to be expanded)
+- [x] Documentation updated with configuration examples
+- [x] Default configuration provides good UX

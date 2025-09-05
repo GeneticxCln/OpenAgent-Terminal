@@ -36,6 +36,32 @@ lto = "thin"
 debug = 1
 incremental = false
 
+# Security Lens development profile - optimized for fast iteration
+[profile.security-lens-dev]
+inherits = "dev"
+opt-level = 1
+debug = true
+incremental = true
+# Enable debug assertions for Security Lens testing
+debug-assertions = true
+
+# Security Lens testing profile - optimized for test performance
+[profile.security-lens-test]
+inherits = "test"
+opt-level = 2
+debug = true
+# Keep symbols for better debugging of Security Lens patterns
+debug-assertions = true
+
+# Security Lens release profile - optimized for Security Lens performance
+[profile.security-lens-release]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+# Optimize regex compilation for Security Lens patterns
+opt-level = 3
+
 [workspace.dependencies]
 # Core dependencies (always needed)
 toml = "0.9.5"

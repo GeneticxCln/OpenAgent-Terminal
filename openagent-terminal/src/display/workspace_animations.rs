@@ -4,10 +4,10 @@
 //! including tab creation/deletion, drag-and-drop, split operations, and transitions.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::workspace::TabId;
-use super::animation::{ease_out_cubic, compute_progress};
+use super::animation::ease_out_cubic;
 
 /// Duration for different animation types in milliseconds
 pub const DURATION_TAB_OPEN_MS: u32 = 200;
@@ -322,7 +322,7 @@ pub struct AnimationPerformanceInfo {
 
 /// Helper functions for common animation calculations
 pub mod animation_helpers {
-    use super::*;
+    
 
     /// Calculate smooth drag offset with momentum
     pub fn calculate_drag_offset(

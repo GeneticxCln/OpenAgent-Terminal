@@ -84,9 +84,21 @@ pub struct TabBarConfig {
     #[config(default = true)]
     pub show_close_button: bool,
 
+    /// Only render the close button on hover (still clickable in the region)
+    #[config(default = false)]
+    pub close_button_on_hover: bool,
+
     /// Show modified indicator
     #[config(default = true)]
     pub show_modified_indicator: bool,
+
+    /// Show a [+] button to create new tabs when there is remaining space
+    #[config(default = true)]
+    pub show_new_tab_button: bool,
+
+    /// Show tab numbers/indices before the title (e.g. "1: title")
+    #[config(default = false)]
+    pub show_tab_numbers: bool,
 
     /// Reserve a terminal row for the tab bar (avoids overlaying content)
     /// Note: Top reservation hides the top line of grid content; Bottom reservation hides the
@@ -97,6 +109,14 @@ pub struct TabBarConfig {
     /// Maximum tab title length
     #[config(default = 20)]
     pub max_title_length: usize,
+
+    /// Minimum tab width (cells). None => built-in default
+    #[serde(default)]
+    pub min_tab_width: Option<usize>,
+
+    /// Maximum tab width (cells). None => built-in default
+    #[serde(default)]
+    pub max_tab_width: Option<usize>,
 
     /// What to do when creating a new tab
     #[config(default = "NewTabAction::InheritWorkingDir")]
@@ -158,8 +178,13 @@ impl Default for TabBarConfig {
             show: true,
             visibility: TabBarVisibility::Auto,
             show_close_button: true,
+            close_button_on_hover: false,
             show_modified_indicator: true,
+            show_new_tab_button: true,
+            show_tab_numbers: false,
             max_title_length: 20,
+            min_tab_width: None,
+            max_tab_width: None,
             new_tab_action: NewTabAction::InheritWorkingDir,
             reserve_row: true,
         }

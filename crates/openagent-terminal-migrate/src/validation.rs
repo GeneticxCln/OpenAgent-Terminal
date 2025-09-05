@@ -34,7 +34,7 @@ pub fn validate_config(config_path: &Path) -> Result<()> {
 
 fn validate_sections(config: &toml::Value) -> Result<()> {
     let mut warnings = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
+    let errors: Vec<String> = Vec::new();
 
     // Check for required sections
     if let Some(table) = config.as_table() {

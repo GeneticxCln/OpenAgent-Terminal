@@ -90,7 +90,9 @@ impl Display {
         }
 
         let available_width = num_cols;
-        let max_tab_width = (available_width / tab_count).clamp(MIN_TAB_WIDTH, MAX_TAB_WIDTH);
+        let min_w = config.workspace.tab_bar.min_tab_width.unwrap_or(MIN_TAB_WIDTH);
+        let max_w = config.workspace.tab_bar.max_tab_width.unwrap_or(MAX_TAB_WIDTH);
+        let max_tab_width = (available_width / tab_count).clamp(min_w, max_w);
 
         // Draw tab bar background
         let bar_y = start_line as f32 * size_info.cell_height();
@@ -123,7 +125,7 @@ impl Display {
         let hover = self.tab_hover;
         let _now = std::time::Instant::now();
         
-        // Check for active drag state
+        // Check for active drag state (clone to avoid borrowing self)
         let drag_state = self.tab_drag_active.clone();
         
         // Calculate animation states
@@ -141,7 +143,7 @@ impl Display {
             let mut scale = 1.0;
             
             // Apply drag animation effects
-            if let Some(drag) = drag_state.as_ref() {
+            if let Some(ref drag) = drag_state {
                 if drag.tab_id == tab_id && drag.is_active {
                     // Tab being dragged - apply visual offset
                     visual_x += drag.visual_offset_x;
@@ -160,13 +162,13 @@ impl Display {
                 }
             }
             
-            // Store position for rendering (include index for separator logic)
-            tab_positions.push((index, tab_id, visual_x, tab_width, alpha, scale));
+            // Store position for rendering (include index for numbering)
+            tab_positions.push((tab_id, index, visual_x, tab_width, alpha, scale));
             current_x += tab_width + 1; // +1 for separator
         }
         
         // Render tabs with calculated positions and effects
-        for (index, tab_id, visual_x, tab_width, alpha, scale) in tab_positions {
+        for (tab_id, index, visual_x, tab_width, alpha, scale) in tab_positions {
             let tab = match tab_manager.get_tab(tab_id) {
                 Some(tab) => tab,
                 None => continue,
@@ -220,7 +222,7 @@ impl Display {
                 self.stage_ui_rounded_rect(active_rect);
                 
                 // Add subtle shadow for dragged tabs
-                if let Some(drag) = drag_state.as_ref() {
+                if let Some(drag) = drag_state.clone() {
                     if drag.tab_id == tab_id && drag.is_active {
                         let shadow_offset = 3.0;
                         let shadow_rect = UiRoundedRect::new(
@@ -247,10 +249,25 @@ impl Display {
                 tab_text.push(' ');
             }
 
+            // Add tab number prefix if configured
+            if tab_cfg.show_tab_numbers {
+                let number_prefix = format!("{}:", index + 1);
+                tab_text.push_str(&number_prefix);
+                tab_text.push(' ');
+            }
+
             // Add tab title (truncate if necessary)
             let reserved_for_close = if tab_cfg.show_close_button { 2 } else { 0 };
             let reserved_for_modified = if show_modified { 2 } else { 0 };
-            let mut title_space = tab_width.saturating_sub(reserved_for_close + reserved_for_modified);
+            let reserved_for_number = if tab_cfg.show_tab_numbers {
+                // Rough count of chars added above (e.g. "12:" => up to 3 or 4 chars). Use 4 to be safe.
+                4
+            } else {
+                0
+            };
+            let mut title_space = tab_width.saturating_sub(
+                reserved_for_close + reserved_for_modified + reserved_for_number,
+            );
             // Also respect configured max title length
             title_space = title_space.min(tab_cfg.max_title_length);
 
@@ -275,7 +292,7 @@ impl Display {
             self.draw_tab_text(text_point, text_color, bg, &tab_text, tab_width.saturating_sub(2));
 
             // Draw close button (if enabled in config)
-            if tab_cfg.show_close_button {
+            if tab_cfg.show_close_button && (!tab_cfg.close_button_on_hover || is_hover_tab) {
                 let close_x = current_x + tab_width.saturating_sub(2);
                 if close_x > current_x {
                     let close_point = Point::new(start_line, Column(close_x));
@@ -302,7 +319,7 @@ impl Display {
         }
 
         // Draw new tab button ("[+]") in the remaining area
-        if current_x < num_cols {
+        if tab_cfg.show_new_tab_button && current_x < num_cols {
             let plus_label = "[+]";
             let plus_point = Point::new(start_line, Column(current_x + 1));
             let hovered_create = matches!(hover, Some(crate::display::TabHoverTarget::Create));
@@ -403,7 +420,7 @@ impl Display {
         let tab_order = tab_manager.tab_order();
         let mut current_x = 0;
 
-for &tab_id in tab_order.iter() {
+        for &tab_id in tab_order.iter() {
             let tab_width = max_tab_width.min(size_info.columns - current_x);
 
             // Check if click is within this tab
@@ -422,7 +439,7 @@ for &tab_id in tab_order.iter() {
         }
 
         // Check if click is in empty area (create new tab)
-        if current_x < size_info.columns {
+        if config.workspace.tab_bar.show_new_tab_button && current_x < size_info.columns {
             return Some(TabBarAction::CreateTab);
         }
 
@@ -487,7 +504,7 @@ for &tab_id in tab_order.iter() {
 
         // Check if click is in empty area (create new tab)
         let tab_count = tab_manager.tab_count();
-        if tab_count > 0 {
+        if config.workspace.tab_bar.show_new_tab_button && tab_count > 0 {
             let available_width = size_info.columns;
             let max_tab_width = (available_width / tab_count).clamp(MIN_TAB_WIDTH, MAX_TAB_WIDTH);
             let tab_area_width = tab_count * (max_tab_width + 1); // +1 for separator

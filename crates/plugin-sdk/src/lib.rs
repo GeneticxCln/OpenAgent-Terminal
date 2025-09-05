@@ -17,6 +17,12 @@ pub use plugin_api::{
 /// Global storage for plugin metadata (allocated in WASM linear memory)
 static mut PLUGIN_METADATA_JSON: Option<Vec<u8>> = None;
 
+/// Global event buffer for host-to-plugin data transfer
+static mut PLUGIN_EVENT_BUFFER: Option<Vec<u8>> = None;
+
+/// Global storage for the last plugin response payload (JSON)
+static mut LAST_RESPONSE_JSON: Option<Vec<u8>> = None;
+
 /// Result codes for plugin functions
 pub mod result_codes {
     pub const SUCCESS: i32 = 0;
@@ -50,6 +56,10 @@ extern "C" {
 
     // Execute a command on the host
     fn host_execute_command(cmd_ptr: *const u8, cmd_len: usize) -> i32;
+
+    // Persistent storage
+    fn host_store_data(key_ptr: *const u8, key_len: usize, data_ptr: *const u8, data_len: usize) -> i32;
+    fn host_retrieve_data(key_ptr: *const u8, key_len: usize, result_ptr: *mut u8, result_len_ptr: *mut u32) -> i32;
 }
 
 /// Safe wrapper for host logging
@@ -146,6 +156,32 @@ pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
     }
 }
 
+/// Persistent storage: store data by key
+pub fn store_data(key: &str, data: &[u8]) -> Result<(), PluginError> {
+    let rc = unsafe { host_store_data(key.as_ptr(), key.len(), data.as_ptr(), data.len()) };
+    match rc {
+        0 => Ok(()),
+        -2 => Err(PluginError::IoError(std::io::Error::other("Store failed"))),
+        _ => Err(PluginError::Unknown("Storage host unavailable".into())),
+    }
+}
+
+/// Persistent storage: retrieve data by key
+pub fn retrieve_data(key: &str) -> Result<Option<Vec<u8>>, PluginError> {
+    let mut len: u32 = 0;
+    let rc = unsafe { host_retrieve_data(key.as_ptr(), key.len(), std::ptr::null_mut(), &mut len as *mut u32) };
+    match rc {
+        0 => {
+            let mut buf = vec![0u8; len as usize];
+            let rc2 = unsafe { host_retrieve_data(key.as_ptr(), key.len(), buf.as_mut_ptr(), &mut len as *mut u32) };
+            if rc2 == 0 { Ok(Some(buf)) } else { Err(PluginError::IoError(std::io::Error::other("Retrieve failed"))) }
+        },
+        -1 => Ok(None),
+        -2 => Err(PluginError::IoError(std::io::Error::other("Retrieve failed"))),
+        _ => Err(PluginError::Unknown("Storage host unavailable".into())),
+    }
+}
+
 /// Set the plugin metadata (called during initialization)
 pub fn set_plugin_metadata(metadata: &PluginMetadata) -> Result<(), PluginError> {
     let json = serde_json::to_vec(metadata).map_err(PluginError::SerializationError)?;
@@ -175,15 +211,31 @@ pub extern "C" fn plugin_get_metadata() -> i64 {
 /// Export: Handle an event (placeholder implementation)
 #[no_mangle]
 pub extern "C" fn plugin_handle_event(ptr: i32, len: i32) -> i32 {
-    // In a full implementation, this would:
-    // 1. Read JSON event data from memory at ptr/len
-    // 2. Deserialize the event
-    // 3. Call the plugin's event handler
-    // 4. Serialize the response back to memory
-    // 5. Return success/error code
-
-    // For now, just log that an event was received
+    // For now, just log that an event was received and set a default response
     log(LogLevel::Info, &format!("Received event at ptr={}, len={}", ptr, len));
+
+    // Best-effort: capture a small preview to aid debugging
+    unsafe {
+        if ptr > 0 && len > 0 {
+            let src = core::slice::from_raw_parts(ptr as *const u8, len as usize);
+            let preview = if src.len() > 64 { &src[..64] } else { src };
+            let mut msg = b"{\"status\":\"ok\",\"preview\":\"".to_vec();
+            for &b in preview {
+                // escape simple quotes for readability
+                let ch = match b {
+                    b'\\' => b"\\\\".to_vec(),
+                    b'"' => b"\\\"".to_vec(),
+                    _ => vec![b],
+                };
+                msg.extend_from_slice(&ch);
+            }
+            msg.extend_from_slice(b"\"}");
+            LAST_RESPONSE_JSON = Some(msg);
+        } else {
+            LAST_RESPONSE_JSON = Some(b"{\"status\":\"ok\"}".to_vec());
+        }
+    }
+
     result_codes::SUCCESS
 }
 
@@ -192,6 +244,51 @@ pub extern "C" fn plugin_handle_event(ptr: i32, len: i32) -> i32 {
 pub extern "C" fn plugin_init() -> i32 {
     log(LogLevel::Info, "Plugin initialized via SDK");
     result_codes::SUCCESS
+}
+
+/// Export: Allocate a buffer inside plugin linear memory for host to write into
+#[no_mangle]
+pub extern "C" fn plugin_alloc(size: i32) -> i32 {
+    if size <= 0 { return 0; }
+    let size = size as usize;
+    unsafe {
+        // Allocate or resize buffer; keep ownership to ensure pointer stability
+        let buf = PLUGIN_EVENT_BUFFER.get_or_insert_with(|| vec![0u8; size]);
+        if buf.len() < size {
+            buf.resize(size, 0);
+        }
+        buf.as_mut_ptr() as i32
+    }
+}
+
+/// Export: Retrieve the last response set by the plugin (packed ptr|len as i64)
+#[no_mangle]
+pub extern "C" fn plugin_get_last_response() -> i64 {
+    unsafe {
+        if let Some(ref json) = LAST_RESPONSE_JSON {
+            let ptr = json.as_ptr() as u32;
+            let len = json.len() as u32;
+            ((len as i64) << 32) | (ptr as i64)
+        } else {
+            0
+        }
+    }
+}
+
+/// Helper: Set the last response from plugin code using a JSON string
+pub fn set_last_response_str(json: &str) {
+    unsafe {
+        LAST_RESPONSE_JSON = Some(json.as_bytes().to_vec());
+    }
+}
+
+/// Helper: Set the last response from a serializable value
+pub fn set_last_response_json<T: serde::Serialize>(value: &T) -> Result<(), PluginError> {
+    let bytes = serde_json::to_vec(value).map_err(PluginError::SerializationError)?;
+    unsafe {
+        LAST_RESPONSE_JSON = Some(bytes);
+    }
+    Ok(())
 }
 
 /// Export: Cleanup plugin (default implementation)

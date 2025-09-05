@@ -36,7 +36,11 @@ pub mod window_context;
 // New component modules
 pub mod blocks_v2;
 pub mod components_init;
-pub mod security_lens;
+pub mod security; // Feature-gated security module
+#[cfg(feature = "security-lens")]
+pub use security::security_lens as security_lens;
+#[cfg(not(feature = "security-lens"))]
+pub use security::stub as security_lens;
 pub mod text_shaping;
 pub mod ui_confirm;
 pub mod workspace;
