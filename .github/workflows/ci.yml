@@ -265,6 +265,20 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
             SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.995 --scenario=$scenario --backend=wgpu
           done
 
+  ide-build:
+    name: IDE (editor + LSP + DAP) build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build IDE feature set (umbrella features: editor,lsp,dap,indexer)
+        run: cargo build -p openagent-terminal --release --features "ide"
+      - name: Clippy (IDE feature set)
+        run: cargo clippy -p openagent-terminal --features "ide" -- -D warnings
+
 
   coverage:
     name: Coverage (llvm-cov)
