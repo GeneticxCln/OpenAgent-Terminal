@@ -1,3 +1,4 @@
+use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::{self, Term};
 use std::path::PathBuf;
@@ -199,7 +200,7 @@ impl super::Display {
         &mut self,
         config: &UiConfig,
         prefix: &str,
-        cursor_point: Point<usize>,
+        cursor_point: Point,
         display_offset: usize,
         alt_screen: bool,
     ) {
@@ -278,7 +279,15 @@ impl super::Display {
 
         // Items
         let mut line = start_line + 1;
-        for item in self.completions.items.iter().take(max_rows) {
+        // Avoid borrowing self.completions while drawing with &mut self by cloning the visible slice
+        let visible_items: Vec<_> = self
+            .completions
+            .items
+            .iter()
+            .take(max_rows)
+            .cloned()
+            .collect();
+        for item in visible_items {
             let icon = item.icon;
             let mut row = String::new();
             row.push_str(icon);

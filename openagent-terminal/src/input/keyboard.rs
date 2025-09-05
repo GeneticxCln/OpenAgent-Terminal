@@ -346,7 +346,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     {
                         self.ctx.open_ai_panel();
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
-                            runtime.ui.scratch = text.clone();
+runtime.ui.scratch = text.to_string();
                             runtime.ui.cursor_position = runtime.ui.scratch.len();
                         }
                         // Reset composer state

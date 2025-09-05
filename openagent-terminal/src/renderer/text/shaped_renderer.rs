@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::mem;
 
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
+use ::wgpu as wgpu_crate;
+use wgpu_crate::util::DeviceExt;
 
 use crate::config::font::Font as FontConfig;
 use crate::display::content::RenderableCell;
@@ -59,20 +60,20 @@ pub struct WgpuShapedTextRenderer {
     render_config: ShapedRenderConfig,
 
     // WGPU resources
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: wgpu_crate::Device,
+    queue: wgpu_crate::Queue,
 
     // Vertex buffer for batched rendering
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
+    vertex_buffer: wgpu_crate::Buffer,
+    index_buffer: wgpu_crate::Buffer,
 
     // Staging data
     vertices: Vec<ShapedTextVertex>,
     indices: Vec<u32>,
 
     // Render pipeline
-    render_pipeline: wgpu::RenderPipeline,
-    bind_group: Option<wgpu::BindGroup>,
+    render_pipeline: wgpu_crate::RenderPipeline,
+    bind_group: Option<wgpu_crate::BindGroup>,
 
     // Cache for line shaping results
     shaped_line_cache: HashMap<String, ShapedLine>,
@@ -81,9 +82,9 @@ pub struct WgpuShapedTextRenderer {
 impl WgpuShapedTextRenderer {
     /// Create a new shaped text renderer
     pub fn new(
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        surface_format: wgpu::TextureFormat,
+        device: wgpu_crate::Device,
+        queue: wgpu_crate::Queue,
+        surface_format: wgpu_crate::TextureFormat,
         font_config: &FontConfig,
         shaping_config: ShapingIntegrationConfig,
         render_config: ShapedRenderConfig,
@@ -92,26 +93,27 @@ impl WgpuShapedTextRenderer {
             .context("Failed to create integrated text shaper")?;
 
         // Create vertex buffer
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let vertex_buffer = device.create_buffer(&wgpu_crate::BufferDescriptor {
             label: Some("Shaped Text Vertex Buffer"),
             size: (render_config.max_vertices_per_batch * mem::size_of::<ShapedTextVertex>())
                 as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu_crate::BufferUsages::VERTEX | wgpu_crate::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         // Create index buffer
         let max_indices = render_config.max_vertices_per_batch * 6 / 4; // Assuming quads
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let index_buffer = device.create_buffer(&wgpu_crate::BufferDescriptor {
             label: Some("Shaped Text Index Buffer"),
             size: (max_indices * mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu_crate::BufferUsages::INDEX | wgpu_crate::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         // Create render pipeline
         let render_pipeline = Self::create_render_pipeline(&device, surface_format)?;
 
+        let max_vertices = render_config.max_vertices_per_batch;
         Ok(Self {
             text_shaper,
             render_config,
@@ -119,7 +121,7 @@ impl WgpuShapedTextRenderer {
             queue,
             vertex_buffer,
             index_buffer,
-            vertices: Vec::with_capacity(render_config.max_vertices_per_batch),
+            vertices: Vec::with_capacity(max_vertices),
             indices: Vec::with_capacity(max_indices),
             render_pipeline,
             bind_group: None,
@@ -298,95 +300,95 @@ impl WgpuShapedTextRenderer {
 
     /// Create the shaped text render pipeline
     fn create_render_pipeline(
-        device: &wgpu::Device,
-        surface_format: wgpu::TextureFormat,
-    ) -> Result<wgpu::RenderPipeline> {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        device: &wgpu_crate::Device,
+        surface_format: wgpu_crate::TextureFormat,
+    ) -> Result<wgpu_crate::RenderPipeline> {
+        let shader = device.create_shader_module(wgpu_crate::ShaderModuleDescriptor {
             label: Some("Shaped Text Shader"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+            source: wgpu_crate::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
                 "../shaders/shaped_text.wgsl"
             ))),
         });
 
-        let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<ShapedTextVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
+        let vertex_buffer_layout = wgpu_crate::VertexBufferLayout {
+            array_stride: mem::size_of::<ShapedTextVertex>() as wgpu_crate::BufferAddress,
+            step_mode: wgpu_crate::VertexStepMode::Vertex,
             attributes: &[
                 // Position
-                wgpu::VertexAttribute {
+                wgpu_crate::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: wgpu_crate::VertexFormat::Float32x2,
                 },
                 // UV
-                wgpu::VertexAttribute {
+                wgpu_crate::VertexAttribute {
                     offset: 8,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: wgpu_crate::VertexFormat::Float32x2,
                 },
                 // Color
-                wgpu::VertexAttribute {
+                wgpu_crate::VertexAttribute {
                     offset: 16,
                     shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu_crate::VertexFormat::Float32x4,
                 },
                 // Flags
-                wgpu::VertexAttribute {
+                wgpu_crate::VertexAttribute {
                     offset: 32,
                     shader_location: 3,
-                    format: wgpu::VertexFormat::Uint32,
+                    format: wgpu_crate::VertexFormat::Uint32,
                 },
                 // Layer
-                wgpu::VertexAttribute {
+                wgpu_crate::VertexAttribute {
                     offset: 36,
                     shader_location: 4,
-                    format: wgpu::VertexFormat::Uint32,
+                    format: wgpu_crate::VertexFormat::Uint32,
                 },
                 // Glyph offset
-                wgpu::VertexAttribute {
+                wgpu_crate::VertexAttribute {
                     offset: 40,
                     shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: wgpu_crate::VertexFormat::Float32x2,
                 },
             ],
         };
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&wgpu_crate::PipelineLayoutDescriptor {
             label: Some("Shaped Text Pipeline Layout"),
             bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let render_pipeline = device.create_render_pipeline(&wgpu_crate::RenderPipelineDescriptor {
             label: Some("Shaped Text Render Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
+            vertex: wgpu_crate::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[vertex_buffer_layout],
                 compilation_options: Default::default(),
             },
-            fragment: Some(wgpu::FragmentState {
+            fragment: Some(wgpu_crate::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu_crate::ColorTargetState {
                     format: surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
+                    blend: Some(wgpu_crate::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu_crate::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
+            primitive: wgpu_crate::PrimitiveState {
+                topology: wgpu_crate::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                front_face: wgpu_crate::FrontFace::Ccw,
+                cull_mode: Some(wgpu_crate::Face::Back),
                 unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
+                polygon_mode: wgpu_crate::PolygonMode::Fill,
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState {
+            multisample: wgpu_crate::MultisampleState {
                 count: 1,
                 mask: !0,
                 alpha_to_coverage_enabled: false,

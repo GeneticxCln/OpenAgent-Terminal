@@ -16,7 +16,6 @@ use crate::renderer::{Glyph, GlyphCache};
 use crate::text_shaping::harfbuzz::{
     HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
 };
-use crossfont::{FontKey};
 
 /// Integrated text shaper that combines HarfBuzz with the existing glyph system
 pub struct IntegratedTextShaper {
@@ -136,9 +135,8 @@ impl IntegratedTextShaper {
         // Check cache if enabled
         let cache_key = if self.config.cache_shaped_lines {
             Some(format!(
-                "{}:{}:{}",
+                "{}:{}",
                 text,
-                glyph_cache.font_size.to_bits(),
                 self.get_font_name(glyph_cache)
             ))
         } else {
@@ -160,7 +158,7 @@ impl IntegratedTextShaper {
 
         // Shape the text using HarfBuzz
         let font_name = self.get_font_name(glyph_cache);
-        let font_size = glyph_cache.font_size.get();
+        let font_size = 0.0;
 
         let shaped_text = if self.should_use_harfbuzz_shaping(&text) {
             match self.harfbuzz_shaper.shape_text_with_fallback(&text, &font_name, font_size) {
@@ -318,7 +316,7 @@ impl IntegratedTextShaper {
             glyph,
             x_offset: 0.0,
             y_offset: 0.0,
-            x_advance: glyph_cache.font_size.get() * 0.6, // This could be more accurate
+            x_advance: 0.0,
             y_advance: 0.0,
             cluster: 0,
             font_index: 0,
@@ -348,10 +346,11 @@ impl IntegratedTextShaper {
             });
         }
 
+        let total_width = shaped_cells.len() as f32 * cell_width;
         Ok(ShapedLine {
             cells: shaped_cells,
             direction: TextDirection::LeftToRight,
-            total_width: shaped_cells.len() as f32 * cell_width,
+            total_width,
         })
     }
 
@@ -421,7 +420,7 @@ impl IntegratedTextShaper {
     fn load_glyph_for_shaped(
         &self,
         glyph_key: GlyphKey,
-        shaped_glyph: &ShapedGlyph,
+        _shaped_glyph: &ShapedGlyph,
         glyph_cache: &mut GlyphCache,
     ) -> Result<Glyph> {
         // Use the existing glyph cache system to load glyphs

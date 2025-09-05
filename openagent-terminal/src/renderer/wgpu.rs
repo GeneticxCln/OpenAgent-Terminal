@@ -4,7 +4,8 @@ use log::{debug, info};
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use wgpu::util::DeviceExt;
+use ::wgpu as wgpu_crate;
+use wgpu_crate::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
 use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
@@ -19,7 +20,7 @@ use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
 
 use super::rects::RenderRect;
-use super::ui::UiRoundedRect;
+use super::ui::{UiRoundedRect, UiSprite};
 use super::{Glyph, GlyphCache, LoadGlyph, LoaderApi};
 
 const RECT_SHADER_WGSL: &str = r#"
@@ -50,6 +51,86 @@ fn vs_main(@location(0) pos: vec2<f32>,
   out.kind = kind;
   return out;
 }
+
+
+fn draw_undercurl(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
+  // Use cos wave with amplitude based on undercurl_position
+  let pi = 3.1415926538;
+  let undercurl = ru.undercurl_position / 2.0 * cos((x + 0.5) * 2.0 * pi / ru.cell_size.x)
+                + ru.undercurl_position - 1.0;
+  let top = undercurl + max((ru.underline_thickness - 1.0), 0.0) / 2.0;
+  let bottom = undercurl - max((ru.underline_thickness - 1.0), 0.0) / 2.0;
+  // Distance from curve boundary; keep positive for AA mask
+  let dst = max(y - top, max(bottom - y, 0.0));
+  // Simple AA-like falloff to preserve thickness
+  let alpha = max(0.0, 1.0 - dst * dst);
+  return vec4<f32>(color.rgb, alpha);
+}
+
+fn draw_dotted_single_px(x: f32, y: f32, color: vec4<f32>, frag_pos: vec4<f32>) -> vec4<f32> {
+  var cell_even: f32 = 0.0;
+  if (i32(ru.cell_size.x) % 2 != 0) {
+    cell_even = f32(i32(floor((frag_pos.x - ru.padding.x) / ru.cell_size.x)) % 2);
+  }
+  var alpha = 1.0 - abs(floor(ru.underline_position) - y);
+  if (i32(x) % 2 != i32(cell_even)) {
+    alpha = 0.0;
+  }
+  return vec4<f32>(color.rgb, alpha);
+}
+
+fn draw_dotted_aa(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
+  let dot_number = floor(x / ru.underline_thickness);
+  let radius = ru.underline_thickness / 2.0;
+  let center_y = ru.underline_position - 1.0;
+  let left_center = (dot_number - (dot_number % 2.0)) * ru.underline_thickness + radius;
+  let right_center = left_center + 2.0 * ru.underline_thickness;
+  let dist_left = distance(vec2<f32>(x, y), vec2<f32>(left_center, center_y));
+  let dist_right = distance(vec2<f32>(x, y), vec2<f32>(right_center, center_y));
+  let d = min(dist_left, dist_right);
+  let alpha = max(0.0, 1.0 - (d - radius));
+  return vec4<f32>(color.rgb, alpha);
+}
+
+fn draw_dashed(x: f32, color: vec4<f32>) -> vec4<f32> {
+  let half_dash = floor(ru.cell_size.x / 4.0 + 0.5);
+  var alpha = 1.0;
+  if (x > half_dash - 1.0 && x < ru.cell_size.x - half_dash) {
+    alpha = 0.0;
+  }
+  return vec4<f32>(color.rgb, alpha);
+}
+
+@fragment
+fn fs_main(in: VsOut, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+  // Compute pixel coordinates within a cell (x,y)
+  let x = floor(f32(mod((frag_pos.x - ru.padding.x), ru.cell_size.x)));
+  let y = floor(f32(mod((frag_pos.y - ru.padding.y), ru.cell_size.y)));
+
+  switch (in.kind) {
+    case 1u: { // undercurl
+      let col = draw_undercurl(x, y, in.color);
+      return vec4<f32>(col.rgb, col.a * in.color.a);
+    }
+    case 2u: { // dotted underline
+      if (ru.underline_thickness < 2.0) {
+        let col = draw_dotted_single_px(x, y, in.color, frag_pos);
+        return vec4<f32>(col.rgb, col.a * in.color.a);
+      } else {
+        let col = draw_dotted_aa(x, y, in.color);
+        return vec4<f32>(col.rgb, col.a * in.color.a);
+      }
+    }
+    case 3u: { // dashed underline
+      let col = draw_dashed(x, in.color);
+      return vec4<f32>(col.rgb, col.a * in.color.a);
+    }
+    default: {
+      return in.color;
+    }
+  }
+}
+"#;
 
 /// Per-layer atlas metrics used for reporting/debugging.
 #[derive(Debug, Clone)]
@@ -175,85 +256,6 @@ impl WgpuRenderer {
         }
     }
 }
-
-fn draw_undercurl(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
-  // Use cos wave with amplitude based on undercurl_position
-  let pi = 3.1415926538;
-  let undercurl = ru.undercurl_position / 2.0 * cos((x + 0.5) * 2.0 * pi / ru.cell_size.x)
-                + ru.undercurl_position - 1.0;
-  let top = undercurl + max((ru.underline_thickness - 1.0), 0.0) / 2.0;
-  let bottom = undercurl - max((ru.underline_thickness - 1.0), 0.0) / 2.0;
-  // Distance from curve boundary; keep positive for AA mask
-  let dst = max(y - top, max(bottom - y, 0.0));
-  // Simple AA-like falloff to preserve thickness
-  let alpha = max(0.0, 1.0 - dst * dst);
-  return vec4<f32>(color.rgb, alpha);
-}
-
-fn draw_dotted_single_px(x: f32, y: f32, color: vec4<f32>, frag_pos: vec4<f32>) -> vec4<f32> {
-  var cell_even: f32 = 0.0;
-  if (i32(ru.cell_size.x) % 2 != 0) {
-    cell_even = f32(i32(floor((frag_pos.x - ru.padding.x) / ru.cell_size.x)) % 2);
-  }
-  var alpha = 1.0 - abs(floor(ru.underline_position) - y);
-  if (i32(x) % 2 != i32(cell_even)) {
-    alpha = 0.0;
-  }
-  return vec4<f32>(color.rgb, alpha);
-}
-
-fn draw_dotted_aa(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
-  let dot_number = floor(x / ru.underline_thickness);
-  let radius = ru.underline_thickness / 2.0;
-  let center_y = ru.underline_position - 1.0;
-  let left_center = (dot_number - (dot_number % 2.0)) * ru.underline_thickness + radius;
-  let right_center = left_center + 2.0 * ru.underline_thickness;
-  let dist_left = distance(vec2<f32>(x, y), vec2<f32>(left_center, center_y));
-  let dist_right = distance(vec2<f32>(x, y), vec2<f32>(right_center, center_y));
-  let d = min(dist_left, dist_right);
-  let alpha = max(0.0, 1.0 - (d - radius));
-  return vec4<f32>(color.rgb, alpha);
-}
-
-fn draw_dashed(x: f32, color: vec4<f32>) -> vec4<f32> {
-  let half_dash = floor(ru.cell_size.x / 4.0 + 0.5);
-  var alpha = 1.0;
-  if (x > half_dash - 1.0 && x < ru.cell_size.x - half_dash) {
-    alpha = 0.0;
-  }
-  return vec4<f32>(color.rgb, alpha);
-}
-
-@fragment
-fn fs_main(in: VsOut, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
-  // Compute pixel coordinates within a cell (x,y)
-  let x = floor(f32(mod((frag_pos.x - ru.padding.x), ru.cell_size.x)));
-  let y = floor(f32(mod((frag_pos.y - ru.padding.y), ru.cell_size.y)));
-
-  switch (in.kind) {
-    case 1u: { // undercurl
-      let col = draw_undercurl(x, y, in.color);
-      return vec4<f32>(col.rgb, col.a * in.color.a);
-    }
-    case 2u: { // dotted underline
-      if (ru.underline_thickness < 2.0) {
-        let col = draw_dotted_single_px(x, y, in.color, frag_pos);
-        return vec4<f32>(col.rgb, col.a * in.color.a);
-      } else {
-        let col = draw_dotted_aa(x, y, in.color);
-        return vec4<f32>(col.rgb, col.a * in.color.a);
-      }
-    }
-    case 3u: { // dashed underline
-      let col = draw_dashed(x, in.color);
-      return vec4<f32>(col.rgb, col.a * in.color.a);
-    }
-    default: {
-      return in.color;
-    }
-  }
-}
-"#;
 
 const NUM_ATLAS_PAGES: u32 = 4;
 
@@ -552,28 +554,28 @@ impl WgpuRenderer {
         policy: AtlasEvictionPolicy,
         report_interval_frames: u32,
     ) -> Result<Self, Error> {
-        let instance = wgpu::Instance::default();
+let instance = wgpu_crate::Instance::new(&wgpu_crate::InstanceDescriptor { backends: wgpu_crate::Backends::all(), ..Default::default() });
         let surface = instance
             .create_surface(window_handle)
             .map_err(|e| Error::Init(format!("surface: {e}")))?;
         let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+.request_adapter(&wgpu_crate::RequestAdapterOptions {
+power_preference: wgpu_crate::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| Error::Init(String::from("no adapter")))?;
+            .map_err(|e| Error::Init(format!("no adapter: {e}")))?;
 
+let device_desc = wgpu_crate::DeviceDescriptor {
+            label: Some("wgpu-device"),
+            required_features: wgpu_crate::Features::empty(),
+            required_limits: wgpu_crate::Limits::default(),
+            memory_hints: wgpu_crate::MemoryHints::Performance,
+            trace: wgpu_crate::Trace::Off,
+        };
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("wgpu-device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                },
-                None,
-            )
+            .request_device(&device_desc)
             .await
             .map_err(|e| Error::Init(format!("device: {e}")))?;
 
@@ -623,12 +625,12 @@ impl WgpuRenderer {
         };
 
 // Build rectangle pipeline.
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+let shader = device.create_shader_module(wgpu_crate::ShaderModuleDescriptor {
             label: Some("rect-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(RECT_SHADER_WGSL)),
         });
         // Rect uniforms/bindings
-        let rect_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+let rect_bgl = device.create_bind_group_layout(&wgpu_crate::BindGroupLayoutDescriptor {
             label: Some("rect-bgl"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -642,39 +644,39 @@ impl WgpuRenderer {
             }],
         });
         // Initialize with zeros; will be populated per-draw
-        let rect_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+let rect_uniform_buffer = device.create_buffer(&wgpu_crate::BufferDescriptor {
             label: Some("rect-uniform-buffer"),
             size: 32, // 8 f32 values (2 vec2 + 4 scalars) = 32 bytes
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let rect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+let rect_bind_group = device.create_bind_group(&wgpu_crate::BindGroupDescriptor {
             label: Some("rect-bind-group"),
             layout: &rect_bgl,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: rect_uniform_buffer.as_entire_binding() }],
         });
-        let ui_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+let ui_shader = device.create_shader_module(wgpu_crate::ShaderModuleDescriptor {
             label: Some("ui-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER_WGSL)),
         });
-let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+let pipeline_layout = device.create_pipeline_layout(&wgpu_crate::PipelineLayoutDescriptor {
             label: Some("rect-pipeline-layout"),
             bind_group_layouts: &[&rect_bgl],
             push_constant_ranges: &[],
         });
-        let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+let rect_pipeline = device.create_render_pipeline(&wgpu_crate::RenderPipelineDescriptor {
             label: Some("rect-pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
+vertex: wgpu_crate::VertexState { compilation_options: Default::default(),
                 module: &shader,
-                entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
+entry_point: Some("vs_main"),
+buffers: &[wgpu_crate::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RectVertex>() as wgpu::BufferAddress,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Unorm8x4, 2 => Uint32],
+step_mode: wgpu_crate::VertexStepMode::Vertex,
+attributes: &wgpu_crate::vertex_attr_array![0 => Float32x2, 1 => Unorm8x4, 2 => Uint32],
                 }],
             },
-            primitive: wgpu::PrimitiveState {
+primitive: wgpu_crate::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
@@ -684,17 +686,18 @@ let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescrip
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
+multisample: wgpu_crate::MultisampleState::default(),
+fragment: Some(wgpu_crate::FragmentState { compilation_options: Default::default(),
                 module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
+entry_point: Some("fs_main"),
+targets: &[Some(wgpu_crate::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+blend: Some(wgpu_crate::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            multiview: None,
+multiview: None,
+            cache: None,
         });
 
         // UI pipeline (rounded rects)
@@ -706,11 +709,11 @@ let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescrip
         let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ui-pipeline"),
             layout: Some(&ui_pipeline_layout),
-            vertex: wgpu::VertexState {
+            vertex: wgpu::VertexState { compilation_options: Default::default(),
                 module: &ui_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<UiVertex>() as wgpu::BufferAddress,
+array_stride: std::mem::size_of::<UiVertex>() as wgpu_crate::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
 attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32, 4 => Float32x4],
                 }],
@@ -718,9 +721,9 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
+            fragment: Some(wgpu::FragmentState { compilation_options: Default::default(),
                 module: &ui_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -728,6 +731,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 })],
             }),
             multiview: None,
+            cache: None,
         });
 
         // Create text atlas resources.
@@ -750,6 +754,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             label: Some("text-atlas-view"),
             format: None,
             dimension: Some(wgpu::TextureViewDimension::D2Array),
+            usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
             aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
             mip_level_count: None,
@@ -839,11 +844,11 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
         let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("text-pipeline"),
             layout: Some(&text_pl_layout),
-            vertex: wgpu::VertexState {
+            vertex: wgpu::VertexState { compilation_options: Default::default(),
                 module: &text_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<TextVertex>() as wgpu::BufferAddress,
+array_stride: std::mem::size_of::<TextVertex>() as wgpu_crate::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Unorm8x4, 3 => Uint32, 4 => Uint32],
                 }],
@@ -851,9 +856,9 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
+            fragment: Some(wgpu::FragmentState { compilation_options: Default::default(),
                 module: &text_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -861,6 +866,7 @@ attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float
                 })],
             }),
             multiview: None,
+            cache: None,
         });
 
         // Prepare zero scratch buffer for optional layer clearing.
@@ -968,6 +974,7 @@ pub fn draw_rects(
                     },
                     wgpu::SurfaceError::OutOfMemory => return,
                     wgpu::SurfaceError::Timeout => return,
+                    wgpu::SurfaceError::Other => return,
                 }
                 match surface.get_current_texture() {
                     Ok(frame) => frame,
@@ -1033,9 +1040,9 @@ pub fn draw_rects(
 // Clear color from pending state if present.
         let clear = if let Some(c) = self.pending_clear.get() {
             self.pending_clear.set(None);
-            wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] }
+            wgpu_crate::Color { r: c[0], g: c[1], b: c[2], a: c[3] }
         } else {
-            wgpu::Color::TRANSPARENT
+            wgpu_crate::Color::TRANSPARENT
         };
 
         // Update rect uniforms for this frame (cell metrics and underline params)
@@ -1079,14 +1086,15 @@ pub fn draw_rects(
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("rects-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(clear),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -1114,6 +1122,7 @@ if let Some(ref vbuf) = vbuf_opt {
                     label: Some("rects-pass-screenshot"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: sview,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
                     })],
@@ -1154,6 +1163,7 @@ if let Some(ref vbuf) = vbuf_opt {
                     label: Some("text-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -1177,6 +1187,7 @@ if let Some(ref vbuf) = vbuf_opt {
                         label: Some("text-pass-screenshot"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                             view: sview,
+                            depth_slice: None,
                             resolve_target: None,
                             ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
                         })],
@@ -1211,20 +1222,13 @@ if let Some(ref vbuf) = vbuf_opt {
                 });
 
                 encoder.copy_texture_to_buffer(
-                    wgpu::ImageCopyTexture {
+                    wgpu::TexelCopyTextureInfo {
                         texture: &tex,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
-                    wgpu::ImageCopyBuffer {
-                        buffer: &readback,
-                        layout: wgpu::ImageDataLayout {
-                            offset: 0,
-                            bytes_per_row: Some(padded_bpr),
-                            rows_per_image: Some(height),
-                        },
-                    },
+                    wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded_bpr), rows_per_image: Some(height) } },
                     wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
                 );
 
@@ -1234,7 +1238,7 @@ if let Some(ref vbuf) = vbuf_opt {
                 // Map and read
                 let slice = readback.slice(..);
                 slice.map_async(wgpu::MapMode::Read, |_| {});
-                self.device.poll(wgpu::Maintain::Wait);
+                let _ = self.device.poll(wgpu::PollType::Wait);
                 let data = slice.get_mapped_range();
                 let mut pixels = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
                 for row in data.chunks(padded_bpr as usize) {
@@ -1495,18 +1499,9 @@ if let Some(ref vbuf) = vbuf_opt {
                 let height = self.atlas_pages[0].height;
                 let extent = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
                 self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &self.atlas_texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
-                        aspect: wgpu::TextureAspect::All,
-                    },
+                    wgpu::TexelCopyTextureInfo { texture: &self.atlas_texture, mip_level: 0, origin: wgpu::Origin3d { x: 0, y: 0, z: layer }, aspect: wgpu::TextureAspect::All },
                     &self.zero_scratch,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * width),
-                        rows_per_image: Some(height),
-                    },
+                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height) },
                     extent,
                 );
             }
@@ -1522,6 +1517,11 @@ if let Some(ref vbuf) = vbuf_opt {
         false
     }
     pub fn set_viewport(&self, _size: &SizeInfo) {}
+
+    /// Stage a UI sprite (currently unsupported in wgpu; placeholder no-op).
+    pub fn stage_ui_sprite(&mut self, _sprite: UiSprite) {
+        // TODO: Implement wgpu sprite rendering pipeline if needed.
+    }
 
     /// Update the text/sprite sampler filter at runtime. True = NEAREST, False = LINEAR.
     pub fn set_sprite_filter_nearest(&mut self, nearest: bool) {
@@ -1728,18 +1728,9 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
             depth_or_array_layers: 1,
         };
         self.renderer.queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &self.renderer.atlas_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: ox as u32, y: oy as u32, z: page_idx },
-                aspect: wgpu::TextureAspect::All,
-            },
+            wgpu::TexelCopyTextureInfo { texture: &self.renderer.atlas_texture, mip_level: 0, origin: wgpu::Origin3d { x: ox as u32, y: oy as u32, z: page_idx }, aspect: wgpu::TextureAspect::All },
             &rgba,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * rasterized.width as u32),
-                rows_per_image: Some(rasterized.height as u32),
-            },
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * rasterized.width as u32), rows_per_image: Some(rasterized.height as u32) },
             extent,
         );
 
