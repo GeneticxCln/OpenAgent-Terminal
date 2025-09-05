@@ -151,7 +151,7 @@ impl Scheduler {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "blocks"))]
 mod tests {
     use super::*;
     use std::thread::sleep;

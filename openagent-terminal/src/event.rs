@@ -316,7 +316,6 @@ impl Processor {
             enable_workflows: cfg!(feature = "workflow"),
             // Gate plugin system behind preview flag even when the cargo feature is enabled
             enable_plugins: cfg!(feature = "plugins") && self.config.debug.plugins_preview,
-            enable_ide: cfg!(feature = "ide") || cfg!(feature = "editor") || cfg!(feature = "lsp") || cfg!(feature = "dap") || cfg!(feature = "indexer"),
             ..Default::default()
         };
 
@@ -534,16 +533,6 @@ impl ApplicationHandler<Event> for Processor {
                 self.initial_window_error = Some(err);
                 event_loop.exit();
                 return;
-            }
-
-            // Open editor overlay at startup if requested via env var
-            #[cfg(feature = "editor")]
-            if let Ok(path) = env::var("OPENAGENT_OPEN_FILE") {
-                if let Some((&first_id, _)) = self.windows.iter().next() {
-                    let _ = self.proxy.send_event(Event::new(EventType::OpenEditorOverlay(std::path::PathBuf::from(path)), first_id));
-                }
-                // Clear to avoid reuse
-                let _ = env::remove_var("OPENAGENT_OPEN_FILE");
             }
 
             // Initialize components after the first window is created
@@ -1471,37 +1460,6 @@ impl ApplicationHandler<Event> for Processor {
                 }
             },
             (payload, Some(window_id)) => {
-                // Handle editor overlay events directly on window context
-                #[cfg(feature = "editor")]
-                match &payload {
-                    EventType::OpenEditorOverlay(path) => {
-                        if let Some(window_context) = self.windows.get_mut(window_id) {
-                            window_context.display.editor_overlay.open_path(path.clone());
-                            window_context.dirty = true;
-                            if window_context.display.window.has_frame {
-                                window_context.display.window.request_redraw();
-                            }
-                        }
-                        return;
-                    },
-                    EventType::CloseEditorOverlay => {
-                        if let Some(window_context) = self.windows.get_mut(window_id) {
-                            window_context.display.editor_overlay.close();
-                            window_context.dirty = true;
-                            if window_context.display.window.has_frame {
-                                window_context.display.window.request_redraw();
-                            }
-                        }
-                        return;
-                    },
-                    EventType::SaveEditorOverlay => {
-                        if let Some(window_context) = self.windows.get_mut(window_id) {
-                            window_context.display.editor_overlay.save();
-                        }
-                        return;
-                    },
-                    _ => {},
-                }
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.handle_event(
                         #[cfg(target_os = "macos")]
@@ -1738,14 +1696,6 @@ pub enum EventType {
 
     // Warp-style workspace events
     WarpUiUpdate(crate::workspace::WarpUiUpdateType),
-
-    // Editor overlay events (native, Warp-like)
-    #[cfg(feature = "editor")]
-    OpenEditorOverlay(std::path::PathBuf),
-    #[cfg(feature = "editor")]
-    CloseEditorOverlay,
-    #[cfg(feature = "editor")]
-    SaveEditorOverlay,
 }
 
 /// Sync IPC event types.
@@ -2227,10 +2177,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 },
                 PaletteEntry::Workflow(name) => {
                     // Ask processor to execute via engine if available
-                    let _ = self.event_proxy.send_event(Event::new(
-                        EventType::WorkflowsExecuteByName(name),
-                        self.display.window.id(),
-                    ));
+                    #[cfg(feature = "workflow")]
+                    {
+                        let _ = self.event_proxy.send_event(Event::new(
+                            EventType::WorkflowsExecuteByName(name),
+                            self.display.window.id(),
+                        ));
+                    }
+                    #[cfg(not(feature = "workflow"))]
+                    {
+                        // Workflow feature not enabled; ignore selection or surface a small message
+                        // (keeping silent here to avoid extra dependencies in non-workflow builds)
+                    }
                 },
             }
         }
@@ -2277,27 +2235,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.send_user_event(EventType::BlocksSearchPerform(
             self.display.blocks_search.query.clone(),
         ));
-    }
-
-    // File tree overlay implementation
-    fn open_file_tree_panel(&mut self) {
-        self.display.file_tree_open(None);
-        *self.dirty = true;
-    }
-    fn close_file_tree_panel(&mut self) {
-        self.display.file_tree_close();
-        *self.dirty = true;
-    }
-    fn file_tree_active(&self) -> bool {
-        self.display.file_tree.active
-    }
-    fn file_tree_move_selection(&mut self, delta: isize) {
-        self.display.file_tree_move_selection(delta);
-        *self.dirty = true;
-    }
-    fn file_tree_confirm(&mut self) {
-        self.display.file_tree_confirm();
-        *self.dirty = true;
     }
 
     #[cfg(feature = "blocks")]
@@ -2957,7 +2894,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.pending_update.dirty = true;
     }
     #[inline]
-
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
         let origin = self.terminal.vi_mode_cursor.point;
 
@@ -3845,26 +3781,19 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_word(&mut self) {
-        // Take ownership of the current suggestion to avoid overlapping borrows of self
-        let (accept_opt, rest_opt) = if let Some(rt) = &mut self.ai_runtime {
-            if let Some(suf) = rt.ui.inline_suggestion.take() {
-                let (accept, rest) = next_word(&suf);
-                (Some(accept), Some(rest))
-            } else {
-                (None, None)
-            }
+        let suggestion_data = if let Some(rt) = &mut self.ai_runtime {
+            rt.ui.inline_suggestion.take()
         } else {
-            (None, None)
+            None
         };
-
-        if let Some(accept) = accept_opt {
+        
+        if let Some(suf) = suggestion_data {
+            let (accept, rest) = next_word(&suf);
             if !accept.is_empty() {
                 self.paste(&accept, true);
             }
-        }
-        if let Some(rest) = rest_opt {
-            if let Some(rt2) = &mut self.ai_runtime {
-                rt2.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
+            if let Some(rt) = &mut self.ai_runtime {
+                rt.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
             }
             *self.dirty = true;
         }
@@ -3898,32 +3827,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_char(&mut self) {
-        // Move out suggestion to avoid holding a mutable borrow across paste
-        let (first_str_opt, remainder_opt) = if let Some(rt) = &mut self.ai_runtime {
-            if let Some(mut suf) = rt.ui.inline_suggestion.take() {
-                if let Some(first) = suf.chars().next() {
-                    let mut buf = [0u8; 4];
-                    let s = first.encode_utf8(&mut buf).to_string();
-                    suf.drain(..first.len_utf8());
-                    (Some(s), Some(suf))
-                } else {
-                    (None, Some(suf))
-                }
-            } else {
-                (None, None)
-            }
+        let suggestion_data = if let Some(rt) = &mut self.ai_runtime {
+            rt.ui.inline_suggestion.take()
         } else {
-            (None, None)
+            None
         };
-
-        if let Some(s) = first_str_opt.as_deref() {
-            self.paste(s, true);
-        }
-        if let Some(rest) = remainder_opt {
-            if let Some(rt2) = &mut self.ai_runtime {
-                rt2.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
+        
+        if let Some(mut suf) = suggestion_data {
+            if let Some(first) = suf.chars().next() {
+                let mut buf = [0u8; 4];
+                let s = first.encode_utf8(&mut buf);
+                self.paste(s, true);
+                suf.drain(..first.len_utf8());
+                if let Some(rt) = &mut self.ai_runtime {
+                    rt.ui.inline_suggestion = if suf.is_empty() { None } else { Some(suf) };
+                }
+                *self.dirty = true;
             }
-            *self.dirty = true;
         }
     }
 
@@ -4528,8 +4448,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
         match event {
             WinitEvent::UserEvent(Event { payload, .. }) => match payload {
                 EventType::ComponentsInitialized(_) => (),
-                #[cfg(feature = "editor")]
-                EventType::OpenEditorOverlay(_) | EventType::CloseEditorOverlay | EventType::SaveEditorOverlay => (),
                 EventType::SearchNext => self.ctx.goto_match(None),
                 EventType::Scroll(scroll) => self.ctx.scroll(scroll),
                 EventType::BlinkCursor => {
@@ -4985,37 +4903,36 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 true
                             }
                         };
-                    // Compute conditions and required data without holding overlapping borrows
-                    let (not_altscreen, ime_off) = {
+
+                    // Extract all terminal data before taking mutable borrow
+                    let (not_altscreen, ime_off, prefix) = {
                         let term = self.ctx.terminal();
-                        (
-                            !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN),
-                            self.ctx.display.ime.preedit().is_none(),
-                        )
+                        let not_altscreen =
+                            !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
+                        let ime_off = self.ctx.display.ime.preedit().is_none();
+                        
+                        // Extract current line prefix up to the cursor
+                        let point = term.grid().cursor.point;
+                        // Collect characters from start of line to cursor (skipping spacer flags)
+                        use openagent_terminal_core::index::Column as Col;
+                        use openagent_terminal_core::term::cell::Flags as CellFlags;
+                        let row = &term.grid()[point.line];
+                        let mut prefix = String::new();
+                        for x in 0..point.column.0 {
+                            let cell = &row[Col(x)];
+                            if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                                continue;
+                            }
+                            let ch = cell.c;
+                            if ch != '\u{0}' {
+                                prefix.push(ch);
+                            }
+                        }
+                        
+                        (not_altscreen, ime_off, prefix)
                     };
 
                     if can_offer && not_altscreen && ime_off {
-                        // Extract current line prefix in a limited scope to drop immutable borrows early
-                        let prefix = {
-                            let term = self.ctx.terminal();
-                            let point = term.grid().cursor.point;
-                            use openagent_terminal_core::index::Column as Col;
-                            use openagent_terminal_core::term::cell::Flags as CellFlags;
-                            let row = &term.grid()[point.line];
-                            let mut prefix = String::new();
-                            for x in 0..point.column.0 {
-                                let cell = &row[Col(x)];
-                                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                                    continue;
-                                }
-                                let ch = cell.c;
-                                if ch != '\u{0}' {
-                                    prefix.push(ch);
-                                }
-                            }
-                            prefix
-                        };
-
                         if let Some(runtime) = &mut self.ctx.ai_runtime {
                             let proxy = self.ctx.event_proxy.clone();
                             let window_id = self.ctx.display.window.id();
@@ -5112,17 +5029,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                         let font = self.ctx.config.font.clone();
                         display_update_pending.set_font(font.with_size(self.ctx.display.font_size));
-
-                        // Update UI sprite filtering decision based on new DPI scale.
-                        let sf = scale_factor as f64;
-                        let frac = sf.fract();
-                        let nearest = frac < 0.05 || (1.0 - frac) < 0.05 || sf <= 1.1;
-                        self.ctx.display.set_ui_sprite_filter(nearest);
-                        log::info!(
-                            "DPI changed to {:.2}: UI sprite filter -> {}",
-                            sf,
-                            if nearest { "NEAREST" } else { "LINEAR" }
-                        );
                     },
                     WindowEvent::Resized(size) => {
                         // Ignore resize events to zero in any dimension, to avoid issues with Winit
@@ -5323,7 +5229,7 @@ pub(crate) mod test_posted_events {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "blocks"))]
 impl Processor {
     /// Lightweight event delivery helper for tests to emulate ApplicationHandler::user_event
     /// without requiring an ActiveEventLoop.
@@ -5338,7 +5244,7 @@ impl Processor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "blocks"))]
 pub(crate) fn schedule_blocks_search_for_test(
     scheduler: &mut Scheduler,
     window_id: WindowId,

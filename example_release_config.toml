@@ -1,0 +1,34 @@
+# OpenAgent Terminal — Release Profile Configuration (Strict)
+
+# This configuration enables a Warp-like security posture for plugins.
+# - All plugins must be signed (ed25519). Unsigned plugins are rejected.
+# - Invalid signatures fail to load.
+# - Hot reloading is disabled.
+# - Per-path policy requires signatures in all locations.
+#
+# Copy this file to one of the supported config locations as openagent-terminal.toml,
+# then merge with your normal settings (fonts, colors, keybindings, etc.).
+#
+# Linux (preferred):
+#   ~/.config/openagent-terminal/openagent-terminal.toml
+# or system-wide:
+#   /etc/openagent-terminal/openagent-terminal.toml
+
+[plugins]
+# Verify signatures and reject invalid ones.
+enforce_signatures = true
+# Require signatures for ALL plugins (reject unsigned plugins).
+require_signatures_for_all = true
+# Disable hot reload in release builds (safer, deterministic behavior).
+hot_reload = false
+
+# Per-path signature requirements (all strict)
+[plugins.paths.system]
+require_signatures = true
+
+[plugins.paths.user]
+require_signatures = true
+
+[plugins.paths.project]
+require_signatures = true
+

@@ -48,8 +48,18 @@ warp_style = true
 
 [workspace.tab_bar]
 show = true
-position = "Top"   # or "Bottom"
-reserve_row = true
+position = "Top"              # or "Bottom" or "Hidden"
+visibility = "Auto"           # Auto | Always | Hover; Auto => Always unless fullscreen
+reserve_row = true            # Reserve a row only when effectively Always
+show_close_button = true      # Show tab close button
+close_button_on_hover = false # Only show close button when hovering
+show_modified_indicator = true
+show_new_tab_button = true
+show_tab_numbers = false
+# Optional cell width constraints per tab (unset => defaults)
+# min_tab_width = 10
+# max_tab_width = 30
+max_title_length = 20
 ```
 
 Enable the Warp-style keyboard mappings with this toggle (on by default):

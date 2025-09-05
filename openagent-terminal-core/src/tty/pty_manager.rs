@@ -34,7 +34,7 @@ impl ShellKind {
             s if s.contains("fish") => ShellKind::Fish,
             s if s.contains("powershell") || s.contains("pwsh") => ShellKind::PowerShell,
             s if s.contains("cmd") => ShellKind::Cmd,
-            s if s == "sh" => ShellKind::Sh,
+            "sh" => ShellKind::Sh,
             s if s.contains("dash") => ShellKind::Dash,
             _ => ShellKind::Unknown,
         }
@@ -433,6 +433,12 @@ impl PtyManagerCollection {
             total_command_count: total_commands,
             avg_startup_time_ms: avg_startup_time,
         }
+    }
+}
+
+impl Default for PtyManagerCollection {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

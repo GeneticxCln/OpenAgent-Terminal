@@ -1,6 +1,16 @@
 #[cfg(feature = "ai")]
 use super::ai::ProviderConfig;
 use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "ai"))]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ProviderConfig {
+    pub api_key_env: Option<String>,
+    pub endpoint_env: Option<String>,
+    pub model_env: Option<String>,
+    pub default_endpoint: Option<String>,
+    pub default_model: Option<String>,
+    pub extra: std::collections::HashMap<String, String>,
+}
 use std::collections::HashMap;
 use tracing::{debug, warn};
 

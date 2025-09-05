@@ -10,12 +10,15 @@ use std::sync::{Arc, RwLock};
 
 use crate::config::font::Font as FontConfig;
 use crate::config::ui_config::Delta;
+use crate::config::UiConfig;
 use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
-use crate::renderer::{Glyph, GlyphCache};
+use crate::renderer::{Glyph, GlyphCache, LoadGlyph};
+// use crate::renderer::text::builtin_font; // Commented out - private module
 use crate::text_shaping::harfbuzz::{
     HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
 };
+use crossfont::{FontDesc, RasterizedGlyph};
 
 /// Integrated text shaper that combines HarfBuzz with the existing glyph system
 pub struct IntegratedTextShaper {
@@ -135,8 +138,9 @@ impl IntegratedTextShaper {
         // Check cache if enabled
         let cache_key = if self.config.cache_shaped_lines {
             Some(format!(
-                "{}:{}",
+                "{}:{}:{}",
                 text,
+                glyph_cache.font_size.as_pt().to_bits(),
                 self.get_font_name(glyph_cache)
             ))
         } else {
@@ -158,7 +162,7 @@ impl IntegratedTextShaper {
 
         // Shape the text using HarfBuzz
         let font_name = self.get_font_name(glyph_cache);
-        let font_size = 0.0;
+        let font_size = glyph_cache.font_size.as_pt();
 
         let shaped_text = if self.should_use_harfbuzz_shaping(&text) {
             match self.harfbuzz_shaper.shape_text_with_fallback(&text, &font_name, font_size) {
@@ -307,16 +311,15 @@ impl IntegratedTextShaper {
         };
 
         // Load the glyph through the existing glyph cache system
-        let glyph = crate::renderer::with_dummy_loader(|mut loader| {
-            glyph_cache.get(glyph_key, &mut loader, true)
-        });
+        let glyph = glyph_cache
+            .get(glyph_key, &mut LoadGlyphImpl, true);
 
         Ok(ShapedCellGlyph {
             glyph_id: cell.character as u32,
             glyph,
             x_offset: 0.0,
             y_offset: 0.0,
-            x_advance: 0.0,
+            x_advance: glyph_cache.font_size.as_pt() * 0.6, // This could be more accurate
             y_advance: 0.0,
             cluster: 0,
             font_index: 0,
@@ -346,11 +349,10 @@ impl IntegratedTextShaper {
             });
         }
 
-        let total_width = shaped_cells.len() as f32 * cell_width;
         Ok(ShapedLine {
-            cells: shaped_cells,
+            cells: shaped_cells.clone(),
             direction: TextDirection::LeftToRight,
-            total_width,
+            total_width: shaped_cells.len() as f32 * cell_width,
         })
     }
 
@@ -420,14 +422,13 @@ impl IntegratedTextShaper {
     fn load_glyph_for_shaped(
         &self,
         glyph_key: GlyphKey,
-        _shaped_glyph: &ShapedGlyph,
+        shaped_glyph: &ShapedGlyph,
         glyph_cache: &mut GlyphCache,
     ) -> Result<Glyph> {
         // Use the existing glyph cache system to load glyphs
         // The glyph_key already contains font, size, and character information
-        Ok(crate::renderer::with_dummy_loader(|mut loader| {
-            glyph_cache.get(glyph_key, &mut loader, true)
-        }))
+        Ok(glyph_cache
+            .get(glyph_key, &mut LoadGlyphImpl, true))
     }
 
     /// Clear caches
@@ -439,6 +440,29 @@ impl IntegratedTextShaper {
     }
 }
 
+/// Glyph loader implementation for shaped text integration
+struct LoadGlyphImpl;
+
+impl LoadGlyph for LoadGlyphImpl {
+    fn load_glyph(&mut self, rasterized: &crossfont::RasterizedGlyph) -> Glyph {
+        Glyph {
+            tex_id: 0,
+            multicolor: false,
+            top: rasterized.top as i16,
+            left: rasterized.left as i16,
+            width: rasterized.width as i16,
+            height: rasterized.height as i16,
+            uv_bot: 0.0,
+            uv_left: 0.0,
+            uv_width: 0.0,
+            uv_height: 0.0,
+        }
+    }
+    
+    fn clear(&mut self) {
+        // No-op for this simple implementation
+    }
+}
 
 /// Trait for renderers that support shaped text
 pub trait ShapedTextRenderer {

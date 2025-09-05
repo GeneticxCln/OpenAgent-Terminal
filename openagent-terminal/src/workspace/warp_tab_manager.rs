@@ -86,7 +86,7 @@ pub struct WarpTabManager {
 
     /// Smart naming
     directory_cache: HashMap<PathBuf, String>,
-    command_history: HashMap<TabId, Vec<String>>,
+    pub(crate) command_history: HashMap<TabId, Vec<String>>,
 }
 
 impl WarpTabManager {
@@ -159,18 +159,6 @@ impl WarpTabManager {
         self.schedule_session_save();
 
         tab_id
-    }
-
-    /// Allocate a new unique PaneId centrally
-    pub fn allocate_pane_id(&mut self) -> PaneId {
-        let pane_id = PaneId(self.next_pane_id);
-        self.next_pane_id += 1;
-        pane_id
-    }
-
-    /// Get all pane IDs for a given tab
-    pub fn get_tab_pane_ids(&self, tab_id: TabId) -> Option<Vec<PaneId>> {
-        self.tabs.get(&tab_id).map(|tab| tab.split_layout.collect_pane_ids())
     }
 
     /// Generate smart tab name based on directory and current command (Warp-style)
@@ -350,12 +338,14 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
                 // Validate session format version
                 if session.version != SESSION_VERSION {
                     // Attempt migration if needed
-                    let from_version = session.version.clone();
+                    let old_version = session.version.clone();
                     match self.migrate_session_format(session) {
                         Ok(migrated) => migrated,
                         Err(e) => {
-                            eprintln!("Failed to migrate session from version {} to {}: {}", 
-                                     from_version, SESSION_VERSION, e);
+                            eprintln!(
+                                "Failed to migrate session from version {} to {}: {}",
+                                old_version, SESSION_VERSION, e
+                            );
                             return Ok(false);
                         }
                     }
@@ -385,6 +375,12 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
         Ok(true)
     }
 
+    fn generate_session_id() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+        format!("sess-{}", nanos)
+    }
+
     /// Create session snapshot for persistence
     fn create_session_snapshot(&self) -> WarpSession {
         let tabs = self
@@ -396,7 +392,7 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
 
         WarpSession {
             version: SESSION_VERSION.to_string(),
-            id: uuid::Uuid::new_v4().to_string(),
+            id: Self::generate_session_id(),
             name: "OpenAgent Terminal Session".to_string(),
             created_at: SystemTime::now(),
             last_used: SystemTime::now(),
@@ -530,7 +526,7 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
     }
 
     /// Validate session data integrity
-    fn validate_session(&self, session: &WarpSession) -> Result<(), String> {
+    pub(crate) fn validate_session(&self, session: &WarpSession) -> Result<(), String> {
         // Check if session has any tabs
         if session.tabs.is_empty() {
             return Err("Session contains no tabs".to_string());
@@ -566,7 +562,7 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
     }
 
     /// Migrate session from older format versions
-    fn migrate_session_format(&self, mut session: WarpSession) -> Result<WarpSession, String> {
+    pub(crate) fn migrate_session_format(&self, mut session: WarpSession) -> Result<WarpSession, String> {
         match session.version.as_str() {
             "1.0.0" => {
                 // Current version, no migration needed

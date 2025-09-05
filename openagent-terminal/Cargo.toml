@@ -172,7 +172,7 @@ windows-sys = { version = "0.59", features = [
 embed-resource = "3.0.2"
 
 [features]
-default = ["wayland", "x11", "blocks", "workflow", "sync"]
+default = ["wayland", "x11", "blocks", "workflow", "sync", "security-lens-full"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Optional background component initialization in a separate task
@@ -227,6 +227,20 @@ harfbuzz = ["dep:harfbuzz_rs", "dep:fontdb", "dep:unicode-bidi"]
 blocks = ["dep:chrono", "dep:uuid", "dep:sqlx"]
 # Native webview editors (Monaco/CodeMirror)
 webview-editors = ["dep:openagent-terminal-web-editors"]
+
+# Security Lens feature gates
+# Core security analysis (pattern matching, risk assessment)
+security-lens = []
+# Extended security patterns (cloud, containers, databases)
+security-lens-extended = ["security-lens"]
+# Platform-specific security patterns (Linux, macOS, Windows)
+security-lens-platform = ["security-lens"]
+# Security Lens rate limiting and advanced features
+security-lens-advanced = ["security-lens", "dep:chrono"]
+# Complete Security Lens suite (all features)
+security-lens-full = ["security-lens", "security-lens-extended", "security-lens-platform", "security-lens-advanced"]
+# Security Lens development tools and enhanced testing
+security-lens-dev = ["security-lens-full"]
 
 # Umbrella features for AI backends (one-flag builds)
 # Example: cargo build -p openagent-terminal --features ai-ollama

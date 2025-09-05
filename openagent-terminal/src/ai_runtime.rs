@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use crate::security_lens::{SecurityLens, SecurityPolicy};
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
-use openagent_terminal_ai::providers::{AnthropicProvider, OllamaProvider, OpenAiProvider};
+use openagent_terminal_ai::providers::{OpenAiProvider, AnthropicProvider, OllamaProvider};
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -667,15 +667,16 @@ impl AiRuntime {
         debug!("Submitting AI query with context: {}", self.ui.scratch);
 
         let (working_directory, shell_kind) = if let Some(ctx) = context {
-            ctx.to_strings()
+            let (wd, sk) = ctx.to_strings();
+            (Some(wd), Some(sk))
         } else {
-            (String::new(), String::new())
+            (None, None)
         };
 
         let req = AiRequest {
             scratch_text: self.ui.scratch.clone(),
-            working_directory: Some(working_directory),
-            shell_kind: Some(shell_kind),
+            working_directory,
+            shell_kind,
             context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
         };
 
@@ -701,12 +702,13 @@ impl AiRuntime {
         window_id: WindowId,
     ) {
         let (working_directory, shell_kind) = if let Some(ctx) = context {
-            ctx.to_strings()
+            let (wd, sk) = ctx.to_strings();
+            (Some(wd), Some(sk))
         } else {
-            (String::new(), String::new())
+            (None, None)
         };
 
-        self.start_propose_stream(Some(working_directory), Some(shell_kind), event_proxy, window_id);
+        self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
     }
 
     /// Check if we can perform actions (have content to act on)

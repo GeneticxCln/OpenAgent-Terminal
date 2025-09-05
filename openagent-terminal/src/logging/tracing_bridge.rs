@@ -161,7 +161,7 @@ pub fn initialize_tracing_bridge() -> Result<(), Box<dyn std::error::Error>> {
 /// Convenience macros for structured logging that bridge to the custom log sink.
 /// These provide a tracing-style API but forward through the log crate to preserve
 /// the existing sensitive data redaction and UI integration.
-
+///
 /// Log an AI request with structured fields.
 #[macro_export]
 macro_rules! log_ai_request_bridge {
@@ -222,11 +222,11 @@ mod tests {
     }
 
     impl log::Log for TestLogger {
-        fn enabled(&self, _metadata: &log::Metadata) -> bool {
+        fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
             true
         }
 
-        fn log(&self, record: &log::Record) {
+        fn log(&self, record: &log::Record<'_>) {
             self.messages.lock().unwrap().push(format!(
                 "[{}] {} - {}",
                 record.level(),
