@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::mem;
 
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
 
 use crate::config::font::Font as FontConfig;
 use crate::display::content::RenderableCell;

@@ -167,7 +167,7 @@ impl DapPump {
         // Reader: parse header-framed messages
         let (resp_tx, resp_rx) = mpsc::channel::<(i64, Value)>();
         let tx_for_reader = resp_tx.clone();
-        let mut out = self.stdout.take().expect("stdout");
+        let out = self.stdout.take().expect("stdout");
         let events_tx_clone = self.events_tx.clone();
         std::thread::spawn(move || {
             let mut reader = out;
@@ -215,7 +215,6 @@ impl DapPump {
             }
         });
 
-        let pending_map = self.pending.clone();
         loop {
             while let Ok((id, json)) = resp_rx.try_recv() {
                 if let Some(chan) = self.pending.lock().remove(&id) {

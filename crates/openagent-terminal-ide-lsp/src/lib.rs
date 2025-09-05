@@ -2,7 +2,6 @@
 //! This is a lightweight, editor-agnostic client suitable for a terminal-first UX.
 
 use anyhow::{anyhow, Result};
-use bytes::BytesMut;
 use lsp_types as lsp;
 use parking_lot::Mutex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -12,7 +11,6 @@ use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
-use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LspError {
@@ -197,9 +195,8 @@ impl LspPump {
         let (resp_tx, resp_rx) = mpsc::channel::<(i64, Value)>();
         let notify_tx_clone = self.notify_tx.clone();
         let tx_for_reader = resp_tx.clone();
-        let mut out = self.stdout.take().expect("stdout");
+        let out = self.stdout.take().expect("stdout");
         std::thread::spawn(move || {
-            let mut buf = Vec::<u8>::new();
             let mut reader = out;
             loop {
                 // Simple framed reader: read headers then body

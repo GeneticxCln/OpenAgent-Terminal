@@ -1,4 +1,5 @@
 [workspace]
+default-run = "openagent-terminal"
 members = [
     "openagent-terminal",
     "openagent-terminal-core",
@@ -81,7 +82,7 @@ tokio-tungstenite = "0.24"
 tungstenite = "0.21"
 open = "5.3"
 urlencoding = "2.1"
-wry = "0.44"
+wry = "0.53"
 
 # Async runtime
 tokio = { version = "1.47", features = ["full"] }
@@ -102,7 +103,7 @@ unicode-bidi = "0.3"
 ab-glyph = "0.2"
 
 # Database
-sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "derive"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # AI capabilities

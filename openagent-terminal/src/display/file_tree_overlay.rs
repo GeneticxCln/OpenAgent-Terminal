@@ -7,7 +7,6 @@ use crate::display::{Display};
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
-use unicode_width::UnicodeWidthStr;
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Clone, Debug)]

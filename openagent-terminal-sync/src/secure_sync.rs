@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ring::rand::{SecureRandom, SystemRandom};
-use ring::{aead, digest, hkdf, pbkdf2};
+use ring::{aead, hkdf, pbkdf2};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

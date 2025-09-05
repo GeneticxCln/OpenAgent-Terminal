@@ -84,7 +84,7 @@ impl ShapedGlyphCache {
     pub fn get_shaped_glyph<L>(
         &mut self,
         shaped_glyph: &ShapedCellGlyph,
-        loader: &mut L,
+        _loader: &mut L,
     ) -> Result<Glyph>
     where
         L: LoadGlyph + ?Sized,

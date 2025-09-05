@@ -11,7 +11,7 @@ use openagent_terminal_ide_editor::EditorBuffer;
 use std::path::PathBuf;
 
 use crate::config::UiConfig;
-use crate::display::{Display, SizeInfo};
+use crate::display::Display;
 use std::path::Path;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
@@ -364,7 +364,6 @@ impl Display {
                         inserted = true;
                     },
                     lsp_types::CompletionTextEdit::InsertAndReplace(ir) => {
-                        let mut rope = buf.rope.write();
                         let s = self.lsp_pos_to_char_index_buf(buf, ir.replace.start);
                         let eidx = self.lsp_pos_to_char_index_buf(buf, ir.replace.end);
                         let mut rope_mut = buf.rope.write();

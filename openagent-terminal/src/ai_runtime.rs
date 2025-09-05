@@ -151,9 +151,9 @@ impl AiRuntime {
 
     pub fn from_config(
         provider_id: Option<&str>,
-        endpoint_env: Option<&str>,
-        api_key_env: Option<&str>,
-        model_env: Option<&str>,
+        _endpoint_env: Option<&str>,
+        _api_key_env: Option<&str>,
+        _model_env: Option<&str>,
     ) -> Self {
         use tracing::warn;
         

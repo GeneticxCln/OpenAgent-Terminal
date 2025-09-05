@@ -1,6 +1,5 @@
 use openagent_terminal_core::index::{Column, Point};
-use openagent_terminal_core::grid::Dimensions;
-use openagent_terminal_core::term::{self, Term};
+use openagent_terminal_core::term;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -241,7 +240,6 @@ impl super::Display {
             config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let fg = tokens.text;
-        let bg = tokens.surface_muted;
         let muted = tokens.text_muted;
         let accent = tokens.accent;
 

@@ -1,7 +1,7 @@
 //! Project indexer and file tree structures
 
 use anyhow::{anyhow, Result};
-use ignore::{DirEntry, WalkBuilder};
+use ignore::WalkBuilder;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectFile {

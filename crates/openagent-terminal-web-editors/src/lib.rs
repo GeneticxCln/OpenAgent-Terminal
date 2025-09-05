@@ -29,9 +29,9 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
         .build(&event_loop)?;
 
     let file_path = cfg.file_path.clone();
-    let webview = WebViewBuilder::new(&window) 
+    let webview = WebViewBuilder::new()
         .with_initialization_script("window.__OPENAGENT__ = { save: () => {}, };")
-.with_html(html)
+        .with_html(html)
         .with_ipc_handler(move |req: Request<String>| {
             // Expect JSON messages like {"type":"save","content":"..."}
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(req.body()) {
@@ -47,7 +47,7 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
                 }
             }
         })
-        .build()?;
+        .build(&window)?;
 
     // Keep webview alive and block until window closes
     let _keep_alive = webview;
@@ -62,7 +62,6 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
             _ => {}
         }
     });
-    Ok(())
 }
 
 fn guess_language_from_path(path: &Path) -> String {

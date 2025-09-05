@@ -818,7 +818,6 @@ impl ApplicationHandler<Event> for Processor {
                 let risk = lens.analyze_command(&command);
 
                 if lens.should_block(&risk) {
-                    let msg = self.config.theme.resolve().tokens.warning; // color not directly used here
                     let message = crate::message_bar::Message::new(
                         format!(
                             "Blocked risky command ({}). {}",

@@ -9,8 +9,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::config::font::Font as FontConfig;
-use crate::config::ui_config::Delta;
-use crate::config::UiConfig;
 use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
 use crate::renderer::{Glyph, GlyphCache, LoadGlyph};
@@ -18,7 +16,6 @@ use crate::renderer::{Glyph, GlyphCache, LoadGlyph};
 use crate::text_shaping::harfbuzz::{
     HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
 };
-use crossfont::{FontDesc, RasterizedGlyph};
 
 /// Integrated text shaper that combines HarfBuzz with the existing glyph system
 pub struct IntegratedTextShaper {
