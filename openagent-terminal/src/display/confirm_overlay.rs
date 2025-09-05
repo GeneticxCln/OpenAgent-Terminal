@@ -6,7 +6,7 @@ use crate::config::UiConfig;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
 #[cfg(feature = "preview_ui")]
-use crate::security_lens::CommandRisk;
+use crate::security_lens::{CommandRisk, RiskLevel};
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 

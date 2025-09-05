@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 
 use crate::security_lens::{SecurityLens, SecurityPolicy};
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
+use openagent_terminal_ai::providers::{AnthropicProvider, OllamaProvider, OpenAiProvider};
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -227,7 +228,7 @@ impl AiRuntime {
                         return rt;
                     }
                 };
-                openagent_terminal_ai::OpenAiProvider::new(api_key, endpoint, model)
+                OpenAiProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
             "anthropic" => {
@@ -248,7 +249,7 @@ impl AiRuntime {
                         return rt;
                     }
                 };
-                openagent_terminal_ai::AnthropicProvider::new(api_key, endpoint, model)
+                AnthropicProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
             "ollama" => {
@@ -261,7 +262,7 @@ impl AiRuntime {
                         return rt;
                     }
                 };
-                openagent_terminal_ai::OllamaProvider::new(endpoint, model)
+                OllamaProvider::new(endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
             "null" => Ok(Box::new(openagent_terminal_ai::NullProvider::default()) as Box<dyn AiProvider>),

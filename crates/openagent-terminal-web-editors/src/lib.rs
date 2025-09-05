@@ -3,9 +3,10 @@
 use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
-use wry::application::event_loop::EventLoop;
-use wry::application::window::{Window, WindowBuilder};
-use wry::webview::{WebView, WebViewBuilder};
+use tao::event_loop::EventLoop;
+use tao::window::WindowBuilder;
+use wry::WebViewBuilder;
+use wry::http::Request;
 
 pub struct WebEditorConfig {
     pub file_path: PathBuf,
@@ -24,24 +25,24 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title(cfg.title.unwrap_or_else(|| format!("Editor - {}", cfg.file_path.display())))
-        .with_inner_size(wry::application::dpi::PhysicalSize::new(1000, 700))
+        .with_inner_size(tao::dpi::PhysicalSize::new(1000, 700))
         .build(&event_loop)?;
 
     let file_path = cfg.file_path.clone();
     let webview = WebViewBuilder::new(&window) 
         .with_initialization_script("window.__OPENAGENT__ = { save: () => {}, };")
-        .with_html(html)?
-        .with_ipc_handler(move |_wv, payload| {
+.with_html(html)
+        .with_ipc_handler(move |req: Request<String>| {
             // Expect JSON messages like {"type":"save","content":"..."}
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&payload) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(req.body()) {
                 if let Some(t) = v.get("type").and_then(|x| x.as_str()) {
                     match t {
                         "save" => {
                             if let Some(content) = v.get("content").and_then(|x| x.as_str()) {
                                 let _ = fs::write(&file_path, content);
                             }
-                        },
-                        _ => {},
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -50,8 +51,8 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
 
     // Keep webview alive and block until window closes
     let _keep_alive = webview;
-    use wry::application::event::{Event, WindowEvent};
-    use wry::application::event_loop::ControlFlow;
+    use tao::event::{Event, WindowEvent};
+    use tao::event_loop::ControlFlow;
     event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
@@ -82,7 +83,17 @@ fn guess_language_from_path(path: &Path) -> String {
 }
 
 fn escape_js(s: &str) -> String {
-    s.replace('\', "\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
+    let mut escaped = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            _ => escaped.push(c),
+        }
+    }
+    escaped
 }
 
 fn build_monaco_html(initial_content: &str, language: &str) -> String {

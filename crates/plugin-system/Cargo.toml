@@ -11,7 +11,7 @@ rust-version.workspace = true
 [features]
 default = ["wasm-runtime"]
 wasm-runtime = ["wasmtime", "wasmtime-wasi"]
-host-integration = []
+host-integration = ["dep:libloading"]
 
 [dependencies]
 # Core dependencies
@@ -21,6 +21,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.47", features = ["full"] }
 tracing = "0.1"
+
+# Native plugin loading (host-integration)
+libloading = { version = "0.8", optional = true }
 
 # WASM runtime
 wasmtime = { version = "36.0", optional = true }

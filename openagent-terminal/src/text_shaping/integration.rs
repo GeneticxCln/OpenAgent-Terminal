@@ -10,15 +10,13 @@ use std::sync::{Arc, RwLock};
 
 use crate::config::font::Font as FontConfig;
 use crate::config::ui_config::Delta;
-use crate::config::Config;
 use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
-use crate::renderer::text::builtin_font;
-use crate::renderer::text::glyph_cache::{Glyph, GlyphCache, LoadGlyph};
+use crate::renderer::{Glyph, GlyphCache};
 use crate::text_shaping::harfbuzz::{
     HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
 };
-use crossfont::{FontDesc, FontKey, RasterizedGlyph};
+use crossfont::{FontKey};
 
 /// Integrated text shaper that combines HarfBuzz with the existing glyph system
 pub struct IntegratedTextShaper {
@@ -311,9 +309,9 @@ impl IntegratedTextShaper {
         };
 
         // Load the glyph through the existing glyph cache system
-        let glyph = glyph_cache
-            .get(&glyph_key, &mut LoadGlyphImpl)
-            .map_err(|e| anyhow::anyhow!("Failed to load basic glyph: {:?}", e))?;
+        let glyph = crate::renderer::with_dummy_loader(|mut loader| {
+            glyph_cache.get(glyph_key, &mut loader, true)
+        });
 
         Ok(ShapedCellGlyph {
             glyph_id: cell.character as u32,
@@ -428,9 +426,9 @@ impl IntegratedTextShaper {
     ) -> Result<Glyph> {
         // Use the existing glyph cache system to load glyphs
         // The glyph_key already contains font, size, and character information
-        glyph_cache
-            .get(&glyph_key, &mut LoadGlyphImpl)
-            .map_err(|e| anyhow::anyhow!("Failed to load glyph: {:?}", e))
+        Ok(crate::renderer::with_dummy_loader(|mut loader| {
+            glyph_cache.get(glyph_key, &mut loader, true)
+        }))
     }
 
     /// Clear caches
@@ -442,29 +440,6 @@ impl IntegratedTextShaper {
     }
 }
 
-/// Glyph loader implementation for shaped text integration
-struct LoadGlyphImpl;
-
-impl LoadGlyph for LoadGlyphImpl {
-    fn load_glyph(
-        &mut self,
-        rasterizer: &mut dyn crossfont::Rasterize,
-        glyph_key: &GlyphKey,
-        metrics: &crossfont::Metrics,
-        offset: &Delta<i8>,
-        glyph_offset: &Delta<i8>,
-    ) -> Result<RasterizedGlyph, crossfont::Error> {
-        // Check for builtin glyphs first (box drawing, powerline symbols, etc.)
-        if let Some(glyph) =
-            builtin_font::builtin_glyph(glyph_key.character, metrics, offset, glyph_offset)
-        {
-            return Ok(glyph);
-        }
-
-        // Use the standard rasterizer for regular glyphs
-        rasterizer.get_glyph(glyph_key)
-    }
-}
 
 /// Trait for renderers that support shaped text
 pub trait ShapedTextRenderer {
