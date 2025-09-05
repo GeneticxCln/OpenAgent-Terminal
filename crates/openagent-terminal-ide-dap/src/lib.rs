@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
@@ -105,6 +106,23 @@ impl DapClient {
 
     pub fn set_breakpoints(&self, arguments: Value) -> Result<Value> {
         self.request("setBreakpoints", arguments)
+    }
+
+    /// Convenience: set breakpoints for a file path at 1-based line numbers
+    pub fn set_breakpoints_for_file<P: AsRef<Path>>(&self, file: P, lines: &[i64]) -> Result<Value> {
+        let source = serde_json::json!({"path": file.as_ref().to_string_lossy()});
+        let bps: Vec<Value> = lines.iter().map(|l| serde_json::json!({"line": l})).collect();
+        let args = serde_json::json!({"source": source, "breakpoints": bps});
+        self.set_breakpoints(args)
+    }
+
+    /// Typed helper: list threads
+    pub fn list_threads(&self) -> Result<Vec<(i64, String)>> {
+        let v = self.threads()?;
+        let threads = v.get("body").and_then(|b| b.get("threads")).and_then(|t| t.as_array()).cloned().unwrap_or_default();
+        let mut out = Vec::new();
+        for t in threads { if let (Some(id), Some(name)) = (t.get("id").and_then(|x| x.as_i64()), t.get("name").and_then(|x| x.as_str())) { out.push((id, name.to_string())); } }
+        Ok(out)
     }
 
     pub fn configuration_done(&self) -> Result<Value> {

@@ -5,7 +5,7 @@
 
 #![allow(dead_code)]
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::LineDamageBounds;
@@ -41,6 +41,16 @@ pub struct TabBarGeometry {
     pub height: usize,
     pub tab_width: usize,
     pub visible_tabs: usize,
+}
+
+/// Compute alpha for exit indicator underline based on elapsed time and Warp-like easing.
+pub fn exit_indicator_alpha(elapsed: Duration, base_alpha: f32) -> f32 {
+    let dur = 0.8_f32; // 800ms flash duration
+    let t = (elapsed.as_secs_f32() / dur).clamp(0.0, 1.0);
+    let ease = 1.0 - (1.0 - t).powi(3); // ease-out cubic
+    let peak = 1.0_f32;
+    let alpha = base_alpha + (peak - base_alpha) * (1.0 - ease);
+    alpha.clamp(base_alpha, 1.0)
 }
 
 impl Display {
@@ -220,6 +230,33 @@ impl Display {
                     )
                 };
                 self.stage_ui_rounded_rect(active_rect);
+
+                // Draw a thin underline to indicate recent non-zero exit on the active tab (Warp-style subtle badge)
+                if is_active && tab.last_exit_nonzero {
+                    let underline_h = 2.0_f32;
+                    let ux = scaled_tab_x;
+                    let uy = (scaled_tab_y + tab_height_px - underline_h).max(scaled_tab_y);
+                    let uw = tab_width_px;
+                    let uh = underline_h.min(tab_height_px);
+                    let exit_color = tokens.exit_indicator.unwrap_or(tokens.warning);
+                    // Compute animated alpha based on last flash
+                    let base_alpha = 0.85_f32;
+                    let now = std::time::Instant::now();
+                    let final_alpha = if let Some(ts) = self.tab_exit_flash.get(&tab.id) {
+                        let elapsed = now.saturating_duration_since(*ts);
+                        if tui.reduce_motion { base_alpha } else { exit_indicator_alpha(elapsed, base_alpha) }
+                    } else { base_alpha };
+                    let warn_line = UiRoundedRect::new(
+                        ux,
+                        uy,
+                        uw,
+                        uh,
+                        0.0,
+                        exit_color,
+                        final_alpha,
+                    );
+                    self.stage_ui_rounded_rect(warn_line);
+                }
                 
                 // Add subtle shadow for dragged tabs
                 if let Some(drag) = drag_state.clone() {
@@ -304,6 +341,34 @@ impl Display {
                         tokens.text_muted
                     };
                     self.draw_tab_text(close_point, close_color, bg, CLOSE_BUTTON, 1);
+                }
+            }
+
+            // For non-active tabs with last error, draw a small corner dot indicator (Warp-like subtle badge)
+            if !is_active && tab.last_exit_nonzero {
+                let now = std::time::Instant::now();
+                let alive = if let Some(ts) = self.tab_exit_flash.get(&tab.id) {
+                    now.saturating_duration_since(*ts).as_secs_f32() < 8.0
+                } else { false };
+                if alive {
+                    let dot_size = 4.0_f32.max(size_info.cell_height() * 0.12);
+                    let dot_x = (visual_x * size_info.cell_width()) + (size_info.cell_width() * 0.1);
+                    let dot_y = (bar_y + size_info.cell_height() * 0.15);
+                    let exit_color = tokens.exit_indicator.unwrap_or(tokens.warning);
+                    let alpha = if let Some(ts) = self.tab_exit_flash.get(&tab.id) {
+                        let elapsed = now.saturating_duration_since(*ts).as_secs_f32();
+                        if tui.reduce_motion { 0.8 } else { (1.0 - (elapsed / 6.0)).clamp(0.0, 1.0) }
+                    } else { 0.8 };
+                    let dot = UiRoundedRect::new(
+                        dot_x,
+                        dot_y,
+                        dot_size,
+                        dot_size,
+                        dot_size * 0.5,
+                        exit_color,
+                        alpha,
+                    );
+                    self.stage_ui_rounded_rect(dot);
                 }
             }
 

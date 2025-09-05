@@ -22,7 +22,7 @@ use winit::raw_window_handle::HasDisplayHandle;
 use winit::window::WindowId;
 
 use openagent_terminal_core::event::Event as TerminalEvent;
-use openagent_terminal_core::event_loop::{EventLoop as PtyEventLoop, Msg, Notifier};
+use openagent_terminal_core::event_loop::{Notifier, EventLoopSender};
 use openagent_terminal_core::grid::{Dimensions, Scroll};
 use openagent_terminal_core::index::Direction;
 use openagent_terminal_core::sync::FairMutex;
@@ -36,6 +36,7 @@ use crate::components_init::InitializedComponents;
 use crate::config::UiConfig;
 use crate::display::window::Window;
 use crate::display::Display;
+use crate::multiplexer::PaneManager;
 use crate::event::{
     ActionContext, Event, EventProxy, InlineSearchState, Mouse, SearchState, TouchPurpose,
 };
@@ -45,23 +46,53 @@ use crate::message_bar::MessageBuffer;
 use crate::scheduler::Scheduler;
 use crate::{input, renderer};
 
+/// Adapter wrapping a PTY event loop sender to satisfy Notify + OnResize without
+/// borrowing WindowContext. This avoids borrow checker conflicts when building
+/// ActionContext.
+pub(crate) struct NotifierAdapter {
+    pub sender: EventLoopSender,
+}
+
+impl openagent_terminal_core::event::Notify for NotifierAdapter {
+    fn notify<B>(&self, bytes: B)
+    where
+        B: Into<std::borrow::Cow<'static, [u8]>>,
+    {
+        use openagent_terminal_core::event_loop::Msg;
+        let _ = self.sender.send(Msg::Input(bytes.into()));
+    }
+}
+
+impl openagent_terminal_core::event::OnResize for NotifierAdapter {
+    fn on_resize(&mut self, window_size: openagent_terminal_core::event::WindowSize) {
+        use openagent_terminal_core::event_loop::Msg;
+        let _ = self.sender.send(Msg::Resize(window_size));
+    }
+}
+
 /// Event context for one individual OpenAgent Terminal window.
 pub struct WindowContext {
     pub message_buffer: MessageBuffer,
     pub display: Display,
     pub dirty: bool,
     event_queue: Vec<winit::event::Event<Event>>,
+    /// Pending confirmation overlays for tab close: id -> (tab_id, window_id)
+    pending_tab_close_confirms: std::collections::HashMap<String, (crate::workspace::TabId, WindowId)>,
+    /// Active pane's terminal (for compatibility with single-pane code paths)
     terminal: Arc<FairMutex<Term<EventProxy>>>,
     cursor_blink_timed_out: bool,
     prev_bell_cmd: Option<Instant>,
     modifiers: Modifiers,
     inline_search_state: InlineSearchState,
     search_state: SearchState,
-    notifier: Notifier,
+    /// Deprecated single-PTY notifier; we now route per-pane notifiers from pane_manager
+    /// and only use a temporary mutable reference to the active pane's notifier when needed.
     mouse: Mouse,
     touch: TouchPurpose,
     occluded: bool,
     preserve_title: bool,
+    /// Multi-pane manager containing one Term+PTY per pane
+    pane_manager: PaneManager,
     #[cfg(not(windows))]
     master_fd: RawFd,
     #[cfg(not(windows))]
@@ -288,46 +319,19 @@ impl WindowContext {
 
         let event_proxy = EventProxy::new(proxy.clone(), display.window.id());
 
-        // Create the terminal.
-        //
-        // This object contains all of the state about what's being displayed. It's
-        // wrapped in a clonable mutex since both the I/O loop and display need to
-        // access it.
-        let terminal = Term::new(config.term_options(), &display.size_info, event_proxy.clone());
-        let terminal = Arc::new(FairMutex::new(terminal));
+        // Initialize the multi-pane manager and create the initial pane (Term + PTY).
+        let mut pane_manager = PaneManager::new(config.clone(), display.size_info, display.window.id(), event_proxy.clone());
+        // Use working directory from options if provided
+        let initial_title = config.window.identity.title.clone();
+        let initial_pane_id = pane_manager
+            .create_pane(options.terminal_options.working_directory.clone(), initial_title, Some(display.size_info))?;
 
-        // Create the PTY.
-        //
-        // The PTY forks a process to run the shell on the slave side of the
-        // pseudoterminal. A file descriptor for the master side is retained for
-        // reading/writing to the shell.
-        let pty = tty::new(&pty_config, display.size_info.into(), display.window.id().into())?;
-
-        #[cfg(not(windows))]
-        let master_fd = pty.file().as_raw_fd();
-        #[cfg(not(windows))]
-        let shell_pid = pty.child().id();
-
-        // Create the pseudoterminal I/O loop.
-        //
-        // PTY I/O is ran on another thread as to not occupy cycles used by the
-        // renderer and input processing. Note that access to the terminal state is
-        // synchronized since the I/O loop updates the state, and the display
-        // consumes it periodically.
-        let event_loop = PtyEventLoop::new(
-            Arc::clone(&terminal),
-            event_proxy.clone(),
-            pty,
-            pty_config.drain_on_exit,
-            config.debug.ref_test,
-        )?;
-
-        // The event loop channel allows write requests from the event processor
-        // to be sent to the pty loop and ultimately written to the pty.
-        let loop_tx = event_loop.channel();
-
-        // Kick off the I/O thread.
-        let _io_thread = event_loop.spawn();
+        // Set compatibility terminal pointer to the active pane
+        let terminal = pane_manager
+            .get_pane(initial_pane_id)
+            .expect("initial pane must exist")
+            .terminal
+            .clone();
 
         // Start cursor blinking, in case `Focused` isn't sent on startup.
         if config.cursor.style().blinking {
@@ -367,10 +371,33 @@ impl WindowContext {
 
         // Initialize Warp functionality immediately (creates default tab or restores session)
         if config.workspace.warp_style {
+            // Detect previous crash via session running marker
+            let session_file_path = if config.workspace.sessions.enabled {
+                config
+                    .workspace
+                    .sessions
+                    .file_path
+                    .clone()
+                    .or(config.workspace.warp_session_file.clone())
+                    .or_else(|| {
+                        dirs::config_dir()
+                            .map(|p| p.join("openagent-terminal").join("warp-session.json"))
+                    })
+            } else {
+                None
+            };
+            let mut restore_on_startup = config.workspace.sessions.restore_on_startup;
+            if let Some(ref session_path) = session_file_path {
+                let marker = session_path.with_extension("running");
+                if marker.exists() && session_path.exists() {
+                    // Previous run did not cleanly remove the marker; prompt later instead of auto-restore
+                    restore_on_startup = false;
+                }
+            }
             let _ = workspace.initialize_warp(
                 display.window.id(),
                 proxy.clone(),
-                config.workspace.sessions.restore_on_startup,
+                restore_on_startup,
             );
         }
 
@@ -388,13 +415,23 @@ impl WindowContext {
             preserve_title,
             terminal,
             display,
+            pending_tab_close_confirms: std::collections::HashMap::new(),
             #[cfg(not(windows))]
-            master_fd,
+            master_fd: {
+                let active = pane_manager
+                    .get_pane(initial_pane_id)
+                    .expect("initial pane must exist");
+                active.master_fd
+            },
             #[cfg(not(windows))]
-            shell_pid,
+            shell_pid: {
+                let active = pane_manager
+                    .get_pane(initial_pane_id)
+                    .expect("initial pane must exist");
+                active.shell_pid
+            },
             config: config.clone(),
             components: None, // Will be initialized later by the event processor
-            notifier: Notifier(loop_tx),
             cursor_blink_timed_out: Default::default(),
             prev_bell_cmd: Default::default(),
             inline_search_state: Default::default(),
@@ -408,6 +445,7 @@ impl WindowContext {
             touch: Default::default(),
             dirty: Default::default(),
             workspace,
+            pane_manager,
             #[cfg(feature = "ai")]
             ai_runtime: {
                 #[cfg(feature = "ai")]
@@ -450,6 +488,15 @@ impl WindowContext {
 
         self.display.update_config(&self.config);
         self.terminal.lock().set_options(self.config.term_options());
+
+        // Propagate reduce-motion from resolved theme into display animations (Warp-like behavior)
+        let theme = self
+            .config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| self.config.theme.resolve());
+        self.display.set_reduce_motion(theme.ui.reduce_motion);
 
         // Reload cursor if its thickness has changed.
         if (old_config.cursor.thickness() - self.config.cursor.thickness()).abs() > f32::EPSILON {
@@ -571,19 +618,114 @@ impl WindowContext {
         }
 
         // Redraw the window.
-        let terminal = self.terminal.lock();
-        #[cfg(feature = "ai")]
-        let ai_state_opt = self.ai_runtime.as_ref().map(|r| &r.ui);
-        self.display.draw(
-            terminal,
-            scheduler,
-            &self.message_buffer,
-            &self.config,
-            &mut self.search_state,
+        // Ensure pane set matches the workspace layout (create/destroy panes as needed)
+        self.sync_panes_with_layout();
+
+        // If we have a split layout with more than one pane, draw all panes; otherwise use single-pane draw
+        let draw_all = if let Some(tab) = self.workspace.active_tab() {
+            crate::workspace::SplitManager::pane_count_static(&tab.split_layout) >= 2
+        } else {
+            false
+        };
+
+
+        if draw_all {
+            // Compute content container (subtract reserved tab bar row if Always and reserve_row)
+            let si = self.display.size_info;
+            let config = &self.config;
+            let mut x0 = si.padding_x();
+            let mut y0 = si.padding_y();
+            let mut w = si.width() - 2.0 * si.padding_x();
+            let mut h = si.height() - 2.0 * si.padding_y();
+            if let Some(tab) = self.workspace.active_tab() {
+                if config.workspace.tab_bar.show
+                    && config.workspace.tab_bar.reserve_row
+                    && config.workspace.tab_bar.position
+                        != crate::config::workspace::TabBarPosition::Hidden
+                {
+                    let is_fs = self.display.window.is_fullscreen();
+                    let eff_vis = match config.workspace.tab_bar.visibility {
+                        crate::config::workspace::TabBarVisibility::Always => {
+                            crate::config::workspace::TabBarVisibility::Always
+                        },
+                        crate::config::workspace::TabBarVisibility::Hover => {
+                            crate::config::workspace::TabBarVisibility::Hover
+                        },
+                        crate::config::workspace::TabBarVisibility::Auto => {
+                            if is_fs {
+                                crate::config::workspace::TabBarVisibility::Hover
+                            } else {
+                                crate::config::workspace::TabBarVisibility::Always
+                            }
+                        },
+                    };
+                    if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
+                        let ch = si.cell_height();
+                        match config.workspace.tab_bar.position {
+                            crate::config::workspace::TabBarPosition::Top => {
+                                y0 += ch;
+                                h = (h - ch).max(0.0);
+                            },
+                            crate::config::workspace::TabBarPosition::Bottom => {
+                                h = (h - ch).max(0.0);
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+
+                let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
+                let rects = crate::multiplexer::compute_pane_rectangles(&tab.split_layout, container);
+
+                // Resize each pane terminal to match its pane rectangle (columns/lines)
+                let cw = self.display.size_info.cell_width();
+                let ch = self.display.size_info.cell_height();
+                for (pid, rect) in &rects {
+                    let pane_term_size = crate::display::SizeInfo::new(
+                        rect.width,
+                        rect.height,
+                        cw,
+                        ch,
+                        0.0,
+                        0.0,
+                        false,
+                    );
+                    let _ = self.pane_manager.resize_pane(*pid, pane_term_size);
+                }
+
+                // Draw all panes in one frame
+                let tmap = self.pane_manager.get_all_terminals();
+                let focused = Some(tab.active_pane);
+                #[cfg(feature = "ai")]
+                let ai_state_opt = self.ai_runtime.as_ref().map(|r| &r.ui);
+                self.display.draw_multipane_frame(
+                    &tmap,
+                    &rects,
+                    focused,
+                    &self.config,
+                    &mut self.search_state,
+                    scheduler,
+                    &self.message_buffer,
+                    #[cfg(feature = "ai")]
+                    ai_state_opt,
+                    Some(&self.workspace.tabs),
+                );
+            }
+        } else {
+            let active_terminal = self.terminal.lock();
             #[cfg(feature = "ai")]
-            ai_state_opt,
-            Some(&self.workspace.tabs),
-        );
+            let ai_state_opt = self.ai_runtime.as_ref().map(|r| &r.ui);
+            self.display.draw(
+                active_terminal,
+                scheduler,
+                &self.message_buffer,
+                &self.config,
+                &mut self.search_state,
+                #[cfg(feature = "ai")]
+                ai_state_opt,
+                Some(&self.workspace.tabs),
+            );
+        }
     }
 
     /// Process events for this terminal window.
@@ -611,10 +753,29 @@ impl WindowContext {
             },
         }
 
+        // Route events to the active pane's terminal and PTY notifier
+        self.sync_panes_with_layout();
         let mut terminal = self.terminal.lock();
 
         let old_is_searching = self.search_state.history_index.is_some();
 
+        // Helper to build a notifier adapter for the active pane
+        let make_active_adapter = |this: &WindowContext| {
+            // Determine active pane
+            let active_pane_id = this
+                .workspace
+                .active_tab()
+                .map(|t| t.active_pane)
+                .expect("active tab/pane required");
+            let pane = this
+                .pane_manager
+                .get_pane(active_pane_id)
+                .expect("active pane must exist");
+            let sender = pane.pty_notifier.0.clone();
+            NotifierAdapter { sender }
+        };
+
+        let mut adapter = make_active_adapter(self);
         let context = ActionContext {
             cursor_blink_timed_out: &mut self.cursor_blink_timed_out,
             prev_bell_cmd: &mut self.prev_bell_cmd,
@@ -622,7 +783,8 @@ impl WindowContext {
             inline_search_state: &mut self.inline_search_state,
             search_state: &mut self.search_state,
             modifiers: &mut self.modifiers,
-            notifier: &mut self.notifier,
+            // Use the active pane's PTY notifier via adapter
+            notifier: &mut adapter,
             display: &mut self.display,
             mouse: &mut self.mouse,
             touch: &mut self.touch,
@@ -643,6 +805,7 @@ impl WindowContext {
             #[cfg(feature = "ai")]
             ai_runtime: self.ai_runtime.as_mut(),
             workspace: &mut self.workspace,
+            pending_tab_close_confirms: &mut self.pending_tab_close_confirms,
         };
         let mut processor = input::Processor::new(context);
 
@@ -652,10 +815,11 @@ impl WindowContext {
 
         // Process DisplayUpdate events.
         if self.display.pending_update.dirty {
+            let mut adapter2 = make_active_adapter(self);
             Self::submit_display_update(
                 &mut terminal,
                 &mut self.display,
-                &mut self.notifier,
+                &mut adapter2,
                 &self.message_buffer,
                 &mut self.search_state,
                 old_is_searching,
@@ -748,7 +912,7 @@ impl WindowContext {
     fn submit_display_update(
         terminal: &mut Term<EventProxy>,
         display: &mut Display,
-        notifier: &mut Notifier,
+        pty_resize_handle: &mut dyn openagent_terminal_core::event::OnResize,
         message_buffer: &MessageBuffer,
         search_state: &mut SearchState,
         old_is_searching: bool,
@@ -763,7 +927,7 @@ impl WindowContext {
             search_state.direction == Direction::Left
         };
 
-        display.handle_update(terminal, notifier, message_buffer, search_state, config);
+        display.handle_update(terminal, pty_resize_handle, message_buffer, search_state, config);
 
         let new_is_searching = search_state.history_index.is_some();
         if !old_is_searching && new_is_searching {
@@ -776,11 +940,102 @@ impl WindowContext {
             }
         }
     }
+
+    /// Return a mutable reference to the active pane's PTY notifier.
+    fn active_pane_notifier_mut(&mut self) -> &mut Notifier {
+        // Determine active pane from workspace
+        let active_pane_id = self
+            .workspace
+            .active_tab()
+            .map(|t| t.active_pane)
+            .expect("active tab/pane required");
+        self.pane_manager
+            .get_pane_mut(active_pane_id)
+            .map(|p| &mut p.pty_notifier)
+            .expect("active pane must exist")
+    }
+
+    /// Ensure the pane manager matches the workspace split layout (create/destroy/focus panes).
+    fn sync_panes_with_layout(&mut self) {
+        // Only proceed if we have an active tab
+        let Some(active_tab) = self.workspace.active_tab() else { return; };
+
+        // Compute required pane IDs from the layout
+        let required_ids = active_tab.split_layout.collect_pane_ids();
+
+        // Add missing panes
+        for pid in &required_ids {
+            if !self.pane_manager.pane_ids().any(|id| id == *pid) {
+                let _ = self
+                    .pane_manager
+                    .create_pane_with_id(*pid, Some(active_tab.working_directory.clone()), active_tab.title.clone(), None);
+            }
+        }
+
+        // Remove panes that are no longer present in the layout
+        let existing: Vec<_> = self.pane_manager.pane_ids().collect();
+        for pid in existing {
+            if !required_ids.contains(&pid) {
+                self.pane_manager.remove_pane(pid);
+            }
+        }
+
+        // Focus the active pane according to the tab
+        let _ = self.pane_manager.focus_pane(active_tab.active_pane);
+
+        // Update compatibility terminal pointer and OS-specific fields to the active pane
+        if let Some(active) = self.pane_manager.get_pane(active_tab.active_pane) {
+            self.terminal = active.terminal.clone();
+            #[cfg(not(windows))]
+            {
+                self.master_fd = active.master_fd;
+                self.shell_pid = active.shell_pid;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openagent_terminal_core::event::{Notify, OnResize};
+
+    #[test]
+    fn notifier_adapter_implements_traits() {
+        fn assert_traits<T: Notify + OnResize>() {}
+        assert_traits::<NotifierAdapter>();
+    }
+
+    // Compile-time acceptance test: ensure Processor can be instantiated with ActionContext
+    // using NotifierAdapter as the notifier type (no runtime execution).
+    #[allow(dead_code)]
+    fn _assert_processor_accepts_adapter<'a>(
+        _p: &mut crate::input::Processor<
+            crate::event::EventProxy,
+            crate::event::ActionContext<'a, NotifierAdapter, crate::event::EventProxy>,
+        >,
+    ) {
+    }
 }
 
 impl Drop for WindowContext {
     fn drop(&mut self) {
-        // Shutdown the terminal's PTY.
-        let _ = self.notifier.0.send(Msg::Shutdown);
+        // Ensure all panes are shutdown cleanly.
+        self.pane_manager.shutdown_all();
+        // Best-effort: remove running marker to indicate clean shutdown
+        if self.config.workspace.sessions.enabled && self.config.workspace.warp_style {
+            let session_file_path = self
+                .config
+                .workspace
+                .sessions
+                .file_path
+                .clone()
+                .or(self.config.workspace.warp_session_file.clone())
+                .or_else(|| dirs::config_dir().map(|p| p.join("openagent-terminal").join("warp-session.json")));
+            if let Some(session_path) = session_file_path {
+                let marker = session_path.with_extension("running");
+                let _ = std::fs::remove_file(marker);
+            }
+        }
     }
 }

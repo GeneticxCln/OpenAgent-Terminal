@@ -855,7 +855,7 @@ impl Display {
                 let change = lsp_types::TextDocumentContentChangeEvent { range: None, range_length: None, text: buf.text() };
                 let _ = client.change_document(uri, version, vec![change]);
             }
-            if ch == '(' { self.editor_overlay_signature_help(); }
+            if ch == '(' || ch == ',' { self.editor_overlay_signature_help(); }
         }
         self.pending_update.dirty = true;
     }

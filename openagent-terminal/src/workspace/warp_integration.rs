@@ -125,11 +125,13 @@ pub struct WarpPerformanceStats {
 impl WarpIntegration {
     /// Create new Warp integration with session file
     pub fn new(config: Rc<UiConfig>, session_file: Option<PathBuf>) -> Self {
-        let tab_manager = if let Some(session_path) = session_file {
+        let mut tab_manager = if let Some(session_path) = session_file {
             WarpTabManager::with_session_file(session_path)
         } else {
             WarpTabManager::new()
         };
+        // Align tab manager's auto-save interval with configured interval
+        tab_manager.set_auto_save_interval(config.workspace.sessions.autosave_interval_secs);
 
         Self {
             tab_manager,
@@ -1021,7 +1023,11 @@ args: self.config.terminal.shell.as_ref()
 
     /// Check if auto-save is needed
     pub fn should_auto_save(&self) -> bool {
-        self.last_activity.elapsed() > Duration::from_secs(30)
+        let secs = self.config.workspace.sessions.autosave_interval_secs;
+        if secs == 0 {
+            return false; // autosave disabled
+        }
+        self.last_activity.elapsed() > Duration::from_secs(secs)
     }
 
     /// Generate unique pane ID

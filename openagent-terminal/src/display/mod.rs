@@ -7,6 +7,7 @@ use std::mem::{self, ManuallyDrop};
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
 
 use glutin::config::GetGlConfig;
 use glutin::context::{NotCurrentContext, PossiblyCurrentContext};
@@ -84,6 +85,7 @@ pub mod pane_drag_drop;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
+pub mod multipane;
 pub mod workspace_animations;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
@@ -541,6 +543,9 @@ pub struct Display {
     /// Pane drag-and-drop manager
     pub pane_drag_manager: pane_drag_drop::PaneDragManager,
 
+    /// Timestamp of last non-zero exit per tab for subtle status animations
+    pub tab_exit_flash: HashMap<crate::workspace::TabId, Instant>,
+
     /// Hovered split divider (if any)
     pub split_hover: Option<crate::workspace::split_manager::SplitDividerHit>,
     /// Active split drag (if any)
@@ -688,7 +693,8 @@ impl Display {
         let mut blocks = blocks::Blocks::new();
         blocks.enabled = config.debug.blocks;
 
-        Ok(Self {
+        // Construct display
+        let mut display = Self {
             backend: Backend::Gl {
                 renderer: ManuallyDrop::new(gl_renderer),
                 context: ManuallyDrop::new(context),
@@ -765,6 +771,7 @@ impl Display {
             // Workspace animation systems
             workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
             pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
+            tab_exit_flash: HashMap::new(),
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
@@ -775,8 +782,17 @@ impl Display {
             palette_anim_duration_ms: 0,
             palette_sel_last_index: None,
             palette_sel_anim_start: None,
-        })
+        };
+        // Apply theme-driven reduce motion at startup
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        display.set_reduce_motion(theme.ui.reduce_motion);
+        Ok(display)
     }
+
 
     /// Update all workspace animations and return whether any updates occurred
     pub fn update_workspace_animations(&mut self) -> bool {
@@ -1161,7 +1177,8 @@ crate::renderer::Glyph {
         let mut blocks = blocks::Blocks::new();
         blocks.enabled = config.debug.blocks;
 
-        Ok(Self {
+        // Construct display (WGPU)
+        let mut display = Self {
             backend: Backend::Wgpu { renderer: wgpu_renderer },
             visual_bell: VisualBell::from(&config.bell),
             renderer_preference: config.debug.renderer,
@@ -1236,10 +1253,19 @@ crate::renderer::Glyph {
             tab_animations: Vec::new(),
             workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
             pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
+            tab_exit_flash: HashMap::new(),
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
-        })
+        };
+        // Apply theme-driven reduce motion at startup
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        display.set_reduce_motion(theme.ui.reduce_motion);
+        Ok(display)
     }
 
     #[inline]

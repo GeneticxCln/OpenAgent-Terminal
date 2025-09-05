@@ -166,7 +166,8 @@ impl ConfigMonitor {
     /// This checks the supplied list of files against the monitored files to determine if a
     /// restart is necessary.
     pub fn needs_restart(&self, files: &[PathBuf]) -> bool {
-        Self::hash_paths(files).map_or(true, |hash| Some(hash) == self.watched_hash)
+        // Restart only when the set of watched paths has changed.
+        Self::hash_paths(files).map_or(true, |hash| Some(hash) != self.watched_hash)
     }
 
     /// Generate the hash for a list of paths.
@@ -188,5 +189,33 @@ impl ConfigMonitor {
         let mut hasher = DefaultHasher::new();
         Hash::hash_slice(&sorted_files, &mut hasher);
         Some(hasher.finish())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_monitor_with_paths(paths: &[PathBuf]) -> ConfigMonitor {
+        // Dummy channel and thread for constructing the struct in tests.
+        let (tx, _rx) = mpsc::channel::<Result<NotifyEvent, NotifyError>>();
+        let thread = std::thread::spawn(|| {});
+        let watched_hash = ConfigMonitor::hash_paths(paths);
+        ConfigMonitor { thread, shutdown_tx: tx, watched_hash }
+    }
+
+    #[test]
+    fn needs_restart_false_when_paths_equal() {
+        let paths = vec![PathBuf::from("/tmp/a.toml"), PathBuf::from("/tmp/b.toml")];
+        let monitor = make_monitor_with_paths(&paths);
+        assert_eq!(monitor.needs_restart(&paths), false);
+    }
+
+    #[test]
+    fn needs_restart_true_when_paths_changed() {
+        let paths1 = vec![PathBuf::from("/tmp/a.toml"), PathBuf::from("/tmp/b.toml")];
+        let paths2 = vec![PathBuf::from("/tmp/a.toml"), PathBuf::from("/tmp/c.toml")];
+        let monitor = make_monitor_with_paths(&paths1);
+        assert_eq!(monitor.needs_restart(&paths2), true);
     }
 }

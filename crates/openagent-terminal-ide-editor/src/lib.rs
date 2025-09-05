@@ -106,5 +106,34 @@ impl EditorBuffer {
     }
 
     pub fn text(&self) -> String { self.rope.read().to_string() }
+
+    /// Get a snapshot of the current cursor position
+    pub fn cursor_position(&self) -> Cursor { self.cursor.read().clone() }
+
+    /// Set cursor position (line, column). Clamps to buffer bounds.
+    pub fn set_cursor_position(&self, line: usize, column: usize) {
+        let rope = self.rope.read();
+        let total_lines = rope.len_lines();
+        let line = line.min(total_lines.saturating_sub(1));
+        let line_len = rope.line(line).len_chars();
+        let column = column.min(line_len);
+        let mut cur = self.cursor.write();
+        cur.line = line; cur.column = column;
+    }
+
+    /// Compute UTF-16 code unit offset for current cursor position (LSP-compatible)
+    pub fn cursor_position_utf16(&self) -> (u32, u32) {
+        let rope = self.rope.read();
+        let cur = self.cursor.read();
+        let line_slice = rope.line(cur.line);
+        let mut u16_units: u32 = 0;
+        let mut iter = line_slice.chars();
+        for (i, ch) in iter.by_ref().enumerate() {
+            if i >= cur.column { break; }
+            let mut buf = [0u16; 2];
+            u16_units += ch.encode_utf16(&mut buf).len() as u32;
+        }
+        (cur.line as u32, u16_units)
+    }
 }
 

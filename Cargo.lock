@@ -4411,10 +4411,12 @@ dependencies = [
  "anyhow",
  "bytes",
  "lsp-types",
+ "openagent-terminal-ide-editor",
  "parking_lot",
  "serde",
  "serde_json",
  "thiserror 2.0.16",
+ "url",
 ]
 
 [[package]]

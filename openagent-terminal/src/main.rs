@@ -53,6 +53,7 @@ mod renderer;
 mod scheduler;
 mod string;
 mod window_context;
+mod multiplexer;
 
 // New component modules
 mod blocks_v2;
@@ -243,19 +244,12 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);
 
-    // `Processor` must be dropped before calling `FreeConsole`.
-    //
-    // This is needed for ConPTY backend. Otherwise a deadlock can occur.
-    // The cause:
-    //   - Drop for ConPTY will deadlock if the conout pipe has already been dropped
-    //   - ConPTY is dropped when the last of processor and window context are dropped, because both
-    //     of them own an Arc<ConPTY>
-    //
-    // The fix is to ensure that processor is dropped first. That way, when window context (i.e.
-    // PTY) is dropped, it can ensure ConPTY is dropped before the conout pipe in the PTY drop
-    // order.
-    //
-    // FIXME: Change PTY API to enforce the correct drop order with the typesystem.
+    // On Windows, ConPTY (pseudoconsole) shutdown ordering is enforced at the
+    // type level in the PTY implementation to avoid deadlocks when closing the
+    // pseudoconsole versus its pipes. Historically, this required dropping the
+    // processor before the window context to influence drop order. That is no
+    // longer necessary for safety, but we still ensure processor is dropped
+    // here before detaching the console for clarity.
 
     // Terminate the config monitor.
     if let Some(config_monitor) = processor.config_monitor.take() {

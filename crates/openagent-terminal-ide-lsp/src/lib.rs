@@ -12,6 +12,8 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 
+pub mod bridge;
+
 #[derive(Debug, thiserror::Error)]
 pub enum LspError {
     #[error("process not running")] ProcessNotRunning,

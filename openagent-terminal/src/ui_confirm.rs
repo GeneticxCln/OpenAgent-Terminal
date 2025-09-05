@@ -284,4 +284,30 @@ mod tests {
         // Ensure the specific pending request created by this call was cleaned up
         assert!(!th::has_pending(&open_id));
     }
+
+    #[test]
+    fn multiple_pending_confirms_resolve_independently() {
+        th::clear_all();
+
+        // Insert two pending confirmations with known ids
+        let id1 = "test-confirm-1".to_string();
+        let id2 = "test-confirm-2".to_string();
+
+        let rx1 = th::insert_pending_for_test(&id1);
+        let rx2 = th::insert_pending_for_test(&id2);
+
+        // Resolve first as accepted, second as canceled
+        assert!(super::resolve(&id1, true));
+        assert!(super::resolve(&id2, false));
+
+        // Verify channels receive the right values
+        let got1 = rx1.recv_timeout(std::time::Duration::from_millis(100)).unwrap();
+        let got2 = rx2.recv_timeout(std::time::Duration::from_millis(100)).unwrap();
+        assert!(got1);
+        assert!(!got2);
+
+        // Second resolve should return false since ids were removed
+        assert!(!super::resolve(&id1, true));
+        assert!(!super::resolve(&id2, false));
+    }
 }

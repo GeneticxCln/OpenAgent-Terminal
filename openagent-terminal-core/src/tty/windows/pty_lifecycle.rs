@@ -77,16 +77,17 @@ impl PtyActive {
     /// Properly shutdown the PTY, ensuring correct drop order.
     /// 
     /// This is the critical method that prevents ConPTY deadlocks.
-    /// It explicitly drops resources in the correct order:
-    /// 1. First, drop the conout pipe
-    /// 2. Then, drop the ConPTY backend
-    /// 3. Finally, return remaining safe resources
+    /// It explicitly drops resources in the correct order and ensures the ConPTY
+    /// (HPCON) is closed before dropping the conout pipe:
+    /// 1. Drop the ConPTY backend (ClosePseudoConsole)
+    /// 2. Then, drop the conout pipe
+    /// 3. Finally, drop the conin pipe and return the child watcher
     pub fn shutdown(self) -> ChildExitWatcher {
-        // CRITICAL: Drop conout pipe first, then backend (ConPTY)
-        // This prevents the ConPTY deadlock described in the FIXME
-        drop(self.conout);
+        // CRITICAL: Drop backend (ConPTY) before the conout pipe. ClosePseudoConsole blocks
+        // until the conout pipe is drained; keeping conout alive avoids a deadlock.
         drop(self.backend);
-        // conin can be dropped safely after ConPTY
+        // Now it's safe to drop pipes.
+        drop(self.conout);
         drop(self.conin);
         
         // Return the child watcher as it's still needed

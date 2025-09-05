@@ -285,6 +285,25 @@ impl WorkspaceManager {
         self.tabs.set_active_tab_last_exit(non_zero);
     }
 
+    /// Set last exit code on active tab
+    pub fn set_active_tab_last_exit_code(&mut self, code: i32) {
+        self.tabs.set_active_tab_last_exit_code(code);
+    }
+
+    /// Set last exit code details for active tab
+    pub fn mark_active_tab_exit_code(&mut self, code: Option<i32>) {
+        self.tabs.set_active_tab_last_exit_details(code);
+    }
+
+    /// Mark active tab command running state
+    pub fn mark_active_tab_command_running(&mut self, running: bool) {
+        if let Some(id) = self.tabs.active_tab_id() {
+            if let Some(tab) = self.tabs.get_tab_mut(id) {
+                tab.command_running = running;
+            }
+        }
+    }
+
     pub fn toggle_active_tab_sync(&mut self) -> bool {
         self.tabs.toggle_active_tab_sync()
     }

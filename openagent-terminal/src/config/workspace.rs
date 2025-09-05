@@ -121,6 +121,10 @@ pub struct TabBarConfig {
     /// What to do when creating a new tab
     #[config(default = "NewTabAction::InheritWorkingDir")]
     pub new_tab_action: NewTabAction,
+
+    /// Policy controlling when to show a confirmation before closing a tab
+    #[config(default = "TabCloseConfirmPolicy::ModifiedOrMultiple")]
+    pub close_confirm_policy: TabCloseConfirmPolicy,
 }
 
 /// Quick Actions bar configuration
@@ -187,8 +191,26 @@ impl Default for TabBarConfig {
             max_tab_width: None,
             new_tab_action: NewTabAction::InheritWorkingDir,
             reserve_row: true,
+close_confirm_policy: TabCloseConfirmPolicy::MultiplePanesOnly,
         }
     }
+}
+
+/// Policy for showing confirmation when closing a tab
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TabCloseConfirmPolicy {
+    /// Never ask for confirmation on close
+    Never,
+    /// Only ask if the tab has unsaved changes
+    ModifiedOnly,
+    /// Only ask if the tab has multiple panes
+    MultiplePanesOnly,
+    /// Ask if the tab has unsaved changes OR multiple panes
+    ModifiedOrMultiple,
+    /// Ask if the tab is currently running a command OR has multiple panes
+    RunningOrMultiple,
+    /// Always ask for confirmation
+    Always,
 }
 
 /// Split pane configuration
@@ -201,6 +223,11 @@ pub struct SplitConfig {
     /// Border thickness in pixels
     #[config(default = 1.0)]
     pub border_thickness: f32,
+
+    /// Draw rounded endcaps at split intersections (cosmetic).
+    /// Off by default to match Warp's straight splitters.
+    #[config(default = false)]
+    pub rounded_endcaps: bool,
 
     /// Default split ratio for new splits
     #[config(default = 0.5)]
@@ -230,6 +257,9 @@ pub struct SplitConfig {
     /// Line alpha when hovered/dragged (0..1)
     #[config(default = 0.95)]
     pub indicator_hover_alpha: f32,
+    /// Hover animation duration in milliseconds (0 disables animation)
+    #[config(default = 160)]
+    pub indicator_hover_duration_ms: u32,
     /// Handle size baseline (px). Actual size also adapts to divider length.
     #[config(default = 8.0)]
     pub handle_size: f32,
@@ -256,6 +286,7 @@ impl Default for SplitConfig {
         Self {
             borders: true,
             border_thickness: 1.0,
+            rounded_endcaps: false,
             default_ratio: 0.5,
             minimum_pane_size: 10,
             resize_increment: 5,
@@ -264,6 +295,7 @@ impl Default for SplitConfig {
             indicator_line_alpha: 0.5,
             indicator_hover_scale: 2.0,
             indicator_hover_alpha: 0.95,
+            indicator_hover_duration_ms: 160,
             handle_size: 8.0,
             handle_alpha: 0.95,
             show_resize_handles: true,

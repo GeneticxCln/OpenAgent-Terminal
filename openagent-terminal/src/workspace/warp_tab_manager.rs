@@ -143,7 +143,9 @@ impl WarpTabManager {
             shell_command: None,
             zoom_saved_layout: None,
             last_exit_nonzero: false,
+            last_exit_code: None,
             panes_synced: false,
+            command_running: false,
         };
 
         self.tabs.insert(tab_id, tab_context);
@@ -478,7 +480,9 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
             shell_command: tab_session.shell_command,
             zoom_saved_layout: None,
             last_exit_nonzero: false,
+            last_exit_code: None,
             panes_synced: false,
+            command_running: false,
         };
 
         self.tabs.insert(tab_session.id, tab_context);
@@ -512,12 +516,23 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
 
     /// Schedule session save if enough time has passed
     fn schedule_session_save(&mut self) {
-        if self.last_session_save.elapsed().unwrap_or(Duration::MAX)
+        if self.session_auto_save_interval == Duration::from_secs(0) {
+            return; // autosave disabled
+        }
+        if self
+            .last_session_save
+            .elapsed()
+            .unwrap_or(Duration::MAX)
             > self.session_auto_save_interval
         {
             // In a real implementation, this would schedule an async save
             let _ = self.save_session();
         }
+    }
+
+    /// Update the auto-save interval used by the manager
+    pub fn set_auto_save_interval(&mut self, secs: u64) {
+        self.session_auto_save_interval = Duration::from_secs(secs);
     }
 
     /// Enable/disable automatic tab naming

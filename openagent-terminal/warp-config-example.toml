@@ -44,6 +44,12 @@ new_tab_action = "inherit_working_dir"  # "inherit_working_dir" | "home_dir" | "
 
 # Split pane configuration
 [workspace.splits]
+# Whether to show borders between panes
+borders = true
+# Border thickness (pixels)
+border_thickness = 1.0
+# Rounded endcaps at split intersections (cosmetic). Off by default to match Warp's straight splitters.
+rounded_endcaps = false
 borders = true
 border_thickness = 1.0
 default_ratio = 0.5

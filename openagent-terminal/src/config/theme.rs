@@ -63,6 +63,9 @@ pub struct ThemeTokens {
     pub selection: Rgb,
     pub border: Rgb,
     pub overlay: Rgb,
+    /// Optional dedicated color for exit status indicators; if None, falls back to `warning`
+    #[serde(default)]
+    pub exit_indicator: Option<Rgb>,
 }
 
 impl Default for ThemeTokens {
@@ -80,6 +83,7 @@ impl Default for ThemeTokens {
             selection: Rgb::new(0x2a, 0x4a, 0x77),
             border: Rgb::new(0x33, 0x33, 0x33),
             overlay: Rgb::new(0x00, 0x00, 0x00),
+            exit_indicator: None,
         }
     }
 }
@@ -111,6 +115,10 @@ pub struct ThemeUi {
     /// Icon pixel size for palette entries (autofilter: NEAREST at 16px, LINEAR when scaled)
     pub palette_icon_px: f32,
 
+    /// Hover animation duration for split dividers (ms). 0 disables.
+    #[serde(default)]
+    pub hover_anim_duration_ms: u32,
+
     /// Caret blink rate in milliseconds for the bottom composer. Set to 0 to disable blinking.
     pub composer_blink_rate_ms: u32,
     /// Word-boundary style for word-wise navigation/deletion in the composer.
@@ -139,6 +147,7 @@ impl Default for ThemeUi {
             palette_icon_tint: true,
             palette_icon_filter_nearest: true,
             palette_icon_px: 16.0,
+            hover_anim_duration_ms: 160,
             composer_blink_rate_ms: 600,
             composer_word_boundary_style: WordBoundaryStyle::Alnum,
             composer_open_mode: ComposerOpenMode::Instant,
@@ -324,6 +333,7 @@ fn builtin_theme(name: &str) -> Option<ThemeFile> {
                 selection: Rgb::new(0xc7, 0xdd, 0xff),
                 border: Rgb::new(0xcc, 0xcc, 0xcc),
                 overlay: Rgb::new(0x00, 0x00, 0x00),
+                exit_indicator: None,
             },
             ui: ThemeUi::default(),
         }),
@@ -340,6 +350,7 @@ fn builtin_theme(name: &str) -> Option<ThemeFile> {
                 selection: Rgb::new(0x22, 0x44, 0x88),
                 border: Rgb::new(0x66, 0x66, 0x66),
                 overlay: Rgb::new(0x00, 0x00, 0x00),
+                exit_indicator: None,
             },
             ui: ThemeUi { shadow: false, shadow_alpha: 0.0, ..ThemeUi::default() },
         }),

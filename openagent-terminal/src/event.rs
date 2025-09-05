@@ -124,6 +124,12 @@ pub struct Processor {
 
     // Pending workflow confirmations (workflow name, window id)
     pending_workflow_confirms: HashMap<String, (String, WindowId)>,
+
+    // Pending confirmation to restore session after crash (id -> window id)
+    pending_restore_confirms: HashMap<String, WindowId>,
+
+    // Pending close-tab confirmations (id -> (tab_id, window id))
+    pending_tab_close_confirms: HashMap<String, (crate::workspace::TabId, WindowId)>,
 }
 
 impl Processor {
@@ -157,7 +163,7 @@ impl Processor {
                 ConfigMonitor::new(config.config_paths.clone(), event_loop.create_proxy());
         }
 
-        Processor {
+Processor {
             initial_window_options,
             initial_window_error: None,
             cli_options,
@@ -174,6 +180,8 @@ impl Processor {
             #[cfg(feature = "ai")]
             pending_security_ai: Default::default(),
             pending_workflow_confirms: Default::default(),
+            pending_restore_confirms: Default::default(),
+            pending_tab_close_confirms: Default::default(),
         }
     }
 
@@ -240,6 +248,42 @@ impl Processor {
         if let Some(components) = &self.components {
             if let Some(window_context) = self.windows.get_mut(&window_id) {
                 window_context.set_components(components.clone());
+            }
+        }
+
+        // Detect previous crash and prompt to restore session if applicable
+        if self.config.workspace.warp_style && self.config.workspace.sessions.enabled {
+            // Derive session file path similar to WindowContext
+            let session_file_path = self
+                .config
+                .workspace
+                .sessions
+                .file_path
+                .clone()
+                .or(self.config.workspace.warp_session_file.clone())
+                .or_else(|| dirs::config_dir().map(|p| p.join("openagent-terminal").join("warp-session.json")));
+            if let Some(session_path) = session_file_path {
+                let marker = session_path.with_extension("running");
+                let crashed = marker.exists() && session_path.exists();
+                // Create running marker for this run (best-effort)
+                if let Some(parent) = marker.parent() { let _ = std::fs::create_dir_all(parent); }
+                let _ = std::fs::write(&marker, b"running");
+                if crashed && self.config.workspace.sessions.restore_on_startup {
+                    let id = crate::ui_confirm::generate_id();
+                    self.pending_restore_confirms.insert(id.clone(), window_id);
+                    let title = "Restore previous session?".to_string();
+                    let body = "It looks like the last session didn't close cleanly. Restore your previous tabs and splits?".to_string();
+                    let _ = self.proxy.send_event(Event::new(
+                        EventType::ConfirmOpen {
+                            id,
+                            title,
+                            body,
+                            confirm_label: Some("Restore".to_string()),
+                            cancel_label: Some("Start fresh".to_string()),
+                        },
+                        window_id,
+                    ));
+                }
             }
         }
 
@@ -1363,7 +1407,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             },
-            (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
+            (EventType::ConfirmRespond { id, accepted }, Some(window_id)) => {
                 // If this is an AI pending confirm, handle it
                 #[cfg(feature = "ai")]
                 if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
@@ -1393,7 +1437,7 @@ impl ApplicationHandler<Event> for Processor {
                                 } else {
                                     p.default.clone()
                                 };
-                                let val = val.unwrap_or_default();
+                                    let val = val.unwrap_or_default();
                                 cmd = cmd.replace(&placeholder, &val);
                             }
                             let _ = self
@@ -1406,6 +1450,81 @@ impl ApplicationHandler<Event> for Processor {
                             crate::message_bar::MessageType::Warning,
                         );
                         let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                    }
+                }
+
+                // Pending restore session confirmation
+                if let Some(win) = self.pending_restore_confirms.remove(&id) {
+                    if accepted {
+                        if let Some(window_context) = self.windows.get_mut(&win) {
+                            if let Some(warp) = &mut window_context.workspace.warp {
+                                let _ = warp.execute_warp_action(&crate::workspace::WarpAction::LoadSession);
+                                window_context.dirty = true;
+                                if window_context.display.window.has_frame {
+                                    window_context.display.window.request_redraw();
+                                }
+                            }
+                        }
+                    } else {
+                        // Start fresh: do nothing, default tab should already be present
+                        if let Some(window_context) = self.windows.get_mut(&win) {
+                            window_context.dirty = true;
+                            if window_context.display.window.has_frame {
+                                window_context.display.window.request_redraw();
+                            }
+                        }
+                    }
+                }
+
+                // Pending close tab confirmation
+                if let Some((tab_id, win)) = self.pending_tab_close_confirms.remove(&id) {
+                    if accepted {
+                        if let Some(window_context) = self.windows.get_mut(&win) {
+                            let ok = window_context.workspace.close_tab(tab_id);
+                            let msg = if ok {
+                                format!("Closed tab '{:?}'", tab_id)
+                            } else {
+                                "Close tab failed".into()
+                            };
+                            window_context
+                                .message_buffer
+                                .push(crate::message_bar::Message::new(
+                                    msg,
+                                    crate::message_bar::MessageType::Warning,
+                                ));
+                            window_context.display.pending_update.dirty = true;
+                            window_context.dirty = true;
+                        }
+                    }
+                } else {
+                    // Fallback: resolve encoded id in the form "close_tab_<id>_<ts>"
+                    {
+                        let window_id = window_id;
+                        if let Some(stripped) = id.strip_prefix("close_tab_") {
+                            if let Some((id_part, _)) = stripped.split_once('_') {
+                                if let Ok(n) = id_part.parse::<usize>() {
+                                    let tab_id = crate::workspace::TabId(n);
+                                    if let Some(window_context) = self.windows.get_mut(window_id) {
+                                        if accepted {
+                                            let ok = window_context.workspace.close_tab(tab_id);
+                                            let msg = if ok {
+                                                format!("Closed tab '{:?}'", tab_id)
+                                            } else {
+                                                "Close tab failed".into()
+                                            };
+                                            window_context
+                                                .message_buffer
+                                                .push(crate::message_bar::Message::new(
+                                                    msg,
+                                                    crate::message_bar::MessageType::Warning,
+                                                ));
+                                            window_context.display.pending_update.dirty = true;
+                                            window_context.dirty = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1848,6 +1967,7 @@ pub struct ActionContext<'a, N, T> {
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
+    pub pending_tab_close_confirms: &'a mut std::collections::HashMap<String, (crate::workspace::TabId, winit::window::WindowId)>,
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
@@ -3575,12 +3695,54 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_close_tab(&mut self) {
+        use crate::workspace::SplitManager as _;
         if let Some(active_tab) = self.workspace.active_tab() {
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
+            let pane_count = crate::workspace::SplitManager::pane_count_static(&active_tab.split_layout);
+            // Determine confirmation policy
+            let policy = self.config.workspace.tab_bar.close_confirm_policy;
+            let needs_confirm = match policy {
+                crate::config::workspace::TabCloseConfirmPolicy::Never => false,
+                crate::config::workspace::TabCloseConfirmPolicy::ModifiedOnly => active_tab.modified,
+                crate::config::workspace::TabCloseConfirmPolicy::MultiplePanesOnly => pane_count > 1,
+                crate::config::workspace::TabCloseConfirmPolicy::ModifiedOrMultiple => {
+                    active_tab.modified || pane_count > 1
+                },
+                crate::config::workspace::TabCloseConfirmPolicy::RunningOrMultiple => {
+                    active_tab.command_running || pane_count > 1
+                },
+                crate::config::workspace::TabCloseConfirmPolicy::Always => true,
+            };
+            if needs_confirm {
+                // Open confirmation overlay and track pending close
+                let id = crate::ui_confirm::generate_id();
+                let body = if active_tab.modified {
+                    format!("Tab '{}' has unsaved changes{}\n\nClose this tab?",
+                        tab_title,
+                        if pane_count > 1 { format!(" and {} panes", pane_count) } else { String::new() }
+                    )
+                } else {
+                    format!("Tab '{}' has {} panes. Close this tab?", tab_title, pane_count)
+                };
+                // Use an id encoding the target tab so the top-level can resolve without local state
+                let _ = self
+                    .event_proxy
+                    .send_event(Event::new(
+                        EventType::ConfirmOpen {
+                            id: format!("close_tab_{}_{}", tab_id.0, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()),
+                            title: "Close tab?".to_string(),
+                            body,
+                            confirm_label: Some("Close".to_string()),
+                            cancel_label: Some("Cancel".to_string()),
+                        },
+                        self.display.window.id(),
+                    ));
+                return;
+            }
+            // No confirmation needed; close immediately
             let ok = self.workspace.close_tab(tab_id);
-            let msg =
-                if ok { format!("Closed tab '{}'", tab_title) } else { "Close tab failed".into() };
+            let msg = if ok { format!("Closed tab '{}'", tab_title) } else { "Close tab failed".into() };
             self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
             self.display.pending_update.dirty = true;
             *self.dirty = true;
@@ -3636,6 +3798,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let msg = if ok { "Toggled pane sync" } else { "Toggle pane sync failed" };
         self.message_buffer
             .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    /// Store exit code details on active tab
+    fn workspace_set_active_tab_exit_details(&mut self, code: Option<i32>) {
+        // API updated: rename to mark_active_tab_exit_code
+        self.workspace.mark_active_tab_exit_code(code);
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    /// Store a concrete last exit code on the active tab
+    fn workspace_set_last_exit_code(&mut self, code: i32) {
+        self.workspace.set_active_tab_last_exit_code(code);
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4483,7 +4660,10 @@ pub struct AccumulatedScroll {
     pub y: f64,
 }
 
-impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
+impl<N> input::Processor<EventProxy, ActionContext<'_, N, EventProxy>>
+where
+    N: openagent_terminal_core::event::Notify + openagent_terminal_core::event::OnResize,
+{
     /// Handle events from winit.
     pub fn handle_event(&mut self, event: WinitEvent<Event>) {
         match event {
@@ -4523,10 +4703,23 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         self.ctx.display().blocks.enabled = true;
                         let total_lines = { self.ctx.terminal().grid().total_lines() };
                         self.ctx.display().blocks.on_event(total_lines, &ev);
-                        // Update active tab error indicator when a command ends
-                        if let CoreCommandBlockEvent::CommandEnd { exit, .. } = ev {
+                        match ev {
+                            CoreCommandBlockEvent::CommandEnd { exit, .. } => {
                             let non_zero = exit.map(|c| c != 0).unwrap_or(false);
                             self.ctx.workspace_mark_active_tab_error(non_zero);
+                            if let Some(code) = exit { self.ctx.workspace_set_last_exit_code(code); }
+                            // Stamp the exit flash time for animation
+                            if non_zero {
+                                if let Some(tab) = self.ctx.workspace.active_tab() {
+                                    self.ctx.display.tab_exit_flash.insert(tab.id, std::time::Instant::now());
+                                }
+                            }
+                            self.ctx.workspace.mark_active_tab_command_running(false);
+                            },
+                            CoreCommandBlockEvent::CommandStart { .. } => {
+                                self.ctx.workspace.mark_active_tab_command_running(true);
+                            },
+                            _ => {},
                         }
                         *self.ctx.dirty = true;
                     },
@@ -4587,7 +4780,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     TerminalEvent::PtyWrite(text) => self.ctx.write_to_pty(text.into_bytes()),
                     TerminalEvent::MouseCursorDirty => self.reset_mouse_cursor(),
                     TerminalEvent::CursorBlinkingChange => self.ctx.update_cursor_blinking(),
-                    TerminalEvent::Exit | TerminalEvent::ChildExit(_) | TerminalEvent::Wakeup => (),
+                    TerminalEvent::Exit => (),
+                    TerminalEvent::ChildExit(code) => {
+                        // Record last exit code on the active tab
+                        self.ctx.workspace_set_last_exit_code(code);
+                        self.ctx.workspace_mark_active_tab_error(code != 0);
+                        *self.ctx.dirty = true;
+                    },
+                    TerminalEvent::Wakeup => (),
                 },
                 #[cfg(unix)]
                 EventType::IpcConfig(_) | EventType::IpcGetConfig(..) => (),

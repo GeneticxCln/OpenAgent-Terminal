@@ -321,6 +321,10 @@ pub trait ActionContext<T: EventListener> {
 
     // Workspace tab helpers
     fn workspace_mark_active_tab_error(&mut self, _non_zero: bool) {}
+    /// Store optional exit code details on active tab (for UI badge/animation)
+    fn workspace_set_active_tab_exit_details(&mut self, _code: Option<i32>) {}
+    /// Store concrete last exit code on active tab
+    fn workspace_set_last_exit_code(&mut self, _code: i32) {}
 
     // Toggle sync for active tab
     fn workspace_toggle_sync(&mut self) {}
@@ -1952,6 +1956,48 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else {
             match state {
                 ElementState::Pressed => {
+                    // If a confirmation overlay is active, intercept clicks on its footer
+                    if self.ctx.confirm_overlay_active() {
+                        let size_info = self.ctx.size_info();
+                        let display_offset = self.ctx.terminal().grid().display_offset();
+                        let point = self.ctx.mouse().point(&size_info, display_offset);
+                        let cols = size_info.columns();
+                        let lines = size_info.screen_lines();
+                        // Recompute modal geometry (must match draw_confirm_overlay)
+                        let modal_cols = (cols as f32 * 0.60).round() as usize;
+                        let modal_cols = modal_cols.clamp(40, cols.saturating_sub(4));
+                        let modal_lines = (lines as f32 * 0.40).round() as usize;
+                        let modal_lines = modal_lines.clamp(6, lines.saturating_sub(4));
+                        let x_col = (cols.saturating_sub(modal_cols)) / 2;
+                        let y_line = (lines.saturating_sub(modal_lines)) / 2;
+                        let footer_line = y_line + modal_lines - 2;
+                        if point.line.0 as usize == footer_line {
+                            // Build footer text segments to compute hit ranges
+                            let overlay = &self.ctx.display().confirm_overlay;
+                            let confirm_seg = format!("Enter = {}", overlay.confirm_label);
+                            let cancel_seg = format!("Esc = {}", overlay.cancel_label);
+                            let footer_start = x_col + 2;
+                            let col = point.column.0;
+                            if col >= footer_start {
+                                let rel = col - footer_start;
+                                let confirm_len = confirm_seg.len();
+                                let cancel_gap = 4; // matches draw spacing "    "
+                                let cancel_start = confirm_len + cancel_gap;
+                                let cancel_len = cancel_seg.len();
+                                if rel < confirm_len {
+                                    // Click on confirm area
+                                    self.ctx.confirm_overlay_confirm();
+                                    return;
+                                } else if rel >= cancel_start && rel < cancel_start + cancel_len {
+                                    // Click on cancel area
+                                    self.ctx.confirm_overlay_cancel();
+                                    return;
+                                }
+                            }
+                        }
+                        // Swallow other clicks while overlay is active
+                        return;
+                    }
                     #[cfg(not(test))]
                     {
                         // Start split drag if hovering a divider

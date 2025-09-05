@@ -145,6 +145,9 @@ pub struct WarpSplitIndicators {
 
     /// Zoom overlay color
     pub zoom_overlay_color: Rgb,
+
+    /// Hover animation duration in milliseconds (0 disables animation)
+    pub hover_anim_duration_ms: u32,
 }
 
 impl Default for WarpSplitIndicators {
@@ -162,6 +165,7 @@ impl Default for WarpSplitIndicators {
             hover_line_alpha: 0.9,
             zoom_overlay_alpha: 0.1,
             zoom_overlay_color: Rgb::new(100, 150, 250),
+            hover_anim_duration_ms: 160,
         }
     }
 }
@@ -204,6 +208,12 @@ impl Display {
         let line_color = s.indicator_line_color.unwrap_or(tokens.border);
         let handle_color = s.handle_color.unwrap_or(tokens.accent);
         let overlay_color = s.overlay_color.unwrap_or(tokens.overlay);
+        // Determine hover animation duration with theme-aware fallback
+        let mut base_dur = s.indicator_hover_duration_ms;
+        let theme_dur = theme.ui.hover_anim_duration_ms;
+        if base_dur == 160 && theme_dur != 160 {
+            base_dur = theme_dur;
+        }
         WarpSplitIndicators {
             show_split_preview: s.preview_enabled,
             split_line_width: s.indicator_line_width,
@@ -217,6 +227,7 @@ impl Display {
             hover_line_alpha: s.indicator_hover_alpha,
             zoom_overlay_alpha: s.zoom_overlay_alpha,
             zoom_overlay_color: overlay_color,
+            hover_anim_duration_ms: if theme.ui.reduce_motion { 0 } else { base_dur },
         }
     }
 
@@ -551,9 +562,13 @@ impl Display {
                 // Animate hover transitions for split line
                 let p = if is_hovered {
                     if let Some(t0) = self.split_hover_anim_start {
-                        let elapsed = t0.elapsed().as_millis() as f32;
-                        let dur = 160.0;
-                        (elapsed / dur).clamp(0.0, 1.0)
+                        let dur_ms = indicators.hover_anim_duration_ms as f32;
+                        if dur_ms <= 0.0 {
+                            1.0
+                        } else {
+                            let elapsed = t0.elapsed().as_millis() as f32;
+                            (elapsed / dur_ms).clamp(0.0, 1.0)
+                        }
                     } else {
                         1.0
                     }
@@ -586,6 +601,29 @@ impl Display {
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_info, &metrics, vec![split_line]);
 
+                // Drag ghosting effect when actively dragging this divider
+                if let Some(drag_hit) = self.split_drag.as_ref() {
+                    if drag_hit.axis == crate::workspace::split_manager::SplitAxis::Horizontal
+                        && (drag_hit.rect.x - rect.x).abs() < f32::EPSILON
+                        && (drag_hit.rect.y - rect.y).abs() < f32::EPSILON
+                        && (drag_hit.rect.width - rect.width).abs() < f32::EPSILON
+                        && (drag_hit.rect.height - rect.height).abs() < f32::EPSILON
+                    {
+                        let ghost_w = (line_width * 1.25).max(line_width + 2.0);
+                        let ghost = RenderRect::new(
+                            split_x - ghost_w / 2.0,
+                            rect.y,
+                            ghost_w,
+                            rect.height,
+                            indicators.split_handle_color,
+                            0.30,
+                        );
+                        let size_info = self.size_info;
+                        let metrics = self.glyph_cache.font_metrics();
+                        self.renderer_draw_rects(&size_info, &metrics, vec![ghost]);
+                    }
+                }
+
                 // Draw grab handle when hovered
                 if is_hovered && indicators.show_resize_handles {
                     let handle_h = (rect.height * 0.18).clamp(18.0, 48.0);
@@ -602,6 +640,19 @@ impl Display {
                         indicators.split_handle_alpha,
                     );
                     self.stage_ui_rounded_rect(handle);
+
+                    // Center handle dot for emphasis (Warp parity ~4px)
+                    let dot_size = 4.0;
+                    let dot = UiRoundedRect::new(
+                        split_x - dot_size / 2.0,
+                        rect.y + rect.height / 2.0 - dot_size / 2.0,
+                        dot_size,
+                        dot_size,
+                        dot_size / 2.0,
+                        indicators.split_handle_color,
+                        0.95,
+                    );
+                    self.stage_ui_rounded_rect(dot);
                 }
 
                 // Recursively draw child splits
@@ -624,9 +675,13 @@ impl Display {
                 // Animate hover transitions for split line
                 let p = if is_hovered {
                     if let Some(t0) = self.split_hover_anim_start {
-                        let elapsed = t0.elapsed().as_millis() as f32;
-                        let dur = 160.0;
-                        (elapsed / dur).clamp(0.0, 1.0)
+                        let dur_ms = indicators.hover_anim_duration_ms as f32;
+                        if dur_ms <= 0.0 {
+                            1.0
+                        } else {
+                            let elapsed = t0.elapsed().as_millis() as f32;
+                            (elapsed / dur_ms).clamp(0.0, 1.0)
+                        }
                     } else {
                         1.0
                     }
@@ -659,6 +714,29 @@ impl Display {
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_info, &metrics, vec![split_line]);
 
+                // Drag ghosting effect when actively dragging this divider
+                if let Some(drag_hit) = self.split_drag.as_ref() {
+                    if drag_hit.axis == crate::workspace::split_manager::SplitAxis::Vertical
+                        && (drag_hit.rect.x - rect.x).abs() < f32::EPSILON
+                        && (drag_hit.rect.y - rect.y).abs() < f32::EPSILON
+                        && (drag_hit.rect.width - rect.width).abs() < f32::EPSILON
+                        && (drag_hit.rect.height - rect.height).abs() < f32::EPSILON
+                    {
+                        let ghost_h = (line_width * 1.25).max(line_width + 2.0);
+                        let ghost = RenderRect::new(
+                            rect.x,
+                            split_y - ghost_h / 2.0,
+                            rect.width,
+                            ghost_h,
+                            indicators.split_handle_color,
+                            0.30,
+                        );
+                        let size_info = self.size_info;
+                        let metrics = self.glyph_cache.font_metrics();
+                        self.renderer_draw_rects(&size_info, &metrics, vec![ghost]);
+                    }
+                }
+
                 // Draw grab handle when hovered
                 if is_hovered && indicators.show_resize_handles {
                     let handle_w = (rect.width * 0.18).clamp(18.0, 48.0);
@@ -675,6 +753,19 @@ impl Display {
                         indicators.split_handle_alpha,
                     );
                     self.stage_ui_rounded_rect(handle);
+
+                    // Center handle dot for emphasis (Warp parity ~4px)
+                    let dot_size = 4.0;
+                    let dot = UiRoundedRect::new(
+                        rect.x + rect.width / 2.0 - dot_size / 2.0,
+                        split_y - dot_size / 2.0,
+                        dot_size,
+                        dot_size,
+                        dot_size / 2.0,
+                        indicators.split_handle_color,
+                        0.95,
+                    );
+                    self.stage_ui_rounded_rect(dot);
                 }
 
                 // Recursively draw child splits

@@ -55,8 +55,14 @@ pub struct TabContext {
     /// True when the last completed command in this tab exited non-zero (for error badge)
     pub last_exit_nonzero: bool,
 
+    /// The last exit code observed in this tab, if any
+    pub last_exit_code: Option<i32>,
+
     /// True when panes/tabs are synchronized (placeholder for sync indicator)
     pub panes_synced: bool,
+
+    /// True while the active terminal in this tab is executing a command (heuristic)
+    pub command_running: bool,
 }
 
 /// Context for a single pane within a tab
@@ -115,7 +121,7 @@ impl TabManager {
         let working_directory = working_dir
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
 
-        let tab_context = TabContext {
+let tab_context = TabContext {
             id: tab_id,
             title,
             working_directory,
@@ -128,7 +134,9 @@ impl TabManager {
             shell_command: None,
             zoom_saved_layout: None,
             last_exit_nonzero: false,
+            last_exit_code: None,
             panes_synced: false,
+            command_running: false,
         };
 
         self.tabs.insert(tab_id, tab_context);
@@ -230,6 +238,26 @@ impl TabManager {
         if let Some(id) = self.active_tab_id {
             if let Some(tab) = self.tabs.get_mut(&id) {
                 tab.last_exit_nonzero = non_zero;
+            }
+        }
+    }
+
+    /// Set last exit code on the active tab and update nonzero flag
+    pub fn set_active_tab_last_exit_code(&mut self, code: i32) {
+        if let Some(id) = self.active_tab_id {
+            if let Some(tab) = self.tabs.get_mut(&id) {
+                tab.last_exit_code = Some(code);
+                tab.last_exit_nonzero = code != 0;
+            }
+        }
+    }
+
+    /// Set last exit details on the active tab from an optional exit code
+    pub fn set_active_tab_last_exit_details(&mut self, code: Option<i32>) {
+        if let Some(id) = self.active_tab_id {
+            if let Some(tab) = self.tabs.get_mut(&id) {
+                tab.last_exit_code = code;
+                tab.last_exit_nonzero = code.map(|c| c != 0).unwrap_or(false);
             }
         }
     }

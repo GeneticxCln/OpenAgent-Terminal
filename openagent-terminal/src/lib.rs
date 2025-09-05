@@ -32,6 +32,7 @@ pub mod scheduler;
 pub mod storage;
 pub mod string;
 pub mod window_context;
+pub mod multiplexer;
 
 // New component modules
 pub mod blocks_v2;

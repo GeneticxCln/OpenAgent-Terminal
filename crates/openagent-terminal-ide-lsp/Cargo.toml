@@ -13,6 +13,8 @@ serde_json = { workspace = true }
 lsp-types = "0.95.1"
 parking_lot = { workspace = true }
 bytes = "1.6"
+openagent-terminal-ide-editor = { path = "../openagent-terminal-ide-editor" }
+url = "2.5"
 
 [dev-dependencies]
 serde_json = { workspace = true }

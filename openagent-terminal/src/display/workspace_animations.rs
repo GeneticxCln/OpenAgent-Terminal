@@ -10,12 +10,12 @@ use crate::workspace::TabId;
 use super::animation::ease_out_cubic;
 
 /// Duration for different animation types in milliseconds
-pub const DURATION_TAB_OPEN_MS: u32 = 200;
-pub const DURATION_TAB_CLOSE_MS: u32 = 150;
+pub const DURATION_TAB_OPEN_MS: u32 = 150;
+pub const DURATION_TAB_CLOSE_MS: u32 = 120;
 pub const DURATION_TAB_SWITCH_MS: u32 = 100;
 pub const DURATION_DRAG_START_MS: u32 = 80;
-pub const DURATION_DRAG_END_MS: u32 = 120;
-pub const DURATION_HOVER_MS: u32 = 60;
+pub const DURATION_DRAG_END_MS: u32 = 100;
+pub const DURATION_HOVER_MS: u32 = 50;
 
 /// Animation state for a single tab
 #[derive(Debug, Clone)]

@@ -117,6 +117,159 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         }
 
+        // Editor overlay key handling
+        #[cfg(feature = "editor")]
+        if self.ctx.display().editor_overlay.is_active() {
+            use winit::keyboard::NamedKey;
+            let mods = self.ctx.modifiers().state();
+            // Intercept named keys first
+            match key.logical_key.as_ref() {
+                // Close editor overlay
+                Key::Named(NamedKey::Escape) => {
+                    // If references popup active, close it
+                    #[cfg(feature = "lsp")]
+                    {
+                        if self.ctx.display().editor_overlay.references_active {
+                            self.ctx.display().editor_overlay.references_active = false;
+                            self.ctx.mark_dirty();
+                            return;
+                        }
+                        if self.ctx.display().editor_overlay.rename_active {
+                            self.ctx.display().editor_overlay.rename_active = false;
+                            self.ctx.mark_dirty();
+                            return;
+                        }
+                    }
+                    self.ctx.display().editor_overlay_close();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                // Save: Ctrl+S or Cmd+S
+                Key::Character(s) if (mods.control_key() || mods.super_key()) && s.eq_ignore_ascii_case("s") => {
+                    self.ctx.display().editor_overlay_save();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                // Arrow navigation
+                Key::Named(NamedKey::ArrowLeft) => { self.ctx.display().editor_overlay_move_left(); return; },
+                Key::Named(NamedKey::ArrowRight) => { self.ctx.display().editor_overlay_move_right(); return; },
+                Key::Named(NamedKey::ArrowUp) => { self.ctx.display().editor_overlay_move_up(); return; },
+                Key::Named(NamedKey::ArrowDown) => { self.ctx.display().editor_overlay_move_down(); return; },
+                Key::Named(NamedKey::PageUp) => { self.ctx.display().editor_overlay_page_up(); return; },
+                Key::Named(NamedKey::PageDown) => { self.ctx.display().editor_overlay_page_down(); return; },
+                // Backspace
+                Key::Named(NamedKey::Backspace) => {
+                    #[cfg(feature = "lsp")]
+                    {
+                        if self.ctx.display().editor_overlay.rename_active {
+                            self.ctx.display().editor_overlay_rename_backspace();
+                            self.ctx.mark_dirty();
+                            return;
+                        }
+                    }
+                    self.ctx.display().editor_overlay_backspace();
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                // Enter
+                Key::Named(NamedKey::Enter) => {
+                    #[cfg(feature = "lsp")]
+                    {
+                        if self.ctx.display().editor_overlay.rename_active {
+                            self.ctx.display().editor_overlay_rename_commit();
+                            self.ctx.mark_dirty();
+                            return;
+                        }
+                    }
+                    // Insert newline in buffer
+                    self.ctx.display().editor_overlay_insert_char('\n');
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                // LSP: F12 goto definition
+                Key::Named(NamedKey::F12) => {
+                    #[cfg(feature = "lsp")]
+                    { self.ctx.display().editor_overlay_goto_definition(); }
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                // LSP: Shift+F12 references
+                Key::Named(NamedKey::F12) if mods.shift_key() => {
+                    #[cfg(feature = "lsp")]
+                    { self.ctx.display().editor_overlay_show_references(); }
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                // LSP: references navigation when popup active
+                Key::Named(NamedKey::ArrowUp) if cfg!(feature = "lsp") => {
+                    #[cfg(feature = "lsp")]
+                    { if self.ctx.display().editor_overlay.references_active { self.ctx.display().editor_overlay_references_move(-1); self.ctx.mark_dirty(); return; } }
+                },
+                Key::Named(NamedKey::ArrowDown) if cfg!(feature = "lsp") => {
+                    #[cfg(feature = "lsp")]
+                    { if self.ctx.display().editor_overlay.references_active { self.ctx.display().editor_overlay_references_move(1); self.ctx.mark_dirty(); return; } }
+                },
+                Key::Named(NamedKey::Enter) if cfg!(feature = "lsp") => {
+                    #[cfg(feature = "lsp")]
+                    { if self.ctx.display().editor_overlay.references_active { self.ctx.display().editor_overlay_references_accept(); self.ctx.mark_dirty(); return; } }
+                },
+                // LSP: F2 rename toggle
+                Key::Named(NamedKey::F2) => {
+                    #[cfg(feature = "lsp")]
+                    { self.ctx.display().editor_overlay_toggle_rename(); }
+                    self.ctx.mark_dirty();
+                    return;
+                },
+                _ => {}
+            }
+
+            // Ctrl+Shift+F format document
+            if (mods.control_key() || mods.super_key()) && mods.shift_key() && text.eq_ignore_ascii_case("f") {
+                #[cfg(feature = "lsp")]
+                { self.ctx.display().editor_overlay_format_document(); }
+                self.ctx.mark_dirty();
+                return;
+            }
+            // Ctrl+Space -> request completion
+            if (mods.control_key() || mods.super_key()) {
+                if let Key::Named(NamedKey::Space) = key.logical_key { 
+                    self.ctx.display().editor_overlay_request_completion();
+                    self.ctx.mark_dirty();
+                    return;
+                }
+            }
+
+            // If completion popup is visible, use Up/Down/Enter to navigate
+            if self.ctx.display().editor_overlay_completion_visible() {
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::ArrowUp) => { self.ctx.display().editor_overlay_completion_move(-1); return; },
+                    Key::Named(NamedKey::ArrowDown) => { self.ctx.display().editor_overlay_completion_move(1); return; },
+                    Key::Named(NamedKey::Enter) => { self.ctx.display().editor_overlay_completion_accept(); return; },
+                    _ => {}
+                }
+            }
+
+            // Text input into editor buffer or rename prompt
+            if !text.is_empty() {
+                for ch in text.chars() {
+                    #[cfg(feature = "lsp")]
+                    {
+                        if self.ctx.display().editor_overlay.rename_active {
+                            // Add to rename text (ignore control characters)
+                            if !ch.is_control() { self.ctx.display().editor_overlay_rename_input(ch); }
+                            self.ctx.mark_dirty();
+                            continue;
+                        }
+                    }
+                    if !ch.is_control() {
+                        self.ctx.display().editor_overlay_insert_char(ch);
+                        self.ctx.mark_dirty();
+                    }
+                }
+                return;
+            }
+        }
+
         // Confirmation overlay handling takes precedence.
         if self.ctx.confirm_overlay_active() {
             match key.logical_key.as_ref() {
