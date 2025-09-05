@@ -52,13 +52,11 @@ use crate::display::hint::{HintMatch, HintState};
 use crate::display::meter::Meter;
 use crate::display::window::Window;
 use crate::event::{Event, EventType, Mouse, SearchState};
-#[cfg(feature = "preview_ui")]
 use crate::gl;
 use crate::message_bar::{MessageBuffer, MessageType};
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
 use crate::renderer::ui::{UiRoundedRect, UiSprite};
 use crate::renderer::{self, platform, GlyphCache, LoaderApi, Renderer};
-use crate::gl;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
 
@@ -86,11 +84,6 @@ pub mod window;
 pub mod workspace_animations;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
-#[cfg(feature = "editor")]
-pub mod editor_overlay;
-pub mod file_tree_overlay;
-#[cfg(feature = "dap")]
-pub mod dap_overlay;
 
 mod bell;
 mod damage;
@@ -506,16 +499,6 @@ pub struct Display {
     /// Command Palette state.
     pub palette: palette::PaletteState,
 
-    /// Native editor overlay (Warp-like), feature-gated
-    #[cfg(feature = "editor")]
-    pub editor_overlay: editor_overlay::EditorOverlayState,
-
-    /// Native file tree overlay (Warp-like)
-    pub file_tree: file_tree_overlay::FileTreeOverlayState,
-    /// DAP overlay (minimal)
-    #[cfg(feature = "dap")]
-    pub dap_overlay: dap_overlay::DapOverlayState,
-
     /// Always-on completions state (experimental).
     #[cfg(feature = "completions")]
     pub completions: completions::CompletionsState,
@@ -613,17 +596,6 @@ impl Display {
 
         // Create renderer.
         let mut gl_renderer = Renderer::new(&context, config.debug.renderer)?;
-        // Decide initial sprite filter based on DPI scale factor (prefer NEAREST at ~integer scales or <=1.1x)
-        let sf = window.scale_factor as f64;
-        let frac = sf.fract();
-        let nearest = frac < 0.05 || (1.0 - frac) < 0.05 || sf <= 1.1;
-        gl_renderer.set_sprite_filter_nearest(nearest);
-        info!(
-            "UI sprite filter initialized to {} (scale_factor={:.2}, reason={})",
-            if nearest { "NEAREST" } else { "LINEAR" },
-            sf,
-            if sf <= 1.1 { "low-dpi" } else if frac < 0.05 || (1.0 - frac) < 0.05 { "integer-scale" } else { "fractional-scale" }
-        );
 
         // Load font common glyphs to accelerate rendering.
         debug!("Filling glyph cache with common glyphs");
@@ -767,11 +739,6 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
-            #[cfg(feature = "editor")]
-            editor_overlay: editor_overlay::EditorOverlayState::new(),
-            file_tree: file_tree_overlay::FileTreeOverlayState::new(),
-            #[cfg(feature = "dap")]
-            dap_overlay: dap_overlay::DapOverlayState::new(),
             tab_hover: None,
             tab_hover_anim_start: None,
             tab_last_active_id: None,
@@ -1082,7 +1049,7 @@ impl Display {
         }
 
         // WGPU renderer init.
-        let mut wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
+        let wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
             window.winit_window(),
             window.inner_size(),
             config.debug.renderer,
@@ -1093,17 +1060,6 @@ impl Display {
             config.debug.atlas_report_interval_frames,
         ))
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
-        // Initialize WGPU sprite/text sampler filter based on DPI
-        let sf = window.scale_factor as f64;
-        let frac = sf.fract();
-        let nearest = frac < 0.05 || (1.0 - frac) < 0.05 || sf <= 1.1;
-        wgpu_renderer.set_sprite_filter_nearest(nearest);
-        info!(
-            "UI sprite filter initialized (WGPU) to {} (scale_factor={:.2}, reason={})",
-            if nearest { "NEAREST" } else { "LINEAR" },
-            sf,
-            if sf <= 1.1 { "low-dpi" } else if frac < 0.05 || (1.0 - frac) < 0.05 { "integer-scale" } else { "fractional-scale" }
-        );
 
         // Load font common glyphs to accelerate rendering.
         debug!("Filling glyph cache with common glyphs (wgpu)");
@@ -1191,11 +1147,40 @@ crate::renderer::Glyph {
         blocks.enabled = config.debug.blocks;
 
         Ok(Self {
-            // Window and sizing
-            window,
+            backend: Backend::Wgpu { renderer: wgpu_renderer },
+            visual_bell: VisualBell::from(&config.bell),
+            renderer_preference: config.debug.renderer,
+            colors: List::from(&config.colors),
+            frame_timer: FrameTimer::new(),
+            raw_window_handle,
+            damage_tracker,
+            glyph_cache,
+            hint_state,
             size_info,
-
-            // Overlays and animations
+            font_size,
+            window,
+            pending_renderer_update: Default::default(),
+            composer_focused: false,
+            composer_text: String::new(),
+            composer_cursor: 0,
+            composer_sel_anchor: None,
+            composer_view_col_offset: 0,
+            composer_caret_visible: true,
+            composer_caret_last_toggle: None,
+            vi_highlighted_hint_age: Default::default(),
+            highlighted_hint_age: Default::default(),
+            vi_highlighted_hint: Default::default(),
+            highlighted_hint: Default::default(),
+            hint_mouse_point: Default::default(),
+            pending_update: Default::default(),
+            cursor_hidden: Default::default(),
+            meter: Default::default(),
+            ime: Default::default(),
+            blocks,
+            #[cfg(feature = "blocks")]
+            blocks_search: blocks_search_panel::BlocksSearchState::new(),
+            #[cfg(feature = "completions")]
+            completions: completions::CompletionsState::new(),
             debug_split_overlay: None,
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
@@ -1207,87 +1192,11 @@ crate::renderer::Glyph {
             ai_panel_anim_duration_ms: 0,
             #[cfg(feature = "ai")]
             ai_hover_control: None,
-
-            highlighted_hint: Default::default(),
-            highlighted_hint_age: Default::default(),
-            vi_highlighted_hint: Default::default(),
-            vi_highlighted_hint_age: Default::default(),
-
-            raw_window_handle,
-            cursor_hidden: Default::default(),
-            visual_bell: VisualBell::from(&config.bell),
-            colors: List::from(&config.colors),
-            hint_state,
-            pending_update: Default::default(),
-            pending_renderer_update: Default::default(),
-
-            // Composer
-            composer_focused: false,
-            composer_text: String::new(),
-            composer_cursor: 0,
-            composer_sel_anchor: None,
-            composer_view_col_offset: 0,
-            composer_caret_visible: true,
-            composer_caret_last_toggle: None,
-
-            // Timers, damage, font
-            ime: Default::default(),
-            frame_timer: FrameTimer::new(),
-            damage_tracker,
-            font_size,
-
-            // Mouse state
-            hint_mouse_point: Default::default(),
-            last_mouse_x: 0,
-            last_mouse_y: 0,
-
-            // Backend and renderer pref
-            backend: Backend::Wgpu { renderer: wgpu_renderer },
-            renderer_preference: config.debug.renderer,
-
-            // Caches and meters
-            glyph_cache,
-            meter: Default::default(),
-
-            // Blocks & panels
-            blocks,
-            #[cfg(feature = "blocks")]
-            blocks_search: blocks_search_panel::BlocksSearchState::new(),
-
-            // Overlays
-            confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
-            palette: palette::PaletteState::new(),
-            #[cfg(feature = "editor")]
-            editor_overlay: editor_overlay::EditorOverlayState::new(),
-            file_tree: file_tree_overlay::FileTreeOverlayState::new(),
-            #[cfg(feature = "dap")]
-            dap_overlay: dap_overlay::DapOverlayState::new(),
-            #[cfg(feature = "completions")]
-            completions: completions::CompletionsState::new(),
-
-            // Workflow panels
             #[cfg(feature = "workflow")]
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
-
-            // Tab hover/drag animations
-            tab_hover: None,
-            tab_hover_anim_start: None,
-            tab_last_active_id: None,
-            tab_anim_switch_start: None,
-            tab_drag_active: None,
-            tab_drag_anim_start: None,
-            tab_animations: Vec::new(),
-            workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
-            pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
-
-            // Split hover/drag indicators
-            split_hover: None,
-            split_drag: None,
-            split_hover_anim_start: None,
-
-            // Palette animation state
+            // Palette animation init (wgpu)
             palette_last_active: false,
             palette_anim_start: None,
             palette_anim_opening: false,
@@ -1617,31 +1526,6 @@ crate::renderer::Glyph {
             Backend::Wgpu { renderer } => {
                 renderer.dump_atlas_stats();
             },
-        }
-    }
-
-    /// Query detailed atlas metrics (WGPU only). Returns None on GL backend.
-    #[cfg(feature = "wgpu")]
-    #[allow(dead_code)]
-    pub fn atlas_metrics(&self) -> Option<()> {
-        match &self.backend {
-            Backend::Gl { .. } => None,
-            Backend::Wgpu { renderer } => {
-                // Emit to logs for now.
-                renderer.dump_atlas_stats();
-                None
-            },
-        }
-    }
-
-    /// Request atlas compaction based on a minimum occupancy threshold percentage (WGPU only).
-    /// Returns number of pages scheduled for eviction (0 or 1). No-op on GL backend.
-    #[cfg(feature = "wgpu")]
-    #[allow(dead_code)]
-    pub fn compact_atlas(&mut self, min_occupancy_pct: f64) -> usize {
-        match &mut self.backend {
-            Backend::Gl { .. } => 0,
-            Backend::Wgpu { renderer } => renderer.compact_atlas(min_occupancy_pct),
         }
     }
 
@@ -2196,10 +2080,14 @@ crate::renderer::Glyph {
         #[cfg(feature = "completions")]
         {
             if config.debug.completions {
+                let cursor_point_usize = Point::new(
+                    cursor_point.line.0 as usize,
+                    cursor_point.column,
+                );
                 self.draw_completions_overlay_with_context(
                     config,
                     &completions_prefix,
-                    cursor_point,
+                    cursor_point_usize,
                     display_offset,
                     completions_alt_screen,
                 );
@@ -2236,32 +2124,6 @@ crate::renderer::Glyph {
         if self.workflows_progress.active {
             let st = self.workflows_progress.clone();
             self.draw_workflows_progress_overlay(config, &st);
-        }
-
-        // File Tree overlay (draw first so editor overlay can sit above if both open)
-        if self.file_tree.active {
-            let st = self.file_tree.clone();
-            self.draw_file_tree_overlay(config, &st);
-        }
-        // Editor overlay
-        #[cfg(feature = "editor")]
-        {
-            // Poll LSP notifications for diagnostics, etc.
-            #[cfg(feature = "lsp")]
-            self.editor_overlay_poll_lsp();
-            if self.editor_overlay.active {
-                let st = self.editor_overlay.clone();
-                self.draw_editor_overlay(config, &st);
-            }
-        }
-        // DAP overlay
-        #[cfg(feature = "dap")]
-        {
-            self.dap_poll_events();
-            if self.dap_overlay.active {
-                let st = self.dap_overlay.clone();
-                self.draw_dap_overlay(config, &st);
-            }
         }
 
         // Command Palette overlay: draw when active or during animation
@@ -2652,7 +2514,7 @@ crate::renderer::Glyph {
     }
 
     #[allow(dead_code)]
-    pub fn set_ui_sprite_filter(&mut self, nearest: bool) {
+    fn set_ui_sprite_filter(&mut self, nearest: bool) {
         match &mut self.backend {
             Backend::Gl { renderer, .. } => renderer.set_sprite_filter_nearest(nearest),
             #[cfg(feature = "wgpu")]
@@ -3018,23 +2880,16 @@ crate::renderer::Glyph {
     pub fn read_frame_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
         match &mut self.backend {
             Backend::Gl { .. } => {
-                #[cfg(feature = "preview_ui")]
-                {
-                    let w = self.size_info.width() as u32;
-                    let h = self.size_info.height() as u32;
-                    let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
-                    unsafe {
-                        crate::gl::Finish();
-                        crate::gl::ReadBuffer(crate::gl::BACK);
-                        crate::gl::PixelStorei(crate::gl::PACK_ALIGNMENT, 1);
-                        crate::gl::ReadPixels(0, 0, w as i32, h as i32, crate::gl::RGBA, crate::gl::UNSIGNED_BYTE, buf.as_mut_ptr().cast());
-                    }
-                    Some((buf, w, h))
+                let w = self.size_info.width() as u32;
+                let h = self.size_info.height() as u32;
+                let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
+                unsafe {
+                    gl::Finish();
+                    gl::ReadBuffer(gl::BACK);
+                    gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+                    gl::ReadPixels(0, 0, w as i32, h as i32, gl::RGBA, gl::UNSIGNED_BYTE, buf.as_mut_ptr().cast());
                 }
-                #[cfg(not(feature = "preview_ui"))]
-                {
-                    None
-                }
+                Some((buf, w, h))
             },
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => renderer.take_screenshot(),

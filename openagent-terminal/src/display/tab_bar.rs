@@ -175,7 +175,7 @@ impl Display {
             };
             
             let is_active = Some(tab_id) == active_tab_id;
-            let mut current_x = visual_x as usize;
+            let current_x = visual_x as usize;
 
             // Determine hover state for this tab
             let is_hover_tab = matches!(hover, Some(crate::display::TabHoverTarget::Tab(id)) if id == tab_id)
