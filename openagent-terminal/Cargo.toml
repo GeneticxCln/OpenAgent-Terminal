@@ -208,7 +208,13 @@ wayland = [
 ]
 nightly = []
 # Optional AI integration for command assistance
-ai = ["dep:openagent-terminal-ai"]
+ai = [
+    "dep:openagent-terminal-ai",
+    # Forward provider features so the providers module is available
+    "openagent-terminal-ai/ai-openai",
+    "openagent-terminal-ai/ai-anthropic",
+    "openagent-terminal-ai/ai-ollama",
+]
 # Optional sync feature for settings/history sync
 sync = ["dep:openagent-terminal-sync"]
 # Optional workflow engine for automated task execution
