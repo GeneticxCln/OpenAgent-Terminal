@@ -1314,14 +1314,6 @@ impl PluginManager {
         results
     }
 
-    /// Verify plugin signature if .sig file is present next to the .wasm
-    fn verify_signature_if_present(&self, wasm_path: &Path) -> anyhow::Result<()> {
-        match self.verify_signature_and_get_key(wasm_path)? {
-            Some(_) => Ok(()),
-            None => Ok(()),
-        }
-    }
-
     /// Verify signature if present; return verifying key hex on success.
     fn verify_signature_and_get_key(&self, wasm_path: &Path) -> anyhow::Result<Option<String>> {
         use ed25519_dalek::{Verifier, Signature, VerifyingKey};
