@@ -3,6 +3,7 @@
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::UiConfig;
+use crate::security::RiskLevel;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
 #[cfg(feature = "preview_ui")]

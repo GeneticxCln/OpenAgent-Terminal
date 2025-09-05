@@ -1,5 +1,5 @@
-use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
+use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::term::{self, Term};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -200,7 +200,7 @@ impl super::Display {
         &mut self,
         config: &UiConfig,
         prefix: &str,
-        cursor_point: Point,
+        cursor_point: Point<usize>,
         display_offset: usize,
         alt_screen: bool,
     ) {
@@ -227,7 +227,11 @@ impl super::Display {
         }
 
         // Compute anchor near cursor
-        let vp = match term::point_to_viewport(display_offset, cursor_point) {
+        let cursor_point_line = openagent_terminal_core::index::Point::new(
+            openagent_terminal_core::index::Line(cursor_point.line.try_into().unwrap()),
+            cursor_point.column,
+        );
+        let vp = match term::point_to_viewport(display_offset, cursor_point_line) {
             Some(p) => p,
             None => return,
         };
@@ -242,8 +246,8 @@ impl super::Display {
         let accent = tokens.accent;
 
         // Layout box under the cursor (or shifted if close to bottom)
-        let cols = self.size_info.columns();
-        let lines = self.size_info.screen_lines();
+        let cols = self.size_info.columns;
+        let lines = self.size_info.screen_lines;
         let box_width_cols = cols.min(48);
         let max_rows = 8usize;
         let needed_rows = self.completions.items.len().min(max_rows);
@@ -279,15 +283,8 @@ impl super::Display {
 
         // Items
         let mut line = start_line + 1;
-        // Avoid borrowing self.completions while drawing with &mut self by cloning the visible slice
-        let visible_items: Vec<_> = self
-            .completions
-            .items
-            .iter()
-            .take(max_rows)
-            .cloned()
-            .collect();
-        for item in visible_items {
+        let items_to_draw: Vec<_> = self.completions.items.iter().take(max_rows).cloned().collect();
+        for item in items_to_draw {
             let icon = item.icon;
             let mut row = String::new();
             row.push_str(icon);

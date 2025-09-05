@@ -9,7 +9,7 @@ use crate::gl;
 use crate::gl::types::*;
 
 mod atlas;
-mod builtin_font;
+pub mod builtin_font;
 mod gles2;
 mod glsl3;
 pub mod glyph_cache;
