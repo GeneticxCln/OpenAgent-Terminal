@@ -75,6 +75,10 @@ pub mod completions;
 pub mod confirm_overlay;
 pub mod content;
 pub mod cursor;
+#[cfg(feature = "dap")]
+pub mod dap_overlay;
+#[cfg(feature = "editor")]
+pub mod editor_overlay;
 pub mod hint;
 pub mod palette;
 pub mod pane_drag_drop;
@@ -499,6 +503,14 @@ pub struct Display {
     /// Command Palette state.
     pub palette: palette::PaletteState,
 
+    /// Native code editor overlay state (feature="editor").
+    #[cfg(feature = "editor")]
+    pub editor_overlay: editor_overlay::EditorOverlayState,
+
+    /// DAP overlay state (feature="dap").
+    #[cfg(feature = "dap")]
+    pub dap_overlay: dap_overlay::DapOverlayState,
+
     /// Always-on completions state (experimental).
     #[cfg(feature = "completions")]
     pub completions: completions::CompletionsState,
@@ -733,6 +745,10 @@ impl Display {
                 p.load_mru_from_config(config);
                 p
             },
+            #[cfg(feature = "editor")]
+            editor_overlay: editor_overlay::EditorOverlayState::new(),
+            #[cfg(feature = "dap")]
+            dap_overlay: dap_overlay::DapOverlayState::new(),
             #[cfg(feature = "completions")]
             completions: completions::CompletionsState::new(),
             #[cfg(feature = "workflow")]
@@ -1196,6 +1212,10 @@ crate::renderer::Glyph {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            #[cfg(feature = "editor")]
+            editor_overlay: editor_overlay::EditorOverlayState::new(),
+            #[cfg(feature = "dap")]
+            dap_overlay: dap_overlay::DapOverlayState::new(),
             // Palette animation init (wgpu)
             palette_last_active: false,
             palette_anim_start: None,
@@ -1627,6 +1647,10 @@ crate::renderer::Glyph {
         // Optimize loop hint comparator.
         let has_highlighted_hint =
             self.highlighted_hint.is_some() || self.vi_highlighted_hint.is_some();
+
+        // Before drawing, poll DAP events to keep the debug overlay state fresh
+        #[cfg(feature = "dap")]
+        self.dap_poll_events();
 
         // Draw grid.
         {
@@ -2111,6 +2135,13 @@ crate::renderer::Glyph {
         if self.confirm_overlay.active {
             let st = self.confirm_overlay.clone();
             self.draw_confirm_overlay(config, &st);
+        }
+
+        // DAP debug overlay if active
+        #[cfg(feature = "dap")]
+        if self.dap_overlay.active {
+            let st = self.dap_overlay.clone();
+            self.draw_dap_overlay(config, &st);
         }
 
         // Workflows panel overlay if active

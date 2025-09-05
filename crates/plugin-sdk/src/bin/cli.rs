@@ -141,7 +141,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 plugin-sdk = {{ path = "../../../crates/plugin-sdk" }}
-plugin-api = {{ path = "../../../crates/plugin-api" }}
 serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
 
@@ -151,77 +150,81 @@ strip = true
 "#,
         name
     );
-
     fs::write(plugin_dir.join("Cargo.toml"), cargo_toml).unwrap_or_else(|err| {
         eprintln!("Failed to create Cargo.toml: {}", err);
         std::process::exit(1);
     });
 
-    // Create lib.rs
-    let lib_rs = r#"use plugin_sdk::{Plugin, PluginResult, PluginMetadata, PluginEvent};
+    // Create lib.rs (working WASI plugin using define_plugin)
+    let lib_rs = r#"use plugin_sdk::{define_plugin, log, LogLevel, PluginError};
 
-pub struct MyPlugin;
-
-impl Plugin for MyPlugin {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            name: env!("CARGO_PKG_NAME").to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            description: "A sample OpenAgent Terminal plugin".to_string(),
-            author: "Plugin Developer".to_string(),
-        }
-    }
-
-    fn initialize(&mut self) -> PluginResult<()> {
-        plugin_sdk::log_info("Plugin initialized successfully");
-        Ok(())
-    }
-
-    fn handle_event(&mut self, event: &PluginEvent) -> PluginResult<()> {
-        plugin_sdk::log_debug(&format!("Received event: {:?}", event));
-        Ok(())
-    }
-
-    fn cleanup(&mut self) -> PluginResult<()> {
-        plugin_sdk::log_info("Plugin cleaned up");
-        Ok(())
-    }
+fn init_plugin() -> Result<(), PluginError> {
+    log(LogLevel::Info, "{NAME} initialized");
+    Ok(())
 }
 
-// Export the plugin
-plugin_sdk::export_plugin!(MyPlugin);
+fn handle_event(_ptr: i32, _len: i32) -> Result<(), PluginError> {
+    // Set a simple response
+    let _ = plugin_sdk::set_last_response_json(&serde_json::json!({ "ok": true }));
+    Ok(())
+}
+
+fn cleanup_plugin() -> Result<(), PluginError> {
+    log(LogLevel::Info, "{NAME} cleaned up");
+    Ok(())
+}
+
+define_plugin! {
+    name: "{NAME}",
+    version: env!("CARGO_PKG_VERSION"),
+    author: "Plugin Developer",
+    description: "A sample OpenAgent Terminal plugin",
+    capabilities: { completions: false, context_provider: false, commands: Vec::<String>::new(), hooks: Vec::<plugin_sdk::HookType>::new(), file_associations: Vec::<String>::new() },
+    permissions: { read_files: vec![], write_files: vec![], network: false, execute_commands: false, environment_variables: vec![] },
+    init: init_plugin,
+    event_handler: handle_event,
+    cleanup: cleanup_plugin,
+}
 "#;
 
-    fs::write(plugin_dir.join("src/lib.rs"), lib_rs).unwrap_or_else(|err| {
+    let lib_rs_filled = lib_rs.replace("{NAME}", name);
+    fs::write(plugin_dir.join("src/lib.rs"), lib_rs_filled).unwrap_or_else(|err| {
         eprintln!("Failed to create lib.rs: {}", err);
         std::process::exit(1);
     });
 
-    // Create manifest.toml
+    // Create plugin manifest TOML matching the crate name (<name>.toml)
     let manifest_toml = format!(
         r#"[plugin]
-name = "{}"
+name = "{name}"
 version = "0.1.0"
-description = "A sample OpenAgent Terminal plugin"
 author = "Plugin Developer"
-license = "Apache-2.0"
+description = "A sample OpenAgent Terminal plugin"
+license = "MIT"
 
-[capabilities]
-# Enable specific capabilities as needed
+[plugin.capabilities]
 completions = false
 context_provider = false
 commands = []
 hooks = []
+file_associations = []
 
-[metadata]
-# Additional metadata
+[permissions]
+read_files = []
+write_files = []
+network = false
+execute_commands = false
+environment_variables = []
+max_memory_mb = 20
+timeout_ms = 2000
+
+[plugin.metadata]
 tags = ["sample", "demo"]
-"#,
-        name
+"#
     );
 
-    fs::write(plugin_dir.join("manifest.toml"), manifest_toml).unwrap_or_else(|err| {
-        eprintln!("Failed to create manifest.toml: {}", err);
+    fs::write(plugin_dir.join(format!("{}.toml", name)), manifest_toml).unwrap_or_else(|err| {
+        eprintln!("Failed to create manifest: {}", err);
         std::process::exit(1);
     });
 

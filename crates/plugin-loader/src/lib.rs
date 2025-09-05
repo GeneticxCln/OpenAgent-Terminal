@@ -108,6 +108,8 @@ struct PluginContext {
     wasi: WasiP1Ctx,
     #[allow(dead_code)]
     permissions: PluginPermissions,
+    /// Absolute base directory for the plugin (WASI sandbox root ".")
+    plugin_base_dir: std::path::PathBuf,
     resource_tracker: ResourceTracker,
 }
 
@@ -511,8 +513,12 @@ impl PluginManager {
         // Build WASIp1 context from the WasiCtxBuilder
         let wasi = wasi_builder.build_p1();
 
-        let context =
-            PluginContext { wasi, permissions, resource_tracker: ResourceTracker::default() };
+let context = PluginContext {
+            wasi,
+            permissions,
+            plugin_base_dir: plugin_base_dir.to_path_buf(),
+            resource_tracker: ResourceTracker::default(),
+        };
 
         let mut store = Store::new(&self.engine, context);
 
@@ -885,30 +891,36 @@ impl PluginManager {
                         .and_then(|e| e.into_memory())
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
-                    // Read path from plugin memory
+// Read path from plugin memory
                     let mut path_buffer = vec![0u8; path_len as usize];
                     memory
                         .read(&caller, path_ptr as usize, &mut path_buffer)
                         .map_err(|_| anyhow::anyhow!("Failed to read path from plugin memory"))?;
 
-                    let path = String::from_utf8_lossy(&path_buffer);
+                    let path_str = String::from_utf8_lossy(&path_buffer).to_string();
 
-                    // Check permissions
+                    // Resolve against plugin base dir if relative
                     let ctx = caller.data();
-                    let can_read = ctx.permissions.read_files.iter().any(|pattern| {
-                        // Simple pattern matching - in production use proper glob
-                        path.starts_with(pattern.trim_end_matches('*'))
+                    let mut resolved = std::path::PathBuf::from(&path_str);
+                    if resolved.is_relative() {
+                        resolved = ctx.plugin_base_dir.join(&resolved);
+                    }
+                    let resolved_str = resolved.to_string_lossy().to_string();
+
+                    // Check permissions against sanitized absolute prefixes
+                    let can_read = ctx.permissions.read_files.iter().any(|prefix| {
+                        resolved_str.starts_with(prefix.trim_end_matches('*'))
                     });
 
                     if !can_read {
                         return Ok(-1); // Permission denied
                     }
 
-                    // Read file through host if available, otherwise WASI
+                    // Read file through host if available, otherwise std fs
                     let file_result = if let Some(ref host) = host_clone {
-                        host.read_file(&path)
+                        host.read_file(&resolved_str)
                     } else {
-                        std::fs::read(&*path).map_err(ApiPluginError::IoError)
+                        std::fs::read(&resolved).map_err(ApiPluginError::IoError)
                     };
 
                     match file_result {
@@ -952,7 +964,7 @@ impl PluginManager {
                         .and_then(|e| e.into_memory())
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
-                    // Read path and data from plugin memory
+// Read path and data from plugin memory
                     let mut path_buffer = vec![0u8; path_len as usize];
                     memory
                         .read(&caller, path_ptr as usize, &mut path_buffer)
@@ -963,15 +975,22 @@ impl PluginManager {
                         .read(&caller, data_ptr as usize, &mut data_buffer)
                         .map_err(|_| anyhow::anyhow!("Failed to read data from plugin memory"))?;
 
-                    let path = String::from_utf8_lossy(&path_buffer);
+                    let path_str = String::from_utf8_lossy(&path_buffer).to_string();
+
+                    // Resolve against plugin base dir if relative
+                    let ctx = caller.data();
+                    let mut resolved = std::path::PathBuf::from(&path_str);
+                    if resolved.is_relative() {
+                        resolved = ctx.plugin_base_dir.join(&resolved);
+                    }
+                    let resolved_str = resolved.to_string_lossy().to_string();
 
                     // Check permissions
-                    let ctx = caller.data();
                     let can_write = ctx
                         .permissions
                         .write_files
                         .iter()
-                        .any(|pattern| path.starts_with(pattern.trim_end_matches('*')));
+                        .any(|prefix| resolved_str.starts_with(prefix.trim_end_matches('*')));
 
                     if !can_write {
                         return Ok(-1); // Permission denied
@@ -979,9 +998,9 @@ impl PluginManager {
 
                     // Write file through host if available
                     let write_result = if let Some(ref host) = host_clone {
-                        host.write_file(&path, &data_buffer)
+                        host.write_file(&resolved_str, &data_buffer)
                     } else {
-                        std::fs::write(&*path, &data_buffer).map_err(ApiPluginError::IoError)
+                        std::fs::write(&resolved, &data_buffer).map_err(ApiPluginError::IoError)
                     };
 
                     match write_result {
@@ -994,7 +1013,7 @@ impl PluginManager {
                 PluginError::InitializationFailed(format!("Failed to add host_write_file: {}", e))
             })?;
 
-        // Host execute command function
+// Host execute command function (two-call, variable-size JSON result)
         let host_clone = self.host.clone();
         linker
             .func_wrap(
@@ -1002,7 +1021,9 @@ impl PluginManager {
                 "host_execute_command",
                 move |mut caller: Caller<'_, PluginContext>,
                       cmd_ptr: i32,
-                      cmd_len: i32|
+                      cmd_len: i32,
+                      result_ptr: i32,
+                      result_len_ptr: i32|
                       -> Result<i32, anyhow::Error> {
                     let memory = caller
                         .get_export("memory")
@@ -1014,7 +1035,7 @@ impl PluginManager {
                         anyhow::anyhow!("Failed to read command from plugin memory")
                     })?;
 
-                    let command = String::from_utf8_lossy(&cmd_buffer);
+let command = String::from_utf8_lossy(&cmd_buffer);
 
                     // Check permissions
                     let ctx = caller.data();
@@ -1025,7 +1046,22 @@ impl PluginManager {
                     // Execute command through host if available
                     if let Some(ref host) = host_clone {
                         match host.execute_command(&command) {
-                            Ok(_output) => Ok(0), // Success - output handling would need memory management
+                            Ok(output) => {
+                                // Serialize to JSON and publish via two-call ABI
+                                let json = serde_json::to_vec(&output)
+                                    .unwrap_or_else(|_| b"{}".to_vec());
+                                // Always write the length
+                                let len_bytes = (json.len() as u32).to_le_bytes();
+                                memory
+                                    .write(&mut caller, result_len_ptr as usize, &len_bytes)
+                                    .map_err(|_| anyhow::anyhow!("Failed to write result length"))?;
+                                if result_ptr != 0 {
+                                    memory
+                                        .write(&mut caller, result_ptr as usize, &json)
+                                        .map_err(|_| anyhow::anyhow!("Failed to write result data"))?;
+                                }
+                                Ok(0)
+                            },
                             Err(_) => Ok(-2),     // Execution failed
                         }
                     } else {

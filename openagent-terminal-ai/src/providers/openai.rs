@@ -188,8 +188,16 @@ impl AiProvider for OpenAiProvider {
 
             if !response.status().is_success() {
                 let status = response.status();
+                // Capture Retry-After header if present and include it in the error message so
+                // the retry strategy can respect it without changing its API.
+                let retry_after_hdr = response.headers().get("retry-after").cloned();
                 let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-                let msg = format!("API error {}: {}", status, error_text);
+                let mut msg = format!("API error {}: {}", status, error_text);
+                if let Some(hv) = retry_after_hdr {
+                    if let Ok(s) = hv.to_str() {
+                        msg.push_str(&format!("; retry-after: {}", s));
+                    }
+                }
                 error!("OpenAI API error {}: {}", status, error_text);
                 if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
                     let delay = retry.delay_for_attempt(attempt, &msg);
@@ -269,6 +277,9 @@ impl AiProvider for OpenAiProvider {
             info!("openai_stream_start model={} endpoint={}", self.model, self.endpoint);
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
+        use futures_util::StreamExt;
+        use eventsource_stream::Eventsource;
+
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
@@ -305,102 +316,140 @@ impl AiProvider for OpenAiProvider {
         let retry =
             RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
-        loop {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                return Err("Cancelled".to_string());
-            }
-            let send_result = self
-                .client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", self.api_key))
-                .header("Content-Type", "application/json")
-                .header("Accept", "text/event-stream")
-                .json(&request_body)
-                .send();
-            let response = match send_result {
-                Ok(resp) => resp,
-                Err(e) => {
-                    let msg = format!("Failed to send request: {}", e);
+
+        // Use a small, single-threaded Tokio runtime for responsive streaming/cancellation
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+
+        rt.block_on(async {
+            loop {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err("Cancelled".to_string());
+                }
+
+                let client = match reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(5))
+                    .user_agent("openagent-terminal-ai/0.1")
+                    .build()
+                {
+                    Ok(c) => c,
+                    Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+                };
+
+                let send_result = client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .json(&request_body)
+                    // Streaming may take a long time; override client timeout for this request
+                    .timeout(std::time::Duration::from_secs(600))
+                    .send()
+                    .await;
+
+                let response = match send_result {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        let msg = format!("Failed to send request: {}", e);
+                        if retry.should_retry(attempt, &msg, cancel) {
+                            let delay = retry.delay_for_attempt(attempt, &msg);
+                            if ai_log_summary() {
+                                info!(
+                                    "openai_stream_retry attempt={} delay_ms={}",
+                                    attempt + 1,
+                                    delay.as_millis()
+                                );
+                            }
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        } else {
+                            return Err(msg);
+                        }
+                    },
+                };
+
+                if !response.status().is_success() {
+                    let status = response.status();
+                    // Capture Retry-After header if present and include it in the error message so
+                    // the retry strategy can respect it without changing its API.
+                    let retry_after_hdr = response.headers().get("retry-after").cloned();
+                    let error_text = match response.text().await { Ok(t) => t, Err(_) => "Unknown error".to_string() };
+                    let mut msg = format!("API error {}: {}", status, error_text);
+                    if let Some(hv) = retry_after_hdr {
+                        if let Ok(s) = hv.to_str() {
+                            msg.push_str(&format!("; retry-after: {}", s));
+                        }
+                    }
+                    error!("OpenAI API error {}: {}", status, error_text);
                     if retry.should_retry(attempt, &msg, cancel) {
                         let delay = retry.delay_for_attempt(attempt, &msg);
                         if ai_log_summary() {
                             info!(
-                                "openai_stream_retry attempt={} delay_ms={}",
+                                "openai_stream_retry_http attempt={} delay_ms={}",
                                 attempt + 1,
                                 delay.as_millis()
                             );
                         }
-                        std::thread::sleep(delay);
+                        tokio::time::sleep(delay).await;
                         attempt += 1;
                         continue;
                     } else {
                         return Err(msg);
                     }
-                },
-            };
+                }
 
-            if !response.status().is_success() {
-                let status = response.status();
-                let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-                let msg = format!("API error {}: {}", status, error_text);
-                error!("OpenAI API error {}: {}", status, error_text);
-                if retry.should_retry(attempt, &msg, cancel) {
-                    let delay = retry.delay_for_attempt(attempt, &msg);
-                    if ai_log_summary() {
-                        info!(
-                            "openai_stream_retry_http attempt={} delay_ms={}",
-                            attempt + 1,
-                            delay.as_millis()
-                        );
+                // Stream SSE lines with periodic cancellation checks
+                let mut stream = response.bytes_stream().eventsource();
+                loop {
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        if ai_log_summary() {
+                            info!("openai_stream_cancelled");
+                        }
+                        return Err("Cancelled".to_string());
                     }
-                    std::thread::sleep(delay);
-                    attempt += 1;
-                    continue;
-                } else {
-                    return Err(msg);
-                }
-            }
-
-            // Stream SSE lines
-            let reader = BufReader::new(response);
-            for line in reader.lines() {
-                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                    if ai_log_summary() {
-                        info!("openai_stream_cancelled");
-                    }
-                    break;
-                }
-                let line = line.map_err(|e| format!("Stream read error: {}", e))?;
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                if let Some(rest) = trimmed.strip_prefix("data: ") {
-                    if rest.trim() == "[DONE]" {
-                        break;
-                    }
-                    match serde_json::from_str::<ChatCompletionChunk>(rest) {
-                        Ok(chunk) => {
-                            for choice in chunk.choices.into_iter() {
-                                if let Some(c) = choice.delta.content {
-                                    if ai_log_verbose() {
-                                        debug!("openai_stream_chunk len={}", c.len());
+                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await {
+                        Ok(Some(Ok(event))) => {
+                            let data = event.data;
+                            if data.trim() == "[DONE]" {
+                                break;
+                            }
+                            match serde_json::from_str::<ChatCompletionChunk>(&data) {
+                                Ok(chunk) => {
+                                    for choice in chunk.choices.into_iter() {
+                                        if let Some(c) = choice.delta.content {
+                                            if ai_log_verbose() {
+                                                debug!("openai_stream_chunk len={}", c.len());
+                                            }
+                                            on_chunk(&c);
+                                        }
                                     }
-                                    on_chunk(&c);
-                                }
+                                },
+                                Err(e) => {
+                                    debug!("Skipping non-JSON or unexpected SSE data from OpenAI: {}", e);
+                                },
                             }
                         },
-                        Err(e) => {
-                            debug!("Skipping non-JSON or unexpected SSE data from OpenAI: {}", e);
+                        Ok(Some(Err(e))) => {
+                            return Err(format!("Stream error: {}", e));
+                        },
+                        Ok(None) => {
+                            break;
+                        },
+                        Err(_) => {
+                            // timeout: loop and re-check cancel
+                            continue;
                         },
                     }
                 }
-            }
 
-            if ai_log_summary() {
-                info!("openai_stream_finished");
+                if ai_log_summary() {
+                    info!("openai_stream_finished");
+                }
+                return Ok(true);
             }
-            return Ok(true);
-        }
+        })
     }
 }

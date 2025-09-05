@@ -294,13 +294,12 @@ impl RetryStrategy {
         match self {
             Self::Standard(config) => config.delay_for_attempt(attempt),
             Self::OpenAI { config, respect_retry_after } => {
-                // TODO: Parse Retry-After header from error if available
-                if *respect_retry_after && error.contains("retry-after:") {
-                    // Extract and use retry-after value
-                    config.max_delay
-                } else {
-                    config.delay_for_attempt(attempt)
+                if *respect_retry_after {
+                    if let Some(d) = Self::parse_retry_after(error) {
+                        return d;
+                    }
                 }
+                config.delay_for_attempt(attempt)
             },
             Self::Anthropic { config, overload_backoff } => {
                 if error.contains("overloaded") {
@@ -351,11 +350,41 @@ impl RetryStrategy {
         // Default to retryable for unknown errors
         true
     }
+
+    /// Parse Retry-After value from an error string that may contain a fragment like
+    /// "; retry-after: 60" or "; retry-after: Fri, 05 Sep 2025 23:20:00 GMT".
+    /// Returns a Duration if parsing succeeds.
+    fn parse_retry_after(error: &str) -> Option<Duration> {
+        // Case-insensitive search for "retry-after:"
+        let lower = error.to_lowercase();
+        let key = "retry-after:";
+        let idx = lower.find(key)?;
+        let start = idx + key.len();
+        let tail = &error[start..].trim();
+        // Try numeric seconds first (common case)
+        if let Some(first_token) = tail.split_whitespace().next() {
+            if let Ok(secs) = first_token.parse::<u64>() {
+                return Some(Duration::from_secs(secs));
+            }
+        }
+        // Try HTTP-date
+        if let Ok(when) = httpdate::parse_http_date(tail) {
+            if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                if let Ok(target) = when.duration_since(std::time::UNIX_EPOCH) {
+                    if target > now {
+                        return Some(target - now);
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_sse_parser_basic() {
@@ -425,5 +454,49 @@ mod tests {
         // But should be capped at max_delay
         let delay_max = config.delay_for_attempt(100);
         assert!(delay_max <= config.max_delay + Duration::from_secs(1)); // Allow for jitter
+    }
+
+    #[test]
+    fn test_openai_retry_after_header_affects_delay() {
+        let cfg = RetryConfig { initial_delay: Duration::from_millis(500), max_delay: Duration::from_secs(10), ..Default::default() };
+        let strat = RetryStrategy::OpenAI { config: cfg.clone(), respect_retry_after: true };
+
+        // With retry-after present, strategy should return the header value (seconds)
+        let d_with = strat.delay_for_attempt(0, "API error 429; retry-after: 60");
+        assert_eq!(d_with, Duration::from_secs(60));
+
+        // Without retry-after header, should use backoff algorithm (less than max)
+        let d_without = strat.delay_for_attempt(0, "API error 429");
+        assert!(d_without < cfg.max_delay);
+    }
+
+    #[test]
+    fn test_anthropic_overload_backoff() {
+        let cfg = RetryConfig { initial_delay: Duration::from_millis(200), max_delay: Duration::from_secs(5), ..Default::default() };
+        let backoff = Duration::from_secs(3);
+        let strat = RetryStrategy::Anthropic { config: cfg.clone(), overload_backoff: backoff };
+
+        // Overload error should use overload_backoff delay
+        let d_over = strat.delay_for_attempt(0, "server overloaded, please retry");
+        assert_eq!(d_over, backoff);
+
+        // Non-overload should use backoff algorithm (less or equal to max)
+        let d_norm = strat.delay_for_attempt(0, "temporary network issue 503");
+        assert!(d_norm <= cfg.max_delay);
+    }
+
+    #[test]
+    fn test_ollama_resource_wait_backoff() {
+        let cfg = RetryConfig { initial_delay: Duration::from_millis(100), max_delay: Duration::from_secs(4), ..Default::default() };
+        let wait = Duration::from_secs(2);
+        let strat = RetryStrategy::Ollama { config: cfg.clone(), resource_wait: wait };
+
+        // Resource error should use resource_wait delay
+        let d_res = strat.delay_for_attempt(0, "resource busy: GPU memory");
+        assert_eq!(d_res, wait);
+
+        // Non-resource should use backoff algorithm
+        let d_norm = strat.delay_for_attempt(0, "timeout contacting local model");
+        assert!(d_norm <= cfg.max_delay);
     }
 }

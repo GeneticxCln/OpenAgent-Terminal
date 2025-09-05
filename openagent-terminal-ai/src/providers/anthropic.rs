@@ -161,9 +161,12 @@ impl AiProvider for AnthropicProvider {
 
         if !response.status().is_success() {
             let status = response.status();
+            let retry_after_hdr = response.headers().get("retry-after").cloned();
             let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+            let mut msg = format!("API error {}: {}", status, error_text);
+            if let Some(hv) = retry_after_hdr { if let Ok(s) = hv.to_str() { msg.push_str(&format!("; retry-after: {}", s)); } }
             error!("Anthropic API error {}: {}", status, error_text);
-            return Err(format!("API error {}: {}", status, error_text));
+            return Err(msg);
         }
 
         let message_response: MessageResponse =
@@ -210,6 +213,9 @@ impl AiProvider for AnthropicProvider {
             info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint);
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
+        use futures_util::StreamExt;
+        use eventsource_stream::Eventsource;
+
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
             "You are a helpful terminal command assistant. \
@@ -247,103 +253,130 @@ impl AiProvider for AnthropicProvider {
             overload_backoff: std::time::Duration::from_secs(2),
         };
         let mut attempt = 0usize;
-        loop {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                return Err("Cancelled".to_string());
-            }
-            let send_result = self
-                .client
-                .post(&url)
-                .header("x-api-key", &self.api_key)
-                .header("anthropic-version", "2023-06-01")
-                .header("Content-Type", "application/json")
-                .header("Accept", "text/event-stream")
-                .json(&request_body)
-                .send();
-            let response = match send_result {
-                Ok(resp) => resp,
-                Err(e) => {
-                    let msg = format!("Failed to send request: {}", e);
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+
+        rt.block_on(async {
+            loop {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err("Cancelled".to_string());
+                }
+                let client = match reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(5))
+                    .user_agent("openagent-terminal-ai/0.1")
+                    .build()
+                {
+                    Ok(c) => c,
+                    Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+                };
+
+                let send_result = client
+                    .post(&url)
+                    .header("x-api-key", &self.api_key)
+                    .header("anthropic-version", "2023-06-01")
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .json(&request_body)
+                    // Streaming may take a long time; override client timeout for this request
+                    .timeout(std::time::Duration::from_secs(600))
+                    .send()
+                    .await;
+                let response = match send_result {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        let msg = format!("Failed to send request: {}", e);
+                        if retry.should_retry(attempt, &msg, cancel) {
+                            let delay = retry.delay_for_attempt(attempt, &msg);
+                            if ai_log_summary() {
+                                info!(
+                                    "anthropic_stream_retry attempt={} delay_ms={}",
+                                    attempt + 1,
+                                    delay.as_millis()
+                                );
+                            }
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        } else {
+                            return Err(msg);
+                        }
+                    },
+                };
+
+                if !response.status().is_success() {
+                    let status = response.status();
+                    // Include Retry-After header if present to allow retry strategy to respect it
+                    let retry_after_hdr = response.headers().get("retry-after").cloned();
+                    let error_text = match response.text().await { Ok(t) => t, Err(_) => "Unknown error".to_string() };
+                    let mut msg = format!("API error {}: {}", status, error_text);
+                    if let Some(hv) = retry_after_hdr {
+                        if let Ok(s) = hv.to_str() { msg.push_str(&format!("; retry-after: {}", s)); }
+                    }
+                    error!("Anthropic API error {}: {}", status, error_text);
                     if retry.should_retry(attempt, &msg, cancel) {
                         let delay = retry.delay_for_attempt(attempt, &msg);
                         if ai_log_summary() {
                             info!(
-                                "anthropic_stream_retry attempt={} delay_ms={}",
+                                "anthropic_stream_retry_http attempt={} delay_ms={}",
                                 attempt + 1,
                                 delay.as_millis()
                             );
                         }
-                        std::thread::sleep(delay);
+                        tokio::time::sleep(delay).await;
                         attempt += 1;
                         continue;
                     } else {
                         return Err(msg);
                     }
-                },
-            };
+                }
 
-            if !response.status().is_success() {
-                let status = response.status();
-                let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-                let msg = format!("API error {}: {}", status, error_text);
-                error!("Anthropic API error {}: {}", status, error_text);
-                if retry.should_retry(attempt, &msg, cancel) {
-                    let delay = retry.delay_for_attempt(attempt, &msg);
-                    if ai_log_summary() {
-                        info!(
-                            "anthropic_stream_retry_http attempt={} delay_ms={}",
-                            attempt + 1,
-                            delay.as_millis()
-                        );
+                // Stream SSE lines; Anthropic sends JSON objects in data: lines
+                let mut stream = response.bytes_stream().eventsource();
+                loop {
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        if ai_log_summary() {
+                            info!("anthropic_stream_cancelled");
+                        }
+                        return Err("Cancelled".to_string());
                     }
-                    std::thread::sleep(delay);
-                    attempt += 1;
-                    continue;
-                } else {
-                    return Err(msg);
-                }
-            }
-
-            // Stream SSE lines; Anthropic sends JSON objects in data: lines
-            let reader = BufReader::new(response);
-            for line in reader.lines() {
-                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                    if ai_log_summary() {
-                        info!("anthropic_stream_cancelled");
-                    }
-                    break;
-                }
-                let line = line.map_err(|e| format!("Stream read error: {}", e))?;
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                if let Some(rest) = trimmed.strip_prefix("data: ") {
-                    if rest.trim() == "[DONE]" {
-                        break;
-                    }
-                    match serde_json::from_str::<AnthropicStreamData>(rest) {
-                        Ok(ev) => {
-                            if let Some(delta) = ev.delta {
-                                if let Some(txt) = delta.text {
-                                    if ai_log_verbose() {
-                                        debug!("anthropic_stream_chunk len={}", txt.len());
+                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await {
+                        Ok(Some(Ok(event))) => {
+                            let data = event.data;
+                            if data.trim() == "[DONE]" {
+                                break;
+                            }
+                            match serde_json::from_str::<AnthropicStreamData>(&data) {
+                                Ok(ev) => {
+                                    if let Some(delta) = ev.delta {
+                                        if let Some(txt) = delta.text {
+                                            if ai_log_verbose() {
+                                                debug!("anthropic_stream_chunk len={}", txt.len());
+                                            }
+                                            on_chunk(&txt);
+                                        }
                                     }
-                                    on_chunk(&txt);
-                                }
+                                },
+                                Err(e) => {
+                                    debug!("Skipping unexpected Anthropic SSE data: {}", e);
+                                },
                             }
                         },
-                        Err(e) => {
-                            debug!("Skipping unexpected Anthropic SSE data: {}", e);
+                        Ok(Some(Err(e))) => {
+                            return Err(format!("Stream error: {}", e));
                         },
+                        Ok(None) => break,
+                        Err(_) => continue, // timeout
                     }
                 }
-            }
 
-            if ai_log_summary() {
-                info!("anthropic_stream_finished");
+                if ai_log_summary() {
+                    info!("anthropic_stream_finished");
+                }
+                return Ok(true);
             }
-            return Ok(true);
-        }
+        })
     }
 }
