@@ -387,6 +387,7 @@ impl PluginHost for TerminalPluginHost {
         // Read policy from current UiConfig via confirm broker.
         let policy = crate::ui_confirm::get_security_policy();
         let lens = crate::security_lens::SecurityLens::new(policy.clone());
+        let mut lens = lens;
         let risk = lens.analyze_command(command);
         if lens.should_block(&risk) {
             return Err(PluginError::CommandFailed(format!(

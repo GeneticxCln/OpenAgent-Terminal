@@ -669,13 +669,13 @@ impl AiRuntime {
         let (working_directory, shell_kind) = if let Some(ctx) = context {
             ctx.to_strings()
         } else {
-            (None, None)
+            (String::new(), String::new())
         };
 
         let req = AiRequest {
             scratch_text: self.ui.scratch.clone(),
-            working_directory,
-            shell_kind,
+            working_directory: Some(working_directory),
+            shell_kind: Some(shell_kind),
             context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
         };
 
@@ -703,10 +703,10 @@ impl AiRuntime {
         let (working_directory, shell_kind) = if let Some(ctx) = context {
             ctx.to_strings()
         } else {
-            (None, None)
+            (String::new(), String::new())
         };
 
-        self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
+        self.start_propose_stream(Some(working_directory), Some(shell_kind), event_proxy, window_id);
     }
 
     /// Check if we can perform actions (have content to act on)

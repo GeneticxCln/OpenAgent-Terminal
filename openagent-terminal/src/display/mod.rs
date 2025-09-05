@@ -1145,38 +1145,11 @@ impl Display {
         blocks.enabled = config.debug.blocks;
 
         Ok(Self {
-            backend: Backend::Wgpu { renderer: wgpu_renderer },
-            visual_bell: VisualBell::from(&config.bell),
-            renderer_preference: config.debug.renderer,
-            colors: List::from(&config.colors),
-            frame_timer: FrameTimer::new(),
-            raw_window_handle,
-            damage_tracker,
-            glyph_cache,
-            hint_state,
-            size_info,
-            font_size,
+            // Window and sizing
             window,
-            pending_renderer_update: Default::default(),
-            composer_focused: false,
-            composer_text: String::new(),
-            composer_cursor: 0,
-            composer_sel_anchor: None,
-            composer_view_col_offset: 0,
-            composer_caret_visible: true,
-            composer_caret_last_toggle: None,
-            vi_highlighted_hint_age: Default::default(),
-            highlighted_hint_age: Default::default(),
-            vi_highlighted_hint: Default::default(),
-            highlighted_hint: Default::default(),
-            hint_mouse_point: Default::default(),
-            pending_update: Default::default(),
-            cursor_hidden: Default::default(),
-            meter: Default::default(),
-            ime: Default::default(),
-            blocks,
-            #[cfg(feature = "blocks")]
-            blocks_search: blocks_search_panel::BlocksSearchState::new(),
+            size_info,
+
+            // Overlays and animations
             debug_split_overlay: None,
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
@@ -1188,11 +1161,87 @@ impl Display {
             ai_panel_anim_duration_ms: 0,
             #[cfg(feature = "ai")]
             ai_hover_control: None,
+
+            highlighted_hint: Default::default(),
+            highlighted_hint_age: Default::default(),
+            vi_highlighted_hint: Default::default(),
+            vi_highlighted_hint_age: Default::default(),
+
+            raw_window_handle,
+            cursor_hidden: Default::default(),
+            visual_bell: VisualBell::from(&config.bell),
+            colors: List::from(&config.colors),
+            hint_state,
+            pending_update: Default::default(),
+            pending_renderer_update: Default::default(),
+
+            // Composer
+            composer_focused: false,
+            composer_text: String::new(),
+            composer_cursor: 0,
+            composer_sel_anchor: None,
+            composer_view_col_offset: 0,
+            composer_caret_visible: true,
+            composer_caret_last_toggle: None,
+
+            // Timers, damage, font
+            ime: Default::default(),
+            frame_timer: FrameTimer::new(),
+            damage_tracker,
+            font_size,
+
+            // Mouse state
+            hint_mouse_point: Default::default(),
+            last_mouse_x: 0,
+            last_mouse_y: 0,
+
+            // Backend and renderer pref
+            backend: Backend::Wgpu { renderer: wgpu_renderer },
+            renderer_preference: config.debug.renderer,
+
+            // Caches and meters
+            glyph_cache,
+            meter: Default::default(),
+
+            // Blocks & panels
+            blocks,
+            #[cfg(feature = "blocks")]
+            blocks_search: blocks_search_panel::BlocksSearchState::new(),
+
+            // Overlays
+            confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
+            palette: palette::PaletteState::new(),
+            #[cfg(feature = "editor")]
+            editor_overlay: editor_overlay::EditorOverlayState::new(),
+            file_tree: file_tree_overlay::FileTreeOverlayState::new(),
+            #[cfg(feature = "dap")]
+            dap_overlay: dap_overlay::DapOverlayState::new(),
+            #[cfg(feature = "completions")]
+            completions: completions::CompletionsState::new(),
+
+            // Workflow panels
             #[cfg(feature = "workflow")]
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
-            // Palette animation init (wgpu)
+
+            // Tab hover/drag animations
+            tab_hover: None,
+            tab_hover_anim_start: None,
+            tab_last_active_id: None,
+            tab_anim_switch_start: None,
+            tab_drag_active: None,
+            tab_drag_anim_start: None,
+            tab_animations: Vec::new(),
+            workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
+            pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
+
+            // Split hover/drag indicators
+            split_hover: None,
+            split_drag: None,
+            split_hover_anim_start: None,
+
+            // Palette animation state
             palette_last_active: false,
             palette_anim_start: None,
             palette_anim_opening: false,
@@ -1511,10 +1560,14 @@ impl Display {
     /// Query detailed atlas metrics (WGPU only). Returns None on GL backend.
     #[cfg(feature = "wgpu")]
     #[allow(dead_code)]
-    pub fn atlas_metrics(&self) -> Option<crate::renderer::wgpu::AtlasMetrics> {
+    pub fn atlas_metrics(&self) -> Option<()> {
         match &self.backend {
             Backend::Gl { .. } => None,
-            Backend::Wgpu { renderer } => Some(renderer.get_atlas_metrics()),
+            Backend::Wgpu { renderer } => {
+                // Emit to logs for now.
+                renderer.dump_atlas_stats();
+                None
+            },
         }
     }
 

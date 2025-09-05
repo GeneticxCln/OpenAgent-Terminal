@@ -67,19 +67,19 @@ impl BackendSelector {
     #[cfg(feature = "wgpu")]
     fn is_wgpu_available() -> bool {
         // Try to create a WGPU instance to check availability
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
 
-        let adapter_opt =
+        let adapter_res =
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
             }));
 
-        if adapter_opt.is_some() {
+        if adapter_res.is_ok() {
             debug!("WGPU backend is available");
             true
         } else {

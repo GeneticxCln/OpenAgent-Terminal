@@ -293,21 +293,19 @@ impl ShapedGlyphCache {
             // Get the paragraph embedding level
             let para_level = bidi_info.paragraphs[0].level;
 
-            // Convert BiDi levels to our BidiRun structure
-            for run in bidi_info.visual_runs(para_level) {
-                let direction = if run.level.is_ltr() {
-                    crate::text_shaping::harfbuzz::TextDirection::LeftToRight
-                } else {
-                    crate::text_shaping::harfbuzz::TextDirection::RightToLeft
-                };
+            // Convert BiDi into a single run for now (full line), using the paragraph level
+            let direction = if para_level.is_ltr() {
+                crate::text_shaping::harfbuzz::TextDirection::LeftToRight
+            } else {
+                crate::text_shaping::harfbuzz::TextDirection::RightToLeft
+            };
 
-                runs.push(BidiRun {
-                    start: run.start,
-                    end: run.end,
-                    direction,
-                    level: run.level.number(),
-                });
-            }
+            runs.push(BidiRun {
+                start: 0,
+                end: _text.len(),
+                direction,
+                level: para_level.number(),
+            });
 
             runs
         }

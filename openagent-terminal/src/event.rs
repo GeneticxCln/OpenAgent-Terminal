@@ -3845,15 +3845,28 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_word(&mut self) {
-        if let Some(rt) = &mut self.ai_runtime {
+        // Take ownership of the current suggestion to avoid overlapping borrows of self
+        let (accept_opt, rest_opt) = if let Some(rt) = &mut self.ai_runtime {
             if let Some(suf) = rt.ui.inline_suggestion.take() {
                 let (accept, rest) = next_word(&suf);
-                if !accept.is_empty() {
-                    self.paste(&accept, true);
-                }
-                rt.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
-                *self.dirty = true;
+                (Some(accept), Some(rest))
+            } else {
+                (None, None)
             }
+        } else {
+            (None, None)
+        };
+
+        if let Some(accept) = accept_opt {
+            if !accept.is_empty() {
+                self.paste(&accept, true);
+            }
+        }
+        if let Some(rest) = rest_opt {
+            if let Some(rt2) = &mut self.ai_runtime {
+                rt2.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
+            }
+            *self.dirty = true;
         }
 
         // Extract next word from suffix up to whitespace boundary
@@ -3885,17 +3898,32 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_char(&mut self) {
-        if let Some(rt) = &mut self.ai_runtime {
+        // Move out suggestion to avoid holding a mutable borrow across paste
+        let (first_str_opt, remainder_opt) = if let Some(rt) = &mut self.ai_runtime {
             if let Some(mut suf) = rt.ui.inline_suggestion.take() {
                 if let Some(first) = suf.chars().next() {
                     let mut buf = [0u8; 4];
-                    let s = first.encode_utf8(&mut buf);
-                    self.paste(s, true);
+                    let s = first.encode_utf8(&mut buf).to_string();
                     suf.drain(..first.len_utf8());
-                    rt.ui.inline_suggestion = if suf.is_empty() { None } else { Some(suf) };
-                    *self.dirty = true;
+                    (Some(s), Some(suf))
+                } else {
+                    (None, Some(suf))
                 }
+            } else {
+                (None, None)
             }
+        } else {
+            (None, None)
+        };
+
+        if let Some(s) = first_str_opt.as_deref() {
+            self.paste(s, true);
+        }
+        if let Some(rest) = remainder_opt {
+            if let Some(rt2) = &mut self.ai_runtime {
+                rt2.ui.inline_suggestion = if rest.is_empty() { None } else { Some(rest) };
+            }
+            *self.dirty = true;
         }
     }
 
@@ -4957,16 +4985,20 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 true
                             }
                         };
-                    let term = self.ctx.terminal();
-                    let not_altscreen =
-                        !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
-                    let ime_off = self.ctx.display.ime.preedit().is_none();
+                    // Compute conditions and required data without holding overlapping borrows
+                    let (not_altscreen, ime_off) = {
+                        let term = self.ctx.terminal();
+                        (
+                            !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN),
+                            self.ctx.display.ime.preedit().is_none(),
+                        )
+                    };
 
                     if can_offer && not_altscreen && ime_off {
-                        if let Some(runtime) = &mut self.ctx.ai_runtime {
-                            // Extract current line prefix up to the cursor
+                        // Extract current line prefix in a limited scope to drop immutable borrows early
+                        let prefix = {
+                            let term = self.ctx.terminal();
                             let point = term.grid().cursor.point;
-                            // Collect characters from start of line to cursor (skipping spacer flags)
                             use openagent_terminal_core::index::Column as Col;
                             use openagent_terminal_core::term::cell::Flags as CellFlags;
                             let row = &term.grid()[point.line];
@@ -4981,6 +5013,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                     prefix.push(ch);
                                 }
                             }
+                            prefix
+                        };
+
+                        if let Some(runtime) = &mut self.ctx.ai_runtime {
                             let proxy = self.ctx.event_proxy.clone();
                             let window_id = self.ctx.display.window.id();
                             runtime.start_inline_suggest(prefix, proxy, window_id);
