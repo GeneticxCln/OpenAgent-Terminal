@@ -11,10 +11,15 @@ pub use security_lens::*;
 #[cfg(not(feature = "security-lens"))]
 pub mod stub {
     use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+    use crate::SerdeReplace;
     
     #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
     pub enum RiskLevel {
         Safe,
+        Caution,
+        Warning,
+        Critical,
     }
     
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +27,7 @@ pub mod stub {
         pub level: RiskLevel,
         pub explanation: String,
         pub requires_confirmation: bool,
+        pub mitigations: Vec<String>,
     }
     
     impl CommandRisk {
@@ -30,14 +36,40 @@ pub mod stub {
                 level: RiskLevel::Safe,
                 explanation: "Security Lens disabled".to_string(),
                 requires_confirmation: false,
+                mitigations: Vec::new(),
             }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub struct SecurityPolicy {
+        pub enabled: bool,
+        pub block_critical: bool,
+        pub require_confirmation: HashMap<RiskLevel, bool>,
+        pub gate_paste_events: bool,
+    }
+
+    impl SerdeReplace for SecurityPolicy {
+        fn replace(&mut self, _value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
+            // In stub mode, accept overrides but do nothing
+            Ok(())
+        }
+    }
+
+    impl Default for SecurityPolicy {
+        fn default() -> Self {
+            let mut require_confirmation = HashMap::new();
+            require_confirmation.insert(RiskLevel::Caution, true);
+            require_confirmation.insert(RiskLevel::Warning, true);
+            require_confirmation.insert(RiskLevel::Critical, true);
+            Self { enabled: false, block_critical: false, require_confirmation, gate_paste_events: false }
         }
     }
     
     pub struct SecurityLens;
     
     impl SecurityLens {
-        pub fn new(_policy: ()) -> Self {
+        pub fn new(_policy: SecurityPolicy) -> Self {
             Self
         }
         

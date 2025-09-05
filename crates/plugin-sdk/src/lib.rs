@@ -54,8 +54,13 @@ extern "C" {
         data_len: usize,
     ) -> i32;
 
-    // Execute a command on the host
-    fn host_execute_command(cmd_ptr: *const u8, cmd_len: usize) -> i32;
+    // Execute a command on the host; two-call variable-size result (JSON CommandOutput)
+    fn host_execute_command(
+        cmd_ptr: *const u8,
+        cmd_len: usize,
+        result_ptr: *mut u8,
+        result_len_ptr: *mut u32,
+    ) -> i32;
 
     // Persistent storage
     fn host_store_data(key_ptr: *const u8, key_len: usize, data_ptr: *const u8, data_len: usize) -> i32;
@@ -136,19 +141,26 @@ pub fn write_file(path: &str, data: &[u8]) -> Result<(), PluginError> {
 
 /// Safe wrapper for command execution
 pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
-    let result = unsafe { host_execute_command(command.as_ptr(), command.len()) };
-
-    match result {
+    let mut len: u32 = 0;
+    // First call: ask for required buffer size
+    let rc = unsafe { host_execute_command(command.as_ptr(), command.len(), core::ptr::null_mut(), &mut len as *mut u32) };
+    match rc {
         0 => {
-            // For now, return a placeholder output
-            // In a full implementation, this would involve more complex memory management
-            Ok(CommandOutput {
-                stdout: "Command executed successfully".into(),
-                stderr: "".into(),
-                exit_code: 0,
-                execution_time_ms: 100,
-            })
-        },
+            // Allocate buffer and fetch JSON payload
+            let mut buf = vec![0u8; len as usize];
+            let rc2 = unsafe { host_execute_command(command.as_ptr(), command.len(), buf.as_mut_ptr(), &mut len as *mut u32) };
+            if rc2 == 0 {
+                serde_json::from_slice::<CommandOutput>(&buf).map_err(PluginError::SerializationError)
+            } else if rc2 == -2 {
+                Err(PluginError::CommandFailed("Command execution failed".into()))
+            } else if rc2 == -1 {
+                Err(PluginError::PermissionDenied("Command execution not permitted".into()))
+            } else if rc2 == -3 {
+                Err(PluginError::Unknown("Host not available".into()))
+            } else {
+                Err(PluginError::Unknown("Unknown command execution error".into()))
+            }
+        }
         -1 => Err(PluginError::PermissionDenied("Command execution not permitted".into())),
         -2 => Err(PluginError::CommandFailed("Command execution failed".into())),
         -3 => Err(PluginError::Unknown("Host not available".into())),

@@ -334,8 +334,7 @@ impl AiRuntime {
             match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
                 Ok(true) => {
                     info!("ai_runtime_stream_finished provider={}", provider.name());
-                    let _ =
-                        event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
+                    let _ = event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
                 },
                 Ok(false) => {
                     info!("ai_runtime_fallback_blocking provider={}", provider.name());
@@ -356,9 +355,16 @@ impl AiRuntime {
                     }
                 },
                 Err(e) => {
-                    error!("ai_runtime_stream_error error={}", e);
-                    let _ =
-                        event_proxy.send_event(Event::new(EventType::AiStreamError(e), window_id));
+                    if e.eq_ignore_ascii_case("cancelled") || e.eq_ignore_ascii_case("canceled") {
+                        info!("ai_runtime_stream_cancelled provider={}", provider.name());
+                        // Treat cancellation as a graceful finish, do not surface an error
+                        let _ = event_proxy
+                            .send_event(Event::new(EventType::AiStreamFinished, window_id));
+                    } else {
+                        error!("ai_runtime_stream_error error={}", e);
+                        let _ = event_proxy
+                            .send_event(Event::new(EventType::AiStreamError(e), window_id));
+                    }
                 },
             }
         });

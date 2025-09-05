@@ -88,19 +88,11 @@ impl WindowContext {
         let mut identity = config.window.identity.clone();
         options.window_identity.override_identity_config(&mut identity);
 
-        // Optional WGPU path (experimental): prefer WGPU if requested.
+        // If WGPU is preferred, we'll attempt initialization later where supported.
         if config.debug.prefer_wgpu {
-            #[cfg(feature = "wgpu")]
-            {
-                log::info!(
-                    "prefer_wgpu is enabled; WGPU backend is not yet implemented — falling back to OpenGL"
-                );
-            }
             #[cfg(not(feature = "wgpu"))]
             {
-                log::info!(
-                    "prefer_wgpu is enabled but the 'wgpu' feature is not built; using OpenGL"
-                );
+                log::info!("'prefer_wgpu' set but binary not built with 'wgpu' feature; using OpenGL");
             }
         }
 

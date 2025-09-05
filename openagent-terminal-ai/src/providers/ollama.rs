@@ -51,6 +51,8 @@ impl OllamaProvider {
             .client
             .post(&url)
             .json(&req_body)
+            // Allow long-running local generation streams
+            .timeout(std::time::Duration::from_secs(600))
             .send()
             .map_err(|e| format!("Failed to send request: {}", e))?;
 
@@ -158,8 +160,79 @@ impl OllamaProvider {
         prompt.push_str(&format!("\nUser request: {}\n", req.scratch_text));
         prompt.push_str("\nProvide the commands:");
 
-        self.stream_generate(prompt, on_chunk, cancel)?;
-        Ok(true)
+        // Async streaming with responsive cancellation
+        use futures_util::StreamExt;
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+        let endpoint = self.endpoint.clone();
+        let model = self.model.clone();
+        rt.block_on(async {
+            let client = match reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .user_agent("openagent-terminal-ai/0.1")
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+            };
+            let url = format!("{}/api/generate", endpoint);
+            let req_body = OllamaRequest { model, prompt, stream: true };
+            let resp = client
+                .post(&url)
+                .json(&req_body)
+                .timeout(std::time::Duration::from_secs(600))
+                .send()
+                .await
+                .map_err(|e| format!("Failed to send request: {}", e))?;
+            if !resp.status().is_success() {
+                return Err(format!("API error: {}", resp.status()));
+            }
+            let mut stream = resp.bytes_stream();
+            let mut buffer = Vec::<u8>::new();
+            loop {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    if ai_log_summary() {
+                        info!("ollama_stream_cancelled");
+                    }
+                    return Err("Cancelled".to_string());
+                }
+                match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await {
+                    Ok(Some(Ok(chunk))) => {
+                        buffer.extend_from_slice(&chunk);
+                        // Process complete lines
+                        loop {
+                            if let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                                let line = buffer.drain(..=pos).collect::<Vec<u8>>();
+                                let line = String::from_utf8_lossy(&line).trim().to_string();
+                                if line.is_empty() { continue; }
+                                match serde_json::from_str::<OllamaGenerateResponse>(&line) {
+                                    Ok(ev) => {
+                                        if !ev.response.is_empty() {
+                                            if ai_log_verbose() {
+                                                debug!("ollama_stream_chunk len={}", ev.response.len());
+                                            }
+                                            on_chunk(&ev.response);
+                                        }
+                                        if ev.done { return Ok(true); }
+                                    },
+                                    Err(e) => {
+                                        debug!("Skipping non-JSON stream line: {} (err: {})", line, e);
+                                    },
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    },
+                    Ok(Some(Err(e))) => return Err(format!("Stream read error: {}", e)),
+                    Ok(None) => break,
+                    Err(_) => continue, // timeout; re-check cancel
+                }
+            }
+            Ok(true)
+        })
     }
 }
 

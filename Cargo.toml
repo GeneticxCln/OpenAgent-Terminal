@@ -35,6 +35,44 @@ repository = "https://github.com/GeneticxCln/OpenAgent-Terminal"
 lto = "thin"
 debug = 1
 incremental = false
+codegen-units = 1
+panic = "unwind" # Keep unwind for better error reporting
+overflow-checks = false
+
+# Optimized release profile for maximum performance
+[profile.release-optimized]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+opt-level = 3
+overflow-checks = false
+debug = false
+strip = "symbols"
+
+# Development profile with better debugging
+[profile.dev]
+opt-level = 0
+debug = true
+incremental = true
+debug-assertions = true
+overflow-checks = true
+panic = "unwind"
+
+# Fast development profile for iteration
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 1
+incremental = true
+debug = 2
+overflow-checks = false
+
+# Testing profile optimized for CI/CD
+[profile.test]
+opt-level = 1
+debug = 2
+incremental = true
+overflow-checks = true
 
 # Security Lens development profile - optimized for fast iteration
 [profile.security-lens-dev]
@@ -44,6 +82,7 @@ debug = true
 incremental = true
 # Enable debug assertions for Security Lens testing
 debug-assertions = true
+overflow-checks = true
 
 # Security Lens testing profile - optimized for test performance
 [profile.security-lens-test]
@@ -52,6 +91,7 @@ opt-level = 2
 debug = true
 # Keep symbols for better debugging of Security Lens patterns
 debug-assertions = true
+overflow-checks = true
 
 # Security Lens release profile - optimized for Security Lens performance
 [profile.security-lens-release]
@@ -61,6 +101,37 @@ codegen-units = 1
 panic = "abort"
 # Optimize regex compilation for Security Lens patterns
 opt-level = 3
+overflow-checks = false
+debug = false
+
+# AI-optimized profile for AI feature builds
+[profile.ai-optimized]
+inherits = "release"
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+# Keep some debug info for AI debugging
+debug = 1
+panic = "unwind"
+
+# Benchmarking profile
+[profile.bench]
+inherits = "release"
+lto = "fat"
+opt-level = 3
+codegen-units = 1
+debug = false
+panic = "abort"
+incremental = false
+
+# Profiling profile
+[profile.profiling]
+inherits = "release"
+opt-level = 2
+debug = true
+lto = "thin"
+codegen-units = 1
+incremental = false
 
 [workspace.dependencies]
 # Core dependencies (always needed)

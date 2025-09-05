@@ -129,6 +129,7 @@ winit = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 gl_generator = "0.14.0"
+chrono = "0.4"
 
 [dev-dependencies]
 clap_complete = "4.2.3"

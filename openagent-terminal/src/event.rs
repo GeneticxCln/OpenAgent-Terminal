@@ -66,8 +66,7 @@ use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-#[cfg(feature = "ai")]
-use crate::security_lens::{RiskLevel, SecurityLens, SecurityPolicy};
+use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 
@@ -124,6 +123,9 @@ pub struct Processor {
 
     // Pending workflow confirmations (workflow name, window id)
     pending_workflow_confirms: HashMap<String, (String, WindowId)>,
+
+    // Pending security confirmation for Paste gating (paste text, window id)
+    pending_security_paste: HashMap<String, (String, WindowId)>,
 }
 
 impl Processor {
@@ -174,6 +176,7 @@ impl Processor {
             #[cfg(feature = "ai")]
             pending_security_ai: Default::default(),
             pending_workflow_confirms: Default::default(),
+            pending_security_paste: Default::default(),
         }
     }
 
@@ -186,12 +189,27 @@ impl Processor {
         event_loop: &ActiveEventLoop,
         window_options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
-        let window_context = WindowContext::initial(
+        let mut window_context = WindowContext::initial(
             event_loop,
             self.proxy.clone(),
             self.config.clone(),
             window_options,
         )?;
+
+        // Initialize enhanced components (Blocks, Workflows, Plugins, HarfBuzz) once
+        // Attach them to the very first window so subsystems like the plugin manager
+        // are operational from startup when enabled by features/config.
+        if self.components.is_none() {
+            // Use the winit Window reference for any OS integrations required during init
+            let winit_win = window_context.display.window.winit_window();
+            // Provide a Tokio runtime to drive async initialization that uses tokio::fs and friends
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                let _ = rt.block_on(self.initialize_components(winit_win));
+            }
+            if let Some(components) = &self.components {
+                window_context.set_components(components.clone());
+            }
+        }
 
         self.gl_config = Some(window_context.display.gl_context().config());
         let window_id = window_context.id();
@@ -881,6 +899,62 @@ impl ApplicationHandler<Event> for Processor {
                     ));
                 }
             },
+            // Intercept paste commands for Security Lens gating before forwarding to windows
+            (EventType::PasteCommand(text), Some(window_id)) => {
+                let policy: SecurityPolicy = self.config.security.clone();
+                if policy.gate_paste_events {
+                    let mut lens = SecurityLens::new(policy.clone());
+                    if let Some(risk) = lens.analyze_paste_content(&text) {
+                        if lens.should_block(&risk) {
+                            let message = crate::message_bar::Message::new(
+                                format!("Blocked risky paste: {}", risk.explanation),
+                                crate::message_bar::MessageType::Warning,
+                            );
+                            let _ = self.proxy.send_event(Event::new(EventType::Message(message), *window_id));
+                            return;
+                        }
+                        // Require confirmation path
+                        if *policy.require_confirmation.get(&risk.level).unwrap_or(&false) {
+                            let id = crate::ui_confirm::generate_id();
+                            // Track pending paste action
+                            self.pending_security_paste.insert(id.clone(), (text.clone(), *window_id));
+                            // Build body
+                            let mut body = String::new();
+                            body.push_str(&format!("{}\n\n", risk.explanation));
+                            if !risk.mitigations.is_empty() {
+                                body.push_str("Suggested mitigations:\n");
+                                for m in &risk.mitigations {
+                                    body.push_str(&format!("  • {}\n", m));
+                                }
+                                body.push('\n');
+                            }
+                            body.push_str("Pasted content will be inserted into the prompt.");
+                            let title = match risk.level {
+                                RiskLevel::Critical => "CRITICAL: Confirm paste".into(),
+                                RiskLevel::Warning => "Warning: Confirm paste".into(),
+                                RiskLevel::Caution => "Caution: Confirm paste".into(),
+                                RiskLevel::Safe => "Confirm paste".into(),
+                            };
+                            let _ = self.proxy.send_event(Event::new(
+                                EventType::ConfirmOpen {
+                                    id: id.clone(),
+                                    title,
+                                    body,
+                                    confirm_label: Some("Paste".into()),
+                                    cancel_label: Some("Cancel".into()),
+                                },
+                                *window_id,
+                            ));
+                            return;
+                        }
+                    }
+                }
+                // No gating needed or safe: forward as checked
+                let _ = self
+                    .proxy
+                    .send_event(Event::new(EventType::PasteCommandChecked(text), *window_id));
+            },
+
             (payload, None) => {
                 // For broadcast events that modify UI state (like ConfirmResolved), handle here
                 match &payload {
@@ -1382,6 +1456,21 @@ impl ApplicationHandler<Event> for Processor {
                         let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
                     }
                 }
+                // If this is a pending paste confirmation, handle it
+                if let Some((text, win)) = self.pending_security_paste.remove(&id) {
+                    if accepted {
+                        let _ = self
+                            .proxy
+                            .send_event(Event::new(EventType::PasteCommandChecked(text), win));
+                    } else {
+                        let message = crate::message_bar::Message::new(
+                            "Paste canceled".into(),
+                            crate::message_bar::MessageType::Warning,
+                        );
+                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                    }
+                }
+
                 // If this is a pending guarded workflow confirmation, handle it
                 if let Some((wf_name, win)) = self.pending_workflow_confirms.remove(&id) {
                     if accepted {
@@ -1676,6 +1765,9 @@ pub enum EventType {
 
     // Generic paste utility for fallbacks
     PasteCommand(String),
+
+    // Paste command that has already passed Security Lens gating
+    PasteCommandChecked(String),
 
     // Global confirmation overlay events
     ConfirmOpen {
@@ -4557,6 +4649,12 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
                 EventType::PasteCommand(text) => {
+                    // Legacy direct paste path (may be gated in Processor before reaching here)
+                    self.ctx.paste(&text, true);
+                    *self.ctx.dirty = true;
+                },
+                EventType::PasteCommandChecked(text) => {
+                    // Paste content that already passed Security Lens gating
                     self.ctx.paste(&text, true);
                     *self.ctx.dirty = true;
                 },
