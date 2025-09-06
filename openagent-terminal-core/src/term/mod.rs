@@ -1023,6 +1023,12 @@ impl<T> Term<T> {
         let bg = self.grid.cursor.template.bg;
         let flags = self.grid.cursor.template.flags;
         let extra = self.grid.cursor.template.extra.clone();
+        
+        // Debug: track writes to line 3
+        if self.grid.cursor.point.line.0 == 3 && self.grid.cursor.point.column.0 < 5 {
+            eprintln!("DBG write_at_cursor: line 3, col {}, char '{}', fg={:?}, flags={:?}",
+                self.grid.cursor.point.column.0, c, fg, flags);
+        }
 
         let mut cursor_cell = self.grid.cursor_cell();
 
@@ -1188,11 +1194,36 @@ impl<T: EventListener> Handler for Term<T> {
             self.scroll_region.end.0,
             self.last_was_crlf
         );
-        // Clear the entire viewport to remove any prior content.
-        self.clear_screen(ansi::ClearMode::All);
-
-        // Fill the entire viewport with 'E's using the default rendition.
-        for line in (0..self.screen_lines()).map(Line::from) {
+        
+        // Reset SGR attributes to defaults (DECALN should reset text attributes)
+        self.grid.cursor.template.fg = Color::Named(NamedColor::Foreground);
+        self.grid.cursor.template.bg = Color::Named(NamedColor::Background);
+        self.grid.cursor.template.flags = Flags::empty();
+        self.grid.cursor.template.set_underline_color(None);
+        
+        // Also reset saved cursor SGR attributes
+        self.grid.saved_cursor.template.fg = Color::Named(NamedColor::Foreground);
+        self.grid.saved_cursor.template.bg = Color::Named(NamedColor::Background);
+        self.grid.saved_cursor.template.flags = Flags::empty();
+        self.grid.saved_cursor.template.set_underline_color(None);
+        
+        // DECALN fills the entire viewport with 'E's using the default rendition.
+        // We don't use clear_screen because it can cause unwanted scrolling.
+        let screen_lines = self.screen_lines();
+        eprintln!("DBG decaln: filling {} lines with 'E'", screen_lines);
+        
+        // Debug: show what's on each line before filling
+        eprintln!("DBG decaln: content before fill:");
+        for line in (0..5.min(screen_lines)).map(Line::from) {
+            let end = Column(40.min(self.columns()));
+            let sample: String = self.grid[line][Column(0)..end]
+                .iter()
+                .map(|c| c.c)
+                .collect();
+            eprintln!("  line {}: '{}'", line.0, sample);
+        }
+        
+        for line in (0..screen_lines).map(Line::from) {
             for column in 0..self.columns() {
                 let cell = &mut self.grid[line][Column(column)];
                 *cell = Cell::default();
@@ -1666,9 +1697,9 @@ impl<T: EventListener> Handler for Term<T> {
         self.damage.damage_line(line.0 as usize, start, num_cols - 1);
 
         // Snapshot current rendition (SGR) before mutably borrowing the grid row.
-        let fg = cursor.template.fg;
-        let flags = cursor.template.flags;
-        let extra = cursor.template.extra.clone();
+        let _fg = cursor.template.fg;
+        let _flags = cursor.template.flags;
+        let _extra = cursor.template.extra.clone();
 
         // Operate on the row slice directly for efficient shifting.
         let row = &mut self.grid[line][..];
