@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, hkdf, pbkdf2};
@@ -539,7 +540,13 @@ impl SyncProvider for SecureSyncProvider {
         }
 
         // Update status
-        let mut status = self.read_status().unwrap_or_default();
+        let mut status = match self.read_status() {
+            Ok(s) => s,
+            Err(e) => {
+warn!("Failed to read secure sync status (pull); defaulting: {:?}", e);
+                SyncStatus::default()
+            },
+        };
         status.last_pull = Some(Self::current_timestamp());
         self.write_status(&status)?;
 

@@ -356,6 +356,31 @@ On Windows, the config file will be looked for in:
 
 * %APPDATA%\\openagent-terminal\\openagent-terminal.toml
 
+### Configuration / Environment
+
+The following environment variables influence runtime behavior and are useful for debugging and CI:
+
+- OPENAGENT_FORCE_GL=1|true
+  - Force OpenGL even when the WGPU backend is compiled in. Useful when debugging driver issues.
+  - On startup you will see a log line like: "OPENAGENT_FORCE_GL detected; forcing OpenGL backend".
+- OPENAGENT_DISABLE_GL_FALLBACK=1|true
+  - When set, the application will not fall back to OpenGL if WGPU initialization fails; it will instead exit with an error. Useful to surface WGPU issues in CI.
+- WGPU_BACKEND=vk|gl
+  - When using WGPU, force a specific backend (Vulkan or OpenGL) if needed.
+
+Examples:
+
+```bash path=null start=null
+# Force OpenGL even if WGPU is built/enabled
+OPENAGENT_FORCE_GL=1 openagent-terminal
+
+# Force WGPU to use the OpenGL backend
+WGPU_BACKEND=gl openagent-terminal
+
+# In CI, fail fast on WGPU init issues instead of silently falling back
+OPENAGENT_DISABLE_GL_FALLBACK=1 openagent-terminal
+```
+
 ### Theming (new)
 
 You can enable theming via the `[theme]` section in your config or by pointing to a custom

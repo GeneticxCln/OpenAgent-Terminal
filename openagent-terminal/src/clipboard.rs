@@ -41,13 +41,34 @@ impl Clipboard {
 impl Default for Clipboard {
     fn default() -> Self {
         #[cfg(any(target_os = "macos", windows))]
-        return Self { clipboard: Box::new(ClipboardContext::new().unwrap()), selection: None };
+        {
+            match ClipboardContext::new() {
+                Ok(ctx) => Self { clipboard: Box::new(ctx), selection: None },
+                Err(err) => {
+                    warn!("Clipboard unavailable on this platform: {err}; falling back to Nop");
+                    return Self::new_nop();
+                },
+            }
+        }
 
         #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-        return Self {
-            clipboard: Box::new(ClipboardContext::new().unwrap()),
-            selection: Some(Box::new(X11ClipboardContext::<X11SelectionClipboard>::new().unwrap())),
-        };
+        {
+            let clipboard = match ClipboardContext::new() {
+                Ok(ctx) => Box::new(ctx) as Box<dyn ClipboardProvider>,
+                Err(err) => {
+                    warn!("X11 clipboard provider unavailable: {err}; using Nop clipboard");
+                    Box::new(NopClipboardContext::new().expect("create nop clipboard"))
+                },
+            };
+            let selection = match X11ClipboardContext::<X11SelectionClipboard>::new() {
+                Ok(sel) => Some(Box::new(sel) as Box<dyn ClipboardProvider>),
+                Err(err) => {
+                    warn!("X11 selection provider unavailable: {err}; selection clipboard disabled");
+                    None
+                },
+            };
+            return Self { clipboard, selection };
+        }
 
         #[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
         return Self::new_nop();

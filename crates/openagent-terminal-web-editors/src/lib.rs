@@ -14,6 +14,7 @@ pub struct WebEditorConfig {
     pub prefer_monaco: bool,
 }
 
+#[allow(unreachable_code)]
 pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
     // Read initial content
     let initial = fs::read_to_string(&cfg.file_path).unwrap_or_default();

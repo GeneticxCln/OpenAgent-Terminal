@@ -7,6 +7,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 use crate::{SyncConfig, SyncError, SyncProvider, SyncScope, SyncStatus};
 
@@ -195,7 +196,13 @@ impl SyncProvider for LocalFsProvider {
         Self::copy_dir_recursive(&source, &destination)?;
 
         // Update status
-        let mut status = self.read_status().unwrap_or_default();
+        let mut status = match self.read_status() {
+            Ok(s) => s,
+            Err(e) => {
+warn!("Failed to read sync status (push); defaulting: {:?}", e);
+                SyncStatus::default()
+            },
+        };
         status.last_push = Some(Self::current_timestamp());
         status.pending = false;
         self.write_status(&status)?;
@@ -227,7 +234,13 @@ impl SyncProvider for LocalFsProvider {
         Self::copy_dir_recursive(&source, &destination)?;
 
         // Update status
-        let mut status = self.read_status().unwrap_or_default();
+        let mut status = match self.read_status() {
+            Ok(s) => s,
+            Err(e) => {
+warn!("Failed to read sync status (pull); defaulting: {:?}", e);
+                SyncStatus::default()
+            },
+        };
         status.last_pull = Some(Self::current_timestamp());
         self.write_status(&status)?;
 

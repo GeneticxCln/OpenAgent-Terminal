@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use gl_generator::{Api, Fallbacks, GlobalGenerator, Profile, Registry};
@@ -95,10 +95,17 @@ impl BuildConfig {
     }
 
     fn print_status(&self) {
+        // Avoid emitting cargo warnings by default; enable verbose build status only if requested.
+        let verbose = std::env::var("OPENAGENT_VERBOSE_BUILD")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if !verbose {
+            return;
+        }
         println!("cargo:warning=Building OpenAgent Terminal v{}", self.version);
         println!("cargo:warning=Target: {}-{}", self.target_arch, self.target_os);
         println!("cargo:warning=Profile: {} (opt-level={})", self.profile, self.optimization_level);
-
         if !self.features.is_empty() {
             let feature_list: Vec<&String> = self.features.iter().collect();
             println!("cargo:warning=Features: {:?}", feature_list);
