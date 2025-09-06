@@ -39,6 +39,11 @@ codegen-units = 1
 panic = "unwind" # Keep unwind for better error reporting
 overflow-checks = false
 
+# Per-package overrides moved from plugin manifests
+[profile.release.package."git-context"]
+opt-level = "s"
+debug = false
+
 # Optimized release profile for maximum performance
 [profile.release-optimized]
 inherits = "release"
@@ -121,7 +126,6 @@ lto = "fat"
 opt-level = 3
 codegen-units = 1
 debug = false
-panic = "abort"
 incremental = false
 
 # Profiling profile

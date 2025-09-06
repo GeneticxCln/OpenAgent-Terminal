@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Animation system for workspace operations (tabs, splits, etc.)
 //!
 //! This module provides smooth, performant animations for all workspace interactions

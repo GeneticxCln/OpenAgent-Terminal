@@ -14,11 +14,6 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 # Build for wasm32-wasi target
-[profile.release]
-opt-level = "s"  # Optimize for size
-lto = true
-debug = false
-panic = "abort"
 
 [features]
 default = []

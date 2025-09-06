@@ -94,9 +94,21 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>> {
 
     // Build a borrowed Passwd struct.
     Ok(Passwd {
-        name: unsafe { CStr::from_ptr(entry.pw_name).to_str().unwrap() },
-        dir: unsafe { CStr::from_ptr(entry.pw_dir).to_str().unwrap() },
-        shell: unsafe { CStr::from_ptr(entry.pw_shell).to_str().unwrap() },
+        name: unsafe {
+            CStr::from_ptr(entry.pw_name)
+                .to_str()
+                .map_err(|_| Error::other("Invalid UTF-8 in passwd name (pw_name)"))?
+        },
+        dir: unsafe {
+            CStr::from_ptr(entry.pw_dir)
+                .to_str()
+                .map_err(|_| Error::other("Invalid UTF-8 in home directory (pw_dir)"))?
+        },
+        shell: unsafe {
+            CStr::from_ptr(entry.pw_shell)
+                .to_str()
+                .map_err(|_| Error::other("Invalid UTF-8 in shell path (pw_shell)"))?
+        },
     })
 }
 

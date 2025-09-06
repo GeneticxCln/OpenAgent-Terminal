@@ -14,7 +14,7 @@ use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
 // Re-export core types
 pub use api::{

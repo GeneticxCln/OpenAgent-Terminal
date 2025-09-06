@@ -84,13 +84,24 @@ impl WindowContext {
         config: Rc<UiConfig>,
         mut options: WindowOptions,
     ) -> Result<Self, Box<dyn Error>> {
-        let raw_display_handle = event_loop.display_handle().unwrap().as_raw();
+        let raw_display_handle = event_loop
+            .display_handle()
+            .expect("display handle not available from event loop")
+            .as_raw();
 
         let mut identity = config.window.identity.clone();
         options.window_identity.override_identity_config(&mut identity);
 
-        // Determine explicit GL override via env var (no automatic fallback from WGPU).
+        // Determine explicit GL override via env var.
         let force_gl = env::var("OPENAGENT_FORCE_GL")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if force_gl {
+            info!("OPENAGENT_FORCE_GL detected; forcing OpenGL backend");
+        }
+        // Allow disabling automatic GL fallback via env var.
+        let disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -111,8 +122,22 @@ impl WindowContext {
                 None,
             )?;
 
-            let display = Display::new_wgpu(window, &config, false)?;
-            return Self::new(display, config, options, proxy);
+            tracing::info!("Attempting WGPU backend initialization…");
+            match Display::new_wgpu(window, &config, false) {
+                Ok(display) => {
+                    tracing::info!("Render backend selected: WGPU");
+                    return Self::new(display, config, options, proxy);
+                },
+                Err(err) => {
+                    if disable_gl_fallback {
+                        tracing::error!("WGPU initialization failed and GL fallback disabled: {err}");
+                        return Err(err.into());
+                    } else {
+                        tracing::warn!("Attempted WGPU → fallback to OpenGL: {err}");
+                        // Drop window and proceed to GL path below
+                    }
+                },
+            }
         }
 
         // OpenGL path (either no WGPU compiled, or explicitly forced).
@@ -146,6 +171,7 @@ impl WindowContext {
         let window = window_opt.take().expect("window should be available for GL path");
         let display = Display::new(window, gl_context, &config, false)?;
 
+        tracing::info!("Render backend selected: OpenGL");
         Self::new(display, config, options, proxy)
     }
 

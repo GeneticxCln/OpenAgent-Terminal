@@ -184,16 +184,7 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
     let config = config::load(&mut options);
     log_config_path(&config);
 
-    // Log selected rendering backend based on compile-time features.
-    #[cfg(feature = "wgpu")]
-    {
-        tracing::info!("Render backend selected: WGPU");
-    }
-    #[cfg(not(feature = "wgpu"))]
-    {
-        tracing::info!("Render backend selected: OpenGL");
-    }
-
+    // Backend selection is logged at runtime by the window context initialization.
     // Log level is managed by tracing-subscriber filters
 
     // Set tty environment variables.

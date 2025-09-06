@@ -79,7 +79,7 @@ jobs:
         run: cargo build --target=x86_64-apple-darwin
 
   security:
-    name: Security checks (cargo-deny, cargo-audit)
+    name: Security checks (cargo-deny, cargo-audit, geiger)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,6 +102,27 @@ jobs:
       - name: cargo-audit
         run: cargo audit -D warnings
 
+      - name: Install cargo-geiger (unsafe usage scan)
+        run: cargo install cargo-geiger --locked
+
+      - name: Geiger scan (workspace, all targets)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Run geiger across the workspace; include all targets and features for maximal coverage
+          cargo geiger --workspace --all-features --all-targets | tee geiger-report.txt
+          echo "## 🔎 Unsafe Usage Report (cargo-geiger)" >> $GITHUB_STEP_SUMMARY
+          echo "This run's geiger report is attached as an artifact. Below is the summary table:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          sed -n '1,300p' geiger-report.txt >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Upload Geiger report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geiger-report-${{ github.run_number }}
+          path: geiger-report.txt
+          if-no-files-found: error
 
   typescript:
     name: TypeScript development tools
@@ -288,3 +309,47 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
         with:
           name: coverage-lcov
           path: lcov.info
+
+  sanitizers:
+    name: Sanitizers (ASan/UBSan) on Linux subset
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined]
+        crate: [openagent-terminal-core, openagent-terminal-config, openagent-terminal-sync]
+    env:
+      # Sanitizer config
+      RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }} -C debuginfo=1 -C opt-level=1"
+      RUSTDOCFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
+      ASAN_OPTIONS: "detect_leaks=0,abort_on_error=1"
+      UBSAN_OPTIONS: "abort_on_error=1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain with rust-src (for sanitizers)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build tests with ${{ matrix.sanitizer }} for ${{ matrix.crate }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build tests with sanitized std; avoid heavy GUI deps in sanitizer job
+          cargo +nightly test -Z build-std -p ${{ matrix.crate }} --no-default-features --tests --no-run
+
+      - name: Run tests with ${{ matrix.sanitizer }} for ${{ matrix.crate }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Run the test binaries produced above
+          cargo +nightly test -Z build-std -p ${{ matrix.crate }} --no-default-features --tests -- --nocapture
