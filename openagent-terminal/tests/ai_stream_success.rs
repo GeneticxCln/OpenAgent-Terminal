@@ -4,7 +4,7 @@
 
 use openagent_terminal::ai_runtime::AiRuntime;
 use openagent_terminal::event::{Event, EventType};
-use openagent_terminal_ai::{AiProvider, AiRequest, AiProposal};
+use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 use std::sync::{Arc, Mutex};
 use winit::application::ApplicationHandler;
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
@@ -12,8 +12,14 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 struct SuccessProvider;
 
 impl AiProvider for SuccessProvider {
-    fn name(&self) -> &'static str { "test-success" }
-    fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> { Ok(Vec::new()) }
+    fn name(&self) -> &'static str {
+        "test-success"
+    }
+
+    fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> {
+        Ok(Vec::new())
+    }
+
     fn propose_stream(
         &self,
         _req: AiRequest,
@@ -26,23 +32,29 @@ impl AiProvider for SuccessProvider {
     }
 }
 
-struct CaptureApp { events: Arc<Mutex<Vec<EventType>>> }
+struct CaptureApp {
+    events: Arc<Mutex<Vec<EventType>>>,
+}
 impl ApplicationHandler<Event> for CaptureApp {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
     fn new_events(&mut self, _el: &ActiveEventLoop, _cause: winit::event::StartCause) {}
+
     fn user_event(&mut self, el: &ActiveEventLoop, ev: Event) {
         self.events.lock().unwrap().push(ev.payload().clone());
         match ev.payload() {
             EventType::AiStreamFinished | EventType::AiStreamError(_) => el.exit(),
-            _ => {}
+            _ => {},
         }
     }
+
     fn window_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
         _window_id: winit::window::WindowId,
         _event: winit::event::WindowEvent,
-    ) {}
+    ) {
+    }
 }
 
 fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
@@ -77,7 +89,10 @@ fn ai_stream_success_emits_finished() {
     let evs = events.lock().unwrap();
     let chunks: Vec<String> = evs
         .iter()
-        .filter_map(|e| match e { EventType::AiStreamChunk(s) => Some(s.clone()), _ => None })
+        .filter_map(|e| match e {
+            EventType::AiStreamChunk(s) => Some(s.clone()),
+            _ => None,
+        })
         .collect();
     let saw_finished = evs.iter().any(|e| matches!(e, EventType::AiStreamFinished));
     let saw_error = evs.iter().any(|e| matches!(e, EventType::AiStreamError(_)));
@@ -86,4 +101,3 @@ fn ai_stream_success_emits_finished() {
     assert!(saw_finished, "expected AiStreamFinished: {:?}", *evs);
     assert!(!saw_error, "did not expect AiStreamError: {:?}", *evs);
 }
-

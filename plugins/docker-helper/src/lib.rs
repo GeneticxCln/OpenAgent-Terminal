@@ -519,47 +519,47 @@ impl Plugin for DockerHelperPlugin {
                 })
             },
 
-            "docker-stats" => {
-                match self.get_docker_stats() {
-                    Ok(stats) => {
-                        let mut output = String::new();
-                        output.push_str("📊 Docker Container Statistics\n");
-                        output.push_str("=".repeat(60).as_str());
-                        output.push_str("\n\n");
+            "docker-stats" => match self.get_docker_stats() {
+                Ok(stats) => {
+                    let mut output = String::new();
+                    output.push_str("📊 Docker Container Statistics\n");
+                    output.push_str("=".repeat(60).as_str());
+                    output.push_str("\n\n");
 
-                        if stats.is_empty() {
-                            output.push_str("No running containers\n");
-                        } else {
-                            output.push_str("Container         CPU      Memory         Net I/O        Block I/O\n");
-                            output.push_str("-".repeat(60).as_str());
-                            output.push('\n');
+                    if stats.is_empty() {
+                        output.push_str("No running containers\n");
+                    } else {
+                        output.push_str(
+                            "Container         CPU      Memory         Net I/O        Block I/O\n",
+                        );
+                        output.push_str("-".repeat(60).as_str());
+                        output.push('\n');
 
-                            for stat in stats {
-                                output.push_str(&format!(
-                                    "{:<15} {:>7} {:>14} {:>13} {:>13}\n",
-                                    stat.get("name").unwrap_or(&String::new()),
-                                    stat.get("cpu_percent").unwrap_or(&String::new()),
-                                    stat.get("memory_usage").unwrap_or(&String::new()),
-                                    stat.get("network_io").unwrap_or(&String::new()),
-                                    stat.get("block_io").unwrap_or(&String::new()),
-                                ));
-                            }
+                        for stat in stats {
+                            output.push_str(&format!(
+                                "{:<15} {:>7} {:>14} {:>13} {:>13}\n",
+                                stat.get("name").unwrap_or(&String::new()),
+                                stat.get("cpu_percent").unwrap_or(&String::new()),
+                                stat.get("memory_usage").unwrap_or(&String::new()),
+                                stat.get("network_io").unwrap_or(&String::new()),
+                                stat.get("block_io").unwrap_or(&String::new()),
+                            ));
                         }
+                    }
 
-                        Ok(CommandOutput {
-                            stdout: output,
-                            stderr: String::new(),
-                            exit_code: 0,
-                            execution_time_ms: start.elapsed().as_millis() as u64,
-                        })
-                    },
-                    Err(e) => Ok(CommandOutput {
-                        stdout: String::new(),
-                        stderr: format!("Failed to get stats: {}", e),
-                        exit_code: 1,
+                    Ok(CommandOutput {
+                        stdout: output,
+                        stderr: String::new(),
+                        exit_code: 0,
                         execution_time_ms: start.elapsed().as_millis() as u64,
-                    }),
-                }
+                    })
+                },
+                Err(e) => Ok(CommandOutput {
+                    stdout: String::new(),
+                    stderr: format!("Failed to get stats: {}", e),
+                    exit_code: 1,
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                }),
             },
 
             "docker-cleanup" => {

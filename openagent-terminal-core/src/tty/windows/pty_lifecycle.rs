@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use std::io::Result;
 use crate::event::WindowSize;
-use crate::tty::windows::{ReadPipe, WritePipe};
 use crate::tty::windows::child::ChildExitWatcher;
 use crate::tty::windows::conpty::Conpty;
+use crate::tty::windows::{ReadPipe, WritePipe};
+use std::io::Result;
+use std::sync::Arc;
 
 /// PTY lifecycle management using typestate pattern to enforce correct drop order.
-/// 
+///
 /// This ensures that ConPTY is always dropped before the conout pipe, preventing
 /// Windows ConPTY deadlocks that occur when the drop order is incorrect.
 ///
@@ -29,7 +29,6 @@ pub struct PtyActive {
     conin: WritePipe,
     child_watcher: ChildExitWatcher,
 }
-
 
 impl PtyBuilder {
     /// Create a new PTY builder with all resources
@@ -75,7 +74,7 @@ impl PtyActive {
     }
 
     /// Properly shutdown the PTY, ensuring correct drop order.
-    /// 
+    ///
     /// This is the critical method that prevents ConPTY deadlocks.
     /// It explicitly drops resources in the correct order:
     /// 1. First, drop the conout pipe
@@ -88,12 +87,11 @@ impl PtyActive {
         drop(self.backend);
         // conin can be dropped safely after ConPTY
         drop(self.conin);
-        
+
         // Return the child watcher as it's still needed
         self.child_watcher
     }
 }
-
 
 /// Wrapper that provides the old PTY interface while using the new lifecycle internally
 /// This ensures backward compatibility while fixing the drop order issue
@@ -165,19 +163,19 @@ impl Drop for SafePty {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_pty_lifecycle_state_transitions() {
         // This test would require mock implementations of the dependencies
         // but demonstrates the intended usage pattern
-        
+
         // let builder = PtyBuilder::new(mock_backend, mock_conout, mock_conin, mock_child);
         // let active = builder.activate();
         // let shutdown = active.shutdown();
-        // 
+        //
         // // Once shutdown, the PTY cannot be reactivated
         // // This is enforced by the type system
-        
+
         // The key point is that shutdown() consumes the PtyActive state,
         // preventing any further operations on the PTY while ensuring
         // proper drop order

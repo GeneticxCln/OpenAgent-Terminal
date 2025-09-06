@@ -1,4 +1,5 @@
-// Developer Tools Plugin - Comprehensive support for Node.js, Python, Kubernetes, and system monitoring
+// Developer Tools Plugin - Comprehensive support for Node.js, Python, Kubernetes, and system
+// monitoring
 
 use plugin_api::*;
 use regex::Regex;
@@ -90,10 +91,12 @@ impl DevToolsPlugin {
         }
 
         // Update Kubernetes namespaces
-        if let Ok(output) = self.run_command(
-            "kubectl",
-            &["get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"],
-        ) {
+        if let Ok(output) = self.run_command("kubectl", &[
+            "get",
+            "namespaces",
+            "-o",
+            "jsonpath={.items[*].metadata.name}",
+        ]) {
             self.cache.k8s_namespaces = output.split_whitespace().map(String::from).collect();
         }
 
@@ -531,9 +534,9 @@ impl Plugin for DevToolsPlugin {
 
                 if self.kubectl_version.is_none() {
                     return Ok(CommandOutput {
-                        stdout:
-                            "kubectl not found. Please install kubectl to use Kubernetes features."
-                                .to_string(),
+                        stdout: "kubectl not found. Please install kubectl to use Kubernetes \
+                                 features."
+                            .to_string(),
                         stderr: String::new(),
                         exit_code: 1,
                         execution_time_ms: start.elapsed().as_millis() as u64,
@@ -560,9 +563,12 @@ impl Plugin for DevToolsPlugin {
                 }
 
                 // Pod status
-                if let Ok(pods) = self
-                    .run_command("kubectl", &["get", "pods", "--all-namespaces", "--no-headers"])
-                {
+                if let Ok(pods) = self.run_command("kubectl", &[
+                    "get",
+                    "pods",
+                    "--all-namespaces",
+                    "--no-headers",
+                ]) {
                     let pod_count = pods.lines().count();
                     let running = pods.lines().filter(|l| l.contains("Running")).count();
                     output

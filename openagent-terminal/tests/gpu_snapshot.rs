@@ -227,16 +227,13 @@ impl SnapshotTestRunner {
                 Ok(img) => img,
                 Err(e) => {
                     eprintln!("Failed to capture snapshot for {}: {}", test.config.name, e);
-                    results.push((
-                        test.config.name.clone(),
-                        ComparisonResult {
-                            passed: false,
-                            similarity: 0.0,
-                            diff_pixels: 0,
-                            max_difference: 0,
-                            diff_image: None,
-                        },
-                    ));
+                    results.push((test.config.name.clone(), ComparisonResult {
+                        passed: false,
+                        similarity: 0.0,
+                        diff_pixels: 0,
+                        max_difference: 0,
+                        diff_image: None,
+                    }));
                     continue;
                 },
             };
@@ -245,16 +242,13 @@ impl SnapshotTestRunner {
                 if let Err(e) = test.update_golden(&snapshot) {
                     eprintln!("Failed to update golden for {}: {}", test.config.name, e);
                 }
-                results.push((
-                    test.config.name.clone(),
-                    ComparisonResult {
-                        passed: true,
-                        similarity: 1.0,
-                        diff_pixels: 0,
-                        max_difference: 0,
-                        diff_image: None,
-                    },
-                ));
+                results.push((test.config.name.clone(), ComparisonResult {
+                    passed: true,
+                    similarity: 1.0,
+                    diff_pixels: 0,
+                    max_difference: 0,
+                    diff_image: None,
+                }));
             } else {
                 let result = test.compare_with_golden(&snapshot);
 

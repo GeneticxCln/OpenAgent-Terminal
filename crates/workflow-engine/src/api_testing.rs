@@ -186,15 +186,18 @@ impl ApiTester {
         Ok(id)
     }
 
-    pub async fn add_request_to_collection(&self, collection_id: Uuid, mut request: ApiRequest) -> Result<Uuid> {
+    pub async fn add_request_to_collection(
+        &self,
+        collection_id: Uuid,
+        mut request: ApiRequest,
+    ) -> Result<Uuid> {
         request.id = Uuid::new_v4();
         request.created_at = chrono::Utc::now();
         request.updated_at = request.created_at;
 
         let mut collections = self.collections.lock().await;
-        let collection = collections
-            .get_mut(&collection_id)
-            .ok_or_else(|| anyhow!("Collection not found"))?;
+        let collection =
+            collections.get_mut(&collection_id).ok_or_else(|| anyhow!("Collection not found"))?;
 
         let request_id = request.id;
         collection.requests.push(request);
@@ -223,7 +226,9 @@ impl ApiTester {
         if let Some(auth) = &request.auth {
             req_builder = match auth {
                 Authentication::Bearer(token) => req_builder.bearer_auth(token),
-                Authentication::Basic { username, password } => req_builder.basic_auth(username, Some(password)),
+                Authentication::Basic { username, password } => {
+                    req_builder.basic_auth(username, Some(password))
+                },
                 Authentication::ApiKey { key, value } => req_builder.header(key, value),
                 Authentication::OAuth2(token) => req_builder.bearer_auth(token),
             };
@@ -243,8 +248,7 @@ impl ApiTester {
         req_builder = req_builder.timeout(request.timeout);
 
         // Execute the request
-        let response = req_builder.send().await
-            .map_err(|e| anyhow!("Request failed: {}", e))?;
+        let response = req_builder.send().await.map_err(|e| anyhow!("Request failed: {}", e))?;
 
         let response_time = start_time.elapsed();
 
@@ -255,17 +259,14 @@ impl ApiTester {
 
         let mut headers = HashMap::new();
         for (name, value) in response.headers() {
-            headers.insert(
-                name.to_string(),
-                value.to_str().unwrap_or("").to_string(),
-            );
+            headers.insert(name.to_string(), value.to_str().unwrap_or("").to_string());
         }
 
-        let body_bytes = response.bytes().await
-            .map_err(|e| anyhow!("Failed to read response body: {}", e))?;
-        
+        let body_bytes =
+            response.bytes().await.map_err(|e| anyhow!("Failed to read response body: {}", e))?;
+
         let size_bytes = body_bytes.len();
-        
+
         let response_body = self.parse_response_body(&headers, body_bytes.to_vec())?;
 
         let api_response = ApiResponse {
@@ -283,7 +284,7 @@ impl ApiTester {
         // Store in history
         let mut history = self.response_history.lock().await;
         history.push(api_response.clone());
-        
+
         // Keep only last 1000 responses
         if history.len() > 1000 {
             history.remove(0);
@@ -292,7 +293,11 @@ impl ApiTester {
         Ok(api_response)
     }
 
-    fn parse_response_body(&self, headers: &HashMap<String, String>, body: Vec<u8>) -> Result<ResponseBody> {
+    fn parse_response_body(
+        &self,
+        headers: &HashMap<String, String>,
+        body: Vec<u8>,
+    ) -> Result<ResponseBody> {
         if body.is_empty() {
             return Ok(ResponseBody::Empty);
         }
@@ -308,14 +313,14 @@ impl ApiTester {
                 Ok(json_value) => Ok(ResponseBody::JSON(json_value)),
                 Err(_) => {
                     // If JSON parsing fails, treat as text
-match String::from_utf8(body.clone()) {
+                    match String::from_utf8(body.clone()) {
                         Ok(text) => Ok(ResponseBody::Text(text)),
                         Err(_) => Ok(ResponseBody::Binary(body)),
                     }
-                }
+                },
             }
         } else if content_type.starts_with("text/") || content_type.contains("xml") {
-match String::from_utf8(body.clone()) {
+            match String::from_utf8(body.clone()) {
                 Ok(text) => Ok(ResponseBody::Text(text)),
                 Err(_) => Ok(ResponseBody::Binary(body)),
             }
@@ -324,14 +329,15 @@ match String::from_utf8(body.clone()) {
             match String::from_utf8(body.clone()) {
                 Ok(text) => {
                     // Check if it looks like JSON even without proper content-type
-                    if (text.trim().starts_with('{') && text.trim().ends_with('}')) ||
-                       (text.trim().starts_with('[') && text.trim().ends_with(']')) {
+                    if (text.trim().starts_with('{') && text.trim().ends_with('}'))
+                        || (text.trim().starts_with('[') && text.trim().ends_with(']'))
+                    {
                         if let Ok(json_value) = serde_json::from_str(&text) {
                             return Ok(ResponseBody::JSON(json_value));
                         }
                     }
                     Ok(ResponseBody::Text(text))
-                }
+                },
                 Err(_) => Ok(ResponseBody::Binary(body)),
             }
         }
@@ -383,7 +389,7 @@ match String::from_utf8(body.clone()) {
             if let Some(request) = collection.requests.iter().find(|r| r.id == test.request_id) {
                 let response = self.execute_request(request).await?;
                 let test_result = self.evaluate_assertions(&test.assertions, &response).await?;
-                
+
                 let result = TestResult {
                     test_id: test.id,
                     passed: test_result.iter().all(|r| r.passed),
@@ -398,7 +404,8 @@ match String::from_utf8(body.clone()) {
 
         // Run teardown requests
         for teardown_request_id in &test_suite.teardown_requests {
-            if let Some(request) = collection.requests.iter().find(|r| r.id == *teardown_request_id) {
+            if let Some(request) = collection.requests.iter().find(|r| r.id == *teardown_request_id)
+            {
                 let _response = self.execute_request(request).await?;
             }
         }
@@ -406,7 +413,11 @@ match String::from_utf8(body.clone()) {
         Ok(results)
     }
 
-    async fn evaluate_assertions(&self, assertions: &[Assertion], response: &ApiResponse) -> Result<Vec<AssertionResult>> {
+    async fn evaluate_assertions(
+        &self,
+        assertions: &[Assertion],
+        response: &ApiResponse,
+    ) -> Result<Vec<AssertionResult>> {
         let mut results = Vec::new();
 
         for assertion in assertions {
@@ -419,22 +430,31 @@ match String::from_utf8(body.clone()) {
                         message: if passed {
                             format!("Status code is {}", expected)
                         } else {
-                            format!("Expected status code {}, got {}", expected, response.status_code)
+                            format!(
+                                "Expected status code {}, got {}",
+                                expected, response.status_code
+                            )
                         },
                     }
-                }
+                },
                 Assertion::StatusCodeRange { min, max } => {
                     let passed = response.status_code >= *min && response.status_code <= *max;
                     AssertionResult {
                         assertion: assertion.clone(),
                         passed,
                         message: if passed {
-                            format!("Status code {} is in range {}-{}", response.status_code, min, max)
+                            format!(
+                                "Status code {} is in range {}-{}",
+                                response.status_code, min, max
+                            )
                         } else {
-                            format!("Status code {} is not in range {}-{}", response.status_code, min, max)
+                            format!(
+                                "Status code {} is not in range {}-{}",
+                                response.status_code, min, max
+                            )
                         },
                     }
-                }
+                },
                 Assertion::HeaderExists(header_name) => {
                     let passed = response.headers.contains_key(header_name);
                     AssertionResult {
@@ -446,7 +466,7 @@ match String::from_utf8(body.clone()) {
                             format!("Header '{}' does not exist", header_name)
                         },
                     }
-                }
+                },
                 Assertion::HeaderEquals { header, value } => {
                     let actual_value = response.headers.get(header);
                     let passed = actual_value == Some(value);
@@ -464,13 +484,14 @@ match String::from_utf8(body.clone()) {
                             )
                         },
                     }
-                }
+                },
                 Assertion::HeaderContains { header, substring } => {
-                    let passed = response.headers
+                    let passed = response
+                        .headers
                         .get(header)
                         .map(|v| v.contains(substring))
                         .unwrap_or(false);
-                    
+
                     AssertionResult {
                         assertion: assertion.clone(),
                         passed,
@@ -480,7 +501,7 @@ match String::from_utf8(body.clone()) {
                             format!("Header '{}' does not contain '{}'", header, substring)
                         },
                     }
-                }
+                },
                 Assertion::BodyContains(substring) => {
                     let body_text = self.response_body_as_text(&response.body);
                     let passed = body_text.contains(substring);
@@ -493,7 +514,7 @@ match String::from_utf8(body.clone()) {
                             format!("Response body does not contain '{}'", substring)
                         },
                     }
-                }
+                },
                 Assertion::BodyEquals(expected) => {
                     let body_text = self.response_body_as_text(&response.body);
                     let passed = body_text.trim() == expected.trim();
@@ -506,12 +527,12 @@ match String::from_utf8(body.clone()) {
                             format!("Response body does not match expected value")
                         },
                     }
-                }
+                },
                 Assertion::BodyJsonPath { path, expected } => {
                     let passed = match &response.body {
                         ResponseBody::JSON(json) => {
                             self.evaluate_json_path(json, path, expected)?
-                        }
+                        },
                         _ => false,
                     };
                     AssertionResult {
@@ -523,7 +544,7 @@ match String::from_utf8(body.clone()) {
                             format!("JSON path '{}' does not match expected value", path)
                         },
                     }
-                }
+                },
                 Assertion::ResponseTime { max_ms } => {
                     let response_time_ms = response.response_time.as_millis() as u64;
                     let passed = response_time_ms <= *max_ms;
@@ -531,14 +552,23 @@ match String::from_utf8(body.clone()) {
                         assertion: assertion.clone(),
                         passed,
                         message: if passed {
-                            format!("Response time {}ms is within limit of {}ms", response_time_ms, max_ms)
+                            format!(
+                                "Response time {}ms is within limit of {}ms",
+                                response_time_ms, max_ms
+                            )
                         } else {
-                            format!("Response time {}ms exceeds limit of {}ms", response_time_ms, max_ms)
+                            format!(
+                                "Response time {}ms exceeds limit of {}ms",
+                                response_time_ms, max_ms
+                            )
                         },
                     }
-                }
+                },
                 Assertion::ContentType(expected) => {
-                    let actual = response.headers.get("content-type").or_else(|| response.headers.get("Content-Type"));
+                    let actual = response
+                        .headers
+                        .get("content-type")
+                        .or_else(|| response.headers.get("Content-Type"));
                     let passed = actual.map(|ct| ct.contains(expected)).unwrap_or(false);
                     AssertionResult {
                         assertion: assertion.clone(),
@@ -547,10 +577,13 @@ match String::from_utf8(body.clone()) {
                             format!("Content-Type contains '{}'", expected)
                         } else {
                             let actual_str = actual.map_or("(not set)".to_string(), |v| v.clone());
-                            format!("Content-Type does not contain '{}', got '{}'", expected, actual_str)
+                            format!(
+                                "Content-Type does not contain '{}', got '{}'",
+                                expected, actual_str
+                            )
                         },
                     }
-                }
+                },
             };
 
             results.push(result);
@@ -568,7 +601,12 @@ match String::from_utf8(body.clone()) {
         }
     }
 
-    fn evaluate_json_path(&self, json: &serde_json::Value, path: &str, expected: &serde_json::Value) -> Result<bool> {
+    fn evaluate_json_path(
+        &self,
+        json: &serde_json::Value,
+        path: &str,
+        expected: &serde_json::Value,
+    ) -> Result<bool> {
         // Simple JSON path implementation - could be expanded with a proper JSONPath library
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = json;
@@ -582,15 +620,15 @@ match String::from_utf8(body.clone()) {
                 let field_name = &part[..array_start];
                 let array_end = part.find(']').ok_or_else(|| anyhow!("Invalid array syntax"))?;
                 let index_str = &part[array_start + 1..array_end];
-                let index: usize = index_str.parse()
-                    .map_err(|_| anyhow!("Invalid array index: {}", index_str))?;
+                let index: usize =
+                    index_str.parse().map_err(|_| anyhow!("Invalid array index: {}", index_str))?;
 
-                current = current.get(field_name)
+                current = current
+                    .get(field_name)
                     .and_then(|v| v.get(index))
                     .ok_or_else(|| anyhow!("Path not found: {}", path))?;
             } else {
-                current = current.get(part)
-                    .ok_or_else(|| anyhow!("Path not found: {}", path))?;
+                current = current.get(part).ok_or_else(|| anyhow!("Path not found: {}", path))?;
             }
         }
 
@@ -601,14 +639,10 @@ match String::from_utf8(body.clone()) {
         let postman_data: serde_json::Value = serde_json::from_str(postman_json)
             .map_err(|e| anyhow!("Failed to parse Postman collection: {}", e))?;
 
-        let collection_name = postman_data["info"]["name"]
-            .as_str()
-            .unwrap_or("Imported Collection")
-            .to_string();
+        let collection_name =
+            postman_data["info"]["name"].as_str().unwrap_or("Imported Collection").to_string();
 
-        let description = postman_data["info"]["description"]
-            .as_str()
-            .map(|s| s.to_string());
+        let description = postman_data["info"]["description"].as_str().map(|s| s.to_string());
 
         let mut api_collection = ApiCollection {
             id: Uuid::new_v4(),
@@ -625,10 +659,7 @@ match String::from_utf8(body.clone()) {
         // Parse variables
         if let Some(variables) = postman_data["variable"].as_array() {
             for var in variables {
-                if let (Some(key), Some(value)) = (
-                    var["key"].as_str(),
-                    var["value"].as_str(),
-                ) {
+                if let (Some(key), Some(value)) = (var["key"].as_str(), var["value"].as_str()) {
                     api_collection.variables.insert(key.to_string(), value.to_string());
                 }
             }
@@ -648,7 +679,7 @@ match String::from_utf8(body.clone()) {
 
     fn parse_postman_item(&self, item: &serde_json::Value) -> Result<Option<ApiRequest>> {
         let name = item["name"].as_str().unwrap_or("Unnamed Request").to_string();
-        
+
         let request_data = &item["request"];
         if request_data.is_null() {
             return Ok(None);
@@ -675,10 +706,8 @@ match String::from_utf8(body.clone()) {
         let mut headers = HashMap::new();
         if let Some(headers_array) = request_data["header"].as_array() {
             for header in headers_array {
-                if let (Some(key), Some(value)) = (
-                    header["key"].as_str(),
-                    header["value"].as_str(),
-                ) {
+                if let (Some(key), Some(value)) = (header["key"].as_str(), header["value"].as_str())
+                {
                     headers.insert(key.to_string(), value.to_string());
                 }
             }
@@ -693,21 +722,20 @@ match String::from_utf8(body.clone()) {
                     } else {
                         None
                     }
-                }
+                },
                 "formdata" => {
                     let mut form_data = HashMap::new();
                     if let Some(formdata_array) = body_data["formdata"].as_array() {
                         for field in formdata_array {
-                            if let (Some(key), Some(value)) = (
-                                field["key"].as_str(),
-                                field["value"].as_str(),
-                            ) {
+                            if let (Some(key), Some(value)) =
+                                (field["key"].as_str(), field["value"].as_str())
+                            {
                                 form_data.insert(key.to_string(), value.to_string());
                             }
                         }
                     }
                     Some(RequestBody::FormData(form_data))
-                }
+                },
                 _ => None,
             }
         } else {
@@ -733,9 +761,8 @@ match String::from_utf8(body.clone()) {
 
     pub async fn export_collection_as_postman(&self, collection_id: Uuid) -> Result<String> {
         let collections = self.collections.lock().await;
-        let collection = collections
-            .get(&collection_id)
-            .ok_or_else(|| anyhow!("Collection not found"))?;
+        let collection =
+            collections.get(&collection_id).ok_or_else(|| anyhow!("Collection not found"))?;
 
         let mut postman_collection = serde_json::json!({
             "info": {
@@ -776,25 +803,29 @@ match String::from_utf8(body.clone()) {
 
             // Add headers
             for (key, value) in &request.headers {
-                postman_request["request"]["header"].as_array_mut().unwrap().push(serde_json::json!({
-                    "key": key,
-                    "value": value
-                }));
+                postman_request["request"]["header"].as_array_mut().unwrap().push(
+                    serde_json::json!({
+                        "key": key,
+                        "value": value
+                    }),
+                );
             }
 
             // Add body
             if let Some(body) = &request.body {
                 match body {
                     RequestBody::Text(text) => {
-                        postman_request["request"]["body"]["raw"] = serde_json::Value::String(text.clone());
-                    }
+                        postman_request["request"]["body"]["raw"] =
+                            serde_json::Value::String(text.clone());
+                    },
                     RequestBody::JSON(json) => {
                         postman_request["request"]["body"]["raw"] = serde_json::Value::String(
-                            serde_json::to_string_pretty(json).unwrap_or_default()
+                            serde_json::to_string_pretty(json).unwrap_or_default(),
                         );
-                    }
+                    },
                     RequestBody::FormData(form) => {
-                        postman_request["request"]["body"]["mode"] = serde_json::Value::String("formdata".to_string());
+                        postman_request["request"]["body"]["mode"] =
+                            serde_json::Value::String("formdata".to_string());
                         let mut formdata = Vec::new();
                         for (key, value) in form {
                             formdata.push(serde_json::json!({
@@ -803,11 +834,13 @@ match String::from_utf8(body.clone()) {
                                 "type": "text"
                             }));
                         }
-                        postman_request["request"]["body"]["formdata"] = serde_json::Value::Array(formdata);
-                    }
+                        postman_request["request"]["body"]["formdata"] =
+                            serde_json::Value::Array(formdata);
+                    },
                     RequestBody::Binary(_) => {
-                        postman_request["request"]["body"]["mode"] = serde_json::Value::String("file".to_string());
-                    }
+                        postman_request["request"]["body"]["mode"] =
+                            serde_json::Value::String("file".to_string());
+                    },
                 }
             }
 
@@ -830,16 +863,16 @@ match String::from_utf8(body.clone()) {
             match auth {
                 Authentication::Bearer(token) => {
                     command.push_str(&format!(" -H 'Authorization: Bearer {}'", token));
-                }
+                },
                 Authentication::Basic { username, password } => {
                     command.push_str(&format!(" -u '{}:{}'", username, password));
-                }
+                },
                 Authentication::ApiKey { key, value } => {
                     command.push_str(&format!(" -H '{}: {}'", key, value));
-                }
+                },
                 Authentication::OAuth2(token) => {
                     command.push_str(&format!(" -H 'Authorization: Bearer {}'", token));
-                }
+                },
             }
         }
 
@@ -848,20 +881,22 @@ match String::from_utf8(body.clone()) {
             match body {
                 RequestBody::Text(text) => {
                     command.push_str(&format!(" -d '{}'", text.replace("'", "'\\''")));
-                }
+                },
                 RequestBody::JSON(json) => {
                     let json_string = serde_json::to_string(json)?;
-                    command.push_str(&format!(" -H 'Content-Type: application/json' -d '{}'", 
-                        json_string.replace("'", "'\\''")));
-                }
+                    command.push_str(&format!(
+                        " -H 'Content-Type: application/json' -d '{}'",
+                        json_string.replace("'", "'\\''")
+                    ));
+                },
                 RequestBody::FormData(form) => {
                     for (key, value) in form {
                         command.push_str(&format!(" -d '{}={}'", key, value));
                     }
-                }
+                },
                 RequestBody::Binary(_) => {
                     command.push_str(" --data-binary @file.bin");
-                }
+                },
             }
         }
 
@@ -897,10 +932,7 @@ match String::from_utf8(body.clone()) {
 
     pub async fn get_collection(&self, id: Uuid) -> Result<ApiCollection> {
         let collections = self.collections.lock().await;
-        collections
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Collection not found"))
+        collections.get(&id).cloned().ok_or_else(|| anyhow!("Collection not found"))
     }
 
     pub fn format_response_summary(&self, response: &ApiResponse) -> String {
@@ -938,18 +970,16 @@ mod tests {
     #[test]
     fn test_response_body_parsing() {
         let api_tester = ApiTester::new();
-        
-        let headers = HashMap::from([
-            ("content-type".to_string(), "application/json".to_string())
-        ]);
-        
+
+        let headers = HashMap::from([("content-type".to_string(), "application/json".to_string())]);
+
         let json_body = b"{\"message\": \"hello\"}";
         let result = api_tester.parse_response_body(&headers, json_body.to_vec()).unwrap();
-        
+
         match result {
             ResponseBody::JSON(json) => {
                 assert_eq!(json["message"], "hello");
-            }
+            },
             _ => panic!("Expected JSON response body"),
         }
     }
@@ -957,7 +987,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_collection() {
         let api_tester = ApiTester::new();
-        
+
         let collection = ApiCollection {
             id: Uuid::new_v4(),
             name: "Test Collection".to_string(),
@@ -971,7 +1001,7 @@ mod tests {
         };
 
         let collection_id = api_tester.create_collection(collection).await.unwrap();
-        
+
         let retrieved = api_tester.get_collection(collection_id).await.unwrap();
         assert_eq!(retrieved.name, "Test Collection");
     }

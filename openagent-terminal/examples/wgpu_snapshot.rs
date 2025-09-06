@@ -15,7 +15,10 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     use wgpu::util::DeviceExt;
 
     // Create instance and request adapter (headless)
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::all(), ..Default::default() });
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        ..Default::default()
+    });
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -50,7 +53,8 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // Clear the texture to a deterministic color without drawing any geometry
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("clear-encoder") });
+    let mut encoder = device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("clear-encoder") });
     {
         let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear-pass"),
@@ -120,7 +124,9 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
         .ok_or_else(|| anyhow::anyhow!("failed to build image buffer"))?;
 
     let out_path = PathBuf::from(out_path);
-    if let Some(parent) = out_path.parent() { fs::create_dir_all(parent)?; }
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     img.save(&out_path)?;
 
     // Print JSON for CI step parsing
@@ -152,4 +158,3 @@ fn main() {
         println!("{{\"output\":\"{}\",\"width\":{},\"height\":{}}}", out_path, width, height);
     }
 }
-

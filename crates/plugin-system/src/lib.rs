@@ -18,38 +18,38 @@ use tracing::{debug, error, info, warn};
 
 // Re-export core types
 pub use api::{
-    CommandOutput, Completion, CompletionKind, Context, ContextRequest, 
-    HookEvent, HookResponse, HookType, PluginConfig, PluginError, SensitivityLevel
+    CommandOutput, Completion, CompletionKind, Context, ContextRequest, HookEvent, HookResponse,
+    HookType, PluginConfig, PluginError, SensitivityLevel,
 };
-pub use runtime::{PluginManager, PluginRuntime};
 pub use permissions::{PluginPermissions, SecurityPolicy};
+pub use runtime::{PluginManager, PluginRuntime};
 
 pub mod api;
-pub mod runtime;
-pub mod permissions;
 pub mod host;
+pub mod permissions;
+pub mod runtime;
 
 /// Plugin system error types
 #[derive(Debug, Error)]
 pub enum PluginSystemError {
     #[error("Plugin not found: {0}")]
     NotFound(String),
-    
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
-    
+
     #[error("Invalid plugin format: {0}")]
     InvalidFormat(String),
-    
+
     #[error("Runtime error: {0}")]
     Runtime(String),
-    
+
     #[error("ABI error: {0}")]
     Abi(String),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 }
@@ -65,16 +65,16 @@ pub struct PluginMetadata {
     pub description: String,
     pub license: String,
     pub homepage: Option<String>,
-    
+
     /// Plugin capabilities
     pub capabilities: PluginCapabilities,
-    
+
     /// Security requirements
     pub permissions: PluginPermissions,
-    
+
     /// ABI version compatibility
     pub abi_version: String,
-    
+
     /// Minimum host version required
     pub min_host_version: Option<String>,
 }
@@ -102,19 +102,19 @@ impl Default for PluginMetadata {
 pub struct PluginCapabilities {
     /// Provides command completions
     pub completions: bool,
-    
+
     /// Provides context for AI or other systems
     pub context_provider: bool,
-    
+
     /// Custom commands provided
     pub commands: Vec<String>,
-    
+
     /// Event hooks supported
     pub hooks: Vec<HookType>,
-    
+
     /// File type associations
     pub file_associations: Vec<String>,
-    
+
     /// Background services
     pub services: Vec<String>,
 }
@@ -124,26 +124,27 @@ pub struct PluginAbi {
     /// Memory management functions
     pub alloc: Option<wasmtime::TypedFunc<i32, i32>>,
     pub dealloc: Option<wasmtime::TypedFunc<(i32, i32), ()>>,
-    
+
     /// Core plugin lifecycle
     pub init: Option<wasmtime::TypedFunc<(), i32>>,
     pub cleanup: Option<wasmtime::TypedFunc<(), i32>>,
-    
+
     /// Metadata and introspection
     pub get_metadata: Option<wasmtime::TypedFunc<(), i64>>, // ptr:len packed
     pub get_capabilities: Option<wasmtime::TypedFunc<(), i64>>,
-    
+
     /// Command execution
-    pub execute_command: Option<wasmtime::TypedFunc<(i32, i32, i32), i32>>, // cmd_ptr, cmd_len, result_ptr
+    pub execute_command: Option<wasmtime::TypedFunc<(i32, i32, i32), i32>>, /* cmd_ptr, cmd_len,
+                                                                             * result_ptr */
     pub execute_command_ex: Option<wasmtime::TypedFunc<(i32, i32, i32, i32, i32, i32, i32), i32>>,
-    
+
     /// Event handling
     pub handle_event: Option<wasmtime::TypedFunc<(i32, i32), i32>>,
-    
+
     /// Context and completions
     pub provide_completions: Option<wasmtime::TypedFunc<(i32, i32, i32), i32>>,
     pub collect_context: Option<wasmtime::TypedFunc<(i32, i32, i32), i32>>,
-    
+
     /// Response retrieval
     pub get_last_response: Option<wasmtime::TypedFunc<(), i64>>,
     pub get_error_message: Option<wasmtime::TypedFunc<(), i64>>,
@@ -160,29 +161,37 @@ impl PluginAbi {
             // Memory management
             alloc: instance.get_typed_func(&mut *store, "plugin_alloc").ok(),
             dealloc: instance.get_typed_func(&mut *store, "plugin_dealloc").ok(),
-            
+
             // Lifecycle
             init: instance.get_typed_func(&mut *store, "plugin_init").ok(),
             cleanup: instance.get_typed_func(&mut *store, "plugin_cleanup").ok(),
-            
+
             // Metadata
             get_metadata: instance.get_typed_func(&mut *store, "plugin_get_metadata").ok(),
             get_capabilities: instance.get_typed_func(&mut *store, "plugin_get_capabilities").ok(),
-            
+
             // Commands
             execute_command: instance.get_typed_func(&mut *store, "plugin_execute_command").ok(),
-            execute_command_ex: instance.get_typed_func(&mut *store, "plugin_execute_command_ex").ok(),
-            
+            execute_command_ex: instance
+                .get_typed_func(&mut *store, "plugin_execute_command_ex")
+                .ok(),
+
             // Events
             handle_event: instance.get_typed_func(&mut *store, "plugin_handle_event").ok(),
-            
+
             // Context and completions
-            provide_completions: instance.get_typed_func(&mut *store, "plugin_provide_completions").ok(),
+            provide_completions: instance
+                .get_typed_func(&mut *store, "plugin_provide_completions")
+                .ok(),
             collect_context: instance.get_typed_func(&mut *store, "plugin_collect_context").ok(),
-            
+
             // Response retrieval
-            get_last_response: instance.get_typed_func(&mut *store, "plugin_get_last_response").ok(),
-            get_error_message: instance.get_typed_func(&mut *store, "plugin_get_error_message").ok(),
+            get_last_response: instance
+                .get_typed_func(&mut *store, "plugin_get_last_response")
+                .ok(),
+            get_error_message: instance
+                .get_typed_func(&mut *store, "plugin_get_error_message")
+                .ok(),
         })
     }
 }
@@ -206,24 +215,24 @@ pub enum PluginState {
 pub struct LoadedPlugin {
     /// Plugin metadata
     pub metadata: PluginMetadata,
-    
+
     /// Current state
     pub state: PluginState,
-    
+
     /// Runtime-specific data
     #[cfg(feature = "wasm-runtime")]
     pub wasm_data: Option<WasmPluginData>,
-    
+
     /// Host integration data
     #[cfg(feature = "host-integration")]
     pub host_data: Option<HostPluginData>,
-    
+
     /// Plugin ABI
     pub abi: PluginAbi,
-    
+
     /// Security policy
     pub security: SecurityPolicy,
-    
+
     /// Performance metrics
     pub metrics: PluginMetrics,
 }
@@ -275,16 +284,16 @@ pub struct PluginMetrics {
 pub struct UnifiedPluginManager {
     /// Loaded plugins
     plugins: Arc<RwLock<HashMap<String, Arc<LoadedPlugin>>>>,
-    
+
     /// Plugin directory
     plugin_dir: PathBuf,
-    
+
     /// Host interface
     host_interface: Option<Arc<dyn host::HostInterface>>,
-    
+
     /// Security policies
     security_policies: HashMap<String, SecurityPolicy>,
-    
+
     /// Runtime configuration
     #[cfg(feature = "wasm-runtime")]
     wasm_engine: wasmtime::Engine,
@@ -302,7 +311,7 @@ impl UnifiedPluginManager {
             config.epoch_interruption(true);
             wasmtime::Engine::new(&config)?
         };
-        
+
         Ok(Self {
             plugins: Arc::new(RwLock::new(HashMap::new())),
             plugin_dir: plugin_dir.as_ref().to_path_buf(),
@@ -312,12 +321,12 @@ impl UnifiedPluginManager {
             wasm_engine,
         })
     }
-    
+
     /// Set host interface for plugin communication
     pub fn set_host_interface(&mut self, interface: Arc<dyn host::HostInterface>) {
         self.host_interface = Some(interface);
     }
-    
+
     /// Load a plugin from path (auto-detect WASM vs native)
     pub async fn load_plugin(&self, path: impl AsRef<Path>) -> Result<String, PluginSystemError> {
         let path = path.as_ref();
@@ -325,46 +334,49 @@ impl UnifiedPluginManager {
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| PluginSystemError::InvalidFormat("Invalid plugin filename".into()))?;
-        
+
         info!("Loading plugin: {} from {:?}", plugin_name, path);
-        
+
         // Auto-detect plugin type
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        
+
         let loaded_plugin = match extension {
             #[cfg(feature = "wasm-runtime")]
             "wasm" => self.load_wasm_plugin(path, plugin_name).await?,
-            
+
             #[cfg(feature = "host-integration")]
             "so" | "dll" | "dylib" => self.load_native_plugin(path, plugin_name).await?,
-            
-            _ => return Err(PluginSystemError::InvalidFormat(
-                format!("Unsupported plugin type: {}", extension)
-            )),
+
+            _ => {
+                return Err(PluginSystemError::InvalidFormat(format!(
+                    "Unsupported plugin type: {}",
+                    extension
+                )))
+            },
         };
-        
+
         let plugin_id = loaded_plugin.metadata.id.clone();
         let mut plugins = self.plugins.write().await;
         plugins.insert(plugin_id.clone(), Arc::new(loaded_plugin));
-        
+
         info!("Successfully loaded plugin: {}", plugin_id);
         Ok(plugin_id)
     }
-    
+
     /// Load WASM plugin
     #[cfg(feature = "wasm-runtime")]
     async fn load_wasm_plugin(
-        &self, 
-        path: &Path, 
-        plugin_name: &str
+        &self,
+        path: &Path,
+        plugin_name: &str,
     ) -> Result<LoadedPlugin, PluginSystemError> {
         let module = wasmtime::Module::from_file(&self.wasm_engine, path)
             .map_err(|e| PluginSystemError::InvalidFormat(e.to_string()))?;
-        
+
         // Load permissions and security policy
         let permissions = self.load_plugin_permissions(path)?;
         let security = SecurityPolicy::from_permissions(&permissions);
-        
+
         // Create plugin context
         let context = WasmPluginContext {
             permissions: permissions.clone(),
@@ -372,24 +384,24 @@ impl UnifiedPluginManager {
             resource_tracker: ResourceTracker::default(),
             host_interface: self.host_interface.clone(),
         };
-        
+
         let mut store = wasmtime::Store::new(&self.wasm_engine, context);
-        
+
         // Set up resource limits
         store.limiter(|ctx| &mut ctx.resource_tracker as &mut dyn wasmtime::ResourceLimiter);
-        
+
         // Create linker and add host functions
         let mut linker = wasmtime::Linker::new(&self.wasm_engine);
         self.add_host_functions(&mut linker)?;
-        
+
         // Instantiate the module
         let instance = linker
             .instantiate(&mut store, &module)
             .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
-        
+
         // Extract ABI
         let abi = PluginAbi::from_instance(&instance, &mut store)?;
-        
+
         // Initialize plugin
         if let Some(init_fn) = &abi.init {
             store.set_epoch_deadline(1000); // 1 second timeout
@@ -397,24 +409,22 @@ impl UnifiedPluginManager {
                 .call(&mut store, ())
                 .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
             store.set_epoch_deadline(u64::MAX);
-            
+
             if result != 0 {
-                return Err(PluginSystemError::Runtime(
-                    format!("Plugin init failed with code: {}", result)
-                ));
+                return Err(PluginSystemError::Runtime(format!(
+                    "Plugin init failed with code: {}",
+                    result
+                )));
             }
         }
-        
+
         // Get metadata
         let metadata = self.get_plugin_metadata(&instance, &abi, &mut store)?;
-        
+
         Ok(LoadedPlugin {
             metadata,
             state: PluginState::Ready,
-            wasm_data: Some(WasmPluginData {
-                instance,
-                store: tokio::sync::Mutex::new(store),
-            }),
+            wasm_data: Some(WasmPluginData { instance, store: tokio::sync::Mutex::new(store) }),
             #[cfg(feature = "host-integration")]
             host_data: None,
             abi,
@@ -422,45 +432,48 @@ impl UnifiedPluginManager {
             metrics: PluginMetrics::default(),
         })
     }
-    
+
     /// Load native plugin
     #[cfg(feature = "host-integration")]
     async fn load_native_plugin(
-        &self, 
-        path: &Path, 
-        plugin_name: &str
+        &self,
+        path: &Path,
+        plugin_name: &str,
     ) -> Result<LoadedPlugin, PluginSystemError> {
         // This would load native plugins using libloading
         // For now, return an error as it's not implemented
         Err(PluginSystemError::Runtime("Native plugin loading not yet implemented".to_string()))
     }
-    
+
     /// Load plugin permissions from manifest
-    fn load_plugin_permissions(&self, wasm_path: &Path) -> Result<PluginPermissions, PluginSystemError> {
+    fn load_plugin_permissions(
+        &self,
+        wasm_path: &Path,
+    ) -> Result<PluginPermissions, PluginSystemError> {
         let manifest_path = wasm_path.with_extension("toml");
-        
+
         if manifest_path.exists() {
             let content = std::fs::read_to_string(&manifest_path)?;
             let manifest: permissions::PluginManifest = toml::from_str(&content)
                 .map_err(|e| PluginSystemError::InvalidFormat(e.to_string()))?;
-            
+
             Ok(manifest.permissions.unwrap_or_default())
         } else {
             Ok(PluginPermissions::default())
         }
     }
-    
+
     /// Add host functions to linker
     #[cfg(feature = "wasm-runtime")]
     fn add_host_functions(
-        &self, 
-        linker: &mut wasmtime::Linker<WasmPluginContext>
+        &self,
+        linker: &mut wasmtime::Linker<WasmPluginContext>,
     ) -> Result<(), PluginSystemError> {
         // Add all the host functions from the host module
         host::add_host_functions(linker, self.host_interface.clone())
             .map_err(|e| PluginSystemError::Runtime(e.to_string()))
     }
-    
+
     /// Get plugin metadata using the unified ABI
     #[cfg(feature = "wasm-runtime")]
     fn get_plugin_metadata(
@@ -473,35 +486,36 @@ impl UnifiedPluginManager {
             let packed_result = get_metadata_fn
                 .call(&mut *store, ())
                 .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
-            
+
             let ptr = (packed_result & 0xFFFF_FFFF) as u32;
             let len = (packed_result >> 32) as u32;
-            
+
             if ptr == 0 || len == 0 {
-                return Err(PluginSystemError::Runtime("Invalid metadata pointer/length".to_string()));
+                return Err(PluginSystemError::Runtime(
+                    "Invalid metadata pointer/length".to_string(),
+                ));
             }
-            
+
             let memory = instance
                 .get_export(&mut *store, "memory")
                 .and_then(|e| e.into_memory())
-                .ok_or_else(|| PluginSystemError::Runtime("Plugin missing memory export".to_string()))?;
-            
+                .ok_or_else(|| {
+                PluginSystemError::Runtime("Plugin missing memory export".to_string())
+            })?;
+
             let mut buffer = vec![0u8; len as usize];
-            memory
-                .read(&mut *store, ptr as usize, &mut buffer)
-                .map_err(|_| PluginSystemError::Runtime("Failed to read plugin metadata".to_string()))?;
-            
+            memory.read(&mut *store, ptr as usize, &mut buffer).map_err(|_| {
+                PluginSystemError::Runtime("Failed to read plugin metadata".to_string())
+            })?;
+
             let metadata: PluginMetadata = serde_json::from_slice(&buffer)?;
             Ok(metadata)
         } else {
             // Return default metadata if function not available
-            Ok(PluginMetadata {
-                name: "Unknown Plugin".to_string(),
-                ..Default::default()
-            })
+            Ok(PluginMetadata { name: "Unknown Plugin".to_string(), ..Default::default() })
         }
     }
-    
+
     /// Execute a command on a plugin
     pub async fn execute_command(
         &self,
@@ -515,7 +529,7 @@ impl UnifiedPluginManager {
             .ok_or_else(|| PluginSystemError::NotFound(plugin_id.to_string()))?
             .clone();
         drop(plugins);
-        
+
         match plugin.state {
             PluginState::Ready => {},
             PluginState::Error(ref e) => {
@@ -525,20 +539,20 @@ impl UnifiedPluginManager {
                 return Err(PluginSystemError::Runtime("Plugin not in ready state".to_string()));
             },
         }
-        
+
         #[cfg(feature = "wasm-runtime")]
         if let Some(wasm_data) = &plugin.wasm_data {
             return self.execute_wasm_command(plugin_id, command, args, wasm_data).await;
         }
-        
+
         #[cfg(feature = "host-integration")]
         if let Some(host_data) = &plugin.host_data {
             return self.execute_host_command(plugin_id, command, args, host_data).await;
         }
-        
+
         Err(PluginSystemError::Runtime("No execution context available".to_string()))
     }
-    
+
     /// Execute command on WASM plugin
     #[cfg(feature = "wasm-runtime")]
     async fn execute_wasm_command(
@@ -549,10 +563,10 @@ impl UnifiedPluginManager {
         wasm_data: &WasmPluginData,
     ) -> Result<CommandOutput, PluginSystemError> {
         let mut store = wasm_data.store.lock().await;
-        
+
         // This would implement the actual command execution
         // using the standardized ABI
-        
+
         Ok(CommandOutput {
             stdout: format!("Executed {} on plugin {}", command, plugin_id),
             stderr: String::new(),
@@ -560,7 +574,7 @@ impl UnifiedPluginManager {
             execution_time_ms: 10,
         })
     }
-    
+
     /// Execute command on native plugin
     #[cfg(feature = "host-integration")]
     async fn execute_host_command(
@@ -573,17 +587,17 @@ impl UnifiedPluginManager {
         // This would implement native plugin command execution
         Err(PluginSystemError::Runtime("Native plugin execution not implemented".to_string()))
     }
-    
+
     /// List all loaded plugins
     pub async fn list_plugins(&self) -> Vec<PluginMetadata> {
         let plugins = self.plugins.read().await;
         plugins.values().map(|p| p.metadata.clone()).collect()
     }
-    
+
     /// Unload a plugin
     pub async fn unload_plugin(&self, plugin_id: &str) -> Result<(), PluginSystemError> {
         let mut plugins = self.plugins.write().await;
-        
+
         if let Some(plugin) = plugins.remove(plugin_id) {
             // Call cleanup if available
             #[cfg(feature = "wasm-runtime")]
@@ -593,7 +607,7 @@ impl UnifiedPluginManager {
                     let _ = cleanup_fn.call(&mut *store, ());
                 }
             }
-            
+
             info!("Unloaded plugin: {}", plugin_id);
             Ok(())
         } else {
@@ -604,7 +618,12 @@ impl UnifiedPluginManager {
 
 #[cfg(feature = "wasm-runtime")]
 impl wasmtime::ResourceLimiter for ResourceTracker {
-    fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> anyhow::Result<bool> {
+    fn memory_growing(
+        &mut self,
+        _current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
+    ) -> anyhow::Result<bool> {
         const MAX_MEMORY: usize = 100 * 1024 * 1024; // 100MB
         if desired > MAX_MEMORY {
             return Ok(false);
@@ -612,8 +631,13 @@ impl wasmtime::ResourceLimiter for ResourceTracker {
         self.memory_used = desired;
         Ok(true)
     }
-    
-    fn table_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> anyhow::Result<bool> {
+
+    fn table_growing(
+        &mut self,
+        _current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
+    ) -> anyhow::Result<bool> {
         const MAX_TABLES: usize = 10;
         Ok(desired <= MAX_TABLES)
     }
@@ -623,12 +647,12 @@ impl wasmtime::ResourceLimiter for ResourceTracker {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    
+
     #[tokio::test]
     async fn test_plugin_manager_creation() {
         let temp_dir = TempDir::new().unwrap();
         let manager = UnifiedPluginManager::new(temp_dir.path()).unwrap();
-        
+
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 0);
     }

@@ -1,13 +1,13 @@
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, error, info};
-use serde::{Deserialize, Serialize};
-use std::fs::File;
 
-use crate::tty::{ChildEvent, EventedPty, Options, Shell};
 use crate::event::WindowSize;
+use crate::tty::{ChildEvent, EventedPty, Options, Shell};
 
 /// Unique identifier for a pane's PTY process
 pub type PtyId = u64;
@@ -43,7 +43,7 @@ impl ShellKind {
     pub fn to_str(&self) -> &'static str {
         match self {
             ShellKind::Bash => "bash",
-            ShellKind::Zsh => "zsh", 
+            ShellKind::Zsh => "zsh",
             ShellKind::Fish => "fish",
             ShellKind::PowerShell => "powershell",
             ShellKind::Cmd => "cmd",
@@ -150,7 +150,7 @@ impl PtyManager {
         environment: HashMap<String, String>,
     ) -> Result<Self, PtyManagerError> {
         let shell_kind = ShellKind::from_shell_name(&shell_config.executable);
-        
+
         let context = PtyContext {
             working_directory: working_directory.clone(),
             shell_kind,
@@ -173,7 +173,11 @@ impl PtyManager {
     }
 
     /// Create PTY process with the configured context
-    pub fn create_pty(&mut self, window_size: WindowSize, window_id: u64) -> Result<(), PtyManagerError> {
+    pub fn create_pty(
+        &mut self,
+        window_size: WindowSize,
+        window_id: u64,
+    ) -> Result<(), PtyManagerError> {
         let start_time = Instant::now();
 
         // Build PTY options from context
@@ -202,11 +206,13 @@ impl PtyManager {
                 self.pty = Some(Box::new(pty));
                 self.status = PtyStatus::Active;
                 self.metrics.startup_time_ms = Some(start_time.elapsed().as_millis() as u64);
-                
-                info!("PTY created successfully for pane {} in {}ms", 
-                      self.id, 
-                      self.metrics.startup_time_ms.unwrap());
-                      
+
+                info!(
+                    "PTY created successfully for pane {} in {}ms",
+                    self.id,
+                    self.metrics.startup_time_ms.unwrap()
+                );
+
                 Ok(())
             },
             Err(e) => {
@@ -214,7 +220,7 @@ impl PtyManager {
                 error!("{}", error_msg);
                 self.status = PtyStatus::Error { message: error_msg.clone() };
                 Err(PtyManagerError::PtyCreation(error_msg))
-            }
+            },
         }
     }
 
@@ -246,7 +252,7 @@ impl PtyManager {
     /// Poll for child events (process exit, etc.)
     pub fn poll_child_events(&mut self) -> Vec<ChildEvent> {
         let mut events = Vec::new();
-        
+
         if let Some(ref mut pty) = self.pty {
             while let Some(event) = pty.next_child_event() {
                 match event {
@@ -327,10 +333,7 @@ pub struct PtyManagerCollection {
 impl PtyManagerCollection {
     /// Create new collection
     pub fn new() -> Self {
-        Self {
-            managers: HashMap::new(),
-            next_id: 1,
-        }
+        Self { managers: HashMap::new(), next_id: 1 }
     }
 
     /// Create a new PTY manager and return its ID
@@ -373,11 +376,15 @@ impl PtyManagerCollection {
 
     /// Cleanup all inactive PTY managers
     pub fn cleanup_inactive(&mut self) {
-        let inactive_ids: Vec<PtyId> = self.managers
+        let inactive_ids: Vec<PtyId> = self
+            .managers
             .iter()
             .filter_map(|(&id, manager)| {
                 let manager_guard = manager.lock();
-                if matches!(manager_guard.status, PtyStatus::Exited { .. } | PtyStatus::Error { .. }) {
+                if matches!(
+                    manager_guard.status,
+                    PtyStatus::Exited { .. } | PtyStatus::Error { .. }
+                ) {
                     Some(id)
                 } else {
                     None
@@ -407,15 +414,15 @@ impl PtyManagerCollection {
         for manager in self.managers.values() {
             let manager_guard = manager.lock();
             let metrics = manager_guard.metrics();
-            
+
             total_bytes_read += metrics.bytes_read;
             total_bytes_written += metrics.bytes_written;
             total_commands += metrics.command_count;
-            
+
             if manager_guard.is_active() {
                 active_count += 1;
             }
-            
+
             if let Some(startup_time) = metrics.startup_time_ms {
                 startup_times.push(startup_time);
             }
@@ -507,7 +514,10 @@ mod tests {
     fn test_pty_context_creation() {
         let context = PtyContext::default();
         assert_eq!(context.shell_kind, ShellKind::Unknown);
-        assert!(context.working_directory.is_absolute() || context.working_directory == PathBuf::from("/"));
+        assert!(
+            context.working_directory.is_absolute()
+                || context.working_directory == PathBuf::from("/")
+        );
         assert!(context.last_command.is_none());
     }
 
@@ -515,15 +525,15 @@ mod tests {
     fn test_pty_manager_collection() {
         let mut collection = PtyManagerCollection::new();
         assert_eq!(collection.count(), 0);
-        
+
         let shell_config = ShellConfig::default();
         let env = HashMap::new();
         let working_dir = PathBuf::from("/tmp");
-        
+
         let pty_id = collection.create_pty_manager(working_dir, shell_config, env).unwrap();
         assert_eq!(collection.count(), 1);
         assert!(collection.get_manager(pty_id).is_some());
-        
+
         collection.remove_manager(pty_id);
         assert_eq!(collection.count(), 0);
     }

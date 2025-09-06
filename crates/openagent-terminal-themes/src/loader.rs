@@ -9,27 +9,26 @@ impl ThemeLoader {
         let content = std::fs::read_to_string(path)?;
         Self::load_from_string(&content)
     }
-    
+
     pub fn load_from_string(content: &str) -> Result<Theme> {
-        toml::from_str(content)
-            .map_err(|e| anyhow!("Failed to parse theme: {}", e))
+        toml::from_str(content).map_err(|e| anyhow!("Failed to parse theme: {}", e))
     }
-    
+
     pub fn load_built_in(name: &str) -> Result<Theme> {
         match name {
             "dark" => Self::load_dark_theme(),
             "light" => Self::load_light_theme(),
             "high-contrast-dark" => Self::load_high_contrast_theme(),
-            _ => Err(anyhow!("Unknown built-in theme: {}", name))
+            _ => Err(anyhow!("Unknown built-in theme: {}", name)),
         }
     }
-    
+
     fn load_dark_theme() -> Result<Theme> {
         // Load from embedded or default dark theme
         let content = include_str!("../../../extra/themes/dark.toml");
         Self::load_from_string(content)
     }
-    
+
     fn load_light_theme() -> Result<Theme> {
         // Placeholder for light theme
         let mut theme = Self::load_dark_theme()?;
@@ -38,7 +37,7 @@ impl ThemeLoader {
         theme.tokens.text = "#000000".to_string();
         Ok(theme)
     }
-    
+
     fn load_high_contrast_theme() -> Result<Theme> {
         // Placeholder for high contrast theme
         let mut theme = Self::load_dark_theme()?;

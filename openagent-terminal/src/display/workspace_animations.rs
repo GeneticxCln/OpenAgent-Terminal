@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::workspace::TabId;
 use super::animation::ease_out_cubic;
+use crate::workspace::TabId;
 
 /// Duration for different animation types in milliseconds
 pub const DURATION_TAB_OPEN_MS: u32 = 200;
@@ -46,27 +46,11 @@ pub enum TabAnimationType {
 /// Animation-specific data
 #[derive(Debug, Clone)]
 pub enum TabAnimationData {
-    Open {
-        target_width: f32,
-        current_width: f32,
-    },
-    Close {
-        initial_width: f32,
-        current_width: f32,
-    },
-    Switch {
-        highlight_alpha: f32,
-    },
-    Drag {
-        offset_x: f32,
-        offset_y: f32,
-        scale: f32,
-        shadow_alpha: f32,
-    },
-    Hover {
-        background_alpha: f32,
-        border_alpha: f32,
-    },
+    Open { target_width: f32, current_width: f32 },
+    Close { initial_width: f32, current_width: f32 },
+    Switch { highlight_alpha: f32 },
+    Drag { offset_x: f32, offset_y: f32, scale: f32, shadow_alpha: f32 },
+    Hover { background_alpha: f32, border_alpha: f32 },
 }
 
 impl Default for TabAnimationData {
@@ -100,7 +84,7 @@ impl WorkspaceAnimationManager {
     /// Update reduce motion setting
     pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
         self.reduce_motion = reduce_motion;
-        
+
         // If reduce motion is enabled, complete all animations immediately
         if reduce_motion {
             for animation in self.tab_animations.values_mut() {
@@ -112,10 +96,10 @@ impl WorkspaceAnimationManager {
 
     /// Start a new tab animation
     pub fn start_tab_animation(
-        &mut self, 
-        tab_id: TabId, 
+        &mut self,
+        tab_id: TabId,
         animation_type: TabAnimationType,
-        data: Option<TabAnimationData>
+        data: Option<TabAnimationData>,
     ) {
         let duration_ms = match animation_type {
             TabAnimationType::Open => DURATION_TAB_OPEN_MS,
@@ -137,24 +121,19 @@ impl WorkspaceAnimationManager {
                 initial_width: 200.0, // Will be updated with actual width
                 current_width: 200.0,
             },
-            TabAnimationType::Switch => TabAnimationData::Switch {
-                highlight_alpha: 0.0,
+            TabAnimationType::Switch => TabAnimationData::Switch { highlight_alpha: 0.0 },
+            TabAnimationType::DragStart
+            | TabAnimationType::DragMove
+            | TabAnimationType::DragEnd => TabAnimationData::Drag {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                scale: 1.0,
+                shadow_alpha: 0.0,
             },
-            TabAnimationType::DragStart | TabAnimationType::DragMove | TabAnimationType::DragEnd => {
-                TabAnimationData::Drag {
-                    offset_x: 0.0,
-                    offset_y: 0.0,
-                    scale: 1.0,
-                    shadow_alpha: 0.0,
-                }
+            TabAnimationType::Hover => {
+                TabAnimationData::Hover { background_alpha: 0.0, border_alpha: 0.0 }
             },
-            TabAnimationType::Hover => TabAnimationData::Hover {
-                background_alpha: 0.0,
-                border_alpha: 0.0,
-            },
-            TabAnimationType::Focus => TabAnimationData::Switch {
-                highlight_alpha: 1.0,
-            },
+            TabAnimationType::Focus => TabAnimationData::Switch { highlight_alpha: 1.0 },
         });
 
         let animation = TabAnimationState {
@@ -174,7 +153,7 @@ impl WorkspaceAnimationManager {
     pub fn update_animations(&mut self) -> bool {
         self.frame_count += 1;
         let now = Instant::now();
-        
+
         // Track frame timing for performance
         if let Some(last_frame) = self.last_frame_time {
             let _frame_duration = now.duration_since(last_frame);
@@ -224,7 +203,7 @@ impl WorkspaceAnimationManager {
                     TabAnimationType::Hover => {}, // Keep hover animations
                     _ => {
                         self.tab_animations.remove(&tab_id);
-                    }
+                    },
                 }
             }
         }
@@ -298,7 +277,9 @@ impl WorkspaceAnimationManager {
     /// Update drag position for active drag animation
     pub fn update_drag_position(&mut self, tab_id: TabId, offset_x: f32, offset_y: f32) {
         if let Some(animation) = self.tab_animations.get_mut(&tab_id) {
-            if let TabAnimationData::Drag { offset_x: ref mut ox, offset_y: ref mut oy, .. } = animation.data {
+            if let TabAnimationData::Drag { offset_x: ref mut ox, offset_y: ref mut oy, .. } =
+                animation.data
+            {
                 *ox = offset_x;
                 *oy = offset_y;
             }
@@ -322,21 +303,20 @@ pub struct AnimationPerformanceInfo {
 
 /// Helper functions for common animation calculations
 pub mod animation_helpers {
-    
 
     /// Calculate smooth drag offset with momentum
     pub fn calculate_drag_offset(
         start_pos: (f32, f32),
         current_pos: (f32, f32),
-        momentum_factor: f32
+        momentum_factor: f32,
     ) -> (f32, f32) {
         let base_offset_x = current_pos.0 - start_pos.0;
         let base_offset_y = current_pos.1 - start_pos.1;
-        
+
         // Apply momentum for smoother movement
         let offset_x = base_offset_x * momentum_factor;
         let offset_y = base_offset_y * momentum_factor;
-        
+
         (offset_x, offset_y)
     }
 
@@ -344,7 +324,7 @@ pub mod animation_helpers {
     pub fn calculate_drop_zone_feedback(
         mouse_x: f32,
         tab_positions: &[(f32, f32)], // (start_x, width) for each tab
-        threshold: f32
+        threshold: f32,
     ) -> Option<usize> {
         for (index, &(start_x, width)) in tab_positions.iter().enumerate() {
             let center_x = start_x + width / 2.0;
@@ -392,7 +372,7 @@ mod tests {
     fn test_start_tab_animation() {
         let mut manager = WorkspaceAnimationManager::new();
         let tab_id = TabId(1);
-        
+
         manager.start_tab_animation(tab_id, TabAnimationType::Open, None);
         assert!(manager.has_active_animations());
         assert!(manager.get_tab_animation(tab_id).is_some());
@@ -402,10 +382,10 @@ mod tests {
     fn test_reduce_motion() {
         let mut manager = WorkspaceAnimationManager::new();
         let tab_id = TabId(1);
-        
+
         manager.start_tab_animation(tab_id, TabAnimationType::Open, None);
         manager.set_reduce_motion(true);
-        
+
         // Animation should be completed immediately
         if let Some(animation) = manager.get_tab_animation(tab_id) {
             assert!(animation.is_complete);
@@ -415,10 +395,10 @@ mod tests {
     #[test]
     fn test_animation_helpers() {
         use animation_helpers::*;
-        
+
         let offset = calculate_drag_offset((0.0, 0.0), (10.0, 5.0), 1.0);
         assert_eq!(offset, (10.0, 5.0));
-        
+
         let smooth = smooth_step(0.5);
         assert!(smooth > 0.0 && smooth < 1.0);
     }

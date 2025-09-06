@@ -12,13 +12,13 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use openagent_terminal_core::tty::pty_manager::{PtyManagerCollection, PtyAiContext, ShellConfig};
 use openagent_terminal_core::grid::Dimensions;
+use openagent_terminal_core::tty::pty_manager::{PtyAiContext, PtyManagerCollection, ShellConfig};
 
 use log::{debug, error, info, warn};
+use openagent_terminal_core::event::WindowSize;
 use openagent_terminal_core::sync::FairMutex;
 use openagent_terminal_core::term::Term;
-use openagent_terminal_core::event::WindowSize;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
@@ -212,18 +212,21 @@ impl WarpIntegration {
         info!("Starting session restoration...");
 
         // Snapshot tab info to avoid borrowing conflicts
-        let tabs_snapshot: Vec<(TabId, PathBuf, super::split_manager::SplitLayout, String)> =
-            self.tab_manager
-                .all_tabs()
-                .map(|tab| (tab.id, tab.working_directory.clone(), tab.split_layout.clone(), tab.title.clone()))
-                .collect();
+        let tabs_snapshot: Vec<(TabId, PathBuf, super::split_manager::SplitLayout, String)> = self
+            .tab_manager
+            .all_tabs()
+            .map(|tab| {
+                (tab.id, tab.working_directory.clone(), tab.split_layout.clone(), tab.title.clone())
+            })
+            .collect();
 
         // Iterate through snapshot and perform mutations/restoration
         for (tab_id, working_dir, split_layout, title) in tabs_snapshot {
             // Determine working directory to use
             let mut effective_dir = working_dir.clone();
             if !working_dir.exists() {
-                let error_msg = format!("Working directory no longer exists: {}", working_dir.display());
+                let error_msg =
+                    format!("Working directory no longer exists: {}", working_dir.display());
                 warn!("{}", error_msg);
                 errors.push(WarpIntegrationError::WorkingDirectoryError {
                     path: working_dir.to_string_lossy().to_string(),
@@ -231,9 +234,8 @@ impl WarpIntegration {
                 });
 
                 // Try to fallback to home directory and update manager state
-                let fallback_dir = std::env::var("HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("/"));
+                let fallback_dir =
+                    std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/"));
                 effective_dir = fallback_dir.clone();
                 self.tab_manager.update_tab_working_directory(tab_id, fallback_dir);
             }
@@ -273,7 +275,9 @@ impl WarpIntegration {
         } else if restored_panes > 0 {
             warn!(
                 "Partial session restoration: {}/{} panes restored in {}ms",
-                restored_panes, total_panes, elapsed.as_millis()
+                restored_panes,
+                total_panes,
+                elapsed.as_millis()
             );
             // Return partial restore error but don't fail completely
             Err(WarpIntegrationError::PartialRestore {
@@ -281,28 +285,20 @@ impl WarpIntegration {
                 total: total_panes,
             })
         } else {
-            error!(
-                "Session restoration failed completely: 0/{} panes restored",
-                total_panes
-            );
-            Err(WarpIntegrationError::SessionRestore(
-                format!(
-                    "Failed to restore any panes. Errors: {}",
-                    errors.iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            ))
+            error!("Session restoration failed completely: 0/{} panes restored", total_panes);
+            Err(WarpIntegrationError::SessionRestore(format!(
+                "Failed to restore any panes. Errors: {}",
+                errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+            )))
         }
     }
 
     /// Restore terminal for a specific pane (used during session restoration)
     fn restore_pane_terminal(
-        &mut self, 
-        pane_id: PaneId, 
-        working_dir: &Path, 
-        tab_id: TabId
+        &mut self,
+        pane_id: PaneId,
+        working_dir: &Path,
+        tab_id: TabId,
     ) -> WarpResult<()> {
         // Check if terminal already exists for this pane (avoid duplicates)
         if self.terminals.contains_key(&pane_id) {
@@ -326,10 +322,7 @@ impl WarpIntegration {
             return Err(WarpIntegrationError::InvalidTabId(tab_id));
         }
 
-        debug!(
-            "Successfully restored terminal for pane {:?} in tab {:?}", 
-            pane_id, tab_id
-        );
+        debug!("Successfully restored terminal for pane {:?} in tab {:?}", pane_id, tab_id);
 
         Ok(())
     }
@@ -369,52 +362,61 @@ impl WarpIntegration {
         self.terminals.insert(pane_id, terminal);
 
         // Create and store PTY manager with better error handling
-            let shell_config = ShellConfig {
-executable: self.config.terminal.shell.as_ref()
+        let shell_config = ShellConfig {
+            executable: self
+                .config
+                .terminal
+                .shell
+                .as_ref()
                 .map(|s| s.program().to_string())
                 .unwrap_or_else(|| {
                     // Platform-specific shell defaults
                     #[cfg(target_os = "windows")]
-                    { "powershell.exe".to_string() }
+                    {
+                        "powershell.exe".to_string()
+                    }
                     #[cfg(not(target_os = "windows"))]
-                    { std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()) }
+                    {
+                        std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
+                    }
                 }),
-args: self.config.terminal.shell.as_ref()
-                .map(|s| s.args().to_vec())
-                .unwrap_or_else(|| {
+            args: self.config.terminal.shell.as_ref().map(|s| s.args().to_vec()).unwrap_or_else(
+                || {
                     #[cfg(target_os = "windows")]
-                    { vec!["-NoProfile".to_string()] }
+                    {
+                        vec!["-NoProfile".to_string()]
+                    }
                     #[cfg(not(target_os = "windows"))]
-                    { vec!["-l".to_string()] }
-                }),
+                    {
+                        vec!["-l".to_string()]
+                    }
+                },
+            ),
             env_vars: HashMap::new(),
             prompt_pattern: None,
         };
 
         // Build environment variables
         let mut environment = HashMap::new();
-        
+
         // Set working directory in environment
         environment.insert("PWD".to_string(), working_dir.to_string_lossy().to_string());
-        
+
         // Add shell integration environment if available
         if let Some(integration_path) = self.get_shell_integration_path() {
-            environment.insert("OPENAGENT_TERMINAL_SHELL_INTEGRATION".to_string(), integration_path);
+            environment
+                .insert("OPENAGENT_TERMINAL_SHELL_INTEGRATION".to_string(), integration_path);
         }
 
-        let pty_id = self.pty_managers.create_pty_manager(
-            working_dir.to_path_buf(),
-            shell_config,
-            environment,
-        ).map_err(|e| WarpIntegrationError::PtyCreation { 
-            pane_id, 
-            reason: e.to_string() 
-        })?;
+        let pty_id = self
+            .pty_managers
+            .create_pty_manager(working_dir.to_path_buf(), shell_config, environment)
+            .map_err(|e| WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() })?;
 
         // Create actual PTY process with window size conversion
         if let Some(manager) = self.pty_managers.get_manager(pty_id) {
             let mut manager_guard = manager.lock();
-            
+
             // Convert SizeInfo to WindowSize
             let window_size = WindowSize {
                 num_lines: size_info.screen_lines() as u16,
@@ -422,16 +424,14 @@ args: self.config.terminal.shell.as_ref()
                 cell_width: size_info.cell_width() as u16,
                 cell_height: size_info.cell_height() as u16,
             };
-            
-            manager_guard.create_pty(window_size, (*window_id).into())
-                .map_err(|e| WarpIntegrationError::PtyCreation { 
-                    pane_id, 
-                    reason: e.to_string() 
-                })?;
-                
+
+            manager_guard.create_pty(window_size, (*window_id).into()).map_err(|e| {
+                WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() }
+            })?;
+
             debug!(
-                "Created PTY for pane {:?} with shell: {} in {}", 
-                pane_id, 
+                "Created PTY for pane {:?} with shell: {} in {}",
+                pane_id,
                 manager_guard.context.shell_config.executable,
                 working_dir.display()
             );
@@ -444,7 +444,11 @@ args: self.config.terminal.shell.as_ref()
 
         self.perf_stats.active_terminals = self.terminals.len();
 
-        debug!("Created terminal and PTY manager for pane {:?} in {}", pane_id, working_dir.display());
+        debug!(
+            "Created terminal and PTY manager for pane {:?} in {}",
+            pane_id,
+            working_dir.display()
+        );
         Ok(())
     }
 
@@ -550,11 +554,8 @@ args: self.config.terminal.shell.as_ref()
         let new_pane_id = self.generate_pane_id();
 
         // Create split in the layout
-        let split_success = self.split_manager.split_right(
-            &mut layout,
-            active_pane_id,
-            new_pane_id,
-        );
+        let split_success =
+            self.split_manager.split_right(&mut layout, active_pane_id, new_pane_id);
 
         if split_success {
             // Update the tab with new layout
@@ -564,7 +565,10 @@ args: self.config.terminal.shell.as_ref()
             if self.window_id.is_some() && self.size_info.is_some() && self.event_proxy.is_some() {
                 self.create_terminal_for_pane(new_pane_id, &working_dir)?;
             } else {
-                info!("Warp not initialized; skipping terminal creation for pane {:?}", new_pane_id);
+                info!(
+                    "Warp not initialized; skipping terminal creation for pane {:?}",
+                    new_pane_id
+                );
             }
 
             // Send UI update event
@@ -598,11 +602,7 @@ args: self.config.terminal.shell.as_ref()
         let new_pane_id = self.generate_pane_id();
 
         // Create split in the layout
-        let split_success = self.split_manager.split_down(
-            &mut layout,
-            active_pane_id,
-            new_pane_id,
-        );
+        let split_success = self.split_manager.split_down(&mut layout, active_pane_id, new_pane_id);
 
         if split_success {
             // Update the tab with new layout
@@ -612,7 +612,10 @@ args: self.config.terminal.shell.as_ref()
             if self.window_id.is_some() && self.size_info.is_some() && self.event_proxy.is_some() {
                 self.create_terminal_for_pane(new_pane_id, &working_dir)?;
             } else {
-                info!("Warp not initialized; skipping terminal creation for pane {:?}", new_pane_id);
+                info!(
+                    "Warp not initialized; skipping terminal creation for pane {:?}",
+                    new_pane_id
+                );
             }
 
             // Send UI update event
@@ -634,25 +637,21 @@ args: self.config.terminal.shell.as_ref()
                 info!("No active tab for navigate pane");
                 return Ok(false);
             };
-            (
-                active_tab.id,
-                active_tab.active_pane,
-                active_tab.split_layout.clone(),
-            )
+            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
         };
 
-        let navigation_success = self.split_manager.navigate_pane(
-            &layout_clone,
-            &mut current_pane,
-            direction,
-        );
+        let navigation_success =
+            self.split_manager.navigate_pane(&layout_clone, &mut current_pane, direction);
 
         if navigation_success {
             // Update active pane in tab
             self.tab_manager.set_active_pane(tab_id, current_pane);
 
             // Send UI update event
-            self.send_ui_update_event(WarpUiUpdateType::PaneFocused { tab_id, pane_id: current_pane });
+            self.send_ui_update_event(WarpUiUpdateType::PaneFocused {
+                tab_id,
+                pane_id: current_pane,
+            });
 
             info!("Navigated to pane {:?}", current_pane);
             Ok(true)
@@ -670,11 +669,7 @@ args: self.config.terminal.shell.as_ref()
                 info!("No active tab for resize pane");
                 return Ok(false);
             };
-            (
-                active_tab.id,
-                active_tab.active_pane,
-                active_tab.split_layout.clone(),
-            )
+            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
         };
 
         let resize_success = self.split_manager.resize_pane(&mut layout, current_pane, direction);
@@ -684,7 +679,10 @@ args: self.config.terminal.shell.as_ref()
             self.tab_manager.update_tab_split_layout(tab_id, layout);
 
             // Send UI update event
-            self.send_ui_update_event(WarpUiUpdateType::PaneResized { tab_id, pane_id: current_pane });
+            self.send_ui_update_event(WarpUiUpdateType::PaneResized {
+                tab_id,
+                pane_id: current_pane,
+            });
 
             info!("Resized pane {:?}", current_pane);
             Ok(true)
@@ -702,11 +700,7 @@ args: self.config.terminal.shell.as_ref()
                 info!("No active tab for zoom pane");
                 return Ok(false);
             };
-            (
-                active_tab.id,
-                active_tab.active_pane,
-                active_tab.split_layout.clone(),
-            )
+            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
         };
 
         let zoom_success = self.split_manager.toggle_pane_zoom(&mut layout, current_pane);
@@ -718,7 +712,11 @@ args: self.config.terminal.shell.as_ref()
             let is_zoomed = self.split_manager.is_pane_zoomed(current_pane);
 
             // Send UI update event
-            self.send_ui_update_event(WarpUiUpdateType::PaneZoomed { tab_id, pane_id: current_pane, zoomed: is_zoomed });
+            self.send_ui_update_event(WarpUiUpdateType::PaneZoomed {
+                tab_id,
+                pane_id: current_pane,
+                zoomed: is_zoomed,
+            });
 
             info!("Toggled zoom for pane {:?} (zoomed: {})", current_pane, is_zoomed);
             Ok(true)
@@ -746,7 +744,10 @@ args: self.config.terminal.shell.as_ref()
             self.tab_manager.set_active_pane(tab_id, current_pane);
 
             // Send UI update event
-            self.send_ui_update_event(WarpUiUpdateType::PaneFocused { tab_id, pane_id: current_pane });
+            self.send_ui_update_event(WarpUiUpdateType::PaneFocused {
+                tab_id,
+                pane_id: current_pane,
+            });
 
             info!("Cycled to recent pane {:?}", current_pane);
             Ok(true)
@@ -787,16 +788,13 @@ args: self.config.terminal.shell.as_ref()
                 info!("No active tab for close pane");
                 return Ok(false);
             };
-            (
-                active_tab.id,
-                active_tab.active_pane,
-                active_tab.split_layout.clone(),
-            )
+            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
         };
 
         let mut active_pane_id = current_pane;
 
-        let close_success = self.split_manager.close_pane_smart(&mut layout, current_pane, &mut active_pane_id);
+        let close_success =
+            self.split_manager.close_pane_smart(&mut layout, current_pane, &mut active_pane_id);
 
         if close_success {
             // Clean up terminal resources for the closed pane
@@ -976,7 +974,7 @@ args: self.config.terminal.shell.as_ref()
     /// Get current context for AI integration
     pub fn get_current_ai_context(&self) -> Option<PtyAiContext> {
         let active_tab = self.tab_manager.active_tab()?;
-        
+
         // For now, we'll map pane_id to pty_id by searching through our PTY managers
         // In a real implementation, we'd maintain a pane_id -> pty_id mapping
         for pty_id in self.pty_managers.active_pty_ids() {
@@ -986,7 +984,7 @@ args: self.config.terminal.shell.as_ref()
                 return Some(context);
             }
         }
-        
+
         // Fallback to basic context from active tab
         Some(PtyAiContext {
             working_directory: active_tab.working_directory.clone(),
@@ -1002,7 +1000,7 @@ args: self.config.terminal.shell.as_ref()
         if let Some(active_tab) = self.tab_manager.active_tab() {
             self.tab_manager.update_tab_for_command(active_tab.id, command);
         }
-        
+
         // Update PTY manager context
         for pty_id in self.pty_managers.active_pty_ids() {
             if let Some(manager) = self.pty_managers.get_manager(pty_id) {
@@ -1010,7 +1008,7 @@ args: self.config.terminal.shell.as_ref()
                 break; // For now, update first active PTY
             }
         }
-        
+
         self.update_activity();
     }
 

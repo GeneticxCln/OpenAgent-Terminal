@@ -112,11 +112,9 @@ impl AiProvider for AnthropicProvider {
         // Build the system prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
-            "You are a helpful terminal command assistant. \
-             Provide only the necessary shell commands with brief comment explanations. \
-             Format your response as a list of commands, one per line. \
-             Start each explanation line with #. \
-             Be concise and practical.",
+            "You are a helpful terminal command assistant. Provide only the necessary shell \
+             commands with brief comment explanations. Format your response as a list of \
+             commands, one per line. Start each explanation line with #. Be concise and practical.",
         );
 
         if let Some(shell) = &req.shell_kind {
@@ -164,7 +162,11 @@ impl AiProvider for AnthropicProvider {
             let retry_after_hdr = response.headers().get("retry-after").cloned();
             let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
             let mut msg = format!("API error {}: {}", status, error_text);
-            if let Some(hv) = retry_after_hdr { if let Ok(s) = hv.to_str() { msg.push_str(&format!("; retry-after: {}", s)); } }
+            if let Some(hv) = retry_after_hdr {
+                if let Ok(s) = hv.to_str() {
+                    msg.push_str(&format!("; retry-after: {}", s));
+                }
+            }
             error!("Anthropic API error {}: {}", status, error_text);
             return Err(msg);
         }
@@ -203,6 +205,7 @@ impl AiProvider for AnthropicProvider {
             Err("No response from Anthropic".to_string())
         }
     }
+
     fn propose_stream(
         &self,
         req: AiRequest,
@@ -213,16 +216,14 @@ impl AiProvider for AnthropicProvider {
             info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint);
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
-        use futures_util::StreamExt;
         use eventsource_stream::Eventsource;
+        use futures_util::StreamExt;
 
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
-            "You are a helpful terminal command assistant. \
-             Provide only the necessary shell commands with brief comment explanations. \
-             Format your response as a list of commands, one per line. \
-             Start each explanation line with #. \
-             Be concise and practical.",
+            "You are a helpful terminal command assistant. Provide only the necessary shell \
+             commands with brief comment explanations. Format your response as a list of \
+             commands, one per line. Start each explanation line with #. Be concise and practical.",
         );
 
         if let Some(shell) = &req.shell_kind {
@@ -310,10 +311,15 @@ impl AiProvider for AnthropicProvider {
                     let status = response.status();
                     // Include Retry-After header if present to allow retry strategy to respect it
                     let retry_after_hdr = response.headers().get("retry-after").cloned();
-                    let error_text = match response.text().await { Ok(t) => t, Err(_) => "Unknown error".to_string() };
+                    let error_text = match response.text().await {
+                        Ok(t) => t,
+                        Err(_) => "Unknown error".to_string(),
+                    };
                     let mut msg = format!("API error {}: {}", status, error_text);
                     if let Some(hv) = retry_after_hdr {
-                        if let Ok(s) = hv.to_str() { msg.push_str(&format!("; retry-after: {}", s)); }
+                        if let Ok(s) = hv.to_str() {
+                            msg.push_str(&format!("; retry-after: {}", s));
+                        }
                     }
                     error!("Anthropic API error {}: {}", status, error_text);
                     if retry.should_retry(attempt, &msg, cancel) {
@@ -342,7 +348,9 @@ impl AiProvider for AnthropicProvider {
                         }
                         return Err("Cancelled".to_string());
                     }
-                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await {
+                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
+                        .await
+                    {
                         Ok(Some(Ok(event))) => {
                             let data = event.data;
                             if data.trim() == "[DONE]" {

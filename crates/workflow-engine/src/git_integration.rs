@@ -74,7 +74,7 @@ pub struct GitIntegration {
 impl GitIntegration {
     pub fn new(repo_path: PathBuf) -> Result<Self> {
         let mut templates = Tera::new("templates/git/*").unwrap_or_else(|_| Tera::new("").unwrap());
-        
+
         // Add built-in templates for conflict resolution
         templates.add_raw_template(
             "conflict_resolution",
@@ -117,16 +117,12 @@ Their Changes ({{ their_changes | length }} lines):
             "#,
         )?;
 
-        Ok(Self {
-            repo_path,
-            signing_key: Self::detect_signing_key()?,
-            templates,
-        })
+        Ok(Self { repo_path, signing_key: Self::detect_signing_key()?, templates })
     }
 
     fn detect_signing_key() -> Result<Option<String>> {
         let output = Command::new("git")
-            .args(&["config", "--get", "user.signingkey"])
+            .args(["config", "--get", "user.signingkey"])
             .output()
             .map_err(|e| anyhow!("Failed to get git signing key: {}", e))?;
 
@@ -158,19 +154,17 @@ Their Changes ({{ their_changes | length }} lines):
     async fn get_branches(&self) -> Result<Vec<GitBranch>> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&[
+            .args([
                 "for-each-ref",
-                "--format=%(refname:short)|%(upstream:short)|%(HEAD)|%(committerdate:iso8601)|%(objectname)|%(objectname:short)|%(authorname)|%(authoremail)|%(subject)",
+                "--format=%(refname:short)|%(upstream:short)|%(HEAD)|%(committerdate:iso8601)|%\
+                 (objectname)|%(objectname:short)|%(authorname)|%(authoremail)|%(subject)",
                 "refs/heads/",
             ])
             .output()
             .map_err(|e| anyhow!("Failed to get branches: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Git command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Git command failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         let mut branches = Vec::new();
@@ -214,15 +208,7 @@ Their Changes ({{ their_changes | length }} lines):
 
         let signed = self.is_commit_signed(&hash).await?;
 
-        let last_commit = GitCommit {
-            hash,
-            short_hash,
-            author,
-            email,
-            date,
-            message,
-            signed,
-        };
+        let last_commit = GitCommit { hash, short_hash, author, email, date, message, signed };
 
         Ok(Some(GitBranch {
             name,
@@ -238,7 +224,7 @@ Their Changes ({{ their_changes | length }} lines):
     async fn get_ahead_behind(&self, branch: &str, upstream: &str) -> Result<(i32, i32)> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["rev-list", "--left-right", "--count", &format!("{}...{}", branch, upstream)])
+            .args(["rev-list", "--left-right", "--count", &format!("{}...{}", branch, upstream)])
             .output()
             .map_err(|e| anyhow!("Failed to get ahead/behind: {}", e))?;
 
@@ -248,7 +234,7 @@ Their Changes ({{ their_changes | length }} lines):
 
         let result = String::from_utf8_lossy(&output.stdout);
         let parts: Vec<&str> = result.trim().split('\t').collect();
-        
+
         if parts.len() == 2 {
             let ahead = parts[0].parse().unwrap_or(0);
             let behind = parts[1].parse().unwrap_or(0);
@@ -261,7 +247,7 @@ Their Changes ({{ their_changes | length }} lines):
     async fn is_commit_signed(&self, hash: &str) -> Result<bool> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["verify-commit", hash])
+            .args(["verify-commit", hash])
             .output()
             .map_err(|e| anyhow!("Failed to verify commit signature: {}", e))?;
 
@@ -271,7 +257,7 @@ Their Changes ({{ their_changes | length }} lines):
     async fn get_current_branch(&self) -> Result<Option<String>> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
             .output()
             .map_err(|e| anyhow!("Failed to get current branch: {}", e))?;
 
@@ -288,7 +274,7 @@ Their Changes ({{ their_changes | length }} lines):
     async fn get_conflicts(&self) -> Result<Vec<GitConflict>> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["diff", "--name-only", "--diff-filter=U"])
+            .args(["diff", "--name-only", "--diff-filter=U"])
             .output()
             .map_err(|e| anyhow!("Failed to get conflicts: {}", e))?;
 
@@ -311,12 +297,12 @@ Their Changes ({{ their_changes | length }} lines):
 
     async fn parse_conflict_file(&self, file: &Path) -> Result<GitConflict> {
         let content = fs::read_to_string(file).await?;
-        
+
         let conflict_marker_re = Regex::new(r"<<<<<<< (.+?)\n(.*?)\n======= ?(.*?)\n>>>>>>> (.+)")?;
-        
+
         let mut our_changes = Vec::new();
         let mut their_changes = Vec::new();
-        
+
         for cap in conflict_marker_re.captures_iter(&content) {
             our_changes.extend(cap[2].lines().map(|s| s.to_string()));
             their_changes.extend(cap[3].lines().map(|s| s.to_string()));
@@ -334,15 +320,12 @@ Their Changes ({{ their_changes | length }} lines):
     async fn get_status(&self) -> Result<GitStatus> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["status", "--porcelain=v1"])
+            .args(["status", "--porcelain=v1"])
             .output()
             .map_err(|e| anyhow!("Failed to get git status: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Git status failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Git status failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         let mut staged = Vec::new();
@@ -365,41 +348,39 @@ Their Changes ({{ their_changes | length }} lines):
                 "??" => untracked.push(filename.to_string()),
                 " D" | "MD" => deleted.push(filename.to_string()),
                 "R " | "RM" => renamed.push(filename.to_string()),
-                _ => {}
+                _ => {},
             }
         }
 
-        Ok(GitStatus {
-            staged,
-            modified,
-            untracked,
-            deleted,
-            renamed,
-        })
+        Ok(GitStatus { staged, modified, untracked, deleted, renamed })
     }
 
-    pub async fn resolve_conflict(&self, file: &Path, resolution: ConflictResolution) -> Result<()> {
+    pub async fn resolve_conflict(
+        &self,
+        file: &Path,
+        resolution: ConflictResolution,
+    ) -> Result<()> {
         match resolution {
             ConflictResolution::AcceptOurs => {
                 Command::new("git")
                     .current_dir(&self.repo_path)
-                    .args(&["checkout", "--ours", file.to_str().unwrap()])
+                    .args(["checkout", "--ours", file.to_str().unwrap()])
                     .output()?;
-            }
+            },
             ConflictResolution::AcceptTheirs => {
                 Command::new("git")
                     .current_dir(&self.repo_path)
-                    .args(&["checkout", "--theirs", file.to_str().unwrap()])
+                    .args(["checkout", "--theirs", file.to_str().unwrap()])
                     .output()?;
-            }
+            },
             ConflictResolution::Manual(content) => {
                 fs::write(file, content).await?;
-            }
+            },
         }
 
         Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["add", file.to_str().unwrap()])
+            .args(["add", file.to_str().unwrap()])
             .output()?;
 
         Ok(())
@@ -408,10 +389,7 @@ Their Changes ({{ their_changes | length }} lines):
     pub async fn create_signed_commit(&self, message: &str, files: &[String]) -> Result<String> {
         // Add files
         for file in files {
-            Command::new("git")
-                .current_dir(&self.repo_path)
-                .args(&["add", file])
-                .output()?;
+            Command::new("git").current_dir(&self.repo_path).args(["add", file]).output()?;
         }
 
         // Create signed commit
@@ -427,16 +405,13 @@ Their Changes ({{ their_changes | length }} lines):
             .map_err(|e| anyhow!("Failed to create commit: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Commit failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Commit failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         // Get the commit hash
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&["rev-parse", "HEAD"])
+            .args(["rev-parse", "HEAD"])
             .output()?;
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -445,7 +420,7 @@ Their Changes ({{ their_changes | length }} lines):
     pub fn render_branch_visualization(&self, branches: &[GitBranch]) -> Result<String> {
         let mut context = Context::new();
         context.insert("branches", branches);
-        
+
         self.templates
             .render("branch_visualization", &context)
             .map_err(|e| anyhow!("Failed to render branch visualization: {}", e))
@@ -458,7 +433,7 @@ Their Changes ({{ their_changes | length }} lines):
         context.insert("our_changes", &conflict.our_changes);
         context.insert("their_changes", &conflict.their_changes);
         context.insert("base_content", &conflict.base_content.as_deref().unwrap_or(""));
-        
+
         self.templates
             .render("conflict_resolution", &context)
             .map_err(|e| anyhow!("Failed to render conflict resolution: {}", e))
@@ -467,7 +442,7 @@ Their Changes ({{ their_changes | length }} lines):
     pub async fn get_commit_graph(&self, max_commits: usize) -> Result<Vec<GitCommit>> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(&[
+            .args([
                 "log",
                 &format!("--max-count={}", max_commits),
                 "--pretty=format:%H|%h|%an|%ae|%ci|%s|%G?",
@@ -476,10 +451,7 @@ Their Changes ({{ their_changes | length }} lines):
             .map_err(|e| anyhow!("Failed to get commit graph: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Git log failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Git log failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         let mut commits = Vec::new();
@@ -512,15 +484,7 @@ Their Changes ({{ their_changes | length }} lines):
 
         let signed = signature_status == "G" || signature_status == "U";
 
-        Ok(Some(GitCommit {
-            hash,
-            short_hash,
-            author,
-            email,
-            date,
-            message,
-            signed,
-        }))
+        Ok(Some(GitCommit { hash, short_hash, author, email, date, message, signed }))
     }
 }
 
@@ -539,12 +503,9 @@ mod tests {
     async fn setup_test_repo() -> Result<(TempDir, GitIntegration)> {
         let temp_dir = TempDir::new()?;
         let repo_path = temp_dir.path().to_path_buf();
-        
+
         // Initialize git repo
-        Command::new("git")
-            .current_dir(&repo_path)
-            .args(&["init"])
-            .output()?;
+        Command::new("git").current_dir(&repo_path).args(&["init"]).output()?;
 
         Command::new("git")
             .current_dir(&repo_path)
@@ -563,7 +524,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_repository_info() -> Result<()> {
         let (_temp_dir, git_integration) = setup_test_repo().await?;
-        
+
         // Create initial commit
         std::fs::write(git_integration.repo_path.join("test.txt"), "Hello, world!")?;
         Command::new("git")
@@ -576,7 +537,7 @@ mod tests {
             .output()?;
 
         let repo_info = git_integration.get_repository_info().await?;
-        
+
         assert_eq!(repo_info.current_branch, Some("master".to_string()));
         assert_eq!(repo_info.branches.len(), 1);
         assert!(repo_info.conflicts.is_empty());

@@ -100,8 +100,8 @@ pub trait EventedPty: EventedReadWrite {
 
 /// Setup environment variables.
 pub fn setup_env() {
-    // Prefer OpenAgent Terminal terminfo if available, otherwise fall back to 'alacritty', then 'xterm-256color'.
-    // May be overridden by user's config below.
+    // Prefer OpenAgent Terminal terminfo if available, otherwise fall back to 'alacritty', then
+    // 'xterm-256color'. May be overridden by user's config below.
     let terminfo = if terminfo_exists("openagent-terminal") {
         "openagent-terminal"
     } else if terminfo_exists("alacritty") {

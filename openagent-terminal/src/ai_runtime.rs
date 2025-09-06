@@ -5,8 +5,8 @@ use log::{debug, error, info};
 use std::collections::VecDeque;
 
 use crate::security_lens::{SecurityLens, SecurityPolicy};
+use openagent_terminal_ai::providers::{AnthropicProvider, OllamaProvider, OpenAiProvider};
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
-use openagent_terminal_ai::providers::{OpenAiProvider, AnthropicProvider, OllamaProvider};
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -46,7 +46,8 @@ impl AiRuntime {
         // Build a lightweight prompt for inline completion
         // We bias providers towards command completion, not multi-line explanations.
         let prompt = format!(
-            "Complete the shell command. Only return the completed command.\nPartial: {}\nCompletion:",
+            "Complete the shell command. Only return the completed command.\nPartial: \
+             {}\nCompletion:",
             prefix
         );
 
@@ -123,10 +124,8 @@ impl Default for AiUiState {
 }
 
 use crate::event::{Event, EventType};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
@@ -156,14 +155,17 @@ impl AiRuntime {
         model_env: Option<&str>,
     ) -> Self {
         use tracing::warn;
-        
+
         // Check for legacy environment variable usage
         crate::config::ai_providers::check_legacy_env_vars();
-        
+
         // DEPRECATED: This method is deprecated in favor of from_secure_config
         // Maintain backward compatibility but warn users
-        warn!("AI runtime from_config is deprecated. Please use from_secure_config with provider-specific configuration.");
-        
+        warn!(
+            "AI runtime from_config is deprecated. Please use from_secure_config with \
+             provider-specific configuration."
+        );
+
         // For backward compatibility, attempt to create provider using legacy approach
         let provider_name = provider_id.unwrap_or("null");
         let provider_result = create_provider(provider_name);
@@ -176,8 +178,9 @@ impl AiRuntime {
                 error!("Failed to create provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                 rt.ui.error_message = Some(format!(
-                    "AI provider initialization failed: {}. Please check your AI settings (provider, endpoint, api key, model). \
-                     Consider migrating to secure provider configuration - see docs/AI_ENVIRONMENT_SECURITY.md",
+                    "AI provider initialization failed: {}. Please check your AI settings \
+                     (provider, endpoint, api key, model). Consider migrating to secure provider \
+                     configuration - see docs/AI_ENVIRONMENT_SECURITY.md",
                     e
                 ));
                 rt
@@ -191,9 +194,9 @@ impl AiRuntime {
         config: &crate::config::ai::ProviderConfig,
     ) -> Self {
         use crate::config::ai_providers::ProviderCredentials;
-        
+
         info!("Initializing AI runtime with secure provider configuration: {}", provider_name);
-        
+
         // Extract credentials securely without polluting global environment
         let credentials = match ProviderCredentials::from_config(provider_name, config) {
             Ok(creds) => creds,
@@ -201,32 +204,38 @@ impl AiRuntime {
                 error!("Failed to load secure credentials for provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                 rt.ui.error_message = Some(format!(
-                    "Secure credential loading failed for '{}': {}. Check your environment variables and configuration.",
+                    "Secure credential loading failed for '{}': {}. Check your environment \
+                     variables and configuration.",
                     provider_name, e
                 ));
                 return rt;
-            }
+            },
         };
-        
+
         // Create provider with isolated credentials
         let provider_result = match provider_name {
             "openai" => {
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        let mut rt =
+                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    }
+                    },
                 };
-                let endpoint = credentials.require_endpoint(provider_name).unwrap_or("https://api.openai.com/v1").to_string();
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string();
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        let mut rt =
+                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    }
+                    },
                 };
                 OpenAiProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
@@ -235,40 +244,50 @@ impl AiRuntime {
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        let mut rt =
+                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    }
+                    },
                 };
-                let endpoint = credentials.require_endpoint(provider_name).unwrap_or("https://api.anthropic.com").to_string();
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://api.anthropic.com")
+                    .to_string();
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        let mut rt =
+                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    }
+                    },
                 };
                 AnthropicProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
             "ollama" => {
-                let endpoint = credentials.require_endpoint(provider_name).unwrap_or("http://localhost:11434").to_string();
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("http://localhost:11434")
+                    .to_string();
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        let mut rt =
+                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    }
+                    },
                 };
-                OllamaProvider::new(endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+                OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
-            "null" => Ok(Box::new(openagent_terminal_ai::NullProvider::default()) as Box<dyn AiProvider>),
-            _ => Err(format!("Unknown provider: {}", provider_name))
+            "null" => {
+                Ok(Box::new(openagent_terminal_ai::NullProvider::default()) as Box<dyn AiProvider>)
+            },
+            _ => Err(format!("Unknown provider: {}", provider_name)),
         };
-        
+
         match provider_result {
             Ok(provider) => {
                 info!("Successfully created secure AI provider: {}", provider_name);
@@ -278,7 +297,8 @@ impl AiRuntime {
                 error!("Failed to create secure provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
                 rt.ui.error_message = Some(format!(
-                    "Secure AI provider initialization failed: {}. Please verify your configuration and credentials.",
+                    "Secure AI provider initialization failed: {}. Please verify your \
+                     configuration and credentials.",
                     e
                 ));
                 rt
@@ -334,7 +354,8 @@ impl AiRuntime {
             match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
                 Ok(true) => {
                     info!("ai_runtime_stream_finished provider={}", provider.name());
-                    let _ = event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
+                    let _ =
+                        event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
                 },
                 Ok(false) => {
                     info!("ai_runtime_fallback_blocking provider={}", provider.name());
@@ -538,9 +559,14 @@ impl AiRuntime {
         // Restart the proposal stream with the same scratch text
         // Note: Context should be provided by the caller in real usage
         // This is a standalone method that doesn't have access to context provider
-        let working_directory = std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string());
+        let working_directory =
+            std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string());
         let shell_kind = std::env::var("SHELL").ok().and_then(|s| {
-            Some(openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s).to_str().to_string())
+            Some(
+                openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s)
+                    .to_str()
+                    .to_string(),
+            )
         });
         self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
     }
@@ -651,7 +677,10 @@ impl AiRuntime {
     }
 
     /// Context-aware propose method
-    pub fn propose_with_context(&mut self, context: Option<openagent_terminal_core::tty::pty_manager::PtyAiContext>) {
+    pub fn propose_with_context(
+        &mut self,
+        context: Option<openagent_terminal_core::tty::pty_manager::PtyAiContext>,
+    ) {
         if self.ui.scratch.trim().is_empty() {
             self.ui.error_message = Some("Query cannot be empty".to_string());
             return;

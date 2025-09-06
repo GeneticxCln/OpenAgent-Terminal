@@ -404,7 +404,12 @@ impl<T> Grid<T> {
     /// This is used only for truncating before saving ref-tests.
     #[inline]
     pub fn truncate(&mut self) {
+        // Compact storage to the active length and normalize ring offset.
         self.raw.truncate();
+
+        // Switch storage into absolute indexing mode for ref-tests.
+        self.raw.align_visible_with_len();
+        // NOTE: Do NOT modify `self.lines` here; keep the viewport height intact.
     }
 
     /// Iterate over all cells in the grid starting at a specific point.

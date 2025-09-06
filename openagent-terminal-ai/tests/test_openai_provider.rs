@@ -6,8 +6,7 @@ mod openai_provider_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use wiremock::matchers::{header, method, path};
-    use wiremock::Request;
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
     fn create_test_request() -> AiRequest {
         AiRequest {

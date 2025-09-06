@@ -6,7 +6,9 @@
 use std::fmt;
 use tracing::field::{Field, Visit};
 use tracing::{Level, Subscriber};
-use tracing_subscriber::{layer::Context, registry::LookupSpan, Layer};
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::Layer;
 
 /// A tracing layer that forwards events to the log crate.
 ///
@@ -33,7 +35,7 @@ where
 {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let metadata = event.metadata();
-        
+
         // Convert tracing level to log level
         let log_level = match *metadata.level() {
             Level::ERROR => log::Level::Error,
@@ -69,10 +71,7 @@ struct LogMessageVisitor {
 
 impl LogMessageVisitor {
     fn new() -> Self {
-        Self {
-            message: String::new(),
-            fields: Vec::new(),
-        }
+        Self { message: String::new(), fields: Vec::new() }
     }
 }
 
@@ -113,7 +112,7 @@ impl Visit for LogMessageVisitor {
 impl fmt::Display for LogMessageVisitor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)?;
-        
+
         if !self.fields.is_empty() {
             write!(f, " ")?;
             for (i, (key, value)) in self.fields.iter().enumerate() {
@@ -123,7 +122,7 @@ impl fmt::Display for LogMessageVisitor {
                 write!(f, "{}={}", key, value)?;
             }
         }
-        
+
         Ok(())
     }
 }
@@ -133,21 +132,21 @@ impl fmt::Display for LogMessageVisitor {
 /// This sets up tracing to forward events to the existing log infrastructure,
 /// allowing gradual migration while keeping the custom sink as canonical.
 pub fn initialize_tracing_bridge() -> Result<(), Box<dyn std::error::Error>> {
-    use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::{EnvFilter, Registry};
 
     // Create environment filter with reasonable defaults for OpenAgent Terminal
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            EnvFilter::new("openagent_terminal=info,openagent_terminal_core=info,openagent_terminal_ai=info,warn")
-        });
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(
+            "openagent_terminal=info,openagent_terminal_core=info,openagent_terminal_ai=info,warn",
+        )
+    });
 
     // Create the log forwarding layer
     let log_forwarding_layer = LogForwardingLayer::new();
 
     // Set up the subscriber with the log forwarding layer
-    let subscriber = Registry::default()
-        .with(env_filter)
-        .with(log_forwarding_layer);
+    let subscriber = Registry::default().with(env_filter).with(log_forwarding_layer);
 
     // Initialize the global subscriber
     tracing::subscriber::set_global_default(subscriber)?;
@@ -168,7 +167,7 @@ macro_rules! log_ai_request_bridge {
     ($provider:expr, $model:expr, $prompt_len:expr) => {
         tracing::info!(
             provider = %$provider,
-            model = %$model, 
+            model = %$model,
             prompt_length = $prompt_len,
             event = "ai_request",
             "AI request initiated"
@@ -185,7 +184,7 @@ macro_rules! log_ai_response_bridge {
             model = %$model,
             response_length = $response_len,
             duration_ms = $duration_ms,
-            event = "ai_response", 
+            event = "ai_response",
             "AI response received"
         );
     };
@@ -208,7 +207,8 @@ macro_rules! log_terminal_event_bridge {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
-    use tracing_subscriber::{layer::SubscriberExt, Registry};
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Registry;
 
     struct TestLogger {
         messages: Arc<Mutex<Vec<String>>>,
@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn test_log_forwarding_layer() {
         let (test_logger, messages) = TestLogger::new();
-        
+
         // Set up the test logger
         log::set_boxed_logger(Box::new(test_logger)).unwrap();
         log::set_max_level(log::LevelFilter::Debug);

@@ -15,7 +15,9 @@ pub struct Cursor {
 }
 
 impl Default for Cursor {
-    fn default() -> Self { Self { line: 0, column: 0 } }
+    fn default() -> Self {
+        Self { line: 0, column: 0 }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,18 +43,30 @@ pub struct EditorBuffer {
 
 impl EditorBuffer {
     pub fn new() -> Self {
-        Self { rope: Arc::new(RwLock::new(Rope::new())), cursor: Arc::new(RwLock::new(Cursor::default())), meta: Arc::new(RwLock::new(EditorBufferMeta::default())) }
+        Self {
+            rope: Arc::new(RwLock::new(Rope::new())),
+            cursor: Arc::new(RwLock::new(Cursor::default())),
+            meta: Arc::new(RwLock::new(EditorBufferMeta::default())),
+        }
     }
 
     pub fn from_text(text: &str) -> Self {
-        Self { rope: Arc::new(RwLock::new(Rope::from_str(text))), cursor: Arc::new(RwLock::new(Cursor::default())), meta: Arc::new(RwLock::new(EditorBufferMeta::default())) }
+        Self {
+            rope: Arc::new(RwLock::new(Rope::from_str(text))),
+            cursor: Arc::new(RwLock::new(Cursor::default())),
+            meta: Arc::new(RwLock::new(EditorBufferMeta::default())),
+        }
     }
 
     pub fn open_file(path: PathBuf) -> Result<Self> {
         let text = fs::read_to_string(&path).unwrap_or_default();
         let mut meta = EditorBufferMeta::default();
         meta.path = Some(path);
-        Ok(Self { rope: Arc::new(RwLock::new(Rope::from_str(&text))), cursor: Arc::new(RwLock::new(Cursor::default())), meta: Arc::new(RwLock::new(meta)) })
+        Ok(Self {
+            rope: Arc::new(RwLock::new(Rope::from_str(&text))),
+            cursor: Arc::new(RwLock::new(Cursor::default())),
+            meta: Arc::new(RwLock::new(meta)),
+        })
     }
 
     pub fn save(&self) -> Result<()> {
@@ -83,7 +97,9 @@ impl EditorBuffer {
         let mut rope = self.rope.write();
         let mut cur = self.cursor.write();
         let char_idx = self.char_index_of_cursor(&rope, &cur);
-        if char_idx == 0 { return; }
+        if char_idx == 0 {
+            return;
+        }
         rope.remove(char_idx - 1..char_idx);
         let new_idx = char_idx - 1;
         let new_line = rope.char_to_line(new_idx);
@@ -95,16 +111,36 @@ impl EditorBuffer {
         meta.version += 1;
     }
 
-    pub fn move_left(&self) { let mut c = self.cursor.write(); if c.column > 0 { c.column -= 1; } }
-    pub fn move_right(&self) { let mut c = self.cursor.write(); c.column += 1; }
-    pub fn move_up(&self) { let mut c = self.cursor.write(); if c.line > 0 { c.line -= 1; } }
-    pub fn move_down(&self) { let mut c = self.cursor.write(); c.line += 1; }
+    pub fn move_left(&self) {
+        let mut c = self.cursor.write();
+        if c.column > 0 {
+            c.column -= 1;
+        }
+    }
+
+    pub fn move_right(&self) {
+        let mut c = self.cursor.write();
+        c.column += 1;
+    }
+
+    pub fn move_up(&self) {
+        let mut c = self.cursor.write();
+        if c.line > 0 {
+            c.line -= 1;
+        }
+    }
+
+    pub fn move_down(&self) {
+        let mut c = self.cursor.write();
+        c.line += 1;
+    }
 
     fn char_index_of_cursor(&self, rope: &Rope, cur: &Cursor) -> usize {
         let line_start = rope.line_to_char(cur.line);
         line_start + cur.column
     }
 
-    pub fn text(&self) -> String { self.rope.read().to_string() }
+    pub fn text(&self) -> String {
+        self.rope.read().to_string()
+    }
 }
-

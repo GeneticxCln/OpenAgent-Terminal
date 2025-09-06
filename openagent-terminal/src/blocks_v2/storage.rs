@@ -5,10 +5,8 @@
 use super::{Block, BlockId, ExecutionStatus};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use sqlx::{
-    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
-    SqlitePool,
-};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::SqlitePool;
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;

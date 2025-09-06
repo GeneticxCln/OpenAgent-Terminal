@@ -85,9 +85,9 @@ pub mod pane_drag_drop;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
-pub mod workspace_animations;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
+pub mod workspace_animations;
 
 mod bell;
 mod damage;
@@ -404,8 +404,9 @@ pub struct Display {
 
     pub size_info: SizeInfo,
 
-    // Debug overlay to visualize split panes (horizontal/vertical) before full pane implementation.
-    // None = off; Some(false) = horizontal split (left/right); Some(true) = vertical split (top/bottom).
+    // Debug overlay to visualize split panes (horizontal/vertical) before full pane
+    // implementation. None = off; Some(false) = horizontal split (left/right); Some(true) =
+    // vertical split (top/bottom).
     pub debug_split_overlay: Option<bool>,
 
     #[cfg(feature = "ai")]
@@ -530,7 +531,7 @@ pub struct Display {
     pub tab_last_active_id: Option<crate::workspace::TabId>,
     /// Animation start for tab switch indicator
     pub tab_anim_switch_start: Option<Instant>,
-    
+
     /// Tab drag-and-drop state
     pub tab_drag_active: Option<TabDragState>,
     /// Animation start for drag operations
@@ -782,21 +783,21 @@ impl Display {
     /// Update all workspace animations and return whether any updates occurred
     pub fn update_workspace_animations(&mut self) -> bool {
         let mut needs_redraw = false;
-        
+
         // Update workspace-level animations (tabs, etc.)
         if self.workspace_animations.update_animations() {
             needs_redraw = true;
         }
-        
+
         // Update pane drag animations
         if self.pane_drag_manager.update_animations() {
             needs_redraw = true;
         }
-        
+
         // Legacy tab animation updates (will be migrated to workspace_animations)
         let now = Instant::now();
         let mut completed_animations = Vec::new();
-        
+
         for (i, anim) in self.tab_animations.iter().enumerate() {
             let elapsed = now.duration_since(anim.start_time).as_millis() as u32;
             if elapsed >= anim.duration_ms {
@@ -805,15 +806,15 @@ impl Display {
                 needs_redraw = true;
             }
         }
-        
+
         // Remove completed animations (in reverse order to maintain indices)
         for &i in completed_animations.iter().rev() {
             self.tab_animations.remove(i);
         }
-        
+
         needs_redraw
     }
-    
+
     /// Enable or disable reduced motion for accessibility
     pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
         self.workspace_animations.set_reduce_motion(reduce_motion);
@@ -1086,8 +1087,8 @@ impl Display {
                 fn load_glyph(
                     &mut self,
                     _rasterized: &crossfont::RasterizedGlyph,
-) -> crate::renderer::Glyph {
-crate::renderer::Glyph {
+                ) -> crate::renderer::Glyph {
+                    crate::renderer::Glyph {
                         tex_id: 0,
                         multicolor: false,
                         top: 0,
@@ -1100,6 +1101,7 @@ crate::renderer::Glyph {
                         uv_height: 0.0,
                     }
                 }
+
                 fn clear(&mut self) {}
             }
             let mut loader = NoopLoader;
@@ -1367,14 +1369,15 @@ crate::renderer::Glyph {
             },
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer: _ } => {
-                // For WGPU we don't have a GL-based atlas yet; preload the cache with a no-op loader.
+                // For WGPU we don't have a GL-based atlas yet; preload the cache with a no-op
+                // loader.
                 struct NoopLoader;
                 impl crate::renderer::LoadGlyph for NoopLoader {
                     fn load_glyph(
                         &mut self,
                         _rasterized: &crossfont::RasterizedGlyph,
-) -> crate::renderer::Glyph {
-crate::renderer::Glyph {
+                    ) -> crate::renderer::Glyph {
+                        crate::renderer::Glyph {
                             tex_id: 0,
                             multicolor: false,
                             top: 0,
@@ -1387,6 +1390,7 @@ crate::renderer::Glyph {
                             uv_height: 0.0,
                         }
                     }
+
                     fn clear(&mut self) {}
                 }
                 let mut loader = NoopLoader;
@@ -1847,7 +1851,8 @@ crate::renderer::Glyph {
             let obstructed_column = Some(vi_cursor_point)
                 .filter(|point| point.line == -(display_offset as i32))
                 .map(|point| point.column);
-            // Suppress vi-mode line indicator when the top row is effectively reserved for the tab bar.
+            // Suppress vi-mode line indicator when the top row is effectively reserved for the tab
+            // bar.
             let tab_cfg = &config.workspace.tab_bar;
             let is_fs = self.window.is_fullscreen();
             let eff_vis = match tab_cfg.visibility {
@@ -2104,10 +2109,8 @@ crate::renderer::Glyph {
         #[cfg(feature = "completions")]
         {
             if config.debug.completions {
-                let cursor_point_usize = Point::new(
-                    cursor_point.line.0 as usize,
-                    cursor_point.column,
-                );
+                let cursor_point_usize =
+                    Point::new(cursor_point.line.0 as usize, cursor_point.column);
                 self.draw_completions_overlay_with_context(
                     config,
                     &completions_prefix,
@@ -2399,8 +2402,8 @@ crate::renderer::Glyph {
             if matches!(self.raw_window_handle, RawWindowHandle::Xcb(_) | RawWindowHandle::Xlib(_))
             {
                 // On X11 `swap_buffers` does not block for vsync. However the next OpenGl command
-                // will block to synchronize (this is `glClear` in OpenAgent Terminal), which causes a
-                // permanent one frame delay.
+                // will block to synchronize (this is `glClear` in OpenAgent Terminal), which causes
+                // a permanent one frame delay.
                 self.renderer_finish();
             }
         }
@@ -2619,8 +2622,7 @@ crate::renderer::Glyph {
         start_col += star.len();
         let available = cols.saturating_sub(start_col + 2);
 
-        use unicode_width::UnicodeWidthChar;
-        use unicode_width::UnicodeWidthStr;
+        use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
         // Update caret blink state
         if self.composer_focused {
@@ -2918,7 +2920,15 @@ crate::renderer::Glyph {
                     gl::Finish();
                     gl::ReadBuffer(gl::BACK);
                     gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-                    gl::ReadPixels(0, 0, w as i32, h as i32, gl::RGBA, gl::UNSIGNED_BYTE, buf.as_mut_ptr().cast());
+                    gl::ReadPixels(
+                        0,
+                        0,
+                        w as i32,
+                        h as i32,
+                        gl::RGBA,
+                        gl::UNSIGNED_BYTE,
+                        buf.as_mut_ptr().cast(),
+                    );
                 }
                 Some((buf, w, h))
             },

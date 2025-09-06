@@ -792,7 +792,8 @@ impl Display {
                     };
                     let cw = size_info.cell_width();
                     let ch = size_info.cell_height();
-                    // Use theme-configurable icon px (Warp baseline 16px), centered vertically in row
+                    // Use theme-configurable icon px (Warp baseline 16px), centered vertically in
+                    // row
                     let icon_px: f32 = ui.palette_icon_px.max(1.0);
                     let x = (col_cursor as f32) * cw;
                     let y = (line as f32) * ch + ((ch - icon_px) * 0.5).max(0.0);
@@ -807,7 +808,8 @@ impl Display {
                     } else {
                         crate::display::color::Rgb::new(255, 255, 255)
                     };
-                    // Determine filter: honor config override if present, otherwise auto (NEAREST at 1x icon size)
+                    // Determine filter: honor config override if present, otherwise auto (NEAREST
+                    // at 1x icon size)
                     let forced = config.theme.palette_icon_filter_nearest;
                     let auto_nearest = (w - 16.0).abs() < 0.5 && (h - 16.0).abs() < 0.5;
                     let filter_nearest = forced.unwrap_or(auto_nearest);

@@ -194,15 +194,12 @@ impl IntegratedTextShaper {
                     }
                 }
 
-                cache.insert(
-                    key,
-                    ShapedLineInfo {
-                        shaped_text: shaped_text.clone(),
-                        font_name,
-                        font_size,
-                        cell_count: cells_vec.len(),
-                    },
-                );
+                cache.insert(key, ShapedLineInfo {
+                    shaped_text: shaped_text.clone(),
+                    font_name,
+                    font_size,
+                    cell_count: cells_vec.len(),
+                });
             }
         }
 
@@ -311,8 +308,7 @@ impl IntegratedTextShaper {
         };
 
         // Load the glyph through the existing glyph cache system
-        let glyph = glyph_cache
-            .get(glyph_key, &mut LoadGlyphImpl, true);
+        let glyph = glyph_cache.get(glyph_key, &mut LoadGlyphImpl, true);
 
         Ok(ShapedCellGlyph {
             glyph_id: cell.character as u32,
@@ -427,8 +423,7 @@ impl IntegratedTextShaper {
     ) -> Result<Glyph> {
         // Use the existing glyph cache system to load glyphs
         // The glyph_key already contains font, size, and character information
-        Ok(glyph_cache
-            .get(glyph_key, &mut LoadGlyphImpl, true))
+        Ok(glyph_cache.get(glyph_key, &mut LoadGlyphImpl, true))
     }
 
     /// Clear caches
@@ -458,7 +453,7 @@ impl LoadGlyph for LoadGlyphImpl {
             uv_height: 0.0,
         }
     }
-    
+
     fn clear(&mut self) {
         // No-op for this simple implementation
     }

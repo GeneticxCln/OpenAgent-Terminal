@@ -3,9 +3,8 @@
 // - Falls back to a minimal sleep path (GL placeholder) if WGPU is unavailable or not built
 // This intentionally avoids deep integration with the main crate to keep compilation simple.
 
-use std::env;
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 
 use winit::event_loop::EventLoop;
 

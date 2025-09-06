@@ -16,9 +16,9 @@ mod pty_lifecycle;
 
 use blocking::{UnblockedReader, UnblockedWriter};
 use conpty::Conpty as Backend;
-use pty_lifecycle::SafePty;
 use miow::pipe::{AnonRead, AnonWrite};
 use polling::{Event, Poller};
+use pty_lifecycle::SafePty;
 
 pub const PTY_CHILD_EVENT_TOKEN: usize = 1;
 pub const PTY_READ_WRITE_TOKEN: usize = 2;
@@ -43,12 +43,7 @@ impl Pty {
         conin: impl Into<WritePipe>,
         child_watcher: ChildExitWatcher,
     ) -> Self {
-        let safe_pty = SafePty::new(
-            backend.into(),
-            conout.into(),
-            conin.into(),
-            child_watcher,
-        );
+        let safe_pty = SafePty::new(backend.into(), conout.into(), conin.into(), child_watcher);
         Self { safe_pty }
     }
 

@@ -4,6 +4,7 @@
 //! It includes macros for easy plugin definition and safe wrappers for host function calls.
 
 use plugin_api::PluginMetadata;
+use std::sync::{Mutex, OnceLock};
 
 pub use plugin_api;
 
@@ -15,13 +16,13 @@ pub use plugin_api::{
 };
 
 /// Global storage for plugin metadata (allocated in WASM linear memory)
-static mut PLUGIN_METADATA_JSON: Option<Vec<u8>> = None;
+static PLUGIN_METADATA_JSON: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
 
 /// Global event buffer for host-to-plugin data transfer
-static mut PLUGIN_EVENT_BUFFER: Option<Vec<u8>> = None;
+static PLUGIN_EVENT_BUFFER: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
 
 /// Global storage for the last plugin response payload (JSON)
-static mut LAST_RESPONSE_JSON: Option<Vec<u8>> = None;
+static LAST_RESPONSE_JSON: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
 
 /// Result codes for plugin functions
 pub mod result_codes {
@@ -63,8 +64,18 @@ extern "C" {
     ) -> i32;
 
     // Persistent storage
-    fn host_store_data(key_ptr: *const u8, key_len: usize, data_ptr: *const u8, data_len: usize) -> i32;
-    fn host_retrieve_data(key_ptr: *const u8, key_len: usize, result_ptr: *mut u8, result_len_ptr: *mut u32) -> i32;
+    fn host_store_data(
+        key_ptr: *const u8,
+        key_len: usize,
+        data_ptr: *const u8,
+        data_len: usize,
+    ) -> i32;
+    fn host_retrieve_data(
+        key_ptr: *const u8,
+        key_len: usize,
+        result_ptr: *mut u8,
+        result_len_ptr: *mut u32,
+    ) -> i32;
 }
 
 /// Safe wrapper for host logging
@@ -143,14 +154,29 @@ pub fn write_file(path: &str, data: &[u8]) -> Result<(), PluginError> {
 pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
     let mut len: u32 = 0;
     // First call: ask for required buffer size
-    let rc = unsafe { host_execute_command(command.as_ptr(), command.len(), core::ptr::null_mut(), &mut len as *mut u32) };
+    let rc = unsafe {
+        host_execute_command(
+            command.as_ptr(),
+            command.len(),
+            core::ptr::null_mut(),
+            &mut len as *mut u32,
+        )
+    };
     match rc {
         0 => {
             // Allocate buffer and fetch JSON payload
             let mut buf = vec![0u8; len as usize];
-            let rc2 = unsafe { host_execute_command(command.as_ptr(), command.len(), buf.as_mut_ptr(), &mut len as *mut u32) };
+            let rc2 = unsafe {
+                host_execute_command(
+                    command.as_ptr(),
+                    command.len(),
+                    buf.as_mut_ptr(),
+                    &mut len as *mut u32,
+                )
+            };
             if rc2 == 0 {
-                serde_json::from_slice::<CommandOutput>(&buf).map_err(PluginError::SerializationError)
+                serde_json::from_slice::<CommandOutput>(&buf)
+                    .map_err(PluginError::SerializationError)
             } else if rc2 == -2 {
                 Err(PluginError::CommandFailed("Command execution failed".into()))
             } else if rc2 == -1 {
@@ -160,7 +186,7 @@ pub fn execute_command(command: &str) -> Result<CommandOutput, PluginError> {
             } else {
                 Err(PluginError::Unknown("Unknown command execution error".into()))
             }
-        }
+        },
         -1 => Err(PluginError::PermissionDenied("Command execution not permitted".into())),
         -2 => Err(PluginError::CommandFailed("Command execution failed".into())),
         -3 => Err(PluginError::Unknown("Host not available".into())),
@@ -181,12 +207,20 @@ pub fn store_data(key: &str, data: &[u8]) -> Result<(), PluginError> {
 /// Persistent storage: retrieve data by key
 pub fn retrieve_data(key: &str) -> Result<Option<Vec<u8>>, PluginError> {
     let mut len: u32 = 0;
-    let rc = unsafe { host_retrieve_data(key.as_ptr(), key.len(), std::ptr::null_mut(), &mut len as *mut u32) };
+    let rc = unsafe {
+        host_retrieve_data(key.as_ptr(), key.len(), std::ptr::null_mut(), &mut len as *mut u32)
+    };
     match rc {
         0 => {
             let mut buf = vec![0u8; len as usize];
-            let rc2 = unsafe { host_retrieve_data(key.as_ptr(), key.len(), buf.as_mut_ptr(), &mut len as *mut u32) };
-            if rc2 == 0 { Ok(Some(buf)) } else { Err(PluginError::IoError(std::io::Error::other("Retrieve failed"))) }
+            let rc2 = unsafe {
+                host_retrieve_data(key.as_ptr(), key.len(), buf.as_mut_ptr(), &mut len as *mut u32)
+            };
+            if rc2 == 0 {
+                Ok(Some(buf))
+            } else {
+                Err(PluginError::IoError(std::io::Error::other("Retrieve failed")))
+            }
         },
         -1 => Ok(None),
         -2 => Err(PluginError::IoError(std::io::Error::other("Retrieve failed"))),
@@ -198,9 +232,10 @@ pub fn retrieve_data(key: &str) -> Result<Option<Vec<u8>>, PluginError> {
 pub fn set_plugin_metadata(metadata: &PluginMetadata) -> Result<(), PluginError> {
     let json = serde_json::to_vec(metadata).map_err(PluginError::SerializationError)?;
 
-    unsafe {
-        PLUGIN_METADATA_JSON = Some(json);
-    }
+    let buf = PLUGIN_METADATA_JSON.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = buf.lock().unwrap();
+    guard.clear();
+    guard.extend_from_slice(&json);
 
     Ok(())
 }
@@ -208,15 +243,15 @@ pub fn set_plugin_metadata(metadata: &PluginMetadata) -> Result<(), PluginError>
 /// Export: Get plugin metadata as JSON in memory
 #[no_mangle]
 pub extern "C" fn plugin_get_metadata() -> i64 {
-    unsafe {
-        if let Some(ref json) = PLUGIN_METADATA_JSON {
-            let ptr = json.as_ptr() as u32;
-            let len = json.len() as u32;
-            // Pack pointer and length into i64: high 32 bits = len, low 32 bits = ptr
-            ((len as i64) << 32) | (ptr as i64)
-        } else {
-            0 // No metadata available
-        }
+    let buf = PLUGIN_METADATA_JSON.get_or_init(|| Mutex::new(Vec::new()));
+    let guard = buf.lock().unwrap();
+    if guard.is_empty() {
+        0 // No metadata available
+    } else {
+        let ptr = guard.as_ptr() as u32;
+        let len = guard.len() as u32;
+        // Pack pointer and length into i64: high 32 bits = len, low 32 bits = ptr
+        ((len as i64) << 32) | (ptr as i64)
     }
 }
 
@@ -242,9 +277,15 @@ pub extern "C" fn plugin_handle_event(ptr: i32, len: i32) -> i32 {
                 msg.extend_from_slice(&ch);
             }
             msg.extend_from_slice(b"\"}");
-            LAST_RESPONSE_JSON = Some(msg);
+            let cell = LAST_RESPONSE_JSON.get_or_init(|| Mutex::new(Vec::new()));
+            let mut guard = cell.lock().unwrap();
+            guard.clear();
+            guard.extend_from_slice(&msg);
         } else {
-            LAST_RESPONSE_JSON = Some(b"{\"status\":\"ok\"}".to_vec());
+            let cell = LAST_RESPONSE_JSON.get_or_init(|| Mutex::new(Vec::new()));
+            let mut guard = cell.lock().unwrap();
+            guard.clear();
+            guard.extend_from_slice(b"{\"status\":\"ok\"}");
         }
     }
 
@@ -261,45 +302,47 @@ pub extern "C" fn plugin_init() -> i32 {
 /// Export: Allocate a buffer inside plugin linear memory for host to write into
 #[no_mangle]
 pub extern "C" fn plugin_alloc(size: i32) -> i32 {
-    if size <= 0 { return 0; }
-    let size = size as usize;
-    unsafe {
-        // Allocate or resize buffer; keep ownership to ensure pointer stability
-        let buf = PLUGIN_EVENT_BUFFER.get_or_insert_with(|| vec![0u8; size]);
-        if buf.len() < size {
-            buf.resize(size, 0);
-        }
-        buf.as_mut_ptr() as i32
+    if size <= 0 {
+        return 0;
     }
+    let size = size as usize;
+    let cell = PLUGIN_EVENT_BUFFER.get_or_init(|| Mutex::new(vec![0u8; size]));
+    let mut guard = cell.lock().unwrap();
+    if guard.len() < size {
+        guard.resize(size, 0);
+    }
+    guard.as_mut_ptr() as i32
 }
 
 /// Export: Retrieve the last response set by the plugin (packed ptr|len as i64)
 #[no_mangle]
 pub extern "C" fn plugin_get_last_response() -> i64 {
-    unsafe {
-        if let Some(ref json) = LAST_RESPONSE_JSON {
-            let ptr = json.as_ptr() as u32;
-            let len = json.len() as u32;
-            ((len as i64) << 32) | (ptr as i64)
-        } else {
-            0
-        }
+    let cell = LAST_RESPONSE_JSON.get_or_init(|| Mutex::new(Vec::new()));
+    let guard = cell.lock().unwrap();
+    if guard.is_empty() {
+        0
+    } else {
+        let ptr = guard.as_ptr() as u32;
+        let len = guard.len() as u32;
+        ((len as i64) << 32) | (ptr as i64)
     }
 }
 
 /// Helper: Set the last response from plugin code using a JSON string
 pub fn set_last_response_str(json: &str) {
-    unsafe {
-        LAST_RESPONSE_JSON = Some(json.as_bytes().to_vec());
-    }
+    let cell = LAST_RESPONSE_JSON.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = cell.lock().unwrap();
+    guard.clear();
+    guard.extend_from_slice(json.as_bytes());
 }
 
 /// Helper: Set the last response from a serializable value
 pub fn set_last_response_json<T: serde::Serialize>(value: &T) -> Result<(), PluginError> {
     let bytes = serde_json::to_vec(value).map_err(PluginError::SerializationError)?;
-    unsafe {
-        LAST_RESPONSE_JSON = Some(bytes);
-    }
+    let cell = LAST_RESPONSE_JSON.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = cell.lock().unwrap();
+    guard.clear();
+    guard.extend_from_slice(&bytes);
     Ok(())
 }
 

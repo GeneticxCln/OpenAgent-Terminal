@@ -7,9 +7,9 @@ pub use crate::config::monitor::ConfigMonitor;
 pub use openagent_terminal_config::SerdeReplace;
 
 #[cfg(feature = "ai")]
-pub mod ai_runtime;
-#[cfg(feature = "ai")]
 pub mod ai_context_provider;
+#[cfg(feature = "ai")]
+pub mod ai_runtime;
 pub mod cli;
 pub mod clipboard;
 pub mod config;
@@ -38,7 +38,7 @@ pub mod blocks_v2;
 pub mod components_init;
 pub mod security; // Feature-gated security module
 #[cfg(feature = "security-lens")]
-pub use security::security_lens as security_lens;
+pub use security::security_lens;
 #[cfg(not(feature = "security-lens"))]
 pub use security::stub as security_lens;
 pub mod text_shaping;

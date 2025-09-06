@@ -48,12 +48,14 @@ pub struct Options {
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
 
-    /// Specify alternative configuration file [default: %APPDATA%\\openagent-terminal\\openagent-terminal.toml].
+    /// Specify alternative configuration file [default:
+    /// %APPDATA%\\openagent-terminal\\openagent-terminal.toml].
     #[cfg(windows)]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
 
-    /// Specify alternative configuration file [default: $HOME/.config/openagent-terminal/openagent-terminal.toml].
+    /// Specify alternative configuration file [default:
+    /// $HOME/.config/openagent-terminal/openagent-terminal.toml].
     #[cfg(target_os = "macos")]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
@@ -601,8 +603,9 @@ mod tests {
             clap_complete::generate(*shell, &mut clap, "openagent-terminal", &mut generated);
             let _generated = String::from_utf8_lossy(&generated);
 
-            // Temporarily skip strict equality with checked-in completion snapshots until new ones are provided.
-            // This test now only asserts that completions are generated without panicking and are non-empty.
+            // Temporarily skip strict equality with checked-in completion snapshots until new ones
+            // are provided. This test now only asserts that completions are generated
+            // without panicking and are non-empty.
             assert!(!_generated.is_empty(), "Generated completion for {} is empty", file);
         }
 

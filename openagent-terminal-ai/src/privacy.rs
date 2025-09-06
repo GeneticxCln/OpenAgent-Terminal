@@ -166,7 +166,9 @@ mod tests {
 
     #[test]
     fn test_redact_jwt() {
-        let text = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let text = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.\
+                    eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.\
+                    SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
         let redacted = redact_secrets(text);
         assert!(redacted.contains("[REDACTED_JWT]"));
     }

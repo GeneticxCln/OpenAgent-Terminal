@@ -2,24 +2,27 @@
 //! This is a lightweight, editor-agnostic client suitable for a terminal-first UX.
 
 use anyhow::{anyhow, Result};
-use bytes::BytesMut;
 use lsp_types as lsp;
 use parking_lot::Mutex;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
-use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LspError {
-    #[error("process not running")] ProcessNotRunning,
-    #[error("io error: {0}")] Io(#[from] std::io::Error),
-    #[error("serde error: {0}")] Serde(#[from] serde_json::Error),
-    #[error("other: {0}")] Other(String),
+    #[error("process not running")]
+    ProcessNotRunning,
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("serde error: {0}")]
+    Serde(#[from] serde_json::Error),
+    #[error("other: {0}")]
+    Other(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,16 +58,14 @@ pub enum LspNotification {
 impl LspClient {
     pub fn start(config: &ServerConfig, root_uri: Option<lsp::Url>) -> Result<Self> {
         let mut cmd = Command::new(&config.command);
-        cmd.args(&config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        cmd.args(&config.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
         let mut child = cmd.spawn()?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
 
         let (tx, rx) = mpsc::channel::<ClientMessage>();
-        let pending: Arc<Mutex<HashMap<i64, mpsc::Sender<Result<Value>>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let pending: Arc<Mutex<HashMap<i64, mpsc::Sender<Result<Value>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
         let write = Arc::new(Mutex::new(stdin));
         let (ntx, nrx) = mpsc::channel::<LspNotification>();
         let mut pump = LspPump::new(stdout, rx, pending.clone(), write.clone(), ntx)?;
@@ -81,17 +82,16 @@ impl LspClient {
         };
 
         // Initialize
+        let workspace_folders = root_uri.as_ref().map(|uri| {
+            vec![lsp::WorkspaceFolder { uri: uri.clone(), name: "workspace".to_string() }]
+        });
         let params = lsp::InitializeParams {
             process_id: Some(std::process::id()),
-            root_path: None,
-            root_uri,
             initialization_options: config.initialization_options.clone(),
             capabilities: lsp::ClientCapabilities::default(),
-            trace: None,
-            workspace_folders: None,
-            locale: None,
+            workspace_folders,
             client_info: Some(lsp::ClientInfo { name: "OpenAgent Terminal".into(), version: None }),
-            work_done_progress_params: Default::default(),
+            ..Default::default()
         };
         let _ = this.request::<lsp::InitializeResult, _>("initialize", params)?;
         this.notify("initialized", serde_json::json!({}))?;
@@ -108,7 +108,10 @@ impl LspClient {
         self.request("textDocument/hover", pos)
     }
 
-    pub fn definition(&self, pos: lsp::TextDocumentPositionParams) -> Result<lsp::GotoDefinitionResponse> {
+    pub fn definition(
+        &self,
+        pos: lsp::TextDocumentPositionParams,
+    ) -> Result<lsp::GotoDefinitionResponse> {
         self.request("textDocument/definition", pos)
     }
 
@@ -124,7 +127,10 @@ impl LspClient {
         self.request("textDocument/formatting", params)
     }
 
-    pub fn signature_help(&self, pos: lsp::TextDocumentPositionParams) -> Result<Option<lsp::SignatureHelp>> {
+    pub fn signature_help(
+        &self,
+        pos: lsp::TextDocumentPositionParams,
+    ) -> Result<Option<lsp::SignatureHelp>> {
         self.request("textDocument/signatureHelp", pos)
     }
 
@@ -140,7 +146,12 @@ impl LspClient {
         self.notify("textDocument/didOpen", params)
     }
 
-    pub fn change_document(&self, uri: lsp::Url, version: i32, changes: Vec<lsp::TextDocumentContentChangeEvent>) -> Result<()> {
+    pub fn change_document(
+        &self,
+        uri: lsp::Url,
+        version: i32,
+        changes: Vec<lsp::TextDocumentContentChangeEvent>,
+    ) -> Result<()> {
         let params = lsp::DidChangeTextDocumentParams {
             text_document: lsp::VersionedTextDocumentIdentifier { uri, version },
             content_changes: changes,
@@ -148,7 +159,10 @@ impl LspClient {
         self.notify("textDocument/didChange", params)
     }
 
-    pub fn completion(&self, pos: lsp::TextDocumentPositionParams) -> Result<lsp::CompletionResponse> {
+    pub fn completion(
+        &self,
+        pos: lsp::TextDocumentPositionParams,
+    ) -> Result<lsp::CompletionResponse> {
         self.request("textDocument/completion", pos)
     }
 
@@ -160,22 +174,26 @@ impl LspClient {
         };
         let (tx_resp, rx_resp) = mpsc::channel();
         self.pending.lock().insert(id, tx_resp);
-        self.tx.send(ClientMessage::Request {
-            id,
-            method: method.to_string(),
-            params: serde_json::to_value(params)?,
-            resp: self.pending.lock().get(&id).unwrap().clone(),
-        }).map_err(|_| anyhow!("tx closed"))?;
+        self.tx
+            .send(ClientMessage::Request {
+                id,
+                method: method.to_string(),
+                params: serde_json::to_value(params)?,
+                resp: self.pending.lock().get(&id).unwrap().clone(),
+            })
+            .map_err(|_| anyhow!("tx closed"))?;
 
         let val = rx_resp.recv().map_err(|_| anyhow!("rx closed"))??;
         Ok(serde_json::from_value(val)?)
     }
 
     fn notify<P: Serialize>(&self, method: &str, params: P) -> Result<()> {
-        self.tx.send(ClientMessage::Notification {
-            method: method.to_string(),
-            params: serde_json::to_value(params)?,
-        }).map_err(|_| anyhow!("tx closed"))
+        self.tx
+            .send(ClientMessage::Notification {
+                method: method.to_string(),
+                params: serde_json::to_value(params)?,
+            })
+            .map_err(|_| anyhow!("tx closed"))
     }
 }
 
@@ -188,7 +206,13 @@ struct LspPump {
 }
 
 impl LspPump {
-    fn new(stdout: ChildStdout, rx: mpsc::Receiver<ClientMessage>, pending: Arc<Mutex<HashMap<i64, mpsc::Sender<Result<Value>>>>>, write: Arc<Mutex<ChildStdin>>, notify_tx: mpsc::Sender<LspNotification>) -> Result<Self> {
+    fn new(
+        stdout: ChildStdout,
+        rx: mpsc::Receiver<ClientMessage>,
+        pending: Arc<Mutex<HashMap<i64, mpsc::Sender<Result<Value>>>>>,
+        write: Arc<Mutex<ChildStdin>>,
+        notify_tx: mpsc::Sender<LspNotification>,
+    ) -> Result<Self> {
         Ok(Self { stdout: Some(stdout), rx, pending, write, notify_tx })
     }
 
@@ -197,9 +221,8 @@ impl LspPump {
         let (resp_tx, resp_rx) = mpsc::channel::<(i64, Value)>();
         let notify_tx_clone = self.notify_tx.clone();
         let tx_for_reader = resp_tx.clone();
-        let mut out = self.stdout.take().expect("stdout");
+        let out = self.stdout.take().expect("stdout");
         std::thread::spawn(move || {
-            let mut buf = Vec::<u8>::new();
             let mut reader = out;
             loop {
                 // Simple framed reader: read headers then body
@@ -210,28 +233,40 @@ impl LspPump {
                 let mut last4 = [0u8; 4];
                 headers.clear();
                 loop {
-                    if reader.read_exact(&mut header_buf).is_err() { return; }
+                    if reader.read_exact(&mut header_buf).is_err() {
+                        return;
+                    }
                     headers.push(header_buf[0] as char);
                     last4.rotate_left(1);
                     last4[3] = header_buf[0];
-                    if last4 == [b'\r', b'\n', b'\r', b'\n'] { break; }
+                    if last4 == [b'\r', b'\n', b'\r', b'\n'] {
+                        break;
+                    }
                 }
                 let content_length = headers
                     .lines()
                     .find_map(|l| l.strip_prefix("Content-Length: "))
                     .and_then(|v| v.trim().parse::<usize>().ok())
                     .unwrap_or(0);
-                if content_length == 0 { continue; }
+                if content_length == 0 {
+                    continue;
+                }
                 let mut body = vec![0u8; content_length];
-                if reader.read_exact(&mut body).is_err() { return; }
+                if reader.read_exact(&mut body).is_err() {
+                    return;
+                }
                 if let Ok(json) = serde_json::from_slice::<Value>(&body) {
                     if let Some(id) = json.get("id").and_then(|id| id.as_i64()) {
                         let _ = tx_for_reader.send((id, json));
                     } else if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
                         if method == "textDocument/publishDiagnostics" {
                             if let Some(params) = json.get("params") {
-                                if let Ok(parsed) = serde_json::from_value::<lsp::PublishDiagnosticsParams>(params.clone()) {
-                                    let _ = notify_tx_clone.send(LspNotification::PublishDiagnostics(parsed));
+                                if let Ok(parsed) = serde_json::from_value::<
+                                    lsp::PublishDiagnosticsParams,
+                                >(params.clone())
+                                {
+                                    let _ = notify_tx_clone
+                                        .send(LspNotification::PublishDiagnostics(parsed));
                                 }
                             }
                         }
@@ -245,7 +280,13 @@ impl LspPump {
             // Drain responses
             while let Ok((id, json)) = resp_rx.try_recv() {
                 if let Some(sender) = self.pending.lock().remove(&id) {
-                    let result = if let Some(res) = json.get("result") { Ok(res.clone()) } else if let Some(err) = json.get("error") { Err(anyhow!(err.to_string())) } else { Err(anyhow!("invalid response")) };
+                    let result = if let Some(res) = json.get("result") {
+                        Ok(res.clone())
+                    } else if let Some(err) = json.get("error") {
+                        Err(anyhow!(err.to_string()))
+                    } else {
+                        Err(anyhow!("invalid response"))
+                    };
                     let _ = sender.send(result);
                 }
             }
@@ -267,4 +308,3 @@ impl LspPump {
         }
     }
 }
-

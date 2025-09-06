@@ -92,7 +92,9 @@ impl WindowContext {
         if config.debug.prefer_wgpu {
             #[cfg(not(feature = "wgpu"))]
             {
-                log::info!("'prefer_wgpu' set but binary not built with 'wgpu' feature; using OpenGL");
+                log::info!(
+                    "'prefer_wgpu' set but binary not built with 'wgpu' feature; using OpenGL"
+                );
             }
         }
 
@@ -103,7 +105,8 @@ impl WindowContext {
         #[cfg(windows)]
         let mut raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
 
-        // On Windows, prefer WGPU if requested (feature-gated); we can probe here before GL display setup.
+        // On Windows, prefer WGPU if requested (feature-gated); we can probe here before GL display
+        // setup.
         #[cfg(all(feature = "wgpu", windows))]
         if config.debug.prefer_wgpu {
             if let Some(ref win_ref) = window_opt {
@@ -124,7 +127,8 @@ impl WindowContext {
                             Ok(display) => return Self::new(display, config, options, proxy),
                             Err(err) => {
                                 log::info!(
-                                    "WGPU initialization failed after successful probe, falling back to OpenGL: {err}"
+                                    "WGPU initialization failed after successful probe, falling \
+                                     back to OpenGL: {err}"
                                 );
                                 // Recreate the window for OpenGL fallback since it was moved.
                                 window_opt = Some(Window::new(
@@ -163,7 +167,8 @@ impl WindowContext {
             gl_config.x11_visual(),
         )?);
 
-        // Prefer WGPU if enabled and feature is built. We probe initialization first and then build the Display.
+        // Prefer WGPU if enabled and feature is built. We probe initialization first and then build
+        // the Display.
         #[cfg(feature = "wgpu")]
         if config.debug.prefer_wgpu {
             if let Some(ref win_ref) = window_opt {
@@ -183,9 +188,11 @@ impl WindowContext {
                         Ok(display) => return Self::new(display, config, options, proxy),
                         Err(err) => {
                             log::info!(
-                                "WGPU initialization failed after successful probe, falling back to OpenGL: {err}"
+                                "WGPU initialization failed after successful probe, falling back \
+                                 to OpenGL: {err}"
                             );
-                            // Recreate the window for OpenGL fallback since it was moved into the WGPU attempt.
+                            // Recreate the window for OpenGL fallback since it was moved into the
+                            // WGPU attempt.
                             window_opt = Some(Window::new(
                                 event_loop,
                                 &config,
@@ -701,7 +708,10 @@ impl WindowContext {
             if let Some(_window_context_arc) = window_context_weak.upgrade() {
                 // This is a simplified approach - in production code we'd need a different pattern
                 // to avoid the Arc<Mutex<WindowContext>> dependency
-                info!("Warp-style workspace enabled but initialization requires architectural changes");
+                info!(
+                    "Warp-style workspace enabled but initialization requires architectural \
+                     changes"
+                );
                 info!("Warp session file: {:?}", self.config.workspace.warp_session_file);
             }
         }

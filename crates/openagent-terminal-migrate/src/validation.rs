@@ -11,24 +11,24 @@ pub fn validate_config(config_path: &Path) -> Result<()> {
     }
 
     let content = std::fs::read_to_string(config_path)?;
-    
+
     // Try to parse as TOML
     let parsed: Result<toml::Value, _> = toml::from_str(&content);
-    
+
     match parsed {
         Ok(config) => {
             println!("{}", "✅ Configuration file is valid TOML".green());
-            
+
             // Perform additional validation checks
             validate_sections(&config)?;
-            
+
             println!("{}", "✅ Configuration validation passed".green());
             Ok(())
-        }
+        },
         Err(e) => {
             println!("{}", format!("❌ TOML parsing error: {}", e).red());
             Err(anyhow!("Invalid TOML configuration: {}", e))
-        }
+        },
     }
 }
 
@@ -98,7 +98,10 @@ fn validate_sections(config: &toml::Value) -> Result<()> {
     }
 
     if !warnings.is_empty() {
-        println!("{}", format!("Configuration is valid but has {} warning(s)", warnings.len()).yellow());
+        println!(
+            "{}",
+            format!("Configuration is valid but has {} warning(s)", warnings.len()).yellow()
+        );
     }
 
     Ok(())
@@ -140,8 +143,8 @@ fn validate_window_section(window: &toml::Value) -> Result<()> {
     if let Some(decorations) = window.get("decorations") {
         if let Some(decorations_str) = decorations.as_str() {
             match decorations_str.to_lowercase().as_str() {
-                "full" | "none" | "transparent" | "buttonless" => {}
-                _ => return Err(anyhow!("Invalid decorations value: {}", decorations_str))
+                "full" | "none" | "transparent" | "buttonless" => {},
+                _ => return Err(anyhow!("Invalid decorations value: {}", decorations_str)),
             }
         }
     }
@@ -166,7 +169,12 @@ fn validate_color_subsection(section: Option<&toml::Value>, section_name: &str) 
             for (key, value) in table {
                 if let Some(color_str) = value.as_str() {
                     if !is_valid_color(color_str) {
-                        return Err(anyhow!("Invalid color '{}' in {} section: {}", color_str, section_name, key));
+                        return Err(anyhow!(
+                            "Invalid color '{}' in {} section: {}",
+                            color_str,
+                            section_name,
+                            key
+                        ));
                     }
                 }
             }
@@ -179,17 +187,17 @@ fn is_valid_color(color: &str) -> bool {
     // Check if it's a valid hex color
     if color.starts_with('#') {
         let hex_part = &color[1..];
-        return (hex_part.len() == 3 || hex_part.len() == 6 || hex_part.len() == 8) &&
-               hex_part.chars().all(|c| c.is_ascii_hexdigit());
+        return (hex_part.len() == 3 || hex_part.len() == 6 || hex_part.len() == 8)
+            && hex_part.chars().all(|c| c.is_ascii_hexdigit());
     }
 
     // Check if it's a named color (basic set)
     match color.to_lowercase().as_str() {
-        "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" |
-        "gray" | "grey" | "darkgray" | "darkgrey" | "lightgray" | "lightgrey" |
-        "darkred" | "darkgreen" | "darkyellow" | "darkblue" | "darkmagenta" | "darkcyan" |
-        "lightred" | "lightgreen" | "lightyellow" | "lightblue" | "lightmagenta" | "lightcyan" => true,
-        _ => false
+        "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "gray"
+        | "grey" | "darkgray" | "darkgrey" | "lightgray" | "lightgrey" | "darkred"
+        | "darkgreen" | "darkyellow" | "darkblue" | "darkmagenta" | "darkcyan" | "lightred"
+        | "lightgreen" | "lightyellow" | "lightblue" | "lightmagenta" | "lightcyan" => true,
+        _ => false,
     }
 }
 
@@ -199,7 +207,10 @@ fn validate_terminal_section(terminal: &toml::Value) -> Result<()> {
         if let Some(history) = scrolling.get("history") {
             if let Some(history_val) = history.as_integer() {
                 if history_val < 0 || history_val > 1_000_000 {
-                    return Err(anyhow!("Scrolling history {} is outside reasonable range (0-1,000,000)", history_val));
+                    return Err(anyhow!(
+                        "Scrolling history {} is outside reasonable range (0-1,000,000)",
+                        history_val
+                    ));
                 }
             }
         }
@@ -211,8 +222,8 @@ fn validate_terminal_section(terminal: &toml::Value) -> Result<()> {
             if let Some(shape) = style.get("shape") {
                 if let Some(shape_str) = shape.as_str() {
                     match shape_str.to_lowercase().as_str() {
-                        "block" | "underline" | "beam" => {}
-                        _ => return Err(anyhow!("Invalid cursor shape: {}", shape_str))
+                        "block" | "underline" | "beam" => {},
+                        _ => return Err(anyhow!("Invalid cursor shape: {}", shape_str)),
                     }
                 }
             }
@@ -241,7 +252,10 @@ fn validate_key_bindings(bindings: &toml::Value) -> Result<()> {
             let has_command = binding.get("command").is_some();
 
             if !has_action && !has_chars && !has_command {
-                return Err(anyhow!("Key binding {} must have 'action', 'chars', or 'command'", i + 1));
+                return Err(anyhow!(
+                    "Key binding {} must have 'action', 'chars', or 'command'",
+                    i + 1
+                ));
             }
         }
     }
@@ -257,23 +271,30 @@ fn validate_ai_section(ai: &toml::Value) -> Result<()> {
                 if let Some(provider) = ai.get("provider") {
                     if let Some(provider_str) = provider.as_str() {
                         match provider_str.to_lowercase().as_str() {
-                            "null" | "ollama" | "openai" | "anthropic" => {}
-                            _ => return Err(anyhow!("Invalid AI provider: {}", provider_str))
+                            "null" | "ollama" | "openai" | "anthropic" => {},
+                            _ => return Err(anyhow!("Invalid AI provider: {}", provider_str)),
                         }
 
                         // Check provider-specific configuration
                         if provider_str != "null" {
                             // For real providers, check if endpoint/model configuration exists
-                            let has_endpoint = ai.get(&format!("{}.endpoint", provider_str)).is_some() ||
-                                             ai.get("endpoint_env").is_some();
-                            let has_model = ai.get(&format!("{}.model", provider_str)).is_some() ||
-                                          ai.get("model_env").is_some();
+                            let has_endpoint =
+                                ai.get(&format!("{}.endpoint", provider_str)).is_some()
+                                    || ai.get("endpoint_env").is_some();
+                            let has_model = ai.get(&format!("{}.model", provider_str)).is_some()
+                                || ai.get("model_env").is_some();
 
                             if !has_endpoint && provider_str != "ollama" {
-                                return Err(anyhow!("AI provider {} requires endpoint configuration", provider_str));
+                                return Err(anyhow!(
+                                    "AI provider {} requires endpoint configuration",
+                                    provider_str
+                                ));
                             }
                             if !has_model {
-                                return Err(anyhow!("AI provider {} requires model configuration", provider_str));
+                                return Err(anyhow!(
+                                    "AI provider {} requires model configuration",
+                                    provider_str
+                                ));
                             }
                         }
                     }
@@ -307,7 +328,10 @@ pub fn quick_validate_toml(content: &str) -> Result<Vec<String>> {
     // Check for common indentation issues (TOML doesn't use indentation like YAML)
     for (line_num, line) in content.lines().enumerate() {
         if line.starts_with("  ") && !line.trim_start().starts_with('#') {
-            issues.push(format!("Line {}: TOML doesn't use indentation (found leading spaces)", line_num + 1));
+            issues.push(format!(
+                "Line {}: TOML doesn't use indentation (found leading spaces)",
+                line_num + 1
+            ));
         }
     }
 
@@ -317,8 +341,8 @@ pub fn quick_validate_toml(content: &str) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_is_valid_color() {
@@ -327,7 +351,7 @@ mod tests {
         assert!(is_valid_color("#FF0000"));
         assert!(is_valid_color("red"));
         assert!(is_valid_color("BLACK"));
-        
+
         assert!(!is_valid_color("invalid"));
         assert!(!is_valid_color("#gg0000"));
         assert!(!is_valid_color("##ff0000"));
@@ -352,40 +376,54 @@ opacity =
     #[test]
     fn test_validate_font_section() {
         // Valid font
-        let font = toml::from_str(r#"
+        let font = toml::from_str(
+            r#"
 size = 12.0
 [normal]
 family = "JetBrains Mono"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         assert!(validate_font_section(&font).is_ok());
 
         // Invalid font size
-        let invalid_font = toml::from_str(r#"
+        let invalid_font = toml::from_str(
+            r#"
 size = -5.0
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         assert!(validate_font_section(&invalid_font).is_err());
     }
 
     #[test]
     fn test_validate_window_section() {
         // Valid window
-        let window = toml::from_str(r#"
+        let window = toml::from_str(
+            r#"
 opacity = 0.9
 decorations = "full"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         assert!(validate_window_section(&window).is_ok());
 
         // Invalid opacity
-        let invalid_window = toml::from_str(r#"
+        let invalid_window = toml::from_str(
+            r#"
 opacity = 1.5
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         assert!(validate_window_section(&invalid_window).is_err());
     }
 
     #[test]
     fn test_validate_config_file() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"
+        writeln!(
+            temp_file,
+            r#"
 [general]
 live_config_reload = true
 
@@ -397,7 +435,9 @@ family = "JetBrains Mono"
 
 [window]
 opacity = 0.9
-"#).unwrap();
+"#
+        )
+        .unwrap();
 
         let result = validate_config(temp_file.path());
         assert!(result.is_ok());

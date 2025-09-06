@@ -540,7 +540,7 @@ impl Display {
                 let split_x = rect.x + rect.width * ratio;
 
                 // Is this divider hovered/dragged?
-                let is_hovered = hover_hit.map_or(false, |hit| {
+                let is_hovered = hover_hit.is_some_and(|hit| {
                     hit.axis == crate::workspace::split_manager::SplitAxis::Horizontal
                         && (hit.rect.x - rect.x).abs() < f32::EPSILON
                         && (hit.rect.y - rect.y).abs() < f32::EPSILON
@@ -613,7 +613,7 @@ impl Display {
                 let split_y = rect.y + rect.height * ratio;
 
                 // Is this divider hovered/dragged?
-                let is_hovered = hover_hit.map_or(false, |hit| {
+                let is_hovered = hover_hit.is_some_and(|hit| {
                     hit.axis == crate::workspace::split_manager::SplitAxis::Vertical
                         && (hit.rect.x - rect.x).abs() < f32::EPSILON
                         && (hit.rect.y - rect.y).abs() < f32::EPSILON

@@ -2,8 +2,8 @@
 
 #![warn(rust_2018_idioms, future_incompatible)]
 #![warn(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
-// During development, keep warnings as warnings to allow feature-gated code paths without breaking clippy runs.
-// With the default subsystem, 'console', windows creates an additional console
+// During development, keep warnings as warnings to allow feature-gated code paths without breaking
+// clippy runs. With the default subsystem, 'console', windows creates an additional console
 // window for the program.
 // This is silently ignored on non-windows systems.
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
@@ -59,7 +59,7 @@ mod blocks_v2;
 mod components_init;
 mod security; // Feature-gated security module wrapper
 #[cfg(feature = "security-lens")]
-pub use security::security_lens as security_lens;
+pub use security::security_lens;
 #[cfg(not(feature = "security-lens"))]
 pub use security::stub as security_lens;
 mod text_shaping;

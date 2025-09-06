@@ -35,18 +35,18 @@ impl SnippetManager {
     }
 
     pub fn find_by_trigger(&self, trigger: &str) -> Result<Vec<&Snippet>> {
-        let matches = self.snippets.values()
-            .filter(|snippet| {
-                snippet.triggers.iter().any(|t| t.matches(trigger))
-            })
+        let matches = self
+            .snippets
+            .values()
+            .filter(|snippet| snippet.triggers.iter().any(|t| t.matches(trigger)))
             .collect();
-        
+
         Ok(matches)
     }
 
     pub fn get_suggestions(&self, input: &str, limit: usize) -> Result<Vec<SnippetSuggestion>> {
         let mut suggestions = Vec::new();
-        
+
         for snippet in self.snippets.values() {
             for trigger in &snippet.triggers {
                 if let Some(score) = self.fuzzy_matcher.fuzzy_match(&trigger.pattern, input) {
@@ -62,7 +62,7 @@ impl SnippetManager {
 
         suggestions.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
         suggestions.truncate(limit);
-        
+
         Ok(suggestions)
     }
 

@@ -77,8 +77,10 @@ impl TerminalType {
         match self {
             TerminalType::ITerm2 => cfg!(target_os = "macos"),
             TerminalType::WindowsTerminal => cfg!(target_os = "windows"),
-            TerminalType::GnomeTerminal | TerminalType::Konsole | 
-            TerminalType::Terminator | TerminalType::Tilix => cfg!(target_os = "linux"),
+            TerminalType::GnomeTerminal
+            | TerminalType::Konsole
+            | TerminalType::Terminator
+            | TerminalType::Tilix => cfg!(target_os = "linux"),
             _ => true, // Cross-platform terminals
         }
     }
@@ -131,7 +133,7 @@ impl fmt::Display for TerminalType {
                 // Convert enum variant to string and capitalize first letter
                 let s = format!("{:?}", self);
                 return write!(f, "{}", s);
-            }
+            },
         };
         write!(f, "{}", name)
     }
