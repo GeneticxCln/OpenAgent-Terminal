@@ -184,13 +184,14 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
     let config = config::load(&mut options);
     log_config_path(&config);
 
-    // Select and log rendering backend early to avoid dead_code warnings and clarify startup.
+    // Log selected rendering backend based on compile-time features.
+    #[cfg(feature = "wgpu")]
     {
-        use crate::renderer::backend::BackendSelector;
-        let prefer_wgpu = config.debug.prefer_wgpu;
-        let selector = BackendSelector::new(prefer_wgpu, config.debug.renderer);
-        let chosen = selector.select_backend();
-        tracing::info!("Render backend selected: {}", chosen);
+        tracing::info!("Render backend selected: WGPU");
+    }
+    #[cfg(not(feature = "wgpu"))]
+    {
+        tracing::info!("Render backend selected: OpenGL");
     }
 
     // Log level is managed by tracing-subscriber filters

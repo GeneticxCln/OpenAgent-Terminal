@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::mem;
+use std::env;
 #[cfg(not(windows))]
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
@@ -88,65 +89,37 @@ impl WindowContext {
         let mut identity = config.window.identity.clone();
         options.window_identity.override_identity_config(&mut identity);
 
-        // If WGPU is preferred, we'll attempt initialization later where supported.
-        if config.debug.prefer_wgpu {
-            #[cfg(not(feature = "wgpu"))]
-            {
-                log::info!(
-                    "'prefer_wgpu' set but binary not built with 'wgpu' feature; using OpenGL"
-                );
-            }
+        // Determine explicit GL override via env var (no automatic fallback from WGPU).
+        let force_gl = env::var("OPENAGENT_FORCE_GL")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        // If compiled with WGPU and not explicitly forcing GL, initialize WGPU as the primary backend.
+        #[cfg(feature = "wgpu")]
+        if !force_gl {
+            // Create a window first (no GL visual required for WGPU).
+            #[cfg(windows)]
+            let window = Window::new(event_loop, &config, &identity, &mut options)?;
+            #[cfg(not(windows))]
+            let window = Window::new(
+                event_loop,
+                &config,
+                &identity,
+                &mut options,
+                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                None,
+            )?;
+
+            let display = Display::new_wgpu(window, &config, false)?;
+            return Self::new(display, config, options, proxy);
         }
 
-        // Windows has different order of GL platform initialization compared to any other platform;
-        // it requires the window first.
+        // OpenGL path (either no WGPU compiled, or explicitly forced).
         #[cfg(windows)]
         let mut window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
         #[cfg(windows)]
-        let mut raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
-
-        // On Windows, prefer WGPU if requested (feature-gated); we can probe here before GL display
-        // setup.
-        #[cfg(all(feature = "wgpu", windows))]
-        if config.debug.prefer_wgpu {
-            if let Some(ref win_ref) = window_opt {
-                match pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
-                    win_ref.winit_window(),
-                    win_ref.inner_size(),
-                    config.debug.renderer,
-                    config.debug.srgb_swapchain,
-                    config.debug.subpixel_text,
-                    config.debug.zero_evicted_atlas_layer,
-                    config.debug.atlas_eviction_policy,
-                    config.debug.atlas_report_interval_frames,
-                )) {
-                    Ok(_) => {
-                        // Move the window into the WGPU display creation.
-                        let window_for_wgpu = window_opt.take().unwrap();
-                        match Display::new_wgpu(window_for_wgpu, &config, false) {
-                            Ok(display) => return Self::new(display, config, options, proxy),
-                            Err(err) => {
-                                log::info!(
-                                    "WGPU initialization failed after successful probe, falling \
-                                     back to OpenGL: {err}"
-                                );
-                                // Recreate the window for OpenGL fallback since it was moved.
-                                window_opt = Some(Window::new(
-                                    event_loop,
-                                    &config,
-                                    &identity,
-                                    &mut options,
-                                )?);
-                                raw_window_handle =
-                                    window_opt.as_ref().map(|w| w.raw_window_handle());
-                            },
-                        }
-                    },
-                    Err(err) => log::info!("WGPU probe failed, using OpenGL: {:?}", err),
-                }
-            }
-        }
-
+        let raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
         #[cfg(not(windows))]
         let raw_window_handle = None;
 
@@ -167,53 +140,9 @@ impl WindowContext {
             gl_config.x11_visual(),
         )?);
 
-        // Prefer WGPU if enabled and feature is built. We probe initialization first and then build
-        // the Display.
-        #[cfg(feature = "wgpu")]
-        if config.debug.prefer_wgpu {
-            if let Some(ref win_ref) = window_opt {
-                let wgpu_probe = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
-                    win_ref.winit_window(),
-                    win_ref.inner_size(),
-                    config.debug.renderer,
-                    config.debug.srgb_swapchain,
-                    config.debug.subpixel_text,
-                    config.debug.zero_evicted_atlas_layer,
-                    config.debug.atlas_eviction_policy,
-                    config.debug.atlas_report_interval_frames,
-                ));
-                if wgpu_probe.is_ok() {
-                    let window_for_wgpu = window_opt.take().unwrap();
-                    match Display::new_wgpu(window_for_wgpu, &config, false) {
-                        Ok(display) => return Self::new(display, config, options, proxy),
-                        Err(err) => {
-                            log::info!(
-                                "WGPU initialization failed after successful probe, falling back \
-                                 to OpenGL: {err}"
-                            );
-                            // Recreate the window for OpenGL fallback since it was moved into the
-                            // WGPU attempt.
-                            window_opt = Some(Window::new(
-                                event_loop,
-                                &config,
-                                &identity,
-                                &mut options,
-                                #[cfg(all(
-                                    feature = "x11",
-                                    not(any(target_os = "macos", windows))
-                                ))]
-                                gl_config.x11_visual(),
-                            )?);
-                        },
-                    }
-                }
-            }
-        }
-
-        // Create context.
+        // Create GL context and display.
         let gl_context =
             renderer::platform::create_gl_context(&gl_display, &gl_config, raw_window_handle)?;
-
         let window = window_opt.take().expect("window should be available for GL path");
         let display = Display::new(window, gl_context, &config, false)?;
 
@@ -264,6 +193,44 @@ impl WindowContext {
         // These are already applied to `config`, so no update is necessary.
         window_context.window_config = config_overrides;
 
+        Ok(window_context)
+    }
+
+    /// Create additional context using the WGPU backend.
+    #[cfg(feature = "wgpu")]
+    pub fn additional_wgpu(
+        event_loop: &ActiveEventLoop,
+        proxy: EventLoopProxy<Event>,
+        config: Rc<UiConfig>,
+        mut options: WindowOptions,
+        config_overrides: ParsedOptions,
+    ) -> Result<Self, Box<dyn Error>> {
+        let mut identity = config.window.identity.clone();
+        options.window_identity.override_identity_config(&mut identity);
+
+        let window = {
+            #[cfg(windows)]
+            {
+                Window::new(event_loop, &config, &identity, &mut options)?
+            }
+            #[cfg(not(windows))]
+            {
+                Window::new(
+                    event_loop,
+                    &config,
+                    &identity,
+                    &mut options,
+                    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                    None,
+                )?
+            }
+        };
+
+        let display = Display::new_wgpu(window, &config, false)?;
+
+        let mut window_context = Self::new(display, config, options, proxy)?;
+        // Apply overrides already reflected in `config`.
+        window_context.window_config = config_overrides;
         Ok(window_context)
     }
 
@@ -708,10 +675,7 @@ impl WindowContext {
             if let Some(_window_context_arc) = window_context_weak.upgrade() {
                 // This is a simplified approach - in production code we'd need a different pattern
                 // to avoid the Arc<Mutex<WindowContext>> dependency
-                info!(
-                    "Warp-style workspace enabled but initialization requires architectural \
-                     changes"
-                );
+                info!("Warp-style workspace enabled but initialization requires architectural changes");
                 info!("Warp session file: {:?}", self.config.workspace.warp_session_file);
             }
         }

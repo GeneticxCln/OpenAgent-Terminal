@@ -83,9 +83,9 @@ pub struct Debug {
     /// The renderer OpenAgent Terminal should be using.
     pub renderer: Option<RendererPreference>,
 
-    /// [EXPERIMENTAL] Prefer the WGPU backend when available (falls back to OpenGL if
-    /// unavailable). WARNING: WGPU backend is experimental and may have visual
-    /// inconsistencies. OpenGL is the stable, recommended renderer.
+    /// Prefer the WGPU backend. WGPU is the default and the application will not
+    /// automatically fall back to the OpenGL renderer. To force OpenGL explicitly,
+    /// set OPENAGENT_FORCE_GL=1 in the environment or build without the `wgpu` feature.
     pub prefer_wgpu: bool,
 
     /// Preview: Enable plugin system (WASI sandbox) integration.
@@ -144,7 +144,8 @@ impl Default for Debug {
             highlight_damage: Default::default(),
             ref_test: Default::default(),
             renderer: Default::default(),
-            prefer_wgpu: Default::default(),
+            // Default to WGPU preferred (the app will attempt WGPU first when compiled with `wgpu`).
+            prefer_wgpu: true,
             plugins_preview: false,
             prefer_egl: Default::default(),
             blocks: true,

@@ -210,7 +210,10 @@ impl Processor {
             }
         }
 
-        self.gl_config = Some(window_context.display.gl_context().config());
+        // Cache GL config only when using the GL backend; on WGPU this is unavailable.
+        if !window_context.display.is_wgpu_backend() {
+            self.gl_config = Some(window_context.display.gl_context().config());
+        }
         let window_id = window_context.id();
         // Set default window for confirmations (first window)
         crate::ui_confirm::set_default_window_id(window_id);
@@ -271,7 +274,9 @@ impl Processor {
         event_loop: &ActiveEventLoop,
         options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
-        let gl_config = self.gl_config.as_ref().unwrap();
+        // Determine backend for additional windows: use WGPU when available and primary backend
+        // (no automatic fallback to GL). If GL was used for the first window, reuse its config.
+        let use_wgpu_additional = cfg!(feature = "wgpu") && self.gl_config.is_none();
 
         // Override config with CLI/IPC options.
         let mut config_overrides = options.config_overrides();
@@ -280,14 +285,25 @@ impl Processor {
         let mut config = self.config.clone();
         config = config_overrides.override_config_rc(config);
 
-        let window_context = WindowContext::additional(
-            gl_config,
-            event_loop,
-            self.proxy.clone(),
-            config,
-            options,
-            config_overrides,
-        )?;
+        let window_context = if use_wgpu_additional {
+            WindowContext::additional_wgpu(
+                event_loop,
+                self.proxy.clone(),
+                config,
+                options,
+                config_overrides,
+            )?
+        } else {
+            let gl_config = self.gl_config.as_ref().expect("GL config should exist for GL backend");
+            WindowContext::additional(
+                gl_config,
+                event_loop,
+                self.proxy.clone(),
+                config,
+                options,
+                config_overrides,
+            )?
+        };
 
         let window_id = window_context.id();
         self.windows.insert(window_id, window_context);
