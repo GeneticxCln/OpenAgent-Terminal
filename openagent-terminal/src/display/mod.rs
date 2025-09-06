@@ -572,6 +572,16 @@ enum Backend {
 }
 
 impl Display {
+    /// Returns true if the active backend is WGPU.
+    pub fn is_wgpu_backend(&self) -> bool {
+        #[allow(irrefutable_let_patterns)]
+        match &self.backend {
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { .. } => true,
+            _ => false,
+        }
+    }
+
     pub fn new(
         window: Window,
         gl_context: NotCurrentContext,

@@ -53,23 +53,18 @@ fn main() {
                         power_preference: wgpu::PowerPreference::HighPerformance,
                         compatible_surface: None,
                         force_fallback_adapter: false,
-                    }));
+                    }))
+                    .expect("No suitable WGPU adapter found");
 
-                if adapter.is_some() {
-                    println!("backend:wgpu");
-                    // Light sleep to simulate one frame of work.
-                    thread::sleep(Duration::from_millis(30));
-                } else {
-                    // Fallback to GL placeholder path.
-                    println!("backend:fallback-gl");
-                    thread::sleep(Duration::from_millis(30));
-                }
+                // If we got here, WGPU init succeeded.
+                let _ = adapter;
+                println!("backend:wgpu");
+                thread::sleep(Duration::from_millis(30));
             }
             #[cfg(not(feature = "wgpu"))]
             {
-                // Feature not compiled; fallback.
-                println!("backend:fallback-gl");
-                thread::sleep(Duration::from_millis(30));
+                eprintln!("wgpu feature not compiled");
+                std::process::exit(1);
             }
         },
     }
