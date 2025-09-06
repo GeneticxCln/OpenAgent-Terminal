@@ -212,7 +212,8 @@ pub fn damage_y_to_viewport_y(size_info: &SizeInfo, rect: &Rect) -> i32 {
     size_info.height() as i32 - rect.y - rect.height
 }
 
-/// Iterator which converts `openagent-terminal-core` damage information into renderer damaged rects.
+/// Iterator which converts `openagent-terminal-core` damage information into renderer damaged
+/// rects.
 struct RenderDamageIterator<'a> {
     damaged_lines: Peekable<TermDamageIterator<'a>>,
     size_info: &'a SizeInfo<u32>,
@@ -361,10 +362,12 @@ mod tests {
         let width = 10;
         let size_info = SizeInfo::new(viewport_height, viewport_height, 5., 5., 0., 0., true);
         frame_damage.add_viewport_rect(&size_info, x, y, width, height);
-        assert_eq!(
-            frame_damage.rects[0],
-            Rect { x, y: viewport_height as i32 - y - height, width, height }
-        );
+        assert_eq!(frame_damage.rects[0], Rect {
+            x,
+            y: viewport_height as i32 - y - height,
+            width,
+            height
+        });
         assert_eq!(frame_damage.rects[0].y, viewport_y_to_damage_y(&size_info, y, height));
         assert_eq!(damage_y_to_viewport_y(&size_info, &frame_damage.rects[0]), y);
     }

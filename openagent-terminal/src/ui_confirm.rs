@@ -277,10 +277,10 @@ mod tests {
                 }
             })
             .expect("ConfirmOpen not recorded");
-        assert!(evs.iter().any(|e| matches!(
-            e,
-            crate::event::EventType::ConfirmResolved { accepted: false, .. }
-        )));
+        assert!(evs.iter().any(|e| matches!(e, crate::event::EventType::ConfirmResolved {
+            accepted: false,
+            ..
+        })));
         // Ensure the specific pending request created by this call was cleaned up
         assert!(!th::has_pending(&open_id));
     }

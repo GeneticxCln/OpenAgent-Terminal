@@ -1,6 +1,6 @@
 // Security Lens tests to lock regex compilation and avoid false-positive blocking
 
-use openagent_terminal::security_lens::{SecurityLens, SecurityPolicy, RateLimitConfig, RiskLevel};
+use openagent_terminal::security_lens::{RateLimitConfig, RiskLevel, SecurityLens, SecurityPolicy};
 
 fn default_policy() -> SecurityPolicy {
     use std::collections::HashMap;
@@ -54,4 +54,3 @@ fn env_export_sensitive_is_warning() {
     let risk = lens.analyze_command("export SECRET_TOKEN=abcd1234");
     assert_eq!(risk.level, RiskLevel::Warning);
 }
-

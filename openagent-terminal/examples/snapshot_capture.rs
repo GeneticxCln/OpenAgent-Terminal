@@ -16,8 +16,7 @@ use winit::event::StartCause;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::raw_window_handle::HasDisplayHandle;
 
-use openagent_terminal::display::TabHoverTarget;
-use openagent_terminal::display::TabDragState;
+use openagent_terminal::display::{TabDragState, TabHoverTarget};
 use openagent_terminal::workspace::split_manager::{PaneId, SplitLayout};
 
 #[cfg(feature = "ai")]
@@ -74,6 +73,7 @@ struct SnapshotApp {
 
 impl ApplicationHandler<()> for SnapshotApp {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
     fn window_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
@@ -118,7 +118,8 @@ impl ApplicationHandler<()> for SnapshotApp {
         // Create window
         #[cfg(windows)]
         let window = {
-            let w = Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window");
+            let w =
+                Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window");
             raw_window_handle = Some(w.raw_window_handle());
             w
         };
@@ -154,8 +155,12 @@ impl ApplicationHandler<()> for SnapshotApp {
             Display::new_wgpu(window, &config, false).expect("wgpu display init")
         } else {
             // Create GL context
-            let gl_context = platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
-                .expect("create gl context");
+            let gl_context = platform::create_gl_context(
+                &gl_display,
+                &gl_config,
+                Some(window.raw_window_handle()),
+            )
+            .expect("create gl context");
             let mut d = Display::new(window, gl_context, &config, false).expect("display init");
             // Load GL for the gl crate so we can manually clear the background deterministically.
             gl::load_with(|s| {
@@ -265,7 +270,8 @@ impl ApplicationHandler<()> for SnapshotApp {
             let _ = fs::create_dir_all(&out_dir);
             let _ = snapshot.save(out_dir.join("snapshot.png"));
             eprintln!(
-                "MISSING GOLDEN: {} (saved snapshot to {}). Run with --update-golden to create the golden.",
+                "MISSING GOLDEN: {} (saved snapshot to {}). Run with --update-golden to create \
+                 the golden.",
                 self.golden_path.display(),
                 out_dir.display()
             );
@@ -333,7 +339,9 @@ fn draw_split_panes(display: &mut Display, config: &UiConfig) {
     st.open(
         "split-panes-test".to_string(),
         "Split Panes Demo".to_string(),
-        "This demonstrates split pane rendering.\n[Left Pane] | [Right Pane]\nVisual test for layout".to_string(),
+        "This demonstrates split pane rendering.\n[Left Pane] | [Right Pane]\nVisual test for \
+         layout"
+            .to_string(),
         Some("Split".to_string()),
         Some("Cancel".to_string()),
     );
@@ -371,8 +379,7 @@ fn draw_tab_bar_preview(display: &mut Display, config: &UiConfig) {
 }
 
 fn draw_tab_bar_hover(display: &mut Display, config: &UiConfig) {
-    use openagent_terminal::workspace::TabBarPosition;
-    use openagent_terminal::workspace::TabManager;
+    use openagent_terminal::workspace::{TabBarPosition, TabManager};
     let mut tm = TabManager::new();
     let t1 = tm.create_tab("main".to_string(), None);
     let t2 = tm.create_tab("server".to_string(), None);
@@ -386,8 +393,7 @@ fn draw_tab_bar_hover(display: &mut Display, config: &UiConfig) {
 }
 
 fn draw_tab_bar_drag(display: &mut Display, config: &UiConfig) {
-    use openagent_terminal::workspace::TabBarPosition;
-    use openagent_terminal::workspace::TabManager;
+    use openagent_terminal::workspace::{TabBarPosition, TabManager};
     let mut tm = TabManager::new();
     let t1 = tm.create_tab("main".to_string(), None);
     let t2 = tm.create_tab("server".to_string(), None);
@@ -412,8 +418,7 @@ fn draw_tab_bar_drag(display: &mut Display, config: &UiConfig) {
 }
 
 fn draw_tab_bar_overflow(display: &mut Display, config: &UiConfig) {
-    use openagent_terminal::workspace::TabBarPosition;
-    use openagent_terminal::workspace::TabManager;
+    use openagent_terminal::workspace::{TabBarPosition, TabManager};
     let mut tm = TabManager::new();
     for i in 0..12 {
         let _ = tm.create_tab(format!("tab-{}", i + 1), None);
@@ -422,8 +427,7 @@ fn draw_tab_bar_overflow(display: &mut Display, config: &UiConfig) {
 }
 
 fn draw_tab_bar_bottom(display: &mut Display, config: &UiConfig) {
-    use openagent_terminal::workspace::TabBarPosition;
-    use openagent_terminal::workspace::TabManager;
+    use openagent_terminal::workspace::{TabBarPosition, TabManager};
     let mut tm = TabManager::new();
     let t1 = tm.create_tab("one".to_string(), None);
     let t2 = tm.create_tab("two".to_string(), None);
@@ -432,8 +436,7 @@ fn draw_tab_bar_bottom(display: &mut Display, config: &UiConfig) {
 }
 
 fn draw_tab_bar_reduce_motion(display: &mut Display, config: &UiConfig) {
-    use openagent_terminal::workspace::TabBarPosition;
-    use openagent_terminal::workspace::TabManager;
+    use openagent_terminal::workspace::{TabBarPosition, TabManager};
     display.set_reduce_motion(true);
     let mut tm = TabManager::new();
     let t1 = tm.create_tab("stable".to_string(), None);
@@ -478,7 +481,8 @@ fn main() {
     let update = args.iter().any(|a| a == "--update-golden")
         || std::env::var("UPDATE_GOLDENS").ok().map(|v| v == "1").unwrap_or(false);
 
-    // Similarity threshold: default 0.995, override via --threshold=VAL or env SNAPSHOT_SIMILARITY_MIN
+    // Similarity threshold: default 0.995, override via --threshold=VAL or env
+    // SNAPSHOT_SIMILARITY_MIN
     let mut threshold = 0.995f64;
     if let Ok(envv) = std::env::var("SNAPSHOT_SIMILARITY_MIN") {
         if let Ok(v) = envv.parse::<f64>() {

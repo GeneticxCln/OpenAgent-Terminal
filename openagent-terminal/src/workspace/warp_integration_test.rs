@@ -3,7 +3,6 @@
 //! This module contains tests that demonstrate and validate the Warp-style
 //! tab and split pane functionality.
 
-
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;

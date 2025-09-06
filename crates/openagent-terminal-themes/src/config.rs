@@ -56,30 +56,30 @@ pub struct ThemeTokens {
     pub surface: String,
     pub surface_muted: String,
     pub surface_elevated: Option<String>,
-    
+
     // Text colors
     pub text: String,
     pub text_muted: String,
     pub text_inverse: Option<String>,
-    
+
     // Semantic colors
     pub accent: String,
     pub success: String,
     pub warning: String,
     pub error: String,
     pub info: Option<String>,
-    
+
     // Interactive colors
     pub selection: String,
     pub hover: Option<String>,
     pub active: Option<String>,
     pub focus: Option<String>,
-    
+
     // UI element colors
     pub border: String,
     pub border_muted: Option<String>,
     pub overlay: String,
-    
+
     // Terminal-specific colors
     pub terminal: Option<TerminalColorScheme>,
 }
@@ -92,7 +92,7 @@ pub struct TerminalColorScheme {
     pub cursor: Option<String>,
     pub selection_background: Option<String>,
     pub selection_foreground: Option<String>,
-    
+
     // ANSI colors
     pub black: String,
     pub red: String,
@@ -102,7 +102,7 @@ pub struct TerminalColorScheme {
     pub magenta: String,
     pub cyan: String,
     pub white: String,
-    
+
     // Bright ANSI colors
     pub bright_black: String,
     pub bright_red: String,
@@ -123,12 +123,12 @@ pub struct UiConfig {
     pub shadow: bool,
     pub shadow_alpha: f32,
     pub shadow_size_px: f32,
-    
+
     // Animation preferences
     pub reduce_motion: bool,
     pub animation_duration_ms: Option<u32>,
     pub easing: Option<String>,
-    
+
     // Component-specific settings
     pub palette: PaletteConfig,
     pub composer: ComposerConfig,
@@ -146,7 +146,7 @@ pub struct PaletteConfig {
     pub selection_scale: f32,
     pub hint_border_px: f32,
     pub hint_border_alpha: f32,
-    
+
     // Icon settings
     pub icon_tint: bool,
     pub icon_filter_nearest: bool,
@@ -339,18 +339,18 @@ impl ThemeCompatibility {
         // Simple semver compatibility check
         let Ok(current) = semver::Version::parse(current_version) else { return false };
         let Ok(min) = semver::Version::parse(&self.min_version) else { return false };
-        
+
         if current < min {
             return false;
         }
-        
+
         if let Some(max_version) = &self.max_version {
             let Ok(max) = semver::Version::parse(max_version) else { return false };
             if current > max {
                 return false;
             }
         }
-        
+
         true
     }
 }
@@ -366,7 +366,7 @@ mod tests {
             max_version: Some("2.0.0".to_string()),
             features: vec![],
         };
-        
+
         assert!(compat.is_compatible("1.5.0"));
         assert!(!compat.is_compatible("0.9.0"));
         assert!(!compat.is_compatible("2.1.0"));
@@ -397,10 +397,10 @@ mod tests {
             terminal: TerminalConfig::default(),
             extensions: HashMap::new(),
         };
-        
+
         let serialized = toml::to_string(&theme).unwrap();
         let deserialized: Theme = toml::from_str(&serialized).unwrap();
-        
+
         assert_eq!(theme.metadata.name, deserialized.metadata.name);
     }
 }

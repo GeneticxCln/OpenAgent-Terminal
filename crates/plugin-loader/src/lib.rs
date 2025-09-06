@@ -12,8 +12,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use wasmtime::*;
 use wasmtime_wasi::preview1::WasiP1Ctx;
-use wasmtime_wasi::WasiCtxBuilder;
-use wasmtime_wasi::{DirPerms, FilePerms};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
 /// Enhanced plugin manifest structure for TOML parsing
 #[derive(serde::Deserialize)]
@@ -286,7 +285,6 @@ impl PluginManager {
         self.signature_policy = Some(policy);
     }
 
-
     /// Load a plugin from a WASM file
     pub async fn load_plugin(&self, path: impl AsRef<Path>) -> Result<String, PluginError> {
         let path = path.as_ref();
@@ -306,7 +304,9 @@ impl PluginManager {
 
             if policy.require_signatures_for_all || policy.require_for_kind(kind) {
                 if !sig_exists {
-                    return Err(PluginError::InvalidFormat("Signature required but not present".into()));
+                    return Err(PluginError::InvalidFormat(
+                        "Signature required but not present".into(),
+                    ));
                 }
             }
         }
@@ -316,12 +316,15 @@ impl PluginManager {
             Ok(v) => v, // Option<String>
             Err(e) => {
                 if self.enforce_signatures {
-                    return Err(PluginError::InvalidFormat(format!("Signature verification failed: {}", e)));
+                    return Err(PluginError::InvalidFormat(format!(
+                        "Signature verification failed: {}",
+                        e
+                    )));
                 } else {
                     warn!("Signature verification skipped or failed: {}", e);
                     None
                 }
-            }
+            },
         };
 
         // Load the WASM module
@@ -341,10 +344,12 @@ impl PluginManager {
         let mut linker = Linker::new(&self.engine);
 
         // Add WASI functions to the linker
-        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |ctx: &mut PluginContext| &mut ctx.wasi)
-            .map_err(|e| {
-                PluginError::InitializationFailed(format!("Failed to add WASI to linker: {}", e))
-            })?;
+        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |ctx: &mut PluginContext| {
+            &mut ctx.wasi
+        })
+        .map_err(|e| {
+            PluginError::InitializationFailed(format!("Failed to add WASI to linker: {}", e))
+        })?;
 
         // Add host functions to the linker
         self.add_host_functions(&mut linker)?;
@@ -386,8 +391,12 @@ impl PluginManager {
             self.validate_permissions(&metadata.permissions, &permissions, plugin_base_dir)?;
         }
 
-
-        let loaded_plugin = Arc::new(LoadedPlugin { metadata, instance, store: tokio::sync::Mutex::new(store), exports });
+        let loaded_plugin = Arc::new(LoadedPlugin {
+            metadata,
+            instance,
+            store: tokio::sync::Mutex::new(store),
+            exports,
+        });
 
         // Store the plugin and path
         let mut plugins = self.plugins.write().await;
@@ -432,7 +441,7 @@ impl PluginManager {
     /// Return loaded plugin names and their file paths
     pub async fn loaded_names_and_paths(&self) -> Vec<(String, PathBuf)> {
         let paths = self.loaded_paths.read().await;
-        paths.iter().map(|(k,v)| (k.clone(), v.clone())).collect()
+        paths.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
     /// Discover plugins in the plugin directory
@@ -480,12 +489,9 @@ impl PluginManager {
         }
 
         // Always preopen the plugin base directory as the sandbox root
-        if let Err(e) = wasi_builder.preopened_dir(
-            plugin_base_dir,
-            ".",
-            DirPerms::all(),
-            FilePerms::all()
-        ) {
+        if let Err(e) =
+            wasi_builder.preopened_dir(plugin_base_dir, ".", DirPerms::all(), FilePerms::all())
+        {
             debug!("Failed to preopen plugin base directory: {}", e);
         }
 
@@ -496,12 +502,10 @@ impl PluginManager {
                 let is_write = permissions.write_files.contains(pattern);
                 let dir_perms = if is_write { DirPerms::all() } else { DirPerms::READ };
                 let file_perms = if is_write { FilePerms::all() } else { FilePerms::READ };
-                
+
                 if let Err(e) = wasi_builder.preopened_dir(
-                    &safe_path,
-                    pattern, // Use original pattern as guest path
-                    dir_perms,
-                    file_perms
+                    &safe_path, pattern, // Use original pattern as guest path
+                    dir_perms, file_perms,
                 ) {
                     debug!("Failed to preopen path {}: {}", safe_path, e);
                 }
@@ -513,7 +517,7 @@ impl PluginManager {
         // Build WASIp1 context from the WasiCtxBuilder
         let wasi = wasi_builder.build_p1();
 
-let context = PluginContext {
+        let context = PluginContext {
             wasi,
             permissions,
             plugin_base_dir: plugin_base_dir.to_path_buf(),
@@ -569,15 +573,18 @@ let context = PluginContext {
             let memory = instance
                 .get_export(&mut *store, "memory")
                 .and_then(|e| e.into_memory())
-                .ok_or_else(|| PluginError::RuntimeError("Plugin missing memory export".into()))?;
+                .ok_or_else(|| {
+                PluginError::RuntimeError("Plugin missing memory export".into())
+            })?;
 
             let mut buffer = vec![0u8; len as usize];
-            memory
-                .read(&mut *store, ptr as usize, &mut buffer)
-                .map_err(|_| PluginError::RuntimeError("Failed to read plugin metadata from memory".into()))?;
+            memory.read(&mut *store, ptr as usize, &mut buffer).map_err(|_| {
+                PluginError::RuntimeError("Failed to read plugin metadata from memory".into())
+            })?;
 
-            let metadata: PluginMetadata = serde_json::from_slice(&buffer)
-                .map_err(|e| PluginError::RuntimeError(format!("Invalid plugin metadata JSON: {}", e)))?;
+            let metadata: PluginMetadata = serde_json::from_slice(&buffer).map_err(|e| {
+                PluginError::RuntimeError(format!("Invalid plugin metadata JSON: {}", e))
+            })?;
 
             Ok(metadata)
         } else {
@@ -596,7 +603,11 @@ let context = PluginContext {
     }
 
     /// Read plugin permissions and metadata from enhanced manifest
-    fn read_plugin_permissions(&self, path: &Path, plugin_base_dir: &Path) -> Result<PluginPermissions, PluginError> {
+    fn read_plugin_permissions(
+        &self,
+        path: &Path,
+        plugin_base_dir: &Path,
+    ) -> Result<PluginPermissions, PluginError> {
         // Look for a manifest file next to the WASM file
         let manifest_path = path.with_extension("toml");
 
@@ -891,7 +902,7 @@ let context = PluginContext {
                         .and_then(|e| e.into_memory())
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
-// Read path from plugin memory
+                    // Read path from plugin memory
                     let mut path_buffer = vec![0u8; path_len as usize];
                     memory
                         .read(&caller, path_ptr as usize, &mut path_buffer)
@@ -908,9 +919,11 @@ let context = PluginContext {
                     let resolved_str = resolved.to_string_lossy().to_string();
 
                     // Check permissions against sanitized absolute prefixes
-                    let can_read = ctx.permissions.read_files.iter().any(|prefix| {
-                        resolved_str.starts_with(prefix.trim_end_matches('*'))
-                    });
+                    let can_read = ctx
+                        .permissions
+                        .read_files
+                        .iter()
+                        .any(|prefix| resolved_str.starts_with(prefix.trim_end_matches('*')));
 
                     if !can_read {
                         return Ok(-1); // Permission denied
@@ -964,7 +977,7 @@ let context = PluginContext {
                         .and_then(|e| e.into_memory())
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
-// Read path and data from plugin memory
+                    // Read path and data from plugin memory
                     let mut path_buffer = vec![0u8; path_len as usize];
                     memory
                         .read(&caller, path_ptr as usize, &mut path_buffer)
@@ -1013,7 +1026,7 @@ let context = PluginContext {
                 PluginError::InitializationFailed(format!("Failed to add host_write_file: {}", e))
             })?;
 
-// Host execute command function (two-call, variable-size JSON result)
+        // Host execute command function (two-call, variable-size JSON result)
         let host_clone = self.host.clone();
         linker
             .func_wrap(
@@ -1035,7 +1048,7 @@ let context = PluginContext {
                         anyhow::anyhow!("Failed to read command from plugin memory")
                     })?;
 
-let command = String::from_utf8_lossy(&cmd_buffer);
+                    let command = String::from_utf8_lossy(&cmd_buffer);
 
                     // Check permissions
                     let ctx = caller.data();
@@ -1048,21 +1061,23 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                         match host.execute_command(&command) {
                             Ok(output) => {
                                 // Serialize to JSON and publish via two-call ABI
-                                let json = serde_json::to_vec(&output)
-                                    .unwrap_or_else(|_| b"{}".to_vec());
+                                let json =
+                                    serde_json::to_vec(&output).unwrap_or_else(|_| b"{}".to_vec());
                                 // Always write the length
                                 let len_bytes = (json.len() as u32).to_le_bytes();
                                 memory
                                     .write(&mut caller, result_len_ptr as usize, &len_bytes)
-                                    .map_err(|_| anyhow::anyhow!("Failed to write result length"))?;
+                                    .map_err(|_| {
+                                        anyhow::anyhow!("Failed to write result length")
+                                    })?;
                                 if result_ptr != 0 {
-                                    memory
-                                        .write(&mut caller, result_ptr as usize, &json)
-                                        .map_err(|_| anyhow::anyhow!("Failed to write result data"))?;
+                                    memory.write(&mut caller, result_ptr as usize, &json).map_err(
+                                        |_| anyhow::anyhow!("Failed to write result data"),
+                                    )?;
                                 }
                                 Ok(0)
                             },
-                            Err(_) => Ok(-2),     // Execution failed
+                            Err(_) => Ok(-2), // Execution failed
                         }
                     } else {
                         Ok(-3) // Host not available
@@ -1094,12 +1109,14 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
                     let mut key_buf = vec![0u8; key_len as usize];
-                    memory.read(&caller, key_ptr as usize, &mut key_buf)
+                    memory
+                        .read(&caller, key_ptr as usize, &mut key_buf)
                         .map_err(|_| anyhow::anyhow!("Failed to read key from plugin memory"))?;
                     let key = String::from_utf8_lossy(&key_buf);
 
                     let mut data_buf = vec![0u8; data_len as usize];
-                    memory.read(&caller, data_ptr as usize, &mut data_buf)
+                    memory
+                        .read(&caller, data_ptr as usize, &mut data_buf)
                         .map_err(|_| anyhow::anyhow!("Failed to read data from plugin memory"))?;
 
                     if let Some(ref host) = host_clone {
@@ -1134,7 +1151,8 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
                     let mut key_buf = vec![0u8; key_len as usize];
-                    memory.read(&caller, key_ptr as usize, &mut key_buf)
+                    memory
+                        .read(&caller, key_ptr as usize, &mut key_buf)
                         .map_err(|_| anyhow::anyhow!("Failed to read key from plugin memory"))?;
                     let key = String::from_utf8_lossy(&key_buf);
 
@@ -1142,11 +1160,15 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                         match host.retrieve_data(&key) {
                             Ok(Some(data)) => {
                                 let len_bytes = (data.len() as u32).to_le_bytes();
-                                memory.write(&mut caller, result_len_ptr as usize, &len_bytes)
-                                    .map_err(|_| anyhow::anyhow!("Failed to write result length"))?;
+                                memory
+                                    .write(&mut caller, result_len_ptr as usize, &len_bytes)
+                                    .map_err(|_| {
+                                        anyhow::anyhow!("Failed to write result length")
+                                    })?;
                                 if result_ptr != 0 {
-                                    memory.write(&mut caller, result_ptr as usize, &data)
-                                        .map_err(|_| anyhow::anyhow!("Failed to write result data"))?;
+                                    memory.write(&mut caller, result_ptr as usize, &data).map_err(
+                                        |_| anyhow::anyhow!("Failed to write result data"),
+                                    )?;
                                 }
                                 Ok(0)
                             },
@@ -1159,7 +1181,10 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                 },
             )
             .map_err(|e| {
-                PluginError::InitializationFailed(format!("Failed to add host_retrieve_data: {}", e))
+                PluginError::InitializationFailed(format!(
+                    "Failed to add host_retrieve_data: {}",
+                    e
+                ))
             })?;
 
         Ok(())
@@ -1190,7 +1215,7 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                     result: None,
                     error: Some("Plugin does not implement event handler".into()),
                 })
-            }
+            },
         };
 
         // Serialize event to JSON
@@ -1212,9 +1237,9 @@ let command = String::from_utf8_lossy(&cmd_buffer);
                 .call(&mut *store, event_json.len() as i32)
                 .map_err(|e| PluginError::RuntimeError(format!("plugin_alloc failed: {}", e)))?;
             // Write event JSON into plugin memory
-            memory
-                .write(&mut *store, p as usize, &event_json)
-                .map_err(|_| PluginError::RuntimeError("Failed to write event data to plugin memory".into()))?;
+            memory.write(&mut *store, p as usize, &event_json).map_err(|_| {
+                PluginError::RuntimeError("Failed to write event data to plugin memory".into())
+            })?;
             (p, event_json.len() as i32)
         } else {
             // Without an allocator we cannot safely write into plugin memory
@@ -1241,21 +1266,20 @@ let command = String::from_utf8_lossy(&cmd_buffer);
         }
 
         // Try to fetch optional last response from plugin
-        let last_resp_fn = instance
-            .get_typed_func::<(), i64>(&mut *store, "plugin_get_last_response")
-            .ok();
+        let last_resp_fn =
+            instance.get_typed_func::<(), i64>(&mut *store, "plugin_get_last_response").ok();
 
         let result = if let Some(get_resp) = last_resp_fn {
-            let packed = get_resp
-                .call(&mut *store, ())
-                .map_err(|e| PluginError::RuntimeError(format!("plugin_get_last_response failed: {}", e)))?;
+            let packed = get_resp.call(&mut *store, ()).map_err(|e| {
+                PluginError::RuntimeError(format!("plugin_get_last_response failed: {}", e))
+            })?;
             let rptr = (packed & 0xFFFF_FFFF) as u32;
             let rlen = (packed >> 32) as u32;
             if rptr != 0 && rlen > 0 {
                 let mut buf = vec![0u8; rlen as usize];
-                memory
-                    .read(&mut *store, rptr as usize, &mut buf)
-                    .map_err(|_| PluginError::RuntimeError("Failed to read plugin response".into()))?;
+                memory.read(&mut *store, rptr as usize, &mut buf).map_err(|_| {
+                    PluginError::RuntimeError("Failed to read plugin response".into())
+                })?;
                 Some(String::from_utf8_lossy(&buf).to_string())
             } else {
                 None
@@ -1344,7 +1368,11 @@ impl PluginManager {
         for name in names {
             match self.send_event_to_plugin(&name, event).await {
                 Ok(resp) => results.push((name, resp)),
-                Err(e) => results.push((name, PluginEventResponse { success: false, result: None, error: Some(e.to_string()) })),
+                Err(e) => results.push((name, PluginEventResponse {
+                    success: false,
+                    result: None,
+                    error: Some(e.to_string()),
+                })),
             }
         }
         results
@@ -1360,7 +1388,7 @@ impl PluginManager {
 
     /// Verify signature if present; return verifying key hex on success.
     fn verify_signature_and_get_key(&self, wasm_path: &Path) -> anyhow::Result<Option<String>> {
-        use ed25519_dalek::{Verifier, Signature, VerifyingKey};
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
         use sha2::{Digest, Sha256};
 
         let sig_path = wasm_path.with_extension("sig");
@@ -1386,7 +1414,9 @@ impl PluginManager {
                     }
                     let key_hex = std::fs::read_to_string(entry.path())?;
                     let key_bytes = hex::decode(key_hex.trim()).map_err(|e| anyhow::anyhow!(e))?;
-                    if let Ok(vk) = VerifyingKey::from_bytes(&key_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?) {
+                    if let Ok(vk) = VerifyingKey::from_bytes(
+                        &key_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?,
+                    ) {
                         if vk.verify(&digest, &signature).is_ok() {
                             return Ok(Some(hex::encode(vk.to_bytes())));
                         }
@@ -1401,7 +1431,12 @@ impl PluginManager {
 
 /// Directory kind for signature policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirKind { System, User, Project, Other }
+pub enum DirKind {
+    System,
+    User,
+    Project,
+    Other,
+}
 
 #[derive(Debug, Clone)]
 pub struct SignaturePolicy {
@@ -1418,13 +1453,19 @@ impl SignaturePolicy {
     pub fn kind_for_dir(&self, dir: &Path) -> DirKind {
         let canon = std::fs::canonicalize(dir).unwrap_or(dir.to_path_buf());
         if let Some(sd) = &self.system_dir {
-            if std::fs::canonicalize(sd).unwrap_or(sd.clone()) == canon { return DirKind::System; }
+            if std::fs::canonicalize(sd).unwrap_or(sd.clone()) == canon {
+                return DirKind::System;
+            }
         }
         if let Some(ud) = &self.user_dir {
-            if std::fs::canonicalize(ud).unwrap_or(ud.clone()) == canon { return DirKind::User; }
+            if std::fs::canonicalize(ud).unwrap_or(ud.clone()) == canon {
+                return DirKind::User;
+            }
         }
         if let Some(pd) = &self.project_dir {
-            if std::fs::canonicalize(pd).unwrap_or(pd.clone()) == canon { return DirKind::Project; }
+            if std::fs::canonicalize(pd).unwrap_or(pd.clone()) == canon {
+                return DirKind::Project;
+            }
         }
         DirKind::Other
     }
@@ -1467,10 +1508,18 @@ mod tests {
         let manifest_path = temp_dir.path().join("p.toml");
         let mut f = std::fs::File::create(&manifest_path).unwrap();
         // Include an unsafe preopen ('/') which should be filtered out
-        writeln!(f, "[permissions]\nread_files=[\"/\",\"sub\"]\nwrite_files=[\"sub\"]\nnetwork=false\nexecute_commands=false\nenvironment_variables=[]\nmax_memory_mb=50\ntimeout_ms=5000\n").unwrap();
+        writeln!(
+            f,
+            "[permissions]\nread_files=[\"/\",\"sub\"]\nwrite_files=[\"sub\"]\nnetwork=false\\
+             nexecute_commands=false\nenvironment_variables=[]\nmax_memory_mb=50\ntimeout_ms=5000\\
+             n"
+        )
+        .unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
-        let perms = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap()).expect("permissions");
+        let perms = manager
+            .read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap())
+            .expect("permissions");
         // Ensure '/' was removed and 'sub' resolved under plugin_dir
         assert!(!perms.read_files.iter().any(|p| p == "/"));
         assert!(perms
@@ -1608,11 +1657,18 @@ mod tests {
 
         // Test complete manifest with plugin metadata
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(f, "[plugin]\nname=\"test-plugin\"\nversion=\"1.0.0\"\nauthor=\"Test Author\"\n[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000").unwrap();
+        writeln!(
+            f,
+            "[plugin]\nname=\"test-plugin\"\nversion=\"1.0.0\"\nauthor=\"Test \
+             Author\"\n[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\\
+             nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000"
+        )
+        .unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
-        let perms =
-            manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap()).expect("Should parse valid manifest");
+        let perms = manager
+            .read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap())
+            .expect("Should parse valid manifest");
         assert_eq!(perms.max_memory_mb, 50);
         assert_eq!(perms.timeout_ms, 5000);
     }
@@ -1627,7 +1683,13 @@ mod tests {
 
         // Test manifest with dangerous file access
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(f, "[permissions]\nread_files=[\"/etc/passwd\"]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000").unwrap();
+        writeln!(
+            f,
+            "[permissions]\nread_files=[\"/etc/passwd\"]\nwrite_files=[]\\
+             nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\\
+             ntimeout_ms=5000"
+        )
+        .unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1644,7 +1706,12 @@ mod tests {
 
         // Test manifest with excessive memory request
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(f, "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=500\ntimeout_ms=5000").unwrap();
+        writeln!(
+            f,
+            "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\\
+             nnetwork=false\nexecute_commands=false\nmax_memory_mb=500\ntimeout_ms=5000"
+        )
+        .unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1661,7 +1728,12 @@ mod tests {
 
         // Test manifest with excessive timeout request
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(f, "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=60000").unwrap();
+        writeln!(
+            f,
+            "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\\
+             nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=60000"
+        )
+        .unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1678,7 +1750,14 @@ mod tests {
 
         // Test manifest with missing required fields
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(f, "[plugin]\nname=\"\"\nversion=\"1.0.0\"\n[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000").unwrap();
+        writeln!(
+            f,
+            "[plugin]\nname=\"\"\nversion=\"1.0.0\"\n[permissions]\nread_files=[]\nwrite_files=[]\\
+             \
+             nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\\
+             ntimeout_ms=5000"
+        )
+        .unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1726,7 +1805,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_metadata_and_event_flow_minimal() {
-        
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("meta_event.wasm");
 
@@ -1795,7 +1873,8 @@ mod tests {
         assert_eq!(listed[0].name, "test-plugin");
 
         // Send a minimal event (will succeed, no response)
-        let event = PluginEvent { event_type: "ping".into(), data: serde_json::json!({}), timestamp: 0 };
+        let event =
+            PluginEvent { event_type: "ping".into(), data: serde_json::json!({}), timestamp: 0 };
         let resp = manager.send_event_to_plugin(&name, &event).await.expect("event ok");
         assert!(resp.success);
     }

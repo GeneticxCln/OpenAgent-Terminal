@@ -113,7 +113,10 @@ impl OllamaProvider {
         let endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
         let model = std::env::var("OLLAMA_MODEL").map_err(|_| {
-            "OLLAMA_MODEL environment variable not set. Configure a model explicitly via config.ai.model_env (e.g., OPENAGENT_AI_MODEL) or export OLLAMA_MODEL before launching.".to_string()
+            "OLLAMA_MODEL environment variable not set. Configure a model explicitly via \
+             config.ai.model_env (e.g., OPENAGENT_AI_MODEL) or export OLLAMA_MODEL before \
+             launching."
+                .to_string()
         })?;
 
         info!("Initializing Ollama provider with endpoint: {} and model: {}", endpoint, model);
@@ -198,7 +201,9 @@ impl OllamaProvider {
                     }
                     return Err("Cancelled".to_string());
                 }
-                match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await {
+                match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
+                    .await
+                {
                     Ok(Some(Ok(chunk))) => {
                         buffer.extend_from_slice(&chunk);
                         // Process complete lines
@@ -206,19 +211,29 @@ impl OllamaProvider {
                             if let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                                 let line = buffer.drain(..=pos).collect::<Vec<u8>>();
                                 let line = String::from_utf8_lossy(&line).trim().to_string();
-                                if line.is_empty() { continue; }
+                                if line.is_empty() {
+                                    continue;
+                                }
                                 match serde_json::from_str::<OllamaGenerateResponse>(&line) {
                                     Ok(ev) => {
                                         if !ev.response.is_empty() {
                                             if ai_log_verbose() {
-                                                debug!("ollama_stream_chunk len={}", ev.response.len());
+                                                debug!(
+                                                    "ollama_stream_chunk len={}",
+                                                    ev.response.len()
+                                                );
                                             }
                                             on_chunk(&ev.response);
                                         }
-                                        if ev.done { return Ok(true); }
+                                        if ev.done {
+                                            return Ok(true);
+                                        }
                                     },
                                     Err(e) => {
-                                        debug!("Skipping non-JSON stream line: {} (err: {})", line, e);
+                                        debug!(
+                                            "Skipping non-JSON stream line: {} (err: {})",
+                                            line, e
+                                        );
                                     },
                                 }
                             } else {

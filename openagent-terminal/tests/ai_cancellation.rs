@@ -8,17 +8,17 @@ use std::sync::{Arc, Mutex};
 
 use openagent_terminal::ai_runtime::AiRuntime;
 use openagent_terminal::event::{Event, EventType};
-use openagent_terminal_ai::{AiProvider, AiRequest, AiProposal};
-use winit::event_loop::EventLoop;
-use winit::event_loop::EventLoopProxy;
-use winit::event_loop::ActiveEventLoop;
+use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 use winit::application::ApplicationHandler;
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 
 // A fake provider that simulates immediate cancellation in streaming mode.
 struct CancelStreamProvider;
 
 impl AiProvider for CancelStreamProvider {
-    fn name(&self) -> &'static str { "test-cancel" }
+    fn name(&self) -> &'static str {
+        "test-cancel"
+    }
 
     fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> {
         Ok(Vec::new())
@@ -51,8 +51,8 @@ impl ApplicationHandler<Event> for CaptureApp {
         match event.payload() {
             EventType::AiStreamFinished | EventType::AiStreamError(_) => {
                 event_loop.exit();
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -108,4 +108,3 @@ fn ai_stream_cancellation_is_graceful() {
     assert!(saw_finished, "expected AiStreamFinished event on cancellation, got: {:?}", *events);
     assert!(!saw_error, "did not expect AiStreamError on cancellation, got: {:?}", *events);
 }
-

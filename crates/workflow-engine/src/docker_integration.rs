@@ -75,7 +75,7 @@ impl DockerIntegration {
     pub async fn new() -> Result<Self> {
         let docker_available = Self::check_docker_availability().await?;
         let compose_available = Self::check_compose_availability().await?;
-        
+
         let context = if docker_available {
             Self::detect_context().await?
         } else {
@@ -89,11 +89,7 @@ impl DockerIntegration {
             }
         };
 
-        Ok(Self {
-            context,
-            docker_available,
-            compose_available,
-        })
+        Ok(Self { context, docker_available, compose_available })
     }
 
     async fn check_docker_availability() -> Result<bool> {
@@ -116,11 +112,7 @@ impl DockerIntegration {
 
     async fn detect_context() -> Result<DockerContext> {
         let in_container = Self::is_running_in_container().await?;
-        let container_id = if in_container {
-            Self::get_container_id().await?
-        } else {
-            None
-        };
+        let container_id = if in_container { Self::get_container_id().await? } else { None };
 
         let available_containers = Self::get_running_containers().await?;
         let compose_services = Self::get_compose_services().await.unwrap_or_default();
@@ -251,7 +243,9 @@ impl DockerIntegration {
         let mut created = chrono::Utc::now();
 
         if inspect_output.status.success() {
-            if let Ok(inspect_data) = serde_json::from_slice::<serde_json::Value>(&inspect_output.stdout) {
+            if let Ok(inspect_data) =
+                serde_json::from_slice::<serde_json::Value>(&inspect_output.stdout)
+            {
                 // Parse environment variables
                 if let Some(env_array) = inspect_data["Config"]["Env"].as_array() {
                     for env_var in env_array {
@@ -283,7 +277,9 @@ impl DockerIntegration {
                 }
 
                 // Parse networks
-                if let Some(network_settings) = inspect_data["NetworkSettings"]["Networks"].as_object() {
+                if let Some(network_settings) =
+                    inspect_data["NetworkSettings"]["Networks"].as_object()
+                {
                     for network_name in network_settings.keys() {
                         networks.push(network_name.clone());
                     }
@@ -337,7 +333,7 @@ impl DockerIntegration {
 
     fn parse_port_mappings(ports_str: &str) -> Vec<PortMapping> {
         let mut mappings = Vec::new();
-        
+
         for port_mapping in ports_str.split(',') {
             let mapping = port_mapping.trim();
             if mapping.is_empty() {
@@ -373,7 +369,9 @@ impl DockerIntegration {
         mappings
     }
 
-    async fn get_working_directories(container_id: &Option<String>) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    async fn get_working_directories(
+        container_id: &Option<String>,
+    ) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
         if let Some(id) = container_id {
             let output = Command::new("docker")
                 .args(&["inspect", "--format", "{{.Config.WorkingDir}}", id])
@@ -381,10 +379,10 @@ impl DockerIntegration {
                 .map_err(|e| anyhow!("Failed to get container working dir: {}", e))?;
 
             if output.status.success() {
-let wd_raw = String::from_utf8_lossy(&output.stdout).to_string();
+                let wd_raw = String::from_utf8_lossy(&output.stdout).to_string();
                 let container_wd = wd_raw.trim().to_string();
                 let container_working_dir = if !container_wd.is_empty() {
-Some(PathBuf::from(&container_wd))
+                    Some(PathBuf::from(&container_wd))
                 } else {
                     None
                 };
@@ -411,12 +409,14 @@ Some(PathBuf::from(&container_wd))
 
         if let Ok(mounts) = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) {
             for mount in mounts {
-                if let (Some(source), Some(destination)) = (
-                    mount["Source"].as_str(),
-                    mount["Destination"].as_str(),
-                ) {
+                if let (Some(source), Some(destination)) =
+                    (mount["Source"].as_str(), mount["Destination"].as_str())
+                {
                     // Look for common project directories
-                    if destination.contains("/workspace") || destination.contains("/app") || destination.contains("/src") {
+                    if destination.contains("/workspace")
+                        || destination.contains("/app")
+                        || destination.contains("/src")
+                    {
                         return Ok(Some(PathBuf::from(source)));
                     }
                 }
@@ -428,8 +428,9 @@ Some(PathBuf::from(&container_wd))
 
     async fn get_compose_services() -> Result<Vec<ComposeService>> {
         // Check if docker-compose.yml exists
-        let compose_files = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
-        
+        let compose_files =
+            ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
+
         for file in &compose_files {
             if fs::metadata(file).await.is_ok() {
                 return Self::parse_compose_file(file).await;
@@ -449,7 +450,8 @@ Some(PathBuf::from(&container_wd))
         if let Some(services_map) = compose_data["services"].as_mapping() {
             for (service_name, service_config) in services_map {
                 if let Some(service_name_str) = service_name.as_str() {
-                    let service = Self::parse_compose_service(service_name_str, service_config).await?;
+                    let service =
+                        Self::parse_compose_service(service_name_str, service_config).await?;
                     services.push(service);
                 }
             }
@@ -463,7 +465,10 @@ Some(PathBuf::from(&container_wd))
         Ok(services)
     }
 
-    async fn parse_compose_service(name: &str, config: &serde_yaml::Value) -> Result<ComposeService> {
+    async fn parse_compose_service(
+        name: &str,
+        config: &serde_yaml::Value,
+    ) -> Result<ComposeService> {
         let image = config["image"].as_str().unwrap_or("unknown").to_string();
         let container_name = config["container_name"].as_str().map(|s| s.to_string());
 
@@ -580,10 +585,7 @@ Some(PathBuf::from(&container_wd))
             .map_err(|e| anyhow!("Failed to copy file to container: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Copy failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Copy failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         Ok(())
@@ -605,10 +607,7 @@ Some(PathBuf::from(&container_wd))
             .map_err(|e| anyhow!("Failed to copy file from container: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Copy failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Copy failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         Ok(())
@@ -648,14 +647,18 @@ Some(PathBuf::from(&container_wd))
         Ok(())
     }
 
-    pub async fn get_container_logs(&self, container_id: &str, lines: Option<usize>) -> Result<String> {
+    pub async fn get_container_logs(
+        &self,
+        container_id: &str,
+        lines: Option<usize>,
+    ) -> Result<String> {
         let mut args: Vec<String> = vec!["logs".to_string()];
-        
+
         if let Some(n) = lines {
             args.push("--tail".to_string());
             args.push(n.to_string());
         }
-        
+
         args.push(container_id.to_string());
 
         let output = Command::new("docker")
@@ -664,10 +667,7 @@ Some(PathBuf::from(&container_wd))
             .map_err(|e| anyhow!("Failed to get container logs: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Failed to get logs: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Failed to get logs: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -675,7 +675,7 @@ Some(PathBuf::from(&container_wd))
 
     pub fn generate_context_prompt(&self) -> String {
         let mut prompt = String::new();
-        
+
         if self.context.in_container {
             prompt.push_str("🐳 Running inside container");
             if let Some(id) = &self.context.container_id {
@@ -686,11 +686,15 @@ Some(PathBuf::from(&container_wd))
         }
 
         if !self.context.available_containers.is_empty() {
-            prompt.push_str(&format!(" • {} containers available", self.context.available_containers.len()));
+            prompt.push_str(&format!(
+                " • {} containers available",
+                self.context.available_containers.len()
+            ));
         }
 
         if !self.context.compose_services.is_empty() {
-            prompt.push_str(&format!(" • {} compose services", self.context.compose_services.len()));
+            prompt
+                .push_str(&format!(" • {} compose services", self.context.compose_services.len()));
         }
 
         prompt
@@ -712,7 +716,7 @@ mod tests {
     fn test_parse_port_mappings() {
         let port_str = "0.0.0.0:8080->80/tcp, 0.0.0.0:8443->443/tcp";
         let mappings = DockerIntegration::parse_port_mappings(port_str);
-        
+
         assert_eq!(mappings.len(), 2);
         assert_eq!(mappings[0].host_port, Some(8080));
         assert_eq!(mappings[0].container_port, 80);
@@ -725,7 +729,7 @@ mod tests {
             DockerIntegration::parse_container_status("Up 2 hours"),
             ContainerStatus::Running
         ));
-        
+
         assert!(matches!(
             DockerIntegration::parse_container_status("Exited (0) 5 minutes ago"),
             ContainerStatus::Exited(0)

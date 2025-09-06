@@ -50,8 +50,7 @@ use crate::cli::{Options as CliOptions, WindowOptions};
 use crate::clipboard::Clipboard;
 use crate::components_init::{ComponentConfig, InitializedComponents};
 use crate::config::ui_config::{HintAction, HintInternalAction};
-use crate::config::Action as BindingAction;
-use crate::config::{self, UiConfig};
+use crate::config::{self, Action as BindingAction, UiConfig};
 #[cfg(not(windows))]
 use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
@@ -235,7 +234,9 @@ impl Processor {
 
         // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
         if self.config.config_paths.is_empty() {
-            let hint = "Welcome — click the bottom bar or use Ctrl+Shift+P/S/W. Place a config at ~/.config/openagent-terminal/openagent-terminal.toml".to_string();
+            let hint = "Welcome — click the bottom bar or use Ctrl+Shift+P/S/W. Place a config at \
+                        ~/.config/openagent-terminal/openagent-terminal.toml"
+                .to_string();
             let message =
                 crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
             let _ = self.proxy.send_event(Event::new(EventType::Message(message), window_id));
@@ -910,14 +911,17 @@ impl ApplicationHandler<Event> for Processor {
                                 format!("Blocked risky paste: {}", risk.explanation),
                                 crate::message_bar::MessageType::Warning,
                             );
-                            let _ = self.proxy.send_event(Event::new(EventType::Message(message), *window_id));
+                            let _ = self
+                                .proxy
+                                .send_event(Event::new(EventType::Message(message), *window_id));
                             return;
                         }
                         // Require confirmation path
                         if *policy.require_confirmation.get(&risk.level).unwrap_or(&false) {
                             let id = crate::ui_confirm::generate_id();
                             // Track pending paste action
-                            self.pending_security_paste.insert(id.clone(), (text.clone(), *window_id));
+                            self.pending_security_paste
+                                .insert(id.clone(), (text.clone(), *window_id));
                             // Build body
                             let mut body = String::new();
                             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -985,18 +989,20 @@ impl ApplicationHandler<Event> for Processor {
             // Warp UI update events
             (EventType::WarpUiUpdate(update_type), Some(window_id)) => {
                 use crate::workspace::WarpUiUpdateType;
-                
+
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     match update_type {
                         // Autosave session event
                         WarpUiUpdateType::SessionAutoSave => {
                             if let Some(warp) = &mut window_context.workspace.warp {
                                 if warp.should_auto_save() {
-                                    let _ = warp.execute_warp_action(&crate::workspace::WarpAction::SaveSession);
+                                    let _ = warp.execute_warp_action(
+                                        &crate::workspace::WarpAction::SaveSession,
+                                    );
                                 }
                             }
                         },
-                        
+
                         // Tab-related events
                         WarpUiUpdateType::TabCreated(_tab_id) => {
                             // Tab created - trigger UI redraw
@@ -1006,7 +1012,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         WarpUiUpdateType::TabClosed(_tab_id) => {
                             // Tab closed - trigger UI redraw
                             info!("Warp tab closed");
@@ -1015,7 +1021,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         WarpUiUpdateType::TabSwitched { tab_id: _ } => {
                             // Tab switched - update UI state
                             info!("Warp tab switched");
@@ -1024,7 +1030,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         // Pane-related events
                         WarpUiUpdateType::PaneSplit { tab_id: _, new_pane_id: _ } => {
                             // Pane split - major layout change
@@ -1034,7 +1040,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         WarpUiUpdateType::PaneFocused { tab_id: _, pane_id: _ } => {
                             // Pane focused - update focus indicators
                             window_context.dirty = true;
@@ -1042,7 +1048,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         WarpUiUpdateType::PaneResized { tab_id: _, pane_id: _ } => {
                             // Pane resized - layout change
                             window_context.dirty = true;
@@ -1050,7 +1056,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         WarpUiUpdateType::PaneZoomed { tab_id: _, pane_id: _, zoomed } => {
                             // Pane zoom toggled - major layout change
                             info!("Warp pane zoom toggled: {}", zoomed);
@@ -1059,8 +1065,12 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
-                        WarpUiUpdateType::PaneClosed { tab_id: _, closed_pane_id: _, new_active_pane_id: _ } => {
+
+                        WarpUiUpdateType::PaneClosed {
+                            tab_id: _,
+                            closed_pane_id: _,
+                            new_active_pane_id: _,
+                        } => {
                             // Pane closed - layout and focus change
                             info!("Warp pane closed");
                             window_context.dirty = true;
@@ -1068,7 +1078,7 @@ impl ApplicationHandler<Event> for Processor {
                                 window_context.display.window.request_redraw();
                             }
                         },
-                        
+
                         WarpUiUpdateType::SplitsEqualized { tab_id: _ } => {
                             // Splits equalized - layout change
                             info!("Warp splits equalized");
@@ -1385,7 +1395,8 @@ impl ApplicationHandler<Event> for Processor {
                             preview_cmd = preview_cmd.replace(&placeholder, &val);
                         }
                         let body = format!(
-                            "About to run guarded workflow: {}\n\nPreview (with defaults):\n  {}\n\nProceed?",
+                            "About to run guarded workflow: {}\n\nPreview (with defaults):\n  \
+                             {}\n\nProceed?",
                             wf.name, preview_cmd
                         );
                         // Track pending workflow confirmation
@@ -2985,6 +2996,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.damage_tracker.frame().mark_fully_damaged();
         self.display.pending_update.dirty = true;
     }
+
     #[inline]
     fn start_seeded_search(&mut self, direction: Direction, text: String) {
         let origin = self.terminal.vi_mode_cursor.point;
@@ -3717,8 +3729,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         mouse_y: usize,
     ) -> Option<crate::display::tab_bar::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
-        self.display
-            .handle_tab_bar_click(&self.config, &self.workspace.tabs, position, mouse_x, mouse_y)
+        self.display.handle_tab_bar_click(
+            &self.config,
+            &self.workspace.tabs,
+            position,
+            mouse_x,
+            mouse_y,
+        )
     }
 
     fn workspace_tab_bar_drag_press(
@@ -3728,10 +3745,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         button: MouseButton,
     ) -> bool {
         let position = self.config.workspace.tab_bar.position;
-        if let Some(action) = self
-            .display
-            .handle_tab_bar_mouse_press(&self.config, &self.workspace.tabs, position, mouse_x, mouse_y, button)
-        {
+        if let Some(action) = self.display.handle_tab_bar_mouse_press(
+            &self.config,
+            &self.workspace.tabs,
+            position,
+            mouse_x,
+            mouse_y,
+            button,
+        ) {
             use crate::display::tab_bar::TabBarAction as TBA;
             match action {
                 TBA::SelectTab(id) => {
@@ -3747,7 +3768,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     self.workspace_create_tab();
                     return true;
                 },
-                TBA::BeginDrag(_) | TBA::DragMove(_, _) | TBA::EndDrag(_) | TBA::CancelDrag(_) => {
+                TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::EndDrag(_) | TBA::CancelDrag(_) => {
                     // Drag lifecycle is handled by move/release handlers; mark dirty for visuals
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
@@ -3759,9 +3780,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_tab_bar_drag_move(&mut self, mouse_x: usize, mouse_y: usize) -> bool {
-        if let Some(action) = self
-            .display
-            .handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
+        if let Some(action) =
+            self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
         {
             use crate::display::tab_bar::TabBarAction as TBA;
             if let TBA::DragMove(tab_id, new_pos) = action {
@@ -3776,12 +3796,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         crate::workspace::TabBarPosition::Hidden => 0,
                     };
                     let cols = self.display.size_info.columns();
-                    self.display
-                        .damage_tracker
-                        .frame()
-                        .damage_line(openagent_terminal_core::term::LineDamageBounds::new(
-                            line, 0, cols,
-                        ));
+                    self.display.damage_tracker.frame().damage_line(
+                        openagent_terminal_core::term::LineDamageBounds::new(line, 0, cols),
+                    );
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                 }
@@ -3813,7 +3830,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     self.workspace_create_tab();
                     return true;
                 },
-                TBA::BeginDrag(_) | TBA::DragMove(_, _) | TBA::CancelDrag(_) => {
+                TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::CancelDrag(_) => {
                     // Shouldn't happen on release; ignore
                     return false;
                 },
@@ -3873,12 +3890,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_word(&mut self) {
-        let suggestion_data = if let Some(rt) = &mut self.ai_runtime {
-            rt.ui.inline_suggestion.take()
-        } else {
-            None
-        };
-        
+        let suggestion_data =
+            if let Some(rt) = &mut self.ai_runtime { rt.ui.inline_suggestion.take() } else { None };
+
         if let Some(suf) = suggestion_data {
             let (accept, rest) = next_word(&suf);
             if !accept.is_empty() {
@@ -3919,12 +3933,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_char(&mut self) {
-        let suggestion_data = if let Some(rt) = &mut self.ai_runtime {
-            rt.ui.inline_suggestion.take()
-        } else {
-            None
-        };
-        
+        let suggestion_data =
+            if let Some(rt) = &mut self.ai_runtime { rt.ui.inline_suggestion.take() } else { None };
+
         if let Some(mut suf) = suggestion_data {
             if let Some(first) = suf.chars().next() {
                 let mut buf = [0u8; 4];
@@ -4152,7 +4163,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     let stop_enabled = streaming;
                     let regen_enabled = !streaming;
 
-                    // Close is a single-column target; Stop/Regenerate extend into their right space
+                    // Close is a single-column target; Stop/Regenerate extend into their right
+                    // space
                     if col == close_col {
                         hovered = Some(crate::display::ai_panel::AiHeaderControl::Close);
                     } else if (col == regen_col || col == regen_col + 1) && regen_enabled {
@@ -5005,10 +5017,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     // Extract all terminal data before taking mutable borrow
                     let (not_altscreen, ime_off, prefix) = {
                         let term = self.ctx.terminal();
-                        let not_altscreen =
-                            !term.mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
+                        let not_altscreen = !term
+                            .mode()
+                            .contains(openagent_terminal_core::term::TermMode::ALT_SCREEN);
                         let ime_off = self.ctx.display.ime.preedit().is_none();
-                        
+
                         // Extract current line prefix up to the cursor
                         let point = term.grid().cursor.point;
                         // Collect characters from start of line to cursor (skipping spacer flags)
@@ -5026,7 +5039,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 prefix.push(ch);
                             }
                         }
-                        
+
                         (not_altscreen, ime_off, prefix)
                     };
 
@@ -5187,7 +5200,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     },
                     WindowEvent::Ime(ime) => match ime {
                         Ime::Commit(text) => {
-                            // If composer is focused, route IME commit according to composer_open_mode
+                            // If composer is focused, route IME commit according to
+                            // composer_open_mode
                             let theme = self
                                 .ctx
                                 .config

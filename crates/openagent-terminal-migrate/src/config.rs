@@ -236,7 +236,7 @@ impl UnifiedConfig {
             self.window.padding = other.window.padding;
         }
         // ... (continue for all fields)
-        
+
         // Merge custom fields
         for (key, value) in other.custom {
             self.custom.insert(key, value);
@@ -262,7 +262,10 @@ impl UnifiedConfig {
         // Validate color format (basic check for hex colors)
         if let Some(bg) = &self.colors.primary.as_ref().and_then(|p| p.background.as_ref()) {
             if !bg.starts_with('#') || bg.len() != 7 {
-                return Err(format!("Background color '{}' doesn't appear to be a valid hex color", bg));
+                return Err(format!(
+                    "Background color '{}' doesn't appear to be a valid hex color",
+                    bg
+                ));
             }
         }
 
@@ -284,14 +287,14 @@ mod tests {
     #[test]
     fn test_unified_config_validation() {
         let mut config = UnifiedConfig::new();
-        
+
         // Valid config should pass
         assert!(config.validate().is_ok());
-        
+
         // Invalid font size should fail
         config.font.size = Some(-5.0);
         assert!(config.validate().is_err());
-        
+
         // Valid font size should pass
         config.font.size = Some(12.0);
         assert!(config.validate().is_ok());
@@ -304,7 +307,7 @@ mod tests {
             config_path: PathBuf::from("/home/user/.alacritty.yml"),
             detected_automatically: true,
         };
-        
+
         assert_eq!(config.terminal_type, TerminalType::Alacritty);
         assert!(config.detected_automatically);
     }

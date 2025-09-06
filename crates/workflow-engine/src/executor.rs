@@ -34,8 +34,8 @@ pub struct OutputLimits {
 impl Default for OutputLimits {
     fn default() -> Self {
         Self {
-            max_stdout_bytes: 64 * 1024, // 64KB
-            max_stderr_bytes: 64 * 1024, // 64KB
+            max_stdout_bytes: 64 * 1024,     // 64KB
+            max_stderr_bytes: 64 * 1024,     // 64KB
             max_log_message_bytes: 4 * 1024, // 4KB
             truncate_at_word_boundary: true,
         }
@@ -70,32 +70,15 @@ pub struct StepExecutionResult {
 #[derive(Debug, Clone)]
 pub enum StepError {
     /// Command execution failed
-    CommandFailed {
-        command: String,
-        exit_code: i32,
-        stderr: String,
-    },
+    CommandFailed { command: String, exit_code: i32, stderr: String },
     /// Step timed out
-    Timeout {
-        duration: Duration,
-        partial_output: String,
-    },
+    Timeout { duration: Duration, partial_output: String },
     /// Resource limit exceeded
-    ResourceLimit {
-        limit_type: String,
-        limit_value: usize,
-        actual_value: usize,
-    },
+    ResourceLimit { limit_type: String, limit_value: usize, actual_value: usize },
     /// Internal error
-    Internal {
-        message: String,
-        source: String,
-    },
+    Internal { message: String, source: String },
     /// Permission denied
-    PermissionDenied {
-        operation: String,
-        resource: String,
-    },
+    PermissionDenied { operation: String, resource: String },
 }
 
 impl std::fmt::Display for StepError {
@@ -108,13 +91,21 @@ impl std::fmt::Display for StepError {
                 write!(f, "Step timed out after {:?}. Partial output: {}", duration, partial_output)
             },
             StepError::ResourceLimit { limit_type, limit_value, actual_value } => {
-                write!(f, "Resource limit exceeded: {} limit {} < actual {}", limit_type, limit_value, actual_value)
+                write!(
+                    f,
+                    "Resource limit exceeded: {} limit {} < actual {}",
+                    limit_type, limit_value, actual_value
+                )
             },
             StepError::Internal { message, source } => {
                 write!(f, "Internal error: {} (source: {})", message, source)
             },
             StepError::PermissionDenied { operation, resource } => {
-                write!(f, "Permission denied for operation '{}' on resource '{}'", operation, resource)
+                write!(
+                    f,
+                    "Permission denied for operation '{}' on resource '{}'",
+                    operation, resource
+                )
             },
         }
     }
@@ -134,17 +125,17 @@ impl EnhancedWorkflowExecutor {
             output_limits: OutputLimits::default(),
         }
     }
-    
+
     pub fn with_limits(mut self, output_limits: OutputLimits) -> Self {
         self.output_limits = output_limits;
         self
     }
-    
+
     pub fn with_max_concurrent(mut self, max_concurrent: usize) -> Self {
         self.max_concurrent = max_concurrent;
         self
     }
-    
+
     pub fn with_default_timeout(mut self, timeout: Duration) -> Self {
         self.default_timeout = timeout;
         self
@@ -158,13 +149,13 @@ impl EnhancedWorkflowExecutor {
     ) -> Result<ParallelExecutionResult> {
         let start_time = Instant::now();
         let mut tasks = JoinSet::new();
-        
+
         // info!("Starting parallel execution of {} steps", steps.len());
-        
+
         // Limit concurrent tasks to prevent resource exhaustion
         let batches = steps.chunks(self.max_concurrent);
         let mut all_results = Vec::new();
-        
+
         for batch in batches {
             // Execute batch of steps concurrently
             for step in batch {
@@ -172,12 +163,12 @@ impl EnhancedWorkflowExecutor {
                 let context_clone = execution_context.clone();
                 let limits = self.output_limits.clone();
                 let step_timeout = self.parse_step_timeout(&step_clone);
-                
+
                 tasks.spawn(async move {
                     Self::execute_single_step(step_clone, context_clone, limits, step_timeout).await
                 });
             }
-            
+
             // Collect results from this batch
             let mut batch_results = Vec::new();
             while batch_results.len() < batch.len() {
@@ -202,17 +193,17 @@ impl EnhancedWorkflowExecutor {
                     None => break,
                 }
             }
-            
+
             all_results.extend(batch_results);
         }
-        
+
         // Aggregate results
         let execution_time = start_time.elapsed();
         let mut success_count = 0;
         let mut failure_count = 0;
         let mut timeout_count = 0;
         let mut aggregated_errors = Vec::new();
-        
+
         for result in &all_results {
             if result.success {
                 success_count += 1;
@@ -226,22 +217,22 @@ impl EnhancedWorkflowExecutor {
                 }
             }
         }
-        
+
         // info!(
         //     "Parallel execution completed: {} successful, {} failed, {} timed out in {:?}",
         //     success_count, failure_count, timeout_count, execution_time
         // );
-        
+
         Ok(ParallelExecutionResult {
             success_count,
-            failure_count, 
+            failure_count,
             timeout_count,
             step_results: all_results,
             aggregated_errors,
             execution_time,
         })
     }
-    
+
     /// Execute a single step with timeout and output limits
     async fn execute_single_step(
         step: WorkflowStep,
@@ -250,16 +241,17 @@ impl EnhancedWorkflowExecutor {
         step_timeout: Duration,
     ) -> StepExecutionResult {
         let start_time = Instant::now();
-        
+
         // debug!("Executing step '{}' with timeout {:?}", step.name, step_timeout);
-        
+
         // Apply per-step timeout
         let execution_result = timeout(step_timeout, async {
             Self::run_step_commands(&step, &context, &limits).await
-        }).await;
-        
+        })
+        .await;
+
         let execution_time = start_time.elapsed();
-        
+
         match execution_result {
             Ok(Ok((stdout_bytes, stderr_bytes))) => {
                 // debug!("Step '{}' completed successfully in {:?}", step.name, execution_time);
@@ -305,7 +297,7 @@ impl EnhancedWorkflowExecutor {
             },
         }
     }
-    
+
     /// Run commands for a step with output limits
     async fn run_step_commands(
         step: &WorkflowStep,
@@ -314,20 +306,20 @@ impl EnhancedWorkflowExecutor {
     ) -> Result<(usize, usize), StepError> {
         let mut total_stdout = 0;
         let mut total_stderr = 0;
-        
+
         for command in &step.commands {
             // This would integrate with the actual command execution
             // For now, simulate command execution
             let simulated_stdout = format!("Executing: {}\n", command).into_bytes();
             let simulated_stderr: Vec<u8> = Vec::new();
-            
+
             // Apply output limits
             let stdout_size = simulated_stdout.len().min(limits.max_stdout_bytes);
             let stderr_size = simulated_stderr.len().min(limits.max_stderr_bytes);
-            
+
             total_stdout += stdout_size;
             total_stderr += stderr_size;
-            
+
             // Check if we've exceeded total limits
             if total_stdout > limits.max_stdout_bytes {
                 return Err(StepError::ResourceLimit {
@@ -336,7 +328,7 @@ impl EnhancedWorkflowExecutor {
                     actual_value: total_stdout,
                 });
             }
-            
+
             if total_stderr > limits.max_stderr_bytes {
                 return Err(StepError::ResourceLimit {
                     limit_type: "stderr_bytes".to_string(),
@@ -345,10 +337,10 @@ impl EnhancedWorkflowExecutor {
                 });
             }
         }
-        
+
         Ok((total_stdout, total_stderr))
     }
-    
+
     /// Parse step timeout from step definition
     fn parse_step_timeout(&self, step: &WorkflowStep) -> Duration {
         if let Some(timeout_str) = &step.timeout {
@@ -357,19 +349,23 @@ impl EnhancedWorkflowExecutor {
             self.default_timeout
         }
     }
-    
+
     /// Truncate text with optional word boundary preservation
     pub fn truncate_text(&self, text: &str, max_bytes: usize) -> String {
         if text.len() <= max_bytes {
             return text.to_string();
         }
-        
+
         if self.output_limits.truncate_at_word_boundary {
             // Find the last word boundary before the limit
-            let truncate_point = text[..max_bytes]
-                .rfind(|c: char| c.is_whitespace())
-                .unwrap_or(max_bytes);
-            format!("{}\n[truncated: {}/{} bytes]", &text[..truncate_point], truncate_point, text.len())
+            let truncate_point =
+                text[..max_bytes].rfind(|c: char| c.is_whitespace()).unwrap_or(max_bytes);
+            format!(
+                "{}\n[truncated: {}/{} bytes]",
+                &text[..truncate_point],
+                truncate_point,
+                text.len()
+            )
         } else {
             format!("{}\n[truncated: {}/{} bytes]", &text[..max_bytes], max_bytes, text.len())
         }
@@ -410,14 +406,14 @@ impl WorkflowExecutor {
             secrets: None,
             working_directory: None,
         };
-        
+
         let result = enhanced.execute_parallel_steps(steps, context).await?;
-        
+
         // Convert to legacy format
-        Ok(result.step_results.into_iter()
-            .map(|r| if r.success { Ok(()) } else { 
-                Err(anyhow!("Step failed: {:?}", r.error)) 
-            })
+        Ok(result
+            .step_results
+            .into_iter()
+            .map(|r| if r.success { Ok(()) } else { Err(anyhow!("Step failed: {:?}", r.error)) })
             .collect())
     }
 }

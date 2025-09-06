@@ -5,8 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tao::event_loop::EventLoop;
 use tao::window::WindowBuilder;
-use wry::WebViewBuilder;
 use wry::http::Request;
+use wry::WebViewBuilder;
 
 pub struct WebEditorConfig {
     pub file_path: PathBuf,
@@ -29,9 +29,9 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
         .build(&event_loop)?;
 
     let file_path = cfg.file_path.clone();
-    let webview = WebViewBuilder::new(&window) 
+    let webview = WebViewBuilder::new(&window)
         .with_initialization_script("window.__OPENAGENT__ = { save: () => {}, };")
-.with_html(html)
+        .with_html(html)
         .with_ipc_handler(move |req: Request<String>| {
             // Expect JSON messages like {"type":"save","content":"..."}
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(req.body()) {
@@ -41,8 +41,8 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
                             if let Some(content) = v.get("content").and_then(|x| x.as_str()) {
                                 let _ = fs::write(&file_path, content);
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
             }
@@ -58,8 +58,8 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 *control_flow = ControlFlow::Exit;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     });
     Ok(())
@@ -78,8 +78,15 @@ fn guess_language_from_path(path: &Path) -> String {
         "go" => "go",
         "c" | "h" => "c",
         "cpp" | "cc" | "hpp" => "cpp",
-        other => if other.is_empty() { "plaintext" } else { other },
-    }.into()
+        other => {
+            if other.is_empty() {
+                "plaintext"
+            } else {
+                other
+            }
+        },
+    }
+    .into()
 }
 
 fn escape_js(s: &str) -> String {
@@ -100,7 +107,8 @@ fn build_monaco_html(initial_content: &str, language: &str) -> String {
     let content = escape_js(initial_content);
     let lang = language;
     // Minimal Monaco loader via unpkg
-    format!(r#"<!DOCTYPE html>
+    format!(
+        r#"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -141,6 +149,6 @@ fn build_monaco_html(initial_content: &str, language: &str) -> String {
 </script>
 </body>
 </html>
-"#)
+"#
+    )
 }
-

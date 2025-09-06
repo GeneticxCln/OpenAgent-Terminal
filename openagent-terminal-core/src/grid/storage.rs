@@ -142,6 +142,18 @@ impl<T> Storage<T> {
         self.len
     }
 
+    /// Switch to absolute indexing mode for ref-tests.
+    ///
+    /// During ref-test (de)serialization we iterate the entire active buffer
+    /// (scrollback + visible) using non-negative indices [0, len). To make the
+    /// ring buffer treat all non-negative requests as absolute top-to-bottom
+    /// indices, force `visible_lines` to 0 temporarily. At runtime the
+    /// `visible_lines` value is the viewport height and must not be 0.
+    #[inline]
+    pub fn align_visible_with_len(&mut self) {
+        self.visible_lines = 0;
+    }
+
     /// Swap implementation for Row<T>.
     ///
     /// Exploits the known size of Row<T> to produce a slightly more efficient
@@ -218,9 +230,36 @@ impl<T> Storage<T> {
     /// Compute actual index in underlying storage given the requested index.
     #[inline]
     fn compute_index(&self, requested: Line) -> usize {
-        debug_assert!(requested.0 < self.visible_lines as i32);
+        let req = requested.0;
 
-        let positive = -(requested - self.visible_lines).0 as usize - 1;
+        // Support two indexing modes:
+        // - Visible-relative: request in [-(history_size), visible_lines)
+        // - Full-buffer absolute (used by ref tests): request in [0, len)
+        if req >= self.visible_lines as i32 {
+            let req_u = req as usize;
+            debug_assert!(
+                req_u < self.len,
+                "requested(full)={}, visible={}, len={}",
+                req_u,
+                self.visible_lines,
+                self.len
+            );
+            // Map absolute top-to-bottom index to ring buffer index.
+            let positive = self.len - 1 - req_u;
+            let zeroed = self.zero + positive;
+            return if zeroed >= self.inner.len() { zeroed - self.inner.len() } else { zeroed };
+        }
+
+        // Visible-relative indexing (top of viewport is 0, bottom is visible_lines - 1).
+        debug_assert!(
+            req < self.visible_lines as i32,
+            "requested={}, visible={}, len={}",
+            req,
+            self.visible_lines,
+            self.len
+        );
+
+        let positive = -((requested - self.visible_lines).0) as usize - 1;
 
         debug_assert!(positive < self.len);
 

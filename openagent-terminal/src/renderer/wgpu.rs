@@ -19,8 +19,8 @@ use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
 
 use super::rects::RenderRect;
-use super::ui::{UiRoundedRect, UiSprite};
 use super::text::glyph_cache::Glyph;
+use super::ui::{UiRoundedRect, UiSprite};
 use super::{GlyphCache, LoadGlyph, LoaderApi};
 
 const RECT_SHADER_WGSL: &str = r#"
@@ -429,11 +429,11 @@ impl WgpuRenderer {
         policy: AtlasEvictionPolicy,
         report_interval_frames: u32,
     ) -> Result<Self, Error> {
-let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance
             .create_surface(window_handle)
             .map_err(|e| Error::Init(format!("surface: {e}")))?;
-let adapter = instance
+        let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
@@ -442,16 +442,14 @@ let adapter = instance
             .await
             .map_err(|e| Error::Init(format!("adapter: {e}")))?;
 
-let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("wgpu-device"),
-                    required_features: wgpu::Features::empty(),
-required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                    trace: Default::default(),
-                },
-            )
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("wgpu-device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: Default::default(),
+            })
             .await
             .map_err(|e| Error::Init(format!("device: {e}")))?;
 
@@ -500,7 +498,7 @@ required_limits: wgpu::Limits::default(),
             SubpixelPreference::Auto => is_srgb_surface,
         };
 
-// Build rectangle pipeline.
+        // Build rectangle pipeline.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(RECT_SHADER_WGSL)),
@@ -529,18 +527,21 @@ required_limits: wgpu::Limits::default(),
         let rect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rect-bind-group"),
             layout: &rect_bgl,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: rect_uniform_buffer.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: rect_uniform_buffer.as_entire_binding(),
+            }],
         });
         let ui_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ui-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER_WGSL)),
         });
-let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect-pipeline-layout"),
             bind_group_layouts: &[&rect_bgl],
             push_constant_ranges: &[],
         });
-let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             cache: None,
             label: Some("rect-pipeline"),
             layout: Some(&pipeline_layout),
@@ -579,12 +580,12 @@ fragment: Some(wgpu::FragmentState {
         });
 
         // UI pipeline (rounded rects)
-let ui_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let ui_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ui-pipeline-layout"),
             bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
-let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             cache: None,
             label: Some("ui-pipeline"),
             layout: Some(&ui_pipeline_layout),
@@ -630,7 +631,7 @@ fragment: Some(wgpu::FragmentState {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor {
+        let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("text-atlas-view"),
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
@@ -710,12 +711,12 @@ let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("text-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(TEXT_SHADER_WGSL)),
         });
-let text_pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let text_pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("text-pipeline-layout"),
             bind_group_layouts: &[&text_bgl],
             push_constant_ranges: &[],
         });
-let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             cache: None,
             label: Some("text-pipeline"),
             layout: Some(&text_pl_layout),
@@ -752,12 +753,13 @@ fragment: Some(wgpu::FragmentState {
         let initial_rect_vb_capacity_vertices: usize = 64 * 1024; // 64k vertices (~6.1 MB at 24 bytes/vertex)
         let rect_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rect-vertex-buffer"),
-            size: (initial_rect_vb_capacity_vertices * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress,
+            size: (initial_rect_vb_capacity_vertices * std::mem::size_of::<RectVertex>())
+                as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-let mut renderer = Self {
+        let mut renderer = Self {
             instance,
             device,
             queue,
@@ -833,7 +835,7 @@ let mut renderer = Self {
         // No-op for wgpu; presentation happens in draw paths.
     }
 
-pub fn draw_rects(
+    pub fn draw_rects(
         &mut self,
         size_info: &SizeInfo,
         metrics: &Metrics,
@@ -893,7 +895,7 @@ pub fn draw_rects(
             screenshot_tex = Some(tex);
         }
 
-// Build vertices for all rects in NDC coordinates, including staged backgrounds.
+        // Build vertices for all rects in NDC coordinates, including staged backgrounds.
         let half_w = size_info.width() / 2.0;
         let half_h = size_info.height() / 2.0;
         let mut all_rects = Vec::with_capacity(self.pending_bg.len() + rects_in.len());
@@ -923,7 +925,7 @@ pub fn draw_rects(
             label: Some("rects-encoder"),
         });
 
-// Clear color from pending state if present.
+        // Clear color from pending state if present.
         let clear = if let Some(c) = self.pending_clear.get() {
             self.pending_clear.set(None);
             wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] }
@@ -989,19 +991,23 @@ pub fn draw_rects(
             let u_th = metrics.underline_thickness.max(1.0);
             let u_curl = metrics.descent.abs().max(1.0);
             let rect_uniforms: [f32; 8] = [cw, ch, px, py, u_pos, u_th, u_curl, 0.0];
-            self.queue.write_buffer(&self.rect_uniform_buffer, 0, bytemuck::cast_slice(&rect_uniforms));
+            self.queue.write_buffer(
+                &self.rect_uniform_buffer,
+                0,
+                bytemuck::cast_slice(&rect_uniforms),
+            );
 
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("rects-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(clear),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -1010,8 +1016,8 @@ pub fn draw_rects(
             if !vertices.is_empty() {
                 pass.set_pipeline(&self.rect_pipeline);
                 pass.set_bind_group(0, &self.rect_bind_group, &[]);
-                let used_bytes = (vertices.len() * std::mem::size_of::<RectVertex>())
-                    as wgpu::BufferAddress;
+                let used_bytes =
+                    (vertices.len() * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress;
                 pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(0..used_bytes));
                 pass.draw(0..vertices.len() as u32, 0..1);
             }
@@ -1032,7 +1038,10 @@ pub fn draw_rects(
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: sview,
                         resolve_target: None,
-                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(clear),
+                            store: wgpu::StoreOp::Store,
+                        },
                         depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
@@ -1043,8 +1052,8 @@ pub fn draw_rects(
                 if !vertices.is_empty() {
                     pass.set_pipeline(&self.rect_pipeline);
                     pass.set_bind_group(0, &self.rect_bind_group, &[]);
-                    let used_bytes = (vertices.len() * std::mem::size_of::<RectVertex>())
-                        as wgpu::BufferAddress;
+                    let used_bytes =
+                        (vertices.len() * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress;
                     pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(0..used_bytes));
                     pass.draw(0..vertices.len() as u32, 0..1);
                 }
@@ -1072,7 +1081,7 @@ pub fn draw_rects(
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("text-pass"),
-color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         depth_slice: None,
                         resolve_target: None,
@@ -1095,12 +1104,15 @@ color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             if self.screenshot_request {
                 if let Some(ref sview) = screenshot_view {
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-label: Some("text-pass-screenshot"),
-color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        label: Some("text-pass-screenshot"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                             view: sview,
                             depth_slice: None,
                             resolve_target: None,
-                            ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
                         })],
                         depth_stencil_attachment: None,
                         timestamp_writes: None,
@@ -1116,7 +1128,8 @@ color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             self.pending_text.clear();
         }
 
-        // If a screenshot was requested, copy the offscreen texture to a mapped buffer and store it.
+        // If a screenshot was requested, copy the offscreen texture to a mapped buffer and store
+        // it.
         if self.screenshot_request {
             if let Some(tex) = screenshot_tex.take() {
                 let width = self.size.width.max(1);
@@ -1132,7 +1145,7 @@ color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     mapped_at_creation: false,
                 });
 
-encoder.copy_texture_to_buffer(
+                encoder.copy_texture_to_buffer(
                     wgpu::TexelCopyTextureInfo {
                         texture: &tex,
                         mip_level: 0,
@@ -1156,8 +1169,9 @@ encoder.copy_texture_to_buffer(
                 // Map and read
                 let slice = readback.slice(..);
                 slice.map_async(wgpu::MapMode::Read, |_| {});
-                // Note: We intentionally do not block here due to API differences across wgpu versions.
-                // Assume mapping is ready shortly after submission in this simplified path.
+                // Note: We intentionally do not block here due to API differences across wgpu
+                // versions. Assume mapping is ready shortly after submission in
+                // this simplified path.
                 let data = slice.get_mapped_range();
                 let mut pixels = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
                 for row in data.chunks(padded_bpr as usize) {
@@ -1197,6 +1211,7 @@ encoder.copy_texture_to_buffer(
 
     // Stub sprite APIs for parity with GL backend; no-op until implemented in WGPU UI pipeline
     pub fn stage_ui_sprite(&mut self, _sprite: UiSprite) {}
+
     pub fn set_sprite_filter_nearest(&mut self, _nearest: bool) {}
 
     pub fn stage_ui_rounded_rect(&mut self, size_info: &SizeInfo, rect: UiRoundedRect) {
@@ -1397,7 +1412,8 @@ encoder.copy_texture_to_buffer(
             let used = page.used_area.min(capacity);
             let pct = if capacity > 0 { (used as f64 / capacity as f64) * 100.0 } else { 0.0 };
             debug!(
-                "WGPU atlas eviction: layer={} used={} / {} ({:.1}%), policy={:?}, counters: inserts={}, misses={}, evictions={}",
+                "WGPU atlas eviction: layer={} used={} / {} ({:.1}%), policy={:?}, counters: \
+                 inserts={}, misses={}, evictions={}",
                 layer,
                 used,
                 capacity,
@@ -1421,7 +1437,7 @@ encoder.copy_texture_to_buffer(
                 let width = self.atlas_pages[0].width;
                 let height = self.atlas_pages[0].height;
                 let extent = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-self.queue.write_texture(
+                self.queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &self.atlas_texture,
                         mip_level: 0,
@@ -1448,6 +1464,7 @@ self.queue.write_texture(
     pub fn was_context_reset(&self) -> bool {
         false
     }
+
     pub fn set_viewport(&self, _size: &SizeInfo) {}
 
     pub fn dump_atlas_stats(&self) {
@@ -1472,7 +1489,8 @@ self.queue.write_texture(
             0.0
         };
         debug!(
-            "WGPU atlas stats: policy={:?} inserts={} misses={} evictions={} total_used={} / {} ({:.1}%)\n{}",
+            "WGPU atlas stats: policy={:?} inserts={} misses={} evictions={} total_used={} / {} \
+             ({:.1}%)\n{}",
             self.policy,
             self.atlas_inserts,
             self.atlas_insert_misses,
@@ -1618,7 +1636,7 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
             height: rasterized.height as u32,
             depth_or_array_layers: 1,
         };
-self.renderer.queue.write_texture(
+        self.renderer.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.renderer.atlas_texture,
                 mip_level: 0,

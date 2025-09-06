@@ -40,7 +40,8 @@ pub struct AiConfig {
     #[serde(default)]
     pub log_verbosity: AiLogVerbosity,
 
-    /// Provider identifier, e.g. "null", "ollama", "openai"; application chooses the concrete impl.
+    /// Provider identifier, e.g. "null", "ollama", "openai"; application chooses the concrete
+    /// impl.
     pub provider: Option<String>,
 
     /// Environment variable name holding the remote endpoint (if any).

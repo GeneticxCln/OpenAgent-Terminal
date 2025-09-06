@@ -64,12 +64,16 @@ impl ProjectIndex {
         // Use ignore (gitignore aware) walker
         let mut builder = WalkBuilder::new(&root);
         builder.hidden(false).follow_links(config.follow_symlinks);
-        if let Some(d) = config.max_depth { builder.max_depth(Some(d)); }
+        if let Some(d) = config.max_depth {
+            builder.max_depth(Some(d));
+        }
         let walker = builder.build();
 
         for result in walker {
             if let Ok(entry) = result {
-                if entry.depth() == 0 { continue; }
+                if entry.depth() == 0 {
+                    continue;
+                }
                 let path = entry.path().to_path_buf();
                 let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
                 files.push(ProjectFile { path: path.clone(), is_dir });
@@ -77,7 +81,11 @@ impl ProjectIndex {
             }
         }
 
-        Ok(Self { root, files: Arc::new(RwLock::new(files)), tree: Arc::new(RwLock::new(root_node)) })
+        Ok(Self {
+            root,
+            files: Arc::new(RwLock::new(files)),
+            tree: Arc::new(RwLock::new(root_node)),
+        })
     }
 
     pub fn snapshot_files(&self) -> Vec<ProjectFile> {
@@ -111,13 +119,19 @@ impl ProjectIndex {
                 if let Ok(event) = res {
                     let mut needs_rebuild = false;
                     match event.kind {
-                        notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Remove(_) => {
+                        notify::EventKind::Create(_)
+                        | notify::EventKind::Modify(_)
+                        | notify::EventKind::Remove(_) => {
                             needs_rebuild = true;
                         },
                         _ => {},
                     }
                     if needs_rebuild {
-                        if let Ok(new_index) = ProjectIndex::build(&ProjectIndexConfig { root: root.clone(), follow_symlinks: false, max_depth: None }) {
+                        if let Ok(new_index) = ProjectIndex::build(&ProjectIndexConfig {
+                            root: root.clone(),
+                            follow_symlinks: false,
+                            max_depth: None,
+                        }) {
                             *files.write() = new_index.snapshot_files();
                             *tree.write() = new_index.snapshot_tree();
                         }
@@ -160,4 +174,3 @@ fn insert_into_tree(root: &mut FileNode, base: &Path, path: &Path, is_dir: bool)
 
     Ok(())
 }
-

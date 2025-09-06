@@ -14,7 +14,8 @@ fn test_split_panes_hash_linux_only() {
         Ok(path) => path,
         Err(_) => {
             eprintln!(
-                "Skipping pane hash test because example binary is not built (set CARGO_BIN_EXE_snapshot_capture)"
+                "Skipping pane hash test because example binary is not built (set \
+                 CARGO_BIN_EXE_snapshot_capture)"
             );
             return;
         },

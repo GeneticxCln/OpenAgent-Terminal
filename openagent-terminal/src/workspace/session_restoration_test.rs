@@ -3,21 +3,21 @@
 //! This module contains comprehensive tests for the Warp-style session
 //! restoration system, covering various scenarios and edge cases.
 
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use crate::workspace::split_manager::PaneId;
 use crate::workspace::warp_tab_manager::{
-    WarpSession, WarpTabSession, WarpSplitLayoutSession, WarpPaneSession, WarpTabManager
+    WarpPaneSession, WarpSession, WarpSplitLayoutSession, WarpTabManager, WarpTabSession,
 };
-use crate::workspace::{TabId, split_manager::PaneId};
+use crate::workspace::TabId;
 
 /// Create a basic test session with one tab and one pane
 fn create_test_session() -> WarpSession {
     let tab_id = TabId(1);
     let pane_id = PaneId(1);
-    
+
     let pane_session = WarpPaneSession {
         id: pane_id,
         working_directory: PathBuf::from("/tmp"),
@@ -58,7 +58,7 @@ fn create_complex_test_session() -> WarpSession {
     let pane1 = PaneId(1);
     let pane2 = PaneId(2);
     let pane3 = PaneId(3);
-    
+
     // Create split layout: Horizontal split with left pane and right vertical split
     let split_layout = WarpSplitLayoutSession::Horizontal {
         left: Box::new(WarpSplitLayoutSession::Single(pane1)),
@@ -107,15 +107,15 @@ fn create_complex_test_session() -> WarpSession {
 #[test]
 fn test_session_serialization_roundtrip() {
     let original_session = create_test_session();
-    
+
     // Serialize to JSON
-    let serialized = serde_json::to_string(&original_session)
-        .expect("Should serialize session to JSON");
-    
+    let serialized =
+        serde_json::to_string(&original_session).expect("Should serialize session to JSON");
+
     // Deserialize back
-    let deserialized: WarpSession = serde_json::from_str(&serialized)
-        .expect("Should deserialize session from JSON");
-    
+    let deserialized: WarpSession =
+        serde_json::from_str(&serialized).expect("Should deserialize session from JSON");
+
     // Verify key fields
     assert_eq!(deserialized.version, "1.0.0");
     assert_eq!(deserialized.id, original_session.id);
@@ -126,42 +126,42 @@ fn test_session_serialization_roundtrip() {
 #[test]
 fn test_complex_session_serialization() {
     let complex_session = create_complex_test_session();
-    
+
     // Serialize and deserialize
-    let json = serde_json::to_string_pretty(&complex_session)
-        .expect("Should serialize complex session");
-    let restored: WarpSession = serde_json::from_str(&json)
-        .expect("Should deserialize complex session");
-    
+    let json =
+        serde_json::to_string_pretty(&complex_session).expect("Should serialize complex session");
+    let restored: WarpSession =
+        serde_json::from_str(&json).expect("Should deserialize complex session");
+
     // Verify structure
     assert_eq!(restored.tabs.len(), 1);
     let tab = &restored.tabs[0];
-    
+
     // Check split layout structure
     match &tab.split_layout {
         WarpSplitLayoutSession::Horizontal { left, right, ratio } => {
             assert_eq!(*ratio, 0.5);
-            
+
             // Left should be single pane
             matches!(left.as_ref(), WarpSplitLayoutSession::Single(_));
-            
+
             // Right should be vertical split
             matches!(right.as_ref(), WarpSplitLayoutSession::Vertical { .. });
         },
         _ => panic!("Expected horizontal split at root"),
     }
-    
+
     assert_eq!(tab.panes.len(), 3);
 }
 
 #[test]
 fn test_session_validation() {
     let manager = WarpTabManager::new();
-    
+
     // Valid session should pass
     let valid_session = create_test_session();
     assert!(manager.validate_session(&valid_session).is_ok());
-    
+
     // Empty session should fail
     let empty_session = WarpSession {
         version: "1.0.0".to_string(),
@@ -173,7 +173,7 @@ fn test_session_validation() {
         active_tab_id: None,
     };
     assert!(manager.validate_session(&empty_session).is_err());
-    
+
     // Session with invalid active tab should fail
     let mut invalid_session = create_test_session();
     invalid_session.active_tab_id = Some(TabId(999)); // Non-existent tab
@@ -183,25 +183,25 @@ fn test_session_validation() {
 #[test]
 fn test_session_migration() {
     let manager = WarpTabManager::new();
-    
+
     // Create old format session (without version)
     let mut old_session = create_test_session();
     old_session.version = "0.9.0".to_string();
-    
-    let migrated = manager.migrate_session_format(old_session)
-        .expect("Should migrate old session format");
-    
+
+    let migrated =
+        manager.migrate_session_format(old_session).expect("Should migrate old session format");
+
     assert_eq!(migrated.version, "1.0.0");
 }
 
 #[test]
 fn test_session_migration_unsupported() {
     let manager = WarpTabManager::new();
-    
+
     // Create session with unsupported version
     let mut future_session = create_test_session();
     future_session.version = "2.0.0".to_string();
-    
+
     let result = manager.migrate_session_format(future_session);
     assert!(result.is_err());
 }
@@ -227,9 +227,9 @@ fn test_working_directory_fallback() {
         }],
         active_tab_id: Some(TabId(1)),
     };
-    
+
     let manager = WarpTabManager::new();
-    
+
     // Validation should succeed but with warnings
     let validation_result = manager.validate_session(&session);
     assert!(validation_result.is_ok(), "Should pass validation despite inaccessible directory");
@@ -259,49 +259,49 @@ fn test_empty_panes_validation() {
         tabs: vec![tab_session],
         active_tab_id: Some(TabId(1)),
     };
-    
+
     let manager = WarpTabManager::new();
-    
+
     // Should still validate (panes can be recreated)
     assert!(manager.validate_session(&session).is_ok());
 }
 
 /// Integration test for full session restoration cycle
-#[test] 
+#[test]
 fn test_session_save_load_cycle() {
     use tempfile::tempdir;
-    
+
     // Create temporary directory for session file
     let temp_dir = tempdir().expect("Should create temp directory");
     let session_path = temp_dir.path().join("test_session.json");
-    
+
     let mut manager = WarpTabManager::with_session_file(&session_path);
-    
+
     // Create some tabs
     let tab1 = manager.create_warp_tab(Some(PathBuf::from("/tmp")));
     let tab2 = manager.create_warp_tab(Some(PathBuf::from("/home")));
-    
+
     // Add some command history
     manager.update_tab_for_command(tab1, "git status");
     manager.update_tab_for_command(tab2, "cargo build");
-    
+
     // Save session
     manager.save_session().expect("Should save session");
-    
+
     // Verify file was created
     assert!(session_path.exists());
-    
+
     // Create new manager and load session
     let mut new_manager = WarpTabManager::with_session_file(&session_path);
     let loaded = new_manager.load_session().expect("Should load session");
-    
+
     assert!(loaded, "Should successfully load session");
     assert_eq!(new_manager.tab_count(), 2);
-    
+
     // Verify tabs were restored
     let tabs: Vec<_> = new_manager.all_tabs().collect();
     assert_eq!(tabs.len(), 2);
-    
+
     // Verify command history was preserved
     assert!(new_manager.command_history.get(&tab1).is_some());
     assert!(new_manager.command_history.get(&tab2).is_some());
@@ -311,19 +311,19 @@ fn test_session_save_load_cycle() {
 #[test]
 fn test_corrupted_session_handling() {
     use tempfile::tempdir;
-    
+
     let temp_dir = tempdir().expect("Should create temp directory");
     let session_path = temp_dir.path().join("corrupted_session.json");
-    
+
     // Write invalid JSON
     std::fs::write(&session_path, "{ invalid json }").expect("Should write corrupted file");
-    
+
     let mut manager = WarpTabManager::with_session_file(&session_path);
     let result = manager.load_session().expect("Should handle corrupted session gracefully");
-    
+
     // Should return false (not loaded) but not error
     assert!(!result);
-    
+
     // Should create backup file
     let backup_path = session_path.with_extension("json.backup");
     assert!(backup_path.exists());

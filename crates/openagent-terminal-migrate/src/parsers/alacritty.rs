@@ -27,9 +27,8 @@ impl ConfigParser for AlacrittyParser {
 
         // Parse window settings
         if let Some(window) = alacritty_config.get("window") {
-            config.window.opacity = window.get("opacity")
-                .and_then(|v| v.as_f64())
-                .map(|v| v as f32);
+            config.window.opacity =
+                window.get("opacity").and_then(|v| v.as_f64()).map(|v| v as f32);
 
             if let Some(padding) = window.get("padding") {
                 let x = padding.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
@@ -39,30 +38,24 @@ impl ConfigParser for AlacrittyParser {
                 }
             }
 
-            config.window.decorations = window.get("decorations")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            config.window.decorations =
+                window.get("decorations").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-            config.window.startup_mode = window.get("startup_mode")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            config.window.startup_mode =
+                window.get("startup_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-            config.window.title = window.get("title")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            config.window.title =
+                window.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-            config.window.dynamic_title = window.get("dynamic_title")
-                .and_then(|v| v.as_bool());
+            config.window.dynamic_title = window.get("dynamic_title").and_then(|v| v.as_bool());
         }
 
         // Parse font settings
         if let Some(font) = alacritty_config.get("font") {
-            config.font.size = font.get("size")
-                .and_then(|v| v.as_f64())
-                .map(|v| v as f32);
+            config.font.size = font.get("size").and_then(|v| v.as_f64()).map(|v| v as f32);
 
-            config.font.builtin_box_drawing = font.get("builtin_box_drawing")
-                .and_then(|v| v.as_bool());
+            config.font.builtin_box_drawing =
+                font.get("builtin_box_drawing").and_then(|v| v.as_bool());
 
             // Parse font faces
             if let Some(normal) = font.get("normal") {
@@ -88,7 +81,10 @@ impl ConfigParser for AlacrittyParser {
 
             if let Some(bold_italic) = font.get("bold_italic") {
                 config.font.bold_italic = Some(FontFaceConfig {
-                    family: bold_italic.get("family").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    family: bold_italic
+                        .get("family")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     style: bold_italic.get("style").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 });
             }
@@ -99,10 +95,22 @@ impl ConfigParser for AlacrittyParser {
             // Primary colors
             if let Some(primary) = colors.get("primary") {
                 config.colors.primary = Some(PrimaryColors {
-                    background: primary.get("background").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    foreground: primary.get("foreground").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    bright_foreground: primary.get("bright_foreground").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    dim_foreground: primary.get("dim_foreground").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    background: primary
+                        .get("background")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    foreground: primary
+                        .get("foreground")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    bright_foreground: primary
+                        .get("bright_foreground")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    dim_foreground: primary
+                        .get("dim_foreground")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
@@ -146,7 +154,10 @@ impl ConfigParser for AlacrittyParser {
             if let Some(selection) = colors.get("selection") {
                 config.colors.selection = Some(SelectionColors {
                     text: selection.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    background: selection.get("background").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    background: selection
+                        .get("background")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
         }
@@ -173,7 +184,10 @@ impl ConfigParser for AlacrittyParser {
             let vi_mode_style = if let Some(vi_style) = cursor.get("vi_mode_style") {
                 Some(CursorStyle {
                     shape: vi_style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    blinking: vi_style.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    blinking: vi_style
+                        .get("blinking")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 })
             } else {
                 None
@@ -190,8 +204,10 @@ impl ConfigParser for AlacrittyParser {
         // Parse selection settings
         if let Some(selection) = alacritty_config.get("selection") {
             config.terminal.selection = Some(SelectionConfig {
-                semantic_escape_chars: selection.get("semantic_escape_chars")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                semantic_escape_chars: selection
+                    .get("semantic_escape_chars")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 save_to_clipboard: selection.get("save_to_clipboard").and_then(|v| v.as_bool()),
             });
         }
@@ -212,10 +228,11 @@ impl ConfigParser for AlacrittyParser {
             if let Some(args) = shell.get("args") {
                 if let Some(args_array) = args.as_sequence() {
                     config.shell.args = Some(
-                        args_array.iter()
+                        args_array
+                            .iter()
                             .filter_map(|v| v.as_str())
                             .map(|s| s.to_string())
-                            .collect()
+                            .collect(),
                     );
                 }
             }
@@ -226,16 +243,27 @@ impl ConfigParser for AlacrittyParser {
             if let Some(bindings_array) = key_bindings.as_sequence() {
                 for binding in bindings_array {
                     if let Some(key) = binding.get("key").and_then(|v| v.as_str()) {
-                        let mods = binding.get("mods").and_then(|v| v.as_str())
+                        let mods = binding
+                            .get("mods")
+                            .and_then(|v| v.as_str())
                             .map(|s| s.split('|').map(|m| m.trim().to_string()).collect());
 
                         let key_binding = KeyBinding {
                             key: key.to_string(),
                             mods,
-                            action: binding.get("action").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            chars: binding.get("chars").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            action: binding
+                                .get("action")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            chars: binding
+                                .get("chars")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             command: None, // TODO: Parse command bindings
-                            mode: binding.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            mode: binding
+                                .get("mode")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                         };
 
                         config.key_bindings.push(key_binding);
@@ -300,10 +328,10 @@ shell:
 
         let parser = AlacrittyParser::new();
         let result = parser.parse(yaml_content);
-        
+
         assert!(result.is_ok());
         let config = result.unwrap();
-        
+
         assert_eq!(config.window.opacity, Some(0.9));
         assert_eq!(config.font.size, Some(12.0));
         assert_eq!(config.font.normal.as_ref().unwrap().family, Some("JetBrains Mono".to_string()));
@@ -337,10 +365,10 @@ foreground = '#abb2bf'
 
         let parser = AlacrittyParser::new();
         let result = parser.parse(toml_content);
-        
+
         assert!(result.is_ok());
         let config = result.unwrap();
-        
+
         assert_eq!(config.window.opacity, Some(0.95));
         assert_eq!(config.font.size, Some(11.0));
         assert_eq!(config.font.normal.as_ref().unwrap().family, Some("Fira Code".to_string()));

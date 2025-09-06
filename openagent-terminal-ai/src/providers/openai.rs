@@ -35,7 +35,10 @@ impl OpenAiProvider {
         let endpoint = std::env::var("OPENAI_API_BASE")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
         let model = std::env::var("OPENAI_MODEL").map_err(|_| {
-            "OPENAI_MODEL environment variable not set. Configure a model explicitly via config.ai.model_env (e.g., OPENAGENT_AI_MODEL) or export OPENAI_MODEL before launching.".to_string()
+            "OPENAI_MODEL environment variable not set. Configure a model explicitly via \
+             config.ai.model_env (e.g., OPENAGENT_AI_MODEL) or export OPENAI_MODEL before \
+             launching."
+                .to_string()
         })?;
 
         info!("Initializing OpenAI provider with model: {}", model);
@@ -116,10 +119,9 @@ impl AiProvider for OpenAiProvider {
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
-            "You are a helpful terminal command assistant. \
-             Provide only the necessary shell commands with brief comment explanations. \
-             Format your response as a list of commands, one per line. \
-             Start each explanation line with #.",
+            "You are a helpful terminal command assistant. Provide only the necessary shell \
+             commands with brief comment explanations. Format your response as a list of \
+             commands, one per line. Start each explanation line with #.",
         );
 
         if let Some(shell) = &req.shell_kind {
@@ -136,10 +138,11 @@ impl AiProvider for OpenAiProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![
-            ChatMessage { role: "system".to_string(), content: system_prompt },
-            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
-        ];
+        let messages =
+            vec![ChatMessage { role: "system".to_string(), content: system_prompt }, ChatMessage {
+                role: "user".to_string(),
+                content: req.scratch_text.clone(),
+            }];
 
         let request_body = ChatCompletionRequest {
             model: self.model.clone(),
@@ -267,6 +270,7 @@ impl AiProvider for OpenAiProvider {
             Err("No response from OpenAI".to_string())
         }
     }
+
     fn propose_stream(
         &self,
         req: AiRequest,
@@ -277,16 +281,15 @@ impl AiProvider for OpenAiProvider {
             info!("openai_stream_start model={} endpoint={}", self.model, self.endpoint);
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
-        use futures_util::StreamExt;
         use eventsource_stream::Eventsource;
+        use futures_util::StreamExt;
 
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
-            "You are a helpful terminal command assistant. \
-             Provide only the necessary shell commands with brief comment explanations. \
-             Format your response as a list of commands, one per line. \
-             Start each explanation line with #.",
+            "You are a helpful terminal command assistant. Provide only the necessary shell \
+             commands with brief comment explanations. Format your response as a list of \
+             commands, one per line. Start each explanation line with #.",
         );
 
         if let Some(shell) = &req.shell_kind {
@@ -299,10 +302,11 @@ impl AiProvider for OpenAiProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![
-            ChatMessage { role: "system".to_string(), content: system_prompt },
-            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
-        ];
+        let messages =
+            vec![ChatMessage { role: "system".to_string(), content: system_prompt }, ChatMessage {
+                role: "user".to_string(),
+                content: req.scratch_text.clone(),
+            }];
 
         let request_body = ChatCompletionRequest {
             model: self.model.clone(),
@@ -376,7 +380,10 @@ impl AiProvider for OpenAiProvider {
                     // Capture Retry-After header if present and include it in the error message so
                     // the retry strategy can respect it without changing its API.
                     let retry_after_hdr = response.headers().get("retry-after").cloned();
-                    let error_text = match response.text().await { Ok(t) => t, Err(_) => "Unknown error".to_string() };
+                    let error_text = match response.text().await {
+                        Ok(t) => t,
+                        Err(_) => "Unknown error".to_string(),
+                    };
                     let mut msg = format!("API error {}: {}", status, error_text);
                     if let Some(hv) = retry_after_hdr {
                         if let Ok(s) = hv.to_str() {
@@ -410,7 +417,9 @@ impl AiProvider for OpenAiProvider {
                         }
                         return Err("Cancelled".to_string());
                     }
-                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await {
+                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
+                        .await
+                    {
                         Ok(Some(Ok(event))) => {
                             let data = event.data;
                             if data.trim() == "[DONE]" {
@@ -428,7 +437,10 @@ impl AiProvider for OpenAiProvider {
                                     }
                                 },
                                 Err(e) => {
-                                    debug!("Skipping non-JSON or unexpected SSE data from OpenAI: {}", e);
+                                    debug!(
+                                        "Skipping non-JSON or unexpected SSE data from OpenAI: {}",
+                                        e
+                                    );
                                 },
                             }
                         },

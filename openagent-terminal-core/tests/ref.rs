@@ -131,6 +131,14 @@ fn ref_test(dir: &Path) {
             }
         }
 
+        // Dump actual and expected grids to /tmp for inspection.
+        let name = dir.file_name().unwrap_or_default().to_string_lossy();
+        let actual_path = format!("/tmp/term_grid_{}.json", name);
+        let expected_path = format!("/tmp/expected_grid_{}.json", name);
+        let _ = fs::write(&actual_path, json::to_string_pretty(&term_grid).unwrap());
+        let _ = fs::write(&expected_path, json::to_string_pretty(&grid).unwrap());
+        println!("Dumped actual to {} and expected to {}", actual_path, expected_path);
+
         panic!("Ref test failed; grid doesn't match");
     }
 

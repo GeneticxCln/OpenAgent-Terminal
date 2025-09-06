@@ -144,7 +144,7 @@ impl WarpSplitManager {
                 .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
         });
 
-        candidates.first().map(|(id, _, _)| *id)
+        candidates.first().map(|(id, ..)| *id)
     }
 
     /// Resize current pane (Warp Cmd+Alt+Arrow with modifiers behavior)

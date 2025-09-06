@@ -13,12 +13,12 @@ impl WezTermParser {
 impl ConfigParser for WezTermParser {
     fn parse(&self, content: &str) -> Result<UnifiedConfig> {
         let mut config = UnifiedConfig::new();
-        
+
         // WezTerm uses Lua config, which is complex to parse
         // For now, implement basic pattern matching
         for line in content.lines() {
             let line = line.trim();
-            
+
             if line.starts_with("config.font_size") {
                 if let Some(size_str) = line.split('=').nth(1) {
                     if let Ok(size) = size_str.trim().parse::<f32>() {
@@ -26,13 +26,13 @@ impl ConfigParser for WezTermParser {
                     }
                 }
             }
-            
+
             if line.starts_with("config.font") && line.contains("family") {
                 // Basic parsing for font family
                 // TODO: Implement proper Lua parsing
             }
         }
-        
+
         Ok(config)
     }
 

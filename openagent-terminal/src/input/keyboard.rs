@@ -206,7 +206,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     {
                         self.ctx.open_ai_panel();
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
-                    runtime.ui.scratch = text.to_string();
+                            runtime.ui.scratch = text.to_string();
                             runtime.ui.cursor_position = runtime.ui.scratch.len();
                         }
                         // Reset composer state
@@ -1069,7 +1069,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
             self.ctx.write_to_pty(bytes);
 
-            // Schedule AI inline suggestion after typing (debounced), and clear any stale suggestion
+            // Schedule AI inline suggestion after typing (debounced), and clear any stale
+            // suggestion
             #[cfg(feature = "ai")]
             {
                 if !self.ctx.ai_active() {

@@ -47,7 +47,7 @@ use crate::event::{
 };
 use crate::message_bar::{self, Message};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::security::{SecurityLens, RiskLevel};
+use crate::security::{RiskLevel, SecurityLens};
 
 pub mod keyboard;
 
@@ -188,7 +188,9 @@ pub trait ActionContext<T: EventListener> {
     // File Tree overlay controls
     fn open_file_tree_panel(&mut self) {}
     fn close_file_tree_panel(&mut self) {}
-    fn file_tree_active(&self) -> bool { false }
+    fn file_tree_active(&self) -> bool {
+        false
+    }
     fn file_tree_move_selection(&mut self, _delta: isize) {}
     fn file_tree_confirm(&mut self) {}
     fn blocks_search_input(&mut self, _c: char) {}
@@ -353,8 +355,12 @@ pub trait ActionContext<T: EventListener> {
     ) -> bool {
         false
     }
-    fn workspace_tab_bar_drag_move(&mut self, _mouse_x: usize, _mouse_y: usize) -> bool { false }
-    fn workspace_tab_bar_drag_release(&mut self, _button: MouseButton) -> bool { false }
+    fn workspace_tab_bar_drag_move(&mut self, _mouse_x: usize, _mouse_y: usize) -> bool {
+        false
+    }
+    fn workspace_tab_bar_drag_release(&mut self, _button: MouseButton) -> bool {
+        false
+    }
 
     /// Apply a new split ratio at a divider path
     fn workspace_set_split_ratio_at_path(
@@ -640,7 +646,11 @@ impl<T: EventListener> Execute<T> for Action {
                 }
             },
             Action::OpenFileTree => {
-                if ctx.file_tree_active() { ctx.close_file_tree_panel(); } else { ctx.open_file_tree_panel(); }
+                if ctx.file_tree_active() {
+                    ctx.close_file_tree_panel();
+                } else {
+                    ctx.open_file_tree_panel();
+                }
             },
             Action::ToggleAiPanel => ctx.open_ai_panel(),
             Action::OpenDebugPanel => {
@@ -649,7 +659,11 @@ impl<T: EventListener> Execute<T> for Action {
                 {
                     // If already open, close
                     if cfg!(feature = "dap") {
-                        if ctx.display().dap_overlay.active { ctx.display().dap_close(); } else { ctx.display().dap_open(None); }
+                        if ctx.display().dap_overlay.active {
+                            ctx.display().dap_close();
+                        } else {
+                            ctx.display().dap_open(None);
+                        }
                         ctx.mark_dirty();
                     }
                 }
@@ -711,8 +725,14 @@ impl<T: EventListener> Execute<T> for Action {
                         // Block if policy requires blocking critical
                         if lens.should_block(&risk) {
                             let message = message_bar::Message::new(
-                                format!("Blocked risky paste ({}). {}",
-                                    match risk.level { RiskLevel::Critical => "CRITICAL", RiskLevel::Warning => "WARNING", RiskLevel::Caution => "CAUTION", RiskLevel::Safe => "SAFE" },
+                                format!(
+                                    "Blocked risky paste ({}). {}",
+                                    match risk.level {
+                                        RiskLevel::Critical => "CRITICAL",
+                                        RiskLevel::Warning => "WARNING",
+                                        RiskLevel::Caution => "CAUTION",
+                                        RiskLevel::Safe => "SAFE",
+                                    },
                                     risk.explanation
                                 ),
                                 message_bar::MessageType::Error,
@@ -722,11 +742,8 @@ impl<T: EventListener> Execute<T> for Action {
                         }
 
                         // Require confirmation if policy says so
-                        let requires_confirmation = policy
-                            .require_confirmation
-                            .get(&risk.level)
-                            .copied()
-                            .unwrap_or(false);
+                        let requires_confirmation =
+                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
 
                         if requires_confirmation {
                             // Prepare confirmation body
@@ -740,11 +757,8 @@ impl<T: EventListener> Execute<T> for Action {
                                 body.push('\n');
                             }
                             // Show only first few lines of pasted content for safety
-                            let preview: String = text
-                                .lines()
-                                .take(10)
-                                .collect::<Vec<_>>()
-                                .join("\n");
+                            let preview: String =
+                                text.lines().take(10).collect::<Vec<_>>().join("\n");
                             body.push_str(&format!("Pasted content (preview):\n{}", preview));
 
                             let title = match risk.level {
@@ -792,8 +806,14 @@ impl<T: EventListener> Execute<T> for Action {
                     if let Some(risk) = lens.analyze_paste_content(&text) {
                         if lens.should_block(&risk) {
                             let message = message_bar::Message::new(
-                                format!("Blocked risky paste ({}). {}",
-                                    match risk.level { RiskLevel::Critical => "CRITICAL", RiskLevel::Warning => "WARNING", RiskLevel::Caution => "CAUTION", RiskLevel::Safe => "SAFE" },
+                                format!(
+                                    "Blocked risky paste ({}). {}",
+                                    match risk.level {
+                                        RiskLevel::Critical => "CRITICAL",
+                                        RiskLevel::Warning => "WARNING",
+                                        RiskLevel::Caution => "CAUTION",
+                                        RiskLevel::Safe => "SAFE",
+                                    },
                                     risk.explanation
                                 ),
                                 message_bar::MessageType::Error,
@@ -801,11 +821,8 @@ impl<T: EventListener> Execute<T> for Action {
                             ctx.send_user_event(crate::event::EventType::Message(message));
                             return;
                         }
-                        let requires_confirmation = policy
-                            .require_confirmation
-                            .get(&risk.level)
-                            .copied()
-                            .unwrap_or(false);
+                        let requires_confirmation =
+                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
                         if requires_confirmation {
                             let mut body = String::new();
                             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -816,11 +833,8 @@ impl<T: EventListener> Execute<T> for Action {
                                 }
                                 body.push('\n');
                             }
-                            let preview: String = text
-                                .lines()
-                                .take(10)
-                                .collect::<Vec<_>>()
-                                .join("\n");
+                            let preview: String =
+                                text.lines().take(10).collect::<Vec<_>>().join("\n");
                             body.push_str(&format!("Pasted content (preview):\n{}", preview));
 
                             let title = match risk.level {
@@ -1096,7 +1110,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.workspace_create_tab();
                 },
                 // Drag-related actions are handled by dedicated handlers; treat as handled here
-                TabBarAction::BeginDrag(_) | TabBarAction::DragMove(_, _) | TabBarAction::EndDrag(_) | TabBarAction::CancelDrag(_) => {
+                TabBarAction::BeginDrag(_)
+                | TabBarAction::DragMove(..)
+                | TabBarAction::EndDrag(_)
+                | TabBarAction::CancelDrag(_) => {
                     // no-op: considered handled
                 },
             }
@@ -1352,7 +1369,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     TabBarAction::CloseTab(id) => Some(crate::display::TabHoverTarget::Close(id)),
                     TabBarAction::CreateTab => Some(crate::display::TabHoverTarget::Create),
                     // Drag actions don't map to a static hover target
-                    TabBarAction::BeginDrag(_) | TabBarAction::DragMove(_, _) | TabBarAction::EndDrag(_) | TabBarAction::CancelDrag(_) => None,
+                    TabBarAction::BeginDrag(_)
+                    | TabBarAction::DragMove(..)
+                    | TabBarAction::EndDrag(_)
+                    | TabBarAction::CancelDrag(_) => None,
                 }
             } else {
                 None
@@ -2539,9 +2559,11 @@ mod tests {
             fn size_info(&self) -> SizeInfo {
                 self.size
             }
+
             fn mouse_mode(&self) -> bool {
                 false
             }
+
             fn search_next(
                 &mut self,
                 _origin: Point,
@@ -2550,73 +2572,96 @@ mod tests {
             ) -> Option<Match> {
                 None
             }
+
             fn search_direction(&self) -> Direction {
                 Direction::Right
             }
+
             fn search_active(&self) -> bool {
                 false
             }
+
             fn selection_is_empty(&self) -> bool {
                 true
             }
+
             fn mouse_mut(&mut self) -> &mut Mouse {
                 &mut self.mouse
             }
+
             fn mouse(&self) -> &Mouse {
                 &self.mouse
             }
+
             fn touch_purpose(&mut self) -> &mut TouchPurpose {
                 unimplemented!()
             }
+
             fn modifiers(&mut self) -> &mut Modifiers {
                 &mut self.mods
             }
+
             fn window(&mut self) -> &mut Window {
                 unimplemented!()
             }
+
             fn display(&mut self) -> &mut Display {
                 unimplemented!()
             }
+
             fn message(&self) -> Option<&Message> {
                 self.msg.message()
             }
+
             fn config(&self) -> &UiConfig {
                 self.cfg
             }
+
             fn clipboard_mut(&mut self) -> &mut Clipboard {
                 self.clipboard
             }
+
             fn scheduler_mut(&mut self) -> &mut crate::scheduler::Scheduler {
                 panic!("not used in this test")
             }
+
             fn semantic_word(&self, _point: Point) -> String {
                 String::new()
             }
+
             fn inline_search_state(&mut self) -> &mut InlineSearchState {
                 &mut self.inline_state
             }
+
             fn terminal(&self) -> &Term<T> {
                 self.term
             }
+
             fn terminal_mut(&mut self) -> &mut Term<T> {
                 self.term
             }
+
             // Blocks Search overrides
             fn open_blocks_search_panel(&mut self) {
                 self.blocks_active = true;
             }
+
             fn close_blocks_search_panel(&mut self) {
                 self.blocks_active = false;
             }
+
             fn blocks_search_active(&self) -> bool {
                 self.blocks_active
             }
+
             fn blocks_search_input(&mut self, c: char) {
                 self.query.push(c);
             }
+
             fn blocks_search_backspace(&mut self) {
                 self.query.pop();
             }
+
             fn blocks_search_cancel(&mut self) {
                 self.blocks_active = false;
             }

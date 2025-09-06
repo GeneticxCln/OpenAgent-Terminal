@@ -308,12 +308,12 @@ impl TabManager {
         self.next_pane_id += 1;
         pane_id
     }
-    
+
     /// Create a new pane ID (legacy method - forwards to allocate_pane_id)
     pub fn create_pane_id(&mut self) -> PaneId {
         self.allocate_pane_id()
     }
-    
+
     /// Allocate multiple PaneIds at once for batch operations
     pub fn allocate_pane_ids(&mut self, count: usize) -> Vec<PaneId> {
         let mut pane_ids = Vec::with_capacity(count);
@@ -322,13 +322,10 @@ impl TabManager {
         }
         pane_ids
     }
-    
+
     /// Get all pane IDs for a specific tab
     pub fn get_tab_pane_ids(&self, tab_id: TabId) -> Vec<PaneId> {
-        self.tabs
-            .get(&tab_id)
-            .map(|tab| tab.split_layout.collect_pane_ids())
-            .unwrap_or_default()
+        self.tabs.get(&tab_id).map(|tab| tab.split_layout.collect_pane_ids()).unwrap_or_default()
     }
 }
 

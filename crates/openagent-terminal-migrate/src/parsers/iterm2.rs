@@ -15,12 +15,12 @@ impl ConfigParser for ITerm2Parser {
         // Placeholder implementation for iTerm2 plist parsing
         // TODO: Implement full plist parsing using the `plist` crate
         let config = UnifiedConfig::new();
-        
+
         // Basic pattern matching for common settings
         if content.contains("<key>Terminal Type</key>") {
             // This is likely an iTerm2 configuration
         }
-        
+
         Ok(config)
     }
 

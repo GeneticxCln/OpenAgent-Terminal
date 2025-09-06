@@ -37,6 +37,7 @@ struct PerfApp {
 
 impl ApplicationHandler<()> for PerfApp {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
     fn window_event(
         &mut self,
         _event_loop: &ActiveEventLoop,

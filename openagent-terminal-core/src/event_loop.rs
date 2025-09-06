@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-use tracing::error;
 use polling::{Event as PollingEvent, Events, PollMode};
+use tracing::error;
 
 use crate::event::{self, Event, EventListener, WindowSize};
 use crate::sync::FairMutex;
@@ -257,8 +257,9 @@ where
                         // Parse payload between start+prefix.len() and end.
                         let payload = &combined[start + prefix.len()..end];
                         self.handle_osc133_payload(payload);
-                        // Skip this entire sequence, advance i past terminator (including BEL or ESC).
-                        // If ST, skip two bytes of terminator, else one.
+                        // Skip this entire sequence, advance i past terminator (including BEL or
+                        // ESC). If ST, skip two bytes of terminator, else
+                        // one.
                         let skip = if combined[end] == BEL { 1 } else { 2 };
                         i = end + skip;
                         continue;

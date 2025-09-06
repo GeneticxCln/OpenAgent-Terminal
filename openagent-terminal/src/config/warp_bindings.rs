@@ -31,7 +31,8 @@ fn kb_named(key: NamedKey, mods: ModifiersState, action: Action) -> KeyBinding {
     }
 }
 
-/// Push binding if there is no conflicting existing binding (same trigger+mods with overlapping modes).
+/// Push binding if there is no conflicting existing binding (same trigger+mods with overlapping
+/// modes).
 fn push_unique(bindings: &mut Vec<KeyBinding>, binding: KeyBinding) {
     if !bindings.iter().any(|b| b.triggers_match(&binding)) {
         bindings.push(binding);
@@ -158,8 +159,9 @@ fn build_warp_non_macos_bindings(existing: &[KeyBinding]) -> (Vec<KeyBinding>, b
             )
     });
 
-    // If default uses Ctrl+Alt+Arrows for resize, we'll adopt Warp-style by moving resize to Ctrl+Shift+Arrows
-    // and using Ctrl+Alt+Arrows for navigation. We'll signal that caller should strip the conflicting defaults.
+    // If default uses Ctrl+Alt+Arrows for resize, we'll adopt Warp-style by moving resize to
+    // Ctrl+Shift+Arrows and using Ctrl+Alt+Arrows for navigation. We'll signal that caller
+    // should strip the conflicting defaults.
     let mut should_remove_default_ctrl_alt_resize = false;
     if existing_ctrl_alt_arrows_for_resize {
         should_remove_default_ctrl_alt_resize = true;

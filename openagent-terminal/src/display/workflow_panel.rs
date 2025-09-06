@@ -330,7 +330,8 @@ impl Display {
         }
 
         // Footer controls/hints
-        let hint = "Enter: Paste  •  Esc: Close  •  ↑/↓/PgUp/PgDn: Navigate  •  Ctrl+N/Ctrl+P: Navigate  •  Backspace: Delete";
+        let hint = "Enter: Paste  •  Esc: Close  •  ↑/↓/PgUp/PgDn: Navigate  •  Ctrl+N/Ctrl+P: \
+                    Navigate  •  Backspace: Delete";
         let hint_fg = tokens.text_muted;
         self.draw_ai_text(Point::new(footer_line, Column(2)), hint_fg, bg, hint, num_cols - 2);
     }

@@ -10,10 +10,10 @@ pub use security_lens::*;
 // Stub implementations when Security Lens is disabled
 #[cfg(not(feature = "security-lens"))]
 pub mod stub {
+    use crate::SerdeReplace;
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
-    use crate::SerdeReplace;
-    
+
     #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
     pub enum RiskLevel {
         Safe,
@@ -21,7 +21,7 @@ pub mod stub {
         Warning,
         Critical,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CommandRisk {
         pub level: RiskLevel,
@@ -29,7 +29,7 @@ pub mod stub {
         pub requires_confirmation: bool,
         pub mitigations: Vec<String>,
     }
-    
+
     impl CommandRisk {
         pub fn safe() -> Self {
             Self {
@@ -62,25 +62,30 @@ pub mod stub {
             require_confirmation.insert(RiskLevel::Caution, true);
             require_confirmation.insert(RiskLevel::Warning, true);
             require_confirmation.insert(RiskLevel::Critical, true);
-            Self { enabled: false, block_critical: false, require_confirmation, gate_paste_events: false }
+            Self {
+                enabled: false,
+                block_critical: false,
+                require_confirmation,
+                gate_paste_events: false,
+            }
         }
     }
-    
+
     pub struct SecurityLens;
-    
+
     impl SecurityLens {
         pub fn new(_policy: SecurityPolicy) -> Self {
             Self
         }
-        
+
         pub fn analyze_command(&mut self, _command: &str) -> CommandRisk {
             CommandRisk::safe()
         }
-        
+
         pub fn analyze_paste_content(&mut self, _content: &str) -> Option<CommandRisk> {
             None
         }
-        
+
         pub fn should_block(&self, _risk: &CommandRisk) -> bool {
             false
         }

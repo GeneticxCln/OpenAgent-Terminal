@@ -406,10 +406,11 @@ mod tests {
         let events = parser.parse_chunk(data);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(
-            events[0].data,
-            vec!["line1".to_string(), "line2".to_string(), "line3".to_string(),]
-        );
+        assert_eq!(events[0].data, vec![
+            "line1".to_string(),
+            "line2".to_string(),
+            "line3".to_string(),
+        ]);
     }
 
     #[test]
@@ -458,7 +459,11 @@ mod tests {
 
     #[test]
     fn test_openai_retry_after_header_affects_delay() {
-        let cfg = RetryConfig { initial_delay: Duration::from_millis(500), max_delay: Duration::from_secs(10), ..Default::default() };
+        let cfg = RetryConfig {
+            initial_delay: Duration::from_millis(500),
+            max_delay: Duration::from_secs(10),
+            ..Default::default()
+        };
         let strat = RetryStrategy::OpenAI { config: cfg.clone(), respect_retry_after: true };
 
         // With retry-after present, strategy should return the header value (seconds)
@@ -472,7 +477,11 @@ mod tests {
 
     #[test]
     fn test_anthropic_overload_backoff() {
-        let cfg = RetryConfig { initial_delay: Duration::from_millis(200), max_delay: Duration::from_secs(5), ..Default::default() };
+        let cfg = RetryConfig {
+            initial_delay: Duration::from_millis(200),
+            max_delay: Duration::from_secs(5),
+            ..Default::default()
+        };
         let backoff = Duration::from_secs(3);
         let strat = RetryStrategy::Anthropic { config: cfg.clone(), overload_backoff: backoff };
 
@@ -487,7 +496,11 @@ mod tests {
 
     #[test]
     fn test_ollama_resource_wait_backoff() {
-        let cfg = RetryConfig { initial_delay: Duration::from_millis(100), max_delay: Duration::from_secs(4), ..Default::default() };
+        let cfg = RetryConfig {
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(4),
+            ..Default::default()
+        };
         let wait = Duration::from_secs(2);
         let strat = RetryStrategy::Ollama { config: cfg.clone(), resource_wait: wait };
 

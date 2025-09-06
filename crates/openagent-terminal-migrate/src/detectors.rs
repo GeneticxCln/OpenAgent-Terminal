@@ -20,9 +20,7 @@ pub fn auto_detect_configs() -> Result<Vec<MigrationConfig>> {
     }
 
     // Sort by terminal type for consistent output
-    detected.sort_by(|a, b| {
-        a.terminal_type.to_string().cmp(&b.terminal_type.to_string())
-    });
+    detected.sort_by(|a, b| a.terminal_type.to_string().cmp(&b.terminal_type.to_string()));
 
     Ok(detected)
 }
@@ -52,40 +50,40 @@ pub fn get_typical_config_locations(terminal_type: &TerminalType) -> Result<Vec<
     match terminal_type {
         TerminalType::Alacritty => {
             locations.extend(get_alacritty_locations()?);
-        }
+        },
         TerminalType::ITerm2 => {
             locations.extend(get_iterm2_locations()?);
-        }
+        },
         TerminalType::WindowsTerminal => {
             locations.extend(get_windows_terminal_locations()?);
-        }
+        },
         TerminalType::Kitty => {
             locations.extend(get_kitty_locations()?);
-        }
+        },
         TerminalType::Hyper => {
             locations.extend(get_hyper_locations()?);
-        }
+        },
         TerminalType::Warp => {
             locations.extend(get_warp_locations()?);
-        }
+        },
         TerminalType::WezTerm => {
             locations.extend(get_wezterm_locations()?);
-        }
+        },
         TerminalType::GnomeTerminal => {
             locations.extend(get_gnome_terminal_locations()?);
-        }
+        },
         TerminalType::Konsole => {
             locations.extend(get_konsole_locations()?);
-        }
+        },
         TerminalType::Terminator => {
             locations.extend(get_terminator_locations()?);
-        }
+        },
         TerminalType::Tilix => {
             locations.extend(get_tilix_locations()?);
-        }
+        },
         TerminalType::Tabby => {
             locations.extend(get_tabby_locations()?);
-        }
+        },
     }
 
     Ok(locations)
@@ -94,7 +92,7 @@ pub fn get_typical_config_locations(terminal_type: &TerminalType) -> Result<Vec<
 /// Get the default/first config path for a terminal type (used when no path specified)
 pub fn get_default_config_path(terminal_type: &TerminalType) -> Result<PathBuf> {
     let locations = get_typical_config_locations(terminal_type)?;
-    
+
     // Try to find an existing config first
     for location in &locations {
         if location.exists() {
@@ -103,21 +101,22 @@ pub fn get_default_config_path(terminal_type: &TerminalType) -> Result<PathBuf> 
     }
 
     // If no existing config found, return the first typical location
-    locations.first()
+    locations
+        .first()
         .cloned()
         .ok_or_else(|| anyhow!("No typical config locations defined for {}", terminal_type))
 }
 
 fn get_alacritty_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         let alacritty_dir = config_dir.join("alacritty");
         locations.push(alacritty_dir.join("alacritty.toml"));
         locations.push(alacritty_dir.join("alacritty.yml"));
         locations.push(alacritty_dir.join("alacritty.yaml"));
     }
-    
+
     if let Some(home_dir) = dirs::home_dir() {
         locations.push(home_dir.join(".alacritty.toml"));
         locations.push(home_dir.join(".alacritty.yml"));
@@ -129,7 +128,7 @@ fn get_alacritty_locations() -> Result<Vec<PathBuf>> {
 
 fn get_iterm2_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(home_dir) = dirs::home_dir() {
         locations.push(home_dir.join("Library/Preferences/com.googlecode.iterm2.plist"));
         locations.push(home_dir.join("Library/Application Support/iTerm2/DynamicProfiles"));
@@ -140,10 +139,13 @@ fn get_iterm2_locations() -> Result<Vec<PathBuf>> {
 
 fn get_windows_terminal_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(appdata) = std::env::var_os("LOCALAPPDATA") {
         let appdata_path = PathBuf::from(appdata);
-        locations.push(appdata_path.join("Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json"));
+        locations.push(
+            appdata_path
+                .join("Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json"),
+        );
         locations.push(appdata_path.join("Microsoft/Windows Terminal/settings.json"));
     }
 
@@ -152,12 +154,12 @@ fn get_windows_terminal_locations() -> Result<Vec<PathBuf>> {
 
 fn get_kitty_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         let kitty_dir = config_dir.join("kitty");
         locations.push(kitty_dir.join("kitty.conf"));
     }
-    
+
     if let Some(home_dir) = dirs::home_dir() {
         locations.push(home_dir.join(".config/kitty/kitty.conf"));
     }
@@ -167,11 +169,11 @@ fn get_kitty_locations() -> Result<Vec<PathBuf>> {
 
 fn get_hyper_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(home_dir) = dirs::home_dir() {
         locations.push(home_dir.join(".hyper.js"));
         locations.push(home_dir.join(".hyperterm.js")); // Legacy name
-        
+
         // Also check in app data directories
         if let Some(appdata) = dirs::data_dir() {
             locations.push(appdata.join("Hyper/.hyper.js"));
@@ -183,7 +185,7 @@ fn get_hyper_locations() -> Result<Vec<PathBuf>> {
 
 fn get_warp_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         let warp_dir = config_dir.join("warp-terminal");
         locations.push(warp_dir.join("user_preferences.yaml"));
@@ -195,13 +197,13 @@ fn get_warp_locations() -> Result<Vec<PathBuf>> {
 
 fn get_wezterm_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         let wezterm_dir = config_dir.join("wezterm");
         locations.push(wezterm_dir.join("wezterm.lua"));
         locations.push(wezterm_dir.join("wezterm.toml"));
     }
-    
+
     if let Some(home_dir) = dirs::home_dir() {
         locations.push(home_dir.join(".wezterm.lua"));
         locations.push(home_dir.join(".wezterm.toml"));
@@ -212,7 +214,7 @@ fn get_wezterm_locations() -> Result<Vec<PathBuf>> {
 
 fn get_gnome_terminal_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     // GNOME Terminal uses dconf, which is more complex to handle
     // For now, just indicate where the settings would typically be stored
     if let Some(home_dir) = dirs::home_dir() {
@@ -224,10 +226,10 @@ fn get_gnome_terminal_locations() -> Result<Vec<PathBuf>> {
 
 fn get_konsole_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         locations.push(config_dir.join("konsolerc"));
-        
+
         // Profile files are separate
         let konsole_dir = config_dir.join("konsole");
         // We'd need to scan for .profile files, but for now just indicate the directory
@@ -248,7 +250,7 @@ fn get_konsole_locations() -> Result<Vec<PathBuf>> {
 
 fn get_terminator_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         locations.push(config_dir.join("terminator/config"));
     }
@@ -258,7 +260,7 @@ fn get_terminator_locations() -> Result<Vec<PathBuf>> {
 
 fn get_tilix_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     // Tilix also uses dconf
     if let Some(home_dir) = dirs::home_dir() {
         locations.push(home_dir.join(".config/dconf/user"));
@@ -269,7 +271,7 @@ fn get_tilix_locations() -> Result<Vec<PathBuf>> {
 
 fn get_tabby_locations() -> Result<Vec<PathBuf>> {
     let mut locations = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         let tabby_dir = config_dir.join("tabby");
         locations.push(tabby_dir.join("config.yaml"));
@@ -296,15 +298,13 @@ pub fn search_configs_by_pattern(terminal_type: &TerminalType) -> Result<Vec<Pat
         // Use walkdir for recursive search with depth limit
         for entry in WalkDir::new(&search_dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
-            
+
             // Skip if it's not a file
             if !path.is_file() {
                 continue;
             }
 
-            let file_name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             // Check if filename matches any of the expected config names
             if config_names.iter().any(|name| file_name == *name) {
@@ -373,17 +373,19 @@ fn get_search_directories() -> Result<Vec<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_alacritty_locations() {
         let locations = get_alacritty_locations().unwrap();
         assert!(!locations.is_empty());
-        
+
         // Should contain both .config/alacritty/* and ~/.alacritty.* patterns
-        let has_config_dir = locations.iter().any(|p| p.to_string_lossy().contains("alacritty/alacritty"));
-        let has_home_file = locations.iter().any(|p| p.file_name().unwrap().to_string_lossy().starts_with(".alacritty"));
-        
+        let has_config_dir =
+            locations.iter().any(|p| p.to_string_lossy().contains("alacritty/alacritty"));
+        let has_home_file = locations
+            .iter()
+            .any(|p| p.file_name().unwrap().to_string_lossy().starts_with(".alacritty"));
+
         assert!(has_config_dir || has_home_file);
     }
 
@@ -409,7 +411,7 @@ mod tests {
     fn test_search_directories() {
         let dirs = get_search_directories().unwrap();
         assert!(!dirs.is_empty());
-        
+
         // Should at least contain home directory
         if let Some(home) = dirs::home_dir() {
             assert!(dirs.contains(&home));

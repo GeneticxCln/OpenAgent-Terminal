@@ -9,15 +9,15 @@
 
 pub mod config;
 pub mod engine;
-pub mod manager;
 pub mod expander;
-pub mod templates;
 pub mod integration;
+pub mod manager;
+pub mod templates;
 
-pub use config::{Snippet, SnippetCollection, SnippetTrigger, SnippetContext};
+pub use config::{Snippet, SnippetCollection, SnippetContext, SnippetTrigger};
 pub use engine::SnippetEngine;
-pub use manager::SnippetManager;
 pub use expander::SnippetExpander;
+pub use manager::SnippetManager;
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -37,11 +37,7 @@ impl SnippetSystem {
         let engine = SnippetEngine::new();
         let context = SnippetContext::new()?;
 
-        Ok(Self {
-            manager,
-            engine,
-            context,
-        })
+        Ok(Self { manager, engine, context })
     }
 
     /// Register a new snippet
@@ -55,12 +51,20 @@ impl SnippetSystem {
     }
 
     /// Expand a snippet with the given context
-    pub fn expand_snippet(&self, snippet: &Snippet, variables: HashMap<String, String>) -> Result<String> {
+    pub fn expand_snippet(
+        &self,
+        snippet: &Snippet,
+        variables: HashMap<String, String>,
+    ) -> Result<String> {
         self.engine.expand(snippet, variables, &self.context)
     }
 
     /// Get snippet suggestions based on current context
-    pub fn get_suggestions(&self, input: &str, limit: Option<usize>) -> Result<Vec<SnippetSuggestion>> {
+    pub fn get_suggestions(
+        &self,
+        input: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<SnippetSuggestion>> {
         self.manager.get_suggestions(input, limit.unwrap_or(10))
     }
 
@@ -96,7 +100,10 @@ impl SnippetSystem {
     }
 
     /// Convert a workflow to snippets
-    pub fn workflow_to_snippets(&mut self, workflow_path: &std::path::Path) -> Result<Vec<Snippet>> {
+    pub fn workflow_to_snippets(
+        &mut self,
+        workflow_path: &std::path::Path,
+    ) -> Result<Vec<Snippet>> {
         integration::convert_workflow_to_snippets(workflow_path)
     }
 }
@@ -145,7 +152,7 @@ pub mod utils {
     pub fn extract_variables(template: &str) -> Vec<String> {
         let mut variables = Vec::new();
         let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
-        
+
         for cap in re.captures_iter(template) {
             if let Some(var) = cap.get(1) {
                 let var_name = var.as_str().trim();
@@ -154,7 +161,7 @@ pub mod utils {
                 }
             }
         }
-        
+
         variables
     }
 

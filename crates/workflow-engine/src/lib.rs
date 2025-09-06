@@ -12,21 +12,21 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
 use tokio::task::JoinSet;
 
+pub mod api_testing;
+pub mod database_integration;
+pub mod developer_workflow;
+pub mod docker_integration;
 pub mod executor;
+pub mod git_integration;
 pub mod parser;
 pub mod validator;
-pub mod git_integration;
-pub mod docker_integration;
-pub mod database_integration;
-pub mod api_testing;
-pub mod developer_workflow;
 
 // Re-export main developer workflow components
-pub use developer_workflow::{DeveloperWorkflow, DeveloperContext, WorkflowResult};
-pub use git_integration::GitIntegration;
-pub use docker_integration::DockerIntegration;
-pub use database_integration::DatabaseIntegration;
 pub use api_testing::ApiTester;
+pub use database_integration::DatabaseIntegration;
+pub use developer_workflow::{DeveloperContext, DeveloperWorkflow, WorkflowResult};
+pub use docker_integration::DockerIntegration;
+pub use git_integration::GitIntegration;
 
 use validator::WorkflowValidator;
 
@@ -406,7 +406,14 @@ impl WorkflowEngine {
         if let Some(pre_hooks) = &workflow.hooks.pre_workflow {
             for command in pre_hooks {
                 let _ = self
-                    .execute_command_with_controls(&execution_id, command, &context, &workflow.environment, None, None)
+                    .execute_command_with_controls(
+                        &execution_id,
+                        command,
+                        &context,
+                        &workflow.environment,
+                        None,
+                        None,
+                    )
                     .await;
             }
         }
@@ -431,7 +438,8 @@ impl WorkflowEngine {
                 for pstep in parallel_steps.iter() {
                     let exec_id = execution_id.clone();
                     let ctx_clone = context.clone();
-                    let env = pstep.environment.clone().unwrap_or_else(|| workflow.environment.clone());
+                    let env =
+                        pstep.environment.clone().unwrap_or_else(|| workflow.environment.clone());
                     let secrets = pstep.secrets.clone();
                     let name = pstep.name.clone();
                     let id = pstep.id.clone();
@@ -441,7 +449,14 @@ impl WorkflowEngine {
                     let engine = self.shallow_clone();
                     set.spawn(async move {
                         let engine = engine; // lightweight instance sharing state
-                        engine.log(&exec_id, Some(&id), LogLevel::Info, format!("Executing parallel step: {}", name)).await;
+                        engine
+                            .log(
+                                &exec_id,
+                                Some(&id),
+                                LogLevel::Info,
+                                format!("Executing parallel step: {}", name),
+                            )
+                            .await;
                         // Recreate context and run commands sequentially within this step
                         let mut ok = true;
                         for cmd in cmds {
@@ -456,9 +471,18 @@ impl WorkflowEngine {
                                 )
                                 .await;
                             if let Err(e) = res {
-                                engine.log(&exec_id, Some(&id), LogLevel::Error, format!("Command failed: {}", e)).await;
+                                engine
+                                    .log(
+                                        &exec_id,
+                                        Some(&id),
+                                        LogLevel::Error,
+                                        format!("Command failed: {}", e),
+                                    )
+                                    .await;
                                 ok = false;
-                                if !continue_on_error { break; }
+                                if !continue_on_error {
+                                    break;
+                                }
                             }
                         }
                         Ok::<(String, bool), anyhow::Error>((id, ok))
@@ -471,24 +495,47 @@ impl WorkflowEngine {
                 while let Some(res) = set.join_next().await {
                     match res {
                         Ok(Ok((sid, ok))) => {
-                            if ok { self.mark_step_completed(&execution_id, &sid).await?; }
-                            else { self.mark_step_failed(&execution_id, &sid).await?; group_success = false; failed_steps.push(sid); }
-                        }
+                            if ok {
+                                self.mark_step_completed(&execution_id, &sid).await?;
+                            } else {
+                                self.mark_step_failed(&execution_id, &sid).await?;
+                                group_success = false;
+                                failed_steps.push(sid);
+                            }
+                        },
                         Ok(Err(e)) => {
                             group_success = false;
-                            self.log(&execution_id, None, LogLevel::Error, format!("Parallel step error: {}", e)).await;
-                        }
+                            self.log(
+                                &execution_id,
+                                None,
+                                LogLevel::Error,
+                                format!("Parallel step error: {}", e),
+                            )
+                            .await;
+                        },
                         Err(e) => {
                             group_success = false;
-                            self.log(&execution_id, None, LogLevel::Error, format!("Join error: {}", e)).await;
-                        }
+                            self.log(
+                                &execution_id,
+                                None,
+                                LogLevel::Error,
+                                format!("Join error: {}", e),
+                            )
+                            .await;
+                        },
                     }
                 }
 
                 if !group_success && !parallel_steps.iter().any(|s| s.allow_failure) {
                     overall_success = false;
                     if !failed_steps.is_empty() {
-                        self.log(&execution_id, None, LogLevel::Error, format!("Parallel group failures: {:?}", failed_steps)).await;
+                        self.log(
+                            &execution_id,
+                            None,
+                            LogLevel::Error,
+                            format!("Parallel group failures: {:?}", failed_steps),
+                        )
+                        .await;
                     }
                     break;
                 }
@@ -608,7 +655,14 @@ impl WorkflowEngine {
         } else if let Some(failure_hooks) = &workflow.hooks.on_failure {
             for command in failure_hooks {
                 let _ = self
-                    .execute_command_with_controls(&execution_id, command, &context, &workflow.environment, None, None)
+                    .execute_command_with_controls(
+                        &execution_id,
+                        command,
+                        &context,
+                        &workflow.environment,
+                        None,
+                        None,
+                    )
                     .await;
             }
         }
@@ -616,7 +670,14 @@ impl WorkflowEngine {
         if let Some(post_hooks) = &workflow.hooks.post_workflow {
             for command in post_hooks {
                 let _ = self
-                    .execute_command_with_controls(&execution_id, command, &context, &workflow.environment, None, None)
+                    .execute_command_with_controls(
+                        &execution_id,
+                        command,
+                        &context,
+                        &workflow.environment,
+                        None,
+                        None,
+                    )
                     .await;
             }
         }
@@ -824,14 +885,14 @@ impl WorkflowEngine {
 
         // Spawn to allow timeout control
         let child = cmd.spawn()?;
-        let output = if let Some(t) = timeout { 
+        let output = if let Some(t) = timeout {
             let dur = parse_duration(t)?;
             match tokio::time::timeout(dur, child.wait_with_output()).await {
                 Ok(res) => res?,
                 Err(_) => {
                     // Timeout occurred - child is no longer accessible after wait_with_output
                     return Err(anyhow!("Command timed out after {}", t));
-                }
+                },
             }
         } else {
             child.wait_with_output().await?
@@ -842,13 +903,19 @@ impl WorkflowEngine {
         let mut stdout = output.stdout;
         let mut stderr = output.stderr;
         let mut truncated = false;
-        if stdout.len() > MAX_OUTPUT_BYTES { stdout = stdout[..MAX_OUTPUT_BYTES].to_vec(); truncated = true; }
-        if stderr.len() > MAX_OUTPUT_BYTES { stderr = stderr[..MAX_OUTPUT_BYTES].to_vec(); truncated = true; }
+        if stdout.len() > MAX_OUTPUT_BYTES {
+            stdout = stdout[..MAX_OUTPUT_BYTES].to_vec();
+            truncated = true;
+        }
+        if stderr.len() > MAX_OUTPUT_BYTES {
+            stderr = stderr[..MAX_OUTPUT_BYTES].to_vec();
+            truncated = true;
+        }
 
         // Enhanced secret redaction in logs
         let redact = |s: &[u8]| -> String {
             let mut text = String::from_utf8_lossy(s).to_string();
-            
+
             // Redact explicit secrets from workflow definition
             if let Some(sec_list) = secrets {
                 for secret in sec_list {
@@ -860,10 +927,10 @@ impl WorkflowEngine {
                     }
                 }
             }
-            
+
             // Redact common secret patterns from templated environment values
             text = self.redact_common_secrets(&text);
-            
+
             text
         };
 
@@ -912,17 +979,17 @@ impl WorkflowEngine {
 
         Ok(result)
     }
-    
+
     /// Render template for logging (with secret redaction)
     fn render_template_for_logging(&self, template: &str, context: &Context) -> Result<String> {
         let rendered = self.render_template(template, context)?;
         Ok(self.redact_common_secrets(&rendered))
     }
-    
+
     /// Redact common secret patterns from text
     fn redact_common_secrets(&self, text: &str) -> String {
         let mut result = text.to_string();
-        
+
         // Common secret patterns with regex
         let secret_patterns = [
             // API keys
@@ -943,25 +1010,25 @@ impl WorkflowEngine {
             // SSH private key headers (partial redaction)
             (r"(-----BEGIN [A-Z ]+PRIVATE KEY-----)", "[REDACTED:PRIVATE_KEY]"),
         ];
-        
+
         for (pattern, replacement) in &secret_patterns {
             if let Ok(re) = Regex::new(pattern) {
                 result = re.replace_all(&result, *replacement).to_string();
             }
         }
-        
+
         // Also redact environment variables that look like secrets
         let env_secret_patterns = [
             r"(?i)(export\s+\w*(?:key|secret|token|password|passwd)\w*\s*=\s*)([^\s\n]+)",
             r"(?i)(\w*(?:key|secret|token|password|passwd)\w*\s*=\s*)([^\s\n]{8,})",
         ];
-        
+
         for pattern in &env_secret_patterns {
             if let Ok(re) = Regex::new(pattern) {
                 result = re.replace_all(&result, "$1[REDACTED:ENV_SECRET]").to_string();
             }
         }
-        
+
         result
     }
 
@@ -1005,7 +1072,7 @@ impl WorkflowEngine {
     async fn add_output(&self, execution_id: &str, name: &str, value: &str) -> Result<()> {
         // Apply secret redaction to output values that might be logged
         let redacted_value = self.redact_common_secrets(value);
-        
+
         let mut states = self.states.write().await;
         if let Some(state) = states.get_mut(execution_id) {
             // Store the redacted version to prevent accidental logging of secrets
@@ -1013,7 +1080,7 @@ impl WorkflowEngine {
         }
         Ok(())
     }
-    
+
     /// Add output value without redaction (for internal use when secrets need to be preserved)
     async fn add_output_raw(&self, execution_id: &str, name: &str, value: &str) -> Result<()> {
         let mut states = self.states.write().await;
@@ -1042,7 +1109,7 @@ impl WorkflowEngine {
     ) {
         // Apply secret redaction to log messages
         let redacted_message = self.redact_common_secrets(&message);
-        
+
         let mut states = self.states.write().await;
         if let Some(state) = states.get_mut(execution_id) {
             state.logs.push(LogEntry {
@@ -1060,7 +1127,7 @@ impl WorkflowEngine {
             message: redacted_message,
         });
     }
-    
+
     /// Add log entry without redaction (for internal use)
     async fn log_internal(
         &self,
@@ -1184,6 +1251,7 @@ mod tests {
             hooks: WorkflowHooks::default(),
             outputs: vec![],
             ai_context: None,
+            execution_limits: None,
         };
 
         let workflow_id = "test-1.0.0".to_string();

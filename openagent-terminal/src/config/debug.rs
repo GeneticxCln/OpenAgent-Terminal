@@ -83,9 +83,9 @@ pub struct Debug {
     /// The renderer OpenAgent Terminal should be using.
     pub renderer: Option<RendererPreference>,
 
-    /// [EXPERIMENTAL] Prefer the WGPU backend when available (falls back to OpenGL if unavailable).
-    /// WARNING: WGPU backend is experimental and may have visual inconsistencies.
-    /// OpenGL is the stable, recommended renderer.
+    /// [EXPERIMENTAL] Prefer the WGPU backend when available (falls back to OpenGL if
+    /// unavailable). WARNING: WGPU backend is experimental and may have visual
+    /// inconsistencies. OpenGL is the stable, recommended renderer.
     pub prefer_wgpu: bool,
 
     /// Preview: Enable plugin system (WASI sandbox) integration.

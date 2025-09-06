@@ -191,10 +191,7 @@ impl DatabaseIntegration {
 
     pub async fn get_connection(&self, id: Uuid) -> Result<DatabaseConnection> {
         let connections = self.connections.lock().await;
-        connections
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Connection not found"))
+        connections.get(&id).cloned().ok_or_else(|| anyhow!("Connection not found"))
     }
 
     async fn test_connection(&self, connection: &DatabaseConnection) -> Result<()> {
@@ -206,12 +203,14 @@ impl DatabaseIntegration {
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to connect to PostgreSQL: {}", e))?;
-                
-                sqlx::query("SELECT 1").execute(&pool).await
+
+                sqlx::query("SELECT 1")
+                    .execute(&pool)
+                    .await
                     .map_err(|e| anyhow!("Failed to test PostgreSQL connection: {}", e))?;
-                
+
                 pool.close().await;
-            }
+            },
             DatabaseType::MySQL | DatabaseType::MariaDB => {
                 let pool = sqlx::mysql::MySqlPoolOptions::new()
                     .max_connections(1)
@@ -219,12 +218,14 @@ impl DatabaseIntegration {
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to connect to MySQL/MariaDB: {}", e))?;
-                
-                sqlx::query("SELECT 1").execute(&pool).await
+
+                sqlx::query("SELECT 1")
+                    .execute(&pool)
+                    .await
                     .map_err(|e| anyhow!("Failed to test MySQL/MariaDB connection: {}", e))?;
-                
+
                 pool.close().await;
-            }
+            },
             DatabaseType::SQLite => {
                 let pool = sqlx::sqlite::SqlitePoolOptions::new()
                     .max_connections(1)
@@ -232,20 +233,22 @@ impl DatabaseIntegration {
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to connect to SQLite: {}", e))?;
-                
-                sqlx::query("SELECT 1").execute(&pool).await
+
+                sqlx::query("SELECT 1")
+                    .execute(&pool)
+                    .await
                     .map_err(|e| anyhow!("Failed to test SQLite connection: {}", e))?;
-                
+
                 pool.close().await;
-            }
+            },
             DatabaseType::MongoDB => {
                 // MongoDB testing would require mongodb crate
                 return Err(anyhow!("MongoDB support not yet implemented"));
-            }
+            },
             DatabaseType::Redis => {
                 // Redis testing would require redis crate
                 return Err(anyhow!("Redis support not yet implemented"));
-            }
+            },
         }
 
         Ok(())
@@ -253,15 +256,14 @@ impl DatabaseIntegration {
 
     async fn get_or_create_pool(&self, connection_id: Uuid) -> Result<()> {
         let mut pools = self.active_pools.lock().await;
-        
+
         if pools.contains_key(&connection_id) {
             return Ok(());
         }
 
         let connections = self.connections.lock().await;
-        let connection = connections
-            .get(&connection_id)
-            .ok_or_else(|| anyhow!("Connection not found"))?;
+        let connection =
+            connections.get(&connection_id).ok_or_else(|| anyhow!("Connection not found"))?;
 
         let pool = match connection.database_type {
             DatabaseType::PostgreSQL => {
@@ -274,9 +276,9 @@ impl DatabaseIntegration {
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to create PostgreSQL pool: {}", e))?;
-                
+
                 DatabasePool::PostgreSQL(pool)
-            }
+            },
             DatabaseType::MySQL | DatabaseType::MariaDB => {
                 let pool = sqlx::mysql::MySqlPoolOptions::new()
                     .max_connections(connection.pool_config.max_connections)
@@ -287,9 +289,9 @@ impl DatabaseIntegration {
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to create MySQL/MariaDB pool: {}", e))?;
-                
+
                 DatabasePool::MySQL(pool)
-            }
+            },
             DatabaseType::SQLite => {
                 let pool = sqlx::sqlite::SqlitePoolOptions::new()
                     .max_connections(connection.pool_config.max_connections)
@@ -300,12 +302,12 @@ impl DatabaseIntegration {
                     .connect(&connection.connection_string)
                     .await
                     .map_err(|e| anyhow!("Failed to create SQLite pool: {}", e))?;
-                
+
                 DatabasePool::SQLite(pool)
-            }
+            },
             DatabaseType::MongoDB | DatabaseType::Redis => {
                 return Err(anyhow!("Unsupported database type"));
-            }
+            },
         };
 
         pools.insert(connection_id, pool);
@@ -327,9 +329,7 @@ impl DatabaseIntegration {
         };
 
         let pools = self.active_pools.lock().await;
-        let pool = pools
-            .get(&connection_id)
-            .ok_or_else(|| anyhow!("Pool not found"))?;
+        let pool = pools.get(&connection_id).ok_or_else(|| anyhow!("Pool not found"))?;
 
         let mut result = QueryResult {
             id: query_id,
@@ -344,15 +344,9 @@ impl DatabaseIntegration {
         };
 
         let query_result = match pool {
-            DatabasePool::PostgreSQL(pool) => {
-                self.execute_postgres_query(pool, query).await
-            }
-            DatabasePool::MySQL(pool) => {
-                self.execute_mysql_query(pool, query).await
-            }
-            DatabasePool::SQLite(pool) => {
-                self.execute_sqlite_query(pool, query).await
-            }
+            DatabasePool::PostgreSQL(pool) => self.execute_postgres_query(pool, query).await,
+            DatabasePool::MySQL(pool) => self.execute_mysql_query(pool, query).await,
+            DatabasePool::SQLite(pool) => self.execute_sqlite_query(pool, query).await,
         };
 
         result.execution_time = start_time.elapsed();
@@ -362,10 +356,10 @@ impl DatabaseIntegration {
                 result.columns = columns;
                 result.rows = rows;
                 result.rows_affected = rows_affected;
-            }
+            },
             Err(e) => {
                 result.error = Some(e.to_string());
-            }
+            },
         }
 
         // Update connection last used
@@ -380,7 +374,7 @@ impl DatabaseIntegration {
         {
             let mut history = self.query_history.lock().await;
             history.push(result.clone());
-            
+
             // Keep only last 1000 queries
             if history.len() > 1000 {
                 history.remove(0);
@@ -395,10 +389,12 @@ impl DatabaseIntegration {
         pool: &sqlx::PgPool,
         query: &str,
     ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
-        use sqlx::{Row, Column};
+        use sqlx::{Column, Row};
 
         if query.trim().to_lowercase().starts_with("select") {
-            let rows = sqlx::query(query).fetch_all(pool).await
+            let rows = sqlx::query(query)
+                .fetch_all(pool)
+                .await
                 .map_err(|e| anyhow!("Query execution failed: {}", e))?;
 
             let mut columns = Vec::new();
@@ -421,7 +417,9 @@ impl DatabaseIntegration {
 
             Ok((columns, result_rows, None))
         } else {
-            let result = sqlx::query(query).execute(pool).await
+            let result = sqlx::query(query)
+                .execute(pool)
+                .await
                 .map_err(|e| anyhow!("Query execution failed: {}", e))?;
 
             Ok((Vec::new(), Vec::new(), Some(result.rows_affected())))
@@ -433,10 +431,12 @@ impl DatabaseIntegration {
         pool: &sqlx::MySqlPool,
         query: &str,
     ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
-        use sqlx::{Row, Column};
+        use sqlx::{Column, Row};
 
         if query.trim().to_lowercase().starts_with("select") {
-            let rows = sqlx::query(query).fetch_all(pool).await
+            let rows = sqlx::query(query)
+                .fetch_all(pool)
+                .await
                 .map_err(|e| anyhow!("Query execution failed: {}", e))?;
 
             let mut columns = Vec::new();
@@ -459,7 +459,9 @@ impl DatabaseIntegration {
 
             Ok((columns, result_rows, None))
         } else {
-            let result = sqlx::query(query).execute(pool).await
+            let result = sqlx::query(query)
+                .execute(pool)
+                .await
                 .map_err(|e| anyhow!("Query execution failed: {}", e))?;
 
             Ok((Vec::new(), Vec::new(), Some(result.rows_affected())))
@@ -471,10 +473,12 @@ impl DatabaseIntegration {
         pool: &sqlx::SqlitePool,
         query: &str,
     ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
-        use sqlx::{Row, Column};
+        use sqlx::{Column, Row};
 
         if query.trim().to_lowercase().starts_with("select") {
-            let rows = sqlx::query(query).fetch_all(pool).await
+            let rows = sqlx::query(query)
+                .fetch_all(pool)
+                .await
                 .map_err(|e| anyhow!("Query execution failed: {}", e))?;
 
             let mut columns = Vec::new();
@@ -497,14 +501,20 @@ impl DatabaseIntegration {
 
             Ok((columns, result_rows, None))
         } else {
-            let result = sqlx::query(query).execute(pool).await
+            let result = sqlx::query(query)
+                .execute(pool)
+                .await
                 .map_err(|e| anyhow!("Query execution failed: {}", e))?;
 
             Ok((Vec::new(), Vec::new(), Some(result.rows_affected())))
         }
     }
 
-    fn extract_postgres_value(&self, row: &sqlx::postgres::PgRow, index: usize) -> Result<serde_json::Value> {
+    fn extract_postgres_value(
+        &self,
+        row: &sqlx::postgres::PgRow,
+        index: usize,
+    ) -> Result<serde_json::Value> {
         use sqlx::Row;
 
         // Try different types with null handling
@@ -534,7 +544,7 @@ impl DatabaseIntegration {
                     } else {
                         serde_json::Value::Null
                     }
-                }
+                },
                 None => serde_json::Value::Null,
             });
         }
@@ -549,7 +559,11 @@ impl DatabaseIntegration {
         Ok(serde_json::Value::String("(unrepresentable)".to_string()))
     }
 
-    fn extract_mysql_value(&self, row: &sqlx::mysql::MySqlRow, index: usize) -> Result<serde_json::Value> {
+    fn extract_mysql_value(
+        &self,
+        row: &sqlx::mysql::MySqlRow,
+        index: usize,
+    ) -> Result<serde_json::Value> {
         use sqlx::Row;
 
         // Try different types with null handling
@@ -579,7 +593,7 @@ impl DatabaseIntegration {
                     } else {
                         serde_json::Value::Null
                     }
-                }
+                },
                 None => serde_json::Value::Null,
             });
         }
@@ -594,7 +608,11 @@ impl DatabaseIntegration {
         Ok(serde_json::Value::String("(unrepresentable)".to_string()))
     }
 
-    fn extract_sqlite_value(&self, row: &sqlx::sqlite::SqliteRow, index: usize) -> Result<serde_json::Value> {
+    fn extract_sqlite_value(
+        &self,
+        row: &sqlx::sqlite::SqliteRow,
+        index: usize,
+    ) -> Result<serde_json::Value> {
         use sqlx::Row;
 
         // Try different types with null handling
@@ -624,7 +642,7 @@ impl DatabaseIntegration {
                     } else {
                         serde_json::Value::Null
                     }
-                }
+                },
                 None => serde_json::Value::Null,
             });
         }
@@ -643,13 +661,14 @@ impl DatabaseIntegration {
         self.get_or_create_pool(connection_id).await?;
 
         let connections = self.connections.lock().await;
-        let connection = connections
-            .get(&connection_id)
-            .ok_or_else(|| anyhow!("Connection not found"))?;
+        let connection =
+            connections.get(&connection_id).ok_or_else(|| anyhow!("Connection not found"))?;
 
         match connection.database_type {
             DatabaseType::PostgreSQL => self.get_postgres_schema(connection_id).await,
-            DatabaseType::MySQL | DatabaseType::MariaDB => self.get_mysql_schema(connection_id).await,
+            DatabaseType::MySQL | DatabaseType::MariaDB => {
+                self.get_mysql_schema(connection_id).await
+            },
             DatabaseType::SQLite => self.get_sqlite_schema(connection_id).await,
             _ => Err(anyhow!("Schema introspection not supported for this database type")),
         }
@@ -675,12 +694,7 @@ impl DatabaseIntegration {
         let result = self.execute_query(connection_id, tables_query).await?;
         let tables = self.parse_table_info_from_query_result(&result)?;
 
-        Ok(DatabaseSchema {
-            tables,
-            views: Vec::new(),
-            functions: Vec::new(),
-            indexes: Vec::new(),
-        })
+        Ok(DatabaseSchema { tables, views: Vec::new(), functions: Vec::new(), indexes: Vec::new() })
     }
 
     async fn get_mysql_schema(&self, connection_id: Uuid) -> Result<DatabaseSchema> {
@@ -701,12 +715,7 @@ impl DatabaseIntegration {
         let result = self.execute_query(connection_id, tables_query).await?;
         let tables = self.parse_table_info_from_query_result(&result)?;
 
-        Ok(DatabaseSchema {
-            tables,
-            views: Vec::new(),
-            functions: Vec::new(),
-            indexes: Vec::new(),
-        })
+        Ok(DatabaseSchema { tables, views: Vec::new(), functions: Vec::new(), indexes: Vec::new() })
     }
 
     async fn get_sqlite_schema(&self, connection_id: Uuid) -> Result<DatabaseSchema> {
@@ -727,43 +736,36 @@ impl DatabaseIntegration {
         let result = self.execute_query(connection_id, tables_query).await?;
         let tables = self.parse_table_info_from_query_result(&result)?;
 
-        Ok(DatabaseSchema {
-            tables,
-            views: Vec::new(),
-            functions: Vec::new(),
-            indexes: Vec::new(),
-        })
+        Ok(DatabaseSchema { tables, views: Vec::new(), functions: Vec::new(), indexes: Vec::new() })
     }
 
     fn parse_table_info_from_query_result(&self, result: &QueryResult) -> Result<Vec<TableInfo>> {
         let mut tables: HashMap<String, TableInfo> = HashMap::new();
 
         for row in &result.rows {
-            let table_name = row.get("table_name")
+            let table_name = row
+                .get("table_name")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("Missing table_name"))?
                 .to_string();
 
-            let column_name = row.get("column_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
+            let column_name =
+                row.get("column_name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
 
-            let data_type = row.get("data_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
+            let data_type =
+                row.get("data_type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
 
-            let nullable = row.get("is_nullable")
+            let nullable = row
+                .get("is_nullable")
                 .and_then(|v| v.as_str())
                 .map(|s| s.eq_ignore_ascii_case("yes") || s == "1")
                 .unwrap_or(true);
 
-            let default_value = row.get("column_default")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            let default_value =
+                row.get("column_default").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-            let is_primary_key = row.get("is_primary_key")
+            let is_primary_key = row
+                .get("is_primary_key")
                 .and_then(|v| {
                     if let Some(b) = v.as_bool() {
                         Some(b)
@@ -786,7 +788,8 @@ impl DatabaseIntegration {
                 foreign_key_column: None,
             };
 
-            tables.entry(table_name.clone())
+            tables
+                .entry(table_name.clone())
                 .or_insert_with(|| TableInfo {
                     name: table_name,
                     columns: Vec::new(),
@@ -835,25 +838,19 @@ impl DatabaseIntegration {
                     "postgresql://{}:{}@{}:{}/{}?sslmode={}",
                     username, password, host, port, database_name, ssl_mode_str
                 )
-            }
+            },
             DatabaseType::MySQL | DatabaseType::MariaDB => {
-                format!(
-                    "mysql://{}:{}@{}:{}/{}",
-                    username, password, host, port, database_name
-                )
-            }
+                format!("mysql://{}:{}@{}:{}/{}", username, password, host, port, database_name)
+            },
             DatabaseType::SQLite => {
                 format!("sqlite:{}", database_name)
-            }
+            },
             DatabaseType::MongoDB => {
-                format!(
-                    "mongodb://{}:{}@{}:{}/{}",
-                    username, password, host, port, database_name
-                )
-            }
+                format!("mongodb://{}:{}@{}:{}/{}", username, password, host, port, database_name)
+            },
             DatabaseType::Redis => {
                 format!("redis://{}:{}@{}:{}", username, password, host, port)
-            }
+            },
         }
     }
 
@@ -904,7 +901,10 @@ impl DatabaseIntegration {
                         let path = entry.path();
                         discovered.push(DatabaseConnection {
                             id: Uuid::new_v4(),
-                            name: format!("SQLite: {}", path.file_name().unwrap().to_string_lossy()),
+                            name: format!(
+                                "SQLite: {}",
+                                path.file_name().unwrap().to_string_lossy()
+                            ),
                             database_type: DatabaseType::SQLite,
                             connection_string: format!("sqlite:{}", path.to_string_lossy()),
                             host: "localhost".to_string(),
@@ -926,7 +926,7 @@ impl DatabaseIntegration {
 
     pub async fn close_all_connections(&self) -> Result<()> {
         let mut pools = self.active_pools.lock().await;
-        
+
         for (_, pool) in pools.drain() {
             match pool {
                 DatabasePool::PostgreSQL(pool) => pool.close().await,
@@ -938,26 +938,31 @@ impl DatabaseIntegration {
         Ok(())
     }
 
-    pub async fn export_query_results(&self, result: &QueryResult, format: ExportFormat) -> Result<String> {
+    pub async fn export_query_results(
+        &self,
+        result: &QueryResult,
+        format: ExportFormat,
+    ) -> Result<String> {
         match format {
-            ExportFormat::JSON => {
-                Ok(serde_json::to_string_pretty(&result.rows)?)
-            }
+            ExportFormat::JSON => Ok(serde_json::to_string_pretty(&result.rows)?),
             ExportFormat::CSV => {
                 let mut csv = String::new();
-                
+
                 // Add header
                 csv.push_str(&result.columns.join(","));
                 csv.push('\n');
-                
+
                 // Add rows
                 for row in &result.rows {
-                    let row_values: Vec<String> = result.columns
+                    let row_values: Vec<String> = result
+                        .columns
                         .iter()
                         .map(|col| {
                             row.get(col)
                                 .map(|v| match v {
-                                    serde_json::Value::String(s) => format!("\"{}\"", s.replace("\"", "\"\"")),
+                                    serde_json::Value::String(s) => {
+                                        format!("\"{}\"", s.replace("\"", "\"\""))
+                                    },
                                     serde_json::Value::Number(n) => n.to_string(),
                                     serde_json::Value::Bool(b) => b.to_string(),
                                     serde_json::Value::Null => "".to_string(),
@@ -966,23 +971,27 @@ impl DatabaseIntegration {
                                 .unwrap_or_else(|| "".to_string())
                         })
                         .collect();
-                    
+
                     csv.push_str(&row_values.join(","));
                     csv.push('\n');
                 }
-                
+
                 Ok(csv)
-            }
+            },
             ExportFormat::Markdown => {
                 let mut md = String::new();
-                
+
                 // Add table header
                 md.push_str(&format!("| {} |\n", result.columns.join(" | ")));
-                md.push_str(&format!("| {} |\n", result.columns.iter().map(|_| "---").collect::<Vec<_>>().join(" | ")));
-                
+                md.push_str(&format!(
+                    "| {} |\n",
+                    result.columns.iter().map(|_| "---").collect::<Vec<_>>().join(" | ")
+                ));
+
                 // Add rows
                 for row in &result.rows {
-                    let row_values: Vec<String> = result.columns
+                    let row_values: Vec<String> = result
+                        .columns
                         .iter()
                         .map(|col| {
                             row.get(col)
@@ -996,12 +1005,12 @@ impl DatabaseIntegration {
                                 .unwrap_or_else(|| "".to_string())
                         })
                         .collect();
-                    
+
                     md.push_str(&format!("| {} |\n", row_values.join(" | ")));
                 }
-                
+
                 Ok(md)
-            }
+            },
         }
     }
 }

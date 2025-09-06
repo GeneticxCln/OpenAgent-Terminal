@@ -1,5 +1,5 @@
-use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::grid::Dimensions;
+use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::{self, Term};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

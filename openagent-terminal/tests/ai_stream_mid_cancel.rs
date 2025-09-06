@@ -1,10 +1,11 @@
-// Mid-stream chunks followed by cancel should yield chunks and then AiStreamFinished, without AiStreamError
+// Mid-stream chunks followed by cancel should yield chunks and then AiStreamFinished, without
+// AiStreamError
 
 #![cfg(feature = "ai")]
 
 use openagent_terminal::ai_runtime::AiRuntime;
 use openagent_terminal::event::{Event, EventType};
-use openagent_terminal_ai::{AiProvider, AiRequest, AiProposal};
+use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 use std::sync::{Arc, Mutex};
 use winit::application::ApplicationHandler;
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
@@ -12,8 +13,14 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 struct ChunkThenCancelProvider;
 
 impl AiProvider for ChunkThenCancelProvider {
-    fn name(&self) -> &'static str { "test-chunk-cancel" }
-    fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> { Ok(Vec::new()) }
+    fn name(&self) -> &'static str {
+        "test-chunk-cancel"
+    }
+
+    fn propose(&self, _req: AiRequest) -> Result<Vec<AiProposal>, String> {
+        Ok(Vec::new())
+    }
+
     fn propose_stream(
         &self,
         _req: AiRequest,
@@ -26,23 +33,29 @@ impl AiProvider for ChunkThenCancelProvider {
     }
 }
 
-struct CaptureApp { events: Arc<Mutex<Vec<EventType>>> }
+struct CaptureApp {
+    events: Arc<Mutex<Vec<EventType>>>,
+}
 impl ApplicationHandler<Event> for CaptureApp {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
     fn new_events(&mut self, _el: &ActiveEventLoop, _cause: winit::event::StartCause) {}
+
     fn user_event(&mut self, el: &ActiveEventLoop, ev: Event) {
         self.events.lock().unwrap().push(ev.payload().clone());
         match ev.payload() {
             EventType::AiStreamFinished | EventType::AiStreamError(_) => el.exit(),
-            _ => {}
+            _ => {},
         }
     }
+
     fn window_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
         _window_id: winit::window::WindowId,
         _event: winit::event::WindowEvent,
-    ) {}
+    ) {
+    }
 }
 
 fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
@@ -83,4 +96,3 @@ fn ai_stream_chunks_then_cancel_finishes_gracefully() {
     assert!(saw_finished, "expected AiStreamFinished: {:?}", *evs);
     assert!(!saw_error, "did not expect AiStreamError: {:?}", *evs);
 }
-

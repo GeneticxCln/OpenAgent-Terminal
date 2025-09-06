@@ -1,5 +1,5 @@
 //! Theme management and marketplace system for OpenAgent Terminal
-//! 
+//!
 //! This crate provides comprehensive theme management including:
 //! - Theme loading and parsing
 //! - Theme validation and compatibility checking
@@ -10,17 +10,17 @@
 use std::path::Path;
 
 pub mod config;
-pub mod loader;
-pub mod validator;
-pub mod marketplace;
-pub mod manager;
 pub mod export;
+pub mod loader;
+pub mod manager;
+pub mod marketplace;
+pub mod validator;
 
 // Re-exports for easy access
 pub use config::{Theme, ThemeMetadata, ThemeTokens, UiConfig};
 pub use loader::ThemeLoader;
-pub use validator::ThemeValidator;
 pub use manager::ThemeManager;
+pub use validator::ThemeValidator;
 
 #[cfg(feature = "marketplace")]
 pub use marketplace::{ThemeMarketplace, ThemeRegistry};
@@ -37,10 +37,10 @@ impl ThemeSystem {
     /// Create a new theme system with default configuration
     pub fn new() -> anyhow::Result<Self> {
         let manager = ThemeManager::new()?;
-        
+
         #[cfg(feature = "marketplace")]
         let marketplace = Some(ThemeMarketplace::new()?);
-        
+
         Ok(Self {
             manager,
             #[cfg(feature = "marketplace")]
@@ -75,7 +75,10 @@ impl ThemeSystem {
 
     /// Search for themes in the marketplace
     #[cfg(feature = "marketplace")]
-    pub async fn search_themes(&self, query: &str) -> anyhow::Result<Vec<marketplace::ThemeSearchResult>> {
+    pub async fn search_themes(
+        &self,
+        query: &str,
+    ) -> anyhow::Result<Vec<marketplace::ThemeSearchResult>> {
         if let Some(marketplace) = &self.marketplace {
             marketplace.search_themes(query).await
         } else {
@@ -108,7 +111,12 @@ impl ThemeSystem {
     }
 
     /// Create a custom theme based on an existing theme
-    pub fn create_custom_theme(&mut self, base_theme: &str, name: &str, modifications: &config::ThemeModifications) -> anyhow::Result<Theme> {
+    pub fn create_custom_theme(
+        &mut self,
+        base_theme: &str,
+        name: &str,
+        modifications: &config::ThemeModifications,
+    ) -> anyhow::Result<Theme> {
         self.manager.create_custom_theme(base_theme, name, modifications)
     }
 
@@ -138,10 +146,10 @@ mod tests {
     fn test_list_built_in_themes() {
         let theme_system = ThemeSystem::new().unwrap();
         let themes = theme_system.list_themes().unwrap();
-        
+
         // Should have at least the built-in themes
         assert!(!themes.is_empty());
-        
+
         // Should include dark theme
         let has_dark = themes.iter().any(|t| t.name == "dark");
         assert!(has_dark);
@@ -151,11 +159,11 @@ mod tests {
     #[cfg(feature = "marketplace")]
     async fn test_theme_search() {
         let theme_system = ThemeSystem::new().unwrap();
-        
+
         // This would normally connect to a real marketplace
         // In tests, we'd mock this or use a test server
         let _results = theme_system.search_themes("dark").await.unwrap_or_default();
-        
+
         // Just verify the search doesn't crash
         // No assertion on length; reaching here without panic is success
     }

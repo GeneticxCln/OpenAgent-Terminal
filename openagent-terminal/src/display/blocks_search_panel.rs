@@ -760,7 +760,8 @@ impl Display {
 
         if state.mode == SearchMode::Advanced {
             // Advanced mode shortcuts - first line
-            let advanced_hint1 = "Tab: Mode • Ctrl+S: Sort • Ctrl+R: Reverse • Ctrl+F: ⭐Filter • *: Star • A: Actions";
+            let advanced_hint1 = "Tab: Mode • Ctrl+S: Sort • Ctrl+R: Reverse • Ctrl+F: ⭐Filter • \
+                                  *: Star • A: Actions";
             self.draw_ai_text(
                 Point::new(line, Column(2)),
                 muted_fg,
@@ -771,7 +772,8 @@ impl Display {
             line += 1;
 
             // Advanced mode shortcuts - second line
-            let advanced_hint2 = "C: Copy Cmd • O: Copy Out • B: Copy Both • I: Insert Cmd • H: Here-doc • Ctrl+C: Clear";
+            let advanced_hint2 = "C: Copy Cmd • O: Copy Out • B: Copy Both • I: Insert Cmd • H: \
+                                  Here-doc • Ctrl+C: Clear";
             self.draw_ai_text(
                 Point::new(line, Column(2)),
                 muted_fg,
@@ -781,7 +783,8 @@ impl Display {
             );
         } else {
             // Basic navigation shortcuts
-            let basic_hint = "Enter: Paste • Esc: Close • ↑/↓/j/k: Navigate • PgUp/PgDn: Page • Tab: Mode • ?: Help";
+            let basic_hint = "Enter: Paste • Esc: Close • ↑/↓/j/k: Navigate • PgUp/PgDn: Page • \
+                              Tab: Mode • ?: Help";
             self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, basic_hint, num_cols - 2);
         }
     }

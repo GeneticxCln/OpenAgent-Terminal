@@ -217,7 +217,8 @@ impl Display {
             let regen_col = ctrl_col + 2;
             let close_col = ctrl_col + 4;
 
-            // Determine enabled state (Warp-like: Stop enabled while streaming; Regenerate enabled when idle)
+            // Determine enabled state (Warp-like: Stop enabled while streaming; Regenerate enabled
+            // when idle)
             let (stop_enabled, regen_enabled) = {
                 // We cannot access ai_state fields here directly; use passed ai_state
                 if ai_state.is_loading || ai_state.streaming_active {
@@ -286,7 +287,9 @@ impl Display {
                     num_cols.saturating_sub(2),
                 );
             } else {
-                let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] Copy code  [Ctrl+Shift+T] Copy all  [Ctrl+X] Explain  [Ctrl+F] Fix  [Ctrl+R] Regenerate  [Ctrl+C] Stop  [Esc] Close";
+                let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] \
+                               Copy code  [Ctrl+Shift+T] Copy all  [Ctrl+X] Explain  [Ctrl+F] Fix  \
+                               [Ctrl+R] Regenerate  [Ctrl+C] Stop  [Esc] Close";
                 // Dim slightly for hint badge
                 let hint_color = tokens.text_muted;
                 self.draw_ai_text(
@@ -495,7 +498,8 @@ impl Display {
         })
     }
 
-    /// Draw the AI overlay immediately (background rects then text), independent of the main draw rect pipeline.
+    /// Draw the AI overlay immediately (background rects then text), independent of the main draw
+    /// rect pipeline.
     pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
         // Allow drawing during closing animation even if not active.
         let progress = if let Some(start) = self.ai_panel_anim_start {

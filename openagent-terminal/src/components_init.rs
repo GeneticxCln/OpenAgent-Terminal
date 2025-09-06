@@ -177,22 +177,44 @@ pub async fn initialize_components(
         let plugins_dir = config.data_dir.join("plugins");
         // Plugin policy toggles (Warp-like defaults with env overrides for releases)
         let enforce_signatures = true;
-        let require_all = std::env::var("OPENAGENT_PLUGINS_REQUIRE_ALL").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
-        let hot_reload = std::env::var("OPENAGENT_PLUGINS_HOT_RELOAD").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true);
+        let require_all = std::env::var("OPENAGENT_PLUGINS_REQUIRE_ALL")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let hot_reload = std::env::var("OPENAGENT_PLUGINS_HOT_RELOAD")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
         let require_system = true;
-        let require_user = std::env::var("OPENAGENT_PLUGINS_USER_REQUIRE_SIGNED").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
-        let require_project = std::env::var("OPENAGENT_PLUGINS_PROJECT_REQUIRE_SIGNED").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        let require_user = std::env::var("OPENAGENT_PLUGINS_USER_REQUIRE_SIGNED")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let require_project = std::env::var("OPENAGENT_PLUGINS_PROJECT_REQUIRE_SIGNED")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
 
         match initialize_plugin_manager(
-            plugins_dir.clone(), enforce_signatures, require_all, require_system, require_user, require_project, hot_reload,
-        ).await {
+            plugins_dir.clone(),
+            enforce_signatures,
+            require_all,
+            require_system,
+            require_user,
+            require_project,
+            hot_reload,
+        )
+        .await
+        {
             Ok(manager) => {
                 info!("✓ Plugin system initialized");
                 let pm = Arc::new(manager);
                 if hot_reload {
                     let watcher_dirs = vec![
                         PathBuf::from("/usr/share/openagent-terminal/plugins"),
-                        dirs::config_dir().map(|d| d.join("openagent-terminal").join("plugins")).unwrap_or_default(),
+                        dirs::config_dir()
+                            .map(|d| d.join("openagent-terminal").join("plugins"))
+                            .unwrap_or_default(),
                         std::env::current_dir().unwrap_or_default().join("plugins"),
                         plugins_dir.clone(),
                     ];
@@ -287,7 +309,15 @@ async fn initialize_workflow_engine(config_dir: &PathBuf) -> Result<WorkflowEngi
 
 /// Initialize plugin manager
 #[cfg(feature = "plugins")]
-async fn initialize_plugin_manager(plugins_dir: PathBuf, enforce_signatures: bool, require_signatures_for_all: bool, path_require_system: bool, path_require_user: bool, path_require_project: bool, hot_reload: bool) -> Result<PluginManager> {
+async fn initialize_plugin_manager(
+    plugins_dir: PathBuf,
+    enforce_signatures: bool,
+    require_signatures_for_all: bool,
+    path_require_system: bool,
+    path_require_user: bool,
+    path_require_project: bool,
+    hot_reload: bool,
+) -> Result<PluginManager> {
     // Compute multi-location plugin directories
     let mut dirs_vec = Vec::new();
     // System
@@ -295,7 +325,9 @@ async fn initialize_plugin_manager(plugins_dir: PathBuf, enforce_signatures: boo
     // User
     if let Some(cfg) = dirs::config_dir() {
         let user_dir = cfg.join("openagent-terminal").join("plugins");
-        if let Err(e) = tokio::fs::create_dir_all(&user_dir).await { warn!("Failed to create user plugin dir: {}", e); }
+        if let Err(e) = tokio::fs::create_dir_all(&user_dir).await {
+            warn!("Failed to create user plugin dir: {}", e);
+        }
         dirs_vec.push(user_dir);
     }
     // Project
@@ -303,29 +335,44 @@ async fn initialize_plugin_manager(plugins_dir: PathBuf, enforce_signatures: boo
         dirs_vec.push(cwd.join("plugins"));
     }
     // Data dir (legacy default)
-    if let Err(e) = tokio::fs::create_dir_all(&plugins_dir).await { warn!("Failed to create data plugin dir: {}", e); }
+    if let Err(e) = tokio::fs::create_dir_all(&plugins_dir).await {
+        warn!("Failed to create data plugin dir: {}", e);
+    }
     dirs_vec.push(plugins_dir.clone());
 
     // Create plugin host with storage dir
-    let storage_dir = if let Some(data) = dirs::data_dir() { data.join("openagent-terminal").join("plugins").join("storage") } else { PathBuf::from("./.openagent-terminal/plugins/storage") };
-    if let Err(e) = tokio::fs::create_dir_all(&storage_dir).await { warn!("Failed to create storage dir: {}", e); }
+    let storage_dir = if let Some(data) = dirs::data_dir() {
+        data.join("openagent-terminal").join("plugins").join("storage")
+    } else {
+        PathBuf::from("./.openagent-terminal/plugins/storage")
+    };
+    if let Err(e) = tokio::fs::create_dir_all(&storage_dir).await {
+        warn!("Failed to create storage dir: {}", e);
+    }
     let host = Arc::new(TerminalPluginHost::new(storage_dir));
 
     // Log planned plugin directories and policy
     info!("Plugin directories under management:");
-    for d in &dirs_vec { info!("  - {:?}", d); }
-    let trusted_keys_dir = dirs::config_dir().map(|d| d.join("openagent-terminal").join("trusted_keys"));
+    for d in &dirs_vec {
+        info!("  - {:?}", d);
+    }
+    let trusted_keys_dir =
+        dirs::config_dir().map(|d| d.join("openagent-terminal").join("trusted_keys"));
     let trusted_keys = count_trusted_keys(trusted_keys_dir.clone());
-    info!("Plugin signing policy: enforce_signatures={}, require_signatures_for_all={}, trusted_keys={} (dir: {:?})",
-        enforce_signatures, require_signatures_for_all, trusted_keys, trusted_keys_dir);
-    info!("Per-path signature requirements: system={}, user={}, project={}, hot_reload={}",
-        path_require_system, path_require_user, path_require_project, hot_reload);
+    info!(
+        "Plugin signing policy: enforce_signatures={}, require_signatures_for_all={}, \
+         trusted_keys={} (dir: {:?})",
+        enforce_signatures, require_signatures_for_all, trusted_keys, trusted_keys_dir
+    );
+    info!(
+        "Per-path signature requirements: system={}, user={}, project={}, hot_reload={}",
+        path_require_system, path_require_user, path_require_project, hot_reload
+    );
 
     // Create plugin manager with host and directories
     let mut manager = PluginManager::with_host_and_dirs(dirs_vec, Some(host))
         .context("Failed to create plugin manager")?;
     manager.set_enforce_signatures(enforce_signatures);
-
 
     manager.configure_signature_policy(plugin_loader::SignaturePolicy {
         require_signatures_for_all,
@@ -352,7 +399,6 @@ async fn initialize_plugin_manager(plugins_dir: PathBuf, enforce_signatures: boo
             warn!("Failed to discover plugins: {}", e);
         },
     }
-
 
     Ok(manager)
 }
@@ -567,7 +613,8 @@ impl<'a> ComponentIntegration<'a> {
 fn count_trusted_keys(dir: Option<PathBuf>) -> usize {
     if let Some(d) = dir {
         if let Ok(entries) = std::fs::read_dir(d) {
-            return entries.filter_map(|e| e.ok())
+            return entries
+                .filter_map(|e| e.ok())
                 .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("pub"))
                 .count();
         }
@@ -586,13 +633,18 @@ fn sanitize_key_to_filename(key: &str) -> String {
         }
     }
     // prevent empty filename
-    if s.is_empty() { s.push('_'); }
+    if s.is_empty() {
+        s.push('_');
+    }
     s
 }
 
 #[cfg(feature = "plugins")]
 fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
-    use notify::{Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
+    use notify::{
+        Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode,
+        Result as NotifyResult, Watcher,
+    };
     use std::sync::mpsc::channel;
 
     // Spawn a background task to receive events and process async loads/unloads
@@ -601,14 +653,15 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
 
         // Watcher lives in this task scope
         let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
-            move |res: NotifyResult<Event>| {
-                match res {
-                    Ok(ev) => { let _ = tx.send(ev); },
-                    Err(e) => warn!("Plugin watcher error: {}", e),
-                }
+            move |res: NotifyResult<Event>| match res {
+                Ok(ev) => {
+                    let _ = tx.send(ev);
+                },
+                Err(e) => warn!("Plugin watcher error: {}", e),
             },
             NotifyConfig::default(),
-        ).expect("failed to create file watcher");
+        )
+        .expect("failed to create file watcher");
 
         for d in dirs {
             if d.exists() {
@@ -627,7 +680,9 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
             tokio::spawn(async move {
                 if p.extension().and_then(|s| s.to_str()) == Some("wasm") {
                     // Unload if already loaded (by name) to trigger cleanup
-                    if let Some(name) = p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()) {
+                    if let Some(name) =
+                        p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+                    {
                         let loaded = mgr.loaded_names_and_paths().await;
                         if loaded.iter().any(|(n, _)| n == &name) {
                             let _ = mgr.unload_plugin(&name).await;
@@ -664,7 +719,9 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
                     // Prefer to act on each path
                     for path in &event.paths {
                         match &event.kind {
-                            EventKind::Create(_) | EventKind::Modify(_) => handle_create_or_modify(path),
+                            EventKind::Create(_) | EventKind::Modify(_) => {
+                                handle_create_or_modify(path)
+                            },
                             EventKind::Remove(_) => handle_remove(path),
                             _ => {},
                         }
@@ -673,12 +730,11 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
                 Err(e) => {
                     warn!("Plugin watcher recv error: {}", e);
                     break;
-                }
+                },
             }
         }
     });
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,14 +1,22 @@
-use crate::manager::SnippetManager;
 use crate::config::Snippet;
-use crate::{ImportFormat, ExportFormat};
+use crate::manager::SnippetManager;
+use crate::{ExportFormat, ImportFormat};
 use anyhow::Result;
 
-pub fn import_snippets(_manager: &mut SnippetManager, _format: ImportFormat, _path: &std::path::Path) -> Result<()> {
+pub fn import_snippets(
+    _manager: &mut SnippetManager,
+    _format: ImportFormat,
+    _path: &std::path::Path,
+) -> Result<()> {
     // Placeholder for importing snippets from various formats
     Ok(())
 }
 
-pub fn export_snippets(_manager: &SnippetManager, _format: ExportFormat, _path: &std::path::Path) -> Result<()> {
+pub fn export_snippets(
+    _manager: &SnippetManager,
+    _format: ExportFormat,
+    _path: &std::path::Path,
+) -> Result<()> {
     // Placeholder for exporting snippets to various formats
     Ok(())
 }

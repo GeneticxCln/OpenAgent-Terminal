@@ -1,6 +1,6 @@
+use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{Datelike, Timelike};
 
 /// A single snippet with triggers and expansion
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,7 +206,9 @@ impl Snippet {
             // Check time range
             if let Some(time_range) = &requirements.time_range {
                 let current_hour = context.current_time.hour();
-                if current_hour < time_range.start_hour as u32 || current_hour > time_range.end_hour as u32 {
+                if current_hour < time_range.start_hour as u32
+                    || current_hour > time_range.end_hour as u32
+                {
                     return false;
                 }
 
@@ -248,12 +250,7 @@ impl SnippetTrigger {
     }
 
     pub fn tab_completion(pattern: String) -> Self {
-        Self {
-            pattern,
-            trigger_type: TriggerType::Tab,
-            case_sensitive: false,
-            word_boundary: true,
-        }
+        Self { pattern, trigger_type: TriggerType::Tab, case_sensitive: false, word_boundary: true }
     }
 
     pub fn matches(&self, input: &str) -> bool {
@@ -272,24 +269,20 @@ impl SnippetTrigger {
                 } else {
                     input.contains(pattern)
                 }
-            }
+            },
             TriggerType::Regex => {
                 if let Ok(re) = regex::Regex::new(&self.pattern) {
                     re.is_match(input)
                 } else {
                     false
                 }
-            }
-            TriggerType::Tab => {
-                input.starts_with(&self.pattern)
-            }
-            TriggerType::Keyword => {
-                input.trim_start().starts_with(&self.pattern)
-            }
+            },
+            TriggerType::Tab => input.starts_with(&self.pattern),
+            TriggerType::Keyword => input.trim_start().starts_with(&self.pattern),
             TriggerType::Custom(_) => {
                 // Custom trigger logic would be implemented here
                 false
-            }
+            },
         }
     }
 }
@@ -370,7 +363,7 @@ mod tests {
             "Test Snippet".to_string(),
             "echo 'hello world'".to_string(),
         );
-        
+
         assert_eq!(snippet.id, "test");
         assert_eq!(snippet.name, "Test Snippet");
         assert!(!snippet.is_template);
@@ -405,15 +398,13 @@ mod tests {
             "git-snippet".to_string(),
             "Git Snippet".to_string(),
             "git status".to_string(),
-        ).with_context_requirements(requirements);
+        )
+        .with_context_requirements(requirements);
 
         let mut context = SnippetContext::new().unwrap();
         context.shell_type = "bash".to_string();
-        context.git_info = Some(GitInfo {
-            branch: "main".to_string(),
-            has_changes: false,
-            remote_url: None,
-        });
+        context.git_info =
+            Some(GitInfo { branch: "main".to_string(), has_changes: false, remote_url: None });
 
         assert!(snippet.matches_context(&context));
     }

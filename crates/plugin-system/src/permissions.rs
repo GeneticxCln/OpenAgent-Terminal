@@ -18,25 +18,25 @@ use crate::PluginSystemError;
 pub struct PluginPermissions {
     /// File read access patterns (glob patterns)
     pub read_files: Vec<String>,
-    
+
     /// File write access patterns (glob patterns)
     pub write_files: Vec<String>,
-    
+
     /// Network access permission
     pub network: bool,
-    
+
     /// Command execution permission
     pub execute_commands: bool,
-    
+
     /// Environment variable access
     pub environment_variables: Vec<String>,
-    
+
     /// Maximum memory usage in MB
     pub max_memory_mb: u32,
-    
+
     /// Execution timeout in milliseconds
     pub timeout_ms: u64,
-    
+
     /// Additional security restrictions
     pub security_restrictions: HashMap<String, serde_json::Value>,
 }
@@ -61,16 +61,16 @@ impl Default for PluginPermissions {
 pub struct SecurityPolicy {
     /// Compiled read access glob set
     pub read_glob_set: Option<GlobSet>,
-    
+
     /// Compiled write access glob set
     pub write_glob_set: Option<GlobSet>,
-    
+
     /// Original permissions
     pub permissions: PluginPermissions,
-    
+
     /// Normalized base paths for validation
     pub base_paths: Vec<PathBuf>,
-    
+
     /// Dangerous path patterns to block
     pub blocked_patterns: GlobSet,
 }
@@ -81,7 +81,7 @@ impl SecurityPolicy {
         let read_glob_set = Self::compile_glob_set(&permissions.read_files);
         let write_glob_set = Self::compile_glob_set(&permissions.write_files);
         let blocked_patterns = Self::create_blocked_patterns();
-        
+
         Self {
             read_glob_set,
             write_glob_set,
@@ -90,13 +90,13 @@ impl SecurityPolicy {
             blocked_patterns,
         }
     }
-    
+
     /// Compile glob patterns into a GlobSet
     fn compile_glob_set(patterns: &[String]) -> Option<GlobSet> {
         if patterns.is_empty() {
             return None;
         }
-        
+
         let mut builder = GlobSetBuilder::new();
         for pattern in patterns {
             // Normalize pattern before compiling
@@ -105,44 +105,40 @@ impl SecurityPolicy {
                 builder.add(glob);
             }
         }
-        
+
         builder.build().ok()
     }
-    
+
     /// Normalize glob pattern for cross-platform compatibility
     fn normalize_pattern(pattern: &str) -> String {
         // Convert Windows-style paths to Unix-style for glob matching
         pattern.replace('\\', "/")
     }
-    
+
     /// Create glob set for dangerous/blocked patterns
     fn create_blocked_patterns() -> GlobSet {
         let dangerous_patterns = [
             // System directories
             "/etc/**",
-            "/sys/**", 
+            "/sys/**",
             "/proc/**",
             "/dev/**",
             "/boot/**",
             "/root/**",
-            
             // Windows system directories
             "C:/Windows/**",
             "C:/System32/**",
             "C:/Program Files/**",
             "C:/Program Files (x86)/**",
-            
             // macOS system directories
             "/System/**",
             "/Library/System/**",
             "/private/etc/**",
-            
             // Path traversal patterns
             "../**",
             "**/../**",
             "/..**",
             "**/..**",
-            
             // Hidden sensitive files
             "**/.ssh/**",
             "**/.gnupg/**",
@@ -152,26 +148,26 @@ impl SecurityPolicy {
             "**/.env",
             "**/.secret*",
         ];
-        
+
         let mut builder = GlobSetBuilder::new();
         for pattern in &dangerous_patterns {
             if let Ok(glob) = Glob::new(pattern) {
                 builder.add(glob);
             }
         }
-        
+
         builder.build().unwrap_or_else(|_| GlobSet::empty())
     }
-    
+
     /// Check if a path is allowed for reading
     pub fn can_read_path(&self, path: &Path) -> Result<bool, PluginSystemError> {
         let normalized_path = self.normalize_and_validate_path(path)?;
-        
+
         // Check against blocked patterns first
         if self.is_path_blocked(&normalized_path) {
             return Ok(false);
         }
-        
+
         // Check against read permissions
         if let Some(ref glob_set) = self.read_glob_set {
             Ok(glob_set.is_match(&normalized_path))
@@ -179,16 +175,16 @@ impl SecurityPolicy {
             Ok(false) // No read permissions granted
         }
     }
-    
+
     /// Check if a path is allowed for writing
     pub fn can_write_path(&self, path: &Path) -> Result<bool, PluginSystemError> {
         let normalized_path = self.normalize_and_validate_path(path)?;
-        
+
         // Check against blocked patterns first
         if self.is_path_blocked(&normalized_path) {
             return Ok(false);
         }
-        
+
         // Check against write permissions
         if let Some(ref glob_set) = self.write_glob_set {
             Ok(glob_set.is_match(&normalized_path))
@@ -196,7 +192,7 @@ impl SecurityPolicy {
             Ok(false) // No write permissions granted
         }
     }
-    
+
     /// Normalize and validate a path to prevent traversal attacks
     pub fn normalize_and_validate_path(&self, path: &Path) -> Result<String, PluginSystemError> {
         // Convert to absolute path to resolve any relative components
@@ -204,130 +200,169 @@ impl SecurityPolicy {
             path.to_path_buf()
         } else {
             std::env::current_dir()
-                .map_err(|e| PluginSystemError::PermissionDenied(format!("Cannot get current directory: {}", e)))?
+                .map_err(|e| {
+                    PluginSystemError::PermissionDenied(format!(
+                        "Cannot get current directory: {}",
+                        e
+                    ))
+                })?
                 .join(path)
         };
-        
+
         // Canonicalize to resolve symlinks and normalize the path
-        let canonical_path = dunce::canonicalize(&absolute_path)
-            .map_err(|e| PluginSystemError::PermissionDenied(format!("Path canonicalization failed: {}", e)))?;
-        
+        let canonical_path = dunce::canonicalize(&absolute_path).map_err(|e| {
+            PluginSystemError::PermissionDenied(format!("Path canonicalization failed: {}", e))
+        })?;
+
         // Convert to string with consistent separators
-        let path_str = canonical_path
-            .to_str()
-            .ok_or_else(|| PluginSystemError::PermissionDenied("Path contains invalid UTF-8".to_string()))?;
-        
+        let path_str = canonical_path.to_str().ok_or_else(|| {
+            PluginSystemError::PermissionDenied("Path contains invalid UTF-8".to_string())
+        })?;
+
         // Normalize separators for glob matching
         Ok(path_str.replace('\\', "/"))
     }
-    
+
     /// Check if a path matches blocked patterns
     fn is_path_blocked(&self, normalized_path: &str) -> bool {
         self.blocked_patterns.is_match(normalized_path)
     }
-    
+
     /// Validate environment variable access
     pub fn can_access_env_var(&self, var_name: &str) -> bool {
         // Check if explicitly allowed
         if self.permissions.environment_variables.contains(&var_name.to_string()) {
             return true;
         }
-        
+
         // Check against sensitive patterns
         let sensitive_prefixes = [
-            "AWS_", "GCP_", "AZURE_", "SECRET_", "TOKEN_", "KEY_",
-            "PASSWORD_", "PASS_", "SSH_", "GPG_", "AUTH_",
+            "AWS_",
+            "GCP_",
+            "AZURE_",
+            "SECRET_",
+            "TOKEN_",
+            "KEY_",
+            "PASSWORD_",
+            "PASS_",
+            "SSH_",
+            "GPG_",
+            "AUTH_",
         ];
-        
+
         let sensitive_exact = [
-            "HOME", "USER", "USERNAME", "PATH", "LD_LIBRARY_PATH", 
-            "SUDO_USER", "LOGNAME", "SHELL",
+            "HOME",
+            "USER",
+            "USERNAME",
+            "PATH",
+            "LD_LIBRARY_PATH",
+            "SUDO_USER",
+            "LOGNAME",
+            "SHELL",
         ];
-        
+
         // Block sensitive variables unless explicitly allowed
-        if sensitive_prefixes.iter().any(|&prefix| var_name.starts_with(prefix)) ||
-           sensitive_exact.contains(&var_name) {
+        if sensitive_prefixes.iter().any(|&prefix| var_name.starts_with(prefix))
+            || sensitive_exact.contains(&var_name)
+        {
             return false;
         }
-        
+
         // Allow other variables
         true
     }
-    
+
     /// Validate memory limit
     pub fn validate_memory_limit(&self) -> Result<(), PluginSystemError> {
         const MAX_ALLOWED_MEMORY_MB: u32 = 500;
-        
+
         if self.permissions.max_memory_mb > MAX_ALLOWED_MEMORY_MB {
             return Err(PluginSystemError::PermissionDenied(format!(
                 "Requested memory ({} MB) exceeds maximum allowed ({} MB)",
                 self.permissions.max_memory_mb, MAX_ALLOWED_MEMORY_MB
             )));
         }
-        
+
         if self.permissions.max_memory_mb == 0 {
             return Err(PluginSystemError::PermissionDenied(
-                "Memory limit must be greater than 0".to_string()
+                "Memory limit must be greater than 0".to_string(),
             ));
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate timeout limit
     pub fn validate_timeout(&self) -> Result<(), PluginSystemError> {
         const MAX_ALLOWED_TIMEOUT_MS: u64 = 60000; // 60 seconds
-        
+
         if self.permissions.timeout_ms > MAX_ALLOWED_TIMEOUT_MS {
             return Err(PluginSystemError::PermissionDenied(format!(
                 "Requested timeout ({} ms) exceeds maximum allowed ({} ms)",
                 self.permissions.timeout_ms, MAX_ALLOWED_TIMEOUT_MS
             )));
         }
-        
+
         if self.permissions.timeout_ms == 0 {
             return Err(PluginSystemError::PermissionDenied(
-                "Timeout must be greater than 0".to_string()
+                "Timeout must be greater than 0".to_string(),
             ));
         }
-        
+
         Ok(())
     }
-    
+
     /// Comprehensive permission validation
     pub fn validate_all_permissions(&self) -> Result<(), PluginSystemError> {
         self.validate_memory_limit()?;
         self.validate_timeout()?;
-        
+
         // Validate file access patterns
         for pattern in &self.permissions.read_files {
             if self.is_dangerous_pattern(pattern) {
                 return Err(PluginSystemError::PermissionDenied(format!(
-                    "Dangerous read pattern denied: {}", pattern
+                    "Dangerous read pattern denied: {}",
+                    pattern
                 )));
             }
         }
-        
+
         for pattern in &self.permissions.write_files {
             if self.is_dangerous_pattern(pattern) {
                 return Err(PluginSystemError::PermissionDenied(format!(
-                    "Dangerous write pattern denied: {}", pattern
+                    "Dangerous write pattern denied: {}",
+                    pattern
                 )));
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Check if a pattern is inherently dangerous
     fn is_dangerous_pattern(&self, pattern: &str) -> bool {
         let dangerous_substrings = [
-            "../", "/..", "\\..\\", "\\..",
-            "/etc/", "/sys/", "/proc/", "/dev/", "/boot/", "/root/",
-            "C:/Windows/", "C:/System32/", "/System/", "/Library/System/",
-            "shadow", "passwd", "sudoers", ".ssh/", ".gnupg/"
+            "../",
+            "/..",
+            "\\..\\",
+            "\\..",
+            "/etc/",
+            "/sys/",
+            "/proc/",
+            "/dev/",
+            "/boot/",
+            "/root/",
+            "C:/Windows/",
+            "C:/System32/",
+            "/System/",
+            "/Library/System/",
+            "shadow",
+            "passwd",
+            "sudoers",
+            ".ssh/",
+            ".gnupg/",
         ];
-        
+
         dangerous_substrings.iter().any(|&dangerous| pattern.contains(dangerous))
     }
 }
@@ -367,93 +402,89 @@ mod tests {
     use super::*;
     use std::env;
     use tempfile::TempDir;
-    
+
     #[test]
     fn test_path_normalization() {
-        let permissions = PluginPermissions {
-            read_files: vec!["test/**".to_string()],
-            ..Default::default()
-        };
+        let permissions =
+            PluginPermissions { read_files: vec!["test/**".to_string()], ..Default::default() };
         let policy = SecurityPolicy::from_permissions(&permissions);
-        
+
         // Test various path inputs
-        let test_cases = [
-            "test/file.txt",
-            "./test/file.txt", 
-            "test/../test/file.txt",
-        ];
-        
+        let test_cases = ["test/file.txt", "./test/file.txt", "test/../test/file.txt"];
+
         for path_str in &test_cases {
             let path = Path::new(path_str);
             let result = policy.normalize_and_validate_path(path);
             assert!(result.is_ok(), "Failed to normalize path: {}", path_str);
         }
     }
-    
+
     #[test]
     fn test_dangerous_pattern_detection() {
         let permissions = PluginPermissions::default();
         let policy = SecurityPolicy::from_permissions(&permissions);
-        
+
         let dangerous_patterns = [
             "../etc/passwd",
-            "/etc/shadow", 
+            "/etc/shadow",
             "C:/Windows/System32/config",
             "../../root/.ssh/id_rsa",
         ];
-        
+
         for pattern in &dangerous_patterns {
-            assert!(policy.is_dangerous_pattern(pattern), 
-                   "Should detect dangerous pattern: {}", pattern);
+            assert!(
+                policy.is_dangerous_pattern(pattern),
+                "Should detect dangerous pattern: {}",
+                pattern
+            );
         }
     }
-    
+
     #[test]
     fn test_blocked_path_detection() {
         let permissions = PluginPermissions::default();
         let policy = SecurityPolicy::from_permissions(&permissions);
-        
+
         let blocked_paths = [
             "/etc/passwd",
             "/sys/kernel/debug",
             "C:/Windows/System32/drivers",
             "../../../etc/shadow",
         ];
-        
+
         for path in &blocked_paths {
-            assert!(policy.is_path_blocked(path), 
-                   "Should block dangerous path: {}", path);
+            assert!(policy.is_path_blocked(path), "Should block dangerous path: {}", path);
         }
     }
-    
+
     #[test]
     fn test_environment_variable_access() {
         let mut permissions = PluginPermissions::default();
         permissions.environment_variables = vec!["PLUGIN_CONFIG".to_string()];
         let policy = SecurityPolicy::from_permissions(&permissions);
-        
+
         // Should allow explicitly granted variables
         assert!(policy.can_access_env_var("PLUGIN_CONFIG"));
-        
+
         // Should block sensitive variables
         assert!(!policy.can_access_env_var("AWS_SECRET_ACCESS_KEY"));
         assert!(!policy.can_access_env_var("HOME"));
         assert!(!policy.can_access_env_var("SSH_PRIVATE_KEY"));
-        
+
         // Should allow non-sensitive variables
         assert!(policy.can_access_env_var("TERM"));
         assert!(policy.can_access_env_var("CUSTOM_VAR"));
     }
-    
-    #[test] 
+
+    #[test]
     fn test_permission_validation() {
         let mut permissions = PluginPermissions::default();
         permissions.max_memory_mb = 1000; // Too high
         let policy = SecurityPolicy::from_permissions(&permissions);
-        
+
         let result = policy.validate_memory_limit();
         assert!(result.is_err(), "Should reject excessive memory limit");
-        
+
         permissions.max_memory_mb = 100; // Reasonable
         let policy = SecurityPolicy::from_permissions(&permissions);
         let result = policy.validate_memory_limit();

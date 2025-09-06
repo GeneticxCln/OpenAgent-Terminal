@@ -27,9 +27,9 @@ pub mod warp_ui {
     pub use crate::display::warp_ui::*;
 }
 #[cfg(test)]
-mod warp_integration_test;
-#[cfg(test)]
 mod session_restoration_test;
+#[cfg(test)]
+mod warp_integration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};
@@ -246,12 +246,15 @@ impl WorkspaceManager {
     pub fn resize_left(&mut self) -> bool {
         self.resize_horizontal(-self.ratio_step_horizontal())
     }
+
     pub fn resize_right(&mut self) -> bool {
         self.resize_horizontal(self.ratio_step_horizontal())
     }
+
     pub fn resize_up(&mut self) -> bool {
         self.resize_vertical(-self.ratio_step_vertical())
     }
+
     pub fn resize_down(&mut self) -> bool {
         self.resize_vertical(self.ratio_step_vertical())
     }
@@ -308,7 +311,8 @@ impl WorkspaceManager {
             && self.config.workspace.tab_bar.position
                 != crate::config::workspace::TabBarPosition::Hidden
         {
-            // Only reserve a row when the tab bar is effectively visible (Always). Hover overlays content.
+            // Only reserve a row when the tab bar is effectively visible (Always). Hover overlays
+            // content.
             let is_fs = false; // WorkspaceManager doesn't know window fullscreen; assume non-FS for now
             let eff_vis = match self.config.workspace.tab_bar.visibility {
                 crate::config::workspace::TabBarVisibility::Always => {

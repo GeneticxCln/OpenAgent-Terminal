@@ -8,9 +8,11 @@ use openagent_terminal_config::SerdeReplace;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum WordBoundaryStyle {
-    /// Letters, numbers and underscore are treated as word characters; punctuation separates words.
+    /// Letters, numbers and underscore are treated as word characters; punctuation separates
+    /// words.
     Alnum,
-    /// Treat most symbols and punctuation as separate words; jumps stop at transitions of unicode categories.
+    /// Treat most symbols and punctuation as separate words; jumps stop at transitions of unicode
+    /// categories.
     Unicode,
 }
 

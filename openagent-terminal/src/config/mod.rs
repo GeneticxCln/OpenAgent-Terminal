@@ -19,6 +19,7 @@ pub mod cursor;
 pub mod debug;
 pub mod font;
 pub mod general;
+pub mod ide;
 pub mod monitor;
 pub mod scrolling;
 pub mod selection;
@@ -29,7 +30,6 @@ pub mod theme;
 pub mod ui_config;
 pub mod window;
 pub mod workspace;
-pub mod ide;
 
 mod bindings;
 mod mouse;
@@ -244,7 +244,8 @@ pub fn deserialize_config(path: &Path, warn_pruned: bool) -> Result<Value> {
     let extension = path.extension().unwrap_or_default();
     if (extension == "yaml" || extension == "yml") && !contents.trim().is_empty() {
         warn!(
-            "YAML config {path:?} is deprecated, please migrate to TOML using `openagent-terminal migrate`"
+            "YAML config {path:?} is deprecated, please migrate to TOML using `openagent-terminal \
+             migrate`"
         );
 
         let mut value: serde_yaml::Value = serde_yaml::from_str(&contents)?;

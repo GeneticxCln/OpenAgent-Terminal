@@ -4,26 +4,24 @@
 //! providing better observability and compatibility with the tracing ecosystem.
 
 use std::fs::{File, OpenOptions};
-use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::{env, process};
+use std::{env, io, process};
 
 use log::LevelFilter;
 use tracing::Subscriber;
 use tracing_log::LogTracer;
-use tracing_subscriber::{
-    filter::EnvFilter,
-    fmt::{self, format::FmtSpan},
-    layer::SubscriberExt,
-    registry::LookupSpan,
-    Layer, Registry,
-};
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::fmt::{self};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::{Layer, Registry};
 use winit::event_loop::EventLoopProxy;
 
 use crate::cli::Options;
-use crate::logging::tracing_bridge;
 use crate::event::{Event, EventType};
+use crate::logging::tracing_bridge;
 use crate::message_bar::{Message, MessageType};
 
 /// Name for the environment variable containing the log file's path.
@@ -58,9 +56,7 @@ pub fn initialize_with_tracing_bridge(
     let filter = create_env_filter(options.log_level());
     // Use a MakeWriter-compatible closure that clones the file handle for each write
     let file_for_writer = log_file;
-    let file_writer = move || file_for_writer
-        .try_clone()
-        .expect("failed to clone log file handle");
+    let file_writer = move || file_for_writer.try_clone().expect("failed to clone log file handle");
     let message_bar_layer = MessageBarLayer::new(event_proxy, log_path.clone());
 
     // Create layered subscriber
@@ -73,31 +69,24 @@ pub fn initialize_with_tracing_bridge(
                 .with_thread_ids(true)
                 .with_file(true)
                 .with_line_number(true)
-                .with_span_events(FmtSpan::CLOSE)
+                .with_span_events(FmtSpan::CLOSE),
         )
-        .with(
-            fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_target(true)
-                .with_ansi(true)
-                .compact()
-        )
+        .with(fmt::layer().with_writer(std::io::stdout).with_target(true).with_ansi(true).compact())
         .with(message_bar_layer);
 
     // Set up AI debug logging if enabled
     if let Some(ai_file) = create_ai_log_file()? {
-        let ai_filter = EnvFilter::new("openagent_terminal_ai=debug,openagent_terminal::ai_runtime=debug");
-        let ai_writer = move || ai_file
-            .try_clone()
-            .expect("failed to clone AI log file handle");
+        let ai_filter =
+            EnvFilter::new("openagent_terminal_ai=debug,openagent_terminal::ai_runtime=debug");
+        let ai_writer = move || ai_file.try_clone().expect("failed to clone AI log file handle");
         let subscriber = subscriber.with(
             fmt::layer()
                 .with_writer(ai_writer)
                 .with_target(true)
                 .with_ansi(false)
-                .with_filter(ai_filter)
+                .with_filter(ai_filter),
         );
-        
+
         tracing::subscriber::set_global_default(subscriber)?;
     } else {
         tracing::subscriber::set_global_default(subscriber)?;
@@ -112,7 +101,7 @@ fn create_env_filter(level: LevelFilter) -> EnvFilter {
     let level_str = match level {
         LevelFilter::Off => "off",
         LevelFilter::Error => "error",
-        LevelFilter::Warn => "warn", 
+        LevelFilter::Warn => "warn",
         LevelFilter::Info => "info",
         LevelFilter::Debug => "debug",
         LevelFilter::Trace => "trace",
@@ -120,7 +109,7 @@ fn create_env_filter(level: LevelFilter) -> EnvFilter {
 
     // Default filter: specified level for openagent crates, WARN for others
     let default_filter = format!("openagent={},warn", level_str);
-    
+
     EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new(&default_filter))
         .unwrap_or_else(|_| EnvFilter::new("warn"))
@@ -131,11 +120,8 @@ fn create_log_file() -> io::Result<(File, PathBuf)> {
     let mut path = env::temp_dir();
     path.push(format!("OpenAgentTerminal-{}.log", process::id()));
 
-    let file = OpenOptions::new()
-        .create_new(true)
-        .append(true)
-        .open(&path)?;
-    
+    let file = OpenOptions::new().create_new(true).append(true).open(&path)?;
+
     Ok((file, path))
 }
 
@@ -149,19 +135,14 @@ fn create_ai_log_file() -> io::Result<Option<File>> {
         return Ok(None);
     }
 
-    let path = env::var("OPENAGENT_AI_DEBUG_LOG_PATH")
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
+    let path =
+        env::var("OPENAGENT_AI_DEBUG_LOG_PATH").ok().map(PathBuf::from).unwrap_or_else(|| {
             let mut p = env::temp_dir();
             p.push(format!("openagent_ai_debug_{}.log", process::id()));
             p
         });
 
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let file = OpenOptions::new().create(true).append(true).open(path)?;
 
     Ok(Some(file))
 }
@@ -174,10 +155,7 @@ struct MessageBarLayer {
 
 impl MessageBarLayer {
     fn new(event_proxy: EventLoopProxy<Event>, log_path: PathBuf) -> Self {
-        Self {
-            event_proxy: Arc::new(Mutex::new(event_proxy)),
-            log_path,
-        }
+        Self { event_proxy: Arc::new(Mutex::new(event_proxy)), log_path }
     }
 }
 
@@ -191,7 +169,7 @@ where
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         let metadata = event.metadata();
-        
+
         // Only show ERROR and WARN in message bar
         let message_type = match *metadata.level() {
             tracing::Level::ERROR => MessageType::Error,
@@ -235,9 +213,7 @@ struct MessageVisitor {
 
 impl MessageVisitor {
     fn new() -> Self {
-        Self {
-            message: String::new(),
-        }
+        Self { message: String::new() }
     }
 }
 
@@ -258,7 +234,7 @@ impl tracing::field::Visit for MessageVisitor {
 /// Logging targets that are allowed
 const ALLOWED_TARGETS: &[&str] = &[
     "ipc_config",
-    "config", 
+    "config",
     "winit_event",
     "openagent_terminal_config_derive",
     "openagent_terminal_config",
@@ -279,7 +255,7 @@ macro_rules! log_ai_request {
     ($provider:expr, $model:expr, $prompt_len:expr) => {
         tracing::info!(
             provider = %$provider,
-            model = %$model, 
+            model = %$model,
             prompt_length = $prompt_len,
             event = "ai_request",
             "AI request initiated"
@@ -295,7 +271,7 @@ macro_rules! log_ai_response {
             model = %$model,
             response_length = $response_len,
             duration_ms = $duration_ms,
-            event = "ai_response", 
+            event = "ai_response",
             "AI response received"
         );
     };
@@ -320,9 +296,9 @@ fn initialize_legacy_bridge(
 ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
     // First, initialize the legacy log system
     let log_file_path = crate::logging::initialize(options, event_proxy)?;
-    
+
     // Then initialize the tracing bridge that forwards to the log system
     tracing_bridge::initialize_tracing_bridge()?;
-    
+
     Ok(log_file_path)
 }

@@ -9,12 +9,15 @@ pub struct SnippetEngine {
 
 impl SnippetEngine {
     pub fn new() -> Self {
-        Self {
-            template_engine: tera::Tera::new("templates/**/*").unwrap_or_default(),
-        }
+        Self { template_engine: tera::Tera::new("templates/**/*").unwrap_or_default() }
     }
 
-    pub fn expand(&self, snippet: &Snippet, variables: HashMap<String, String>, context: &SnippetContext) -> Result<String> {
+    pub fn expand(
+        &self,
+        snippet: &Snippet,
+        variables: HashMap<String, String>,
+        context: &SnippetContext,
+    ) -> Result<String> {
         if snippet.is_template {
             self.expand_template(snippet, variables, context)
         } else {
@@ -22,9 +25,17 @@ impl SnippetEngine {
         }
     }
 
-    fn expand_template(&self, snippet: &Snippet, mut variables: HashMap<String, String>, context: &SnippetContext) -> Result<String> {
+    fn expand_template(
+        &self,
+        snippet: &Snippet,
+        mut variables: HashMap<String, String>,
+        context: &SnippetContext,
+    ) -> Result<String> {
         // Add context variables
-        variables.insert("current_dir".to_string(), context.working_directory.to_string_lossy().to_string());
+        variables.insert(
+            "current_dir".to_string(),
+            context.working_directory.to_string_lossy().to_string(),
+        );
         variables.insert("shell".to_string(), context.shell_type.clone());
         variables.insert("date".to_string(), context.current_time.format("%Y-%m-%d").to_string());
         variables.insert("time".to_string(), context.current_time.format("%H:%M:%S").to_string());

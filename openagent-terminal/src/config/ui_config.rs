@@ -119,7 +119,8 @@ pub struct UiConfig {
     pub theme: ThemeConfig,
 
     /// Global per-user reduce motion override.
-    /// When set, this takes precedence over any theme-provided reduce_motion or theme.reduce_motion.
+    /// When set, this takes precedence over any theme-provided reduce_motion or
+    /// theme.reduce_motion.
     #[serde(default)]
     pub reduce_motion_override: Option<bool>,
 

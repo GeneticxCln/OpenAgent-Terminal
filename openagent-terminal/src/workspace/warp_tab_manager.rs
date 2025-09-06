@@ -331,9 +331,9 @@ impl WarpTabManager {
 
         // Read and validate session file
         let session_json = std::fs::read_to_string(session_path)?;
-        
+
         // First try to parse as current format
-let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_json) {
+        let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_json) {
             Ok(session) => {
                 // Validate session format version
                 if session.version != SESSION_VERSION {
@@ -347,7 +347,7 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
                                 old_version, SESSION_VERSION, e
                             );
                             return Ok(false);
-                        }
+                        },
                     }
                 } else {
                     session
@@ -355,14 +355,14 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
             },
             Err(e) => {
                 eprintln!("Failed to parse session file {}: {}", session_path.display(), e);
-                
+
                 // Try to create backup and return false
                 if let Err(backup_err) = self.backup_corrupted_session(session_path) {
                     eprintln!("Failed to backup corrupted session: {}", backup_err);
                 }
-                
+
                 return Ok(false);
-            }
+            },
         };
 
         // Validate session data integrity
@@ -535,8 +535,14 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
         // Validate each tab
         for (idx, tab) in session.tabs.iter().enumerate() {
             // Check working directory exists or can be recovered
-            if !tab.working_directory.exists() && !tab.working_directory.parent().map_or(false, |p| p.exists()) {
-                println!("Warning: Tab {} working directory {} is not accessible", idx, tab.working_directory.display());
+            if !tab.working_directory.exists()
+                && !tab.working_directory.parent().map_or(false, |p| p.exists())
+            {
+                println!(
+                    "Warning: Tab {} working directory {} is not accessible",
+                    idx,
+                    tab.working_directory.display()
+                );
             }
 
             // Validate split layout has at least one pane
@@ -545,7 +551,7 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
                 WarpSplitLayoutSession::Horizontal { .. } => 2, // Simplified validation
                 WarpSplitLayoutSession::Vertical { .. } => 2,   // Simplified validation
             };
-            
+
             if pane_count == 0 {
                 return Err(format!("Tab {} has no panes", idx));
             }
@@ -562,7 +568,10 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
     }
 
     /// Migrate session from older format versions
-    pub(crate) fn migrate_session_format(&self, mut session: WarpSession) -> Result<WarpSession, String> {
+    pub(crate) fn migrate_session_format(
+        &self,
+        mut session: WarpSession,
+    ) -> Result<WarpSession, String> {
         match session.version.as_str() {
             "1.0.0" => {
                 // Current version, no migration needed
@@ -574,9 +583,7 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
                 println!("Migrated session from version 0.9.0 to {}", SESSION_VERSION);
                 Ok(session)
             },
-            _ => {
-                Err(format!("Unsupported session version: {}", session.version))
-            }
+            _ => Err(format!("Unsupported session version: {}", session.version)),
         }
     }
 
@@ -673,7 +680,12 @@ let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_js
     }
 
     /// Add pane context to a tab (for session restoration)
-    pub fn add_pane_to_tab(&mut self, tab_id: TabId, pane_id: PaneId, pane_context: PaneContext) -> bool {
+    pub fn add_pane_to_tab(
+        &mut self,
+        tab_id: TabId,
+        pane_id: PaneId,
+        pane_context: PaneContext,
+    ) -> bool {
         if let Some(tab) = self.tabs.get_mut(&tab_id) {
             tab.panes.insert(pane_id, pane_context);
             true

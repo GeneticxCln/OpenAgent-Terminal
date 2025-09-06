@@ -15,7 +15,6 @@ use std::sync::Arc;
 use std::{env, ptr};
 
 use libc::{c_int, fcntl, F_GETFL, F_SETFL, O_NONBLOCK, TIOCSCTTY};
-use tracing::error;
 use polling::{Event, PollMode, Poller};
 use rustix_openpty::openpty;
 use rustix_openpty::rustix::termios::Winsize;
@@ -23,6 +22,7 @@ use rustix_openpty::rustix::termios::Winsize;
 use rustix_openpty::rustix::termios::{self, InputModes, OptionalActions};
 use signal_hook::low_level::{pipe as signal_pipe, unregister as unregister_signal};
 use signal_hook::{consts as sigconsts, SigId};
+use tracing::error;
 
 use crate::event::{OnResize, WindowSize};
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Options};
