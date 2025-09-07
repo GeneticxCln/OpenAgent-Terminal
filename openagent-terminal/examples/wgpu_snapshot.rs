@@ -15,7 +15,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     use wgpu::util::DeviceExt;
 
     // Create instance and request adapter (headless)
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
     });
@@ -25,17 +25,17 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
             compatible_surface: None,
             force_fallback_adapter: false,
         })
-        .await
-        .ok_or_else(|| anyhow::anyhow!("No suitable WGPU adapter found"))?;
+        .await?;
 
     let (device, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("OpenAgent WGPU Device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
-            },
-            None,
+                required_limits: wgpu::Limits::default(),
+                memory_hints: Default::default(),
+                trace: Default::default(),
+            }
         )
         .await?;
 
@@ -63,8 +63,9 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.4, a: 1.0 }),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
@@ -87,15 +88,15 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     });
 
     encoder.copy_texture_to_buffer(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture: &texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        wgpu::ImageCopyBuffer {
+        wgpu::TexelCopyBufferInfo {
             buffer: &output_buffer,
-            layout: wgpu::ImageDataLayout {
+            layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(padded_bytes_per_row),
                 rows_per_image: Some(height),
@@ -109,7 +110,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     // Read back the buffer
     let slice = output_buffer.slice(..);
     slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::Wait);
     let data = slice.get_mapped_range();
 
     // Remove row padding and write PNG

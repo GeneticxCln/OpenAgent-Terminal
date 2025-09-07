@@ -156,7 +156,7 @@ Their Changes ({{ their_changes | length }} lines):
             .current_dir(&self.repo_path)
             .args([
                 "for-each-ref",
-                "--format=%(refname:short)|%(upstream:short)|%(HEAD)|%(committerdate:iso8601)|%\
+                "--format=%(refname:short)|%(upstream:short)|%(HEAD)|%(committerdate:iso8601-strict)|%\
                  (objectname)|%(objectname:short)|%(authorname)|%(authoremail)|%(subject)",
                 "refs/heads/",
             ])

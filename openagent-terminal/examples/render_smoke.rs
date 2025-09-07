@@ -44,7 +44,7 @@ fn main() {
             // Try WGPU adapter discovery without creating a surface (works headless).
             #[cfg(feature = "wgpu")]
             {
-                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
                     backends: wgpu::Backends::all(),
                     ..Default::default()
                 });
@@ -54,7 +54,7 @@ fn main() {
                         compatible_surface: None,
                         force_fallback_adapter: false,
                     }))
-                    .expect("No suitable WGPU adapter found");
+                    .expect("request_adapter failed");
 
                 // If we got here, WGPU init succeeded.
                 let _ = adapter;

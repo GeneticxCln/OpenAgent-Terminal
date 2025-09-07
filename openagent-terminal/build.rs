@@ -189,7 +189,7 @@ fn generate_feature_config(config: &BuildConfig) {
     let mut file = File::create(&feature_file).unwrap();
     writeln!(file, "// Auto-generated feature configuration").unwrap();
     writeln!(file, "use std::collections::HashSet;").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Core feature flags
     writeln!(file, "pub const HAS_AI: bool = {};", config.has_feature("ai")).unwrap();
@@ -263,7 +263,7 @@ fn generate_feature_config(config: &BuildConfig) {
     writeln!(file, "pub const HAS_HARFBUZZ: bool = {};", config.has_feature("harfbuzz")).unwrap();
 
     // Generate feature list function
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
     writeln!(file, "pub fn enabled_features() -> HashSet<&'static str> {{").unwrap();
     writeln!(file, "    let mut features = HashSet::new();").unwrap();
 
@@ -275,19 +275,17 @@ fn generate_feature_config(config: &BuildConfig) {
     writeln!(file, "}}").unwrap();
 
     // Generate build info function
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
     writeln!(file, "pub fn build_info() -> &'static str {{").unwrap();
     writeln!(
         file,
-        "    \"{}\"",
-        format!(
-            "OpenAgent Terminal {} built on {} for {} (profile: {}, opt-level: {})",
-            config.version,
-            config.build_timestamp,
-            format!("{}-{}", config.target_arch, config.target_os),
-            config.profile,
-            config.optimization_level
-        )
+        "    \"OpenAgent Terminal {} built on {} for {}-{} (profile: {}, opt-level: {})\"",
+        config.version,
+        config.build_timestamp,
+        config.target_arch,
+        config.target_os,
+        config.profile,
+        config.optimization_level
     )
     .unwrap();
     writeln!(file, "}}").unwrap();
@@ -300,7 +298,7 @@ fn bundle_assets(config: &BuildConfig) {
     let mut file = File::create(&assets_file).unwrap();
     writeln!(file, "// Auto-generated asset bundle").unwrap();
     writeln!(file, "use std::collections::HashMap;").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Bundle themes if available
     if let Ok(themes_dir) = fs::read_dir("extra/themes") {
@@ -311,7 +309,7 @@ fn bundle_assets(config: &BuildConfig) {
         for entry in themes_dir.flatten() {
             if entry.path().extension().and_then(|s| s.to_str()) == Some("toml") {
                 if let Some(name) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                    let safe_name = name.replace('-', "_").replace('.', "_");
+                    let safe_name = name.replace(['-', '.'], "_");
                     writeln!(
                         file,
                         "    pub const {}: &str = \
@@ -334,7 +332,7 @@ fn bundle_assets(config: &BuildConfig) {
             for entry in themes_dir.flatten() {
                 if entry.path().extension().and_then(|s| s.to_str()) == Some("toml") {
                     if let Some(name) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                        let safe_name = name.replace('-', "_").replace('.', "_");
+                        let safe_name = name.replace(['-', '.'], "_");
                         writeln!(
                             file,
                             "        themes.insert(\"{}\", {});",
@@ -350,7 +348,7 @@ fn bundle_assets(config: &BuildConfig) {
         writeln!(file, "        themes").unwrap();
         writeln!(file, "    }}").unwrap();
         writeln!(file, "}}").unwrap();
-        writeln!(file, "").unwrap();
+        writeln!(file).unwrap();
     }
 
     // Bundle fonts if available
@@ -359,7 +357,7 @@ fn bundle_assets(config: &BuildConfig) {
         writeln!(file, "    // Font assets would be embedded here for release builds").unwrap();
         writeln!(file, "    pub const FONTS_DIR: &str = \"extra/fonts\";").unwrap();
         writeln!(file, "}}").unwrap();
-        writeln!(file, "").unwrap();
+        writeln!(file).unwrap();
     }
 
     // Bundle icons if available
@@ -367,7 +365,7 @@ fn bundle_assets(config: &BuildConfig) {
         writeln!(file, "pub mod icons {{").unwrap();
         writeln!(file, "    pub const ICONS_DIR: &str = \"extra/icons\";").unwrap();
         writeln!(file, "}}").unwrap();
-        writeln!(file, "").unwrap();
+        writeln!(file).unwrap();
     }
 
     // Security Lens patterns
@@ -376,7 +374,7 @@ fn bundle_assets(config: &BuildConfig) {
         writeln!(file, "    // Security Lens pattern definitions").unwrap();
         writeln!(file, "    pub const PATTERNS_AVAILABLE: bool = true;").unwrap();
         writeln!(file, "}}").unwrap();
-        writeln!(file, "").unwrap();
+        writeln!(file).unwrap();
     }
 }
 
@@ -386,7 +384,7 @@ fn generate_platform_config(config: &BuildConfig) {
 
     let mut file = File::create(&platform_file).unwrap();
     writeln!(file, "// Auto-generated platform configuration").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     writeln!(file, "pub const TARGET_OS: &str = \"{}\";", config.target_os).unwrap();
     writeln!(file, "pub const TARGET_ARCH: &str = \"{}\";", config.target_arch).unwrap();
@@ -453,7 +451,7 @@ fn generate_platform_config(config: &BuildConfig) {
     }
 
     // Windowing system configuration
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
     writeln!(
         file,
         "pub const SUPPORTS_WAYLAND: bool = {};",
@@ -491,7 +489,7 @@ fn generate_runtime_config(config: &BuildConfig) {
 
     let mut file = File::create(&runtime_file).unwrap();
     writeln!(file, "// Auto-generated runtime configuration").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Performance settings based on build profile
     if config.is_release {
