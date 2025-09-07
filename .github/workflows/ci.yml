@@ -193,7 +193,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo run -p openagent-terminal --release --example render_smoke -- --backend=wgpu | tee /tmp/smoke.log
+          cargo run -p openagent-terminal -F wgpu --release --example render_smoke -- --backend=wgpu | tee /tmp/smoke.log
           grep -E "backend:(wgpu)" /tmp/smoke.log
 
       - name: GPU snapshots (Linux via xvfb, WGPU)
