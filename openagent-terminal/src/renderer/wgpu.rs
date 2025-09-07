@@ -44,7 +44,6 @@ struct VsOutV {
 struct FsIn {
   @location(0) color: vec4<f32>,
   @location(1) kind: u32,
-  @location(2) frag_xy: vec2<f32>,
 };
 
 @vertex
@@ -183,9 +182,9 @@ fn sdRoundedBox(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
 }
 
 @fragment
-fn fs_main(in: VsOut, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
   let center = in.origin + in.size * 0.5;
-  let p = frag_pos.xy - center;
+  let p = in.pos.xy - center;
   let half_size = in.size * 0.5;
   let d = sdRoundedBox(p, half_size, in.radius);
   let aa = fwidth(d);
@@ -237,18 +236,18 @@ fn vs_main(in: VsIn) -> VsOut {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-  let sample = textureSample(atlas, atlas_sampler, in.uv, i32(in.layer));
+  let s = textureSample(atlas, atlas_sampler, in.uv, i32(in.layer));
   let is_colored = (in.flags & 1u) != 0u;
-  let is_subpixel = (in.flags & 2u) != 0u;
+
+  // Keep multicolor glyphs (emoji/color fonts) as-is
   if (is_colored) {
-    return sample;
-  } else if (is_subpixel) {
-    let a = max(sample.r, max(sample.g, sample.b)) * in.color.a;
-    return vec4<f32>(in.color.rgb * sample.rgb, a);
-  } else {
-    let a = sample.a * in.color.a;
-    return vec4<f32>(in.color.rgb, a);
+    return s;
   }
+
+  // Force reliable grayscale rendering: use alpha coverage only.
+  let a = s.a * in.color.a;
+  // Debug: draw glyphs in solid white to maximize visibility across color schemes.
+  return vec4<f32>(vec3<f32>(1.0, 1.0, 1.0), a);
 }
 "#;
 
@@ -263,8 +262,6 @@ pub struct WgpuRenderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
-    // Keep a raw pointer to the winit window; we recreate the surface on demand.
-    window_ptr: *const winit::window::Window,
     // Pipelines
     rect_pipeline: wgpu::RenderPipeline,
     ui_pipeline: wgpu::RenderPipeline,
@@ -307,9 +304,6 @@ pub struct WgpuRenderer {
     pending_bg: Vec<RenderRect>,
     pending_ui: Vec<UiVertex>,
     atlas_evicted: Cell<bool>,
-    // Screenshot capture state
-    screenshot_request: bool,
-    screenshot_result: Option<(Vec<u8>, u32, u32)>,
 }
 
 impl From<String> for Error {
@@ -416,10 +410,8 @@ impl WgpuAtlas {
         if w > self.width as i32 || h > self.height as i32 {
             return None;
         }
-        if !self.room_in_row(w, h) {
-            if !self.advance_row() {
-                return None;
-            }
+        if !self.room_in_row(w, h) && !self.advance_row() {
+            return None;
         }
         if !self.room_in_row(w, h) {
             return None;
@@ -435,6 +427,13 @@ impl WgpuAtlas {
 }
 
 impl WgpuRenderer {
+    /// Preload common ASCII glyphs into the WGPU atlas and cache.
+    pub fn preload_glyphs(&mut self, glyph_cache: &mut GlyphCache) {
+        let mut loader = WgpuGlyphLoader { renderer: self };
+        glyph_cache.reset_glyph_cache(&mut loader);
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         window_handle: &winit::window::Window,
         size: PhysicalSize<u32>,
@@ -445,7 +444,11 @@ impl WgpuRenderer {
         policy: AtlasEvictionPolicy,
         report_interval_frames: u32,
     ) -> Result<Self, Error> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        // Prefer Vulkan backend explicitly (like Warp) and allow GL as a build fallback only if changed later.
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            ..Default::default()
+        });
         let surface = instance
             .create_surface(window_handle)
             .map_err(|e| Error::Init(format!("surface: {e}")))?;
@@ -474,14 +477,10 @@ impl WgpuRenderer {
         let surface_caps = surface.get_capabilities(&adapter);
         // Choose surface format based on preference.
         let formats = surface_caps.formats.clone();
-        let pick_srgb = || formats.iter().copied().find(|f| f.is_srgb());
         let pick_non_srgb = || formats.iter().copied().find(|f| !f.is_srgb());
-        let format = match srgb_pref {
-            SrgbPreference::Enabled => pick_srgb().unwrap_or(formats[0]),
-            SrgbPreference::Disabled => pick_non_srgb().unwrap_or(formats[0]),
-            SrgbPreference::Auto => pick_srgb().unwrap_or(formats[0]),
-        };
-        let is_srgb_surface = format.is_srgb();
+        // Force non-sRGB format for reliable blending/gamma on Wayland+GLES.
+        let format = pick_non_srgb().unwrap_or(formats[0]);
+        let is_srgb_surface = false;
 
         // Prefer vsync-capable present modes when available to avoid tearing.
         let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
@@ -491,8 +490,10 @@ impl WgpuRenderer {
         } else {
             surface_caps.present_modes[0]
         };
-        // Choose a stable alpha mode if possible
-        let alpha_mode = if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Auto) {
+        // Prefer opaque alpha mode to avoid compositor blending artifacts.
+        let alpha_mode = if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+            wgpu::CompositeAlphaMode::Opaque
+        } else if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Auto) {
             wgpu::CompositeAlphaMode::Auto
         } else {
             surface_caps.alpha_modes[0]
@@ -757,7 +758,8 @@ fragment: Some(wgpu::FragmentState {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    // Disable blending for debug visibility (acts as REPLACE).
+                    blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -783,7 +785,6 @@ fragment: Some(wgpu::FragmentState {
             queue,
             config,
             size,
-            window_ptr: window_handle as *const _ as *const winit::window::Window,
             rect_pipeline,
             ui_pipeline,
             text_pipeline,
@@ -816,8 +817,6 @@ fragment: Some(wgpu::FragmentState {
             pending_bg: Vec::new(),
             pending_ui: Vec::new(),
             atlas_evicted: Cell::new(false),
-            screenshot_request: false,
-            screenshot_result: None,
         };
         // Apply constructor preferences that depend on caller config.
         renderer.zero_evicted_layer = zero_evicted_layer;
@@ -841,12 +840,12 @@ fragment: Some(wgpu::FragmentState {
         // Reconfiguration will happen on the next draw when recreating the surface.
     }
 
-    pub fn clear(&self, color: Rgb, alpha: f32) {
-        // Record clear color for the next draw pass; do not present immediately.
-        let r = (color.r as f32 / 255.0).min(1.0) * alpha;
-        let g = (color.g as f32 / 255.0).min(1.0) * alpha;
-        let b = (color.b as f32 / 255.0).min(1.0) * alpha;
-        self.pending_clear.set(Some([r as f64, g as f64, b as f64, alpha as f64]));
+    pub fn clear(&self, color: Rgb, _alpha: f32) {
+        // Force opaque clear to avoid compositor transparency interactions.
+        let r = (color.r as f32 / 255.0).min(1.0);
+        let g = (color.g as f32 / 255.0).min(1.0);
+        let b = (color.b as f32 / 255.0).min(1.0);
+        self.pending_clear.set(Some([r as f64, g as f64, b as f64, 1.0]));
     }
 
     pub fn finish(&self) {
@@ -855,14 +854,14 @@ fragment: Some(wgpu::FragmentState {
 
     pub fn draw_rects(
         &mut self,
+        window_handle: &winit::window::Window,
         size_info: &SizeInfo,
         metrics: &Metrics,
         rects_in: Vec<RenderRect>,
     ) {
         // Acquire frame.
         // Create a fresh surface for the current frame and (re)configure it.
-        let window_ref = unsafe { &*self.window_ptr };
-        let surface = match self.instance.create_surface(window_ref) {
+        let surface = match self.instance.create_surface(window_handle) {
             Ok(s) => s,
             Err(_) => return,
         };
@@ -893,31 +892,12 @@ fragment: Some(wgpu::FragmentState {
             ..Default::default()
         });
 
-        // Optional: create offscreen color target for screenshot mirroring
-        let mut screenshot_tex: Option<wgpu::Texture> = None;
-        let mut screenshot_view: Option<wgpu::TextureView> = None;
-        if self.screenshot_request {
-            let width = self.size.width.max(1);
-            let height = self.size.height.max(1);
-            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("wgpu-screenshot-rt"),
-                size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: self.config.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
-            });
-            screenshot_view = Some(tex.create_view(&wgpu::TextureViewDescriptor::default()));
-            screenshot_tex = Some(tex);
-        }
 
         // Build vertices for all rects in NDC coordinates, including staged backgrounds.
         let half_w = size_info.width() / 2.0;
         let half_h = size_info.height() / 2.0;
         let mut all_rects = Vec::with_capacity(self.pending_bg.len() + rects_in.len());
-        all_rects.extend(self.pending_bg.drain(..));
+        all_rects.append(&mut self.pending_bg);
         all_rects.extend(rects_in);
         let mut vertices: Vec<RectVertex> = Vec::with_capacity(all_rects.len() * 6);
         for rect in all_rects.iter() {
@@ -1048,40 +1028,6 @@ fragment: Some(wgpu::FragmentState {
             }
         }
 
-        // Mirror the rects/UI to the offscreen screenshot target if requested.
-        if self.screenshot_request {
-            if let Some(ref sview) = screenshot_view {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("rects-pass-screenshot"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: sview,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(clear),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-
-                if !vertices.is_empty() {
-                    pass.set_pipeline(&self.rect_pipeline);
-                    pass.set_bind_group(0, &self.rect_bind_group, &[]);
-                    let used_bytes =
-                        (vertices.len() * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress;
-                    pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(0..used_bytes));
-                    pass.draw(0..vertices.len() as u32, 0..1);
-                }
-                if let Some(ref ui_buf) = ui_buf_opt {
-                    pass.set_pipeline(&self.ui_pipeline);
-                    pass.set_vertex_buffer(0, ui_buf.slice(..));
-                    pass.draw(0..self.pending_ui.len() as u32, 0..1);
-                }
-            }
-        }
 
         // After the pass, it's safe to clear pending UI vertices.
         if !self.pending_ui.is_empty() {
@@ -1118,93 +1064,10 @@ fragment: Some(wgpu::FragmentState {
                 pass.draw(0..self.pending_text.len() as u32, 0..1);
             }
 
-            // Mirror text to screenshot target if requested
-            if self.screenshot_request {
-                if let Some(ref sview) = screenshot_view {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("text-pass-screenshot"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: sview,
-                            depth_slice: None,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-                    pass.set_pipeline(&self.text_pipeline);
-                    pass.set_bind_group(0, &self.text_bind_group, &[]);
-                    pass.set_vertex_buffer(0, text_vbuf.slice(..));
-                    pass.draw(0..self.pending_text.len() as u32, 0..1);
-                }
-            }
 
             self.pending_text.clear();
         }
 
-        // If a screenshot was requested, copy the offscreen texture to a mapped buffer and store
-        // it.
-        if self.screenshot_request {
-            if let Some(tex) = screenshot_tex.take() {
-                let width = self.size.width.max(1);
-                let height = self.size.height.max(1);
-                let bytes_per_pixel = 4u32;
-                let bytes_per_row = bytes_per_pixel * width;
-                let padded_bpr = ((bytes_per_row + 255) / 256) * 256;
-                let output_size = (padded_bpr * height) as wgpu::BufferAddress;
-                let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("wgpu-screenshot-readback"),
-                    size: output_size,
-                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                    mapped_at_creation: false,
-                });
-
-                encoder.copy_texture_to_buffer(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &tex,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::TexelCopyBufferInfo {
-                        buffer: &readback,
-                        layout: wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(padded_bpr),
-                            rows_per_image: Some(height),
-                        },
-                    },
-                    wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-                );
-
-                // Submit the encoder so the copy occurs
-                self.queue.submit([encoder.finish()]);
-
-                // Map and read
-                let slice = readback.slice(..);
-                slice.map_async(wgpu::MapMode::Read, |_| {});
-                // Note: We intentionally do not block here due to API differences across wgpu
-                // versions. Assume mapping is ready shortly after submission in
-                // this simplified path.
-                let data = slice.get_mapped_range();
-                let mut pixels = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
-                for row in data.chunks(padded_bpr as usize) {
-                    pixels.extend_from_slice(&row[..bytes_per_row as usize]);
-                }
-                drop(data);
-                readback.unmap();
-
-                self.screenshot_result = Some((pixels, width, height));
-                self.screenshot_request = false;
-                frame.present();
-                // Early return since we've already submitted the work and presented
-                return;
-            }
-        }
 
         self.queue.submit([encoder.finish()]);
         frame.present();
@@ -1218,14 +1081,6 @@ fragment: Some(wgpu::FragmentState {
         }
     }
 
-    pub fn request_screenshot(&mut self) {
-        self.screenshot_request = true;
-        self.screenshot_result = None;
-    }
-
-    pub fn take_screenshot(&mut self) -> Option<(Vec<u8>, u32, u32)> {
-        self.screenshot_result.take()
-    }
 
     // Stub sprite APIs for parity with GL backend; no-op until implemented in WGPU UI pipeline
     pub fn stage_ui_sprite(&mut self, _sprite: UiSprite) {}
@@ -1299,7 +1154,7 @@ fragment: Some(wgpu::FragmentState {
                     size_info.cell_width(),
                     size_info.cell_height(),
                     cell.bg,
-                    cell.bg_alpha as f32,
+                    cell.bg_alpha,
                 ));
             }
             // Skip hidden or tab cells by rendering as space.
@@ -1568,8 +1423,8 @@ struct WgpuGlyphLoader<'a> {
 impl LoadGlyph for WgpuGlyphLoader<'_> {
     fn load_glyph(&mut self, rasterized: &RasterizedGlyph) -> Glyph {
         // Insert into atlas, uploading to GPU.
-        let w = rasterized.width as i32;
-        let h = rasterized.height as i32;
+        let w = rasterized.width;
+        let h = rasterized.height;
         // Choose a page with space, starting at current_page.
         let mut chosen: Option<(u32, i32, i32)> = None;
         for i in 0..NUM_ATLAS_PAGES {
@@ -1675,8 +1530,8 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
         let page_dims = &self.renderer.atlas_pages[0];
         let u0 = ox as f32 / page_dims.width as f32;
         let v0 = oy as f32 / page_dims.height as f32;
-        let u1 = (ox + rasterized.width as i32) as f32 / page_dims.width as f32;
-        let v1 = (oy + rasterized.height as i32) as f32 / page_dims.height as f32;
+        let u1 = (ox + rasterized.width) as f32 / page_dims.width as f32;
+        let v1 = (oy + rasterized.height) as f32 / page_dims.height as f32;
 
         Glyph {
             tex_id: page_idx + 1,
