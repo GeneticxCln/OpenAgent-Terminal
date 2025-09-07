@@ -155,16 +155,17 @@ mod tests {
         assert!(has_dark);
     }
 
-    #[tokio::test]
     #[cfg(feature = "marketplace")]
-    async fn test_theme_search() {
-        let theme_system = ThemeSystem::new().unwrap();
-
-        // This would normally connect to a real marketplace
-        // In tests, we'd mock this or use a test server
-        let _results = theme_system.search_themes("dark").await.unwrap_or_default();
-
-        // Just verify the search doesn't crash
-        // No assertion on length; reaching here without panic is success
+    mod marketplace_tests {
+        use super::*;
+        #[tokio::test]
+        async fn test_theme_search() {
+            let theme_system = ThemeSystem::new().unwrap();
+            // This would normally connect to a real marketplace
+            // In tests, we'd mock this or use a test server
+            let _results = theme_system.search_themes("dark").await.unwrap_or_default();
+            // Just verify the search doesn't crash
+            // No assertion on length; reaching here without panic is success
+        }
     }
 }

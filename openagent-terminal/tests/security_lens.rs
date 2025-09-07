@@ -1,3 +1,4 @@
+#![cfg(feature = "security-lens")]
 // Security Lens tests to lock regex compilation and avoid false-positive blocking
 
 use openagent_terminal::security_lens::{RateLimitConfig, RiskLevel, SecurityLens, SecurityPolicy};

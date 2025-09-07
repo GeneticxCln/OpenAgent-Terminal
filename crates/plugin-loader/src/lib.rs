@@ -1508,13 +1508,17 @@ mod tests {
         let manifest_path = temp_dir.path().join("p.toml");
         let mut f = std::fs::File::create(&manifest_path).unwrap();
         // Include an unsafe preopen ('/') which should be filtered out
-        writeln!(
-            f,
-            "[permissions]\nread_files=[\"/\",\"sub\"]\nwrite_files=[\"sub\"]\nnetwork=false\\
-             nexecute_commands=false\nenvironment_variables=[]\nmax_memory_mb=50\ntimeout_ms=5000\\
-             n"
-        )
-        .unwrap();
+        let content = r#"[permissions]
+read_files=["/","sub"]
+write_files=["sub"]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"#;
+        use std::io::Write as _;
+        f.write_all(content.as_bytes()).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let perms = manager
@@ -1657,13 +1661,21 @@ mod tests {
 
         // Test complete manifest with plugin metadata
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(
-            f,
-            "[plugin]\nname=\"test-plugin\"\nversion=\"1.0.0\"\nauthor=\"Test \
-             Author\"\n[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\\
-             nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=5000"
-        )
-        .unwrap();
+        let content = r#"[plugin]
+name="test-plugin"
+version="1.0.0"
+author="Test Author"
+[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"#;
+        use std::io::Write as _;
+        f.write_all(content.as_bytes()).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let perms = manager
@@ -1683,13 +1695,17 @@ mod tests {
 
         // Test manifest with dangerous file access
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(
-            f,
-            "[permissions]\nread_files=[\"/etc/passwd\"]\nwrite_files=[]\\
-             nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\\
-             ntimeout_ms=5000"
-        )
-        .unwrap();
+        let content = r#"[permissions]
+read_files=["/etc/passwd"]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"#;
+        use std::io::Write as _;
+        f.write_all(content.as_bytes()).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1706,12 +1722,17 @@ mod tests {
 
         // Test manifest with excessive memory request
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(
-            f,
-            "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\\
-             nnetwork=false\nexecute_commands=false\nmax_memory_mb=500\ntimeout_ms=5000"
-        )
-        .unwrap();
+        let content = r#"[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=500
+timeout_ms=5000
+"#;
+        use std::io::Write as _;
+        f.write_all(content.as_bytes()).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1728,12 +1749,17 @@ mod tests {
 
         // Test manifest with excessive timeout request
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(
-            f,
-            "[permissions]\nread_files=[]\nwrite_files=[]\nenvironment_variables=[]\\
-             nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\ntimeout_ms=60000"
-        )
-        .unwrap();
+        let content = r#"[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=60000
+"#;
+        use std::io::Write as _;
+        f.write_all(content.as_bytes()).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
