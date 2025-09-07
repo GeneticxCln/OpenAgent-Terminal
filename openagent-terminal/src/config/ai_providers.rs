@@ -13,6 +13,8 @@ pub struct ProviderConfig {
 }
 use std::collections::HashMap;
 use tracing::{debug, warn};
+use std::fs;
+use std::path::PathBuf;
 
 /// Secure provider credentials container that never mutates global environment
 #[derive(Debug, Clone)]
@@ -39,10 +41,19 @@ impl ProviderCredentials {
                     Some(key)
                 },
                 Err(_) => {
-                    return Err(format!(
-                        "API key environment variable '{}' not set for provider '{}'",
-                        env_name, provider_name
-                    ));
+                    // Fallback: check secure secrets store
+                    match read_secret_from_store(env_name) {
+                        Some(key) => {
+                            debug!("Found API key for provider '{}' in secrets store ({}).", provider_name, env_name);
+                            Some(key)
+                        },
+                        None => {
+                            return Err(format!(
+                                "API key environment variable '{}' not set for provider '{}'",
+                                env_name, provider_name
+                            ));
+                        },
+                    }
                 },
             }
         } else {
@@ -60,7 +71,10 @@ impl ProviderCredentials {
                     Some(endpoint)
                 },
                 Err(_) => {
-                    if let Some(default) = &config.default_endpoint {
+                    if let Some(val) = read_secret_from_store(env_name) {
+                        debug!("Using endpoint for provider '{}' from secrets store ({}).", provider_name, env_name);
+                        Some(val)
+                    } else if let Some(default) = &config.default_endpoint {
                         debug!(
                             "Using default endpoint for provider '{}': {}",
                             provider_name, default
@@ -87,7 +101,10 @@ impl ProviderCredentials {
                     Some(model)
                 },
                 Err(_) => {
-                    if let Some(default) = &config.default_model {
+                    if let Some(val) = read_secret_from_store(env_name) {
+                        debug!("Using model for provider '{}' from secrets store ({}).", provider_name, env_name);
+                        Some(val)
+                    } else if let Some(default) = &config.default_model {
                         debug!("Using default model for provider '{}': {}", provider_name, default);
                         Some(default.clone())
                     } else {
@@ -167,6 +184,16 @@ pub fn get_default_provider_configs() -> HashMap<String, ProviderConfig> {
         extra: HashMap::new(),
     });
 
+    // OpenRouter configuration
+    configs.insert("openrouter".to_string(), ProviderConfig {
+        api_key_env: Some("OPENAGENT_OPENROUTER_API_KEY".to_string()),
+        endpoint_env: Some("OPENAGENT_OPENROUTER_ENDPOINT".to_string()),
+        model_env: Some("OPENAGENT_OPENROUTER_MODEL".to_string()),
+        default_endpoint: Some("https://openrouter.ai/api/v1".to_string()),
+        default_model: None, // Force explicit model configuration by default
+        extra: HashMap::new(),
+    });
+
     configs
 }
 
@@ -181,6 +208,9 @@ pub fn check_legacy_env_vars() {
         "ANTHROPIC_MODEL",
         "OLLAMA_ENDPOINT",
         "OLLAMA_MODEL",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_API_BASE",
+        "OPENROUTER_MODEL",
     ];
 
     for var in &legacy_vars {
@@ -216,6 +246,29 @@ pub fn validate_provider_isolation(
     }
 
     Ok(())
+}
+
+fn secrets_store_path() -> PathBuf {
+    let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    base.join("openagent-terminal").join("secrets.toml")
+}
+
+fn read_secret_from_store(env_name: &str) -> Option<String> {
+    let path = secrets_store_path();
+    let mut s = String::new();
+    if let Ok(mut f) = fs::File::open(&path) {
+        use std::io::Read;
+        if f.read_to_string(&mut s).is_ok() {
+            if let Ok(val) = toml::from_str::<toml::Value>(&s) {
+                if let Some(tbl) = val.get("secrets").and_then(|v| v.as_table()) {
+                    if let Some(v) = tbl.get(env_name).and_then(|v| v.as_str()) {
+                        return Some(v.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

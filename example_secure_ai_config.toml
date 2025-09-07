@@ -47,6 +47,13 @@ model_env = "OPENAGENT_OLLAMA_MODEL"
 default_endpoint = "http://localhost:11434"
 default_model = "codellama"
 
+[ai.providers.openrouter]
+api_key_env = "OPENAGENT_OPENROUTER_API_KEY"
+model_env = "OPENAGENT_OPENROUTER_MODEL"
+endpoint_env = "OPENAGENT_OPENROUTER_ENDPOINT"
+default_endpoint = "https://openrouter.ai/api/v1"
+# default_model intentionally omitted to encourage explicit selection
+
 # Example: Custom OpenAI-compatible provider
 [ai.providers.custom]
 api_key_env = "OPENAGENT_CUSTOM_API_KEY"
@@ -70,6 +77,11 @@ default_model = "your-custom-model"
 # For Ollama (local):
 # export OPENAGENT_OLLAMA_ENDPOINT="http://localhost:11434"  # optional, uses default
 # export OPENAGENT_OLLAMA_MODEL="codellama"
+#
+# For OpenRouter:
+# export OPENAGENT_OPENROUTER_API_KEY="sk-or-your-openrouter-key"
+# export OPENAGENT_OPENROUTER_MODEL="openai/gpt-4o-mini"  # pick a model slug supported by OpenRouter
+# export OPENAGENT_OPENROUTER_ENDPOINT="https://openrouter.ai/api/v1"  # optional, uses default
 #
 # Security benefits:
 # - No cross-provider credential pollution

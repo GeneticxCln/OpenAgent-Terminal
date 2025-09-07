@@ -119,6 +119,73 @@ pub struct ThemeUi {
     pub composer_word_boundary_style: WordBoundaryStyle,
     /// Composer open behavior: "instant" (Warp-like) or "commit"
     pub composer_open_mode: ComposerOpenMode,
+
+    /// Chip capsule background alpha when the composer is NOT focused.
+    pub composer_chip_alpha_unfocused: f32,
+    /// Chip capsule background alpha when the composer IS focused.
+    pub composer_chip_alpha_focused: f32,
+    /// Additional alpha added to composer chip capsule on hover
+    pub composer_chip_alpha_hover_delta: f32,
+    /// Additional alpha added to composer chip capsule on press flash
+    pub composer_chip_alpha_press_delta: f32,
+
+    /// Main composer pill background alpha when NOT focused.
+    pub composer_pill_alpha_unfocused: f32,
+    /// Main composer pill background alpha when focused.
+    pub composer_pill_alpha_focused: f32,
+
+    /// Accent focus ring alpha around composer when focused.
+    pub composer_focus_ring_alpha: f32,
+    /// Bottom band background alpha (line behind the composer pill).
+    pub composer_band_alpha: f32,
+    /// Horizontal margin (left/right) of the composer pill in px.
+    pub composer_margin_px: f32,
+    /// Vertical inset on the bottom line for the composer pill in px (top/bottom each this amount).
+    pub composer_pill_vertical_inset_px: f32,
+    /// Columns of gap between action chips when right-aligned.
+    pub composer_chip_gap_cols: u32,
+    /// Optional override for chip padding in px (fallbacks to palette_chip_pad_px when None).
+    pub composer_chip_pad_px: Option<f32>,
+    /// Optional override for composer pill radius in px (fallbacks to palette_pill_radius_px when None).
+    pub composer_pill_radius_px: Option<f32>,
+    /// Optional leading icon/glyph string at start of composer (e.g., "✦ ").
+    pub composer_star_glyph: Option<String>,
+    /// Optional placeholder string shown when composer is empty and not focused.
+    pub composer_placeholder_text: Option<String>,
+
+    // --- Warp-style tab bar controls for parity ---
+    /// Warp tab bar height in pixels
+    pub tab_bar_height_px: f32,
+    /// Warp tab corner radius in pixels
+    pub tab_bar_corner_radius_px: f32,
+    /// Warp tab horizontal padding in pixels
+    pub tab_bar_padding_px: f32,
+    /// Warp tab animation duration in ms (0 disables)
+    pub tab_bar_animation_duration_ms: u32,
+    /// Override for tab bar drop shadow; if not set, uses `shadow`
+    pub tab_bar_drop_shadow: Option<bool>,
+    /// Settings gear icon pixel size in the tab bar (None => auto)
+    pub tab_bar_settings_icon_px: Option<f32>,
+
+    // --- Quick Actions bar controls ---
+    /// Backdrop alpha for Quick Actions bar
+    pub quick_actions_band_alpha: f32,
+    /// Enable capsule backgrounds for Quick Actions labels
+    pub quick_actions_chip_capsules: bool,
+    /// Chip padding for Quick Actions labels; None => palette_chip_pad_px
+    pub quick_actions_chip_pad_px: Option<f32>,
+    /// Chip gap in columns for Quick Actions labels
+    pub quick_actions_chip_gap_cols: u32,
+    /// Chip background alpha for Quick Actions labels
+    pub quick_actions_chip_alpha: f32,
+    /// Pill radius for Quick Actions capsules; None => palette_pill_radius_px
+    pub quick_actions_pill_radius_px: Option<f32>,
+    /// Settings gear icon pixel size in the Quick Actions bar (None => auto)
+    pub quick_actions_settings_icon_px: Option<f32>,
+    /// Additional alpha added to chip capsule on hover
+    pub quick_actions_chip_alpha_hover_delta: f32,
+    /// Additional alpha added to chip capsule on press flash
+    pub quick_actions_chip_alpha_press_delta: f32,
 }
 
 impl Default for ThemeUi {
@@ -144,6 +211,38 @@ impl Default for ThemeUi {
             composer_blink_rate_ms: 600,
             composer_word_boundary_style: WordBoundaryStyle::Alnum,
             composer_open_mode: ComposerOpenMode::Instant,
+            composer_chip_alpha_unfocused: 0.22,
+            composer_chip_alpha_focused: 0.28,
+            composer_chip_alpha_hover_delta: 0.08,
+            composer_chip_alpha_press_delta: 0.10,
+            composer_pill_alpha_unfocused: 0.14,
+            composer_pill_alpha_focused: 0.20,
+            composer_focus_ring_alpha: 0.10,
+            composer_band_alpha: 0.98,
+            composer_margin_px: 6.0,
+            composer_pill_vertical_inset_px: 2.0,
+            composer_chip_gap_cols: 2,
+            composer_chip_pad_px: None,
+            composer_pill_radius_px: None,
+            composer_star_glyph: Some("✦ ".to_string()),
+            composer_placeholder_text: None,
+            // Warp tab bar
+            tab_bar_height_px: 36.0,
+            tab_bar_corner_radius_px: 8.0,
+            tab_bar_padding_px: 12.0,
+            tab_bar_animation_duration_ms: 180,
+            tab_bar_drop_shadow: None,
+            tab_bar_settings_icon_px: None,
+            // Quick Actions bar
+            quick_actions_band_alpha: 0.98,
+            quick_actions_chip_capsules: false,
+            quick_actions_chip_pad_px: None,
+            quick_actions_chip_gap_cols: 2,
+            quick_actions_chip_alpha: 0.18,
+            quick_actions_pill_radius_px: None,
+            quick_actions_settings_icon_px: None,
+            quick_actions_chip_alpha_hover_delta: 0.08,
+            quick_actions_chip_alpha_press_delta: 0.10,
         }
     }
 }
@@ -207,6 +306,14 @@ pub struct ThemeConfig {
     pub composer_word_boundary_style: Option<WordBoundaryStyle>,
     #[serde(default)]
     pub composer_open_mode: Option<ComposerOpenMode>,
+    #[serde(default)]
+    pub composer_chip_alpha_unfocused: Option<f32>,
+    #[serde(default)]
+    pub composer_chip_alpha_focused: Option<f32>,
+    #[serde(default)]
+    pub composer_pill_alpha_unfocused: Option<f32>,
+    #[serde(default)]
+    pub composer_pill_alpha_focused: Option<f32>,
 }
 
 impl Default for ThemeConfig {
@@ -226,6 +333,10 @@ impl Default for ThemeConfig {
             composer_blink_rate_ms: None,
             composer_word_boundary_style: None,
             composer_open_mode: None,
+            composer_chip_alpha_unfocused: None,
+            composer_chip_alpha_focused: None,
+            composer_pill_alpha_unfocused: None,
+            composer_pill_alpha_focused: None,
         }
     }
 }
@@ -290,6 +401,18 @@ impl ThemeConfig {
         }
         if let Some(mode) = self.composer_open_mode.clone() {
             resolved.ui.composer_open_mode = mode;
+        }
+        if let Some(alpha) = self.composer_chip_alpha_unfocused {
+            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_chip_alpha_unfocused = alpha; }
+        }
+        if let Some(alpha) = self.composer_chip_alpha_focused {
+            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_chip_alpha_focused = alpha; }
+        }
+        if let Some(alpha) = self.composer_pill_alpha_unfocused {
+            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_pill_alpha_unfocused = alpha; }
+        }
+        if let Some(alpha) = self.composer_pill_alpha_focused {
+            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_pill_alpha_focused = alpha; }
         }
         resolved
     }

@@ -30,6 +30,9 @@ declare -A legacy_mappings=(
     ["ANTHROPIC_MODEL"]="OPENAGENT_ANTHROPIC_MODEL"
     ["OLLAMA_ENDPOINT"]="OPENAGENT_OLLAMA_ENDPOINT"
     ["OLLAMA_MODEL"]="OPENAGENT_OLLAMA_MODEL"
+    ["OPENROUTER_API_KEY"]="OPENAGENT_OPENROUTER_API_KEY"
+    ["OPENROUTER_API_BASE"]="OPENAGENT_OPENROUTER_ENDPOINT"
+    ["OPENROUTER_MODEL"]="OPENAGENT_OPENROUTER_MODEL"
 )
 
 echo -e "${YELLOW}Scanning for legacy environment variables...${NC}"
@@ -86,6 +89,11 @@ export OPENAGENT_ANTHROPIC_ENDPOINT="https://api.anthropic.com/v1"  # optional
 export OPENAGENT_OLLAMA_ENDPOINT="http://localhost:11434"  # optional
 export OPENAGENT_OLLAMA_MODEL="codellama"
 
+# OpenRouter Configuration
+export OPENAGENT_OPENROUTER_API_KEY="sk-or-your-openrouter-key-here"
+export OPENAGENT_OPENROUTER_MODEL="openai/gpt-4o-mini"  # choose a model slug supported by OpenRouter
+export OPENAGENT_OPENROUTER_ENDPOINT="https://openrouter.ai/api/v1"  # optional
+
 # Remove legacy variables to prevent pollution
 unset OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL
 unset ANTHROPIC_API_KEY ANTHROPIC_API_BASE ANTHROPIC_MODEL
@@ -131,6 +139,12 @@ endpoint_env = "OPENAGENT_OLLAMA_ENDPOINT"
 model_env = "OPENAGENT_OLLAMA_MODEL"
 default_endpoint = "http://localhost:11434"
 default_model = "codellama"
+
+[ai.providers.openrouter]
+api_key_env = "OPENAGENT_OPENROUTER_API_KEY"
+model_env = "OPENAGENT_OPENROUTER_MODEL"
+endpoint_env = "OPENAGENT_OPENROUTER_ENDPOINT"
+default_endpoint = "https://openrouter.ai/api/v1"
 EOF
 
 echo

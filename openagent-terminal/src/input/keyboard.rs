@@ -503,7 +503,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if self.ctx.palette_active() {
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Enter) => {
-                    self.ctx.palette_confirm();
+                    let mods = self.ctx.modifiers().state();
+                    if mods.contains(ModifiersState::ALT) {
+                        self.ctx.palette_confirm_cd();
+                    } else {
+                        self.ctx.palette_confirm();
+                    }
                     return;
                 },
                 Key::Named(NamedKey::Escape) => {
@@ -817,6 +822,51 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.workflows_panel_input(ch);
                 }
             }
+            return;
+        }
+
+        // Settings panel input handling (if active)
+        if self.ctx.settings_panel_active() {
+            let mods = self.ctx.modifiers().state();
+            // If we're capturing a new keybinding, capture first
+            if self.ctx.settings_panel_is_capturing() {
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => { self.ctx.settings_panel_cancel_capture(); return; },
+                    _ => {
+                        // Build capture key as owned Key<String>
+                        let cap_key = match key.logical_key.as_ref() {
+                            Key::Named(n) => Key::Named(n.clone()),
+                            Key::Character(s) => Key::Character(s.to_string()),
+                            _ => { self.ctx.settings_panel_cancel_capture(); return; },
+                        };
+                        self.ctx.settings_panel_capture(cap_key, mods);
+                        return;
+                    },
+                }
+            }
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => { self.ctx.settings_panel_save(); return; },
+                Key::Named(NamedKey::Escape) => { self.ctx.close_settings_panel(); return; },
+                Key::Named(NamedKey::Tab) if mods.shift_key() => { self.ctx.settings_panel_prev_field(); return; },
+                Key::Named(NamedKey::Tab) => { self.ctx.settings_panel_next_field(); return; },
+                // List navigation in Keybindings
+                Key::Named(NamedKey::ArrowUp) => { self.ctx.settings_panel_move_selection(-1); return; },
+                Key::Named(NamedKey::ArrowDown) => { self.ctx.settings_panel_move_selection(1); return; },
+                // Begin capture mode via 'c'
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") => { self.ctx.settings_panel_begin_capture(); return; },
+                // Category switching
+                Key::Named(NamedKey::ArrowLeft) if mods.control_key() => { self.ctx.settings_panel_switch_category(false); return; },
+                Key::Named(NamedKey::ArrowRight) if mods.control_key() => { self.ctx.settings_panel_switch_category(true); return; },
+                // Provider cycling (AI category)
+                Key::Named(NamedKey::ArrowLeft) => { self.ctx.settings_panel_cycle_provider(false); return; },
+                Key::Named(NamedKey::ArrowRight) => { self.ctx.settings_panel_cycle_provider(true); return; },
+                // Backspace
+                Key::Named(NamedKey::Backspace) => { self.ctx.settings_panel_backspace(); return; },
+                // Test connection (AI)
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("t") => { self.ctx.settings_panel_test_connection(); return; },
+                _ => {},
+            }
+            for ch in text.chars() { if !ch.is_control() { self.ctx.settings_panel_input(ch); } }
             return;
         }
 

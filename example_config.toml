@@ -62,7 +62,7 @@ shadow_size_px = 8
 # AI Assistant Configuration (optional, disabled by default)
 [ai]
 enabled = true
-# Choose provider: "null", "ollama", "openai", "anthropic"
+# Choose provider: "null", "ollama", "openai", "anthropic", "openrouter"
 provider = "ollama"
 endpoint_env = "OPENAGENT_AI_ENDPOINT"
 api_key_env = "OPENAGENT_AI_API_KEY"
@@ -106,6 +106,13 @@ timeout = 30
 # [ai.anthropic]
 # endpoint = "https://api.anthropic.com/v1"
 # model = "claude-3-haiku-20240307"
+# timeout = 30
+
+# OpenRouter settings (requires API key; OpenAI-compatible)
+# Set OPENROUTER_API_KEY environment variable
+# [ai.openrouter]
+# endpoint = "https://openrouter.ai/api/v1"
+# model = "openai/gpt-4o-mini"  # or any OpenRouter-supported model slug
 # timeout = 30
 
 # Security Lens Configuration - Command Risk Analysis
