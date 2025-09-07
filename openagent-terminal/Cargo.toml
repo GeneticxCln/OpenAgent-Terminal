@@ -1,6 +1,6 @@
 [package]
 name = "openagent-terminal"
-version = "0.16.0-dev"
+version = "0.16.0"
 authors = ["Christian Duerr <contact@christianduerr.com>", "Joe Wilm <joe@jwilm.com>"]
 license = "Apache-2.0"
 description = "AI-enhanced, cross-platform terminal emulator with built-in command assistance; fast GPU rendering (OpenGL), privacy-first, optional local/cloud AI providers."
