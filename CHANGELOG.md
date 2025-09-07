@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Notable changes to the `openagent-terminal-core` crate are documented in its
 [CHANGELOG](./openagent-terminal-core/CHANGELOG.md).
 
-## 0.16.0-dev
+## 0.16.0
 
 ### Packaging
 
@@ -30,11 +30,13 @@ Notable changes to the `openagent-terminal-core` crate are documented in its
 
 ### Changed
 
+- OpenGL is the practical default renderer; WGPU backend is gated behind the `wgpu` feature and documented env toggles
 - Hide login message if `~/.hushlogin` is present
 - Improve rendering of rounded corners with builtin box drawing
 
 ### Fixed
 
+- Windows: PTY drop-order deadlock resolved by enforcing ConPTY shutdown order via typestate (SafePty) in openagent-terminal-core
 - Crash when OpenGL context resets
 - Modifier keys clearing selection with kitty keyboard protocol enabled
 - `glyph_offset.y` not applied to strikeout
