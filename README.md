@@ -4,6 +4,18 @@
 
 [![CI](https://github.com/GeneticxCln/OpenAgent-Terminal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/GeneticxCln/OpenAgent-Terminal/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/GeneticxCln/OpenAgent-Terminal?include_prereleases&sort=semver)](https://github.com/GeneticxCln/OpenAgent-Terminal/releases) [![License](https://img.shields.io/github/license/GeneticxCln/OpenAgent-Terminal)](https://github.com/GeneticxCln/OpenAgent-Terminal/blob/main/LICENSE-APACHE)
 
+## 💬 Community
+
+**Join our Discord server for support, discussions, and updates:**
+
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/PP8cRXAz3V)
+
+🗨️ **[Join Discord Community](https://discord.gg/PP8cRXAz3V)**
+- Get help with installation and setup
+- Share your AI terminal workflows
+- Discuss feature requests and bug reports
+- Connect with other OpenAgent Terminal users
+
 ---
 
 ## Overview
