@@ -285,24 +285,47 @@ impl Processor {
         let mut config = self.config.clone();
         config = config_overrides.override_config_rc(config);
 
-        let window_context = if use_wgpu_additional {
-            WindowContext::additional_wgpu(
-                event_loop,
-                self.proxy.clone(),
-                config,
-                options,
-                config_overrides,
-            )?
-        } else {
-            let gl_config = self.gl_config.as_ref().expect("GL config should exist for GL backend");
-            WindowContext::additional(
-                gl_config,
-                event_loop,
-                self.proxy.clone(),
-                config,
-                options,
-                config_overrides,
-            )?
+        let window_context = {
+            #[cfg(feature = "wgpu")]
+            {
+                if use_wgpu_additional {
+                    WindowContext::additional_wgpu(
+                        event_loop,
+                        self.proxy.clone(),
+                        config,
+                        options,
+                        config_overrides,
+                    )?
+                } else {
+                    let gl_config = self
+                        .gl_config
+                        .as_ref()
+                        .expect("GL config should exist for GL backend");
+                    WindowContext::additional(
+                        gl_config,
+                        event_loop,
+                        self.proxy.clone(),
+                        config,
+                        options,
+                        config_overrides,
+                    )?
+                }
+            }
+            #[cfg(not(feature = "wgpu"))]
+            {
+                let gl_config = self
+                    .gl_config
+                    .as_ref()
+                    .expect("GL config should exist for GL backend");
+                WindowContext::additional(
+                    gl_config,
+                    event_loop,
+                    self.proxy.clone(),
+                    config,
+                    options,
+                    config_overrides,
+                )?
+            }
         };
 
         let window_id = window_context.id();
