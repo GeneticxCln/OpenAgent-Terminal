@@ -173,9 +173,9 @@ windows-sys = { version = "0.59", features = [
 embed-resource = "3.0.2"
 
 [features]
-# Enable WGPU by default; OpenGL remains available but is no longer the default renderer.
-# This makes the WGPU backend the primary, non-fallback path.
-default = ["wayland", "x11", "blocks", "workflow", "sync", "security-lens-full", "wgpu"]
+# OpenGL is the practical default renderer. WGPU is experimental and gated behind the 'wgpu' feature.
+# Default feature set keeps core UX stable across platforms.
+default = ["wayland", "x11", "blocks", "workflow", "sync"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Optional background component initialization in a separate task
