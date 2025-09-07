@@ -1,7 +1,10 @@
 # [CRITICAL] Fix PTY drop order to prevent ConPTY deadlock
 
 ## Priority
-🔴 **Critical** - Can cause deadlocks in production
+🔴 Critical — originally classified to cause deadlocks in production
+
+## Status
+✅ Resolved in v0.16.0 (Public Beta). The PTY lifecycle now enforces correct drop order via typestate in `openagent-terminal-core/src/tty/windows/pty_lifecycle.rs`. The previous FIXME in `openagent-terminal/src/main.rs` has been addressed and updated.
 
 ## Description
 There's a critical ordering issue with PTY and ConPTY dropping that can cause deadlocks on Windows. The current implementation has a FIXME comment indicating this needs to be fixed at the type system level.
