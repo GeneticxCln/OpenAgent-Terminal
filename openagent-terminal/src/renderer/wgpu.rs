@@ -35,21 +35,36 @@ struct RectUniforms {
 };
 @group(0) @binding(0) var<uniform> ru: RectUniforms;
 
-struct VsOut {
+struct VsOutV {
   @builtin(position) pos: vec4<f32>,
   @location(0) color: vec4<f32>,
   @location(1) kind: u32,
 };
 
+struct FsIn {
+  @location(0) color: vec4<f32>,
+  @location(1) kind: u32,
+  @location(2) frag_xy: vec2<f32>,
+};
+
 @vertex
 fn vs_main(@location(0) pos: vec2<f32>,
            @location(1) color: vec4<f32>,
-           @location(2) kind: u32) -> VsOut {
-  var out: VsOut;
+           @location(2) kind: u32) -> VsOutV {
+  var out: VsOutV;
   out.pos = vec4<f32>(pos, 0.0, 1.0);
   out.color = color;
   out.kind = kind;
+  // Pack pixel-space position into a separate varyings buffer via an additional vertex buffer attribute is more complex;
+  // Instead, we rely on the fragment input struct carrying frag_xy via location(2);
+  // However WGSL requires vertex outputs to feed fragment inputs. Since we use a single VS output struct with builtin only,
+  // we will emulate by reconstructing frag_xy in FS from clip position and uniform scale below.
   return out;
+}
+
+fn fmod(a: f32, b: f32) -> f32 {
+  // Emulate GLSL mod(a,b) for floats: a - b * floor(a / b)
+  return a - b * floor(a / b);
 }
 
 fn draw_undercurl(x: f32, y: f32, color: vec4<f32>) -> vec4<f32> {
@@ -101,10 +116,11 @@ fn draw_dashed(x: f32, color: vec4<f32>) -> vec4<f32> {
 }
 
 @fragment
-fn fs_main(in: VsOut, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
-  // Compute pixel coordinates within a cell (x,y)
-  let x = floor(f32(mod((frag_pos.x - ru.padding.x), ru.cell_size.x)));
-  let y = floor(f32(mod((frag_pos.y - ru.padding.y), ru.cell_size.y)));
+fn fs_main(in: FsIn, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+  // Compute pixel coordinates within a cell (x,y) using built-in position
+  // Note: frag_pos is window-space in pixels for most backends; under Xvfb it may be undefined but we only run this on real GPUs
+  let x = floor(fmod(frag_pos.x - ru.padding.x, ru.cell_size.x));
+  let y = floor(fmod(frag_pos.y - ru.padding.y, ru.cell_size.y));
 
   switch (in.kind) {
     case 1u: { // undercurl
