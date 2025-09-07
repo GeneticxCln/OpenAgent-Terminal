@@ -167,7 +167,9 @@ pub mod utils {
 
     /// Validate a snippet template
     pub fn validate_template(template: &str) -> Result<()> {
-        match tera::Tera::one_off(template, &tera::Context::new(), false) {
+        // Validate syntax only; do not require variables to be present
+        let mut t = tera::Tera::default();
+        match t.add_raw_template("__validate__", template) {
             Ok(_) => Ok(()),
             Err(e) => Err(anyhow::anyhow!("Invalid template: {}", e)),
         }
@@ -216,11 +218,14 @@ mod tests {
         assert!(utils::validate_template("Hello {{").is_err());
     }
 
-    #[tokio::test]
     #[cfg(feature = "async")]
-    async fn test_async_snippet_expansion() {
-        let _system = SnippetSystem::new().unwrap();
-        // Test async snippet expansion
-        // This would test actual async template processing
+    mod async_tests {
+        use super::*;
+        #[test]
+        fn test_async_snippet_expansion() {
+            let _system = SnippetSystem::new().unwrap();
+            // Test async snippet expansion
+            // This would test actual async template processing
+        }
     }
 }

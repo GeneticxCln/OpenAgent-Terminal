@@ -7,6 +7,9 @@
 The WGPU rendering backend is partially implemented but missing critical functionality. Multiple TODO comments in shaders and renderer code indicate incomplete features needed for a fully functional terminal.
 
 ## Current Status
+
+Status update (v0.16.1): WGPU is now the default renderer. Recent fixes resolved WGSL shader issues (GLSL mod() compatibility and fragment input built-ins). Core terminal content and text rendering paths are functional for default usage. The items below capture remaining work for advanced features and performance tooling.
+
 The basic WGPU infrastructure exists, but core rendering operations are not implemented:
 
 ### Missing Critical Features

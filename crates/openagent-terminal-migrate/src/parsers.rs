@@ -195,13 +195,17 @@ pub fn parse_by_extension(extension: &str, content: &str) -> Result<UnifiedConfi
         "yml" | "yaml" => {
             // Could be Alacritty, Warp, or Tabby
             // Try to determine by content structure
-            if content.contains("alacritty")
-                || content.contains("window:") && content.contains("font:")
-            {
-                AlacrittyParser::new().parse(content)
-            } else if content.contains("theme:") || content.contains("warp") {
+            if content.contains("theme:") || content.contains("warp") {
+                // Warp configs typically include a top-level 'theme' key
                 parse_warp_config(content)
+            } else if content.contains("terminal:") {
+                // Tabby often nests settings under 'terminal'
+                parse_tabby_config(content)
+            } else if content.contains("font:") {
+                // Fallback to Alacritty when a top-level 'font' section exists
+                AlacrittyParser::new().parse(content)
             } else {
+                // Default to Tabby if indeterminate
                 parse_tabby_config(content)
             }
         },

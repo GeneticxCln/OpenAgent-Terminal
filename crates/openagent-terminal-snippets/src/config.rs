@@ -256,18 +256,21 @@ impl SnippetTrigger {
     pub fn matches(&self, input: &str) -> bool {
         match self.trigger_type {
             TriggerType::Text => {
-                let pattern = if self.case_sensitive {
-                    &self.pattern
+                // Apply case-sensitivity consistently, then respect word_boundary
+                if self.case_sensitive {
+                    if self.word_boundary {
+                        input.split_whitespace().any(|word| word == self.pattern)
+                    } else {
+                        input.contains(&self.pattern)
+                    }
                 } else {
-                    // Simple case-insensitive comparison
-                    return input.to_lowercase().contains(&self.pattern.to_lowercase());
-                };
-
-                if self.word_boundary {
-                    // Simple word boundary check
-                    input.split_whitespace().any(|word| word == pattern)
-                } else {
-                    input.contains(pattern)
+                    let input_ci = input.to_lowercase();
+                    let pattern_ci = self.pattern.to_lowercase();
+                    if self.word_boundary {
+                        input_ci.split_whitespace().any(|word| word == pattern_ci)
+                    } else {
+                        input_ci.contains(&pattern_ci)
+                    }
                 }
             },
             TriggerType::Regex => {
