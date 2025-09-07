@@ -1,6 +1,6 @@
 [package]
 name = "openagent-terminal"
-version = "0.16.0"
+version = "0.16.1"
 authors = ["Christian Duerr <contact@christianduerr.com>", "Joe Wilm <joe@jwilm.com>"]
 license = "Apache-2.0"
 description = "AI-enhanced, cross-platform terminal emulator with built-in command assistance; fast GPU rendering (OpenGL), privacy-first, optional local/cloud AI providers."
@@ -175,7 +175,7 @@ embed-resource = "3.0.2"
 [features]
 # OpenGL is the practical default renderer. WGPU is experimental and gated behind the 'wgpu' feature.
 # Default feature set keeps core UX stable across platforms.
-default = ["wayland", "x11", "blocks", "workflow", "sync"]
+default = ["wayland", "x11", "blocks", "workflow", "sync", "wgpu"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Optional background component initialization in a separate task

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Notable changes to the `openagent-terminal-core` crate are documented in its
 [CHANGELOG](./openagent-terminal-core/CHANGELOG.md).
 
+## 0.16.1
+
+### Fixed
+
+- WGPU: Correct WGSL shader issues (replace GLSL-style mod() with WGSL-compatible fmod; remove duplicate @builtin(position) from FS inputs). Improves WGPU startup stability across platforms.
+- WGPU: Default-enabled backend; GL remains available via OPENAGENT_FORCE_GL=1.
+
 ## 0.16.0
 
 ### Packaging
