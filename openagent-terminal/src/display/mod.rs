@@ -121,6 +121,7 @@ pub struct TabDragState {
     pub current_mouse_y: usize,
     /// Visual offset for drag preview
     pub visual_offset_x: f32,
+    #[allow(dead_code)]
     pub visual_offset_y: f32,
     /// Whether the drag is currently active
     pub is_active: bool,
@@ -546,10 +547,13 @@ pub struct Display {
     /// Animation start for drag operations
     pub tab_drag_anim_start: Option<Instant>,
     /// List of active tab animations (opening, closing, moving)
+    #[allow(dead_code)]
     pub tab_animations: Vec<tab_bar::TabAnimation>,
     /// Workspace animation manager for smooth UI transitions
+    #[allow(dead_code)]
     pub workspace_animations: workspace_animations::WorkspaceAnimationManager,
     /// Pane drag-and-drop manager
+    #[allow(dead_code)]
     pub pane_drag_manager: pane_drag_drop::PaneDragManager,
 
     /// Hovered split divider (if any)
@@ -803,6 +807,7 @@ impl Display {
     }
 
     /// Update all workspace animations and return whether any updates occurred
+    #[allow(dead_code)]
     pub fn update_workspace_animations(&mut self) -> bool {
         let mut needs_redraw = false;
 
@@ -838,6 +843,7 @@ impl Display {
     }
 
     /// Enable or disable reduced motion for accessibility
+    #[allow(dead_code)]
     pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
         self.workspace_animations.set_reduce_motion(reduce_motion);
         self.pane_drag_manager.set_reduce_motion(reduce_motion);
@@ -868,10 +874,11 @@ impl Display {
 
         // Background band with subtle shadow underneath
         let bg = tokens.surface;
-        let mut rects = Vec::new();
-        rects.push(RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98));
-        // Shadow below
-        rects.push(RenderRect::new(0.0, y + h, size_info.width(), 2.0, tokens.surface_muted, 0.15));
+        let rects = vec![
+            RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98),
+            // Shadow below
+            RenderRect::new(0.0, y + h, size_info.width(), 2.0, tokens.surface_muted, 0.15),
+        ];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);
@@ -1161,7 +1168,7 @@ impl Display {
         }
 
         // WGPU renderer init.
-        let wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
+        let mut wgpu_renderer = pollster::block_on(crate::renderer::wgpu::WgpuRenderer::new(
             window.winit_window(),
             window.inner_size(),
             config.debug.renderer,
@@ -1173,35 +1180,9 @@ impl Display {
         ))
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
 
-        // Load font common glyphs to accelerate rendering.
+        // Load font common glyphs to accelerate rendering using the WGPU atlas.
         debug!("Filling glyph cache with common glyphs (wgpu)");
-        {
-            // For WGPU we don't have a GL-based atlas yet; preload the cache with a no-op loader.
-            struct NoopLoader;
-            impl crate::renderer::LoadGlyph for NoopLoader {
-                fn load_glyph(
-                    &mut self,
-                    _rasterized: &crossfont::RasterizedGlyph,
-                ) -> crate::renderer::Glyph {
-                    crate::renderer::Glyph {
-                        tex_id: 0,
-                        multicolor: false,
-                        top: 0,
-                        left: 0,
-                        width: 0,
-                        height: 0,
-                        uv_bot: 0.0,
-                        uv_left: 0.0,
-                        uv_width: 0.0,
-                        uv_height: 0.0,
-                    }
-                }
-
-                fn clear(&mut self) {}
-            }
-            let mut loader = NoopLoader;
-            glyph_cache.reset_glyph_cache(&mut loader);
-        }
+        wgpu_renderer.preload_glyphs(&mut glyph_cache);
 
         let padding = config.window.padding(window.scale_factor as f32);
         let viewport_size = window.inner_size();
@@ -1660,6 +1641,9 @@ impl Display {
     /// A reference to Term whose state is being drawn must be provided.
     ///
     /// This call may block if vsync is enabled.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::vec_init_then_push)]
+    #[allow(clippy::if_not_else)]
     pub fn draw<T: EventListener>(
         &mut self,
         mut terminal: MutexGuard<'_, Term<T>>,
@@ -2638,7 +2622,10 @@ impl Display {
         match &mut self.backend {
             Backend::Gl { renderer, .. } => renderer.draw_rects(size_info, metrics, rects),
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.draw_rects(size_info, metrics, rects),
+            Backend::Wgpu { renderer } => {
+                let win = self.window.winit_window();
+                renderer.draw_rects(win, size_info, metrics, rects)
+            },
         }
     }
 
@@ -2740,7 +2727,7 @@ impl Display {
             .composer_star_glyph
             .as_deref()
             .unwrap_or("✦ ");
-        let star_color = if self.composer_focused { tokens.accent } else { tokens.accent };
+        let star_color = tokens.accent;
         self.draw_ai_text(
             Point::new(lines.saturating_sub(1), Column(start_col)),
             star_color,
@@ -2795,8 +2782,6 @@ impl Display {
                         if wcols + 1 >= col_end { break; }
                         let start = col_end.saturating_sub(wcols);
                         // Capsule background
-                        let cw = cw; // cell width
-                        let ch = ch; // cell height
                         let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
                         let x_px = (start as f32) * cw - pad;
                         let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
@@ -2912,7 +2897,16 @@ impl Display {
 
             // Draw text segments (before selection / selection / after selection)
             if let Some(anchor) = self.composer_sel_anchor {
-                if anchor != self.composer_cursor {
+                if anchor == self.composer_cursor {
+                    // No selection
+                    self.draw_ai_text(
+                        Point::new(lines.saturating_sub(1), Column(start_col)),
+                        tokens.text,
+                        tokens.surface_muted,
+                        visible,
+                        available,
+                    );
+                } else {
                     let sel_lo = anchor.min(self.composer_cursor);
                     let sel_hi = anchor.max(self.composer_cursor);
                     let vis_sel_start_cols =
@@ -2935,7 +2929,7 @@ impl Display {
                         }
                         b
                     };
-                    let vis_sel_end_byte = if vis_sel_end_cols <= 0 {
+                    let vis_sel_end_byte = if vis_sel_end_cols == 0 {
                         start_byte
                     } else {
                         let mut cacc = 0usize;
@@ -2991,15 +2985,6 @@ impl Display {
                             available.saturating_sub(after_offset_cols),
                         );
                     }
-                } else {
-                    // No selection
-                    self.draw_ai_text(
-                        Point::new(lines.saturating_sub(1), Column(start_col)),
-                        tokens.text,
-                        tokens.surface_muted,
-                        visible,
-                        available,
-                    );
                 }
             } else {
                 // No selection
@@ -3036,8 +3021,6 @@ impl Display {
                     if wcols + 1 >= col_end { break; }
                     let start = col_end.saturating_sub(wcols);
                     // Capsule background
-                    let cw = cw; // cell width
-                    let ch = ch; // cell height
                     let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
                     let x_px = (start as f32) * cw - pad;
                     let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
@@ -3119,12 +3102,13 @@ impl Display {
 
     /// Prepare the renderer to capture a screenshot of the next frame.
     /// For GL this is a no-op. For WGPU this will mirror the next render to an offscreen target.
+    #[allow(dead_code)]
     pub fn begin_screenshot(&mut self) {
         match &mut self.backend {
             Backend::Gl { .. } => {},
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.request_screenshot();
+            Backend::Wgpu { .. } => {
+                // WGPU offscreen capture removed; no-op.
             },
         }
     }
@@ -3132,6 +3116,7 @@ impl Display {
     /// Read the current frame's RGBA pixels. Returns (bytes, width, height) on success.
     /// For GL this reads the backbuffer. For WGPU this returns the last captured screenshot
     /// if begin_screenshot() was called before the last draw.
+    #[allow(dead_code)]
     pub fn read_frame_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
         match &mut self.backend {
             Backend::Gl { .. } => {
@@ -3155,7 +3140,7 @@ impl Display {
                 Some((buf, w, h))
             },
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.take_screenshot(),
+            Backend::Wgpu { .. } => None,
         }
     }
 
@@ -3745,6 +3730,10 @@ pub struct FrameTimer {
 
     /// The refresh rate we've used to compute sync timestamps.
     refresh_interval: Duration,
+}
+
+impl Default for FrameTimer {
+    fn default() -> Self { Self::new() }
 }
 
 impl FrameTimer {
