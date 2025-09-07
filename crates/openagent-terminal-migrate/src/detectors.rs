@@ -282,6 +282,7 @@ fn get_tabby_locations() -> Result<Vec<PathBuf>> {
 }
 
 /// Search for config files in common locations using patterns
+#[allow(dead_code)]
 pub fn search_configs_by_pattern(terminal_type: &TerminalType) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     let config_names = terminal_type.config_names();
@@ -307,7 +308,7 @@ pub fn search_configs_by_pattern(terminal_type: &TerminalType) -> Result<Vec<Pat
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             // Check if filename matches any of the expected config names
-            if config_names.iter().any(|name| file_name == *name) {
+            if config_names.contains(&file_name) {
                 found.push(path.to_path_buf());
                 continue;
             }
@@ -332,6 +333,7 @@ pub fn search_configs_by_pattern(terminal_type: &TerminalType) -> Result<Vec<Pat
     Ok(found)
 }
 
+#[allow(dead_code)]
 fn get_search_directories() -> Result<Vec<PathBuf>> {
     let mut dirs = Vec::new();
 

@@ -215,25 +215,25 @@ pub fn integrate_warp_bindings(existing_bindings: &mut Vec<KeyBinding>) {
                 if b.mods != ctrl_alt {
                     return true;
                 }
-                match (&b.trigger, &b.action) {
+                !matches!(
+                    (&b.trigger, &b.action),
                     (
                         BindingKey::Keycode { key: Key::Named(NamedKey::ArrowLeft), .. },
                         Action::ResizePaneLeft,
                     )
-                    | (
-                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. },
-                        Action::ResizePaneRight,
-                    )
-                    | (
-                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. },
-                        Action::ResizePaneUp,
-                    )
-                    | (
-                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. },
-                        Action::ResizePaneDown,
-                    ) => false,
-                    _ => true,
-                }
+                        | (
+                            BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. },
+                            Action::ResizePaneRight,
+                        )
+                        | (
+                            BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. },
+                            Action::ResizePaneUp,
+                        )
+                        | (
+                            BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. },
+                            Action::ResizePaneDown,
+                        )
+                )
             });
         }
 

@@ -447,14 +447,12 @@ impl HarfBuzzShaper {
 
     /// Find a fallback font for text
     fn find_fallback_font(&self, _text: &str, primary: &str) -> Option<&str> {
-        for fallback in &self.config.fallback_fonts {
-            if fallback != primary {
-                // Check if this font can handle the text
-                // Simplified - actual implementation would check coverage
-                return Some(fallback);
-            }
-        }
-        None
+        self
+            .config
+            .fallback_fonts
+            .iter()
+            .find(|f| f.as_str() != primary)
+            .map(|s| s.as_str())
     }
 
     /// Clear all caches

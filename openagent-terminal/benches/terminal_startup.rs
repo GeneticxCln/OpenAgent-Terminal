@@ -49,7 +49,7 @@ fn benchmark_config_loading(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(5));
 
     group.bench_function("ui_config_default", |b| {
-        b.iter(|| UiConfig::default());
+        b.iter(UiConfig::default);
     });
 
     group.finish();

@@ -30,18 +30,16 @@ pub struct AdapterConfig {
 }
 
 pub struct DapClient {
-    child: Child,
+    _child: Child,
     next_id: Arc<Mutex<i64>>,
     tx: mpsc::Sender<ClientMessage>,
     _pump: JoinHandle<()>,
     pending: Arc<Mutex<HashMap<i64, mpsc::Sender<Result<Value>>>>>,
-    write: Arc<Mutex<ChildStdin>>,
     events_rx: Arc<Mutex<mpsc::Receiver<DapEvent>>>,
 }
 
 enum ClientMessage {
-    Request { id: i64, command: String, arguments: Value, resp: mpsc::Sender<Result<Value>> },
-    Event(Value),
+    Request { id: i64, command: String, arguments: Value },
 }
 
 #[derive(Debug, Clone)]
@@ -72,12 +70,11 @@ impl DapClient {
         let pump_handle = std::thread::spawn(move || pump.run());
 
         Ok(Self {
-            child,
+            _child: child,
             next_id: Arc::new(Mutex::new(1)),
             tx,
             _pump: pump_handle,
             pending,
-            write,
             events_rx: Arc::new(Mutex::new(erx)),
         })
     }
@@ -85,18 +82,23 @@ impl DapClient {
     pub fn initialize(&self) -> Result<Value> {
         #[derive(Serialize)]
         struct InitArgs {
-            clientID: String,
-            adapterID: String,
-            linesStartAt1: bool,
-            columnsStartAt1: bool,
-            pathFormat: String,
+            #[serde(rename = "clientID")]
+            client_id: String,
+            #[serde(rename = "adapterID")]
+            adapter_id: String,
+            #[serde(rename = "linesStartAt1")]
+            lines_start_at1: bool,
+            #[serde(rename = "columnsStartAt1")]
+            columns_start_at1: bool,
+            #[serde(rename = "pathFormat")]
+            path_format: String,
         }
         let args = InitArgs {
-            clientID: "openagent-terminal".into(),
-            adapterID: "generic".into(),
-            linesStartAt1: true,
-            columnsStartAt1: true,
-            pathFormat: "path".into(),
+            client_id: "openagent-terminal".into(),
+            adapter_id: "generic".into(),
+            lines_start_at1: true,
+            columns_start_at1: true,
+            path_format: "path".into(),
         };
         self.request("initialize", serde_json::to_value(args)?)
     }
@@ -177,12 +179,7 @@ impl DapClient {
         let (tx_resp, rx_resp) = mpsc::channel();
         self.pending.lock().insert(id, tx_resp);
         self.tx
-            .send(ClientMessage::Request {
-                id,
-                command: command.to_string(),
-                arguments,
-                resp: self.pending.lock().get(&id).unwrap().clone(),
-            })
+            .send(ClientMessage::Request { id, command: command.to_string(), arguments })
             .map_err(|_| anyhow!("tx closed"))?;
 
         let val = rx_resp.recv().map_err(|_| anyhow!("rx closed"))??;
@@ -298,7 +295,7 @@ impl DapPump {
                 }
             }
             match self.rx.recv() {
-                Ok(ClientMessage::Request { id, command, arguments, resp: _ }) => {
+                Ok(ClientMessage::Request { id, command, arguments }) => {
                     let json = serde_json::json!({"seq": id, "type": "request", "command": command, "arguments": arguments});
                     let bytes = serde_json::to_vec(&json).unwrap();
                     let header = format!("Content-Length: {}\r\n\r\n", bytes.len());
@@ -307,7 +304,6 @@ impl DapPump {
                     let _ = stdin.write_all(&bytes);
                     let _ = stdin.flush();
                 },
-                Ok(ClientMessage::Event(_)) => {},
                 Err(_) => break,
             }
         }

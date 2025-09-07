@@ -1,6 +1,6 @@
 #[cfg(feature = "ai")]
 mod ai_provider_security_tests {
-    use openagent_terminal::config::ai::{AiConfig, ProviderConfig};
+    use openagent_terminal::config::ai::ProviderConfig;
     use openagent_terminal::config::ai_providers::ProviderCredentials;
     use std::collections::{HashMap, HashSet};
 

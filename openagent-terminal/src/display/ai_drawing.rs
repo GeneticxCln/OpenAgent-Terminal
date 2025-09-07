@@ -18,6 +18,7 @@ pub struct AiDrawConfig {
     /// Maximum lines to show for AI panel
     pub max_panel_lines: usize,
     /// Panel label shown at the top
+    #[allow(dead_code)]
     pub panel_label: &'static str,
     /// Loading indicator text
     pub loading_text: &'static str,
@@ -71,6 +72,7 @@ impl AiDrawConfig {
 
 /// Render mode for AI UI
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum AiRenderMode {
     /// Render as a panel (bottom sheet)
     Panel,
@@ -151,19 +153,17 @@ impl<'a> AiDrawContext<'a> {
             }
 
             eased
+        } else if active {
+            1.0
         } else {
-            if active {
-                1.0
-            } else {
-                0.0
-            }
+            0.0
         };
 
         // Invert progress for closing animation
-        if !self.display.ai_panel_anim_opening {
-            1.0 - progress
-        } else {
+        if self.display.ai_panel_anim_opening {
             progress
+        } else {
+            1.0 - progress
         }
     }
 
@@ -236,6 +236,7 @@ impl<'a> AiDrawContext<'a> {
     }
 
     /// Draw the panel content
+    #[allow(clippy::ptr_arg)]
     fn draw_panel_content(
         &mut self,
         ai_state: &crate::ai_runtime::AiUiState,
@@ -267,8 +268,7 @@ impl<'a> AiDrawContext<'a> {
         }
 
         // Draw main content based on state
-        current_line =
-            self.draw_main_content(ai_state, current_line, separator_line, fg, bg, num_cols);
+        let _ = self.draw_main_content(ai_state, current_line, separator_line, fg, bg, num_cols);
 
         // Draw separator
         if separator_line >= start_line {

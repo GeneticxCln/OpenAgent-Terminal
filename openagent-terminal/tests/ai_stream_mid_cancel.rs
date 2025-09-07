@@ -74,7 +74,7 @@ fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
 
 #[test]
 fn ai_stream_chunks_then_cancel_finishes_gracefully() {
-    let (mut el, proxy) = build_event_loop();
+    let (el, proxy) = build_event_loop();
 
     let provider: Box<dyn AiProvider> = Box::new(ChunkThenCancelProvider);
     let mut rt = AiRuntime::new(provider);

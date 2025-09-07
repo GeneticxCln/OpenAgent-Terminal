@@ -303,8 +303,8 @@ fn test_session_save_load_cycle() {
     assert_eq!(tabs.len(), 2);
 
     // Verify command history was preserved
-    assert!(new_manager.command_history.get(&tab1).is_some());
-    assert!(new_manager.command_history.get(&tab2).is_some());
+    assert!(new_manager.command_history.contains_key(&tab1));
+    assert!(new_manager.command_history.contains_key(&tab2));
 }
 
 /// Test session restoration with corrupted data

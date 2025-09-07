@@ -403,16 +403,16 @@ impl ThemeConfig {
             resolved.ui.composer_open_mode = mode;
         }
         if let Some(alpha) = self.composer_chip_alpha_unfocused {
-            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_chip_alpha_unfocused = alpha; }
+            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_chip_alpha_unfocused = alpha; }
         }
         if let Some(alpha) = self.composer_chip_alpha_focused {
-            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_chip_alpha_focused = alpha; }
+            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_chip_alpha_focused = alpha; }
         }
         if let Some(alpha) = self.composer_pill_alpha_unfocused {
-            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_pill_alpha_unfocused = alpha; }
+            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_pill_alpha_unfocused = alpha; }
         }
         if let Some(alpha) = self.composer_pill_alpha_focused {
-            if alpha >= 0.0 && alpha <= 1.0 { resolved.ui.composer_pill_alpha_focused = alpha; }
+            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_pill_alpha_focused = alpha; }
         }
         resolved
     }

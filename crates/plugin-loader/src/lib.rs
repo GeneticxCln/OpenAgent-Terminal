@@ -302,12 +302,10 @@ impl PluginManager {
             let sig_path = path.with_extension("sig");
             let sig_exists = sig_path.exists();
 
-            if policy.require_signatures_for_all || policy.require_for_kind(kind) {
-                if !sig_exists {
-                    return Err(PluginError::InvalidFormat(
-                        "Signature required but not present".into(),
-                    ));
-                }
+            if (policy.require_signatures_for_all || policy.require_for_kind(kind)) && !sig_exists {
+                return Err(PluginError::InvalidFormat(
+                    "Signature required but not present".into(),
+                ));
             }
         }
 
@@ -1379,6 +1377,7 @@ impl PluginManager {
     }
 
     /// Verify plugin signature if .sig file is present next to the .wasm
+#[allow(dead_code)]
     fn verify_signature_if_present(&self, wasm_path: &Path) -> anyhow::Result<()> {
         match self.verify_signature_and_get_key(wasm_path)? {
             Some(_) => Ok(()),
@@ -1501,12 +1500,10 @@ mod tests {
 
     #[test]
     fn test_read_manifest_permissions_sanitized() {
-        use std::io::Write as _;
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("p.wasm");
         std::fs::write(&wasm_path, b"00").unwrap();
         let manifest_path = temp_dir.path().join("p.toml");
-        let mut f = std::fs::File::create(&manifest_path).unwrap();
         // Include an unsafe preopen ('/') which should be filtered out
         let content = r#"[permissions]
 read_files=["/","sub"]
@@ -1517,8 +1514,7 @@ execute_commands=false
 max_memory_mb=50
 timeout_ms=5000
 "#;
-        use std::io::Write as _;
-        f.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&manifest_path, content).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let perms = manager
@@ -1653,14 +1649,12 @@ timeout_ms=5000
 
     #[tokio::test]
     async fn test_enhanced_manifest_validation() {
-        use std::io::Write as _;
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("test_plugin.wasm");
         std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
         let manifest_path = temp_dir.path().join("test_plugin.toml");
 
         // Test complete manifest with plugin metadata
-        let mut f = std::fs::File::create(&manifest_path).unwrap();
         let content = r#"[plugin]
 name="test-plugin"
 version="1.0.0"
@@ -1674,8 +1668,7 @@ execute_commands=false
 max_memory_mb=50
 timeout_ms=5000
 "#;
-        use std::io::Write as _;
-        f.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&manifest_path, content).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let perms = manager
@@ -1687,14 +1680,12 @@ timeout_ms=5000
 
     #[tokio::test]
     async fn test_dangerous_file_pattern_rejection() {
-        use std::io::Write as _;
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("dangerous.wasm");
         std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
         let manifest_path = temp_dir.path().join("dangerous.toml");
 
         // Test manifest with dangerous file access
-        let mut f = std::fs::File::create(&manifest_path).unwrap();
         let content = r#"[permissions]
 read_files=["/etc/passwd"]
 write_files=[]
@@ -1704,8 +1695,7 @@ execute_commands=false
 max_memory_mb=50
 timeout_ms=5000
 "#;
-        use std::io::Write as _;
-        f.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&manifest_path, content).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1714,14 +1704,12 @@ timeout_ms=5000
 
     #[tokio::test]
     async fn test_memory_limit_validation() {
-        use std::io::Write as _;
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("memory_test.wasm");
         std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
         let manifest_path = temp_dir.path().join("memory_test.toml");
 
         // Test manifest with excessive memory request
-        let mut f = std::fs::File::create(&manifest_path).unwrap();
         let content = r#"[permissions]
 read_files=[]
 write_files=[]
@@ -1731,8 +1719,7 @@ execute_commands=false
 max_memory_mb=500
 timeout_ms=5000
 "#;
-        use std::io::Write as _;
-        f.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&manifest_path, content).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1741,14 +1728,12 @@ timeout_ms=5000
 
     #[tokio::test]
     async fn test_timeout_limit_validation() {
-        use std::io::Write as _;
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("timeout_test.wasm");
         std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
         let manifest_path = temp_dir.path().join("timeout_test.toml");
 
         // Test manifest with excessive timeout request
-        let mut f = std::fs::File::create(&manifest_path).unwrap();
         let content = r#"[permissions]
 read_files=[]
 write_files=[]
@@ -1758,8 +1743,7 @@ execute_commands=false
 max_memory_mb=50
 timeout_ms=60000
 "#;
-        use std::io::Write as _;
-        f.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&manifest_path, content).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1768,22 +1752,25 @@ timeout_ms=60000
 
     #[tokio::test]
     async fn test_plugin_manifest_info_validation() {
-        use std::io::Write as _;
         let temp_dir = TempDir::new().unwrap();
         let wasm_path = temp_dir.path().join("info_test.wasm");
         std::fs::write(&wasm_path, build_cleanup_only_wasm()).unwrap();
         let manifest_path = temp_dir.path().join("info_test.toml");
 
         // Test manifest with missing required fields
-        let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(
-            f,
-            "[plugin]\nname=\"\"\nversion=\"1.0.0\"\n[permissions]\nread_files=[]\nwrite_files=[]\\
-             \
-             nenvironment_variables=[]\nnetwork=false\nexecute_commands=false\nmax_memory_mb=50\\
-             ntimeout_ms=5000"
-        )
-        .unwrap();
+        let content = r#"[plugin]
+name=""
+version="1.0.0"
+[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"#;
+        std::fs::write(&manifest_path, content).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
         let result = manager.read_plugin_permissions(&wasm_path, wasm_path.parent().unwrap());
@@ -1861,7 +1848,7 @@ timeout_ms=60000
         })
         .to_string();
         let ptr = 1024u32;
-        let len = meta_json.as_bytes().len() as u32;
+        let len = meta_json.len() as u32;
         let packed = ((len as i64) << 32) | (ptr as i64);
 
         let wat = format!(

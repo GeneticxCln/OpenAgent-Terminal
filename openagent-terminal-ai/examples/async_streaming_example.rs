@@ -1,10 +1,11 @@
 // async-streaming-migration.rs
 // Async streaming client implementation with unified cancellation
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::stream::{Stream, StreamExt};
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -68,8 +69,10 @@ pub struct StreamMetrics {
 // Cancellation System
 // ============================================================================
 
+#[derive(Clone)]
 pub struct CancellationToken {
     flag: Arc<AtomicBool>,
+    #[allow(clippy::type_complexity)]
     callbacks: Arc<tokio::sync::Mutex<Vec<Box<dyn FnOnce() + Send>>>>,
 }
 
@@ -147,7 +150,7 @@ pub struct Message {
 }
 
 pub struct StreamingResponse {
-    pub stream: Box<dyn Stream<Item = Result<StreamChunk>> + Send + Unpin>,
+    pub stream: Pin<Box<dyn Stream<Item = Result<StreamChunk>> + Send>>,
     pub metrics: Arc<tokio::sync::Mutex<StreamMetrics>>,
     pub cancellation: CancellationToken,
 }
@@ -257,10 +260,10 @@ impl OpenAIClient {
 
                         // Process complete SSE events
                         while let Some(event_end) = buffer.find("\n\n") {
-                            let event = &buffer[..event_end];
+                            let event_block = buffer[..event_end].to_string();
                             buffer = buffer[event_end + 2..].to_string();
 
-                            if let Some(data) = event.strip_prefix("data: ") {
+                            if let Some(data) = event_block.strip_prefix("data: ") {
                                 if data.trim() == "[DONE]" {
                                     return;
                                 }
@@ -351,7 +354,7 @@ impl StreamingClient for OpenAIClient {
 
             let response = self
                 .client
-                .post(&format!("{}/chat/completions", self.base_url))
+                .post(format!("{}/chat/completions", self.base_url))
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&payload)
@@ -365,7 +368,7 @@ impl StreamingClient for OpenAIClient {
                         .await;
 
                     return Ok(StreamingResponse {
-                        stream: Box::new(stream),
+                        stream: Box::pin(stream),
                         metrics,
                         cancellation,
                     });
@@ -386,7 +389,7 @@ impl StreamingClient for OpenAIClient {
 
                     return Err(anyhow::anyhow!("API error {}: {}", status, error_body));
                 },
-                Err(e) if retry_count < self.config.max_retries => {
+                Err(_e) if retry_count < self.config.max_retries => {
                     retry_count += 1;
                     let mut m = metrics.lock().await;
                     m.retry_count = retry_count;
@@ -455,14 +458,14 @@ impl AnthropicClient {
 
                         // Process complete SSE events
                         while let Some(event_end) = buffer.find("\n\n") {
-                            let event = &buffer[..event_end];
+                            let event_block = buffer[..event_end].to_string();
                             buffer = buffer[event_end + 2..].to_string();
 
                             // Parse event type and data
                             let mut event_type = None;
                             let mut event_data = None;
 
-                            for line in event.lines() {
+                            for line in event_block.lines() {
                                 if let Some(evt) = line.strip_prefix("event: ") {
                                     event_type = Some(evt.to_string());
                                 } else if let Some(data) = line.strip_prefix("data: ") {
@@ -622,7 +625,7 @@ impl StreamingClient for AnthropicClient {
 
             let response = self
                 .client
-                .post(&format!("{}/messages", self.base_url))
+                .post(format!("{}/messages", self.base_url))
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("Content-Type", "application/json")
@@ -637,7 +640,7 @@ impl StreamingClient for AnthropicClient {
                         .await;
 
                     return Ok(StreamingResponse {
-                        stream: Box::new(stream),
+                        stream: Box::pin(stream),
                         metrics,
                         cancellation,
                     });
@@ -658,7 +661,7 @@ impl StreamingClient for AnthropicClient {
 
                     return Err(anyhow::anyhow!("API error {}: {}", status, error_body));
                 },
-                Err(e) if retry_count < self.config.max_retries => {
+                Err(_e) if retry_count < self.config.max_retries => {
                     retry_count += 1;
                     let mut m = metrics.lock().await;
                     m.retry_count = retry_count;
@@ -675,6 +678,10 @@ impl StreamingClient for AnthropicClient {
     fn provider(&self) -> Provider {
         Provider::Anthropic
     }
+}
+
+impl Default for CancellationToken {
+    fn default() -> Self { Self::new() }
 }
 
 // ============================================================================
@@ -776,6 +783,10 @@ impl StreamingManager {
     }
 }
 
+impl Default for StreamingManager {
+    fn default() -> Self { Self::new() }
+}
+
 // Helper for cancellation
 impl CancellationToken {
     async fn cancelled(&self) {
@@ -837,4 +848,12 @@ mod tests {
             }
         }
     }
+}
+
+#[cfg(not(test))]
+#[tokio::main]
+async fn main() -> Result<()> {
+    // This example is primarily covered by tests; provide a minimal main to satisfy example build
+    println!("Run `cargo test --example async_streaming_example` to execute tests.");
+    Ok(())
 }

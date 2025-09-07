@@ -91,22 +91,26 @@ pub enum ShellType {
     Custom(u32), // Hash of custom shell name
 }
 
-impl ShellType {
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+impl std::str::FromStr for ShellType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "bash" => Self::Bash,
             "zsh" => Self::Zsh,
             "fish" => Self::Fish,
             "powershell" | "pwsh" => Self::PowerShell,
             "nu" | "nushell" => Self::Nushell,
             other => {
-                let hash = std::collections::hash_map::DefaultHasher::new();
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 use std::hash::{Hash, Hasher};
-                other.hash(&mut hash.clone());
-                Self::Custom(hash.finish() as u32)
+                other.hash(&mut hasher);
+                Self::Custom(hasher.finish() as u32)
             },
-        }
+        })
     }
+}
+
+impl ShellType {
 
     pub fn to_str(self) -> &'static str {
         match self {
@@ -159,6 +163,10 @@ pub struct BlockManager {
 /// Session identifier for grouping blocks
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SessionId(Uuid);
+
+impl Default for SessionId {
+    fn default() -> Self { Self::new() }
+}
 
 impl SessionId {
     pub fn new() -> Self {

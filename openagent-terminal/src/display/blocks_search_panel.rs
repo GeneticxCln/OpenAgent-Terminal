@@ -2,6 +2,8 @@
 // Feature-gated under `blocks`
 
 #![cfg(feature = "blocks")]
+#![allow(clippy::items_after_test_module)]
+#![allow(dead_code)]
 
 use unicode_width::UnicodeWidthStr;
 
@@ -119,6 +121,13 @@ impl BlocksSearchState {
         }
     }
 
+}
+
+impl Default for BlocksSearchState {
+    fn default() -> Self { Self::new() }
+}
+
+impl BlocksSearchState {
     pub fn open(&mut self) {
         self.active = true;
         self.selected = 0;
@@ -570,6 +579,7 @@ impl Display {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_filter_bar(
         &mut self,
         state: &BlocksSearchState,
@@ -668,6 +678,7 @@ impl Display {
         self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, &info, num_cols - 2);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_results_list(
         &mut self,
         state: &BlocksSearchState,

@@ -4,12 +4,19 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct SnippetEngine {
-    template_engine: tera::Tera,
+    _template_engine: tera::Tera,
 }
+
+impl Default for SnippetEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 impl SnippetEngine {
     pub fn new() -> Self {
-        Self { template_engine: tera::Tera::new("templates/**/*").unwrap_or_default() }
+        Self { _template_engine: tera::Tera::new("templates/**/*").unwrap_or_default() }
     }
 
     pub fn expand(

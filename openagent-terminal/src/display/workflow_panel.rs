@@ -204,6 +204,10 @@ pub struct WorkflowsPanelState {
     pub selected: usize,
 }
 
+impl Default for WorkflowsPanelState {
+    fn default() -> Self { Self::new() }
+}
+
 impl WorkflowsPanelState {
     pub fn new() -> Self {
         Self { active: false, query: String::new(), results: Vec::new(), selected: 0 }

@@ -7,7 +7,6 @@ use std::sync::Arc;
 use anyhow::Result as AnyResult;
 
 use crate::api::{CommandOutput, PluginError};
-use crate::permissions::PluginPermissions;
 
 /// Host interface that plugins can call into
 pub trait HostInterface: Send + Sync {

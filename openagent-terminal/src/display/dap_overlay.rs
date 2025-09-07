@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Minimal DAP overlay to launch/continue a debug session via codelldb
 
 #[cfg(feature = "dap")]
@@ -11,6 +12,7 @@ use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 
+#[derive(Default)]
 pub struct DapOverlayState {
     pub active: bool,
     pub status: String,
@@ -47,25 +49,6 @@ impl Clone for DapOverlayState {
     }
 }
 
-impl Default for DapOverlayState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            status: String::new(),
-            #[cfg(feature = "dap")]
-            client: None,
-            program_path: None,
-            #[cfg(feature = "dap")]
-            breakpoints: std::collections::HashMap::new(),
-            #[cfg(feature = "dap")]
-            current_thread_id: None,
-            #[cfg(feature = "dap")]
-            stack_frames: Vec::new(),
-            #[cfg(feature = "dap")]
-            variables: Vec::new(),
-        }
-    }
-}
 
 impl DapOverlayState {
     pub fn new() -> Self {

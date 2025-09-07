@@ -292,11 +292,7 @@ pub fn generate_openagent_config(unified: &UnifiedConfig) -> Result<String> {
     }
 
     // Footer with migration info
-    sections.push(format!(
-        "\n# Migration completed. You may want to:\n# - Review and adjust color schemes\n# - \
-         Check font availability on your system\n# - Verify key bindings work as expected\n# - \
-         Enable AI features if desired (see example_config.toml)"
-    ));
+    sections.push("\n# Migration completed. You may want to:\n# - Review and adjust color schemes\n# - Check font availability on your system\n# - Verify key bindings work as expected\n# - Enable AI features if desired (see example_config.toml)".to_string());
 
     Ok(sections.join("\n\n"))
 }

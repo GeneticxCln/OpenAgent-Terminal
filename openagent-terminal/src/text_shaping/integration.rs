@@ -3,14 +3,11 @@
 
 use anyhow::{Context, Result};
 use crossfont::{FontKey, GlyphKey};
-use openagent_terminal_core::index::{Column, Point};
 use openagent_terminal_core::term::cell::Flags;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::config::font::Font as FontConfig;
-use crate::config::ui_config::Delta;
-use crate::config::UiConfig;
 use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
 use crate::renderer::{Glyph, GlyphCache, LoadGlyph};
@@ -18,7 +15,6 @@ use crate::renderer::{Glyph, GlyphCache, LoadGlyph};
 use crate::text_shaping::harfbuzz::{
     HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
 };
-use crossfont::{FontDesc, RasterizedGlyph};
 
 /// Integrated text shaper that combines HarfBuzz with the existing glyph system
 pub struct IntegratedTextShaper {
@@ -55,8 +51,11 @@ impl Default for ShapingIntegrationConfig {
 #[derive(Debug, Clone)]
 struct ShapedLineInfo {
     shaped_text: ShapedText,
+    #[allow(dead_code)]
     font_name: String,
+    #[allow(dead_code)]
     font_size: f32,
+    #[allow(dead_code)]
     cell_count: usize,
 }
 
@@ -64,7 +63,9 @@ struct ShapedLineInfo {
 #[derive(Debug)]
 pub struct ShapedLine {
     pub cells: Vec<ShapedCell>,
+    #[allow(dead_code)]
     pub direction: TextDirection,
+    #[allow(dead_code)]
     pub total_width: f32,
 }
 
@@ -92,7 +93,7 @@ pub struct ShapedCellGlyph {
 impl IntegratedTextShaper {
     /// Create a new integrated text shaper
     pub fn new(
-        font_config: &FontConfig,
+        _font_config: &FontConfig,
         integration_config: ShapingIntegrationConfig,
     ) -> Result<Self> {
         // Create HarfBuzz configuration from terminal font config
@@ -378,8 +379,8 @@ impl IntegratedTextShaper {
         }
 
         // Check for ligature candidates if ligatures are enabled
-        if self.config.enable_ligatures {
-            if text.contains("->")
+        if self.config.enable_ligatures
+            && (text.contains("->")
                 || text.contains("=>")
                 || text.contains("!=")
                 || text.contains("<=")
@@ -388,17 +389,16 @@ impl IntegratedTextShaper {
                 || text.contains("fi")
                 || text.contains("fl")
                 || text.contains("ffi")
-                || text.contains("ffl")
-            {
-                return true;
-            }
+                || text.contains("ffl"))
+        {
+            return true;
         }
 
         false
     }
 
     /// Get font name from glyph cache
-    fn get_font_name(&self, glyph_cache: &GlyphCache) -> String {
+    fn get_font_name(&self, _glyph_cache: &GlyphCache) -> String {
         // This is a placeholder - we'd need to extract the actual font name
         // from the glyph cache's font system
         "JetBrains Mono".to_string()
@@ -418,7 +418,7 @@ impl IntegratedTextShaper {
     fn load_glyph_for_shaped(
         &self,
         glyph_key: GlyphKey,
-        shaped_glyph: &ShapedGlyph,
+        _shaped_glyph: &ShapedGlyph,
         glyph_cache: &mut GlyphCache,
     ) -> Result<Glyph> {
         // Use the existing glyph cache system to load glyphs
@@ -460,6 +460,7 @@ impl LoadGlyph for LoadGlyphImpl {
 }
 
 /// Trait for renderers that support shaped text
+#[allow(dead_code)]
 pub trait ShapedTextRenderer {
     /// Render a shaped line of text
     fn render_shaped_line(&mut self, shaped_line: &ShapedLine, size_info: &SizeInfo) -> Result<()>;
@@ -474,7 +475,6 @@ pub trait ShapedTextRenderer {
 mod tests {
     use super::*;
     use crate::config::font::Font as FontConfig;
-    use crossfont::Size;
 
     #[test]
     fn test_integration_config_default() {

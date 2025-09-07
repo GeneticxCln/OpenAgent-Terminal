@@ -74,7 +74,7 @@ fn benchmark_policy_creation(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(5));
 
     group.bench_function("security_policy_default", |b| {
-        b.iter(|| SecurityPolicy::default());
+        b.iter(SecurityPolicy::default);
     });
 
     group.bench_function("security_lens_init", |b| {

@@ -35,18 +35,17 @@ pub struct ServerConfig {
 }
 
 pub struct LspClient {
-    child: Child,
+    _child: Child,
     next_id: Arc<Mutex<i64>>,
     tx: mpsc::Sender<ClientMessage>,
     _pump: JoinHandle<()>,
     pending: Arc<Mutex<HashMap<i64, mpsc::Sender<Result<Value>>>>>,
-    write: Arc<Mutex<ChildStdin>>,
     /// Notification receiver (publishDiagnostics, etc.)
     notify_rx: Arc<Mutex<mpsc::Receiver<LspNotification>>>,
 }
 
 enum ClientMessage {
-    Request { id: i64, method: String, params: Value, resp: mpsc::Sender<Result<Value>> },
+    Request { id: i64, method: String, params: Value },
     Notification { method: String, params: Value },
 }
 
@@ -72,12 +71,11 @@ impl LspClient {
         let pump_handle = std::thread::spawn(move || pump.run());
 
         let this = Self {
-            child,
+            _child: child,
             next_id: Arc::new(Mutex::new(1)),
             tx,
             _pump: pump_handle,
             pending,
-            write,
             notify_rx: Arc::new(Mutex::new(nrx)),
         };
 
@@ -175,12 +173,7 @@ impl LspClient {
         let (tx_resp, rx_resp) = mpsc::channel();
         self.pending.lock().insert(id, tx_resp);
         self.tx
-            .send(ClientMessage::Request {
-                id,
-                method: method.to_string(),
-                params: serde_json::to_value(params)?,
-                resp: self.pending.lock().get(&id).unwrap().clone(),
-            })
+            .send(ClientMessage::Request { id, method: method.to_string(), params: serde_json::to_value(params)? })
             .map_err(|_| anyhow!("tx closed"))?;
 
         let val = rx_resp.recv().map_err(|_| anyhow!("rx closed"))??;
@@ -291,7 +284,7 @@ impl LspPump {
                 }
             }
             match self.rx.recv() {
-                Ok(ClientMessage::Request { id, method, params, resp: _ }) => {
+                Ok(ClientMessage::Request { id, method, params }) => {
                     let json = serde_json::json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
                     let bytes = serde_json::to_vec(&json).unwrap();
                     let header = format!("Content-Length: {}\r\n\r\n", bytes.len());
@@ -300,8 +293,14 @@ impl LspPump {
                     let _ = stdin.write_all(&bytes);
                     let _ = stdin.flush();
                 },
-                Ok(ClientMessage::Notification { method: _, params: _ }) => {
-                    // Ignore
+                Ok(ClientMessage::Notification { method, params }) => {
+                    let json = serde_json::json!({"jsonrpc":"2.0","method":method,"params":params});
+                    let bytes = serde_json::to_vec(&json).unwrap();
+                    let header = format!("Content-Length: {}\r\n\r\n", bytes.len());
+                    let mut stdin = self.write.lock();
+                    let _ = stdin.write_all(header.as_bytes());
+                    let _ = stdin.write_all(&bytes);
+                    let _ = stdin.flush();
                 },
                 Err(_) => break,
             }

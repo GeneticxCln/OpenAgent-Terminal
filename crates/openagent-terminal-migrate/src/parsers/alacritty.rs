@@ -1,7 +1,6 @@
 use crate::config::*;
 use crate::parsers::ConfigParser;
 use anyhow::Result;
-use serde_yaml;
 
 pub struct AlacrittyParser;
 
@@ -172,26 +171,18 @@ impl ConfigParser for AlacrittyParser {
 
         // Parse cursor settings
         if let Some(cursor) = alacritty_config.get("cursor") {
-            let cursor_style = if let Some(style) = cursor.get("style") {
-                Some(CursorStyle {
-                    shape: style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    blinking: style.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                })
-            } else {
-                None
-            };
+            let cursor_style = cursor.get("style").map(|style| CursorStyle {
+                shape: style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                blinking: style.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            });
 
-            let vi_mode_style = if let Some(vi_style) = cursor.get("vi_mode_style") {
-                Some(CursorStyle {
-                    shape: vi_style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    blinking: vi_style
-                        .get("blinking")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                })
-            } else {
-                None
-            };
+            let vi_mode_style = cursor.get("vi_mode_style").map(|vi_style| CursorStyle {
+                shape: vi_style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                blinking: vi_style
+                    .get("blinking")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
 
             config.terminal.cursor = Some(CursorConfig {
                 style: cursor_style,

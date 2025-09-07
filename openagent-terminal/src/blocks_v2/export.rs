@@ -104,6 +104,10 @@ pub struct ExportManager {
     // Add fields as needed
 }
 
+impl Default for ExportManager {
+    fn default() -> Self { Self::new() }
+}
+
 impl ExportManager {
     pub fn new() -> Self {
         Self {}

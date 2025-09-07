@@ -139,7 +139,7 @@ fn main() -> Result<()> {
 fn show_migration_preview(config: &MigrationConfig) -> Result<()> {
     println!(
         "{}",
-        format!("📋 Preview migration from {}", config.terminal_type.to_string()).cyan()
+        format!("📋 Preview migration from {}", config.terminal_type).cyan()
     );
 
     let parsed = parsers::parse_config(config)?;
@@ -160,7 +160,7 @@ fn perform_migration(
 ) -> Result<()> {
     println!(
         "{}",
-        format!("🔄 Migrating from {} configuration", config.terminal_type.to_string()).cyan()
+        format!("🔄 Migrating from {} configuration", config.terminal_type).cyan()
     );
 
     let parsed = parsers::parse_config(config)?;

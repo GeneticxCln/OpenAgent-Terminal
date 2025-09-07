@@ -416,8 +416,6 @@ pub struct CapabilityManifest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-    use tempfile::TempDir;
 
     #[test]
     fn test_path_normalization() {
@@ -475,8 +473,10 @@ mod tests {
 
     #[test]
     fn test_environment_variable_access() {
-        let mut permissions = PluginPermissions::default();
-        permissions.environment_variables = vec!["PLUGIN_CONFIG".to_string()];
+        let permissions = PluginPermissions {
+            environment_variables: vec!["PLUGIN_CONFIG".to_string()],
+            ..Default::default()
+        };
         let policy = SecurityPolicy::from_permissions(&permissions);
 
         // Should allow explicitly granted variables
@@ -494,15 +494,14 @@ mod tests {
 
     #[test]
     fn test_permission_validation() {
-        let mut permissions = PluginPermissions::default();
-        permissions.max_memory_mb = 1000; // Too high
+        let permissions = PluginPermissions { max_memory_mb: 1000, ..Default::default() }; // Too high
         let policy = SecurityPolicy::from_permissions(&permissions);
 
         let result = policy.validate_memory_limit();
         assert!(result.is_err(), "Should reject excessive memory limit");
 
-        permissions.max_memory_mb = 100; // Reasonable
-        let policy = SecurityPolicy::from_permissions(&permissions);
+        let permissions_ok = PluginPermissions { max_memory_mb: 100, ..Default::default() }; // Reasonable
+        let policy = SecurityPolicy::from_permissions(&permissions_ok);
         let result = policy.validate_memory_limit();
         assert!(result.is_ok(), "Should accept reasonable memory limit");
     }

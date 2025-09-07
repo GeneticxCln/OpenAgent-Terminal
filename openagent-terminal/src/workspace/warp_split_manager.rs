@@ -277,6 +277,7 @@ impl WarpSplitManager {
     }
 
     /// Swap adjacent panes in a split
+#[allow(clippy::only_used_in_recursion)]
     fn swap_adjacent_panes(&self, layout: &mut SplitLayout, pane1: PaneId, pane2: PaneId) -> bool {
         match layout {
             SplitLayout::Horizontal { left, right, .. } => {
@@ -315,6 +316,7 @@ impl WarpSplitManager {
     }
 
     /// Recursively equalize all split ratios
+#[allow(clippy::only_used_in_recursion)]
     fn equalize_splits_recursive(&self, layout: &mut SplitLayout) {
         match layout {
             SplitLayout::Horizontal { left, right, ratio } => {

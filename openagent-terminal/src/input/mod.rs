@@ -1105,7 +1105,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     }
 
     /// Handle clicks on the tab bar (top or bottom)
-    #[cfg_attr(test, allow(dead_code))]
+    #[allow(dead_code)]
     fn process_tab_bar_click(&mut self) -> bool {
         if !self.ctx.config().workspace.tab_bar.show {
             return false;
@@ -1157,7 +1157,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         use unicode_width::UnicodeWidthStr as _;
         let size_info = self.ctx.size_info();
         let ch = size_info.cell_height();
-        let cw = size_info.cell_width();
+        let _cw = size_info.cell_width();
         let lines = size_info.screen_lines();
         if lines == 0 {
             return false;
@@ -1211,8 +1211,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             {
                                 // Seed AI panel with composer text if any, then propose
                                 self.ctx.open_ai_panel();
+                                let text = self.ctx.display().composer_text.clone();
                                 if let Some(rt) = self.ctx.ai_runtime_mut() {
-                                    let text = self.ctx.display().composer_text.clone();
                                     if !text.is_empty() {
                                         rt.ui.scratch = text;
                                         rt.ui.cursor_position = rt.ui.scratch.len();
@@ -1487,7 +1487,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     },
                 };
                 if line >= lines { line = lines.saturating_sub(1); }
-                if point.line.0 as usize != line { false } else {
+                if point.line.0 as usize == line {
                     // Labels and gear regions
                     use unicode_width::UnicodeWidthStr as _;
                     let cols = size_info.columns();
@@ -1512,7 +1512,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                     }
                     qa_hover
-                }
+                } else { false }
             } else { false }
         };
 
@@ -1775,10 +1775,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // Handle AI panel header controls first (stop, regenerate, close).
             #[cfg(feature = "ai")]
             {
-                if button == MouseButton::Left {
-                    if self.ctx.ai_try_handle_header_click() {
-                        return;
-                    }
+                if button == MouseButton::Left && self.ctx.ai_try_handle_header_click() {
+                    return;
                 }
             }
 

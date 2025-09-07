@@ -69,10 +69,7 @@ fn benchmark_selection_ops(c: &mut Criterion) {
 
     group.bench_function("selection_to_string", |b| {
         b.iter_with_setup(
-            || {
-                let term = Term::new(config.term_options(), &size, MockEventProxy);
-                term
-            },
+            || Term::new(config.term_options(), &size, MockEventProxy),
             |term| {
                 // Benchmark selection conversion to string
                 let _selection = term.selection_to_string();

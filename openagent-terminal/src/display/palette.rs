@@ -85,14 +85,17 @@ impl PaletteState {
         self.active = false;
     }
 
+    #[allow(dead_code)]
     pub fn items(&self) -> &Vec<PaletteItem> {
         &self.items
     }
 
+    #[allow(dead_code)]
     pub fn filter(&self) -> &str {
         &self.filter
     }
 
+    #[allow(dead_code)]
     pub fn set_filter(&mut self, filter: String) {
         self.filter = filter;
         self.refilter();
@@ -181,11 +184,11 @@ impl PaletteState {
         let q = self.filter.to_lowercase();
         // Prefix filters
         let (filter_type, term) = if q.starts_with("w:") || q.starts_with("workflows:") {
-            (Some("workflow"), q.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
+            (Some("workflow"), q.split_once(':').map(|(_, t)| t).unwrap_or("").trim().to_string())
         } else if q.starts_with("a:") || q.starts_with("actions:") {
-            (Some("action"), q.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
+            (Some("action"), q.split_once(':').map(|(_, t)| t).unwrap_or("").trim().to_string())
         } else if q.starts_with("f:") || q.starts_with("files:") {
-            (Some("file"), q.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
+            (Some("file"), q.split_once(':').map(|(_, t)| t).unwrap_or("").trim().to_string())
         } else {
             (None, q)
         };
@@ -465,20 +468,18 @@ impl Display {
 
         // Animation progress (open/close)
         let mut progress: f32 = 1.0;
-        if !theme.ui.reduce_motion {
-            if let Some(start) = self.palette_anim_start {
-                let elapsed = start.elapsed().as_millis() as u32;
-                let dur = self.palette_anim_duration_ms.max(1);
-                let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
-                // ease-out cubic
-                let eased = 1.0 - (1.0 - t).powi(3);
-                progress = if self.palette_anim_opening { eased } else { 1.0 - eased };
-                if t >= 1.0 {
-                    self.palette_anim_start = None;
-                }
-            }
-        } else {
+        if theme.ui.reduce_motion {
             self.palette_anim_start = None;
+        } else if let Some(start) = self.palette_anim_start {
+            let elapsed = start.elapsed().as_millis() as u32;
+            let dur = self.palette_anim_duration_ms.max(1);
+            let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
+            // ease-out cubic
+            let eased = 1.0 - (1.0 - t).powi(3);
+            progress = if self.palette_anim_opening { eased } else { 1.0 - eased };
+            if t >= 1.0 {
+                self.palette_anim_start = None;
+            }
         }
 
         // Geometry: centered panel, ~70% width, ~45% height (min 8 lines, max 16 lines)
@@ -499,8 +500,7 @@ impl Display {
         let panel_h = panel_lines as f32 * size_info.cell_height();
 
         // Apply scale based on progress (simulate scale from 0.98 -> 1.0 on open)
-        let scale =
-            if self.palette_anim_opening { 0.98 + 0.02 * progress } else { 0.98 + 0.02 * progress };
+        let scale = 0.98 + 0.02 * progress;
         let cx = panel_x + panel_w * 0.5;
         let cy = panel_y + panel_h * 0.5;
         let scaled_w = panel_w * scale;
@@ -509,27 +509,14 @@ impl Display {
         let sy = cy - scaled_h * 0.5;
 
         // Backdrop, shadow, and panel background
-        let mut rects = Vec::new();
-        // Fade backdrop with progress
-        rects.push(RenderRect::new(
-            0.0,
-            0.0,
-            size_info.width(),
-            size_info.height(),
-            tokens.overlay,
-            0.22 * progress,
-        ));
-        // Soft shadow
-        rects.push(RenderRect::new(
-            sx + 3.0,
-            sy + 5.0,
-            scaled_w,
-            scaled_h,
-            tokens.surface,
-            0.12 * progress,
-        ));
-        // Panel background
-        rects.push(RenderRect::new(sx, sy, scaled_w, scaled_h, tokens.surface_muted, 0.97));
+        let rects = vec![
+            // Fade backdrop with progress
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.22 * progress),
+            // Soft shadow
+            RenderRect::new(sx + 3.0, sy + 5.0, scaled_w, scaled_h, tokens.surface, 0.12 * progress),
+            // Panel background
+            RenderRect::new(sx, sy, scaled_w, scaled_h, tokens.surface_muted, 0.97),
+        ];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy: SizeInfo = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);
@@ -880,7 +867,7 @@ impl Display {
             // Compute visible title and width under budget
             let mut visible = String::new();
             let mut visible_w = 0usize;
-            for (_i, ch) in title.chars().enumerate() {
+            for ch in title.chars() {
                 let cw = ch.width().unwrap_or(1);
                 if visible_w + cw >= content_max_cols.saturating_sub(2) {
                     break;
@@ -897,12 +884,12 @@ impl Display {
                 let y = (line as f32) * ch;
                 let w = (visible_w as f32) * cw + pad * 2.0;
                 let h = ch;
-                let scale = 1.0 + ui.palette_selection_scale * row_sel_p as f32;
+                let scale = 1.0 + ui.palette_selection_scale * row_sel_p;
                 let cx = x + w * 0.5;
                 let scaled_w = w * scale;
                 let sx = cx - scaled_w * 0.5;
                 let radius = ui.palette_pill_radius_px;
-                let alpha = 0.12 * progress + 0.10 * row_sel_p as f32;
+                let alpha = 0.12 * progress + 0.10 * row_sel_p;
                 let pill = UiRoundedRect::new(sx, y, scaled_w, h, radius, tokens.surface, alpha);
                 self.stage_ui_rounded_rect(pill);
             }
@@ -968,17 +955,17 @@ impl Display {
             let row_mut_base =
                 if idx == selected_visible { muted_fg } else { lerp_rgb(bg, muted_fg, 0.7) };
             let row_fg = if idx == selected_visible {
-                lerp_rgb(row_fg_base, white, 0.10 * row_sel_p as f32)
+                lerp_rgb(row_fg_base, white, 0.10 * row_sel_p)
             } else {
                 row_fg_base
             };
             let row_acc = if idx == selected_visible {
-                lerp_rgb(row_acc_base, white, 0.12 * row_sel_p as f32)
+                lerp_rgb(row_acc_base, white, 0.12 * row_sel_p)
             } else {
                 row_acc_base
             };
             let row_mut = if idx == selected_visible {
-                lerp_rgb(row_mut_base, white, 0.06 * row_sel_p as f32)
+                lerp_rgb(row_mut_base, white, 0.06 * row_sel_p)
             } else {
                 row_mut_base
             };
@@ -1033,7 +1020,7 @@ impl Display {
                         let y = (line as f32) * ch;
                         let w = (chip.width() as f32) * cw + pad * 2.0;
                         let h = ch;
-                        let scale = 1.0 + ui.palette_selection_scale * row_sel_p as f32;
+                        let scale = 1.0 + ui.palette_selection_scale * row_sel_p;
                         let cx = x + w * 0.5;
                         let scaled_w = w * scale;
                         let sx = cx - scaled_w * 0.5;
@@ -1053,7 +1040,7 @@ impl Display {
                             );
                             self.stage_ui_rounded_rect(outer);
                         }
-                        let alpha = 0.18 * progress + 0.10 * row_sel_p as f32;
+                        let alpha = 0.18 * progress + 0.10 * row_sel_p;
                         let pill = UiRoundedRect::new(
                             sx,
                             y,
@@ -1243,7 +1230,7 @@ impl Display {
                         self.stage_ui_rounded_rect(outer);
                     }
                     // Background pill (use surface_muted to differentiate)
-                    let alpha = 0.18 * progress + 0.10 * row_sel_p as f32;
+                    let alpha = 0.18 * progress + 0.10 * row_sel_p;
                     let pill = UiRoundedRect::new(
                         start_px,
                         (line as f32) * ch,

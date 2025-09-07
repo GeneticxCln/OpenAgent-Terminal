@@ -106,10 +106,60 @@ impl WindowContext {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        // If compiled with WGPU and not explicitly forcing GL, initialize WGPU as the primary backend.
+        // If user forces GL, initialize OpenGL backend for maximum compatibility.
+        if force_gl {
+            tracing::info!("OPENAGENT_FORCE_GL set — initializing OpenGL backend…");
+            // Create GL display using winit's raw display handle
+            let gl_display = renderer::platform::create_gl_display(
+                raw_display_handle,
+                None,
+                config.debug.prefer_egl,
+            )?;
+
+            // Pick a GL config compatible with a native window
+            let gl_config = renderer::platform::pick_gl_config(&gl_display, None)
+                .map_err(|e| format!("GL pick config failed: {e}"))
+                .map_err(|e| -> Box<dyn Error> { e.into() })?;
+
+            // Create the winit window, passing X11 visual when applicable
+            #[cfg(windows)]
+            let mut window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
+            #[cfg(windows)]
+            let raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
+
+            #[cfg(not(windows))]
+            let mut window_opt = Some(Window::new(
+                event_loop,
+                &config,
+                &identity,
+                &mut options,
+                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                gl_config.x11_visual(),
+            )?);
+            #[cfg(not(windows))]
+            let raw_window_handle = None;
+
+            // Create the GL context and Display wrapper
+            let gl_context = renderer::platform::create_gl_context(
+                &gl_display,
+                &gl_config,
+                raw_window_handle,
+            )?;
+            let window = window_opt.take().expect("window should be available for GL path");
+            let display = Display::new(window, gl_context, &config, false)?;
+            tracing::info!("Render backend selected: OpenGL");
+            return Self::new(display, config, options, proxy);
+        }
+
+        // WGPU-only path: prefer X11/XWayland like Warp to avoid Wayland/EGL pitfalls.
         #[cfg(feature = "wgpu")]
-        if !force_gl {
-            // Create a window first (no GL visual required for WGPU).
+        {
+            // Prefer X11 backend on Unix if not explicitly set.
+            #[cfg(all(unix, not(target_os = "macos")))]
+            if std::env::var("WINIT_UNIX_BACKEND").is_err() {
+                std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+            }
+
             #[cfg(windows)]
             let window = Window::new(event_loop, &config, &identity, &mut options)?;
             #[cfg(not(windows))]
@@ -122,57 +172,20 @@ impl WindowContext {
                 None,
             )?;
 
-            tracing::info!("Attempting WGPU backend initialization…");
-            match Display::new_wgpu(window, &config, false) {
-                Ok(display) => {
-                    tracing::info!("Render backend selected: WGPU");
-                    return Self::new(display, config, options, proxy);
-                },
-                Err(err) => {
-                    if disable_gl_fallback {
-                        tracing::error!("WGPU initialization failed and GL fallback disabled: {err}");
-                        return Err(err.into());
-                    } else {
-                        tracing::warn!("Attempted WGPU → fallback to OpenGL: {err}");
-                        // Drop window and proceed to GL path below
-                    }
-                },
-            }
+            tracing::info!("Initializing WGPU backend (no fallback)…");
+            let display = Display::new_wgpu(window, &config, false)
+                .map_err(|e| {
+                    tracing::error!("WGPU initialization failed: {e}");
+                    e
+                })?;
+            return Self::new(display, config, options, proxy);
         }
 
-        // OpenGL path (either no WGPU compiled, or explicitly forced).
-        #[cfg(windows)]
-        let mut window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
-        #[cfg(windows)]
-        let raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
-        #[cfg(not(windows))]
-        let raw_window_handle = None;
-
-        let gl_display = renderer::platform::create_gl_display(
-            raw_display_handle,
-            raw_window_handle,
-            config.debug.prefer_egl,
-        )?;
-        let gl_config = renderer::platform::pick_gl_config(&gl_display, raw_window_handle)?;
-
-        #[cfg(not(windows))]
-        let mut window_opt = Some(Window::new(
-            event_loop,
-            &config,
-            &identity,
-            &mut options,
-            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-            gl_config.x11_visual(),
-        )?);
-
-        // Create GL context and display.
-        let gl_context =
-            renderer::platform::create_gl_context(&gl_display, &gl_config, raw_window_handle)?;
-        let window = window_opt.take().expect("window should be available for GL path");
-        let display = Display::new(window, gl_context, &config, false)?;
-
-        tracing::info!("Render backend selected: OpenGL");
-        Self::new(display, config, options, proxy)
+        // If the build does not include the `wgpu` feature, error clearly.
+        #[cfg(not(feature = "wgpu"))]
+        {
+            return Err("This build is WGPU-only. Rebuild with --features=wgpu".into());
+        }
     }
 
     /// Create additional context with the graphics platform other windows are using.

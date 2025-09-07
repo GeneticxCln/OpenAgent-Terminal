@@ -29,6 +29,9 @@ pub mod host;
 pub mod permissions;
 pub mod runtime;
 
+/// Alias to simplify complex wasmtime typed function signatures in the public API
+pub type ExecCommandExFn = wasmtime::TypedFunc<(i32, i32, i32, i32, i32, i32, i32), i32>;
+
 /// Plugin system error types
 #[derive(Debug, Error)]
 pub enum PluginSystemError {
@@ -136,7 +139,7 @@ pub struct PluginAbi {
     /// Command execution
     pub execute_command: Option<wasmtime::TypedFunc<(i32, i32, i32), i32>>, /* cmd_ptr, cmd_len,
                                                                              * result_ptr */
-    pub execute_command_ex: Option<wasmtime::TypedFunc<(i32, i32, i32, i32, i32, i32, i32), i32>>,
+    pub execute_command_ex: Option<ExecCommandExFn>,
 
     /// Event handling
     pub handle_event: Option<wasmtime::TypedFunc<(i32, i32), i32>>,
@@ -286,12 +289,14 @@ pub struct UnifiedPluginManager {
     plugins: Arc<RwLock<HashMap<String, Arc<LoadedPlugin>>>>,
 
     /// Plugin directory
+    #[allow(dead_code)]
     plugin_dir: PathBuf,
 
     /// Host interface
     host_interface: Option<Arc<dyn host::HostInterface>>,
 
     /// Security policies
+    #[allow(dead_code)]
     security_policies: HashMap<String, SecurityPolicy>,
 
     /// Runtime configuration
@@ -368,7 +373,7 @@ impl UnifiedPluginManager {
     async fn load_wasm_plugin(
         &self,
         path: &Path,
-        plugin_name: &str,
+        _plugin_name: &str,
     ) -> Result<LoadedPlugin, PluginSystemError> {
         let module = wasmtime::Module::from_file(&self.wasm_engine, path)
             .map_err(|e| PluginSystemError::InvalidFormat(e.to_string()))?;
@@ -437,8 +442,8 @@ impl UnifiedPluginManager {
     #[cfg(feature = "host-integration")]
     async fn load_native_plugin(
         &self,
-        path: &Path,
-        plugin_name: &str,
+        _path: &Path,
+        _plugin_name: &str,
     ) -> Result<LoadedPlugin, PluginSystemError> {
         // This would load native plugins using libloading
         // For now, return an error as it's not implemented
@@ -559,10 +564,10 @@ impl UnifiedPluginManager {
         &self,
         plugin_id: &str,
         command: &str,
-        args: &[String],
+        _args: &[String],
         wasm_data: &WasmPluginData,
     ) -> Result<CommandOutput, PluginSystemError> {
-        let mut store = wasm_data.store.lock().await;
+        let _store = wasm_data.store.lock().await;
 
         // This would implement the actual command execution
         // using the standardized ABI
@@ -579,10 +584,10 @@ impl UnifiedPluginManager {
     #[cfg(feature = "host-integration")]
     async fn execute_host_command(
         &self,
-        plugin_id: &str,
-        command: &str,
-        args: &[String],
-        host_data: &HostPluginData,
+        _plugin_id: &str,
+        _command: &str,
+        _args: &[String],
+        _host_data: &HostPluginData,
     ) -> Result<CommandOutput, PluginSystemError> {
         // This would implement native plugin command execution
         Err(PluginSystemError::Runtime("Native plugin execution not implemented".to_string()))

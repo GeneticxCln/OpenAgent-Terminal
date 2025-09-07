@@ -232,6 +232,7 @@ impl tracing::field::Visit for MessageVisitor {
 }
 
 /// Logging targets that are allowed
+#[allow(dead_code)]
 const ALLOWED_TARGETS: &[&str] = &[
     "ipc_config",
     "config",
@@ -245,6 +246,7 @@ const ALLOWED_TARGETS: &[&str] = &[
 ];
 
 /// Check if a target should be logged (for filtering)
+#[allow(dead_code)]
 pub fn is_allowed_target(target: &str) -> bool {
     ALLOWED_TARGETS.iter().any(|allowed| target.starts_with(allowed))
 }

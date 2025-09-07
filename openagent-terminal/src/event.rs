@@ -1,3 +1,4 @@
+#![allow(clippy::items_after_test_module)]
 //! Process window events.
 
 use crate::ConfigMonitor;
@@ -274,9 +275,8 @@ impl Processor {
         event_loop: &ActiveEventLoop,
         options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
-        // Determine backend for additional windows: use WGPU when available and primary backend
-        // (no automatic fallback to GL). If GL was used for the first window, reuse its config.
-        let use_wgpu_additional = cfg!(feature = "wgpu") && self.gl_config.is_none();
+        // WGPU-only: always use WGPU for additional windows; no GL fallback.
+        let use_wgpu_additional = cfg!(feature = "wgpu");
 
         // Override config with CLI/IPC options.
         let mut config_overrides = options.config_overrides();
@@ -288,43 +288,17 @@ impl Processor {
         let window_context = {
             #[cfg(feature = "wgpu")]
             {
-                if use_wgpu_additional {
-                    WindowContext::additional_wgpu(
-                        event_loop,
-                        self.proxy.clone(),
-                        config,
-                        options,
-                        config_overrides,
-                    )?
-                } else {
-                    let gl_config = self
-                        .gl_config
-                        .as_ref()
-                        .expect("GL config should exist for GL backend");
-                    WindowContext::additional(
-                        gl_config,
-                        event_loop,
-                        self.proxy.clone(),
-                        config,
-                        options,
-                        config_overrides,
-                    )?
-                }
-            }
-            #[cfg(not(feature = "wgpu"))]
-            {
-                let gl_config = self
-                    .gl_config
-                    .as_ref()
-                    .expect("GL config should exist for GL backend");
-                WindowContext::additional(
-                    gl_config,
+                WindowContext::additional_wgpu(
                     event_loop,
                     self.proxy.clone(),
                     config,
                     options,
                     config_overrides,
                 )?
+            }
+            #[cfg(not(feature = "wgpu"))]
+            {
+                return Err("This build is WGPU-only. Rebuild with --features=wgpu".into());
             }
         };
 
@@ -876,7 +850,7 @@ impl ApplicationHandler<Event> for Processor {
                 let risk = lens.analyze_command(&command);
 
                 if lens.should_block(&risk) {
-                    let msg = self.config.theme.resolve().tokens.warning; // color not directly used here
+                    let _msg = self.config.theme.resolve().tokens.warning; // color not directly used here
                     let message = crate::message_bar::Message::new(
                         format!(
                             "Blocked risky command ({}). {}",
@@ -1000,18 +974,15 @@ impl ApplicationHandler<Event> for Processor {
 
             (payload, None) => {
                 // For broadcast events that modify UI state (like ConfirmResolved), handle here
-                match &payload {
-                    EventType::ConfirmResolved { id, .. } => {
-                        for window_context in self.windows.values_mut() {
-                            window_context.display.confirm_overlay.close_if(id);
-                            window_context.dirty = true;
-                            if window_context.display.window.has_frame {
-                                window_context.display.window.request_redraw();
-                            }
+                if let EventType::ConfirmResolved { id, .. } = &payload {
+                    for window_context in self.windows.values_mut() {
+                        window_context.display.confirm_overlay.close_if(id);
+                        window_context.dirty = true;
+                        if window_context.display.window.has_frame {
+                            window_context.display.window.request_redraw();
                         }
-                        return;
-                    },
-                    _ => {},
+                    }
+                    return;
                 }
                 let event = WinitEvent::UserEvent(Event::new(payload, None));
                 for window_context in self.windows.values_mut() {
@@ -2427,7 +2398,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         // Start close animation before hiding
         self.display.palette.close();
         // Persist MRU on confirm
-        self.display.palette.save_mru_to_config(&self.config);
+self.display.palette.save_mru_to_config(self.config);
         self.display.palette_anim_opening = false;
         self.display.palette_anim_start = Some(std::time::Instant::now());
         let theme = self
@@ -2465,7 +2436,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.paste(&cmd, true);
             // Close + persist MRU
             self.display.palette.close();
-            self.display.palette.save_mru_to_config(&self.config);
+self.display.palette.save_mru_to_config(self.config);
             self.display.palette_anim_opening = false;
             self.display.palette_anim_start = Some(std::time::Instant::now());
             let theme = self
@@ -2488,7 +2459,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     // If locale contains Windows paths this is still harmless on Linux
     fn palette_cancel(&mut self) {
         // Persist MRU on cancel as well
-        self.display.palette.save_mru_to_config(&self.config);
+self.display.palette.save_mru_to_config(self.config);
         self.display.palette.close();
         // Trigger closing animation
         self.display.palette_anim_opening = false;
@@ -2507,7 +2478,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[cfg(feature = "blocks")]
     fn open_blocks_search_panel(&mut self) {
         if self.palette_active() {
-            self.display.palette.save_mru_to_config(&self.config);
+self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         self.display.blocks_search.open();
@@ -2890,7 +2861,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[cfg(feature = "workflow")]
     fn open_workflows_panel(&mut self) {
         if self.palette_active() {
-            self.display.palette.save_mru_to_config(&self.config);
+self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         self.display.workflows_panel.open();
@@ -2967,11 +2938,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn open_settings_panel(&mut self) {
         // Close palette if open
         if self.palette_active() {
-            self.display.palette.save_mru_to_config(&self.config);
+self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         // Open with current config to preload values
-        let cfg_ref: &UiConfig = &self.config;
+let cfg_ref: &UiConfig = self.config;
         self.display.settings_panel.open(cfg_ref);
         self.mark_dirty();
     }
@@ -3010,7 +2981,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
     fn settings_panel_test_connection(&mut self) {
-        let cfg_ref: &UiConfig = &self.config;
+let cfg_ref: &UiConfig = self.config;
         self.display.settings_panel.test_connection(cfg_ref);
         self.mark_dirty();
     }
@@ -3022,7 +2993,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn settings_panel_cancel_capture(&mut self) { self.display.settings_panel.cancel_kb_capture(); self.mark_dirty(); }
     fn settings_panel_is_capturing(&self) -> bool { self.display.settings_panel.is_kb_capturing() }
     fn settings_panel_capture(&mut self, key: winit::keyboard::Key<String>, mods: winit::keyboard::ModifiersState) {
-        let res = self.display.settings_panel.capture_kb_binding(&self.config, key, mods);
+let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods);
         if res.is_ok() {
             // Reload config to apply keybinding
             let path = crate::config::installed_config("toml").unwrap_or_else(|| {
@@ -3129,7 +3100,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
-        self.ai_runtime.as_ref().map(|r| &**r)
+self.ai_runtime.as_deref()
     }
 
     #[inline]
@@ -4001,7 +3972,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     ) -> Option<crate::display::tab_bar::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
         self.display.handle_tab_bar_click(
-            &self.config,
+            self.config,
             &self.workspace.tabs,
             position,
             mouse_x,
@@ -4017,7 +3988,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     ) -> bool {
         let position = self.config.workspace.tab_bar.position;
         if let Some(action) = self.display.handle_tab_bar_mouse_press(
-            &self.config,
+            self.config,
             &self.workspace.tabs,
             position,
             mouse_x,
@@ -4198,7 +4169,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 }
             }
             // If first segment is empty (starts with whitespace), accept that whitespace first
-            if s.chars().next().map_or(false, |c| c.is_whitespace()) {
+            if s.chars().next().is_some_and(|c| c.is_whitespace()) {
                 let mut j = 0usize;
                 for (i, ch) in s.char_indices() {
                     j = i + ch.len_utf8();
@@ -4341,7 +4312,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             };
 
             // Compute geometry; None means fully hidden
-            let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
+let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
                 Some(g) => g,
                 None => return false,
             };
@@ -4423,7 +4394,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 },
             };
 
-            let geom = match self.display.ai_panel_geometry(&self.config, &runtime.ui) {
+let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
                 Some(g) => g,
                 None => {
                     if self.display.ai_hover_control.take().is_some() {

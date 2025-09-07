@@ -1,4 +1,5 @@
 // Confirmation Overlay UI: state and rendering
+#![allow(clippy::items_after_test_module)]
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -172,7 +173,7 @@ impl Display {
 
         // Draw title
         let mut line = y_line + 1;
-        let title = format!("{}", state.title);
+        let title = state.title.to_string();
         self.draw_ai_text(
             Point::new(line, Column(x_col + 2)),
             tokens.text,
@@ -233,6 +234,7 @@ impl Display {
 
     /// Draw the Security Lens confirmation overlay with detailed risk analysis
     #[cfg(feature = "preview_ui")]
+    #[allow(dead_code)]
     pub fn draw_security_confirm_overlay(
         &mut self,
         config: &UiConfig,
@@ -285,7 +287,7 @@ impl Display {
             Point::new(line, Column(x_col + 2)),
             tokens.warning,
             tokens.surface,
-            &title,
+            title,
             max_width,
         );
         line += 2;
@@ -323,13 +325,14 @@ impl Display {
             Point::new(footer_line, Column(x_col + 2)),
             tokens.text_muted,
             tokens.surface,
-            &footer,
+            footer,
             max_width,
         );
     }
 
     /// Draw detailed risk analysis information
     #[cfg(feature = "preview_ui")]
+    #[allow(dead_code)]
     fn draw_risk_analysis(
         &mut self,
         _config: &UiConfig,

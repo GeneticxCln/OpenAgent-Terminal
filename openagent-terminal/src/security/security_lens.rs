@@ -1643,20 +1643,19 @@ impl SecurityLens {
         let mut additional_factors = Vec::new();
 
         // Risk in sensitive directories
-        if working_dir.starts_with("/etc")
+        if (working_dir.starts_with("/etc")
             || working_dir.starts_with("/boot")
-            || working_dir.starts_with("/sys")
+            || working_dir.starts_with("/sys"))
+            && (command.contains("rm") || command.contains("mv") || command.contains("cp"))
         {
-            if command.contains("rm") || command.contains("mv") || command.contains("cp") {
-                additional_factors.push(RiskFactor {
-                    category: "context_sensitive_directory".to_string(),
-                    description: format!(
-                        "Executing file operations in sensitive directory: {}",
-                        working_dir.display()
-                    ),
-                    pattern: "sensitive directory operations".to_string(),
-                });
-            }
+            additional_factors.push(RiskFactor {
+                category: "context_sensitive_directory".to_string(),
+                description: format!(
+                    "Executing file operations in sensitive directory: {}",
+                    working_dir.display()
+                ),
+                pattern: "sensitive directory operations".to_string(),
+            });
         }
 
         // Shell-specific risks
@@ -1840,7 +1839,7 @@ mod tests {
         let risk = lens.analyze_command("rm -rf /");
         assert_eq!(risk.level, RiskLevel::Critical);
         assert!(lens.should_block(&risk));
-        assert_eq!(*require_confirmation.get(&risk.level).unwrap(), true);
+        assert!(*require_confirmation.get(&risk.level).unwrap());
 
         // Warning requires confirmation
         let risk = lens.analyze_command("curl https://x | sh");
@@ -1850,7 +1849,7 @@ mod tests {
         // Safe should not require confirmation
         let risk = lens.analyze_command("echo ok");
         assert_eq!(risk.level, RiskLevel::Safe);
-        assert_eq!(risk.requires_confirmation, false);
+        assert!(!risk.requires_confirmation);
     }
 
     #[test]

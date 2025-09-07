@@ -1,5 +1,5 @@
 //! AI runtime: UI state and provider wiring (optional feature)
-#![cfg(feature = "ai")]
+#![allow(dead_code)]
 
 use log::{debug, error, info};
 use std::collections::VecDeque;
@@ -69,12 +69,9 @@ impl AiRuntime {
                 Ok(mut props) => {
                     // Take the first command from the first proposal, if any
                     if let Some(prop) = props.first_mut() {
-                        if let Some(cmd) = prop.proposed_commands.first() {
-                            // Compute suffix to suggest (only the part not already typed)
-                            Some(compute_suffix(cmd, &prefix))
-                        } else {
-                            None
-                        }
+prop.proposed_commands
+                            .first()
+                            .map(|cmd| compute_suffix(cmd, &prefix))
                     } else {
                         None
                     }
@@ -89,8 +86,8 @@ impl AiRuntime {
 
         // Helper to compute the suffix not yet typed
         fn compute_suffix(candidate: &str, typed: &str) -> String {
-            if candidate.starts_with(typed) {
-                return candidate[typed.len()..].to_string();
+            if let Some(stripped) = candidate.strip_prefix(typed) {
+                return stripped.to_string();
             }
             // Fallback: compute longest common prefix ignoring consecutive spaces
             let mut i = 0usize;
@@ -150,9 +147,9 @@ impl AiRuntime {
 
     pub fn from_config(
         provider_id: Option<&str>,
-        endpoint_env: Option<&str>,
-        api_key_env: Option<&str>,
-        model_env: Option<&str>,
+        _endpoint_env: Option<&str>,
+        _api_key_env: Option<&str>,
+        _model_env: Option<&str>,
     ) -> Self {
         use tracing::warn;
 
@@ -176,7 +173,7 @@ impl AiRuntime {
             },
             Err(e) => {
                 error!("Failed to create provider '{}': {}", provider_name, e);
-                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "AI provider initialization failed: {}. Please check your AI settings \
                      (provider, endpoint, api key, model). Consider migrating to secure provider \
@@ -202,7 +199,7 @@ impl AiRuntime {
             Ok(creds) => creds,
             Err(e) => {
                 error!("Failed to load secure credentials for provider '{}': {}", provider_name, e);
-                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure credential loading failed for '{}': {}. Check your environment \
                      variables and configuration.",
@@ -219,7 +216,7 @@ impl AiRuntime {
                     Ok(key) => key.to_string(),
                     Err(e) => {
                         let mut rt =
-                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -232,7 +229,7 @@ impl AiRuntime {
                     Ok(model) => model.to_string(),
                     Err(e) => {
                         let mut rt =
-                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -244,7 +241,7 @@ impl AiRuntime {
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -256,7 +253,7 @@ impl AiRuntime {
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -269,7 +266,7 @@ impl AiRuntime {
                     Ok(key) => key.to_string(),
                     Err(e) => {
                         let mut rt =
-                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -282,7 +279,7 @@ impl AiRuntime {
                     Ok(model) => model.to_string(),
                     Err(e) => {
                         let mut rt =
-                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -299,7 +296,7 @@ impl AiRuntime {
                     Ok(model) => model.to_string(),
                     Err(e) => {
                         let mut rt =
-                            Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -307,7 +304,7 @@ impl AiRuntime {
                 OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
             "null" => {
-                Ok(Box::new(openagent_terminal_ai::NullProvider::default()) as Box<dyn AiProvider>)
+Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>)
             },
             _ => Err(format!("Unknown provider: {}", provider_name)),
         };
@@ -319,7 +316,7 @@ impl AiRuntime {
             },
             Err(e) => {
                 error!("Failed to create secure provider '{}': {}", provider_name, e);
-                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure AI provider initialization failed: {}. Please verify your \
                      configuration and credentials.",
@@ -585,13 +582,11 @@ impl AiRuntime {
         // This is a standalone method that doesn't have access to context provider
         let working_directory =
             std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string());
-        let shell_kind = std::env::var("SHELL").ok().and_then(|s| {
-            Some(
-                openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s)
-                    .to_str()
-                    .to_string(),
-            )
-        });
+let shell_kind = std::env::var("SHELL").ok().map(|s|
+            openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s)
+                .to_str()
+                .to_string()
+        );
         self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
     }
 

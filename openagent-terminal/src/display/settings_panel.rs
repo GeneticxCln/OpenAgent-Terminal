@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::UiConfig;
-use crate::display::{Display, SizeInfo};
+use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
@@ -81,28 +81,24 @@ pub struct KbItem {
     pub binding: String,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum GeneralField {
+    #[default]
     LiveReload,
     WorkingDirectory,
     DefaultShell,
 }
 
-impl Default for GeneralField {
-    fn default() -> Self { GeneralField::LiveReload }
-}
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Field {
+    #[default]
     Provider,
     ApiKey,
     Model,
     Endpoint,
 }
 
-impl Default for Field {
-    fn default() -> Self { Field::Provider }
-}
 
 impl Default for SettingsPanelState {
     fn default() -> Self {
@@ -201,7 +197,7 @@ impl SettingsPanelState {
     }
 
     pub fn cycle_provider(&mut self, forward: bool) {
-        let mut options = vec!["openrouter", "openai", "anthropic", "ollama"];
+        let options = ["openrouter", "openai", "anthropic", "ollama"];
         if let Some(idx) = options.iter().position(|p| *p == self.provider) {
             let next = if forward {
                 (idx + 1) % options.len()
@@ -735,7 +731,7 @@ impl Display {
 
         // Footer / message
         if let Some(msg) = &st.message {
-            let m = format!("{}", msg);
+let m = msg.to_string();
             self.draw_ai_text(Point::new(line, Column(2)), tokens.success, bg, &m, num_cols - 2);
         } else {
             let hint = "Enter: Save  •  Esc: Close  •  Tab/Shift+Tab: Next/Prev field  •  Ctrl+Left/Right: Switch category  •  Left/Right: Cycle provider  •  T: Test Connection";
@@ -819,21 +815,20 @@ impl Display {
                 line += 1;
 
                 // List entries (filtered)
-                let mut shown = 0usize;
                 let max_rows = (size_info.screen_lines() - (line + 2)).max(3);
                 let filtered: Vec<&KbItem> = st
                     .kb_items
                     .iter()
                     .filter(|it| it.action.contains(&st.kb_filter) || it.binding.contains(&st.kb_filter))
                     .collect();
-                for (i, it) in filtered.iter().enumerate() {
+                for (shown, (i, it)) in filtered.iter().enumerate().enumerate() {
                     if shown >= max_rows { break; }
                     let sel = i == st.kb_selected;
                     let prefix = if sel { "> " } else { "  " };
                     let row = format!("{}{:30} — {}", prefix, it.action, it.binding);
                     let color = if sel { tokens.accent } else { fg };
                     self.draw_ai_text(Point::new(line, Column(2)), color, bg, &row, num_cols - 2);
-                    line += 1; shown += 1;
+                    line += 1;
                 }
                 line += 1;
 
@@ -872,7 +867,7 @@ fn mods_string_for_display(mods: ModifiersState) -> String {
 fn key_string_for_display(trigger: &BindingKey) -> String {
     match trigger {
         BindingKey::Keycode { key, .. } => match key {
-            winit::keyboard::Key::Character(s) => format!("{}", s),
+            winit::keyboard::Key::Character(s) => s.to_string(),
             winit::keyboard::Key::Named(named) => format!("{:?}", named),
             _ => "Key".into(),
         },
@@ -893,8 +888,7 @@ fn key_string_for_config_from_binding(trigger: &BindingKey) -> String {
     match trigger {
         BindingKey::Keycode { key, .. } => match key {
             winit::keyboard::Key::Character(s) => {
-                let ss = format!("{}", s);
-                if ss.chars().count() == 1 { ss } else { ss }
+                s.to_string()
             },
             winit::keyboard::Key::Named(named) => match named {
                 winit::keyboard::NamedKey::Enter => "Enter".into(),
@@ -916,7 +910,7 @@ fn key_string_for_config_from_binding(trigger: &BindingKey) -> String {
 fn key_string_for_config_from_key(key: &winit::keyboard::Key<String>) -> String {
     match key {
         winit::keyboard::Key::Character(s) => {
-            if s.chars().count() == 1 { s.clone() } else { s.clone() }
+            s.clone()
         },
         winit::keyboard::Key::Named(named) => match named {
             winit::keyboard::NamedKey::Enter => "Enter".into(),

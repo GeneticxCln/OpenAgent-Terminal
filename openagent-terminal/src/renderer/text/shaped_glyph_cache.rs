@@ -84,7 +84,7 @@ impl ShapedGlyphCache {
     pub fn get_shaped_glyph<L>(
         &mut self,
         shaped_glyph: &ShapedCellGlyph,
-        loader: &mut L,
+        _loader: &mut L,
     ) -> Result<Glyph>
     where
         L: LoadGlyph + ?Sized,
@@ -285,13 +285,12 @@ impl ShapedGlyphCache {
     fn perform_bidi_analysis(&self, _text: &str) -> Vec<BidiRun> {
         #[cfg(feature = "harfbuzz")]
         {
-            use unicode_bidi::{BidiInfo, Level};
+            use unicode_bidi::BidiInfo;
 
             let bidi_info = BidiInfo::new(_text, None);
             let mut runs = Vec::new();
 
             // Get the paragraph embedding level
-            let para_level = bidi_info.paragraphs[0].level;
 
             // Convert BiDi levels to our BidiRun structure
             let para_range = 0.._text.len();

@@ -134,6 +134,12 @@ pub struct DatabaseIntegration {
     query_history: Arc<Mutex<Vec<QueryResult>>>,
 }
 
+impl Default for DatabaseIntegration {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 enum DatabasePool {
     PostgreSQL(sqlx::PgPool),
     MySQL(sqlx::MySqlPool),
@@ -335,7 +341,7 @@ impl DatabaseIntegration {
             id: query_id,
             query: query.to_string(),
             connection_name,
-            execution_time: Duration::from_millis(0),
+            execution_time: Duration::ZERO,
             rows_affected: None,
             columns: Vec::new(),
             rows: Vec::new(),
@@ -766,15 +772,7 @@ impl DatabaseIntegration {
 
             let is_primary_key = row
                 .get("is_primary_key")
-                .and_then(|v| {
-                    if let Some(b) = v.as_bool() {
-                        Some(b)
-                    } else if let Some(n) = v.as_i64() {
-                        Some(n != 0)
-                    } else {
-                        None
-                    }
-                })
+                .and_then(|v| v.as_bool().or_else(|| v.as_i64().map(|n| n != 0)))
                 .unwrap_or(false);
 
             let column = ColumnInfo {
@@ -858,7 +856,7 @@ impl DatabaseIntegration {
         let mut discovered = Vec::new();
 
         // Check for common local database setups
-        if let Ok(_) = std::process::Command::new("pg_isready").output() {
+        if std::process::Command::new("pg_isready").output().is_ok() {
             discovered.push(DatabaseConnection {
                 id: Uuid::new_v4(),
                 name: "Local PostgreSQL".to_string(),
@@ -876,7 +874,7 @@ impl DatabaseIntegration {
         }
 
         // Check for MySQL/MariaDB
-        if let Ok(_) = std::process::Command::new("mysql").arg("--version").output() {
+        if std::process::Command::new("mysql").arg("--version").output().is_ok() {
             discovered.push(DatabaseConnection {
                 id: Uuid::new_v4(),
                 name: "Local MySQL".to_string(),
@@ -966,7 +964,7 @@ impl DatabaseIntegration {
                                     serde_json::Value::Number(n) => n.to_string(),
                                     serde_json::Value::Bool(b) => b.to_string(),
                                     serde_json::Value::Null => "".to_string(),
-                                    _ => format!("\"{}\"", v.to_string()),
+                                    _ => format!("\"{}\"", v),
                                 })
                                 .unwrap_or_else(|| "".to_string())
                         })
@@ -1029,7 +1027,7 @@ mod tests {
     #[tokio::test]
     async fn test_database_integration_creation() {
         let _db_integration = DatabaseIntegration::new();
-        assert!(true); // Basic creation should work
+        // Creation should not panic
     }
 
     #[test]

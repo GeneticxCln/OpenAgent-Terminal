@@ -158,6 +158,12 @@ pub struct ApiTester {
     test_suites: tokio::sync::Mutex<HashMap<Uuid, TestSuite>>,
 }
 
+impl Default for ApiTester {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApiTester {
     pub fn new() -> Self {
         let client = Client::builder()
@@ -524,7 +530,7 @@ impl ApiTester {
                         message: if passed {
                             "Response body matches expected value".to_string()
                         } else {
-                            format!("Response body does not match expected value")
+                            "Response body does not match expected value".to_string()
                         },
                     }
                 },
@@ -717,11 +723,7 @@ impl ApiTester {
             let mode = body_data["mode"].as_str().unwrap_or("raw");
             match mode {
                 "raw" => {
-                    if let Some(raw_body) = body_data["raw"].as_str() {
-                        Some(RequestBody::Text(raw_body.to_string()))
-                    } else {
-                        None
-                    }
+                    body_data["raw"].as_str().map(|raw_body| RequestBody::Text(raw_body.to_string()))
                 },
                 "formdata" => {
                     let mut form_data = HashMap::new();
@@ -851,7 +853,7 @@ impl ApiTester {
     }
 
     pub async fn generate_curl_command(&self, request: &ApiRequest) -> Result<String> {
-        let mut command = format!("curl -X {} '{}'", format!("{:?}", request.method), request.url);
+        let mut command = format!("curl -X {:?} '{}'", request.method, request.url);
 
         // Add headers
         for (key, value) in &request.headers {
@@ -964,7 +966,7 @@ mod tests {
     #[tokio::test]
     async fn test_api_tester_creation() {
         let _api_tester = ApiTester::new();
-        assert!(true); // Basic creation should work
+        // Creation should not panic
     }
 
     #[test]
