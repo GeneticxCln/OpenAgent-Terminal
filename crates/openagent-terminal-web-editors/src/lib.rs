@@ -37,13 +37,10 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
             // Expect JSON messages like {"type":"save","content":"..."}
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(req.body()) {
                 if let Some(t) = v.get("type").and_then(|x| x.as_str()) {
-                    match t {
-                        "save" => {
-                            if let Some(content) = v.get("content").and_then(|x| x.as_str()) {
-                                let _ = fs::write(&file_path, content);
-                            }
-                        },
-                        _ => {},
+                    if t == "save" {
+                        if let Some(content) = v.get("content").and_then(|x| x.as_str()) {
+                            let _ = fs::write(&file_path, content);
+                        }
                     }
                 }
             }
@@ -56,11 +53,8 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
     use tao::event_loop::ControlFlow;
     event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
-        match event {
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                *control_flow = ControlFlow::Exit;
-            },
-            _ => {},
+        if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
+            *control_flow = ControlFlow::Exit;
         }
     });
     Ok(())

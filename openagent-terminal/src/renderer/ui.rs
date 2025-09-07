@@ -167,6 +167,7 @@ pub struct UiSprite {
 }
 
 impl UiSprite {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         x: f32,
         y: f32,
@@ -176,7 +177,7 @@ impl UiSprite {
         uv_y: f32,
         uv_w: f32,
         uv_h: f32,
-        tint: Rgb,
+        tint: crate::display::color::Rgb,
         alpha: f32,
         filter_nearest: Option<bool>,
     ) -> Self {
@@ -448,10 +449,10 @@ impl UiSpriteGlRenderer {
                     // Diagonals
                     for t in 0..3 {
                         let a = t as usize;
-                        if 2 + a < tile && 2 + a < tile { put(i, 2 + a, 2 + a, [255,255,255,255]); }
+                        if 2 + a < tile { put(i, 2 + a, 2 + a, [255,255,255,255]); }
                         if 12 >= a && 2 + a < tile { put(i, 12 - a, 2 + a, [255,255,255,255]); }
                         if 2 + a < tile && 12 >= a { put(i, 2 + a, 12 - a, [255,255,255,255]); }
-                        if 12 >= a && 12 >= a { put(i, 12 - a, 12 - a, [255,255,255,255]); }
+                        if 12 >= a { put(i, 12 - a, 12 - a, [255,255,255,255]); }
                     }
                 },
                 _ => {},

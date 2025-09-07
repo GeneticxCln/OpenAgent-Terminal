@@ -16,21 +16,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn openai_streaming_success() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn openai_streaming_success() {
+let server = MockServer::start().await;
         let body = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"echo \"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"ls\"}}]}\n\n",
             "data: [DONE]\n\n"
         );
-        let _m = server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(200).header("content-type", "text/event-stream").body(body);
-        });
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
@@ -43,9 +46,9 @@ mod tests {
         assert!(collected.contains("ls"));
     }
 
-    #[test]
-    fn anthropic_streaming_success() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn anthropic_streaming_success() {
+let server = MockServer::start().await;
         let body = concat!(
             "event: content_block_delta\n",
             "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"echo \"}}\n\n",
@@ -53,14 +56,17 @@ mod tests {
             "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ls\"}}\n\n",
             "data: [DONE]\n\n"
         );
-        let _m = server.mock(|when, then| {
-            when.method(POST).path("/messages");
-            then.status(200).header("content-type", "text/event-stream").body(body);
-        });
+Mock::given(method("POST")).and(path("/messages")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
 
-        let provider = AnthropicProvider::new(
+let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3".to_string(),
         )
         .unwrap();
@@ -75,19 +81,20 @@ mod tests {
         assert!(collected.contains("ls"));
     }
 
-    #[test]
-    fn openai_streaming_abort_no_done() {
-        let server = MockServer::start();
-        let body = concat!(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\" }]}]}\n\n" // No [DONE]
-        );
-        let _m = server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(200).header("content-type", "text/event-stream").body(body);
-        });
+#[tokio::test]
+async fn openai_streaming_abort_no_done() {
+let server = MockServer::start().await;
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\" }]}]}\n\n"; // No [DONE]
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);

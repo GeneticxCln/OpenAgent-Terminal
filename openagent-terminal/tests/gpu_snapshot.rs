@@ -113,7 +113,7 @@ impl SnapshotTest {
             let mut diff_color = Rgba([0, 0, 0, 255]);
 
             for i in 0..4 {
-                let diff = (golden_pixel[i] as i32 - snapshot_pixel[i] as i32).abs() as u8;
+                let diff = (golden_pixel[i] as i32 - snapshot_pixel[i] as i32).unsigned_abs() as u8;
                 pixel_diff += diff as u32;
                 max_difference = max_difference.max(diff);
 

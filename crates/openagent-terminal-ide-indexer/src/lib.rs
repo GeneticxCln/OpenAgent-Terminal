@@ -1,7 +1,7 @@
 //! Project indexer and file tree structures
 
 use anyhow::{anyhow, Result};
-use ignore::{DirEntry, WalkBuilder};
+use ignore::WalkBuilder;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectFile {
@@ -69,16 +68,14 @@ impl ProjectIndex {
         }
         let walker = builder.build();
 
-        for result in walker {
-            if let Ok(entry) = result {
-                if entry.depth() == 0 {
-                    continue;
-                }
-                let path = entry.path().to_path_buf();
-                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                files.push(ProjectFile { path: path.clone(), is_dir });
-                insert_into_tree(&mut root_node, &root, &path, is_dir)?;
+        for entry in walker.flatten() {
+            if entry.depth() == 0 {
+                continue;
             }
+            let path = entry.path().to_path_buf();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            files.push(ProjectFile { path: path.clone(), is_dir });
+            insert_into_tree(&mut root_node, &root, &path, is_dir)?;
         }
 
         Ok(Self {

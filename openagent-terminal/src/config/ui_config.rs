@@ -204,17 +204,12 @@ impl Default for PluginsPaths {
     }
 }
 
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Default)]
 pub struct PluginsPathPolicy {
     #[serde(default)]
     pub require_signatures: bool,
 }
 
-impl Default for PluginsPathPolicy {
-    fn default() -> Self {
-        Self { require_signatures: false }
-    }
-}
 
 impl Default for PluginsConfig {
     fn default() -> Self {

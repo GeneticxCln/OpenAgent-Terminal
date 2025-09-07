@@ -301,7 +301,7 @@ impl EnhancedWorkflowExecutor {
     /// Run commands for a step with output limits
     async fn run_step_commands(
         step: &WorkflowStep,
-        context: &ExecutionContext,
+        _context: &ExecutionContext,
         limits: &OutputLimits,
     ) -> Result<(usize, usize), StepError> {
         let mut total_stdout = 0;

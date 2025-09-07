@@ -10,12 +10,13 @@ use openagent_terminal_ide_editor::EditorBuffer;
 use std::path::PathBuf;
 
 use crate::config::UiConfig;
-use crate::display::{Display, SizeInfo};
+use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 use std::path::Path;
 
+#[derive(Default)]
 pub struct EditorOverlayState {
     pub active: bool,
     pub file_path: Option<PathBuf>,
@@ -263,48 +264,6 @@ impl Clone for EditorOverlayState {
     }
 }
 
-impl Default for EditorOverlayState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            file_path: None,
-            #[cfg(feature = "editor")]
-            buffer: None,
-            scroll_line: 0,
-            #[cfg(feature = "lsp")]
-            lsp: None,
-            #[cfg(feature = "lsp")]
-            lsp_uri: None,
-            #[cfg(feature = "lsp")]
-            language_id: None,
-            completion_active: false,
-            completion_items: Vec::new(),
-            completion_selected: 0,
-            #[cfg(feature = "lsp")]
-            completion_items_full: Vec::new(),
-            #[cfg(feature = "lsp")]
-            diagnostics: Vec::new(),
-            #[cfg(feature = "lsp")]
-            references_active: false,
-            #[cfg(feature = "lsp")]
-            references: Vec::new(),
-            #[cfg(feature = "lsp")]
-            references_selected: 0,
-            #[cfg(feature = "lsp")]
-            rename_active: false,
-            #[cfg(feature = "lsp")]
-            rename_text: String::new(),
-            #[cfg(feature = "lsp")]
-            hover_active: false,
-            #[cfg(feature = "lsp")]
-            hover_text: String::new(),
-            #[cfg(feature = "lsp")]
-            signature_active: false,
-            #[cfg(feature = "lsp")]
-            signature_label: String::new(),
-        }
-    }
-}
 
 impl EditorOverlayState {
     pub fn new() -> Self {
@@ -441,7 +400,6 @@ impl Display {
                         inserted = true;
                     },
                     lsp_types::CompletionTextEdit::InsertAndReplace(ir) => {
-                        let mut rope = buf.rope.write();
                         let s = self.lsp_pos_to_char_index_buf(buf, ir.replace.start);
                         let eidx = self.lsp_pos_to_char_index_buf(buf, ir.replace.end);
                         let mut rope_mut = buf.rope.write();
@@ -543,8 +501,12 @@ impl Display {
         if let Some(buf) = &state.buffer {
             // Render visible lines from rope
             let text_all = buf.text();
-            let mut yline = 0usize;
-            for (i, raw) in text_all.lines().enumerate().skip(state.scroll_line).take(content_lines)
+            for (yline, (i, raw)) in text_all
+                .lines()
+                .enumerate()
+                .skip(state.scroll_line)
+                .take(content_lines)
+                .enumerate()
             {
                 let line = content_top + yline;
                 let mut text = raw.to_string();
@@ -620,7 +582,6 @@ impl Display {
                     }
                 }
 
-                yline += 1;
             }
 
             // Caret drawing (vertical bar)
@@ -778,7 +739,7 @@ impl Display {
             let px = (start_col + 2) as f32 * size.cell_width();
             let py = (start_line + panel_lines.saturating_sub(3)) as f32 * size.cell_height();
             let pw = (popup_cols as f32 * size.cell_width()).max(150.0);
-            let ph = (3 as f32) * size.cell_height();
+            let ph = 3_f32 * size.cell_height();
             let bg = RenderRect::new(px, py, pw, ph, tokens.surface_muted, 0.98);
             let rects = vec![bg];
             let metrics = self.glyph_cache.font_metrics();

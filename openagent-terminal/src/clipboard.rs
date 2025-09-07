@@ -18,6 +18,11 @@ pub struct Clipboard {
 }
 
 impl Clipboard {
+    /// # Safety
+    /// On Wayland, the caller must pass a valid RawDisplayHandle corresponding to the
+    /// current process' Wayland display. The handle must remain valid for the duration of clipboard
+    /// initialization. On other platforms, this function returns a default clipboard and does not
+    /// dereference the handle.
     pub unsafe fn new(display: RawDisplayHandle) -> Self {
         match display {
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -67,11 +72,11 @@ impl Default for Clipboard {
                     None
                 },
             };
-            return Self { clipboard, selection };
+            Self { clipboard, selection }
         }
 
-        #[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
-        return Self::new_nop();
+#[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
+        Self::new_nop()
     }
 }
 

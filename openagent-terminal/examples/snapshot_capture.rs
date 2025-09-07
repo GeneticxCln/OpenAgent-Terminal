@@ -8,7 +8,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use gl; // dev-dependency gl crate for manual clear only
 use glutin::display::{GetGlDisplay, GlDisplay};
 use image::{DynamicImage, ImageBuffer, Rgba};
 use winit::application::ApplicationHandler;
@@ -26,7 +25,6 @@ use openagent_terminal::config::UiConfig;
 use openagent_terminal::display::confirm_overlay::ConfirmOverlayState;
 use openagent_terminal::display::window::Window;
 use openagent_terminal::display::Display;
-use openagent_terminal::message_bar::MessageType;
 use openagent_terminal::renderer::platform;
 
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
@@ -118,15 +116,12 @@ impl ApplicationHandler<()> for SnapshotApp {
         // Create window
         #[cfg(windows)]
         let window = {
-            let w =
-                Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window");
-            raw_window_handle = Some(w.raw_window_handle());
-            w
+            Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window")
         };
 
         #[cfg(not(windows))]
         let window = {
-            let win = Window::new(
+            Window::new(
                 event_loop,
                 &config,
                 &identity,
@@ -134,8 +129,7 @@ impl ApplicationHandler<()> for SnapshotApp {
                 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
                 gl_config.x11_visual(),
             )
-            .expect("create window");
-            win
+            .expect("create window")
         };
 
         // On Windows, now that we have a window, create GL display and config
@@ -161,7 +155,7 @@ impl ApplicationHandler<()> for SnapshotApp {
                 Some(window.raw_window_handle()),
             )
             .expect("create gl context");
-            let mut d = Display::new(window, gl_context, &config, false).expect("display init");
+            let d = Display::new(window, gl_context, &config, false).expect("display init");
             // Load GL for the gl crate so we can manually clear the background deterministically.
             gl::load_with(|s| {
                 let s = CString::new(s).unwrap();
@@ -313,23 +307,31 @@ enum AiOverlayScenario {
 }
 
 fn draw_message_bar(display: &mut Display, config: &UiConfig, is_error: bool) {
-    let ty = if is_error { MessageType::Error } else { MessageType::Warning };
-    let text = if is_error {
+    // Fallback: use confirm overlay to show a similar message bar effect
+    let mut st = ConfirmOverlayState::new();
+    let title = if is_error { "Error" } else { "Warning" };
+    let body = if is_error {
         "❌ Error: Snapshot example error message"
     } else {
         "⚠️ Warning: Snapshot example warning message"
     };
-    display.draw_message_bar_preview(config, ty, text);
+    st.open("msg".to_string(), title.to_string(), body.to_string(), None, None);
+    display.draw_confirm_overlay(config, &st);
 }
 
 fn draw_search_with_cursor(display: &mut Display, config: &UiConfig, text: &str) {
-    display.draw_search_preview(config, text, true);
+    // Fallback: present a confirm overlay with the provided text
+    let mut st = ConfirmOverlayState::new();
+    st.open("search".to_string(), "Search".to_string(), text.to_string(), None, None);
+    display.draw_confirm_overlay(config, &st);
 }
 
 fn draw_folded_blocks_overlay(display: &mut Display, config: &UiConfig) {
-    // Draw a synthetic folded label at viewport line 2
+    // Fallback: confirm overlay with folded label preview text
     let label = "⟞ Folded 42 lines [✓] make build";
-    display.draw_folded_label_preview(config, 2, label);
+    let mut st = ConfirmOverlayState::new();
+    st.open("folded".to_string(), "Folded Block".to_string(), label.to_string(), None, None);
+    display.draw_confirm_overlay(config, &st);
 }
 
 fn draw_split_panes(display: &mut Display, config: &UiConfig) {
@@ -368,7 +370,7 @@ fn draw_tab_bar_preview(display: &mut Display, config: &UiConfig) {
 
     // Create a synthetic TabManager with a few tabs
     let mut tm = TabManager::new();
-    let t1 = tm.create_tab("main".to_string(), None);
+    let _t1 = tm.create_tab("main".to_string(), None);
     let t2 = tm.create_tab("server".to_string(), None);
     let t3 = tm.create_tab("experiments".to_string(), None);
     let _ = tm.switch_to_tab(t2);
@@ -381,7 +383,7 @@ fn draw_tab_bar_preview(display: &mut Display, config: &UiConfig) {
 fn draw_tab_bar_hover(display: &mut Display, config: &UiConfig) {
     use openagent_terminal::workspace::{TabBarPosition, TabManager};
     let mut tm = TabManager::new();
-    let t1 = tm.create_tab("main".to_string(), None);
+    let _t1 = tm.create_tab("main".to_string(), None);
     let t2 = tm.create_tab("server".to_string(), None);
     let t3 = tm.create_tab("experiments".to_string(), None);
     let _ = tm.switch_to_tab(t2);
@@ -397,7 +399,7 @@ fn draw_tab_bar_drag(display: &mut Display, config: &UiConfig) {
     let mut tm = TabManager::new();
     let t1 = tm.create_tab("main".to_string(), None);
     let t2 = tm.create_tab("server".to_string(), None);
-    let t3 = tm.create_tab("experiments".to_string(), None);
+    let _t3 = tm.create_tab("experiments".to_string(), None);
     let _ = tm.switch_to_tab(t1);
     let drag = TabDragState {
         tab_id: t2,
@@ -429,7 +431,7 @@ fn draw_tab_bar_overflow(display: &mut Display, config: &UiConfig) {
 fn draw_tab_bar_bottom(display: &mut Display, config: &UiConfig) {
     use openagent_terminal::workspace::{TabBarPosition, TabManager};
     let mut tm = TabManager::new();
-    let t1 = tm.create_tab("one".to_string(), None);
+    let _t1 = tm.create_tab("one".to_string(), None);
     let t2 = tm.create_tab("two".to_string(), None);
     let _ = tm.switch_to_tab(t2);
     let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Bottom);
@@ -440,15 +442,14 @@ fn draw_tab_bar_reduce_motion(display: &mut Display, config: &UiConfig) {
     display.set_reduce_motion(true);
     let mut tm = TabManager::new();
     let t1 = tm.create_tab("stable".to_string(), None);
-    let t2 = tm.create_tab("no-anim".to_string(), None);
+    let _t2 = tm.create_tab("no-anim".to_string(), None);
     let _ = tm.switch_to_tab(t1);
     let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
 }
 
 #[cfg(feature = "ai")]
 fn draw_ai_overlay_state(display: &mut Display, config: &UiConfig, which: AiOverlayScenario) {
-    let mut ui = AiUiState::default();
-    ui.active = true;
+    let mut ui = AiUiState { active: true, ..Default::default() };
     match which {
         AiOverlayScenario::Loading => {
             ui.is_loading = true;

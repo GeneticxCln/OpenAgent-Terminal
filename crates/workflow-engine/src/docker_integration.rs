@@ -68,6 +68,7 @@ pub struct ComposeService {
 pub struct DockerIntegration {
     context: DockerContext,
     docker_available: bool,
+    #[allow(dead_code)]
     compose_available: bool,
 }
 
@@ -94,7 +95,7 @@ impl DockerIntegration {
 
     async fn check_docker_availability() -> Result<bool> {
         let output = Command::new("docker")
-            .args(&["version", "--format", "{{.Server.Version}}"])
+            .args(["version", "--format", "{{.Server.Version}}"])
             .output()
             .map_err(|_| anyhow!("Docker not found"))?;
 
@@ -103,7 +104,7 @@ impl DockerIntegration {
 
     async fn check_compose_availability() -> Result<bool> {
         let output = Command::new("docker")
-            .args(&["compose", "version"])
+            .args(["compose", "version"])
             .output()
             .map_err(|_| anyhow!("Docker Compose not found"))?;
 
@@ -194,7 +195,7 @@ impl DockerIntegration {
 
     async fn get_running_containers() -> Result<Vec<ContainerInfo>> {
         let output = Command::new("docker")
-            .args(&[
+            .args([
                 "ps",
                 "--format",
                 "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}|{{.CreatedAt}}",
@@ -233,7 +234,7 @@ impl DockerIntegration {
 
         // Get detailed container info
         let inspect_output = Command::new("docker")
-            .args(&["inspect", "--format", "{{json .}}", &id])
+            .args(["inspect", "--format", "{{json .}}", &id])
             .output()
             .map_err(|e| anyhow!("Failed to inspect container {}: {}", id, e))?;
 
@@ -374,7 +375,7 @@ impl DockerIntegration {
     ) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
         if let Some(id) = container_id {
             let output = Command::new("docker")
-                .args(&["inspect", "--format", "{{.Config.WorkingDir}}", id])
+            .args(["inspect", "--format", "{{.Config.WorkingDir}}", id])
                 .output()
                 .map_err(|e| anyhow!("Failed to get container working dir: {}", e))?;
 
@@ -399,7 +400,7 @@ impl DockerIntegration {
 
     async fn find_host_working_dir(container_id: &str) -> Result<Option<PathBuf>> {
         let output = Command::new("docker")
-            .args(&["inspect", "--format", "{{json .Mounts}}", container_id])
+            .args(["inspect", "--format", "{{json .Mounts}}", container_id])
             .output()
             .map_err(|e| anyhow!("Failed to get container mounts: {}", e))?;
 
@@ -522,7 +523,7 @@ impl DockerIntegration {
 
     async fn get_service_health(service_name: &str) -> Result<Option<String>> {
         let output = Command::new("docker")
-            .args(&["compose", "ps", "--format", "json", service_name])
+            .args(["compose", "ps", "--format", "json", service_name])
             .output()
             .map_err(|e| anyhow!("Failed to get service health: {}", e))?;
 
@@ -555,7 +556,7 @@ impl DockerIntegration {
 
     pub async fn execute_in_container(&self, container_id: &str, command: &str) -> Result<String> {
         let output = Command::new("docker")
-            .args(&["exec", "-t", container_id, "sh", "-c", command])
+            .args(["exec", "-t", container_id, "sh", "-c", command])
             .output()
             .map_err(|e| anyhow!("Failed to execute in container: {}", e))?;
 
@@ -576,7 +577,7 @@ impl DockerIntegration {
         container_path: &Path,
     ) -> Result<()> {
         let output = Command::new("docker")
-            .args(&[
+            .args([
                 "cp",
                 host_path.to_str().unwrap(),
                 &format!("{}:{}", container_id, container_path.to_str().unwrap()),
@@ -598,7 +599,7 @@ impl DockerIntegration {
         host_path: &Path,
     ) -> Result<()> {
         let output = Command::new("docker")
-            .args(&[
+            .args([
                 "cp",
                 &format!("{}:{}", container_id, container_path.to_str().unwrap()),
                 host_path.to_str().unwrap(),
@@ -615,7 +616,7 @@ impl DockerIntegration {
 
     pub async fn start_service(&self, service_name: &str) -> Result<()> {
         let output = Command::new("docker")
-            .args(&["compose", "up", "-d", service_name])
+            .args(["compose", "up", "-d", service_name])
             .output()
             .map_err(|e| anyhow!("Failed to start service: {}", e))?;
 
@@ -632,7 +633,7 @@ impl DockerIntegration {
 
     pub async fn stop_service(&self, service_name: &str) -> Result<()> {
         let output = Command::new("docker")
-            .args(&["compose", "stop", service_name])
+            .args(["compose", "stop", service_name])
             .output()
             .map_err(|e| anyhow!("Failed to stop service: {}", e))?;
 

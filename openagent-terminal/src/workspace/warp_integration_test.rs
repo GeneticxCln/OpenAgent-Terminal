@@ -283,7 +283,7 @@ fn test_example_usage() {
     );
 
     // Test action enum usage
-    let actions = vec![
+    let actions = [
         WarpAction::CreateTab,
         WarpAction::SplitRight,
         WarpAction::NavigatePane(WarpNavDirection::Left),

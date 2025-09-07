@@ -5,3 +5,9 @@ impl SnippetExpander {
         Self
     }
 }
+
+impl Default for SnippetExpander {
+    fn default() -> Self {
+        Self::new()
+    }
+}

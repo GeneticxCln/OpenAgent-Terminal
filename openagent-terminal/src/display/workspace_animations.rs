@@ -113,7 +113,7 @@ impl WorkspaceAnimationManager {
             TabAnimationType::Focus => DURATION_TAB_SWITCH_MS,
         };
 
-        let animation_data = data.unwrap_or_else(|| match animation_type {
+        let animation_data = data.unwrap_or(match animation_type {
             TabAnimationType::Open => TabAnimationData::Open {
                 target_width: 200.0, // Will be updated with actual width
                 current_width: 0.0,

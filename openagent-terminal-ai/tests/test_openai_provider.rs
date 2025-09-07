@@ -6,7 +6,7 @@ mod openai_provider_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use wiremock::matchers::{header, method, path};
-    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn create_test_request() -> AiRequest {
         AiRequest {
@@ -30,9 +30,9 @@ mod openai_provider_tests {
         assert!(provider.is_ok());
     }
 
-    #[test]
-    fn test_openai_streaming_complete_response() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_openai_streaming_complete_response() {
+let server = MockServer::start().await;
         let stream_data = concat!(
             "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"ls \"}}]}\n\n",
@@ -54,7 +54,7 @@ mod openai_provider_tests {
             .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
 
         let mut collected = String::new();
@@ -67,12 +67,11 @@ mod openai_provider_tests {
 
         assert!(result.is_ok());
         assert_eq!(collected, "ls -la");
-        mock.assert();
     }
 
-    #[test]
-    fn test_openai_streaming_with_cancellation() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_openai_streaming_with_cancellation() {
+let server = MockServer::start().await;
         let stream_data = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"ls \"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"-la\"}}]}\n\n",
@@ -80,16 +79,17 @@ mod openai_provider_tests {
             "data: [DONE]\n\n"
         );
 
-        server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .delay(Duration::from_millis(100))
-                .body(stream_data);
-        });
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_delay(Duration::from_millis(100))
+                .set_body_string(stream_data),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
 
         let mut collected = String::new();
@@ -110,9 +110,9 @@ mod openai_provider_tests {
         assert!(collected.len() < 10); // Should not have collected all chunks
     }
 
-    #[test]
-    fn test_openai_error_response() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_openai_error_response() {
+let server = MockServer::start().await;
 
         let error_response = r#"{
             "error": {
@@ -122,13 +122,16 @@ mod openai_provider_tests {
             }
         }"#;
 
-        server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(401).header("content-type", "application/json").body(error_response);
-        });
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(401)
+                .insert_header("content-type", "application/json")
+                .set_body_string(error_response),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("invalid_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("invalid_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
 
         let mut collected = String::new();
@@ -143,19 +146,20 @@ mod openai_provider_tests {
         assert!(result.unwrap_err().contains("401"));
     }
 
-    #[test]
-    fn test_openai_network_timeout() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_openai_network_timeout() {
+let server = MockServer::start().await;
 
-        server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(200)
-                .delay(Duration::from_secs(65)) // Longer than typical timeout
-                .body("data: timeout\n\n");
-        });
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(65))
+                .set_body_string("data: timeout\n\n"),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
 
         let mut collected = String::new();
@@ -172,9 +176,9 @@ mod openai_provider_tests {
         assert!(result.is_err() || result.is_ok());
     }
 
-    #[test]
-    fn test_openai_malformed_streaming_data() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_openai_malformed_streaming_data() {
+let server = MockServer::start().await;
         let malformed_data = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"valid\"}}]}\n\n",
             "data: {invalid json}\n\n", // Malformed JSON
@@ -182,13 +186,16 @@ mod openai_provider_tests {
             "data: [DONE]\n\n"
         );
 
-        server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(200).header("content-type", "text/event-stream").body(malformed_data);
-        });
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(malformed_data),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
 
         let mut collected = String::new();
@@ -205,19 +212,20 @@ mod openai_provider_tests {
         assert!(collected.contains("valid"));
     }
 
-    #[test]
-    fn test_openai_rate_limit_response() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_openai_rate_limit_response() {
+let server = MockServer::start().await;
 
-        server.mock(|when, then| {
-            when.method(POST).path("/chat/completions");
-            then.status(429)
-                .header("retry-after", "60")
-                .body(r#"{"error": {"message": "Rate limit exceeded"}}"#);
-        });
+Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "60")
+                .set_body_string(r#"{"error": {"message": "Rate limit exceeded"}}"#),
+        )
+        .mount(&server)
+        .await;
 
         let provider =
-            OpenAiProvider::new("test_key".to_string(), server.base_url(), "gpt-4".to_string())
+OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
                 .unwrap();
 
         let mut collected = String::new();

@@ -12,7 +12,6 @@ use image::{ImageBuffer, Rgba};
 
 #[cfg(feature = "wgpu")]
 async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()> {
-    use wgpu::util::DeviceExt;
 
     // Create instance and request adapter (headless)
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -77,7 +76,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     let bytes_per_pixel = 4u32;
     let bytes_per_row = bytes_per_pixel * width;
     // WGPU requires bytes_per_row to be a multiple of wgpu::COPY_BYTES_PER_ROW_ALIGNMENT (256)
-    let padded_bytes_per_row = ((bytes_per_row + 255) / 256) * 256;
+    let padded_bytes_per_row = bytes_per_row.div_ceil(256) * 256;
     let output_buffer_size = (padded_bytes_per_row * height) as wgpu::BufferAddress;
 
     let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -110,7 +109,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     // Read back the buffer
     let slice = output_buffer.slice(..);
     slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::Wait);
+    let _ = device.poll(wgpu::PollType::Wait);
     let data = slice.get_mapped_range();
 
     // Remove row padding and write PNG
@@ -150,7 +149,6 @@ fn main() {
             println!("{{\"output\":\"{}\",\"width\":{},\"height\":{}}}", out_path, width, height);
             std::process::exit(1);
         }
-        return;
     }
 
     #[cfg(not(feature = "wgpu"))]

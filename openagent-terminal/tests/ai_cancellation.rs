@@ -83,7 +83,7 @@ fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
 #[test]
 fn ai_stream_cancellation_is_graceful() {
     // Build test event loop and proxy
-    let (mut event_loop, proxy) = build_event_loop();
+    let (event_loop, proxy) = build_event_loop();
 
     // Prepare AI runtime with cancelling provider
     let provider: Box<dyn AiProvider> = Box::new(CancelStreamProvider);

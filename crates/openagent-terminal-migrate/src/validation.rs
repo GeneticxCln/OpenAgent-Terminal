@@ -134,7 +134,7 @@ fn validate_font_section(font: &toml::Value) -> Result<()> {
 fn validate_window_section(window: &toml::Value) -> Result<()> {
     if let Some(opacity) = window.get("opacity") {
         if let Some(opacity_val) = opacity.as_float() {
-            if opacity_val < 0.0 || opacity_val > 1.0 {
+            if !(0.0..=1.0).contains(&opacity_val) {
                 return Err(anyhow!("Window opacity {} must be between 0.0 and 1.0", opacity_val));
             }
         }
@@ -185,20 +185,19 @@ fn validate_color_subsection(section: Option<&toml::Value>, section_name: &str) 
 
 fn is_valid_color(color: &str) -> bool {
     // Check if it's a valid hex color
-    if color.starts_with('#') {
-        let hex_part = &color[1..];
+    if let Some(hex_part) = color.strip_prefix('#') {
         return (hex_part.len() == 3 || hex_part.len() == 6 || hex_part.len() == 8)
             && hex_part.chars().all(|c| c.is_ascii_hexdigit());
     }
 
     // Check if it's a named color (basic set)
-    match color.to_lowercase().as_str() {
+    matches!(
+        color.to_lowercase().as_str(),
         "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "gray"
-        | "grey" | "darkgray" | "darkgrey" | "lightgray" | "lightgrey" | "darkred"
-        | "darkgreen" | "darkyellow" | "darkblue" | "darkmagenta" | "darkcyan" | "lightred"
-        | "lightgreen" | "lightyellow" | "lightblue" | "lightmagenta" | "lightcyan" => true,
-        _ => false,
-    }
+            | "grey" | "darkgray" | "darkgrey" | "lightgray" | "lightgrey" | "darkred"
+            | "darkgreen" | "darkyellow" | "darkblue" | "darkmagenta" | "darkcyan" | "lightred"
+            | "lightgreen" | "lightyellow" | "lightblue" | "lightmagenta" | "lightcyan"
+    )
 }
 
 fn validate_terminal_section(terminal: &toml::Value) -> Result<()> {
@@ -206,7 +205,7 @@ fn validate_terminal_section(terminal: &toml::Value) -> Result<()> {
     if let Some(scrolling) = terminal.get("scrolling") {
         if let Some(history) = scrolling.get("history") {
             if let Some(history_val) = history.as_integer() {
-                if history_val < 0 || history_val > 1_000_000 {
+                if !(0..=1_000_000).contains(&history_val) {
                     return Err(anyhow!(
                         "Scrolling history {} is outside reasonable range (0-1,000,000)",
                         history_val
@@ -279,9 +278,9 @@ fn validate_ai_section(ai: &toml::Value) -> Result<()> {
                         if provider_str != "null" {
                             // For real providers, check if endpoint/model configuration exists
                             let has_endpoint =
-                                ai.get(&format!("{}.endpoint", provider_str)).is_some()
+                                ai.get(format!("{}.endpoint", provider_str)).is_some()
                                     || ai.get("endpoint_env").is_some();
-                            let has_model = ai.get(&format!("{}.model", provider_str)).is_some()
+                            let has_model = ai.get(format!("{}.model", provider_str)).is_some()
                                 || ai.get("model_env").is_some();
 
                             if !has_endpoint && provider_str != "ollama" {
@@ -309,6 +308,7 @@ fn validate_ai_section(ai: &toml::Value) -> Result<()> {
 }
 
 /// Quick validation for common configuration issues
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn quick_validate_toml(content: &str) -> Result<Vec<String>> {
     let mut issues = Vec::new();
 

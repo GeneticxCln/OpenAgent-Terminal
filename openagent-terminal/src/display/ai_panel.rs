@@ -15,18 +15,23 @@ use crate::renderer::ui::UiRoundedRect;
 const MAX_AI_PANEL_LINES: usize = 10;
 
 /// AI panel label shown at the top
+#[allow(dead_code)]
 const AI_PANEL_LABEL: &str = "🤖 AI Assistant: ";
 
 /// Loading indicator text
+#[allow(dead_code)]
 const LOADING_TEXT: &str = "⏳ Thinking...";
 
 /// Error prefix
+#[allow(dead_code)]
 const ERROR_PREFIX: &str = "❌ Error: ";
 
 /// Command suggestion prefix
+#[allow(dead_code)]
 const SUGGESTION_PREFIX: &str = "$ ";
 
 /// Selection indicator
+#[allow(dead_code)]
 const SELECTION_INDICATOR: &str = "▶ ";
 
 #[cfg(feature = "ai")]
@@ -39,6 +44,7 @@ pub enum AiHeaderControl {
 
 #[cfg(feature = "ai")]
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct AiPanelGeometry {
     pub start_line: usize,
     pub anim_lines: usize,
@@ -52,7 +58,8 @@ pub struct AiPanelGeometry {
 #[cfg(feature = "ai")]
 impl Display {
     /// Draw the AI panel if it's active (legacy helper using caller-owned rect list)
-    pub fn draw_ai_panel(
+#[allow(dead_code)]
+pub fn draw_ai_panel(
         &mut self,
         config: &UiConfig,
         ai_state: &crate::ai_runtime::AiUiState,
@@ -68,12 +75,10 @@ impl Display {
                 config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false);
             self.ai_panel_anim_duration_ms = if reduce_motion {
                 0
+            } else if ai_state.active {
+                160
             } else {
-                if ai_state.active {
-                    160
-                } else {
-                    140
-                }
+                140
             };
         }
 
@@ -109,7 +114,7 @@ impl Display {
         let backdrop_alpha = {
             #[cfg(feature = "ai")]
             {
-                (config.ai.backdrop_alpha * progress as f32).clamp(0.0, 1.0)
+                (config.ai.backdrop_alpha * progress).clamp(0.0, 1.0)
             }
             #[cfg(not(feature = "ai"))]
             {
@@ -152,13 +157,13 @@ impl Display {
         // Compute panel geometry (pixels)
         let panel_y = start_line as f32 * size_info.cell_height();
         let panel_height = anim_lines as f32 * size_info.cell_height();
-        let panel_alpha = 0.95_f32.max(0.0).min(1.0) * progress as f32;
+        let panel_alpha = 0.95_f32.clamp(0.0, 1.0) * progress;
 
         // Stage shadow as a separate rounded rect (simple soft shadow)
         if tui.shadow {
             let spread = tui.shadow_size_px.max(1) as f32;
             let offset_y = (tui.shadow_size_px as f32 * 0.5).round();
-            let shadow_alpha = (tui.shadow_alpha * progress as f32).min(1.0);
+            let shadow_alpha = (tui.shadow_alpha * progress).min(1.0);
             if shadow_alpha > 0.0 {
                 let shadow = UiRoundedRect::new(
                     -spread,
@@ -453,12 +458,10 @@ impl Display {
             } else {
                 1.0 - eased
             }
+        } else if ai_state.active {
+            1.0
         } else {
-            if ai_state.active {
-                1.0
-            } else {
-                0.0
-            }
+            0.0
         };
         if progress <= 0.0 {
             return None;
@@ -500,7 +503,8 @@ impl Display {
 
     /// Draw the AI overlay immediately (background rects then text), independent of the main draw
     /// rect pipeline.
-    pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
+#[allow(dead_code)]
+pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
         // Allow drawing during closing animation even if not active.
         let progress = if let Some(start) = self.ai_panel_anim_start {
             let elapsed = start.elapsed().as_millis() as u32;
@@ -515,12 +519,10 @@ impl Display {
             } else {
                 1.0 - eased
             }
+        } else if ai_state.active {
+            1.0
         } else {
-            if ai_state.active {
-                1.0
-            } else {
-                0.0
-            }
+            0.0
         };
         if progress <= 0.0 {
             return;

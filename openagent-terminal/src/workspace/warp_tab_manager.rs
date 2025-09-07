@@ -336,7 +336,9 @@ impl WarpTabManager {
         let session: WarpSession = match serde_json::from_str::<WarpSession>(&session_json) {
             Ok(session) => {
                 // Validate session format version
-                if session.version != SESSION_VERSION {
+                if session.version == SESSION_VERSION {
+                    session
+                } else {
                     // Attempt migration if needed
                     let old_version = session.version.clone();
                     match self.migrate_session_format(session) {
@@ -349,8 +351,6 @@ impl WarpTabManager {
                             return Ok(false);
                         },
                     }
-                } else {
-                    session
                 }
             },
             Err(e) => {
@@ -421,6 +421,7 @@ impl WarpTabManager {
     }
 
     /// Convert split layout to session format
+    #[allow(clippy::only_used_in_recursion)]
     fn split_layout_to_session(&self, layout: &SplitLayout) -> WarpSplitLayoutSession {
         match layout {
             SplitLayout::Single(pane_id) => WarpSplitLayoutSession::Single(*pane_id),
@@ -494,6 +495,7 @@ impl WarpTabManager {
     }
 
     /// Convert session split layout back to runtime format
+    #[allow(clippy::only_used_in_recursion)]
     fn session_to_split_layout(&self, session_layout: &WarpSplitLayoutSession) -> SplitLayout {
         match session_layout {
             WarpSplitLayoutSession::Single(pane_id) => SplitLayout::Single(*pane_id),
@@ -536,7 +538,7 @@ impl WarpTabManager {
         for (idx, tab) in session.tabs.iter().enumerate() {
             // Check working directory exists or can be recovered
             if !tab.working_directory.exists()
-                && !tab.working_directory.parent().map_or(false, |p| p.exists())
+                && !tab.working_directory.parent().is_some_and(|p| p.exists())
             {
                 println!(
                     "Warning: Tab {} working directory {} is not accessible",

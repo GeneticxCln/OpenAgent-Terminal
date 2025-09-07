@@ -2,6 +2,7 @@
 //!
 //! This module handles visual feedback and state management for dragging panes
 //! between tabs and creating new splits.
+#![allow(dead_code)]
 
 use std::time::Instant;
 

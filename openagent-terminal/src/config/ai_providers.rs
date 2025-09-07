@@ -1,5 +1,6 @@
 #[cfg(feature = "ai")]
 use super::ai::ProviderConfig;
+#[cfg(not(feature = "ai"))]
 use serde::{Deserialize, Serialize};
 #[cfg(not(feature = "ai"))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -22,6 +23,7 @@ pub struct ProviderCredentials {
     pub api_key: Option<String>,
     pub endpoint: Option<String>,
     pub model: Option<String>,
+    #[allow(dead_code)]
     pub extra: HashMap<String, String>,
 }
 
@@ -198,6 +200,7 @@ pub fn get_default_provider_configs() -> HashMap<String, ProviderConfig> {
 }
 
 /// Legacy environment variable compatibility (with deprecation warnings)
+#[allow(dead_code)]
 pub fn check_legacy_env_vars() {
     let legacy_vars = [
         "OPENAI_API_KEY",

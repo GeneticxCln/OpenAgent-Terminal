@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -176,13 +176,13 @@ impl DeveloperWorkflow {
         Ok(workflow)
     }
 
-    async fn is_git_repository(directory: &PathBuf) -> Result<bool> {
+    async fn is_git_repository(directory: &Path) -> Result<bool> {
         let git_dir = directory.join(".git");
         Ok(tokio::fs::metadata(git_dir).await.is_ok())
     }
 
     async fn analyze_project_context(
-        directory: &PathBuf,
+        directory: &Path,
         docker_integration: &DockerIntegration,
     ) -> Result<DeveloperContext> {
         let project_type = Self::detect_project_type(directory).await?;
@@ -200,7 +200,7 @@ impl DeveloperWorkflow {
         };
 
         Ok(DeveloperContext {
-            current_directory: directory.clone(),
+            current_directory: directory.to_path_buf(),
             git_repository: None, // Will be populated later
             docker_context: Some(docker_integration.get_context().clone()),
             active_databases: Vec::new(),
@@ -212,7 +212,7 @@ impl DeveloperWorkflow {
         })
     }
 
-    async fn detect_project_type(directory: &PathBuf) -> Result<Option<ProjectType>> {
+    async fn detect_project_type(directory: &Path) -> Result<Option<ProjectType>> {
         let entries = tokio::fs::read_dir(directory).await?;
         let mut entries_vec = Vec::new();
 
@@ -253,9 +253,9 @@ impl DeveloperWorkflow {
         Ok(Some(ProjectType::Unknown))
     }
 
-    async fn detect_languages(directory: &PathBuf) -> Result<Vec<ProgrammingLanguage>> {
+    async fn detect_languages(directory: &Path) -> Result<Vec<ProgrammingLanguage>> {
         let mut languages = Vec::new();
-        let mut stack = vec![directory.clone()];
+        let mut stack = vec![directory.to_path_buf()];
 
         while let Some(current_dir) = stack.pop() {
             if let Ok(mut entries) = tokio::fs::read_dir(&current_dir).await {
@@ -336,7 +336,7 @@ impl DeveloperWorkflow {
         Ok(languages)
     }
 
-    async fn detect_build_tools(directory: &PathBuf) -> Result<Vec<BuildTool>> {
+    async fn detect_build_tools(directory: &Path) -> Result<Vec<BuildTool>> {
         let mut tools = Vec::new();
 
         let entries = tokio::fs::read_dir(directory).await?;
@@ -844,7 +844,7 @@ impl DeveloperWorkflow {
 
         // Git information
         if let Some(git_repo) = &context.git_repository {
-            prompt.push_str(&format!("\n📝 Git Repository:\n"));
+            prompt.push_str("\n📝 Git Repository:\n");
             if let Some(current_branch) = &git_repo.current_branch {
                 prompt.push_str(&format!("  Current branch: {}\n", current_branch));
             }
@@ -863,7 +863,7 @@ impl DeveloperWorkflow {
 
         // Docker information
         if let Some(docker_context) = &context.docker_context {
-            prompt.push_str(&format!("\n🐳 Docker Context:\n"));
+            prompt.push_str("\n🐳 Docker Context:\n");
             prompt.push_str(&format!(
                 "  Available containers: {}\n",
                 docker_context.available_containers.len()
@@ -880,7 +880,7 @@ impl DeveloperWorkflow {
 
         // Database information
         if !context.active_databases.is_empty() {
-            prompt.push_str(&format!("\n🗄️  Databases:\n"));
+            prompt.push_str("\n🗄️  Databases:\n");
             for db in &context.active_databases {
                 prompt.push_str(&format!(
                     "  {} ({:?}) on {}:{}\n",
@@ -891,7 +891,7 @@ impl DeveloperWorkflow {
 
         // API collections
         if !context.api_collections.is_empty() {
-            prompt.push_str(&format!("\n🌐 API Collections:\n"));
+            prompt.push_str("\n🌐 API Collections:\n");
             for collection in &context.api_collections {
                 prompt.push_str(&format!(
                     "  {} ({} requests)\n",

@@ -8,6 +8,7 @@ use std::path::PathBuf;
 pub struct MigrationConfig {
     pub terminal_type: TerminalType,
     pub config_path: PathBuf,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub detected_automatically: bool,
 }
 
@@ -227,6 +228,7 @@ impl UnifiedConfig {
     }
 
     /// Merge another config into this one, with the other config taking priority
+    #[allow(dead_code)]
     pub fn merge(&mut self, other: UnifiedConfig) {
         // Merge window config
         if other.window.opacity.is_some() {
@@ -244,6 +246,7 @@ impl UnifiedConfig {
     }
 
     /// Validate the configuration for any obvious issues
+    #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
         // Check font size range
         if let Some(size) = self.font.size {
@@ -254,7 +257,7 @@ impl UnifiedConfig {
 
         // Check opacity range
         if let Some(opacity) = self.window.opacity {
-            if opacity < 0.0 || opacity > 1.0 {
+            if !(0.0..=1.0).contains(&opacity) {
                 return Err(format!("Window opacity {} is out of range (0.0-1.0)", opacity));
             }
         }

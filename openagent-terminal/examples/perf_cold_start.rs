@@ -72,7 +72,7 @@ impl ApplicationHandler<()> for ColdStartApp {
         };
         #[cfg(not(windows))]
         let window = {
-            let w = Window::new(
+            Window::new(
                 event_loop,
                 &config,
                 &identity,
@@ -80,8 +80,7 @@ impl ApplicationHandler<()> for ColdStartApp {
                 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
                 gl_config.x11_visual(),
             )
-            .expect("window");
-            w
+            .expect("window")
         };
 
         #[cfg(windows)]
@@ -99,7 +98,7 @@ impl ApplicationHandler<()> for ColdStartApp {
             platform::create_gl_context(&gl_display, &gl_config, Some(window.raw_window_handle()))
                 .expect("gl ctx");
 
-        let display = Display::new(window, gl_context, &config, false).expect("display");
+        let mut display = Display::new(window, gl_context, &config, false).expect("display");
 
         // Present one frame by drawing a no-op confirm overlay (inactive) then swapping
         // We ensure clear happened in Display::new; swap on GL occurs in drop or explicit draw.

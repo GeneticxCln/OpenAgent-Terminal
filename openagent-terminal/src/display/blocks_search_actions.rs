@@ -154,6 +154,10 @@ pub struct ActionsMenuState {
     pub width: usize,
 }
 
+impl Default for ActionsMenuState {
+    fn default() -> Self { Self::new() }
+}
+
 impl ActionsMenuState {
     /// Create new actions menu state
     pub fn new() -> Self {
@@ -311,6 +315,10 @@ pub enum HelpSection {
     Tips,
 }
 
+impl Default for HelpOverlayState {
+    fn default() -> Self { Self::new() }
+}
+
 impl HelpOverlayState {
     pub fn new() -> Self {
         Self { active: false, section: HelpSection::Overview, scroll: 0 }
@@ -379,6 +387,7 @@ impl HelpOverlayState {
     }
 
     /// Draw help content
+    #[allow(clippy::too_many_arguments)]
     fn draw_help_content(
         &self,
         display: &mut Display,
@@ -659,13 +668,13 @@ pub fn format_as_variable_heredoc(var_name: &str, command: &str, output: &str) -
 
 /// Format as pipe input for next command
 pub fn format_as_pipe_input(output: &str) -> String {
-    // For single-line output, use echo
-    if !output.contains('\n') {
-        format!("echo '{}' | ", output.trim())
-    } else {
-        // For multi-line output, use printf
+    // For multi-line output, use printf
+    if output.contains('\n') {
         let escaped = output.replace('\'', "'\\''");
         format!("printf '%s\\n' '{}' | ", escaped)
+    } else {
+        // For single-line output, use echo
+        format!("echo '{}' | ", output.trim())
     }
 }
 
@@ -707,8 +716,12 @@ pub fn format_heredoc_for_shell(output: &str, shell_type: &str) -> String {
             // PowerShell here-string syntax
             format!("@'\n{}\n'@", output.trim())
         },
-        "zsh" | "bash" | _ => {
+        "zsh" | "bash" => {
             // Standard POSIX here-doc
+            format!("cat << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
+        },
+        _ => {
+            // Default to POSIX here-doc
             format!("cat << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
         },
     }

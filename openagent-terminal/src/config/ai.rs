@@ -115,7 +115,7 @@ impl Default for AiConfig {
 }
 
 /// Secure provider-specific configuration.
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Default)]
 pub struct ProviderConfig {
     /// Environment variable name holding the API key/secret. Never printed.
     pub api_key_env: Option<String>,
@@ -137,18 +137,6 @@ pub struct ProviderConfig {
     pub extra: HashMap<String, String>,
 }
 
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self {
-            api_key_env: None,
-            endpoint_env: None,
-            model_env: None,
-            default_model: None,
-            default_endpoint: None,
-            extra: HashMap::new(),
-        }
-    }
-}
 
 /// Ollama-specific configuration.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]

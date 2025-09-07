@@ -268,7 +268,7 @@ impl Display {
         }
 
         let available_width = size_info.width() - style.tab_padding * 2.0;
-        let tab_width = (available_width / tab_count as f32).min(200.0).max(120.0);
+        let tab_width = (available_width / tab_count as f32).clamp(120.0, 200.0);
 
         let mut current_x = style.tab_padding;
 
@@ -300,7 +300,7 @@ impl Display {
         let gear_cols = 3usize; // previous "[⚙]" text took ~3 columns
         if gear_cols + 2 < cols {
             let cw = self.size_info.cell_width();
-            let ch = self.size_info.cell_height();
+            let _ch = self.size_info.cell_height();
             let start_col = cols.saturating_sub(gear_cols + 2);
             let icon_px = ui
                 .tab_bar_settings_icon_px
@@ -807,7 +807,7 @@ impl Display {
         indicators: &WarpSplitIndicators,
     ) {
         let preview_color = indicators.split_handle_color;
-        let preview_alpha = indicators.hover_line_alpha.min(1.0).max(0.0) * 0.5;
+        let preview_alpha = indicators.hover_line_alpha.clamp(0.0, 1.0) * 0.5;
 
         let preview_rect = match split_direction {
             crate::workspace::warp_split_manager::WarpNavDirection::Right => {

@@ -501,10 +501,10 @@ mod tests {
         let y0 = si.padding_y();
         let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
-        if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row {
-            if config.workspace.tab_bar.position == TabBarPosition::Bottom {
-                h = (h - si.cell_height()).max(0.0);
-            }
+        if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row
+            && config.workspace.tab_bar.position == TabBarPosition::Bottom
+        {
+            h = (h - si.cell_height()).max(0.0);
         }
         let split_y = y0 + h * 0.5;
         let tol = 3.0;

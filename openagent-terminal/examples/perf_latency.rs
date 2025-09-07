@@ -4,7 +4,6 @@
 use std::ffi::CString;
 use std::time::{Duration, Instant};
 
-use gl;
 use winit::application::ApplicationHandler;
 use winit::event::StartCause;
 use winit::event_loop::{ActiveEventLoop, EventLoop};

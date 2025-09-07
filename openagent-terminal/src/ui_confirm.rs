@@ -60,22 +60,12 @@ mod test_helpers {
     }
 }
 
+#[derive(Default)]
 struct ConfirmState {
     proxy: Option<EventLoopProxy<Event>>,
     default_window: Option<winit::window::WindowId>,
     pending: HashMap<String, mpsc::Sender<bool>>,
     policy: SecurityPolicy,
-}
-
-impl Default for ConfirmState {
-    fn default() -> Self {
-        Self {
-            proxy: None,
-            default_window: None,
-            pending: HashMap::new(),
-            policy: SecurityPolicy::default(),
-        }
-    }
 }
 
 static STATE: once_cell::sync::Lazy<Mutex<ConfirmState>> =

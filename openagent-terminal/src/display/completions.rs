@@ -1,6 +1,6 @@
-use openagent_terminal_core::grid::Dimensions;
+#![allow(dead_code)]
 use openagent_terminal_core::index::{Column, Point};
-use openagent_terminal_core::term::{self, Term};
+use openagent_terminal_core::term as term;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -45,6 +45,10 @@ impl CompletionsState {
     }
 }
 
+impl Default for CompletionsState {
+    fn default() -> Self { Self::new() }
+}
+
 impl super::Display {
     fn fuzzy_score(query: &str, candidate: &str) -> f32 {
         if query.is_empty() {
@@ -84,7 +88,7 @@ impl super::Display {
 
         // Tokenize to get current token and first word (command)
         let tokens: Vec<&str> = prefix.split_whitespace().collect();
-        let first = tokens.get(0).copied().unwrap_or("");
+        let first = tokens.first().copied().unwrap_or("");
         let cur_token =
             if prefix.ends_with(' ') { "" } else { tokens.last().copied().unwrap_or("") };
         let is_flag_context = cur_token.starts_with('-');
@@ -241,7 +245,6 @@ impl super::Display {
             config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let fg = tokens.text;
-        let bg = tokens.surface_muted;
         let muted = tokens.text_muted;
         let accent = tokens.accent;
 
@@ -315,7 +318,7 @@ impl super::Display {
                         let metrics = self.glyph_cache.font_metrics();
                         let size_copy = self.size_info;
                         self.renderer_draw_rects(&size_copy, &metrics, rects);
-                        let text = format!("{}", desc);
+                        let text = desc.to_string();
                         self.draw_ai_text(
                             Point::new(start_line, Column(start_col + box_width_cols + 2)),
                             accent,

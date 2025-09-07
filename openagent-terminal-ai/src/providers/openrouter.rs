@@ -2,7 +2,6 @@ use crate::privacy::{sanitize_request, AiPrivacyOptions};
 use crate::streaming::{RetryConfig, RetryStrategy};
 use crate::{AiProposal, AiProvider, AiRequest};
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
 use tracing::{debug, error, info};
 

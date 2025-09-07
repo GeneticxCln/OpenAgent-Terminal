@@ -322,8 +322,8 @@ impl SnippetContext {
 fn detect_shell() -> String {
     std::env::var("SHELL")
         .unwrap_or_else(|_| "bash".to_string())
-        .split('/')
-        .last()
+.split('/')
+        .next_back()
         .unwrap_or("bash")
         .to_string()
 }

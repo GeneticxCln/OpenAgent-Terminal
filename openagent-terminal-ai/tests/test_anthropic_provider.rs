@@ -6,7 +6,7 @@ mod anthropic_provider_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use wiremock::matchers::{header, method, path};
-    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn create_test_request() -> AiRequest {
         AiRequest {
@@ -30,9 +30,9 @@ mod anthropic_provider_tests {
         assert!(provider.is_ok());
     }
 
-    #[test]
-    fn test_anthropic_streaming_complete_response() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_anthropic_streaming_complete_response() {
+let server = MockServer::start().await;
         let stream_data = concat!(
             "event: message_start\n",
             "data: {\"type\":\"message_start\",\"message\":{\"role\":\"assistant\",\"content\":[]}}\n\n",
@@ -50,18 +50,20 @@ mod anthropic_provider_tests {
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-        let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages")
-                .header("x-api-key", "test_key")
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json");
-            then.status(200).header("content-type", "text/event-stream").body(stream_data);
-        });
+Mock::given(method("POST")).and(path("/messages")).and(header("x-api-key", "test_key"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .and(header("content-type", "application/json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(stream_data),
+            )
+            .mount(&server)
+            .await;
 
-        let provider = AnthropicProvider::new(
+let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3-opus".to_string(),
         )
         .unwrap();
@@ -76,12 +78,11 @@ mod anthropic_provider_tests {
 
         assert!(result.is_ok());
         assert_eq!(collected, "find . -type f -size +100M");
-        mock.assert();
     }
 
-    #[test]
-    fn test_anthropic_streaming_with_multiple_blocks() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_anthropic_streaming_with_multiple_blocks() {
+let server = MockServer::start().await;
         // Anthropic can send multiple content blocks
         let stream_data = concat!(
             "event: message_start\n",
@@ -102,14 +103,17 @@ mod anthropic_provider_tests {
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-        server.mock(|when, then| {
-            when.method(POST).path("/messages");
-            then.status(200).header("content-type", "text/event-stream").body(stream_data);
-        });
+Mock::given(method("POST")).and(path("/messages")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(stream_data),
+        )
+        .mount(&server)
+        .await;
 
-        let provider = AnthropicProvider::new(
+let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3-opus".to_string(),
         )
         .unwrap();
@@ -127,9 +131,9 @@ mod anthropic_provider_tests {
         assert!(collected.contains("find /var/log"));
     }
 
-    #[test]
-    fn test_anthropic_error_response() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_anthropic_error_response() {
+let server = MockServer::start().await;
 
         let error_response = r#"{
             "type": "error",
@@ -139,14 +143,17 @@ mod anthropic_provider_tests {
             }
         }"#;
 
-        server.mock(|when, then| {
-            when.method(POST).path("/messages");
-            then.status(401).header("content-type", "application/json").body(error_response);
-        });
+Mock::given(method("POST")).and(path("/messages")).respond_with(
+            ResponseTemplate::new(401)
+                .insert_header("content-type", "application/json")
+                .set_body_string(error_response),
+        )
+        .mount(&server)
+        .await;
 
-        let provider = AnthropicProvider::new(
+let provider = AnthropicProvider::new(
             "invalid_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3".to_string(),
         )
         .unwrap();
@@ -164,23 +171,23 @@ mod anthropic_provider_tests {
         assert!(error.contains("401") || error.contains("authentication"));
     }
 
-    #[test]
-    fn test_anthropic_rate_limit() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_anthropic_rate_limit() {
+let server = MockServer::start().await;
 
-        server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
-            then.status(429)
-                .header("retry-after", "30")
-                .header("x-ratelimit-limit", "1000")
-                .header("x-ratelimit-remaining", "0")
-                .body(r#"{"type":"error","error":{"type":"rate_limit_error","message":"Rate limit exceeded"}}"#);
-        });
+Mock::given(method("POST")).and(path("/messages")).respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "30")
+                .insert_header("x-ratelimit-limit", "1000")
+                .insert_header("x-ratelimit-remaining", "0")
+                .set_body_string(r#"{"type":"error","error":{"type":"rate_limit_error","message":"Rate limit exceeded"}}"#),
+        )
+        .mount(&server)
+        .await;
 
-        let provider = AnthropicProvider::new(
+let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3".to_string(),
         )
         .unwrap();
@@ -197,9 +204,9 @@ mod anthropic_provider_tests {
         assert!(result.unwrap_err().contains("429"));
     }
 
-    #[test]
-    fn test_anthropic_streaming_cancellation() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_anthropic_streaming_cancellation() {
+let server = MockServer::start().await;
         let stream_data = concat!(
             "event: message_start\n",
             "data: {\"type\":\"message_start\"}\n\n",
@@ -213,17 +220,18 @@ mod anthropic_provider_tests {
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-        server.mock(|when, then| {
-            when.method(POST).path("/messages");
-            then.status(200)
-                .header("content-type", "text/event-stream")
-                .delay(Duration::from_millis(50))
-                .body(stream_data);
-        });
+Mock::given(method("POST")).and(path("/messages")).respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_delay(Duration::from_millis(50))
+                .set_body_string(stream_data),
+        )
+        .mount(&server)
+        .await;
 
-        let provider = AnthropicProvider::new(
+let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3".to_string(),
         )
         .unwrap();
@@ -248,20 +256,20 @@ mod anthropic_provider_tests {
         assert!(!collected.contains("/log"));
     }
 
-    #[test]
-    fn test_anthropic_server_error() {
-        let server = MockServer::start();
+#[tokio::test]
+async fn test_anthropic_server_error() {
+let server = MockServer::start().await;
 
-        server.mock(|when, then| {
-            when.method(POST)
-                .path("/messages");
-            then.status(500)
-                .body(r#"{"type":"error","error":{"type":"api_error","message":"Internal server error"}}"#);
-        });
+Mock::given(method("POST")).and(path("/messages")).respond_with(
+            ResponseTemplate::new(500)
+                .set_body_string(r#"{"type":"error","error":{"type":"api_error","message":"Internal server error"}}"#),
+        )
+        .mount(&server)
+        .await;
 
         let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3".to_string(),
         )
         .unwrap();
@@ -278,9 +286,9 @@ mod anthropic_provider_tests {
         assert!(result.unwrap_err().contains("500"));
     }
 
-    #[test]
-    fn test_anthropic_unexpected_event_type() {
-        let server = MockServer::start();
+    #[tokio::test]
+    async fn test_anthropic_unexpected_event_type() {
+        let server = MockServer::start().await;
         // Include some unexpected event types that should be ignored
         let stream_data = concat!(
             "event: ping\n",
@@ -295,14 +303,19 @@ mod anthropic_provider_tests {
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-        server.mock(|when, then| {
-            when.method(POST).path("/messages");
-            then.status(200).header("content-type", "text/event-stream").body(stream_data);
-        });
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(stream_data),
+            )
+            .mount(&server)
+            .await;
 
         let provider = AnthropicProvider::new(
             "test_key".to_string(),
-            server.base_url(),
+            server.uri(),
             "claude-3".to_string(),
         )
         .unwrap();

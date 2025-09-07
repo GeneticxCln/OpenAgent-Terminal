@@ -19,6 +19,7 @@ use crate::scheduler::{TimerId, Topic};
 
 impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Process key input.
+    #[allow(clippy::clone_on_copy)]
     pub fn key_input(&mut self, key: KeyEvent) {
         // IME input will be applied on commit and shouldn't trigger key bindings.
         if self.ctx.display().ime.preedit().is_some() {
@@ -104,7 +105,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Bottom composer: click-to-focus + rich text editing while palette is inactive
-        if self.ctx.display().composer_focused && self.ctx.palette_active() == false {
+        if self.ctx.display().composer_focused && !self.ctx.palette_active() {
             use openagent_terminal_core::term::ClipboardType;
             let mods = self.ctx.modifiers().state();
             let is_mac = cfg!(target_os = "macos");
@@ -491,7 +492,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     delete_selection(&mut self.ctx);
                 }
                 let cur = self.ctx.display().composer_cursor;
-                self.ctx.display().composer_text.insert_str(cur, &text);
+                self.ctx.display().composer_text.insert_str(cur, text);
                 self.ctx.display().composer_cursor = cur + text.len();
                 ensure_caret_visible(&mut self.ctx);
                 self.ctx.mark_dirty();
@@ -560,11 +561,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.blocks_search_move_actions_selection(1);
                         return;
                     },
-                    Key::Character(c) if c == "k" => {
+                    Key::Character("k") => {
                         self.ctx.blocks_search_move_actions_selection(-1);
                         return;
                     },
-                    Key::Character(c) if c == "j" => {
+                    Key::Character("j") => {
                         self.ctx.blocks_search_move_actions_selection(1);
                         return;
                     },
@@ -582,7 +583,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.blocks_search_close_help();
                         return;
                     },
-                    Key::Character(c) if c == "?" => {
+                    Key::Character("?") => {
                         // Close help
                         self.ctx.blocks_search_close_help();
                         return;
@@ -988,13 +989,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::ArrowUp) => {
                     // If we have proposals, navigate them; otherwise navigate history
                     if let Some(runtime) = self.ctx.ai_runtime_ref() {
-                        if !runtime.ui.proposals.is_empty() {
-                            self.ctx.send_user_event(crate::event::EventType::AiSelectPrev);
-                        } else {
+                        if runtime.ui.proposals.is_empty() {
                             if let Some(runtime) = self.ctx.ai_runtime_mut() {
                                 runtime.history_previous();
                                 self.ctx.mark_dirty();
                             }
+                        } else {
+                            self.ctx.send_user_event(crate::event::EventType::AiSelectPrev);
                         }
                     }
                     return;
@@ -1002,13 +1003,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::ArrowDown) => {
                     // If we have proposals, navigate them; otherwise navigate history
                     if let Some(runtime) = self.ctx.ai_runtime_ref() {
-                        if !runtime.ui.proposals.is_empty() {
-                            self.ctx.send_user_event(crate::event::EventType::AiSelectNext);
-                        } else {
+                        if runtime.ui.proposals.is_empty() {
                             if let Some(runtime) = self.ctx.ai_runtime_mut() {
                                 runtime.history_next();
                                 self.ctx.mark_dirty();
                             }
+                        } else {
+                            self.ctx.send_user_event(crate::event::EventType::AiSelectNext);
                         }
                     }
                     return;
@@ -1079,12 +1080,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Workflows progress overlay: allow Esc to dismiss when visible
         #[cfg(feature = "workflow")]
         if self.ctx.workflows_progress_active() && self.ctx.workflows_progress_terminal() {
-            match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Escape) => {
-                    self.ctx.workflows_progress_dismiss();
-                    return;
-                },
-                _ => {},
+            if let Key::Named(NamedKey::Escape) = key.logical_key.as_ref() {
+                self.ctx.workflows_progress_dismiss();
+                return;
             }
         }
 

@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::str::FromStr;
 use tokio::runtime::Runtime;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
@@ -272,7 +273,7 @@ async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
 
 /// Initialize workflow engine
 #[cfg(feature = "workflow")]
-async fn initialize_workflow_engine(config_dir: &PathBuf) -> Result<WorkflowEngine> {
+async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<WorkflowEngine> {
     let engine = WorkflowEngine::new().context("Failed to create workflow engine")?;
 
     // Load workflows from directory
@@ -428,11 +429,11 @@ impl PluginHost for TerminalPluginHost {
     }
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>, PluginError> {
-        std::fs::read(path).map_err(|e| PluginError::IoError(e))
+        std::fs::read(path).map_err(PluginError::IoError)
     }
 
     fn write_file(&self, path: &str, data: &[u8]) -> Result<(), PluginError> {
-        std::fs::write(path, data).map_err(|e| PluginError::IoError(e))
+        std::fs::write(path, data).map_err(PluginError::IoError)
     }
 
     fn execute_command(&self, command: &str) -> Result<CommandOutput, PluginError> {
@@ -522,8 +523,8 @@ impl PluginHost for TerminalPluginHost {
     fn store_data(&self, key: &str, value: &[u8]) -> Result<(), PluginError> {
         // sanitize key to filesystem-friendly name
         let file = self.storage_dir.join(sanitize_key_to_filename(key));
-        std::fs::create_dir_all(&self.storage_dir).map_err(|e| PluginError::IoError(e))?;
-        std::fs::write(file, value).map_err(|e| PluginError::IoError(e))
+        std::fs::create_dir_all(&self.storage_dir).map_err(PluginError::IoError)?;
+        std::fs::write(file, value).map_err(PluginError::IoError)
     }
 
     fn retrieve_data(&self, key: &str) -> Result<Option<Vec<u8>>, PluginError> {
@@ -567,7 +568,7 @@ impl<'a> ComponentIntegration<'a> {
                 command,
                 directory: Some(std::env::current_dir()?),
                 environment: Some(std::env::vars().collect()),
-                shell: Some(crate::blocks_v2::ShellType::from_str(shell)),
+shell: Some(crate::blocks_v2::ShellType::from_str(shell).unwrap_or(crate::blocks_v2::ShellType::Bash)),
                 tags: None,
                 parent_id: None,
                 metadata: None,

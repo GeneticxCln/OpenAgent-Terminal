@@ -8,6 +8,10 @@ pub struct EnvironmentManager {
     base_environment: HashMap<String, String>,
 }
 
+impl Default for EnvironmentManager {
+    fn default() -> Self { Self::new() }
+}
+
 impl EnvironmentManager {
     pub fn new() -> Self {
         Self { base_environment: std::env::vars().collect() }

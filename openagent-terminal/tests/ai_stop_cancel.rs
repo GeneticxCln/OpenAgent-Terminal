@@ -81,7 +81,7 @@ fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
 
 #[test]
 fn ai_stop_event_triggers_graceful_finish() {
-    let (mut el, proxy) = build_event_loop();
+    let (el, proxy) = build_event_loop();
 
     let provider: Box<dyn AiProvider> = Box::new(WaitCancelProvider);
     let mut rt = AiRuntime::new(provider);

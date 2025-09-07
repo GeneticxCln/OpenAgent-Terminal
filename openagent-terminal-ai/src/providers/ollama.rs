@@ -30,6 +30,7 @@ fn ai_log_summary() -> bool {
 
 impl OllamaProvider {
     /// Stream tokens from Ollama and invoke on_chunk for each text fragment.
+    #[allow(dead_code)]
     fn stream_generate(
         &self,
         prompt: String,
@@ -207,37 +208,27 @@ impl OllamaProvider {
                     Ok(Some(Ok(chunk))) => {
                         buffer.extend_from_slice(&chunk);
                         // Process complete lines
-                        loop {
-                            if let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
-                                let line = buffer.drain(..=pos).collect::<Vec<u8>>();
-                                let line = String::from_utf8_lossy(&line).trim().to_string();
-                                if line.is_empty() {
-                                    continue;
-                                }
-                                match serde_json::from_str::<OllamaGenerateResponse>(&line) {
-                                    Ok(ev) => {
-                                        if !ev.response.is_empty() {
-                                            if ai_log_verbose() {
-                                                debug!(
-                                                    "ollama_stream_chunk len={}",
-                                                    ev.response.len()
-                                                );
-                                            }
-                                            on_chunk(&ev.response);
+                        while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                            let line = buffer.drain(..=pos).collect::<Vec<u8>>();
+                            let line = String::from_utf8_lossy(&line).trim().to_string();
+                            if line.is_empty() {
+                                continue;
+                            }
+                            match serde_json::from_str::<OllamaGenerateResponse>(&line) {
+                                Ok(ev) => {
+                                    if !ev.response.is_empty() {
+                                        if ai_log_verbose() {
+                                            debug!("ollama_stream_chunk len={}", ev.response.len());
                                         }
-                                        if ev.done {
-                                            return Ok(true);
-                                        }
-                                    },
-                                    Err(e) => {
-                                        debug!(
-                                            "Skipping non-JSON stream line: {} (err: {})",
-                                            line, e
-                                        );
-                                    },
-                                }
-                            } else {
-                                break;
+                                        on_chunk(&ev.response);
+                                    }
+                                    if ev.done {
+                                        return Ok(true);
+                                    }
+                                },
+                                Err(e) => {
+                                    debug!("Skipping non-JSON stream line: {} (err: {})", line, e);
+                                },
                             }
                         }
                     },

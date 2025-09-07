@@ -268,7 +268,7 @@ fn install_plugin(src: &str) -> anyhow::Result<()> {
         if !resp.status().is_success() {
             anyhow::bail!("HTTP {}", resp.status());
         }
-        let fname = src.split('/').last().unwrap_or("plugin.wasm");
+let fname = src.split('/').next_back().unwrap_or("plugin.wasm");
         std::fs::create_dir_all(&dest_dir)?;
         let dest = dest_dir.join(fname);
         std::fs::write(&dest, resp.bytes()?)?;

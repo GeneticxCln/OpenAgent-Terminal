@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::mem;
 
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
 
 use crate::config::font::Font as FontConfig;
 use crate::display::content::RenderableCell;
@@ -37,6 +36,7 @@ pub struct ShapedTextVertex {
 }
 
 /// Configuration for shaped text rendering
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ShapedRenderConfig {
     /// Maximum number of vertices per batch
@@ -54,6 +54,7 @@ impl Default for ShapedRenderConfig {
 }
 
 /// WGPU-based shaped text renderer
+#[allow(dead_code)]
 pub struct WgpuShapedTextRenderer {
     text_shaper: IntegratedTextShaper,
     render_config: ShapedRenderConfig,
@@ -78,6 +79,7 @@ pub struct WgpuShapedTextRenderer {
     shaped_line_cache: HashMap<String, ShapedLine>,
 }
 
+#[allow(dead_code)]
 impl WgpuShapedTextRenderer {
     /// Create a new shaped text renderer
     pub fn new(
@@ -175,8 +177,8 @@ impl WgpuShapedTextRenderer {
         &mut self,
         shaped_cell: &ShapedCell,
         position: [f32; 2],
-        cell_width: f32,
-        cell_height: f32,
+        _cell_width: f32,
+        _cell_height: f32,
     ) -> Result<()> {
         let mut x_offset = 0.0;
 

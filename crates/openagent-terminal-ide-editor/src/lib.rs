@@ -8,15 +8,15 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Cursor {
     pub line: usize,
     pub column: usize,
 }
 
-impl Default for Cursor {
+impl Default for EditorBuffer {
     fn default() -> Self {
-        Self { line: 0, column: 0 }
+        Self::new()
     }
 }
 
@@ -60,8 +60,7 @@ impl EditorBuffer {
 
     pub fn open_file(path: PathBuf) -> Result<Self> {
         let text = fs::read_to_string(&path).unwrap_or_default();
-        let mut meta = EditorBufferMeta::default();
-        meta.path = Some(path);
+        let meta = EditorBufferMeta { path: Some(path), ..Default::default() };
         Ok(Self {
             rope: Arc::new(RwLock::new(Rope::from_str(&text))),
             cursor: Arc::new(RwLock::new(Cursor::default())),

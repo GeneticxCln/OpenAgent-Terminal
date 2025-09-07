@@ -181,15 +181,19 @@ fn parse_tabby_config(content: &str) -> Result<UnifiedConfig> {
 }
 
 /// Trait for configuration parsers
+#[cfg_attr(not(test), allow(dead_code))]
 pub trait ConfigParser {
     fn parse(&self, content: &str) -> Result<UnifiedConfig>;
 
+    #[allow(dead_code)]
     fn supports_file_extension(&self, extension: &str) -> bool;
 
+    #[allow(dead_code)]
     fn parser_name(&self) -> &'static str;
 }
 
 /// Generic parser dispatcher based on file extension
+#[allow(dead_code)]
 pub fn parse_by_extension(extension: &str, content: &str) -> Result<UnifiedConfig> {
     match extension.to_lowercase().as_str() {
         "yml" | "yaml" => {

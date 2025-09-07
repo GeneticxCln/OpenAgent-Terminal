@@ -55,6 +55,7 @@ impl TerminalType {
     }
 
     /// Get typical file extensions for this terminal's config
+    #[allow(dead_code)]
     pub fn config_extensions(&self) -> Vec<&'static str> {
         match self {
             TerminalType::Alacritty => vec!["yml", "yaml", "toml"],
@@ -86,6 +87,7 @@ impl TerminalType {
     }
 
     /// Get the typical config file/directory names for this terminal
+    #[allow(dead_code)]
     pub fn config_names(&self) -> Vec<&'static str> {
         match self {
             TerminalType::Alacritty => vec!["alacritty.yml", "alacritty.yaml", "alacritty.toml"],
@@ -104,6 +106,7 @@ impl TerminalType {
     }
 
     /// Get description of what this terminal is
+    #[allow(dead_code)]
     pub fn description(&self) -> &'static str {
         match self {
             TerminalType::Alacritty => "A cross-platform, OpenGL terminal emulator",
