@@ -327,6 +327,29 @@ impl Display {
             self.draw_tab_text(plus_point, plus_color, bg, plus_label, plus_label.len());
         }
 
+        // Draw settings gear on far right using sprite atlas
+        // Compute anchor based on previous text placement geometry for consistency
+        let gear_cols = 3usize; // approximate width previously used by "[⚙]"
+        if gear_cols + 2 < num_cols {
+            let start_col = num_cols.saturating_sub(gear_cols + 2);
+            let cw = size_info.cell_width();
+            let ch = size_info.cell_height();
+            let icon_px = (ch * 0.9).clamp(12.0, 18.0);
+            let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
+            let iy = (start_line as f32) * ch + (ch - icon_px) * 0.5;
+            // Atlas slot 8 = gear when atlas has 9 slots horizontally
+            let step = 1.0f32 / 9.0f32;
+            let uv_x = 8.0 * step;
+            let uv_y = 0.0f32;
+            let uv_w = step;
+            let uv_h = 1.0f32;
+            let tint = tokens.text;
+            let nearest = (icon_px - 16.0).abs() < 0.5;
+            self.stage_ui_sprite(crate::renderer::ui::UiSprite::new(
+                ix, iy, icon_px, icon_px, uv_x, uv_y, uv_w, uv_h, tint, 1.0, Some(nearest),
+            ));
+        }
+
         // Damage the tab bar area
         for line_idx in start_line..(start_line + TAB_BAR_HEIGHT) {
             if line_idx < num_lines {
@@ -441,6 +464,17 @@ impl Display {
         // Check if click is in empty area (create new tab)
         if config.workspace.tab_bar.show_new_tab_button && current_x < size_info.columns {
             return Some(TabBarAction::CreateTab);
+        }
+
+        // Settings gear region: right-aligned area approximating previous "[⚙]" width
+        let cols = size_info.columns;
+        let gear_cols = 3usize; // previous text width
+        if gear_cols + 2 < cols {
+            let start = cols.saturating_sub(gear_cols + 2);
+            let end = start + gear_cols;
+            if mouse_x >= start && mouse_x < end {
+                return Some(TabBarAction::OpenSettings);
+            }
         }
 
         None
@@ -701,6 +735,8 @@ pub enum TabBarAction {
     SelectTab(TabId),
     CloseTab(TabId),
     CreateTab,
+    /// Open settings panel (gear button at the corner)
+    OpenSettings,
     // Drag and drop operations
     BeginDrag(TabId),
     DragMove(TabId, usize), // tab_id, new_position

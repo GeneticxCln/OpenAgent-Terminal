@@ -88,6 +88,7 @@ pub mod window;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
 pub mod workspace_animations;
+pub mod settings_panel;
 
 mod bell;
 mod damage;
@@ -523,6 +524,14 @@ pub struct Display {
     #[cfg(feature = "workflow")]
     pub workflows_progress: workflow_panel::WorkflowProgressState,
 
+    /// Settings panel state (for in-app configuration like API keys)
+    pub settings_panel: settings_panel::SettingsPanelState,
+
+    /// Short press flash effect for Quick Actions capsules
+    pub quick_actions_press_flash_until: Option<Instant>,
+    /// Short press flash effect for Composer capsules
+    pub composer_press_flash_until: Option<Instant>,
+
     /// Hover state for tab bar interactions
     pub tab_hover: Option<TabHoverTarget>,
     /// Animation start for tab hover transitions
@@ -719,6 +728,7 @@ impl Display {
             window,
             pending_renderer_update: Default::default(),
             composer_focused: false,
+            composer_press_flash_until: None,
             composer_text: String::new(),
             composer_cursor: 0,
             composer_sel_anchor: None,
@@ -766,6 +776,8 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            settings_panel: settings_panel::SettingsPanelState::new(),
+            quick_actions_press_flash_until: None,
             tab_hover: None,
             tab_hover_anim_start: None,
             tab_last_active_id: None,
@@ -962,7 +974,7 @@ impl Display {
 
         // Backdrop strip
         let bg = tokens.surface_muted;
-        let rects = vec![RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98)];
+        let rects = vec![RenderRect::new(0.0, y, size_info.width(), h, bg, theme.ui.quick_actions_band_alpha)];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);
@@ -971,12 +983,30 @@ impl Display {
         let fg = tokens.text;
         let muted = tokens.text_muted;
 
-        // Build labels dynamically to respect configuration
+        // Build labels dynamically to respect configuration and features
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
         if config.workspace.quick_actions.show_palette {
             labels.push("[Palette]");
         }
-        labels.push("[AI]");
+        #[cfg(feature = "ai")]
+        if config.ai.enabled {
+            labels.push("[AI]");
+        }
+
+        // Compute hover state based on last mouse position
+        let cw = size_info.cell_width();
+        let px = self.last_mouse_x as f32;
+        let py = self.last_mouse_y as f32;
+        let inside_line = py >= y && py < y + h;
+        let mut hover_col: Option<usize> = None;
+        if inside_line {
+            let col_from_px = ((px - size_info.padding_x()) / cw).floor() as isize;
+            if col_from_px >= 0 { hover_col = Some(col_from_px as usize); }
+        }
+        let now = Instant::now();
+        let press_flash = self
+            .quick_actions_press_flash_until
+            .is_some_and(|t| now < t);
 
         let mut col = 1usize;
         for label in labels.iter() {
@@ -985,27 +1015,82 @@ impl Display {
             #[allow(unused_mut)]
             let mut color = fg;
             #[cfg(not(feature = "ai"))]
-            if is_ai {
-                color = muted;
+            if is_ai { color = muted; }
+
+            let label_cols = label.chars().count();
+            let start_col = col;
+            let end_col = col + label_cols;
+            let is_hovered = hover_col.is_some_and(|c| c >= start_col && c < end_col);
+
+            // Optional capsule background for Quick Actions labels
+            if theme.ui.quick_actions_chip_capsules {
+                let pad = theme.ui.quick_actions_chip_pad_px.unwrap_or(theme.ui.palette_chip_pad_px).max(1.0);
+                let pill_radius = theme.ui.quick_actions_pill_radius_px.unwrap_or(theme.ui.palette_pill_radius_px);
+                let x_px = (start_col as f32) * cw - pad;
+                let w_px = (label_cols as f32) * cw + pad * 2.0;
+                let y_px = y + (h - h * 0.8) * 0.5;
+                let h_px = h * 0.8;
+                let mut alpha = theme.ui.quick_actions_chip_alpha;
+                if is_hovered { alpha = (alpha + theme.ui.quick_actions_chip_alpha_hover_delta).min(1.0); }
+                if press_flash && is_hovered { alpha = (alpha + theme.ui.quick_actions_chip_alpha_press_delta).min(1.0); }
+                let pill = UiRoundedRect::new(x_px, y_px, w_px, h_px, pill_radius.min(h_px * 0.5), tokens.surface, alpha);
+                self.stage_ui_rounded_rect(pill);
+                // Hovered text color accent
+                if is_hovered { color = tokens.accent; }
+            } else if is_hovered {
+                // No capsule; still accent the text color on hover
+                color = tokens.accent;
             }
+
             self.draw_ai_text(
-                Point::new(line, Column(col)),
+                Point::new(line, Column(start_col)),
                 color,
                 bg,
                 label,
-                cols.saturating_sub(col),
+                cols.saturating_sub(start_col),
             );
-            col += label.len() + 2;
-            if col >= cols {
-                break;
-            }
+            col = end_col + theme.ui.quick_actions_chip_gap_cols as usize;
+            if col >= cols { break; }
         }
 
-        // Small hint on the far right
-        let hint = "click to open";
-        if hint.len() + 2 < cols {
-            let start = cols.saturating_sub(hint.len() + 2);
-            self.draw_ai_text(Point::new(line, Column(start)), muted, bg, hint, hint.len() + 2);
+        // Settings quick access on the far right: gear sprite
+        // Reserve a similar width region as the text label previously used
+        let gear_cols = 3usize;
+        if gear_cols + 2 < cols {
+            let start_col = cols.saturating_sub(gear_cols + 2);
+            let cw = size_info.cell_width();
+            let ch = size_info.cell_height();
+            let icon_px = theme
+                .ui
+                .quick_actions_settings_icon_px
+                .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
+            let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
+            let iy = y + (h - icon_px) * 0.5;
+            // Atlas slot 8 = gear
+            let step = 1.0f32 / 9.0f32;
+            let uv_x = 8.0 * step;
+            let uv_y = 0.0f32;
+            let uv_w = step;
+            let uv_h = 1.0f32;
+            let nearest = (icon_px - 16.0).abs() < 0.5;
+            // Hover tint: accent when mouse over gear
+            let mx_col_opt = hover_col;
+            let gear_hover = mx_col_opt
+                .is_some_and(|c| c >= start_col && c < start_col + gear_cols);
+            let tint = if gear_hover { tokens.accent } else { fg };
+            self.stage_ui_sprite(crate::renderer::ui::UiSprite::new(
+                ix,
+                iy,
+                icon_px,
+                icon_px,
+                uv_x,
+                uv_y,
+                uv_w,
+                uv_h,
+                tint,
+                1.0,
+                Some(nearest),
+            ));
         }
     }
 
@@ -1189,6 +1274,7 @@ impl Display {
             window,
             pending_renderer_update: Default::default(),
             composer_focused: false,
+            composer_press_flash_until: None,
             composer_text: String::new(),
             composer_cursor: 0,
             composer_sel_anchor: None,
@@ -1224,6 +1310,8 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            settings_panel: settings_panel::SettingsPanelState::new(),
+            quick_actions_press_flash_until: None,
             #[cfg(feature = "editor")]
             editor_overlay: editor_overlay::EditorOverlayState::new(),
             #[cfg(feature = "dap")]
@@ -1236,7 +1324,11 @@ impl Display {
             palette_sel_last_index: None,
             palette_sel_anim_start: None,
             // Additional UI state defaults
-            palette: palette::PaletteState::new(),
+            palette: {
+                let mut p = palette::PaletteState::new();
+                p.load_mru_from_config(config);
+                p
+            },
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
             last_mouse_x: 0,
             last_mouse_y: 0,
@@ -2170,6 +2262,12 @@ impl Display {
             self.draw_workflows_progress_overlay(config, &st);
         }
 
+        // Settings panel overlay if active
+        if self.settings_panel.active {
+            let st = self.settings_panel.clone();
+            self.draw_settings_panel_overlay(config, &st);
+        }
+
         // Command Palette overlay: draw when active or during animation
         if self.palette.active() || self.palette_anim_start.is_some() {
             self.draw_palette_overlay(config);
@@ -2384,12 +2482,8 @@ impl Display {
         // Avoid overlap with reserved bottom tab row and with active search/footer bars
         let has_search = search_state.regex().is_some();
         let has_message = message_buffer.message().is_some();
-        // Warp doesn't show a bottom quick actions bar; suppress when warp_style is enabled
-        if !config.workspace.warp_style
-            && config.workspace.quick_actions.show
-            && !has_search
-            && !has_message
-        {
+        // Draw Quick Actions bar when enabled and not obstructed by search/message bar
+        if config.workspace.quick_actions.show && !has_search && !has_message {
             self.draw_quick_actions_bar(config);
         }
 
@@ -2586,17 +2680,30 @@ impl Display {
             self.size_info.width(),
             ch,
             tokens.surface_muted,
-            0.98,
+            ui.composer_band_alpha,
         )];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);
         // Rounded composer pill
-        let margin_px = 6.0_f32;
+        let margin_px = ui.composer_margin_px.max(0.0);
         let x = margin_px;
-        let y = y_band + 2.0_f32;
+        let y_inset = ui.composer_pill_vertical_inset_px.max(0.0);
+        let y = y_band + y_inset;
         let w = self.size_info.width() - margin_px * 2.0;
-        let h = ch - 4.0_f32;
+        let h = ch - y_inset * 2.0;
+        // Compute hover and press flash for composer chips
+        let px = self.last_mouse_x as f32;
+        let py = self.last_mouse_y as f32;
+        let inside_pill = px >= x && px < x + w && py >= y && py < y + h;
+        let hover_col_for_composer: Option<usize> = if inside_pill {
+            Some((((px - self.size_info.padding_x()) / cw).floor() as isize).max(0) as usize)
+        } else { None };
+        let now = Instant::now();
+        let composer_press_flash = self
+            .composer_press_flash_until
+            .is_some_and(|t| now < t);
+
         // Focus ring / stronger bg when focused
         if self.composer_focused {
             let ring = UiRoundedRect::new(
@@ -2604,23 +2711,35 @@ impl Display {
                 y - 1.0,
                 w + 2.0,
                 h + 2.0,
-                ui.palette_pill_radius_px + 1.0,
+                ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px) + 1.0,
                 tokens.accent,
-                0.10,
+                ui.composer_focus_ring_alpha,
             );
             self.stage_ui_rounded_rect(ring);
         }
-        let bg_alpha = if self.composer_focused { 0.20 } else { 0.14 };
-        let pill =
-            UiRoundedRect::new(x, y, w, h, ui.palette_pill_radius_px, tokens.surface, bg_alpha);
+        let bg_alpha = if self.composer_focused { ui.composer_pill_alpha_focused } else { ui.composer_pill_alpha_unfocused };
+        let pill = UiRoundedRect::new(
+            x,
+            y,
+            w,
+            h,
+            ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px),
+            tokens.surface,
+            bg_alpha,
+        );
         self.stage_ui_rounded_rect(pill);
 
         // Placeholder text
-        let placeholder =
-            "Warp anything e.g. Help me optimize my SQL queries that are running slowly";
+        let placeholder = ui
+            .composer_placeholder_text
+            .as_deref()
+            .unwrap_or("Warp anything e.g. Help me optimize my SQL queries that are running slowly");
         let mut start_col = 2usize;
         // Sparkle/star glyph to hint AI
-        let star = "✦ ";
+        let star = ui
+            .composer_star_glyph
+            .as_deref()
+            .unwrap_or("✦ ");
         let star_color = if self.composer_focused { tokens.accent } else { tokens.accent };
         self.draw_ai_text(
             Point::new(lines.saturating_sub(1), Column(start_col)),
@@ -2665,6 +2784,52 @@ impl Display {
                     placeholder,
                     available,
                 );
+                // Also draw action chips even when placeholder is shown
+                {
+                    use unicode_width::UnicodeWidthStr as _;
+                    let chips = ["[Palette]", "[AI]", "[Run]"];
+                    let mut col_end = cols.saturating_sub(2);
+                    let gap = ui.composer_chip_gap_cols as usize;
+                    for label in chips.iter() {
+                        let wcols = label.width();
+                        if wcols + 1 >= col_end { break; }
+                        let start = col_end.saturating_sub(wcols);
+                        // Capsule background
+                        let cw = cw; // cell width
+                        let ch = ch; // cell height
+                        let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
+                        let x_px = (start as f32) * cw - pad;
+                        let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
+                        let h_px = ch * 0.8; // slightly inset vertically
+                        let w_px = (wcols as f32) * cw + pad * 2.0;
+                        let radius = ui.palette_pill_radius_px.min(h_px * 0.5);
+                        let mut alpha = if self.composer_focused { ui.composer_chip_alpha_focused } else { ui.composer_chip_alpha_unfocused };
+                        let is_hovered = hover_col_for_composer.is_some_and(|c| c >= start && c < start + wcols);
+                        if is_hovered { alpha = (alpha + ui.composer_chip_alpha_hover_delta).min(1.0); }
+                        if composer_press_flash && is_hovered { alpha = (alpha + ui.composer_chip_alpha_press_delta).min(1.0); }
+                        let pill = UiRoundedRect::new(
+                            x_px,
+                            y_px,
+                            w_px,
+                            h_px,
+                            radius,
+                            tokens.surface_muted,
+                            alpha,
+                        );
+                        self.stage_ui_rounded_rect(pill);
+                        // Label text
+                        let text_color = if is_hovered { tokens.accent } else { tokens.text };
+                        self.draw_ai_text(
+                            Point::new(lines.saturating_sub(1), Column(start)),
+                            text_color,
+                            tokens.surface_muted,
+                            label,
+                            wcols,
+                        );
+                        if start <= 2 { break; }
+                        col_end = start.saturating_sub(gap);
+                    }
+                }
                 return;
             }
 
@@ -2858,6 +3023,53 @@ impl Display {
                     " ",
                     1,
                 );
+            }
+
+            // Draw action chips aligned to the right inside the pill: [Palette] [AI] [Run]
+            {
+                use unicode_width::UnicodeWidthStr as _;
+                let chips = ["[Palette]", "[AI]", "[Run]"];
+                let mut col_end = cols.saturating_sub(2);
+                let gap = ui.composer_chip_gap_cols as usize;
+                for label in chips.iter() {
+                    let wcols = label.width();
+                    if wcols + 1 >= col_end { break; }
+                    let start = col_end.saturating_sub(wcols);
+                    // Capsule background
+                    let cw = cw; // cell width
+                    let ch = ch; // cell height
+                    let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
+                    let x_px = (start as f32) * cw - pad;
+                    let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
+                    let h_px = ch * 0.8; // slightly inset vertically
+                    let w_px = (wcols as f32) * cw + pad * 2.0;
+                    let radius = ui.palette_pill_radius_px.min(h_px * 0.5);
+                    let mut alpha = if self.composer_focused { ui.composer_chip_alpha_focused } else { ui.composer_chip_alpha_unfocused };
+                    let is_hovered = hover_col_for_composer.is_some_and(|c| c >= start && c < start + wcols);
+                    if is_hovered { alpha = (alpha + ui.composer_chip_alpha_hover_delta).min(1.0); }
+                    if composer_press_flash && is_hovered { alpha = (alpha + ui.composer_chip_alpha_press_delta).min(1.0); }
+                    let pill = UiRoundedRect::new(
+                        x_px,
+                        y_px,
+                        w_px,
+                        h_px,
+                        radius,
+                        tokens.surface_muted,
+                        alpha,
+                    );
+                    self.stage_ui_rounded_rect(pill);
+                    // Label text
+                    let text_color = if is_hovered { tokens.accent } else { tokens.text };
+                    self.draw_ai_text(
+                        Point::new(lines.saturating_sub(1), Column(start)),
+                        text_color,
+                        tokens.surface_muted,
+                        label,
+                        wcols,
+                    );
+                    if start <= 2 { break; }
+                    col_end = start.saturating_sub(gap);
+                }
             }
         }
     }

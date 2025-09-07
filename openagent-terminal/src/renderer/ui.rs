@@ -252,10 +252,10 @@ impl UiSpriteGlRenderer {
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
         }
 
-        // Build a multi-icon atlas: 8 slots horizontally, 16x16 each
+        // Build a multi-icon atlas: 9 slots horizontally, 16x16 each
         // Slot order must match palette mapping
-        let icon_names: [&str; 8] = [
-            "action",   // 0 magnifier
+        let icon_names: [&str; 9] = [
+            "action",   // 0 magnifier/search
             "workflow", // 1 branching
             "tab",      // 2 plus
             "split_v",  // 3 vertical split
@@ -263,6 +263,7 @@ impl UiSpriteGlRenderer {
             "focus",    // 5 target
             "zoom",     // 6 square
             "blocks",   // 7 grid
+            "gear",     // 8 settings gear
         ];
         let tile = 16usize;
         let atlas_w = icon_names.len() * tile;
@@ -362,8 +363,8 @@ impl UiSpriteGlRenderer {
             // Procedural fallback
             match *name {
                 "action" => {
+                    // magnifier: circle + diagonal handle
                     draw_circle(i, 7.0, 7.0, 5.0, [255, 255, 255, 255], &mut put);
-                    // handle
                     for t in 0..5 {
                         let x = 10 + t;
                         let y = 10 + t;
@@ -417,6 +418,40 @@ impl UiSpriteGlRenderer {
                                 &mut put,
                             );
                         }
+                    }
+                },
+                "gear" => {
+                    // Simple procedural gear: outer circle, inner hole, and 8 teeth rectangles
+                    // Outer ring
+                    draw_circle(i, 8.0, 8.0, 6.5, [255, 255, 255, 255], &mut put);
+                    // Inner hole (erase with transparent by overdrawing with alpha 0)
+                    // Since we can't erase easily, draw a slightly dimmer hole using low alpha
+                    for y in 0..tile {
+                        for x in 0..tile {
+                            let dx = x as f32 - 8.0;
+                            let dy = y as f32 - 8.0;
+                            let r2 = dx * dx + dy * dy;
+                            if r2 <= 3.5 * 3.5 {
+                                put(i, x, y, [255, 255, 255, 32]);
+                            }
+                        }
+                    }
+                    // Teeth at 8 directions
+                    let mut tooth = |tx: usize, cx: usize, cy: usize, w: usize, h: usize| {
+                        draw_rect(tx, cx, cy, w, h, [255, 255, 255, 255], &mut put)
+                    };
+                    // Up, Down, Left, Right
+                    tooth(i, 7, 0, 2, 3);
+                    tooth(i, 7, 13, 2, 3);
+                    tooth(i, 0, 7, 3, 2);
+                    tooth(i, 13, 7, 3, 2);
+                    // Diagonals
+                    for t in 0..3 {
+                        let a = t as usize;
+                        if 2 + a < tile && 2 + a < tile { put(i, 2 + a, 2 + a, [255,255,255,255]); }
+                        if 12 >= a && 2 + a < tile { put(i, 12 - a, 2 + a, [255,255,255,255]); }
+                        if 2 + a < tile && 12 >= a { put(i, 2 + a, 12 - a, [255,255,255,255]); }
+                        if 12 >= a && 12 >= a { put(i, 12 - a, 12 - a, [255,255,255,255]); }
                     }
                 },
                 _ => {},

@@ -92,17 +92,21 @@ impl WarpTabStyle {
         let tokens = theme.tokens;
         let ui = theme.ui;
         Self {
-            tab_height: 36.0,
-            corner_radius: if ui.rounded_corners { ui.corner_radius_px } else { 0.0 },
-            tab_padding: 12.0,
+            tab_height: ui.tab_bar_height_px.max(16.0),
+            corner_radius: if ui.rounded_corners {
+                ui.tab_bar_corner_radius_px
+            } else {
+                0.0
+            },
+            tab_padding: ui.tab_bar_padding_px.max(0.0),
             active_bg: tokens.surface,
             inactive_bg: tokens.surface_muted,
             hover_bg: tokens.surface_muted,
             active_fg: tokens.accent,
             inactive_fg: tokens.text,
             separator_color: tokens.border,
-            drop_shadow: ui.shadow,
-            animation_duration_ms: if ui.reduce_motion { 0 } else { 180 },
+            drop_shadow: ui.tab_bar_drop_shadow.unwrap_or(ui.shadow),
+            animation_duration_ms: if ui.reduce_motion { 0 } else { ui.tab_bar_animation_duration_ms },
         }
     }
 }
@@ -287,6 +291,34 @@ impl Display {
         // Draw "+" button for new tab (hover-aware)
         let create_hover = matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
         self.draw_new_tab_button(current_x, start_y, style, create_hover);
+
+        // Draw settings gear on far right using sprite atlas, aligned with previous text region
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let ui = theme.ui;
+        let cols = self.size_info.columns;
+        let gear_cols = 3usize; // previous "[⚙]" text took ~3 columns
+        if gear_cols + 2 < cols {
+            let cw = self.size_info.cell_width();
+            let ch = self.size_info.cell_height();
+            let start_col = cols.saturating_sub(gear_cols + 2);
+            let icon_px = ui
+                .tab_bar_settings_icon_px
+                .unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
+            let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
+            let iy = start_y + (style.tab_height - icon_px) * 0.5;
+            // Atlas slot 8 = gear (atlas has 9 slots)
+            let step = 1.0f32 / 9.0f32;
+            let uv_x = 8.0 * step;
+            let uv_y = 0.0f32;
+            let uv_w = step;
+            let uv_h = 1.0f32;
+            let tint = tokens.text;
+            let nearest = (icon_px - 16.0).abs() < 0.5;
+            self.stage_ui_sprite(crate::renderer::ui::UiSprite::new(
+                ix, iy, icon_px, icon_px, uv_x, uv_y, uv_w, uv_h, tint, 1.0, Some(nearest),
+            ));
+        }
 
         Some(crate::display::tab_bar::TabBarGeometry {
             start_line: (start_y / size_info.cell_height()) as usize,

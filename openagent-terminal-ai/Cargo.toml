@@ -14,6 +14,7 @@ default = []
 ai-ollama = ["serde", "serde_json", "reqwest", "tokio", "futures-util"]
 ai-openai = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 ai-anthropic = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
+ai-openrouter = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 # Internal feature to build examples; disabled by default
 examples = []
 

@@ -1815,6 +1815,9 @@ pub enum EventType {
 
     // Warp-style workspace events
     WarpUiUpdate(crate::workspace::WarpUiUpdateType),
+
+    // Command Palette: append files (e.g. async recursive scan results). Each entry is a path.
+    PaletteAppendFiles(Vec<String>),
 }
 
 /// Sync IPC event types.
@@ -2144,7 +2147,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     // Command Palette controls
     fn open_command_palette(&mut self) {
-        // Build minimal core actions list
+        // Build pooled palette items (Actions + Workflows + Files)
         let mut items: Vec<PaletteItem> = Vec::new();
         // Start open animation for palette
         self.display.palette_anim_opening = true;
@@ -2231,10 +2234,94 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
 
-        // Persist MRU counts after a selection
-        self.display.palette.save_mru_to_config(&self.config);
-        self.display.palette.close();
+        // Recent files from MRU (top 20)
+        if let Ok(cwd) = std::env::current_dir() {
+            let recent = self.display.palette.recent_file_paths(20);
+            for p in recent {
+                let path = std::path::PathBuf::from(&p);
+                if !path.exists() { continue; }
+                let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or(&p).to_string();
+                let subtitle = path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
+                items.push(PaletteItem {
+                    key: format!("file:{}", p),
+                    title: format!("File: {}", file_name),
+                    subtitle,
+                    entry: PaletteEntry::File(p),
+                });
+            }
+        }
+
+        // Files from current working directory (basic, non-recursive, capped) for immediate feedback
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Ok(rd) = std::fs::read_dir(&cwd) {
+                for (i, entry) in rd.flatten().enumerate() {
+                    if i >= 100 { break; }
+                    let path = entry.path();
+                    let file_name = entry.file_name().to_string_lossy().to_string();
+                    let subtitle = path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
+                    items.push(PaletteItem {
+                        key: format!("file:{}", path.to_string_lossy()),
+                        title: format!("File: {}", file_name),
+                        subtitle,
+                        entry: PaletteEntry::File(path.to_string_lossy().to_string()),
+                    });
+                }
+            }
+        }
+
+        // Open palette with assembled items
+        self.display.palette.open(items);
         self.mark_dirty();
+        if self.display.window.has_frame {
+            self.display.window.request_redraw();
+        }
+
+        // Spawn background recursive scan with ignore list and cap, append results once ready
+        let proxy = self.event_proxy.clone();
+        let window_id = self.display.window.id();
+        let cwd = std::env::current_dir().ok();
+        std::thread::spawn(move || {
+            let Some(root) = cwd else { return; };
+            use std::collections::VecDeque;
+            use std::fs;
+            let mut queue: VecDeque<std::path::PathBuf> = VecDeque::new();
+            queue.push_back(root.clone());
+            let ignore_dirs = [
+                ".git", "target", "node_modules", "dist", "build", ".venv", ".cache",
+                ".tox", ".mypy_cache", "venv", ".idea", ".vscode",
+            ];
+            let ignore_set: std::collections::HashSet<&str> = ignore_dirs.iter().copied().collect();
+            let mut out: Vec<String> = Vec::new();
+            let max_files: usize = 3000;
+            while let Some(dir) = queue.pop_front() {
+                let rd = match fs::read_dir(&dir) { Ok(rd) => rd, Err(_) => continue };
+                for entry in rd.flatten() {
+                    // Stop if over cap
+                    if out.len() >= max_files { break; }
+                    let path = entry.path();
+                    let name_os = entry.file_name();
+                    let name = name_os.to_string_lossy();
+                    // Skip symlinks
+                    let ft = match entry.file_type() { Ok(ft) => ft, Err(_) => continue };
+                    if ft.is_dir() {
+                        // Ignore directories by name
+                        if ignore_set.contains(name.as_ref()) { continue; }
+                        // Ignore hidden dot-directories except current directory root
+                        if name.starts_with('.') && !["."].contains(&name.as_ref()) {
+                            continue;
+                        }
+                        queue.push_back(path);
+                    } else if ft.is_file() {
+                        out.push(path.to_string_lossy().to_string());
+                    }
+                }
+                if out.len() >= max_files { break; }
+            }
+            // Post results
+            if !out.is_empty() {
+                let _ = proxy.send_event(Event::new(EventType::PaletteAppendFiles(out), window_id));
+            }
+        });
     }
 
     fn palette_active(&self) -> bool {
@@ -2306,13 +2393,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     #[cfg(not(feature = "workflow"))]
                     {
                         // Workflow feature not enabled; ignore selection or surface a small message
-                        // (keeping silent here to avoid extra dependencies in non-workflow builds)
                     }
+                },
+                PaletteEntry::File(_path) => {
+                    // Default action: open the File Tree overlay
+                    self.open_file_tree_panel();
                 },
             }
         }
         // Start close animation before hiding
         self.display.palette.close();
+        // Persist MRU on confirm
+        self.display.palette.save_mru_to_config(&self.config);
         self.display.palette_anim_opening = false;
         self.display.palette_anim_start = Some(std::time::Instant::now());
         let theme = self
@@ -2325,6 +2417,52 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
+    fn palette_confirm_cd(&mut self) {
+        // Alt+Enter: for file entries, paste "cd <dir>" into the prompt; otherwise fallback
+        if let Some(PaletteEntry::File(path)) = self.display.palette.selected_entry().cloned() {
+            // Mark usage
+            if let Some(key) = self.display.palette.selected_item_key().map(|s| s.to_string()) {
+                self.display.palette.note_used(&key);
+            }
+            let p = std::path::PathBuf::from(&path);
+            let target_dir = if p.is_dir() { p } else { p.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
+            // Inline shell quote for POSIX
+            let target_str = target_dir.to_string_lossy();
+            let quoted = if target_str.is_empty() {
+                "''".to_string()
+            } else if target_str
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'/' | b'.' | b'-' | b'_' | b':'))
+            {
+                target_str.to_string()
+            } else {
+                format!("'{}'", target_str.replace("'", "'\\''"))
+            };
+            let cmd = format!("cd {}", quoted);
+            self.paste(&cmd, true);
+            // Close + persist MRU
+            self.display.palette.close();
+            self.display.palette.save_mru_to_config(&self.config);
+            self.display.palette_anim_opening = false;
+            self.display.palette_anim_start = Some(std::time::Instant::now());
+            let theme = self
+                .config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.config.theme.resolve());
+            self.display.palette_anim_duration_ms = if theme.ui.reduce_motion { 0 } else { 120 };
+            self.mark_dirty();
+            return;
+        }
+        // Fallback
+        self.palette_confirm();
+    }
+
+    // Minimal single-quote shell escaping suitable for POSIX shells
+    // Example: path O'Reilly -> 'O'\''Reilly'
+    // For safety we also handle backslashes conservatively by leaving them as-is inside quotes
+    // If locale contains Windows paths this is still harmless on Linux
     fn palette_cancel(&mut self) {
         // Persist MRU on cancel as well
         self.display.palette.save_mru_to_config(&self.config);
@@ -2799,6 +2937,100 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.send_user_event(EventType::WorkflowsExecuteByName(name));
         }
         self.display.workflows_panel.close();
+        self.mark_dirty();
+    }
+
+    // Settings panel controls
+    fn open_settings_panel(&mut self) {
+        // Close palette if open
+        if self.palette_active() {
+            self.display.palette.save_mru_to_config(&self.config);
+            self.display.palette.close();
+        }
+        // Open with current config to preload values
+        let cfg_ref: &UiConfig = &self.config;
+        self.display.settings_panel.open(cfg_ref);
+        self.mark_dirty();
+    }
+
+    fn close_settings_panel(&mut self) {
+        self.display.settings_panel.close();
+        self.mark_dirty();
+    }
+
+    fn settings_panel_active(&self) -> bool { self.display.settings_panel.active }
+
+    fn settings_panel_input(&mut self, c: char) {
+        self.display.settings_panel.insert_char(c);
+        self.mark_dirty();
+    }
+    fn settings_panel_backspace(&mut self) {
+        self.display.settings_panel.backspace();
+        self.mark_dirty();
+    }
+    fn settings_panel_next_field(&mut self) {
+        self.display.settings_panel.next_field();
+        self.mark_dirty();
+    }
+    fn settings_panel_prev_field(&mut self) {
+        self.display.settings_panel.prev_field();
+        self.mark_dirty();
+    }
+    fn settings_panel_cycle_provider(&mut self, forward: bool) {
+        if self.display.settings_panel.selected_field == crate::display::settings_panel::Field::Provider {
+            self.display.settings_panel.cycle_provider(forward);
+            self.mark_dirty();
+        }
+    }
+    fn settings_panel_switch_category(&mut self, forward: bool) {
+        self.display.settings_panel.switch_category(forward);
+        self.mark_dirty();
+    }
+    fn settings_panel_test_connection(&mut self) {
+        let cfg_ref: &UiConfig = &self.config;
+        self.display.settings_panel.test_connection(cfg_ref);
+        self.mark_dirty();
+    }
+    fn settings_panel_move_selection(&mut self, delta: isize) {
+        self.display.settings_panel.move_kb_selection(delta);
+        self.mark_dirty();
+    }
+    fn settings_panel_begin_capture(&mut self) { self.display.settings_panel.begin_kb_capture(); self.mark_dirty(); }
+    fn settings_panel_cancel_capture(&mut self) { self.display.settings_panel.cancel_kb_capture(); self.mark_dirty(); }
+    fn settings_panel_is_capturing(&self) -> bool { self.display.settings_panel.is_kb_capturing() }
+    fn settings_panel_capture(&mut self, key: winit::keyboard::Key<String>, mods: winit::keyboard::ModifiersState) {
+        let res = self.display.settings_panel.capture_kb_binding(&self.config, key, mods);
+        if res.is_ok() {
+            // Reload config to apply keybinding
+            let path = crate::config::installed_config("toml").unwrap_or_else(|| {
+                let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+                base.join("openagent-terminal").join("openagent-terminal.toml")
+            });
+            let _ = self.event_proxy.send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
+        }
+        self.mark_dirty();
+    }
+    fn settings_panel_save(&mut self) {
+        let need_reload;
+        let category = self.display.settings_panel.category;
+        match self.display.settings_panel.save() {
+            Ok(()) => {
+                // For most categories we should reload config to apply changes
+                need_reload = matches!(category, crate::display::settings_panel::SettingsCategory::Ai | crate::display::settings_panel::SettingsCategory::Theme | crate::display::settings_panel::SettingsCategory::General);
+            },
+            Err(e) => {
+                need_reload = false;
+                self.display.settings_panel.message = Some(e);
+            },
+        }
+        if need_reload {
+            // Compute primary config path and request reload
+            let path = crate::config::installed_config("toml").unwrap_or_else(|| {
+                let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+                base.join("openagent-terminal").join("openagent-terminal.toml")
+            });
+            let _ = self.event_proxy.send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
+        }
         self.mark_dirty();
     }
 
@@ -3784,8 +4016,16 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     self.workspace_create_tab();
                     return true;
                 },
-                TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::EndDrag(_) | TBA::CancelDrag(_) => {
-                    // Drag lifecycle is handled by move/release handlers; mark dirty for visuals
+                TBA::OpenSettings => {
+                    self.open_settings_panel();
+                    return true;
+                },
+                // Drag-related actions are handled by dedicated handlers; treat as handled here
+                TBA::BeginDrag(_)
+                | TBA::DragMove(..)
+                | TBA::EndDrag(_)
+                | TBA::CancelDrag(_) => {
+                    // Mark dirty for visuals; actual drag is handled elsewhere
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                     return true;
@@ -3844,6 +4084,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 },
                 TBA::CreateTab => {
                     self.workspace_create_tab();
+                    return true;
+                },
+                TBA::OpenSettings => {
+                    self.open_settings_panel();
                     return true;
                 },
                 TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::CancelDrag(_) => {
@@ -4684,6 +4928,34 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::PasteCommandChecked(text) => {
                     // Paste content that already passed Security Lens gating
                     self.ctx.paste(&text, true);
+                    *self.ctx.dirty = true;
+                },
+                // Palette: append results from async file scan
+                EventType::PaletteAppendFiles(paths) => {
+                    // Build PaletteItems from paths on the main thread
+                    let cwd = std::env::current_dir().ok();
+                    let items: Vec<crate::display::palette::PaletteItem> = paths
+                        .into_iter()
+                        .map(|p| {
+                            let path = std::path::PathBuf::from(&p);
+                            let file_name = path
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(p.as_str())
+                                .to_string();
+                            let subtitle = cwd
+                                .as_ref()
+                                .and_then(|cwd| path.strip_prefix(cwd).ok())
+                                .map(|rel| rel.to_string_lossy().to_string());
+                            crate::display::palette::PaletteItem {
+                                key: format!("file:{}", p),
+                                title: format!("File: {}", file_name),
+                                subtitle,
+                                entry: crate::display::palette::PaletteEntry::File(p),
+                            }
+                        })
+                        .collect();
+                    self.ctx.display.palette.add_items_unique(items);
                     *self.ctx.dirty = true;
                 },
                 // Warp-style workspace events

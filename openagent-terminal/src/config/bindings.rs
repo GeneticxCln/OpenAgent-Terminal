@@ -283,6 +283,9 @@ pub enum Action {
     /// Open the File Tree overlay.
     OpenFileTree,
 
+    /// Open the Settings panel (in-app configuration)
+    OpenSettingsPanel,
+
     /// Execute a named workflow from the config.
     #[config(skip)]
     RunWorkflow(String),
@@ -541,6 +544,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         "w",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenWorkflowsPanel;
         // Open File Tree: Ctrl+Shift+O
         "o",      ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::OpenFileTree;
+        // Open Settings panel: Ctrl+,
+        ",",   ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::OpenSettingsPanel;
         "j",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::NextBlock;
         "k",      ModifiersState::ALT, ~BindingMode::SEARCH; Action::PreviousBlock;
         // Workspace pane controls (default shortcuts)
@@ -728,6 +733,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         Insert, ModifiersState::SHIFT, ~BindingMode::VI, ~BindingMode::SEARCH; Action::Esc("\x1b[2;2~".into());
         // Command Palette on macOS
         "p",    ModifiersState::SUPER, ~BindingMode::SEARCH;                    Action::OpenCommandPalette;
+        // Settings on macOS: Cmd+,
+        ",", ModifiersState::SUPER, ~BindingMode::SEARCH;                      Action::OpenSettingsPanel;
         // Debug: dump WGPU atlas stats
         "d",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::DumpAtlasStats;
         // Tabbing api.

@@ -215,6 +215,7 @@ ai = [
     "openagent-terminal-ai/ai-openai",
     "openagent-terminal-ai/ai-anthropic",
     "openagent-terminal-ai/ai-ollama",
+    "openagent-terminal-ai/ai-openrouter",
 ]
 # Optional sync feature for settings/history sync
 sync = ["dep:openagent-terminal-sync"]
@@ -248,6 +249,7 @@ security-lens-dev = ["security-lens-full"]
 ai-ollama = ["ai", "openagent-terminal-ai/ai-ollama"]
 ai-openai = ["ai", "openagent-terminal-ai/ai-openai"]
 ai-anthropic = ["ai", "openagent-terminal-ai/ai-anthropic"]
+ai-openrouter = ["ai", "openagent-terminal-ai/ai-openrouter"]
 
 [package.metadata.msix]
 # Minimal MSIX metadata for unsigned packaging in CI

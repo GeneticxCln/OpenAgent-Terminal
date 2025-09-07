@@ -410,11 +410,22 @@ impl WindowContext {
                             "OPENAGENT_AI_LOG_VERBOSITY",
                             config.ai.log_verbosity.to_string(),
                         );
-                        Some(crate::ai_runtime::AiRuntime::from_config(
-                            config.ai.provider.as_deref(),
-                            config.ai.endpoint_env.as_deref(),
-                            config.ai.api_key_env.as_deref(),
-                            config.ai.model_env.as_deref(),
+                        let provider_name = config.ai.provider.as_deref().unwrap_or("null");
+                        // Prefer user-configured provider entry; fall back to defaults
+                        let prov_cfg = config
+                            .ai
+                            .providers
+                            .get(provider_name)
+                            .cloned()
+                            .or_else(|| {
+                                crate::config::ai_providers::get_default_provider_configs()
+                                    .get(provider_name)
+                                    .cloned()
+                            })
+                            .unwrap_or_default();
+                        Some(crate::ai_runtime::AiRuntime::from_secure_config(
+                            provider_name,
+                            &prov_cfg,
                         ))
                     } else {
                         None
@@ -504,6 +515,40 @@ impl WindowContext {
         // Update cursor blinking.
         let event = Event::new(TerminalEvent::CursorBlinkingChange.into(), None);
         self.event_queue.push(event.into());
+
+        // Rebuild AI runtime on config update to apply provider changes immediately (Warp parity)
+        #[cfg(feature = "ai")]
+        {
+            if self.config.ai.enabled {
+                // Export AI log verbosity for provider/runtime side
+                std::env::set_var(
+                    "OPENAGENT_AI_LOG_VERBOSITY",
+                    self.config.ai.log_verbosity.to_string(),
+                );
+
+                let provider_name = self.config.ai.provider.as_deref().unwrap_or("null");
+                // Prefer user-configured provider entry; fall back to defaults
+                let prov_cfg = self
+                    .config
+                    .ai
+                    .providers
+                    .get(provider_name)
+                    .cloned()
+                    .or_else(|| {
+                        crate::config::ai_providers::get_default_provider_configs()
+                            .get(provider_name)
+                            .cloned()
+                    })
+                    .unwrap_or_default();
+
+                self.ai_runtime = Some(crate::ai_runtime::AiRuntime::from_secure_config(
+                    provider_name,
+                    &prov_cfg,
+                ));
+            } else {
+                self.ai_runtime = None;
+            }
+        }
 
         self.dirty = true;
     }

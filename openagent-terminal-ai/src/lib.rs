@@ -60,7 +60,12 @@ impl AiProvider for NullProvider {
     }
 }
 
-#[cfg(any(feature = "ai-ollama", feature = "ai-openai", feature = "ai-anthropic"))]
+#[cfg(any(
+    feature = "ai-ollama",
+    feature = "ai-openai",
+    feature = "ai-anthropic",
+    feature = "ai-openrouter",
+))]
 pub mod providers;
 
 /// Factory function for creating providers
@@ -99,10 +104,22 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
                     "Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL environment variables".to_string(),
                 ),
             }),
+        #[cfg(feature = "ai-openrouter")]
+        "openrouter" => providers::OpenRouterProvider::from_env()
+            .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            .map_err(|e| AiError::Configuration {
+                setting: "OpenRouter".to_string(),
+                message: e,
+                suggestion: Some(
+                    "Check OPENROUTER_API_KEY and OPENROUTER_MODEL environment variables".to_string(),
+                ),
+            }),
         _ => Err(AiError::Configuration {
             setting: "provider".to_string(),
             message: format!("Unknown provider: {}", name),
-            suggestion: Some("Available providers: null, ollama, openai, anthropic".to_string()),
+            suggestion: Some(
+                "Available providers: null, ollama, openai, anthropic, openrouter".to_string(),
+            ),
         }),
     }
 }

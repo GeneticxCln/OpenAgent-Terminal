@@ -5,7 +5,7 @@ use log::{debug, error, info};
 use std::collections::VecDeque;
 
 use crate::security_lens::{SecurityLens, SecurityPolicy};
-use openagent_terminal_ai::providers::{AnthropicProvider, OllamaProvider, OpenAiProvider};
+use openagent_terminal_ai::providers::{AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider};
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
 
 /// Maximum history entries to keep
@@ -238,6 +238,30 @@ impl AiRuntime {
                     },
                 };
                 OpenAiProvider::new(api_key, endpoint, model)
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            },
+            "openrouter" => {
+                let api_key = match credentials.require_api_key(provider_name) {
+                    Ok(key) => key.to_string(),
+                    Err(e) => {
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        rt.ui.error_message = Some(e);
+                        return rt;
+                    },
+                };
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://openrouter.ai/api/v1")
+                    .to_string();
+                let model = match credentials.require_model(provider_name) {
+                    Ok(model) => model.to_string(),
+                    Err(e) => {
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider::default()));
+                        rt.ui.error_message = Some(e);
+                        return rt;
+                    },
+                };
+                OpenRouterProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
             "anthropic" => {

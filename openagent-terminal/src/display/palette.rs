@@ -5,6 +5,7 @@ use crate::config::Action;
 pub enum PaletteEntry {
     Action(Action),
     Workflow(String),
+    File(String), // absolute or relative path
 }
 
 #[derive(Clone, Debug)]
@@ -36,6 +37,36 @@ impl PaletteState {
             selected: 0,
             mru_counts: std::collections::HashMap::new(),
         }
+    }
+
+    /// Append new items, deduplicating by key; then re-run filtering
+    pub fn add_items_unique(&mut self, mut new_items: Vec<PaletteItem>) {
+        if new_items.is_empty() { return; }
+        use std::collections::HashSet;
+        let mut existing: HashSet<&str> = HashSet::new();
+        for it in &self.items { existing.insert(it.key.as_str()); }
+        new_items.retain(|it| !existing.contains(it.key.as_str()));
+        if new_items.is_empty() { return; }
+        self.items.extend(new_items);
+        self.refilter();
+    }
+
+    /// Return up to `max` recent file paths from MRU counts
+    pub fn recent_file_paths(&self, max: usize) -> Vec<String> {
+        let mut pairs: Vec<(&String, &u32)> = self
+            .mru_counts
+            .iter()
+            .filter(|(k, _)| k.starts_with("file:"))
+            .collect();
+        // Sort by count desc
+        pairs.sort_by(|a, b| b.1.cmp(a.1));
+        let mut out = Vec::new();
+        for (k, _) in pairs.into_iter().take(max) {
+            if let Some(path) = k.strip_prefix("file:") {
+                out.push(path.to_string());
+            }
+        }
+        out
     }
 
     pub fn active(&self) -> bool {
@@ -153,6 +184,8 @@ impl PaletteState {
             (Some("workflow"), q.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
         } else if q.starts_with("a:") || q.starts_with("actions:") {
             (Some("action"), q.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
+        } else if q.starts_with("f:") || q.starts_with("files:") {
+            (Some("file"), q.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
         } else {
             (None, q)
         };
@@ -164,6 +197,7 @@ impl PaletteState {
                 match (&it.entry, ft) {
                     (PaletteEntry::Action(_), "action") => {},
                     (PaletteEntry::Workflow(_), "workflow") => {},
+                    (PaletteEntry::File(_), "file") => {},
                     _ => continue,
                 }
             }
@@ -578,10 +612,11 @@ impl Display {
         let ix = input_x + 4.0;
         let iy = input_y + ((input_ch - icon_px) * 0.5).max(0.0);
         // Atlas slot 0 = magnifier
-        const STEP: f32 = 1.0 / 8.0;
+        const UI_ATLAS_SLOTS: usize = 9;
+        let step: f32 = 1.0 / UI_ATLAS_SLOTS as f32;
         let uv_x = 0.0f32;
         let uv_y = 0.0f32;
-        let uv_w = STEP;
+        let uv_w = step;
         let uv_h = 1.0f32;
         let tint = if ui.palette_icon_tint {
             accent_fg
@@ -766,8 +801,8 @@ impl Display {
             if let Some(&orig_i) = self.palette.filtered_indices.get(idx) {
                 if let Some(orig_item) = self.palette.items.get(orig_i) {
                     // Use sprite atlas where possible; fallback to text if needed.
-                    // Atlas: 8 slots horizontally; step = 1/8
-                    const UI_ATLAS_SLOTS: usize = 8;
+                    // Atlas: 9 slots horizontally; step = 1/9
+                    const UI_ATLAS_SLOTS: usize = 9;
                     const STEP: f32 = 1.0 / UI_ATLAS_SLOTS as f32;
                     fn uv_for_slot(slot: usize) -> (f32, f32, f32, f32) {
                         let x = (slot as f32) * STEP;
@@ -775,15 +810,16 @@ impl Display {
                     }
                     let (uv_x, uv_y, uv_w, uv_h) = match &orig_item.entry {
                         PaletteEntry::Workflow(_) => uv_for_slot(1),
+                        PaletteEntry::File(_) => uv_for_slot(2),
                         PaletteEntry::Action(a) => {
                             use BindingAction as BA;
                             let slot = match a {
-                                BA::CreateTab => 2,
-                                BA::SplitVertical => 3,
-                                BA::SplitHorizontal => 4,
-                                BA::FocusNextPane | BA::FocusPreviousPane => 5,
-                                BA::ToggleZoom => 6,
-                                BA::OpenBlocksSearchPanel => 7,
+                                BA::CreateTab => 3,
+                                BA::SplitVertical => 4,
+                                BA::SplitHorizontal => 5,
+                                BA::FocusNextPane | BA::FocusPreviousPane => 6,
+                                BA::ToggleZoom => 7,
+                                BA::OpenBlocksSearchPanel => 0,
                                 BA::OpenWorkflowsPanel => 1,
                                 _ => 0,
                             };
@@ -986,6 +1022,7 @@ impl Display {
                     let chip = match orig_item.entry {
                         PaletteEntry::Action(_) => " [⚙ Action]",
                         PaletteEntry::Workflow(_) => " [⚡ Workflow]",
+                        PaletteEntry::File(_) => " [📄 File]",
                     };
                     if col_cursor < row_start_col + content_max_cols - chip.width() {
                         // Draw chip pill background with inner padding and selection scale
@@ -1241,7 +1278,7 @@ impl Display {
 
         // Footer hints
         if line <= footer_line {
-            let hints = "Enter • Run    Esc • Close    ↑/↓ • Navigate";
+            let hints = "Enter • Run    Alt+Enter • cd dir    Esc • Close    ↑/↓ • Navigate";
             self.draw_ai_text(
                 Point::new(footer_line, Column(panel_start_col + 2)),
                 muted_fg,

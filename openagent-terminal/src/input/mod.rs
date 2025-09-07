@@ -176,6 +176,7 @@ pub trait ActionContext<T: EventListener> {
     fn palette_move_selection(&mut self, _delta: isize) {}
     fn palette_confirm(&mut self) {}
     fn palette_cancel(&mut self) {}
+    fn palette_confirm_cd(&mut self) {}
     fn run_workflow_by_name(&mut self, _name: &str) {}
 
     // Blocks Search panel - basic functionality
@@ -243,6 +244,24 @@ pub trait ActionContext<T: EventListener> {
 
     // Workflows panel (feature="workflow"). Default to no-op/false when disabled.
     fn open_workflows_panel(&mut self) {}
+
+    // Settings panel controls
+    fn open_settings_panel(&mut self) {}
+    fn close_settings_panel(&mut self) {}
+    fn settings_panel_active(&self) -> bool { false }
+    fn settings_panel_input(&mut self, _c: char) {}
+    fn settings_panel_backspace(&mut self) {}
+    fn settings_panel_next_field(&mut self) {}
+    fn settings_panel_prev_field(&mut self) {}
+    fn settings_panel_cycle_provider(&mut self, _forward: bool) {}
+    fn settings_panel_save(&mut self) {}
+    fn settings_panel_switch_category(&mut self, _forward: bool) {}
+    fn settings_panel_test_connection(&mut self) {}
+    fn settings_panel_move_selection(&mut self, _delta: isize) {}
+    fn settings_panel_begin_capture(&mut self) {}
+    fn settings_panel_cancel_capture(&mut self) {}
+    fn settings_panel_is_capturing(&self) -> bool { false }
+    fn settings_panel_capture(&mut self, _key: winit::keyboard::Key<String>, _mods: ModifiersState) {}
     fn workflows_panel_cancel(&mut self) {}
     fn workflows_panel_confirm(&mut self) {}
     fn workflows_panel_input(&mut self, _c: char) {}
@@ -650,6 +669,13 @@ impl<T: EventListener> Execute<T> for Action {
                     ctx.close_file_tree_panel();
                 } else {
                     ctx.open_file_tree_panel();
+                }
+            },
+            Action::OpenSettingsPanel => {
+                if ctx.settings_panel_active() {
+                    ctx.close_settings_panel();
+                } else {
+                    ctx.open_settings_panel();
                 }
             },
             Action::ToggleAiPanel => ctx.open_ai_panel(),
@@ -1116,6 +1142,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 | TabBarAction::CancelDrag(_) => {
                     // no-op: considered handled
                 },
+                TabBarAction::OpenSettings => {
+                    self.ctx.open_settings_panel();
+                },
             }
             return true;
         }
@@ -1125,8 +1154,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Handle clicks on the Warp-like bottom composer pill (visual-only -> opens AI panel)
     #[cfg_attr(test, allow(dead_code))]
     fn process_bottom_composer_click(&mut self) -> bool {
+        use unicode_width::UnicodeWidthStr as _;
         let size_info = self.ctx.size_info();
         let ch = size_info.cell_height();
+        let cw = size_info.cell_width();
         let lines = size_info.screen_lines();
         if lines == 0 {
             return false;
@@ -1141,13 +1172,88 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let mx = self.ctx.display().last_mouse_x as f32;
         let my = self.ctx.display().last_mouse_y as f32;
         let inside = mx >= x && mx <= x + w && my >= y && my <= y + h;
-        // Set focus state based on hit test
+
+        // Convert mouse x to column on the bottom line
+        let point = {
+            let display_offset = self.ctx.terminal().grid().display_offset();
+            self.ctx.mouse().point(&size_info, display_offset)
+        };
+        let mouse_col = point.column.0;
+        let line_idx = point.line.0 as usize;
+        let bottom_line = lines.saturating_sub(1);
+
+        // Chip hit-testing: right-aligned inside the pill
+        if inside && line_idx == bottom_line {
+            let cols = size_info.columns();
+            let mut col_end = cols.saturating_sub(2);
+            // order: [Palette] [AI] [Run] drawn from right to left
+            let chips = ["[Palette]", "[AI]", "[Run]"];
+            for label in chips.iter() {
+                let wcols = label.width();
+                if wcols + 1 >= col_end { break; }
+                let start = col_end.saturating_sub(wcols);
+                let end = col_end;
+                if mouse_col >= start && mouse_col < end {
+                    match *label {
+                        "[Palette]" => {
+                            self.ctx.open_command_palette();
+                            return true;
+                        },
+                        "[AI]" => {
+                            #[cfg(feature = "ai")]
+                            {
+                                self.ctx.open_ai_panel();
+                                return true;
+                            }
+                        },
+                        "[Run]" => {
+                            #[cfg(feature = "ai")]
+                            {
+                                // Seed AI panel with composer text if any, then propose
+                                self.ctx.open_ai_panel();
+                                if let Some(rt) = self.ctx.ai_runtime_mut() {
+                                    let text = self.ctx.display().composer_text.clone();
+                                    if !text.is_empty() {
+                                        rt.ui.scratch = text;
+                                        rt.ui.cursor_position = rt.ui.scratch.len();
+                                    }
+                                }
+                                self.ctx.ai_propose();
+                                // reset composer focus
+                                self.ctx.display().composer_text.clear();
+                                self.ctx.display().composer_cursor = 0;
+                                self.ctx.display().composer_sel_anchor = None;
+                                self.ctx.display().composer_view_col_offset = 0;
+                                self.ctx.display().composer_focused = false;
+                                self.ctx.mark_dirty();
+                                return true;
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+                if start <= 2 { break; }
+                col_end = start.saturating_sub(2);
+            }
+        }
+
+        // If clicked inside pill but not on a chip: focus or open AI (instant behavior)
         self.ctx.display().composer_focused = inside;
         if inside {
             #[cfg(feature = "ai")]
             {
-                self.ctx.open_ai_panel();
-                return true;
+                // In instant mode we open AI panel on click; commit mode will just focus
+                let theme = self
+                    .ctx
+                    .config()
+                    .resolved_theme
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| self.ctx.config().theme.resolve());
+                if matches!(theme.ui.composer_open_mode, crate::config::theme::ComposerOpenMode::Instant) {
+                    self.ctx.open_ai_panel();
+                    return true;
+                }
             }
         }
         false
@@ -1156,57 +1262,98 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Handle clicks on the persistent Quick Actions bar at the bottom
     #[cfg_attr(test, allow(dead_code))]
     fn process_quick_actions_click(&mut self) -> bool {
+        // Gather inputs without holding long immutable borrows
+        let is_fs = self.ctx.window().is_fullscreen();
+        let cfg = self.ctx.config();
+        if !cfg.workspace.quick_actions.show { return false; }
+
         let size_info = self.ctx.size_info();
         let display_offset = self.ctx.terminal().grid().display_offset();
         let point = self.ctx.mouse().point(&size_info, display_offset);
-        let bottom_line = size_info.screen_lines().saturating_sub(1);
-        if point.line != bottom_line {
-            return false;
-        }
 
-        // Compute label hitboxes; build dynamically to match drawing logic
+        // Mirror line selection logic from draw_quick_actions_bar
+        let lines = size_info.screen_lines();
+        let tab_cfg = &cfg.workspace.tab_bar;
+        let effective_visibility = match tab_cfg.visibility {
+            crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+            crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+            crate::config::workspace::TabBarVisibility::Auto => {
+                if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+            },
+        };
+        let reserve_top = tab_cfg.show
+            && tab_cfg.reserve_row
+            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && tab_cfg.position == crate::workspace::TabBarPosition::Top;
+        let reserve_bottom = tab_cfg.show
+            && tab_cfg.reserve_row
+            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && tab_cfg.position == crate::workspace::TabBarPosition::Bottom;
+
+        let mut line = match cfg.workspace.quick_actions.position {
+            crate::config::workspace::QuickActionsPosition::Top => if reserve_top { 1 } else { 0 },
+            crate::config::workspace::QuickActionsPosition::Bottom => {
+                let base = lines.saturating_sub(1);
+                if reserve_bottom { base.saturating_sub(1) } else { base }
+            },
+            crate::config::workspace::QuickActionsPosition::Auto => {
+                let base = lines.saturating_sub(1);
+                if reserve_bottom { base.saturating_sub(1) } else { base }
+            },
+        };
+        if line >= lines { line = lines.saturating_sub(1); }
+        if point.line != line { return false; }
+
+        // Build label hitboxes; match drawing logic and AI enablement
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
-        if self.ctx.config().workspace.quick_actions.show_palette {
-            labels.push("[Palette]");
-        }
-        labels.push("[AI]");
+        if cfg.workspace.quick_actions.show_palette { labels.push("[Palette]"); }
+        #[cfg(feature = "ai")]
+        if cfg.ai.enabled { labels.push("[AI]"); }
 
         let mut start = 1usize;
         let col = point.column.0;
 
         for label in labels {
-            let end = start + label.len();
+            let end = start + label.chars().count();
             if col >= start && col < end {
                 match label {
                     "[Workflows]" => {
                         #[cfg(feature = "workflow")]
-                        {
-                            self.ctx.open_workflows_panel();
-                        }
+                        { self.ctx.open_workflows_panel(); }
+                        self.ctx.display().quick_actions_press_flash_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
                     },
                     "[Blocks]" => {
                         #[cfg(feature = "blocks")]
-                        {
-                            self.ctx.open_blocks_search_panel();
-                        }
+                        { self.ctx.open_blocks_search_panel(); }
+                        self.ctx.display().quick_actions_press_flash_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
                     },
-                    "[Palette]" => {
-                        self.ctx.open_command_palette();
-                        return true;
-                    },
+                    "[Palette]" => { self.ctx.open_command_palette(); self.ctx.display().quick_actions_press_flash_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(140)); return true; },
                     "[AI]" => {
                         #[cfg(feature = "ai")]
-                        {
-                            self.ctx.open_ai_panel();
-                        }
+                        { self.ctx.open_ai_panel(); }
+                        self.ctx.display().quick_actions_press_flash_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
                     },
                     _ => {},
                 }
             }
             start = end + 2;
+        }
+
+        // Check right-aligned settings button: [⚙]
+        let settings = "[⚙]";
+        let cols = size_info.columns();
+        if settings.chars().count() + 2 < cols {
+            let start = cols.saturating_sub(settings.chars().count() + 2);
+            let end = start + settings.chars().count();
+            let col = point.column.0;
+            if col >= start && col < end {
+                self.ctx.open_settings_panel();
+                self.ctx.display().quick_actions_press_flash_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
+                return true;
+            }
         }
 
         false
@@ -1306,6 +1453,69 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         };
 
+        // Quick Actions hover: set pointer when hovering labels or gear
+        let quick_actions_hover = {
+            let is_fs = self.ctx.window().is_fullscreen();
+            let cfg = self.ctx.config();
+            if cfg.workspace.quick_actions.show {
+                let mut qa_hover = false;
+                // Mirror line selection logic from draw_quick_actions_bar
+                let size_info = self.ctx.size_info();
+                let display_offset = self.ctx.terminal().grid().display_offset();
+                let point = self.ctx.mouse().point(&size_info, display_offset);
+
+                let lines = size_info.screen_lines();
+                let tab_cfg = &cfg.workspace.tab_bar;
+                let effective_visibility = match tab_cfg.visibility {
+                    crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                    crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                    crate::config::workspace::TabBarVisibility::Auto => {
+                        if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                    },
+                };
+                let reserve_top = tab_cfg.show && tab_cfg.reserve_row && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always) && tab_cfg.position == crate::workspace::TabBarPosition::Top;
+                let reserve_bottom = tab_cfg.show && tab_cfg.reserve_row && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always) && tab_cfg.position == crate::workspace::TabBarPosition::Bottom;
+                let mut line = match cfg.workspace.quick_actions.position {
+                    crate::config::workspace::QuickActionsPosition::Top => if reserve_top { 1 } else { 0 },
+                    crate::config::workspace::QuickActionsPosition::Bottom => {
+                        let base = lines.saturating_sub(1);
+                        if reserve_bottom { base.saturating_sub(1) } else { base }
+                    },
+                    crate::config::workspace::QuickActionsPosition::Auto => {
+                        let base = lines.saturating_sub(1);
+                        if reserve_bottom { base.saturating_sub(1) } else { base }
+                    },
+                };
+                if line >= lines { line = lines.saturating_sub(1); }
+                if point.line.0 as usize != line { false } else {
+                    // Labels and gear regions
+                    use unicode_width::UnicodeWidthStr as _;
+                    let cols = size_info.columns();
+                    let mut col = 1usize;
+                    let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
+                    if cfg.workspace.quick_actions.show_palette { labels.push("[Palette]"); }
+                    #[cfg(feature = "ai")]
+                    if cfg.ai.enabled { labels.push("[AI]"); }
+                    let pcol = point.column.0;
+                    for label in labels {
+                        let end = col + label.width();
+                        if pcol >= col && pcol < end { qa_hover = true; break; }
+                        col = end + 2;
+                    }
+                    // Gear area: approx 3 cols from right with 2 padding
+                    if !qa_hover {
+                        let gear_cols = 3usize;
+                        if gear_cols + 2 < cols {
+                            let start = cols.saturating_sub(gear_cols + 2);
+                            let end = start + gear_cols;
+                            if pcol >= start && pcol < end { qa_hover = true; }
+                        }
+                    }
+                    qa_hover
+                }
+            } else { false }
+        };
+
         // Update mouse state with split hover taking precedence for resize cursor
         if let Some(hit) = self.ctx.display().split_hover.clone() {
             match hit.axis {
@@ -1319,7 +1529,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else {
             // Update mouse state and check for URL change.
             let mouse_state = self.cursor_state();
-            if ai_hover || tab_hover {
+            if ai_hover || tab_hover || quick_actions_hover {
                 self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
             } else {
                 self.ctx.window().set_mouse_cursor(mouse_state);
@@ -1373,6 +1583,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     | TabBarAction::DragMove(..)
                     | TabBarAction::EndDrag(_)
                     | TabBarAction::CancelDrag(_) => None,
+                    TabBarAction::OpenSettings => None,
                 }
             } else {
                 None
