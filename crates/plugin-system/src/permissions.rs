@@ -209,10 +209,26 @@ impl SecurityPolicy {
                 .join(path)
         };
 
-        // Canonicalize to resolve symlinks and normalize the path
-        let canonical_path = dunce::canonicalize(&absolute_path).map_err(|e| {
-            PluginSystemError::PermissionDenied(format!("Path canonicalization failed: {}", e))
-        })?;
+        // Canonicalize to resolve symlinks and normalize the path when possible.
+        // Fall back to a component-based normalization if the path does not exist.
+        let canonical_path = match dunce::canonicalize(&absolute_path) {
+            Ok(p) => p,
+            Err(_) => {
+                // Normalize components without touching the filesystem.
+                use std::path::Component;
+                let mut norm = PathBuf::new();
+                for comp in absolute_path.components() {
+                    match comp {
+                        Component::CurDir => {},
+                        Component::ParentDir => {
+                            norm.pop();
+                        },
+                        other => norm.push(other.as_os_str()),
+                    }
+                }
+                norm
+            },
+        };
 
         // Convert to string with consistent separators
         let path_str = canonical_path.to_str().ok_or_else(|| {

@@ -20,7 +20,7 @@ walkdir = "2.4"
 
 # HTTP client for theme downloads
 reqwest = { version = "0.12", features = ["json", "stream"], optional = true }
-tokio = { version = "1.47", features = ["fs"], optional = true }
+tokio = { version = "1.47", features = ["fs", "macros"], optional = true }
 
 # Validation
 regex = "1.10"

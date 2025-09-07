@@ -459,13 +459,15 @@ impl WgpuRenderer {
             .map_err(|e| Error::Init(format!("adapter: {e}")))?;
 
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("wgpu-device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::Performance,
-                trace: Default::default(),
-            })
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("wgpu-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                    trace: Default::default(),
+                }
+            )
             .await
             .map_err(|e| Error::Init(format!("device: {e}")))?;
 

@@ -1006,12 +1006,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_developer_workflow_creation() {
+        if std::env::var("DOCKER_AVAILABLE").ok().as_deref() != Some("1") {
+            eprintln!("Skipping docker-dependent test: set DOCKER_AVAILABLE=1 to enable");
+            return;
+        }
         let result = create_test_workflow().await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_workflow_suggestions() {
+        if std::env::var("DOCKER_AVAILABLE").ok().as_deref() != Some("1") {
+            eprintln!("Skipping docker-dependent test: set DOCKER_AVAILABLE=1 to enable");
+            return;
+        }
         let workflow = create_test_workflow().await.unwrap();
         let suggestions = workflow.suggest_workflows().await.unwrap();
         // Should not fail, may be empty for a new directory
@@ -1020,6 +1028,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ai_context_generation() {
+        if std::env::var("DOCKER_AVAILABLE").ok().as_deref() != Some("1") {
+            eprintln!("Skipping docker-dependent test: set DOCKER_AVAILABLE=1 to enable");
+            return;
+        }
         let workflow = create_test_workflow().await.unwrap();
         let context_prompt = workflow.generate_ai_context_prompt().await.unwrap();
 
