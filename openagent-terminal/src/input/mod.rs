@@ -245,6 +245,30 @@ pub trait ActionContext<T: EventListener> {
     // Workflows panel (feature="workflow"). Default to no-op/false when disabled.
     fn open_workflows_panel(&mut self) {}
 
+    // Notebooks panel controls (feature = "blocks")
+    #[cfg(feature = "blocks")]
+    fn open_notebooks_panel(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_active(&self) -> bool { false }
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_close(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_move_selection(&mut self, _delta: isize) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_confirm(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_run_all(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_focus_next(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_focus_prev(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_rerun_selected(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_add_command_cell(&mut self) {}
+    #[cfg(feature = "blocks")]
+    fn notebooks_panel_add_markdown_cell(&mut self) {}
+
     // Settings panel controls
     fn open_settings_panel(&mut self) {}
     fn close_settings_panel(&mut self) {}
@@ -378,6 +402,22 @@ pub trait ActionContext<T: EventListener> {
         false
     }
     fn workspace_tab_bar_drag_release(&mut self, _button: MouseButton) -> bool {
+        false
+    }
+
+    // Pane drag-and-drop helpers (Alt+LeftDrag)
+    fn workspace_pane_drag_press(
+        &mut self,
+        _mouse_x_px: f32,
+        _mouse_y_px: f32,
+        _button: MouseButton,
+    ) -> bool {
+        false
+    }
+    fn workspace_pane_drag_move(&mut self, _mouse_x_px: f32, _mouse_y_px: f32) -> bool {
+        false
+    }
+    fn workspace_pane_drag_release(&mut self, _button: MouseButton) -> bool {
         false
     }
 
@@ -969,6 +1009,64 @@ impl<T: EventListener> Execute<T> for Action {
             Action::DumpAtlasStats => {
                 ctx.display().dump_atlas_stats();
             },
+            Action::TogglePerfHud => {
+                if ctx.display().toggle_perf_hud() {
+                    let msg = message_bar::Message::new(
+                        "Perf HUD toggled".into(),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    ctx.send_user_event(crate::event::EventType::Message(msg));
+                }
+            },
+            Action::IncreaseSubpixelGamma => {
+                if ctx.display().adjust_subpixel_gamma(0.1) {
+                    let msg = message_bar::Message::new(
+                        "Gamma +0.1".into(),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    ctx.send_user_event(crate::event::EventType::Message(msg));
+                }
+            },
+            Action::DecreaseSubpixelGamma => {
+                if ctx.display().adjust_subpixel_gamma(-0.1) {
+                    let msg = message_bar::Message::new(
+                        "Gamma -0.1".into(),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    ctx.send_user_event(crate::event::EventType::Message(msg));
+                }
+            },
+            Action::ResetSubpixelGamma => {
+                if ctx.display().reset_subpixel_gamma() {
+                    let msg = message_bar::Message::new(
+                        "Gamma reset".into(),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    ctx.send_user_event(crate::event::EventType::Message(msg));
+                }
+            },
+            Action::ToggleSubpixelText => {
+                let applied = ctx.display().toggle_subpixel_text();
+                if applied {
+                    let msg = message_bar::Message::new(
+                        "Toggled subpixel text".into(),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    ctx.send_user_event(crate::event::EventType::Message(msg));
+                    ctx.mark_dirty();
+                }
+            },
+            Action::CycleSubpixelOrientation => {
+                if let Some(next) = ctx.display().cycle_subpixel_orientation() {
+                    let label = match next { crate::config::debug::SubpixelOrientation::RGB => "RGB", crate::config::debug::SubpixelOrientation::BGR => "BGR" };
+                    let msg = message_bar::Message::new(
+                        format!("Subpixel orientation: {}", label),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    ctx.send_user_event(crate::event::EventType::Message(msg));
+                    ctx.mark_dirty();
+                }
+            },
             #[cfg(not(target_os = "macos"))]
             Action::CreateNewWindow => ctx.create_new_window(),
             Action::SpawnNewInstance => ctx.spawn_new_instance(),
@@ -1439,6 +1537,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         }
 
+        // If a pane drag is active, update drag and short-circuit other hover logic
+        if self.ctx.display().pane_drag_manager.current_drag().is_some() {
+            let handled = self.ctx.workspace_pane_drag_move(x as f32, y as f32);
+            if handled { return; }
+        }
+
         // Tab bar hover: set pointer when hovering on a clickable tab area
         let tab_hover = {
             if self.ctx.config().workspace.tab_bar.show
@@ -1873,6 +1977,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
             // Stop split drag on mouse release
             if let MouseButton::Left = button {
+                // First, try to finalize pane drag if active
+                if self.ctx.workspace_pane_drag_release(button) {
+                    return;
+                }
                 if self.ctx.display().split_drag.take().is_some() {
                     return;
                 }
@@ -2187,6 +2295,36 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         if let Some(hit) = self.ctx.display().split_hover.clone() {
                             self.ctx.display().split_drag = Some(hit);
                             return;
+                        }
+                        // Pane drag gesture starts a pane drag operation (configurable)
+                        {
+                            let dcfg = {
+                                // Copy drag config to avoid holding immutable borrow across mutable ctx use
+                                self.ctx.config().workspace.drag.clone()
+                            };
+                            if dcfg.enable_pane_drag {
+                                let mods = self.ctx.modifiers().state();
+                                let modifier_ok = match dcfg.pane_drag_modifier {
+                                    crate::config::workspace::DragModifier::None => {
+                                        !mods.alt_key() && !mods.control_key() && !mods.shift_key()
+                                    },
+                                    crate::config::workspace::DragModifier::Alt => mods.alt_key(),
+                                    crate::config::workspace::DragModifier::Ctrl => mods.control_key(),
+                                    crate::config::workspace::DragModifier::Shift => mods.shift_key(),
+                                };
+                                let button_ok = match dcfg.pane_drag_button {
+                                    crate::config::workspace::DragButton::Left => button == MouseButton::Left,
+                                    crate::config::workspace::DragButton::Middle => button == MouseButton::Middle,
+                                    crate::config::workspace::DragButton::Right => button == MouseButton::Right,
+                                };
+                                if modifier_ok && button_ok {
+                                    let mx = self.ctx.display().last_mouse_x as f32;
+                                    let my = self.ctx.display().last_mouse_y as f32;
+                                    if self.ctx.workspace_pane_drag_press(mx, my, button) {
+                                        return;
+                                    }
+                                }
+                            }
                         }
                         // Tab bar drag/click handling (top/bottom)
                         // Compute current grid coordinates

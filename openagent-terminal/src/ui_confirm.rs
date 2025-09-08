@@ -51,7 +51,8 @@ mod test_helpers {
 
     pub fn pending_len() -> usize {
         let st = STATE.lock().unwrap();
-        st.pending.len()
+        // Count only test-tagged entries to avoid interference from concurrently running tests
+        st.pending.keys().filter(|k| k.starts_with("t-")).count()
     }
 
     pub fn has_pending(id: &str) -> bool {
@@ -223,8 +224,13 @@ mod tests {
     use super::*;
     use crate::ui_confirm::test_helpers as th;
 
+    // Global test lock to avoid interference through shared global state.
+    static TEST_LOCK: once_cell::sync::Lazy<std::sync::Mutex<()>> =
+        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(()));
+
     #[test]
     fn resolve_removes_pending_and_sends_value() {
+        let _g = TEST_LOCK.lock().unwrap();
         th::clear_all();
         let id = "t-1".to_string();
         let rx = th::insert_pending_for_test(&id);
@@ -238,6 +244,7 @@ mod tests {
 
     #[test]
     fn resolve_unknown_returns_false() {
+        let _g = TEST_LOCK.lock().unwrap();
         th::clear_all();
         let ok = resolve("does-not-exist", false);
         assert!(!ok);
@@ -245,6 +252,7 @@ mod tests {
 
     #[test]
     fn request_confirm_timeout_closes_overlay_and_cleans_pending() {
+        let _g = TEST_LOCK.lock().unwrap();
         th::clear_all();
         // No real proxy in tests; request_confirm records events when no proxy is set
         let res = super::request_confirm(

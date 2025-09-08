@@ -181,6 +181,20 @@ pub enum Action {
     /// Dump WGPU atlas stats to the debug log (no-op on GL backend).
     DumpAtlasStats,
 
+    /// Toggle subpixel text rendering (WGPU backend only).
+    ToggleSubpixelText,
+
+    /// Cycle LCD subpixel orientation between RGB and BGR (WGPU backend only).
+    CycleSubpixelOrientation,
+
+    /// Toggle performance HUD in WGPU backend.
+    TogglePerfHud,
+
+    /// Increase/decrease/reset subpixel gamma.
+    IncreaseSubpixelGamma,
+    DecreaseSubpixelGamma,
+    ResetSubpixelGamma,
+
     /// Spawn a new instance of OpenAgent Terminal.
     SpawnNewInstance,
 
@@ -688,6 +702,12 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 fn common_keybindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
+        // Perf HUD toggle
+        "f",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::TogglePerfHud;
+        // Subpixel gamma tuning: increase/decrease/reset
+        "g",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::IncreaseSubpixelGamma;
+        "h",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::DecreaseSubpixelGamma;
+        "r",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResetSubpixelGamma;
         // Command Palette
         "p",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::OpenCommandPalette;
         // Clipboard
@@ -731,6 +751,12 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
         Insert, ModifiersState::SHIFT, ~BindingMode::VI, ~BindingMode::SEARCH; Action::Esc("\x1b[2;2~".into());
+        // Perf HUD toggle
+        "f",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::TogglePerfHud;
+        // Subpixel gamma tuning: increase/decrease/reset
+        "g",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::IncreaseSubpixelGamma;
+        "h",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::DecreaseSubpixelGamma;
+        "r",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResetSubpixelGamma;
         // Command Palette on macOS
         "p",    ModifiersState::SUPER, ~BindingMode::SEARCH;                    Action::OpenCommandPalette;
         // Settings on macOS: Cmd+,

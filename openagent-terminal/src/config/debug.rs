@@ -26,6 +26,17 @@ pub enum SubpixelPreference {
     Disabled,
 }
 
+/// Orientation for LCD subpixel rendering.
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SubpixelOrientation {
+    RGB,
+    BGR,
+}
+
+impl Default for SubpixelOrientation {
+    fn default() -> Self { Self::RGB }
+}
+
 impl Default for SubpixelPreference {
     fn default() -> Self {
         Self::Auto
@@ -46,6 +57,7 @@ impl Default for SrgbPreference {
     }
 }
 
+
 /// Render timer color style.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RenderTimerStyle {
@@ -62,7 +74,7 @@ impl Default for RenderTimerStyle {
 }
 
 /// Debugging options.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq)]
 pub struct Debug {
     pub log_level: LevelFilter,
 
@@ -101,6 +113,15 @@ pub struct Debug {
 
     /// Subpixel text rendering toggle (Auto/Enabled/Disabled).
     pub subpixel_text: SubpixelPreference,
+
+    /// LCD subpixel orientation used when subpixel text is enabled.
+    pub subpixel_orientation: SubpixelOrientation,
+
+    /// Subpixel gamma exponent (typical ~2.2).
+    pub subpixel_gamma: f32,
+
+    /// Enable HarfBuzz text shaping in WGPU renderer (experimental).
+    pub text_shaping: bool,
 
     /// sRGB swapchain preference (Auto/Enabled/Disabled).
     pub srgb_swapchain: SrgbPreference,
@@ -150,6 +171,9 @@ impl Default for Debug {
             prefer_egl: Default::default(),
             blocks: true,
             subpixel_text: Default::default(),
+            subpixel_orientation: Default::default(),
+            subpixel_gamma: 2.2,
+            text_shaping: false,
             srgb_swapchain: Default::default(),
             zero_evicted_atlas_layer: false,
             atlas_eviction_policy: Default::default(),

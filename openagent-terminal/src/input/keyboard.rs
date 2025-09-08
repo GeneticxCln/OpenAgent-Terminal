@@ -775,6 +775,162 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Notebooks panel input handling (if active)
+        #[cfg(feature = "blocks")]
+        if self.ctx.notebooks_panel_active() {
+            // If the editor overlay is currently active (editing a notebook cell),
+            // handle basic save/close controls here.
+            #[cfg(all(feature = "blocks", feature = "editor"))]
+            if self.ctx.display().notebooks_edit_session.is_some() {
+                let mods = self.ctx.modifiers().state();
+                match key.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => {
+                        // Cancel edit session and close overlay without applying
+                        #[cfg(feature = "blocks")]
+                        {
+                            self.ctx.display().notebooks_edit_session = None;
+                        }
+                        #[cfg(feature = "editor")]
+                        self.ctx.display().editor_overlay_close();
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    Key::Character(c) if mods.control_key() && c.eq_ignore_ascii_case("s") => {
+                        // Save and apply edits if there is an active session
+                        #[cfg(feature = "editor")]
+                        self.ctx.display().editor_overlay_save();
+                        #[cfg(feature = "blocks")]
+                        {
+                            if let Some(session) = self.ctx.display().notebooks_edit_session.clone() {
+                                let path = session.path.clone();
+                                let cell_id = session.cell_id.clone();
+                                if let Ok(contents) = std::fs::read_to_string(&path) {
+                                    self.ctx.send_user_event(crate::event::EventType::NotebooksEditApply {
+                                        cell_id,
+                                        content: contents,
+                                    });
+                                }
+                                self.ctx.display().notebooks_edit_session = None;
+                            }
+                        }
+                        #[cfg(feature = "editor")]
+                        self.ctx.display().editor_overlay_close();
+                        self.ctx.mark_dirty();
+                        return;
+                    },
+                    _ => {}
+                }
+            }
+            let mods = self.ctx.modifiers().state();
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) if mods.shift_key() => { self.ctx.notebooks_panel_run_all(); return; },
+                Key::Named(NamedKey::Enter) => { self.ctx.notebooks_panel_confirm(); return; },
+                Key::Named(NamedKey::Escape) => { self.ctx.notebooks_panel_close(); return; },
+                Key::Named(NamedKey::ArrowUp) => { self.ctx.notebooks_panel_move_selection(-1); return; },
+                Key::Named(NamedKey::ArrowDown) => { self.ctx.notebooks_panel_move_selection(1); return; },
+                Key::Named(NamedKey::PageUp) => { self.ctx.notebooks_panel_move_selection(-5); return; },
+                Key::Named(NamedKey::PageDown) => { self.ctx.notebooks_panel_move_selection(5); return; },
+                Key::Named(NamedKey::Tab) => { self.ctx.notebooks_panel_focus_next(); return; },
+                Key::Named(NamedKey::ArrowLeft) => { self.ctx.notebooks_panel_focus_prev(); return; },
+                Key::Named(NamedKey::ArrowRight) => { self.ctx.notebooks_panel_focus_next(); return; },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("r") => { self.ctx.notebooks_panel_rerun_selected(); return; },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("a") && mods.shift_key() => { self.ctx.notebooks_panel_add_markdown_cell(); return; },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("a") => { self.ctx.notebooks_panel_add_command_cell(); return; },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("e") => {
+                    // Begin edit of the selected cell using the editor overlay when available.
+                    #[cfg(all(feature = "blocks", feature = "editor"))]
+                    {
+                        let idx = self.ctx.display().notebooks_panel.selected_cell;
+                        if let Some(cell) = self.ctx.display().notebooks_panel.cells.get(idx).cloned() {
+                            // Create a temp file with appropriate extension
+                            let ext = if cell.cell_type == "md" { "md" } else { "sh" };
+                            let mut path = std::env::temp_dir();
+                            path.push(format!("openagent_cell_{}.{}", cell.id, ext));
+                            let _ = std::fs::write(&path, cell.summary.clone());
+                            // Track edit session and open overlay
+                            self.ctx.display().notebooks_edit_session = Some(crate::display::notebook_panel::NotebookEditSession { cell_id: cell.id.clone(), path: path.clone() });
+                            self.ctx.display().editor_overlay_open(path);
+                            self.ctx.mark_dirty();
+                        }
+                    }
+                    #[cfg(any(not(feature = "blocks"), not(feature = "editor")))]
+                    {
+                        let msg = crate::message_bar::Message::new(
+                            "Notebooks feature not enabled in this build".into(),
+                            crate::message_bar::MessageType::Warning,
+                        );
+                        self.ctx.send_user_event(crate::event::EventType::Message(msg));
+                    }
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("d") => {
+                    // Delete selected cell
+                    #[cfg(feature = "blocks")]
+                    {
+                        let cell_id_opt = {
+                            let d = self.ctx.display();
+                            let idx = d.notebooks_panel.selected_cell;
+                            d.notebooks_panel.cells.get(idx).map(|c| c.id.clone())
+                        };
+                        if let Some(cell_id) = cell_id_opt {
+                            self.ctx
+                                .send_user_event(crate::event::EventType::NotebooksDeleteCell(cell_id));
+                        }
+                    }
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("m") => {
+                    // Convert selected cell to Markdown
+                    #[cfg(feature = "blocks")]
+                    {
+                        let cell_id_opt = {
+                            let d = self.ctx.display();
+                            let idx = d.notebooks_panel.selected_cell;
+                            d.notebooks_panel.cells.get(idx).map(|c| c.id.clone())
+                        };
+                        if let Some(cell_id) = cell_id_opt {
+                            self.ctx.send_user_event(
+                                crate::event::EventType::NotebooksConvertCellToMarkdown(cell_id),
+                            );
+                        }
+                    }
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") => {
+                    // Convert selected cell to Command
+                    #[cfg(feature = "blocks")]
+                    {
+                        let cell_id_opt = {
+                            let d = self.ctx.display();
+                            let idx = d.notebooks_panel.selected_cell;
+                            d.notebooks_panel.cells.get(idx).map(|c| c.id.clone())
+                        };
+                        if let Some(cell_id) = cell_id_opt {
+                            self.ctx.send_user_event(
+                                crate::event::EventType::NotebooksConvertCellToCommand(cell_id),
+                            );
+                        }
+                    }
+                    return;
+                },
+                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("x") => {
+                    // Export current notebook to Markdown and paste to prompt (fallback)
+                    #[cfg(feature = "blocks")]
+                    {
+                        let nb_id_opt = { self.ctx.display().notebooks_panel.selected_notebook.clone() };
+                        if let Some(nb_id) = nb_id_opt {
+                            self.ctx
+                                .send_user_event(crate::event::EventType::NotebooksExportNotebook(nb_id));
+                        }
+                    }
+                    return;
+                },
+                _ => {}
+            }
+            // Swallow text input while panel active
+            return;
+        }
+
         // Workflows panel input handling (if active)
         #[cfg(feature = "workflow")]
         if self.ctx.workflows_panel_active() {
@@ -895,10 +1051,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
         }
 
-        // Global AI toggle: Ctrl+Shift+A (handle even when panel is active)
-        #[cfg(feature = "ai")]
+        // Global toggles: Notebooks and AI
         if mods.control_key() && mods.shift_key() {
             match key.logical_key.as_ref() {
+                #[cfg(feature = "blocks")]
+                Key::Character(c) if c.eq_ignore_ascii_case("n") => {
+                    self.ctx.open_notebooks_panel();
+                    return;
+                },
+                #[cfg(feature = "ai")]
                 Key::Character(c) if c.eq_ignore_ascii_case("a") => {
                     self.ctx.send_user_event(crate::event::EventType::AiToggle);
                     return;

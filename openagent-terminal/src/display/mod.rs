@@ -46,6 +46,7 @@ use crate::config::UiConfig;
 use crate::display::bell::VisualBell;
 use crate::display::color::{List, Rgb};
 use crate::display::content::{RenderableCell, RenderableContent, RenderableCursor};
+use crate::config::debug::SubpixelOrientation;
 use crate::display::cursor::IntoRects;
 use crate::display::damage::{damage_y_to_viewport_y, DamageTracker};
 use crate::display::hint::{HintMatch, HintState};
@@ -69,6 +70,8 @@ pub mod blocks;
 #[cfg(feature = "blocks")]
 pub mod blocks_search_actions;
 pub mod blocks_search_panel;
+#[cfg(feature = "blocks")]
+pub mod notebook_panel;
 pub mod color;
 #[cfg(feature = "completions")]
 pub mod completions;
@@ -406,6 +409,7 @@ pub struct Display {
 
     pub size_info: SizeInfo,
 
+
     // Debug overlay to visualize split panes (horizontal/vertical) before full pane
     // implementation. None = off; Some(false) = horizontal split (left/right); Some(true) =
     // vertical split (top/bottom).
@@ -506,6 +510,10 @@ pub struct Display {
     /// Command Palette state.
     pub palette: palette::PaletteState,
 
+    // Active notebook edit session (temporary file based), if any
+    #[cfg(feature = "blocks")]
+    pub notebooks_edit_session: Option<crate::display::notebook_panel::NotebookEditSession>,
+
     /// Native code editor overlay state (feature="editor").
     #[cfg(feature = "editor")]
     pub editor_overlay: editor_overlay::EditorOverlayState,
@@ -524,6 +532,9 @@ pub struct Display {
     /// Workflows progress overlay state.
     #[cfg(feature = "workflow")]
     pub workflows_progress: workflow_panel::WorkflowProgressState,
+    /// Notebooks panel state (feature="blocks")
+    #[cfg(feature = "blocks")]
+    pub notebooks_panel: notebook_panel::NotebookPanelState,
 
     /// Settings panel state (for in-app configuration like API keys)
     pub settings_panel: settings_panel::SettingsPanelState,
@@ -549,6 +560,8 @@ pub struct Display {
     /// List of active tab animations (opening, closing, moving)
     #[allow(dead_code)]
     pub tab_animations: Vec<tab_bar::TabAnimation>,
+    /// Cached tab bounds in pixels for precise hit testing and drop targeting
+    pub tab_bounds_px: Vec<(crate::workspace::TabId, f32, f32)>,
     /// Workspace animation manager for smooth UI transitions
     #[allow(dead_code)]
     pub workspace_animations: workspace_animations::WorkspaceAnimationManager,
@@ -713,7 +726,7 @@ impl Display {
         let mut blocks = blocks::Blocks::new();
         blocks.enabled = config.debug.blocks;
 
-        Ok(Self {
+Ok(Self {
             backend: Backend::Gl {
                 renderer: ManuallyDrop::new(gl_renderer),
                 context: ManuallyDrop::new(context),
@@ -765,11 +778,15 @@ impl Display {
             #[cfg(feature = "ai")]
             ai_hover_control: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
+            #[cfg(feature = "blocks")]
+            notebooks_panel: notebook_panel::NotebookPanelState::new(),
             palette: {
                 let mut p = palette::PaletteState::default();
                 p.load_mru_from_config(config);
                 p
             },
+            #[cfg(feature = "blocks")]
+            notebooks_edit_session: None,
             #[cfg(feature = "editor")]
             editor_overlay: editor_overlay::EditorOverlayState::new(),
             #[cfg(feature = "dap")]
@@ -793,6 +810,7 @@ impl Display {
             // Workspace animation systems
             workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
             pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
+            tab_bounds_px: Vec::new(),
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
@@ -1147,7 +1165,7 @@ impl Display {
     }
 
     #[cfg(feature = "wgpu")]
-    pub fn new_wgpu(window: Window, config: &UiConfig, _tabbed: bool) -> Result<Display, Error> {
+pub fn new_wgpu(mut window: Window, config: &UiConfig, _tabbed: bool) -> Result<Display, Error> {
         let raw_window_handle = window.raw_window_handle();
 
         let scale_factor = window.scale_factor as f32;
@@ -1174,6 +1192,7 @@ impl Display {
             config.debug.renderer,
             config.debug.srgb_swapchain,
             config.debug.subpixel_text,
+            SubpixelOrientation::RGB,
             config.debug.zero_evicted_atlas_layer,
             config.debug.atlas_eviction_policy,
             config.debug.atlas_report_interval_frames,
@@ -1217,6 +1236,10 @@ impl Display {
 
         window.set_visible(true);
 
+        // Some compositors (Wayland) won't show a window until the first draw commits.
+        // Request an immediate redraw so the first frame is presented.
+        window.request_redraw();
+
         #[cfg(target_os = "macos")]
         window.focus_window();
 
@@ -1240,7 +1263,7 @@ impl Display {
         let mut blocks = blocks::Blocks::new();
         blocks.enabled = config.debug.blocks;
 
-        Ok(Self {
+Ok(Self {
             backend: Backend::Wgpu { renderer: wgpu_renderer },
             visual_bell: VisualBell::from(&config.bell),
             renderer_preference: config.debug.renderer,
@@ -1253,6 +1276,8 @@ impl Display {
             size_info,
             font_size,
             window,
+            #[cfg(feature = "blocks")]
+            notebooks_panel: notebook_panel::NotebookPanelState::new(),
             pending_renderer_update: Default::default(),
             composer_focused: false,
             composer_press_flash_until: None,
@@ -1310,6 +1335,8 @@ impl Display {
                 p.load_mru_from_config(config);
                 p
             },
+            #[cfg(feature = "blocks")]
+            notebooks_edit_session: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
             last_mouse_x: 0,
             last_mouse_y: 0,
@@ -1322,6 +1349,7 @@ impl Display {
             tab_animations: Vec::new(),
             workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
             pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
+            tab_bounds_px: Vec::new(),
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
@@ -1451,34 +1479,143 @@ impl Display {
                 });
             },
             #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer: _ } => {
-                // For WGPU we don't have a GL-based atlas yet; preload the cache with a no-op
-                // loader.
-                struct NoopLoader;
-                impl crate::renderer::LoadGlyph for NoopLoader {
-                    fn load_glyph(
-                        &mut self,
-                        _rasterized: &crossfont::RasterizedGlyph,
-                    ) -> crate::renderer::Glyph {
-                        crate::renderer::Glyph {
-                            tex_id: 0,
-                            multicolor: false,
-                            top: 0,
-                            left: 0,
-                            width: 0,
-                            height: 0,
-                            uv_bot: 0.0,
-                            uv_left: 0.0,
-                            uv_width: 0.0,
-                            uv_height: 0.0,
-                        }
-                    }
-
-                    fn clear(&mut self) {}
-                }
-                let mut loader = NoopLoader;
-                self.glyph_cache.reset_glyph_cache(&mut loader);
+            Backend::Wgpu { renderer } => {
+                // Reset the WGPU atlas pages and reload common glyphs using the real loader.
+                renderer.reset_atlas();
+                renderer.preload_glyphs(&mut self.glyph_cache);
             },
+        }
+    }
+
+    /// Draw overlay visuals for active pane drag (preview + drop zone).
+    pub fn draw_pane_drag_overlay(
+        &mut self,
+        config: &UiConfig,
+        active_tab: &crate::workspace::tab_manager::TabContext,
+    ) {
+        use crate::renderer::ui::UiRoundedRect;
+        if let Some(effects) = self.pane_drag_manager.get_visual_effects() {
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let tokens = theme.tokens;
+
+            // Compute content container rect (padding + reserved tab row)
+            let si = self.size_info;
+            let mut x0 = si.padding_x();
+            let mut y0 = si.padding_y();
+            let mut w = si.width() - 2.0 * si.padding_x();
+            let mut h = si.height() - 2.0 * si.padding_y();
+            let tab_cfg = &config.workspace.tab_bar;
+            let is_fs = self.window.is_fullscreen();
+            let effective_visibility = match tab_cfg.visibility {
+                crate::config::workspace::TabBarVisibility::Always => {
+                    crate::config::workspace::TabBarVisibility::Always
+                },
+                crate::config::workspace::TabBarVisibility::Hover => {
+                    crate::config::workspace::TabBarVisibility::Hover
+                },
+                crate::config::workspace::TabBarVisibility::Auto => {
+                    if is_fs {
+                        crate::config::workspace::TabBarVisibility::Hover
+                    } else {
+                        crate::config::workspace::TabBarVisibility::Always
+                    }
+                },
+            };
+            if tab_cfg.show
+                && tab_cfg.reserve_row
+                && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+                && tab_cfg.position != crate::workspace::TabBarPosition::Hidden
+            {
+                let cell_h = si.cell_height();
+                match tab_cfg.position {
+                    crate::workspace::TabBarPosition::Top => {
+                        y0 += cell_h;
+                        h = (h - cell_h).max(0.0);
+                    },
+                    crate::workspace::TabBarPosition::Bottom => {
+                        h = (h - cell_h).max(0.0);
+                    },
+                    crate::workspace::TabBarPosition::Hidden => {},
+                }
+            }
+            let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
+
+            // Compute pane rects to find the source pane rect and to draw ghost effect
+            let rects = crate::workspace::SplitManager::calculate_pane_rects(
+                &crate::workspace::SplitManager::new(),
+                &active_tab.split_layout,
+                container,
+            );
+
+            // Drop-zone highlight
+            if let Some(dz) = effects.drop_zone {
+                match dz {
+                    crate::display::pane_drag_drop::PaneDropZone::Split { direction, target_split, before, .. } => {
+                        // Find target split rect
+                        if let Some((_, target_rect)) = rects.iter().find(|(pid, _)| Some(*pid) == target_split) {
+                            let (hx, hy, hw, hh) = match direction {
+                                crate::display::pane_drag_drop::SplitDirection::Vertical => {
+                                    // left/right region
+                                    let half = target_rect.width * 0.5;
+                                    if before { (target_rect.x, target_rect.y, half, target_rect.height) } else { (target_rect.x + half, target_rect.y, half, target_rect.height) }
+                                },
+                                crate::display::pane_drag_drop::SplitDirection::Horizontal => {
+                                    // top/bottom region
+                                    let half = target_rect.height * 0.5;
+                                    if before { (target_rect.x, target_rect.y, target_rect.width, half) } else { (target_rect.x, target_rect.y + half, target_rect.width, half) }
+                                },
+                            };
+                            let alpha = (0.15 + 0.35 * effects.drop_zone_highlight_alpha).min(0.5);
+                            let rect = RenderRect::new(hx, hy, hw, hh, tokens.accent, alpha);
+                            let metrics = self.glyph_cache.font_metrics();
+                            let size_copy = self.size_info;
+                            self.renderer_draw_rects(&size_copy, &metrics, vec![rect]);
+                        }
+                    },
+                    crate::display::pane_drag_drop::PaneDropZone::Tab { .. } => {
+                        // Highlight tab strip subtly near pointer (optional enhancement)
+                    },
+                    crate::display::pane_drag_drop::PaneDropZone::NewTab { .. } => {
+                        // Optional: highlight new-tab area
+                    },
+                }
+            }
+
+            // Ghost the source pane area slightly
+            if let Some((_, src_rect)) = rects.iter().find(|(pid, _)| *pid == effects.source_split) {
+                let ghost = RenderRect::new(
+                    src_rect.x,
+                    src_rect.y,
+                    src_rect.width,
+                    src_rect.height,
+                    tokens.overlay,
+                    effects.ghost_pane_alpha.clamp(0.0, 1.0),
+                );
+                let metrics = self.glyph_cache.font_metrics();
+                let size_copy = self.size_info;
+                self.renderer_draw_rects(&size_copy, &metrics, vec![ghost]);
+            }
+
+            // Drag preview rectangle around current cursor (scaled)
+            if effects.is_active {
+                let base_w = (self.size_info.cell_width() * 12.0).clamp(120.0, 260.0);
+                let base_h = (self.size_info.cell_height() * 6.0).clamp(80.0, 200.0);
+                let w = base_w * effects.drag_preview_scale.max(0.9);
+                let h = base_h * effects.drag_preview_scale.max(0.9);
+                let x = (effects.current_pos.0 - w * 0.5).clamp(0.0, self.size_info.width() - w);
+                let y = (effects.current_pos.1 - h * 0.5).clamp(0.0, self.size_info.height() - h);
+                let pill = UiRoundedRect::new(
+                    x,
+                    y,
+                    w,
+                    h,
+                    (theme.ui.corner_radius_px * 0.75).min(h * 0.5),
+                    tokens.surface,
+                    effects.drag_preview_alpha.clamp(0.0, 1.0),
+                );
+                self.stage_ui_rounded_rect(pill);
+            }
         }
     }
 
@@ -1633,6 +1770,73 @@ impl Display {
             Backend::Wgpu { renderer } => {
                 renderer.dump_atlas_stats();
             },
+        }
+    }
+
+    /// Toggle subpixel text rendering (WGPU backend only).
+    pub fn toggle_subpixel_text(&mut self) -> bool {
+        #[allow(irrefutable_let_patterns)]
+        match &mut self.backend {
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                let _now = renderer.toggle_subpixel_enabled();
+                self.damage_tracker.frame().mark_fully_damaged();
+                true
+            },
+            _ => false,
+        }
+    }
+
+    /// Cycle LCD subpixel orientation between RGB and BGR (WGPU backend only).
+    pub fn cycle_subpixel_orientation(&mut self) -> Option<SubpixelOrientation> {
+        #[allow(irrefutable_let_patterns)]
+        match &mut self.backend {
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                let next = renderer.cycle_subpixel_orientation();
+                self.damage_tracker.frame().mark_fully_damaged();
+                Some(next)
+            },
+            _ => None,
+        }
+    }
+
+    /// Toggle performance HUD (WGPU backend only).
+    pub fn toggle_perf_hud(&mut self) -> bool {
+        #[allow(irrefutable_let_patterns)]
+        match &mut self.backend {
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.toggle_perf_hud();
+                true
+            },
+            _ => false,
+        }
+    }
+
+    /// Adjust subpixel gamma (WGPU backend only).
+    pub fn adjust_subpixel_gamma(&mut self, delta: f32) -> bool {
+        #[allow(irrefutable_let_patterns)]
+        match &mut self.backend {
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.adjust_subpixel_gamma(delta);
+                true
+            },
+            _ => false,
+        }
+    }
+
+    /// Reset subpixel gamma to default (WGPU backend only).
+    pub fn reset_subpixel_gamma(&mut self) -> bool {
+        #[allow(irrefutable_let_patterns)]
+        match &mut self.backend {
+            #[cfg(feature = "wgpu")]
+            Backend::Wgpu { renderer } => {
+                renderer.set_subpixel_gamma(2.2);
+                true
+            },
+            _ => false,
         }
     }
 
@@ -2220,6 +2424,13 @@ impl Display {
             }
         }
 
+        // Draw pane drag overlay (preview and drop-zone highlights) if a pane drag is in progress
+        if let Some(tm) = tab_manager {
+            if let Some(active_tab) = tm.active_tab() {
+                self.draw_pane_drag_overlay(config, active_tab);
+            }
+        }
+
         // Confirmation overlay
         if self.confirm_overlay.active {
             let st = self.confirm_overlay.clone();
@@ -2238,6 +2449,12 @@ impl Display {
         if self.workflows_panel.active {
             let st = self.workflows_panel.clone();
             self.draw_workflows_panel_overlay(config, &st);
+        }
+        // Notebooks panel overlay if active
+        #[cfg(feature = "blocks")]
+        if self.notebooks_panel.active {
+            let st = self.notebooks_panel.clone();
+            self.draw_notebooks_panel_overlay(config, &st);
         }
         // Workflows progress overlay if active
         #[cfg(feature = "workflow")]
@@ -2623,8 +2840,7 @@ impl Display {
             Backend::Gl { renderer, .. } => renderer.draw_rects(size_info, metrics, rects),
             #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => {
-                let win = self.window.winit_window();
-                renderer.draw_rects(win, size_info, metrics, rects)
+                renderer.draw_rects(self.window.winit_window(), size_info, metrics, rects)
             },
         }
     }

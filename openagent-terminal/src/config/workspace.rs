@@ -44,6 +44,10 @@ pub struct WorkspaceConfig {
     /// Warp-style keybindings toggle and options
     #[config(default)]
     pub warp_style_bindings: WarpStyleBindingsConfig,
+
+    /// Drag gesture configuration (pane drag, etc.)
+    #[config(default)]
+    pub drag: DragConfig,
 }
 
 impl Default for WorkspaceConfig {
@@ -58,6 +62,7 @@ impl Default for WorkspaceConfig {
             warp_session_file: None,
             sessions: SessionConfig::default(),
             warp_style_bindings: WarpStyleBindingsConfig::default(),
+            drag: DragConfig::default(),
         }
     }
 }
@@ -273,6 +278,49 @@ impl Default for SplitConfig {
             zoom_overlay_alpha: 0.06,
         }
     }
+}
+
+/// Drag configuration for workspace interactions
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct DragConfig {
+    /// Enable pane drag-and-drop gesture
+    #[config(default = true)]
+    pub enable_pane_drag: bool,
+    /// Modifier required for pane drag
+    #[config(default = "DragModifier::Alt")]
+    pub pane_drag_modifier: DragModifier,
+    /// Mouse button for pane drag
+    #[config(default = "DragButton::Left")]
+    pub pane_drag_button: DragButton,
+}
+
+impl Default for DragConfig {
+    fn default() -> Self {
+        Self { enable_pane_drag: true, pane_drag_modifier: DragModifier::Alt, pane_drag_button: DragButton::Left }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragModifier {
+    None,
+    Alt,
+    Ctrl,
+    Shift,
+}
+
+impl Default for DragModifier {
+    fn default() -> Self { DragModifier::Alt }
+}
+
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragButton {
+    Left,
+    Middle,
+    Right,
+}
+
+impl Default for DragButton {
+    fn default() -> Self { DragButton::Left }
 }
 
 /// Session persistence configuration

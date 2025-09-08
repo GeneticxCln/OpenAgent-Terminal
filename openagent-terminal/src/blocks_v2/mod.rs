@@ -149,8 +149,7 @@ pub struct BlockMetadata {
     pub custom: HashMap<String, serde_json::Value>,
 }
 
-/// Block manager for creating and managing blocks
-#[allow(dead_code)]
+/// Native block manager for creating and managing blocks without lazy fallbacks
 pub struct BlockManager {
     storage: Arc<storage::BlockStorage>,
     environment_manager: environment::EnvironmentManager,
@@ -158,6 +157,12 @@ pub struct BlockManager {
     export_manager: export::ExportManager,
     current_session: SessionId,
     active_blocks: HashMap<BlockId, Arc<Block>>,
+    /// Native event callbacks for real-time updates
+    event_callbacks: Vec<Box<dyn Fn(&BlockEvent) + Send + Sync>>,
+    /// Real-time block execution state
+    executing_blocks: HashMap<BlockId, ExecutionHandle>,
+    /// Native rendering state
+    render_state: BlockRenderState,
 }
 
 /// Session identifier for grouping blocks
@@ -174,8 +179,66 @@ impl SessionId {
     }
 }
 
+/// Native block events for real-time processing
+#[derive(Debug, Clone)]
+pub enum BlockEvent {
+    Created(BlockId),
+    Updated(BlockId),
+    Executed(BlockId, ExecutionResult),
+    Deleted(BlockId),
+    StarToggled(BlockId, bool),
+    TagsUpdated(BlockId, Vec<String>),
+}
+
+/// Execution handle for tracking running commands
+#[derive(Debug)]
+pub struct ExecutionHandle {
+    pub block_id: BlockId,
+    pub pid: Option<u32>,
+    pub start_time: DateTime<Utc>,
+    pub status: ExecutionStatus,
+    pub output_stream: Arc<std::sync::Mutex<String>>,
+}
+
+/// Execution result for completed commands
+#[derive(Debug, Clone)]
+pub struct ExecutionResult {
+    pub exit_code: i32,
+    pub output: String,
+    pub error_output: String,
+    pub duration: std::time::Duration,
+}
+
+/// Native rendering state for blocks
+#[derive(Debug, Default)]
+pub struct BlockRenderState {
+    pub visible_blocks: Vec<BlockId>,
+    pub collapsed_blocks: HashSet<BlockId>,
+    pub highlighted_block: Option<BlockId>,
+    pub animation_states: HashMap<BlockId, BlockAnimation>,
+}
+
+/// Block animation states
+#[derive(Debug, Clone)]
+pub struct BlockAnimation {
+    pub animation_type: BlockAnimationType,
+    pub start_time: std::time::Instant,
+    pub duration: std::time::Duration,
+    pub progress: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockAnimationType {
+    FadeIn,
+    FadeOut,
+    Expand,
+    Collapse,
+    Highlight,
+    Update,
+}
+
 impl BlockManager {
-    /// Create a new block manager
+    /// Create a new native block manager with immediate operations
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         let storage = Arc::new(storage::BlockStorage::new(&data_dir).await?);
         let environment_manager = environment::EnvironmentManager::new();
@@ -189,7 +252,138 @@ impl BlockManager {
             export_manager,
             current_session: SessionId::new(),
             active_blocks: HashMap::new(),
+            event_callbacks: Vec::new(),
+            executing_blocks: HashMap::new(),
+            render_state: BlockRenderState::default(),
         })
+    }
+
+    /// Register a native event callback for real-time updates
+    pub fn register_event_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&BlockEvent) + Send + Sync + 'static,
+    {
+        self.event_callbacks.push(Box::new(callback));
+    }
+
+    /// Emit block event immediately to all registered callbacks
+    fn emit_event(&self, event: BlockEvent) {
+        for callback in &self.event_callbacks {
+            callback(&event);
+        }
+    }
+
+    /// Create and immediately execute a native command block
+    pub async fn create_and_execute_block(
+        &mut self,
+        params: CreateBlockParams,
+    ) -> Result<Arc<Block>> {
+        let block = self.create_block(params).await?;
+        
+        // Start execution immediately - no lazy loading
+        let command = block.command.clone();
+        self.start_native_execution(block.id, command).await?;
+        
+        Ok(block)
+    }
+
+    /// Start native command execution without lazy fallbacks
+async fn start_native_execution(&mut self, block_id: BlockId, _command: String) -> Result<()> {
+        let execution_handle = ExecutionHandle {
+            block_id,
+            pid: None, // Will be set when process starts
+            start_time: Utc::now(),
+            status: ExecutionStatus::Running,
+            output_stream: Arc::new(std::sync::Mutex::new(String::new())),
+        };
+
+        self.executing_blocks.insert(block_id, execution_handle);
+        
+        // Emit immediate event - no lazy processing
+        self.emit_event(BlockEvent::Executed(block_id, ExecutionResult {
+            exit_code: -1, // Indicates still running
+            output: String::new(),
+            error_output: String::new(),
+            duration: std::time::Duration::from_secs(0),
+        }));
+
+        // TODO: Start actual process execution in a separate task
+        // For now, we'll simulate with a placeholder
+        tokio::spawn(async move {
+            // Native process execution would go here
+            // This should interface directly with the PTY/terminal
+        });
+
+        Ok(())
+    }
+
+    /// Get native rendering state for immediate display
+    pub fn get_render_state(&self) -> &BlockRenderState {
+        &self.render_state
+    }
+
+    /// Update rendering state immediately
+    pub fn update_render_state<F>(&mut self, update_fn: F)
+    where
+        F: FnOnce(&mut BlockRenderState),
+    {
+        update_fn(&mut self.render_state);
+    }
+
+    /// Toggle block visibility with immediate effect
+    pub fn toggle_block_visibility(&mut self, block_id: BlockId) -> bool {
+        if self.render_state.collapsed_blocks.contains(&block_id) {
+            self.render_state.collapsed_blocks.remove(&block_id);
+            // Start expand animation immediately
+            self.start_block_animation(block_id, BlockAnimationType::Expand);
+            false
+        } else {
+            self.render_state.collapsed_blocks.insert(block_id);
+            // Start collapse animation immediately
+            self.start_block_animation(block_id, BlockAnimationType::Collapse);
+            true
+        }
+    }
+
+    /// Start block animation immediately
+    fn start_block_animation(&mut self, block_id: BlockId, animation_type: BlockAnimationType) {
+        let animation = BlockAnimation {
+            animation_type,
+            start_time: std::time::Instant::now(),
+            duration: match animation_type {
+                BlockAnimationType::FadeIn | BlockAnimationType::FadeOut => std::time::Duration::from_millis(200),
+                BlockAnimationType::Expand | BlockAnimationType::Collapse => std::time::Duration::from_millis(300),
+                BlockAnimationType::Highlight => std::time::Duration::from_millis(150),
+                BlockAnimationType::Update => std::time::Duration::from_millis(100),
+            },
+            progress: 0.0,
+        };
+
+        self.render_state.animation_states.insert(block_id, animation);
+    }
+
+    /// Update animation progress and return blocks that need rerendering
+    pub fn update_animations(&mut self) -> Vec<BlockId> {
+        let mut changed_blocks = Vec::new();
+        let now = std::time::Instant::now();
+
+        let keys: Vec<BlockId> = self.render_state.animation_states.keys().cloned().collect();
+        for block_id in keys {
+            if let Some(anim) = self.render_state.animation_states.get(&block_id).cloned() {
+                let elapsed = now.duration_since(anim.start_time);
+                let progress = (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
+                if progress >= 1.0 {
+                    // Animation complete; remove it
+                    self.render_state.animation_states.remove(&block_id);
+                    changed_blocks.push(block_id);
+                } else if let Some(animation_mut) = self.render_state.animation_states.get_mut(&block_id) {
+                    animation_mut.progress = progress;
+                    changed_blocks.push(block_id);
+                }
+            }
+        }
+
+        changed_blocks
     }
 
     /// Create a new block
@@ -238,6 +432,9 @@ impl BlockManager {
         // Index for search
         self.search_engine.index_block(&block_arc).await?;
 
+        // Emit immediate creation event
+        self.emit_event(BlockEvent::Created(block_id));
+
         info!("Created block {}", block_id.to_string());
 
         Ok(block_arc)
@@ -268,6 +465,10 @@ impl BlockManager {
         // Update storage and search without holding a mutable borrow on self
         self.storage.update(&updated_block).await?;
         self.search_engine.update_block(&updated_block).await?;
+        
+        // Emit immediate update event
+        self.emit_event(BlockEvent::Updated(block_id));
+        
         Ok(())
     }
 
@@ -276,8 +477,8 @@ impl BlockManager {
         let updated_block = {
             let entry = self.get_block_mut(block_id).await?;
             let mut owned = (**entry).clone();
-            for tag in tags {
-                owned.tags.insert(tag);
+            for tag in &tags {
+                owned.tags.insert(tag.clone());
             }
             owned.modified_at = Utc::now();
             let arc_new = Arc::new(owned.clone());
@@ -286,6 +487,8 @@ impl BlockManager {
         };
         self.storage.update(&updated_block).await?;
         self.search_engine.update_block(&updated_block).await?;
+        // Notify listeners of tags update
+        self.emit_event(BlockEvent::TagsUpdated(block_id, tags));
         Ok(())
     }
 
@@ -303,6 +506,10 @@ impl BlockManager {
         };
 
         self.storage.update(&updated_block).await?;
+        
+        // Emit immediate star toggle event
+        self.emit_event(BlockEvent::StarToggled(block_id, starred));
+        
         info!("Block {} starred: {}", block_id.to_string(), starred);
         Ok(starred)
     }

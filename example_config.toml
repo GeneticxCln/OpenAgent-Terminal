@@ -214,6 +214,10 @@ require_signatures = false
 require_signatures = false
 # Subpixel text rendering for WGPU: "Auto" | "Enabled" | "Disabled"
 subpixel_text = "Auto"
+# Subpixel orientation for WGPU when enabled: "RGB" | "BGR"
+subpixel_orientation = "RGB"
+# Subpixel gamma exponent (typical ~2.2)
+subpixel_gamma = 2.2
 # sRGB swapchain preference for WGPU: "Auto" | "Enabled" | "Disabled"
 srgb_swapchain = "Auto"
 # Clear evicted WGPU atlas layer to zero (cosmetic)
