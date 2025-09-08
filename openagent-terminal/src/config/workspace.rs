@@ -32,6 +32,11 @@ pub struct WorkspaceConfig {
     #[config(default = true)]
     pub warp_style: bool,
 
+    /// When using Warp-style UI, draw the tab bar as an overlay without reserving a grid row.
+    /// This prevents the legacy/classic row reservation path from interfering with the layout.
+    #[config(default = true)]
+    pub warp_overlay_only: bool,
+
     /// File to store Warp session data (optional)
     /// Deprecated in favor of [workspace.sessions.file_path] but still supported.
     #[serde(default)]
@@ -48,6 +53,12 @@ pub struct WorkspaceConfig {
     /// Drag gesture configuration (pane drag, etc.)
     #[config(default)]
     pub drag: DragConfig,
+
+    /// Clean startup: suppress non-essential overlays (tab bar reservation, quick actions,
+    /// bottom composer band) until the first terminal output renders.
+    /// Set to false to show full UI immediately on startup.
+    #[config(default = true)]
+    pub clean_startup: bool,
 }
 
 impl Default for WorkspaceConfig {
@@ -63,6 +74,8 @@ impl Default for WorkspaceConfig {
             sessions: SessionConfig::default(),
             warp_style_bindings: WarpStyleBindingsConfig::default(),
             drag: DragConfig::default(),
+            clean_startup: true,
+            warp_overlay_only: true,
         }
     }
 }
@@ -105,23 +118,10 @@ pub struct TabBarConfig {
     #[config(default = false)]
     pub show_tab_numbers: bool,
 
-    /// Reserve a terminal row for the tab bar (avoids overlaying content)
-    /// Note: Top reservation hides the top line of grid content; Bottom reservation hides the
-    /// bottom line. Future versions may shift the grid instead of hiding.
-    #[config(default = true)]
-    pub reserve_row: bool,
-
+    // Reserve row is deprecated in Warp-only layout and removed.
     /// Maximum tab title length
     #[config(default = 20)]
     pub max_title_length: usize,
-
-    /// Minimum tab width (cells). None => built-in default
-    #[serde(default)]
-    pub min_tab_width: Option<usize>,
-
-    /// Maximum tab width (cells). None => built-in default
-    #[serde(default)]
-    pub max_tab_width: Option<usize>,
 
     /// What to do when creating a new tab
     #[config(default = "NewTabAction::InheritWorkingDir")]
@@ -144,7 +144,8 @@ pub struct QuickActionsConfig {
 
 impl Default for QuickActionsConfig {
     fn default() -> Self {
-        Self { show: true, position: QuickActionsPosition::Auto, show_palette: true }
+        // Turn off by default; can be enabled in config
+        Self { show: false, position: QuickActionsPosition::Auto, show_palette: true }
     }
 }
 
@@ -188,10 +189,7 @@ impl Default for TabBarConfig {
             show_new_tab_button: true,
             show_tab_numbers: false,
             max_title_length: 20,
-            min_tab_width: None,
-            max_tab_width: None,
             new_tab_action: NewTabAction::InheritWorkingDir,
-            reserve_row: true,
         }
     }
 }
@@ -296,31 +294,29 @@ pub struct DragConfig {
 
 impl Default for DragConfig {
     fn default() -> Self {
-        Self { enable_pane_drag: true, pane_drag_modifier: DragModifier::Alt, pane_drag_button: DragButton::Left }
+        Self {
+            enable_pane_drag: true,
+            pane_drag_modifier: DragModifier::Alt,
+            pane_drag_button: DragButton::Left,
+        }
     }
 }
 
-#[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DragModifier {
     None,
+    #[default]
     Alt,
     Ctrl,
     Shift,
 }
 
-impl Default for DragModifier {
-    fn default() -> Self { DragModifier::Alt }
-}
-
-#[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DragButton {
+    #[default]
     Left,
     Middle,
     Right,
-}
-
-impl Default for DragButton {
-    fn default() -> Self { DragButton::Left }
 }
 
 /// Session persistence configuration

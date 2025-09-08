@@ -1,7 +1,6 @@
 // Command Notebooks core module
 // Provides: Notebook types, storage, and manager with command execution
 
-
 pub mod storage;
 
 use anyhow::{anyhow, Context, Result};
@@ -22,12 +21,31 @@ use crate::blocks_v2::{BlockId, BlockManager, CreateBlockParams, ExecutionStatus
 pub struct NotebookId(Uuid);
 
 impl NotebookId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
-    pub fn from_str(s: &str) -> Result<Self> { Ok(Self(Uuid::parse_str(s)?)) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+    pub fn from_string(s: &str) -> Result<Self> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
+}
+
+impl Default for NotebookId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::str::FromStr for NotebookId {
+    type Err = uuid::Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
 }
 
 impl std::fmt::Display for NotebookId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// Notebook cell identifier
@@ -35,12 +53,31 @@ impl std::fmt::Display for NotebookId {
 pub struct CellId(Uuid);
 
 impl CellId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
-    pub fn from_str(s: &str) -> Result<Self> { Ok(Self(Uuid::parse_str(s)?)) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+    pub fn from_string(s: &str) -> Result<Self> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
+}
+
+impl Default for CellId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::str::FromStr for CellId {
+    type Err = uuid::Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
 }
 
 impl std::fmt::Display for CellId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// Cell type for notebooks
@@ -74,7 +111,7 @@ pub struct NotebookCell {
     pub notebook_id: NotebookId,
     pub idx: i64,
     pub cell_type: CellType,
-    pub content: String,       // command string or markdown text
+    pub content: String, // command string or markdown text
     pub directory: Option<PathBuf>,
     pub shell: Option<ShellType>,
     pub output: Option<String>,
@@ -103,7 +140,10 @@ pub struct NotebookParam {
 
 impl NotebookManager {
     /// Create a new manager. Will create the notebooks database in `data_dir`.
-    pub async fn new(data_dir: impl AsRef<Path>, block_manager: Option<Arc<RwLock<BlockManager>>>) -> Result<Self> {
+    pub async fn new(
+        data_dir: impl AsRef<Path>,
+        block_manager: Option<Arc<RwLock<BlockManager>>>,
+    ) -> Result<Self> {
         let storage = storage::NotebookStorage::new(data_dir.as_ref()).await?;
         Ok(Self { storage, block_manager })
     }
@@ -129,12 +169,24 @@ impl NotebookManager {
         Ok(nb)
     }
 
-    pub async fn list_notebooks(&self) -> Result<Vec<Notebook>> { self.storage.list_notebooks().await }
+    pub async fn list_notebooks(&self) -> Result<Vec<Notebook>> {
+        self.storage.list_notebooks().await
+    }
 
-    pub async fn get_notebook(&self, id: NotebookId) -> Result<Notebook> { self.storage.get_notebook(id).await }
+    pub async fn get_notebook(&self, id: NotebookId) -> Result<Notebook> {
+        self.storage.get_notebook(id).await
+    }
 
-    pub async fn add_markdown_cell(&self, notebook_id: NotebookId, idx: Option<i64>, text: String) -> Result<NotebookCell> {
-        let order = match idx { Some(i) => i, None => self.storage.next_index_for_notebook(notebook_id).await? };
+    pub async fn add_markdown_cell(
+        &self,
+        notebook_id: NotebookId,
+        idx: Option<i64>,
+        text: String,
+    ) -> Result<NotebookCell> {
+        let order = match idx {
+            Some(i) => i,
+            None => self.storage.next_index_for_notebook(notebook_id).await?,
+        };
         let cell = NotebookCell {
             id: CellId::new(),
             notebook_id,
@@ -164,7 +216,10 @@ impl NotebookManager {
         directory: Option<PathBuf>,
         shell: Option<ShellType>,
     ) -> Result<NotebookCell> {
-        let order = match idx { Some(i) => i, None => self.storage.next_index_for_notebook(notebook_id).await? };
+        let order = match idx {
+            Some(i) => i,
+            None => self.storage.next_index_for_notebook(notebook_id).await?,
+        };
         let cell = NotebookCell {
             id: CellId::new(),
             notebook_id,
@@ -216,7 +271,7 @@ impl NotebookManager {
         // Substitute notebook-level parameters {{name}} with defaults
         if let Ok(nb) = self.storage.get_notebook(cell.notebook_id).await {
             if !nb.params.is_empty() {
-                let mut param_map: std::collections::HashMap<String, String> = nb
+                let param_map: std::collections::HashMap<String, String> = nb
                     .params
                     .iter()
                     .map(|p| (p.name.clone(), p.default.clone().unwrap_or_default()))
@@ -271,7 +326,8 @@ impl NotebookManager {
         cell.error_output = Some(stderr.clone());
         cell.exit_code = Some(exit_code);
         cell.duration_ms = Some(duration.as_millis() as u64);
-        cell.status = if exit_code == 0 { ExecutionStatus::Success } else { ExecutionStatus::Failed };
+        cell.status =
+            if exit_code == 0 { ExecutionStatus::Success } else { ExecutionStatus::Failed };
         cell.block_id = maybe_block_id;
         cell.updated_at = Utc::now();
         self.storage.update_cell(&cell).await?;
@@ -327,33 +383,77 @@ pub struct NotebookOptions {
 #[derive(Subcommand, Debug, Clone)]
 pub enum NotebookCommand {
     /// Create a new notebook
-    Create { name: String, #[clap(long)] description: Option<String>, #[clap(long)] tag: Vec<String> },
+    Create {
+        name: String,
+        #[clap(long)]
+        description: Option<String>,
+        #[clap(long)]
+        tag: Vec<String>,
+    },
     /// List notebooks
     List {},
     /// Show notebook cells
-    Show { /// Notebook ID or exact name
-        notebook: String },
+    Show {
+        /// Notebook ID or exact name
+        notebook: String,
+    },
     /// Add a command cell
-    AddCommand { notebook: String, #[clap(long)] idx: Option<i64>, command: String, #[clap(long)] shell: Option<String>, #[clap(long, value_hint = clap::ValueHint::DirPath)] directory: Option<PathBuf> },
+    AddCommand {
+        notebook: String,
+        #[clap(long)]
+        idx: Option<i64>,
+        command: String,
+        #[clap(long)]
+        shell: Option<String>,
+        #[clap(long, value_hint = clap::ValueHint::DirPath)]
+        directory: Option<PathBuf>,
+    },
     /// Add a markdown cell
-    AddMarkdown { notebook: String, #[clap(long)] idx: Option<i64>, #[clap(long)] text: Option<String>, #[clap(long, value_hint = clap::ValueHint::FilePath)] file: Option<PathBuf> },
+    AddMarkdown {
+        notebook: String,
+        #[clap(long)]
+        idx: Option<i64>,
+        #[clap(long)]
+        text: Option<String>,
+        #[clap(long, value_hint = clap::ValueHint::FilePath)]
+        file: Option<PathBuf>,
+    },
     /// Run a single command cell by index (0-based) or all if omitted
-    Run { notebook: String, #[clap(long)] cell: Option<i64>, #[clap(long = "param", value_parser = parse_kv, num_args = 0..)] params: Vec<(String, String)> },
+    Run {
+        notebook: String,
+        #[clap(long)]
+        cell: Option<i64>,
+        #[clap(long = "param", value_parser = parse_kv, num_args = 0..)]
+        params: Vec<(String, String)>,
+    },
     /// Export a notebook to JSON or Markdown
-    Export { notebook: String, #[clap(long, value_enum)] format: ExportFmt, #[clap(long, value_hint = clap::ValueHint::FilePath)] out: Option<PathBuf> },
+    Export {
+        notebook: String,
+        #[clap(long, value_enum)]
+        format: ExportFmt,
+        #[clap(long, value_hint = clap::ValueHint::FilePath)]
+        out: Option<PathBuf>,
+    },
     /// Import a notebook from a JSON file
-    Import { #[clap(long, value_hint = clap::ValueHint::FilePath)] file: PathBuf, #[clap(long)] generate_new_ids: bool },
+    Import {
+        #[clap(long, value_hint = clap::ValueHint::FilePath)]
+        file: PathBuf,
+        #[clap(long)]
+        generate_new_ids: bool,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
-pub enum ExportFmt { Json, Md }
+pub enum ExportFmt {
+    Json,
+    Md,
+}
 
 /// Entry point to execute notebook-related CLI commands
 pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
     // Compute data directories similar to components_init
-    let base_data_dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("openagent-terminal");
+    let base_data_dir =
+        dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
     let blocks_dir = base_data_dir.join("blocks");
     let notebooks_dir = base_data_dir.join("notebooks");
 
@@ -394,7 +494,9 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
                     },
                     CellType::Command => {
                         println!("#{} [cmd] {}", c.idx, c.content);
-                        if let Some(code) = c.exit_code { println!("-> exit={} time={}ms", code, c.duration_ms.unwrap_or(0)); }
+                        if let Some(code) = c.exit_code {
+                            println!("-> exit={} time={}ms", code, c.duration_ms.unwrap_or(0));
+                        }
                     },
                 }
             }
@@ -402,9 +504,7 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
         },
         NotebookCommand::AddCommand { notebook, idx, command, shell, directory } => {
             let nb = resolve_notebook(&mgr, notebook).await?;
-            let shell_t = shell
-                .as_ref()
-                .and_then(|s| s.parse::<ShellType>().ok());
+            let shell_t = shell.as_ref().and_then(|s| s.parse::<ShellType>().ok());
             let cell = mgr
                 .add_command_cell(nb.id, *idx, command.clone(), directory.clone(), shell_t)
                 .await?;
@@ -414,7 +514,9 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
         NotebookCommand::AddMarkdown { notebook, idx, text, file } => {
             let nb = resolve_notebook(&mgr, notebook).await?;
             let content = if let Some(path) = file {
-                let mut f = tokio::fs::File::open(path).await.with_context(|| format!("Failed reading {:?}", path))?;
+                let mut f = tokio::fs::File::open(path)
+                    .await
+                    .with_context(|| format!("Failed reading {:?}", path))?;
                 let mut buf = String::new();
                 f.read_to_string(&mut buf).await?;
                 buf
@@ -427,16 +529,23 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
             println!("{}", cell.id);
             Ok(0)
         },
-        NotebookCommand::Run { notebook, cell, params } => {
+        NotebookCommand::Run { notebook, cell, params: _ } => {
             let nb = resolve_notebook(&mgr, notebook).await?;
             if let Some(i) = cell {
                 // Run a single cell by index
                 let cells = mgr.list_cells(nb.id).await?;
-                let target = cells.into_iter().find(|c| c.idx == *i).ok_or_else(|| anyhow!("No cell with index {}", i))?;
+                let target = cells
+                    .into_iter()
+                    .find(|c| c.idx == *i)
+                    .ok_or_else(|| anyhow!("No cell with index {}", i))?;
                 let updated = mgr.run_cell(target.id).await?;
                 // Print outputs
-                if let Some(out) = updated.output { print!("{}", out); }
-                if let Some(err) = updated.error_output { eprint!("{}", err); }
+                if let Some(out) = updated.output {
+                    print!("{}", out);
+                }
+                if let Some(err) = updated.error_output {
+                    eprint!("{}", err);
+                }
                 Ok(updated.exit_code.unwrap_or(0))
             } else {
                 // Run entire notebook (current notebook-level defaults are used)
@@ -444,8 +553,12 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
                 // Print outputs in order
                 for c in &results {
                     if c.cell_type == CellType::Command {
-                        if let Some(out) = &c.output { print!("{}", out); }
-                        if let Some(err) = &c.error_output { eprint!("{}", err); }
+                        if let Some(out) = &c.output {
+                            print!("{}", out);
+                        }
+                        if let Some(err) = &c.error_output {
+                            eprint!("{}", err);
+                        }
                     }
                 }
                 // Return last exit code or 0
@@ -474,7 +587,9 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
         NotebookCommand::Import { file, generate_new_ids } => {
             let bytes = tokio::fs::read(file).await?;
             let ids = import_notebook_json(&mgr, &bytes, *generate_new_ids).await?;
-            for id in ids { println!("{}", id); }
+            for id in ids {
+                println!("{}", id);
+            }
             Ok(0)
         },
     }
@@ -482,8 +597,10 @@ pub async fn run_cli(opts: &NotebookOptions) -> Result<i32> {
 
 async fn resolve_notebook(mgr: &NotebookManager, arg: &str) -> Result<Notebook> {
     // Try ID first
-    if let Ok(id) = NotebookId::from_str(arg) {
-        if let Ok(nb) = mgr.get_notebook(id).await { return Ok(nb); }
+    if let Ok(id) = arg.parse::<NotebookId>() {
+        if let Ok(nb) = mgr.get_notebook(id).await {
+            return Ok(nb);
+        }
     }
     // Fallback to exact name match
     let list = mgr.list_notebooks().await?;
@@ -519,9 +636,7 @@ fn substitute_params(cmd: &str, params: &std::collections::HashMap<String, Strin
 }
 
 fn parse_kv(s: &str) -> Result<(String, String), String> {
-    let (k, v) = s
-        .split_once('=')
-        .ok_or_else(|| "expected key=value".to_string())?;
+    let (k, v) = s.split_once('=').ok_or_else(|| "expected key=value".to_string())?;
     Ok((k.to_string(), v.to_string()))
 }
 
@@ -535,11 +650,17 @@ async fn export_notebook_json(mgr: &NotebookManager, id: NotebookId) -> Result<V
     Ok(serde_json::to_vec_pretty(&export)?)
 }
 
-pub(crate) async fn export_notebook_markdown(mgr: &NotebookManager, id: NotebookId) -> Result<Vec<u8>> {
+pub(crate) async fn export_notebook_markdown(
+    mgr: &NotebookManager,
+    id: NotebookId,
+) -> Result<Vec<u8>> {
     let nb = mgr.storage.get_notebook(id).await?;
     let mut s = String::new();
     s.push_str(&format!("# {}\n\n", nb.name));
-    if let Some(desc) = &nb.description { s.push_str(desc); s.push_str("\n\n"); }
+    if let Some(desc) = &nb.description {
+        s.push_str(desc);
+        s.push_str("\n\n");
+    }
     let mut cells = mgr.storage.list_cells(id).await?;
     cells.sort_by_key(|c| c.idx);
     for c in cells {
@@ -564,10 +685,17 @@ pub(crate) async fn export_notebook_markdown(mgr: &NotebookManager, id: Notebook
     Ok(s.into_bytes())
 }
 
-async fn import_notebook_json(mgr: &NotebookManager, data: &[u8], generate_new_ids: bool) -> Result<Vec<String>> {
+async fn import_notebook_json(
+    mgr: &NotebookManager,
+    data: &[u8],
+    generate_new_ids: bool,
+) -> Result<Vec<String>> {
     let v: serde_json::Value = serde_json::from_slice(data)?;
-    let nb: Notebook = serde_json::from_value(v.get("notebook").cloned().ok_or_else(|| anyhow!("missing notebook"))?)?;
-    let mut cells: Vec<NotebookCell> = serde_json::from_value(v.get("cells").cloned().ok_or_else(|| anyhow!("missing cells"))?)?;
+    let nb: Notebook = serde_json::from_value(
+        v.get("notebook").cloned().ok_or_else(|| anyhow!("missing notebook"))?,
+    )?;
+    let mut cells: Vec<NotebookCell> =
+        serde_json::from_value(v.get("cells").cloned().ok_or_else(|| anyhow!("missing cells"))?)?;
     let mut nb_new = nb.clone();
     if generate_new_ids {
         nb_new.id = NotebookId::new();
@@ -594,7 +722,11 @@ impl NotebookManager {
         self.storage.delete_cell(cell_id).await
     }
 
-    pub async fn update_cell_content(&self, cell_id: CellId, new_content: String) -> Result<NotebookCell> {
+    pub async fn update_cell_content(
+        &self,
+        cell_id: CellId,
+        new_content: String,
+    ) -> Result<NotebookCell> {
         let mut cell = self.storage.get_cell(cell_id).await?;
         cell.content = new_content;
         cell.updated_at = Utc::now();
@@ -619,4 +751,3 @@ impl NotebookManager {
         Ok(cell)
     }
 }
-

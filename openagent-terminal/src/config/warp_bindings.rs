@@ -220,19 +220,16 @@ pub fn integrate_warp_bindings(existing_bindings: &mut Vec<KeyBinding>) {
                     (
                         BindingKey::Keycode { key: Key::Named(NamedKey::ArrowLeft), .. },
                         Action::ResizePaneLeft,
+                    ) | (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. },
+                        Action::ResizePaneRight,
+                    ) | (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. },
+                        Action::ResizePaneUp,
+                    ) | (
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. },
+                        Action::ResizePaneDown,
                     )
-                        | (
-                            BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. },
-                            Action::ResizePaneRight,
-                        )
-                        | (
-                            BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. },
-                            Action::ResizePaneUp,
-                        )
-                        | (
-                            BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. },
-                            Action::ResizePaneDown,
-                        )
                 )
             });
         }

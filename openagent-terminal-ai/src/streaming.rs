@@ -406,11 +406,10 @@ mod tests {
         let events = parser.parse_chunk(data);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].data, vec![
-            "line1".to_string(),
-            "line2".to_string(),
-            "line3".to_string(),
-        ]);
+        assert_eq!(
+            events[0].data,
+            vec!["line1".to_string(), "line2".to_string(), "line3".to_string(),]
+        );
     }
 
     #[test]

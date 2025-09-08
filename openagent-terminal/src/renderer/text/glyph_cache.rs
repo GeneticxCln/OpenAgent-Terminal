@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::config::font::{Font, FontDescription};
 use crate::config::ui_config::Delta;
-use crate::gl::types::*;
+// WGPU-only build: use u32 for texture identifiers.
 
 use super::builtin_font;
 
@@ -27,7 +27,7 @@ pub trait LoadGlyph {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Glyph {
-    pub tex_id: GLuint,
+    pub tex_id: u32,
     pub multicolor: bool,
     pub top: i16,
     pub left: i16,

@@ -178,10 +178,7 @@ impl ConfigParser for AlacrittyParser {
 
             let vi_mode_style = cursor.get("vi_mode_style").map(|vi_style| CursorStyle {
                 shape: vi_style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                blinking: vi_style
-                    .get("blinking")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                blinking: vi_style.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
             });
 
             config.terminal.cursor = Some(CursorConfig {

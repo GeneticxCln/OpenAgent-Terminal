@@ -210,7 +210,6 @@ pub struct PluginsPathPolicy {
     pub require_signatures: bool,
 }
 
-
 impl Default for PluginsConfig {
     fn default() -> Self {
         Self {

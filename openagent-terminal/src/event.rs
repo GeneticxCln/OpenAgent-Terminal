@@ -2,6 +2,7 @@
 //! Process window events.
 
 use crate::ConfigMonitor;
+#[cfg(feature = "gl-backend")]
 use glutin::config::GetGlConfig;
 use std::borrow::Cow;
 use std::cmp::min;
@@ -23,7 +24,9 @@ use std::{env, f32, mem};
 
 use ahash::RandomState;
 use crossfont::Size as FontSize;
+#[cfg(feature = "gl-backend")]
 use glutin::config::Config as GlutinConfig;
+#[cfg(feature = "gl-backend")]
 use glutin::display::GetGlDisplay;
 use log::{debug, error, info, warn};
 use winit::application::ApplicationHandler;
@@ -57,10 +60,10 @@ use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
 use crate::display::color::Rgb;
 use crate::display::hint::HintMatch;
-use crate::display::palette::{PaletteEntry, PaletteItem};
-use crate::display::window::Window;
 #[cfg(feature = "blocks")]
 use crate::display::notebook_panel::{NotebookCellItem, NotebookListItem};
+use crate::display::palette::{PaletteEntry, PaletteItem};
+use crate::display::window::Window;
 use crate::display::{Display, Preedit, SizeInfo};
 use crate::input::{self, ActionContext as _, FONT_SIZE_STEP};
 #[cfg(unix)]
@@ -112,6 +115,7 @@ pub struct Processor {
     initial_window_error: Option<Box<dyn Error>>,
     windows: HashMap<WindowId, WindowContext, RandomState>,
     proxy: EventLoopProxy<Event>,
+    #[cfg(feature = "gl-backend")]
     gl_config: Option<GlutinConfig>,
     components: Option<Arc<InitializedComponents>>,
     #[cfg(unix)]
@@ -167,6 +171,7 @@ impl Processor {
             cli_options,
             proxy,
             scheduler,
+            #[cfg(feature = "gl-backend")]
             gl_config: None,
             components: None,
             config: Rc::new(config),
@@ -214,8 +219,11 @@ impl Processor {
         }
 
         // Cache GL config only when using the GL backend; on WGPU this is unavailable.
-        if !window_context.display.is_wgpu_backend() {
-            self.gl_config = Some(window_context.display.gl_context().config());
+        #[cfg(feature = "gl-backend")]
+        {
+            if !window_context.display.is_wgpu_backend() {
+                self.gl_config = Some(window_context.display.gl_context().config());
+            }
         }
         let window_id = window_context.id();
         // Set default window for confirmations (first window)
@@ -278,7 +286,7 @@ impl Processor {
         options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
         // WGPU-only: always use WGPU for additional windows; no GL fallback.
-        let use_wgpu_additional = cfg!(feature = "wgpu");
+        let _use_wgpu_additional = cfg!(feature = "wgpu");
 
         // Override config with CLI/IPC options.
         let mut config_overrides = options.config_overrides();
@@ -559,7 +567,9 @@ impl Processor {
         if let Some(win) = self.windows.get_mut(&window_id) {
             win.display.notebooks_panel.open();
             win.dirty = true;
-            if win.display.window.has_frame { win.display.window.request_redraw(); }
+            if win.display.window.has_frame {
+                win.display.window.request_redraw();
+            }
         }
         if let Some(components) = &self.components {
             if let Some(nb) = &components.notebook_manager {
@@ -568,9 +578,12 @@ impl Processor {
                 let win = window_id;
                 components.runtime.spawn(async move {
                     let mut items = Vec::new();
-if let Ok(list) = nb.read().await.list_notebooks().await {
+                    if let Ok(list) = nb.read().await.list_notebooks().await {
                         for n in list {
-                            items.push(NotebookListItem { id: n.id.to_string(), name: n.name.clone() });
+                            items.push(NotebookListItem {
+                                id: n.id.to_string(),
+                                name: n.name.clone(),
+                            });
                         }
                     }
                     let _ = proxy.send_event(Event::new(EventType::NotebooksList(items), win));
@@ -587,13 +600,29 @@ if let Ok(list) = nb.read().await.list_notebooks().await {
                 let win = window_id;
                 components.runtime.spawn(async move {
                     let mut items = Vec::new();
-                    if let Ok(id) = crate::notebooks::NotebookId::from_str(&notebook_id) {
-if let Ok(mut cells) = nb.read().await.list_cells(id).await {
+                    if let Ok(id) = notebook_id.parse::<crate::notebooks::NotebookId>() {
+                        if let Ok(mut cells) = nb.read().await.list_cells(id).await {
                             cells.sort_by_key(|c| c.idx);
                             for c in cells {
-                                let summary = match c.cell_type { crate::notebooks::CellType::Markdown => c.content.lines().next().unwrap_or("").to_string(), crate::notebooks::CellType::Command => c.content.clone() };
-                                let cell_type = match c.cell_type { crate::notebooks::CellType::Markdown => "md", crate::notebooks::CellType::Command => "cmd" }.to_string();
-                                items.push(NotebookCellItem { id: c.id.to_string(), idx: c.idx, cell_type, summary, exit_code: c.exit_code, duration_ms: c.duration_ms });
+                                let summary = match c.cell_type {
+                                    crate::notebooks::CellType::Markdown => {
+                                        c.content.lines().next().unwrap_or("").to_string()
+                                    },
+                                    crate::notebooks::CellType::Command => c.content.clone(),
+                                };
+                                let cell_type = match c.cell_type {
+                                    crate::notebooks::CellType::Markdown => "md",
+                                    crate::notebooks::CellType::Command => "cmd",
+                                }
+                                .to_string();
+                                items.push(NotebookCellItem {
+                                    id: c.id.to_string(),
+                                    idx: c.idx,
+                                    cell_type,
+                                    summary,
+                                    exit_code: c.exit_code,
+                                    duration_ms: c.duration_ms,
+                                });
                             }
                         }
                     }
@@ -884,7 +913,8 @@ impl ApplicationHandler<Event> for Processor {
                     window_context.display.make_not_current();
                 }
 
-                if self.gl_config.is_none() {
+                let is_first = self.windows.is_empty();
+                if is_first {
                     // Handle initial window creation in daemon mode.
                     if let Err(err) = self.create_initial_window(event_loop, options) {
                         self.initial_window_error = Some(err);
@@ -1061,7 +1091,9 @@ impl ApplicationHandler<Event> for Processor {
                     win.display.notebooks_panel.selected_notebook = None;
                     win.display.notebooks_panel.cells.clear();
                     win.dirty = true;
-                    if win.display.window.has_frame { win.display.window.request_redraw(); }
+                    if win.display.window.has_frame {
+                        win.display.window.request_redraw();
+                    }
                 }
             },
             #[cfg(feature = "blocks")]
@@ -1077,7 +1109,9 @@ impl ApplicationHandler<Event> for Processor {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.cells = cells;
                     win.dirty = true;
-                    if win.display.window.has_frame { win.display.window.request_redraw(); }
+                    if win.display.window.has_frame {
+                        win.display.window.request_redraw();
+                    }
                 }
             },
             #[cfg(feature = "blocks")]
@@ -1088,7 +1122,7 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::CellId::from_str(&cell_id) {
+                            if let Ok(id) = cell_id.parse::<crate::notebooks::CellId>() {
                                 let _ = nb.read().await.run_cell(id).await;
                             }
                             let _ = proxy.send_event(Event::new(EventType::NotebooksOpen, win));
@@ -1104,7 +1138,7 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::NotebookId::from_str(&nb_id) {
+                            if let Ok(id) = nb_id.parse::<crate::notebooks::NotebookId>() {
                                 let _ = nb.read().await.run_notebook(id).await;
                             }
                             let _ = proxy.send_event(Event::new(EventType::NotebooksOpen, win));
@@ -1120,14 +1154,21 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::NotebookId::from_str(&nb_id) {
+                            if let Ok(id) = nb_id.parse::<crate::notebooks::NotebookId>() {
                                 let _ = nb
                                     .read()
                                     .await
-                                    .add_command_cell(id, None, "echo New cell".to_string(), None, None)
+                                    .add_command_cell(
+                                        id,
+                                        None,
+                                        "echo New cell".to_string(),
+                                        None,
+                                        None,
+                                    )
                                     .await;
                                 // Reload cells for notebook
-                                let _ = proxy.send_event(Event::new(EventType::NotebooksSelect(nb_id), win));
+                                let _ = proxy
+                                    .send_event(Event::new(EventType::NotebooksSelect(nb_id), win));
                             }
                         });
                     }
@@ -1141,13 +1182,14 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::NotebookId::from_str(&nb_id) {
+                            if let Ok(id) = nb_id.parse::<crate::notebooks::NotebookId>() {
                                 let _ = nb
                                     .read()
                                     .await
                                     .add_markdown_cell(id, None, "# New cell".to_string())
                                     .await;
-                                let _ = proxy.send_event(Event::new(EventType::NotebooksSelect(nb_id), win));
+                                let _ = proxy
+                                    .send_event(Event::new(EventType::NotebooksSelect(nb_id), win));
                             }
                         });
                     }
@@ -1162,7 +1204,7 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::CellId::from_str(&cell_id) {
+                            if let Ok(id) = cell_id.parse::<crate::notebooks::CellId>() {
                                 let _ = nbm.read().await.delete_cell(id).await;
                             }
                             // Refresh panel
@@ -1179,7 +1221,7 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::CellId::from_str(&cell_id) {
+                            if let Ok(id) = cell_id.parse::<crate::notebooks::CellId>() {
                                 let _ = nbm
                                     .read()
                                     .await
@@ -1199,7 +1241,7 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::CellId::from_str(&cell_id) {
+                            if let Ok(id) = cell_id.parse::<crate::notebooks::CellId>() {
                                 let _ = nbm
                                     .read()
                                     .await
@@ -1219,10 +1261,15 @@ impl ApplicationHandler<Event> for Processor {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::NotebookId::from_str(&nb_id) {
-if let Ok(bytes) = nbm.read().await.export_notebook_markdown_bytes(id).await {
+                            if let Ok(id) = nb_id.parse::<crate::notebooks::NotebookId>() {
+                                if let Ok(bytes) =
+                                    nbm.read().await.export_notebook_markdown_bytes(id).await
+                                {
                                     if let Ok(s) = String::from_utf8(bytes) {
-                                        let _ = proxy.send_event(Event::new(EventType::PasteCommand(s), win));
+                                        let _ = proxy.send_event(Event::new(
+                                            EventType::PasteCommand(s),
+                                            win,
+                                        ));
                                     }
                                 }
                             }
@@ -1238,7 +1285,7 @@ if let Ok(bytes) = nbm.read().await.export_notebook_markdown_bytes(id).await {
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         components.runtime.spawn(async move {
-                            if let Ok(id) = crate::notebooks::CellId::from_str(&cell_id) {
+                            if let Ok(id) = cell_id.parse::<crate::notebooks::CellId>() {
                                 let _ = nbm.read().await.update_cell_content(id, content).await;
                             }
                             let _ = proxy.send_event(Event::new(EventType::NotebooksOpen, win));
@@ -1866,6 +1913,7 @@ if let Ok(bytes) = nbm.read().await.export_notebook_markdown_bytes(id).await {
             info!("Exiting the event loop");
         }
 
+        #[cfg(feature = "gl-backend")]
         match self.gl_config.take().map(|config| config.display()) {
             #[cfg(not(target_os = "macos"))]
             Some(glutin::display::Display::Egl(display)) => {
@@ -2030,15 +2078,18 @@ pub enum EventType {
     #[cfg(feature = "blocks")]
     NotebooksRunNotebook(String), // notebook id
     #[cfg(feature = "blocks")]
-    NotebooksAddCommand(String),   // notebook id
+    NotebooksAddCommand(String), // notebook id
     #[cfg(feature = "blocks")]
-    NotebooksAddMarkdown(String),  // notebook id
+    NotebooksAddMarkdown(String), // notebook id
     // New editing and export actions
-    NotebooksDeleteCell(String),         // cell id
+    NotebooksDeleteCell(String),            // cell id
     NotebooksConvertCellToMarkdown(String), // cell id
     NotebooksConvertCellToCommand(String),  // cell id
-    NotebooksExportNotebook(String),     // notebook id
-    NotebooksEditApply { cell_id: String, content: String },
+    NotebooksExportNotebook(String),        // notebook id
+    NotebooksEditApply {
+        cell_id: String,
+        content: String,
+    },
 
     // Workflows panel events
     #[cfg(feature = "workflow")]
@@ -2508,9 +2559,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let recent = self.display.palette.recent_file_paths(20);
             for p in recent {
                 let path = std::path::PathBuf::from(&p);
-                if !path.exists() { continue; }
+                if !path.exists() {
+                    continue;
+                }
                 let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or(&p).to_string();
-                let subtitle = path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
+                let subtitle =
+                    path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
                 items.push(PaletteItem {
                     key: format!("file:{}", p),
                     title: format!("File: {}", file_name),
@@ -2524,10 +2578,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if let Ok(cwd) = std::env::current_dir() {
             if let Ok(rd) = std::fs::read_dir(&cwd) {
                 for (i, entry) in rd.flatten().enumerate() {
-                    if i >= 100 { break; }
+                    if i >= 100 {
+                        break;
+                    }
                     let path = entry.path();
                     let file_name = entry.file_name().to_string_lossy().to_string();
-                    let subtitle = path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
+                    let subtitle =
+                        path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
                     items.push(PaletteItem {
                         key: format!("file:{}", path.to_string_lossy()),
                         title: format!("File: {}", file_name),
@@ -2550,31 +2607,53 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let window_id = self.display.window.id();
         let cwd = std::env::current_dir().ok();
         std::thread::spawn(move || {
-            let Some(root) = cwd else { return; };
+            let Some(root) = cwd else {
+                return;
+            };
             use std::collections::VecDeque;
             use std::fs;
             let mut queue: VecDeque<std::path::PathBuf> = VecDeque::new();
             queue.push_back(root.clone());
             let ignore_dirs = [
-                ".git", "target", "node_modules", "dist", "build", ".venv", ".cache",
-                ".tox", ".mypy_cache", "venv", ".idea", ".vscode",
+                ".git",
+                "target",
+                "node_modules",
+                "dist",
+                "build",
+                ".venv",
+                ".cache",
+                ".tox",
+                ".mypy_cache",
+                "venv",
+                ".idea",
+                ".vscode",
             ];
             let ignore_set: std::collections::HashSet<&str> = ignore_dirs.iter().copied().collect();
             let mut out: Vec<String> = Vec::new();
             let max_files: usize = 3000;
             while let Some(dir) = queue.pop_front() {
-                let rd = match fs::read_dir(&dir) { Ok(rd) => rd, Err(_) => continue };
+                let rd = match fs::read_dir(&dir) {
+                    Ok(rd) => rd,
+                    Err(_) => continue,
+                };
                 for entry in rd.flatten() {
                     // Stop if over cap
-                    if out.len() >= max_files { break; }
+                    if out.len() >= max_files {
+                        break;
+                    }
                     let path = entry.path();
                     let name_os = entry.file_name();
                     let name = name_os.to_string_lossy();
                     // Skip symlinks
-                    let ft = match entry.file_type() { Ok(ft) => ft, Err(_) => continue };
+                    let ft = match entry.file_type() {
+                        Ok(ft) => ft,
+                        Err(_) => continue,
+                    };
                     if ft.is_dir() {
                         // Ignore directories by name
-                        if ignore_set.contains(name.as_ref()) { continue; }
+                        if ignore_set.contains(name.as_ref()) {
+                            continue;
+                        }
                         // Ignore hidden dot-directories except current directory root
                         if name.starts_with('.') && !["."].contains(&name.as_ref()) {
                             continue;
@@ -2584,7 +2663,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         out.push(path.to_string_lossy().to_string());
                     }
                 }
-                if out.len() >= max_files { break; }
+                if out.len() >= max_files {
+                    break;
+                }
             }
             // Post results
             if !out.is_empty() {
@@ -2673,7 +2754,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         // Start close animation before hiding
         self.display.palette.close();
         // Persist MRU on confirm
-self.display.palette.save_mru_to_config(self.config);
+        self.display.palette.save_mru_to_config(self.config);
         self.display.palette_anim_opening = false;
         self.display.palette_anim_start = Some(std::time::Instant::now());
         let theme = self
@@ -2694,7 +2775,11 @@ self.display.palette.save_mru_to_config(self.config);
                 self.display.palette.note_used(&key);
             }
             let p = std::path::PathBuf::from(&path);
-            let target_dir = if p.is_dir() { p } else { p.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
+            let target_dir = if p.is_dir() {
+                p
+            } else {
+                p.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+            };
             // Inline shell quote for POSIX
             let target_str = target_dir.to_string_lossy();
             let quoted = if target_str.is_empty() {
@@ -2711,7 +2796,7 @@ self.display.palette.save_mru_to_config(self.config);
             self.paste(&cmd, true);
             // Close + persist MRU
             self.display.palette.close();
-self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.save_mru_to_config(self.config);
             self.display.palette_anim_opening = false;
             self.display.palette_anim_start = Some(std::time::Instant::now());
             let theme = self
@@ -2734,7 +2819,7 @@ self.display.palette.save_mru_to_config(self.config);
     // If locale contains Windows paths this is still harmless on Linux
     fn palette_cancel(&mut self) {
         // Persist MRU on cancel as well
-self.display.palette.save_mru_to_config(self.config);
+        self.display.palette.save_mru_to_config(self.config);
         self.display.palette.close();
         // Trigger closing animation
         self.display.palette_anim_opening = false;
@@ -2753,7 +2838,7 @@ self.display.palette.save_mru_to_config(self.config);
     #[cfg(feature = "blocks")]
     fn open_blocks_search_panel(&mut self) {
         if self.palette_active() {
-self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         self.display.blocks_search.open();
@@ -3136,7 +3221,7 @@ self.display.palette.save_mru_to_config(self.config);
     #[cfg(feature = "workflow")]
     fn open_workflows_panel(&mut self) {
         if self.palette_active() {
-self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         self.display.workflows_panel.open();
@@ -3213,11 +3298,11 @@ self.display.palette.save_mru_to_config(self.config);
     fn open_settings_panel(&mut self) {
         // Close palette if open
         if self.palette_active() {
-self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         // Open with current config to preload values
-let cfg_ref: &UiConfig = self.config;
+        let cfg_ref: &UiConfig = self.config;
         self.display.settings_panel.open(cfg_ref);
         self.mark_dirty();
     }
@@ -3227,7 +3312,9 @@ let cfg_ref: &UiConfig = self.config;
         self.mark_dirty();
     }
 
-    fn settings_panel_active(&self) -> bool { self.display.settings_panel.active }
+    fn settings_panel_active(&self) -> bool {
+        self.display.settings_panel.active
+    }
 
     fn settings_panel_input(&mut self, c: char) {
         self.display.settings_panel.insert_char(c);
@@ -3246,7 +3333,9 @@ let cfg_ref: &UiConfig = self.config;
         self.mark_dirty();
     }
     fn settings_panel_cycle_provider(&mut self, forward: bool) {
-        if self.display.settings_panel.selected_field == crate::display::settings_panel::Field::Provider {
+        if self.display.settings_panel.selected_field
+            == crate::display::settings_panel::Field::Provider
+        {
             self.display.settings_panel.cycle_provider(forward);
             self.mark_dirty();
         }
@@ -3256,7 +3345,7 @@ let cfg_ref: &UiConfig = self.config;
         self.mark_dirty();
     }
     fn settings_panel_test_connection(&mut self) {
-let cfg_ref: &UiConfig = self.config;
+        let cfg_ref: &UiConfig = self.config;
         self.display.settings_panel.test_connection(cfg_ref);
         self.mark_dirty();
     }
@@ -3264,18 +3353,32 @@ let cfg_ref: &UiConfig = self.config;
         self.display.settings_panel.move_kb_selection(delta);
         self.mark_dirty();
     }
-    fn settings_panel_begin_capture(&mut self) { self.display.settings_panel.begin_kb_capture(); self.mark_dirty(); }
-    fn settings_panel_cancel_capture(&mut self) { self.display.settings_panel.cancel_kb_capture(); self.mark_dirty(); }
-    fn settings_panel_is_capturing(&self) -> bool { self.display.settings_panel.is_kb_capturing() }
-    fn settings_panel_capture(&mut self, key: winit::keyboard::Key<String>, mods: winit::keyboard::ModifiersState) {
-let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods);
+    fn settings_panel_begin_capture(&mut self) {
+        self.display.settings_panel.begin_kb_capture();
+        self.mark_dirty();
+    }
+    fn settings_panel_cancel_capture(&mut self) {
+        self.display.settings_panel.cancel_kb_capture();
+        self.mark_dirty();
+    }
+    fn settings_panel_is_capturing(&self) -> bool {
+        self.display.settings_panel.is_kb_capturing()
+    }
+    fn settings_panel_capture(
+        &mut self,
+        key: winit::keyboard::Key<String>,
+        mods: winit::keyboard::ModifiersState,
+    ) {
+        let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods);
         if res.is_ok() {
             // Reload config to apply keybinding
             let path = crate::config::installed_config("toml").unwrap_or_else(|| {
                 let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
                 base.join("openagent-terminal").join("openagent-terminal.toml")
             });
-            let _ = self.event_proxy.send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
+            let _ = self
+                .event_proxy
+                .send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
         }
         self.mark_dirty();
     }
@@ -3285,7 +3388,12 @@ let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods)
         match self.display.settings_panel.save() {
             Ok(()) => {
                 // For most categories we should reload config to apply changes
-                need_reload = matches!(category, crate::display::settings_panel::SettingsCategory::Ai | crate::display::settings_panel::SettingsCategory::Theme | crate::display::settings_panel::SettingsCategory::General);
+                need_reload = matches!(
+                    category,
+                    crate::display::settings_panel::SettingsCategory::Ai
+                        | crate::display::settings_panel::SettingsCategory::Theme
+                        | crate::display::settings_panel::SettingsCategory::General
+                );
             },
             Err(e) => {
                 need_reload = false;
@@ -3298,7 +3406,9 @@ let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods)
                 let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
                 base.join("openagent-terminal").join("openagent-terminal.toml")
             });
-            let _ = self.event_proxy.send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
+            let _ = self
+                .event_proxy
+                .send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
         }
         self.mark_dirty();
     }
@@ -3367,7 +3477,7 @@ let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods)
     #[cfg(feature = "blocks")]
     fn open_notebooks_panel(&mut self) {
         if self.palette_active() {
-self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.save_mru_to_config(self.config);
             self.display.palette.close();
         }
         self.display.notebooks_panel.open();
@@ -3379,7 +3489,9 @@ self.display.palette.save_mru_to_config(self.config);
     }
 
     #[cfg(feature = "blocks")]
-    fn notebooks_panel_active(&self) -> bool { self.display.notebooks_panel.active }
+    fn notebooks_panel_active(&self) -> bool {
+        self.display.notebooks_panel.active
+    }
 
     #[cfg(feature = "blocks")]
     fn notebooks_panel_close(&mut self) {
@@ -3392,13 +3504,18 @@ self.display.palette.save_mru_to_config(self.config);
         use std::cmp::min;
         // If a notebook is selected, move within cells; else move within notebooks
         // Decide based on focus
-        if matches!(self.display.notebooks_panel.focus, crate::display::notebook_panel::FocusArea::Cells) {
+        if matches!(
+            self.display.notebooks_panel.focus,
+            crate::display::notebook_panel::FocusArea::Cells
+        ) {
             // Move cell selection
             let len = self.display.notebooks_panel.cells.len();
-            if len == 0 { return; }
+            if len == 0 {
+                return;
+            }
             let cur = self.display.notebooks_panel.selected_cell.min(len.saturating_sub(1));
             let new_idx = if delta.is_negative() {
-                cur.saturating_sub(delta.unsigned_abs() as usize)
+                cur.saturating_sub(delta.unsigned_abs())
             } else {
                 min(cur.saturating_add(delta as usize), len.saturating_sub(1))
             };
@@ -3407,18 +3524,16 @@ self.display.palette.save_mru_to_config(self.config);
         } else {
             // Move notebooks selection by changing selected_notebook id
             let len = self.display.notebooks_panel.notebooks.len();
-            if len == 0 { return; }
+            if len == 0 {
+                return;
+            }
             // Find current index as None => -1
             let cur_opt = self.display.notebooks_panel.selected_notebook.as_ref().and_then(|id| {
-                self.display
-                    .notebooks_panel
-                    .notebooks
-                    .iter()
-                    .position(|n| &n.id == id)
+                self.display.notebooks_panel.notebooks.iter().position(|n| &n.id == id)
             });
             let cur = cur_opt.unwrap_or(0);
             let new_idx = if delta.is_negative() {
-                cur.saturating_sub(delta.unsigned_abs() as usize)
+                cur.saturating_sub(delta.unsigned_abs())
             } else {
                 min(cur.saturating_add(delta as usize), len.saturating_sub(1))
             };
@@ -3439,7 +3554,7 @@ self.display.palette.save_mru_to_config(self.config);
     fn notebooks_panel_confirm(&mut self) {
         // If no notebook selected, treat as selecting the first notebook
         if self.display.notebooks_panel.selected_notebook.is_none() {
-            if let Some(first) = self.display.notebooks_panel.notebooks.get(0) {
+            if let Some(first) = self.display.notebooks_panel.notebooks.first() {
                 self.display.notebooks_panel.selected_notebook = Some(first.id.clone());
                 self.display.notebooks_panel.selected_cell = 0;
                 let _ = self.event_proxy.send_event(Event::new(
@@ -3462,7 +3577,9 @@ self.display.palette.save_mru_to_config(self.config);
 
     #[cfg(feature = "blocks")]
     fn notebooks_panel_rerun_selected(&mut self) {
-        if !self.display.notebooks_panel.active { return; }
+        if !self.display.notebooks_panel.active {
+            return;
+        }
         let idx = self.display.notebooks_panel.selected_cell;
         if let Some(cell) = self.display.notebooks_panel.cells.get(idx) {
             let _ = self.event_proxy.send_event(Event::new(
@@ -3530,7 +3647,7 @@ self.display.palette.save_mru_to_config(self.config);
 
     #[cfg(feature = "ai")]
     fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
-self.ai_runtime.as_deref()
+        self.ai_runtime.as_deref()
     }
 
     #[inline]
@@ -4399,7 +4516,7 @@ self.ai_runtime.as_deref()
         &mut self,
         mouse_x: usize,
         mouse_y: usize,
-    ) -> Option<crate::display::tab_bar::TabBarAction> {
+    ) -> Option<crate::display::warp_ui::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
         self.display.handle_tab_bar_click(
             self.config,
@@ -4425,7 +4542,7 @@ self.ai_runtime.as_deref()
             mouse_y,
             button,
         ) {
-            use crate::display::tab_bar::TabBarAction as TBA;
+            use crate::display::warp_ui::TabBarAction as TBA;
             match action {
                 TBA::SelectTab(id) => {
                     self.workspace_switch_to_tab(id);
@@ -4445,10 +4562,7 @@ self.ai_runtime.as_deref()
                     return true;
                 },
                 // Drag-related actions are handled by dedicated handlers; treat as handled here
-                TBA::BeginDrag(_)
-                | TBA::DragMove(..)
-                | TBA::EndDrag(_)
-                | TBA::CancelDrag(_) => {
+                TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::EndDrag(_) | TBA::CancelDrag(_) => {
                     // Mark dirty for visuals; actual drag is handled elsewhere
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
@@ -4463,7 +4577,7 @@ self.ai_runtime.as_deref()
         if let Some(action) =
             self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
         {
-            use crate::display::tab_bar::TabBarAction as TBA;
+            use crate::display::warp_ui::TabBarAction as TBA;
             if let TBA::DragMove(tab_id, new_pos) = action {
                 let moved = self.workspace.tabs.move_tab(tab_id, new_pos);
                 if moved {
@@ -4490,7 +4604,7 @@ self.ai_runtime.as_deref()
 
     fn workspace_tab_bar_drag_release(&mut self, button: MouseButton) -> bool {
         if let Some(action) = self.display.handle_tab_bar_mouse_release(button) {
-            use crate::display::tab_bar::TabBarAction as TBA;
+            use crate::display::warp_ui::TabBarAction as TBA;
             match action {
                 TBA::EndDrag(_) => {
                     self.display.pending_update.dirty = true;
@@ -4544,9 +4658,12 @@ self.ai_runtime.as_deref()
             None => return false,
         };
         // Start drag animation state
-        self.display
-            .pane_drag_manager
-            .start_drag(tab_id, pane_id, (mouse_x_px, mouse_y_px), PaneDragType::MoveToTab);
+        self.display.pane_drag_manager.start_drag(
+            tab_id,
+            pane_id,
+            (mouse_x_px, mouse_y_px),
+            PaneDragType::MoveToTab,
+        );
         self.display.pending_update.dirty = true;
         *self.dirty = true;
         true
@@ -4581,9 +4698,9 @@ self.ai_runtime.as_deref()
         // Compute split areas for the active tab
         let si = self.display.size_info;
         // Content container with padding and reserved tab bar row (when effectively visible)
-        let mut x0 = si.padding_x();
+        let x0 = si.padding_x();
         let mut y0 = si.padding_y();
-        let mut cw = si.width() - 2.0 * si.padding_x();
+        let cw = si.width() - 2.0 * si.padding_x();
         let mut ch = si.height() - 2.0 * si.padding_y();
         let tab_cfg = &self.config.workspace.tab_bar;
         let is_fs = self.display.window.is_fullscreen();
@@ -4603,7 +4720,7 @@ self.ai_runtime.as_deref()
             },
         };
         if tab_cfg.show
-            && tab_cfg.reserve_row
+            && !self.config.workspace.warp_overlay_only
             && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
             && tab_cfg.position != crate::workspace::TabBarPosition::Hidden
         {
@@ -4620,8 +4737,7 @@ self.ai_runtime.as_deref()
             }
         }
         let container = crate::workspace::split_manager::PaneRect::new(x0, y0, cw, ch);
-        let split_areas_raw =
-            self.workspace.splits.calculate_pane_rects(split_layout, container);
+        let split_areas_raw = self.workspace.splits.calculate_pane_rects(split_layout, container);
         let mut split_areas: Vec<(
             crate::workspace::TabId,
             crate::workspace::PaneId,
@@ -4635,14 +4751,12 @@ self.ai_runtime.as_deref()
         }
 
         // Compute current drop zone and update animations
-        let dz = self
-            .display
-            .pane_drag_manager
-            .calculate_drop_zone((mouse_x_px, mouse_y_px), &tab_positions, &split_areas);
-        let updated = self
-            .display
-            .pane_drag_manager
-            .update_drag((mouse_x_px, mouse_y_px), dz);
+        let dz = self.display.pane_drag_manager.calculate_drop_zone(
+            (mouse_x_px, mouse_y_px),
+            &tab_positions,
+            &split_areas,
+        );
+        let updated = self.display.pane_drag_manager.update_drag((mouse_x_px, mouse_y_px), dz);
         if updated {
             self.display.pending_update.dirty = true;
             *self.dirty = true;
@@ -4671,10 +4785,14 @@ self.ai_runtime.as_deref()
                         if let Some(active_tab) = self.workspace.active_tab_mut() {
                             // Map SplitDirection to SplitAxis
                             let axis = match direction {
-                                SplitDirection::Vertical => crate::workspace::split_manager::SplitAxis::Horizontal,
-                                SplitDirection::Horizontal => crate::workspace::split_manager::SplitAxis::Vertical,
+                                SplitDirection::Vertical => {
+                                    crate::workspace::split_manager::SplitAxis::Horizontal
+                                },
+                                SplitDirection::Horizontal => {
+                                    crate::workspace::split_manager::SplitAxis::Vertical
+                                },
                             };
-let mut sm = crate::workspace::SplitManager::new();
+                            let mut sm = crate::workspace::SplitManager::new();
                             let _ok = sm.move_pane_to_split(
                                 &mut active_tab.split_layout,
                                 drag_state.source_split,
@@ -4695,20 +4813,22 @@ let mut sm = crate::workspace::SplitManager::new();
                     // Cross-tab move: remove from source tab and insert next to the destination tab's active pane
                     // 1) Remove from the source tab's layout (from drag_state.source_tab)
                     if let Some(src_tab) = self.workspace.tabs.get_tab_mut(drag_state.source_tab) {
-let mut sm = crate::workspace::SplitManager::new();
+                        let mut sm = crate::workspace::SplitManager::new();
                         let _ = sm.close_pane(&mut src_tab.split_layout, drag_state.source_split);
                     }
 
                     // 2) Move PaneContext across tabs (if present)
-                    let _ = self.workspace
-                        .tabs
-                        .move_pane_context(drag_state.source_tab, tab_id, drag_state.source_split);
+                    let _ = self.workspace.tabs.move_pane_context(
+                        drag_state.source_tab,
+                        tab_id,
+                        drag_state.source_split,
+                    );
 
                     // 3) Insert into destination tab around its active pane and update active pane
                     if let Some(dest_tab) = self.workspace.tabs.get_tab_mut(tab_id) {
                         let axis = crate::workspace::split_manager::SplitAxis::Horizontal;
                         let before = true;
-let mut sm = crate::workspace::SplitManager::new();
+                        let sm = crate::workspace::SplitManager::new();
                         let _ = sm.insert_pane_with_split(
                             &mut dest_tab.split_layout,
                             dest_tab.active_pane,
@@ -4734,15 +4854,16 @@ let mut sm = crate::workspace::SplitManager::new();
 
                     // Remove from source tab's layout (by ID from drag state)
                     if let Some(src_tab) = self.workspace.tabs.get_tab_mut(drag_state.source_tab) {
-let mut sm = crate::workspace::SplitManager::new();
+                        let mut sm = crate::workspace::SplitManager::new();
                         let _ = sm.close_pane(&mut src_tab.split_layout, drag_state.source_split);
                     }
 
                     // Move PaneContext across tabs (if present)
-                    let _ = self
-                        .workspace
-                        .tabs
-                        .move_pane_context(drag_state.source_tab, new_id, drag_state.source_split);
+                    let _ = self.workspace.tabs.move_pane_context(
+                        drag_state.source_tab,
+                        new_id,
+                        drag_state.source_split,
+                    );
 
                     // Initialize new tab layout and focus
                     if let Some(new_tab) = self.workspace.tabs.get_tab_mut(new_id) {
@@ -4755,7 +4876,7 @@ let mut sm = crate::workspace::SplitManager::new();
                         new_tab.active_pane = drag_state.source_split;
                     }
 
-                    let _ = self.workspace_switch_to_tab(new_id);
+                    self.workspace_switch_to_tab(new_id);
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                     return true;
@@ -4984,7 +5105,7 @@ let mut sm = crate::workspace::SplitManager::new();
             };
 
             // Compute geometry; None means fully hidden
-let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
+            let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
                 Some(g) => g,
                 None => return false,
             };
@@ -5066,7 +5187,7 @@ let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
                 },
             };
 
-let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
+            let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
                 Some(g) => g,
                 None => {
                     if self.display.ai_hover_control.take().is_some() {
@@ -5635,7 +5756,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::ConfirmResolved { .. } => (),
                 #[cfg(feature = "blocks")]
                 EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
-#[cfg(feature = "blocks")]
+                #[cfg(feature = "blocks")]
                 EventType::BlocksToggleStar(_block_id) => {
                     // Star toggling is handled at the processor level, not in input processor
                     // This event should already be processed there
@@ -6091,7 +6212,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     // Workflow progress clearing is handled at the processor level
                     *self.ctx.dirty = true;
                 },
-                _ => {},
             },
             WinitEvent::WindowEvent { event, .. } => {
                 match event {
@@ -6143,6 +6263,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     WindowEvent::Focused(is_focused) => {
                         self.ctx.terminal.is_focused = is_focused;
 
+                        // Cancel any active pane drag on focus loss to avoid stuck overlays.
+                        if !is_focused {
+                            self.ctx.display.pane_drag_manager.cancel_drag();
+                            self.ctx.display.pending_update.dirty = true;
+                            *self.ctx.dirty = true;
+                        }
+
                         // When the unfocused hollow is used we must redraw on focus change.
                         if self.ctx.config.cursor.unfocused_hollow {
                             *self.ctx.dirty = true;
@@ -6165,6 +6292,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     },
                     WindowEvent::CursorLeft { .. } => {
                         self.ctx.mouse.inside_text_area = false;
+
+                        // Cancel any active pane drag when cursor leaves the window.
+                        self.ctx.display.pane_drag_manager.cancel_drag();
+                        self.ctx.display.pending_update.dirty = true;
+                        *self.ctx.dirty = true;
 
                         if self.ctx.display().highlighted_hint.is_some() {
                             *self.ctx.dirty = true;

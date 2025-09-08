@@ -681,7 +681,9 @@ impl StreamingClient for AnthropicClient {
 }
 
 impl Default for CancellationToken {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ============================================================================
@@ -784,7 +786,9 @@ impl StreamingManager {
 }
 
 impl Default for StreamingManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // Helper for cancellation

@@ -107,6 +107,8 @@ impl PaneRect {
     }
 }
 
+type SplitEventCallback = Box<dyn Fn(&SplitEvent) + Send + Sync>;
+
 /// Native split manager handles pane layouts and operations without lazy fallbacks
 pub struct SplitManager {
     /// Minimum pane size in cells
@@ -116,7 +118,7 @@ pub struct SplitManager {
     default_split_ratio: f32,
 
     /// Native event callbacks for real-time split updates
-    event_callbacks: Vec<Box<dyn Fn(&SplitEvent) + Send + Sync>>,
+    event_callbacks: Vec<SplitEventCallback>,
 
     /// Split animation states for immediate rendering
     animation_states: HashMap<PaneId, SplitAnimation>,
@@ -355,20 +357,16 @@ impl SplitLayout {
 
 impl SplitHistory {
     pub fn new(max_history: usize) -> Self {
-        Self {
-            snapshots: Vec::new(),
-            current_index: 0,
-            max_history,
-        }
+        Self { snapshots: Vec::new(), current_index: 0, max_history }
     }
 
     pub fn save_snapshot(&mut self, layout: &SplitLayout) {
         // Remove any snapshots after current index
         self.snapshots.truncate(self.current_index + 1);
-        
+
         // Add new snapshot
         self.snapshots.push(layout.clone());
-        
+
         // Limit history size
         if self.snapshots.len() > self.max_history {
             self.snapshots.remove(0);
@@ -411,20 +409,20 @@ impl SplitManager {
     /// - rotating away adjacent splits of the same orientation into a right-leaning normal form
     /// - ensuring focus points to a valid leaf if tracked
     pub fn normalize(&self, layout: &mut SplitLayout) {
-        self.normalize_tree(layout);
+        Self::normalize_tree(layout);
     }
 
     fn clamp_ratio(value: f32) -> f32 {
         value.clamp(RATIO_EPS, 1.0 - RATIO_EPS)
     }
 
-    fn normalize_tree(&self, node: &mut SplitLayout) {
+    fn normalize_tree(node: &mut SplitLayout) {
         // First, normalize children
         match node {
-            SplitLayout::Single(_) => return,
+            SplitLayout::Single(_) => {},
             SplitLayout::Horizontal { left, right, ratio } => {
-                self.normalize_tree(left);
-                self.normalize_tree(right);
+                Self::normalize_tree(left);
+                Self::normalize_tree(right);
 
                 // Attempt to rotate/merge with same-orientation children into right-leaning form
                 // Case 1: Left child is also Horizontal => rotate left child up
@@ -434,7 +432,12 @@ impl SplitManager {
                     // Clamp ratio each iteration
                     *ratio = Self::clamp_ratio(*ratio);
 
-                    if let SplitLayout::Horizontal { left: l_left, right: l_right, ratio: l_ratio } = left.as_ref() {
+                    if let SplitLayout::Horizontal {
+                        left: l_left,
+                        right: l_right,
+                        ratio: l_ratio,
+                    } = left.as_ref()
+                    {
                         // Only rotate when the right child is not a simple leaf to preserve adjacency semantics
                         let right_is_leaf = matches!(right.as_ref(), SplitLayout::Single(_));
                         if !right_is_leaf {
@@ -449,7 +452,11 @@ impl SplitManager {
                                 let a = l_left.as_ref().clone();
                                 let b = l_right.as_ref().clone();
                                 let c = right.as_ref().clone();
-                                let new_right = SplitLayout::Horizontal { left: Box::new(b), right: Box::new(c), ratio: r2 };
+                                let new_right = SplitLayout::Horizontal {
+                                    left: Box::new(b),
+                                    right: Box::new(c),
+                                    ratio: r2,
+                                };
                                 *left = Box::new(a);
                                 *right = Box::new(new_right);
                                 *ratio = r_p_prime;
@@ -458,12 +465,11 @@ impl SplitManager {
                             }
                         }
                     }
-
                 }
             },
             SplitLayout::Vertical { top, bottom, ratio } => {
-                self.normalize_tree(top);
-                self.normalize_tree(bottom);
+                Self::normalize_tree(top);
+                Self::normalize_tree(bottom);
 
                 let mut changed = true;
                 while changed {
@@ -471,7 +477,9 @@ impl SplitManager {
                     *ratio = Self::clamp_ratio(*ratio);
 
                     // Case 1: Top child is also Vertical => rotate top child up
-                    if let SplitLayout::Vertical { top: t_top, bottom: t_bottom, ratio: t_ratio } = top.as_ref() {
+                    if let SplitLayout::Vertical { top: t_top, bottom: t_bottom, ratio: t_ratio } =
+                        top.as_ref()
+                    {
                         // Only rotate when the bottom child is not a simple leaf to preserve adjacency semantics
                         let bottom_is_leaf = matches!(bottom.as_ref(), SplitLayout::Single(_));
                         if !bottom_is_leaf {
@@ -484,7 +492,11 @@ impl SplitManager {
                                 let a = t_top.as_ref().clone();
                                 let b = t_bottom.as_ref().clone();
                                 let c = bottom.as_ref().clone();
-                                let new_bottom = SplitLayout::Vertical { top: Box::new(b), bottom: Box::new(c), ratio: r2 };
+                                let new_bottom = SplitLayout::Vertical {
+                                    top: Box::new(b),
+                                    bottom: Box::new(c),
+                                    ratio: r2,
+                                };
                                 *top = Box::new(a);
                                 *bottom = Box::new(new_bottom);
                                 *ratio = r_p_prime;
@@ -493,7 +505,6 @@ impl SplitManager {
                             }
                         }
                     }
-
                 }
             },
         }
@@ -660,7 +671,7 @@ impl SplitManager {
     fn update_cached_state(&mut self, layout: &SplitLayout, container: PaneRect) {
         let pane_rects = self.calculate_pane_rects(layout, container);
         let total_panes = layout.pane_count();
-        
+
         self.cached_state = SplitManagerState {
             total_panes,
             active_pane: self.cached_state.active_pane, // Preserve active pane
@@ -705,7 +716,8 @@ impl SplitManager {
         for pane_id in keys {
             if let Some(anim) = self.animation_states.get(&pane_id).cloned() {
                 let elapsed = now.duration_since(anim.start_time);
-                let progress = (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
+                let progress =
+                    (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
                 if progress >= 1.0 {
                     self.animation_states.remove(&pane_id);
                     changed_panes.push(pane_id);
@@ -747,12 +759,12 @@ impl SplitManager {
             // Start split animation immediately
             self.start_split_animation(new_pane_id, SplitAnimationType::Create);
             self.start_split_animation(pane_id, SplitAnimationType::Split);
-            
+
             // Emit immediate events
             self.emit_event(SplitEvent::PaneCreated(new_pane_id));
             self.emit_event(SplitEvent::SplitCreated(pane_id, new_pane_id, SplitAxis::Horizontal));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
-            
+
             Some(new_pane_id)
         } else {
             None
@@ -775,12 +787,12 @@ impl SplitManager {
             // Start split animation immediately
             self.start_split_animation(new_pane_id, SplitAnimationType::Create);
             self.start_split_animation(pane_id, SplitAnimationType::Split);
-            
+
             // Emit immediate events
             self.emit_event(SplitEvent::PaneCreated(new_pane_id));
             self.emit_event(SplitEvent::SplitCreated(pane_id, new_pane_id, SplitAxis::Vertical));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
-            
+
             Some(new_pane_id)
         } else {
             None
@@ -831,12 +843,12 @@ impl SplitManager {
     pub fn close_pane(&mut self, layout: &mut SplitLayout, pane_id: PaneId) -> bool {
         // Save snapshot for undo
         self.split_history.save_snapshot(layout);
-        
+
         // Start close animation immediately
         self.start_split_animation(pane_id, SplitAnimationType::Close);
-        
+
         let success = self.remove_pane(layout, pane_id).is_some();
-        
+
         if success {
             // Normalize after structural mutation
             self.normalize(layout);
@@ -844,7 +856,7 @@ impl SplitManager {
             self.emit_event(SplitEvent::PaneClosed(pane_id));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
         }
-        
+
         success
     }
 
@@ -904,16 +916,16 @@ impl SplitManager {
         if let Some(current_index) = panes.iter().position(|&id| id == *current_pane) {
             let next_index = (current_index + 1) % panes.len();
             let new_pane = panes[next_index];
-            
+
             // Start focus animation immediately
             self.start_split_animation(new_pane, SplitAnimationType::Focus);
-            
+
             // Update cached state
             self.cached_state.active_pane = Some(new_pane);
-            
+
             // Emit immediate focus event
             self.emit_event(SplitEvent::PaneFocused(new_pane));
-            
+
             *current_pane = new_pane;
             true
         } else {
@@ -927,16 +939,16 @@ impl SplitManager {
         if let Some(current_index) = panes.iter().position(|&id| id == *current_pane) {
             let prev_index = if current_index == 0 { panes.len() - 1 } else { current_index - 1 };
             let new_pane = panes[prev_index];
-            
+
             // Start focus animation immediately
             self.start_split_animation(new_pane, SplitAnimationType::Focus);
-            
+
             // Update cached state
             self.cached_state.active_pane = Some(new_pane);
-            
+
             // Emit immediate focus event
             self.emit_event(SplitEvent::PaneFocused(new_pane));
-            
+
             *current_pane = new_pane;
             true
         } else {
@@ -983,18 +995,18 @@ impl SplitManager {
     pub fn resize_split(&mut self, layout: &mut SplitLayout, pane_id: PaneId, delta: f32) -> bool {
         // Save snapshot for undo
         self.split_history.save_snapshot(layout);
-        
+
         // Start resize animation immediately
         self.start_split_animation(pane_id, SplitAnimationType::Resize);
-        
+
         let success = self.adjust_split_ratio(layout, pane_id, delta);
-        
+
         if success {
             // Emit immediate resize event
             self.emit_event(SplitEvent::PaneResized(pane_id, delta));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
         }
-        
+
         success
     }
 
@@ -1038,10 +1050,10 @@ impl SplitManager {
     pub fn undo_split(&mut self, layout: &mut SplitLayout) -> bool {
         if let Some(previous_layout) = self.split_history.undo() {
             *layout = previous_layout;
-            
+
             // Emit layout change event
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
-            
+
             true
         } else {
             false
@@ -1052,10 +1064,10 @@ impl SplitManager {
     pub fn redo_split(&mut self, layout: &mut SplitLayout) -> bool {
         if let Some(next_layout) = self.split_history.redo() {
             *layout = next_layout;
-            
+
             // Emit layout change event
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
-            
+
             true
         } else {
             false
@@ -1076,13 +1088,13 @@ impl SplitManager {
     pub fn toggle_zoom(&mut self, layout: &mut SplitLayout, pane_id: PaneId) -> bool {
         // Save current layout before zooming
         self.split_history.save_snapshot(layout);
-        
+
         // Start zoom animation
         self.start_split_animation(pane_id, SplitAnimationType::Create);
-        
+
         // Emit zoom event
         self.emit_event(SplitEvent::ZoomToggled(pane_id));
-        
+
         // For now, just return true - actual zoom logic would go here
         true
     }
@@ -1097,8 +1109,10 @@ impl Default for SplitManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    fn approx_eq(a: f32, b: f32, eps: f32) -> bool { (a - b).abs() <= eps }
+
+    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
+        (a - b).abs() <= eps
+    }
 
     // Property testing
     use proptest::prelude::*;
@@ -1139,7 +1153,7 @@ mod tests {
         assert_eq!(layout.pane_count(), 3);
 
         // Normalize to clamp ratios and check structure is still valid
-        let _ = sm.normalize(&mut layout);
+        sm.normalize(&mut layout);
         assert!(layout.find_pane(a));
     }
 
@@ -1151,15 +1165,22 @@ mod tests {
             right: Box::new(SplitLayout::Single(PaneId(2))),
             ratio: 0.5,
         };
-        let ok = sm.move_pane_to_split(&mut layout, PaneId(1), PaneId(1), SplitAxis::Horizontal, true);
+        let ok =
+            sm.move_pane_to_split(&mut layout, PaneId(1), PaneId(1), SplitAxis::Horizontal, true);
         assert!(!ok, "moving a pane next to itself should be a no-op and return false");
     }
 
     #[test]
     fn insert_pane_with_split_missing_target_fails() {
-        let mut sm = SplitManager::new();
+        let sm = SplitManager::new();
         let mut layout = SplitLayout::Single(PaneId(1));
-        let ok = sm.insert_pane_with_split(&mut layout, PaneId(99), PaneId(2), SplitAxis::Horizontal, true);
+        let ok = sm.insert_pane_with_split(
+            &mut layout,
+            PaneId(99),
+            PaneId(2),
+            SplitAxis::Horizontal,
+            true,
+        );
         assert!(!ok, "inserting next to non-existent target should fail");
     }
 
@@ -1205,7 +1226,7 @@ mod tests {
 
     #[test]
     fn horizontal_insert_before_and_after_root_leaf() {
-        let mut sm = SplitManager::new();
+        let sm = SplitManager::new();
         // Start with a single target leaf B
         let b = PaneId(10);
         let mut layout = SplitLayout::Single(b);
@@ -1214,13 +1235,11 @@ mod tests {
         assert!(sm.insert_pane_with_split(&mut layout, b, m, SplitAxis::Horizontal, true));
         // Expect Horizontal { left: M, right: B }
         match &layout {
-            SplitLayout::Horizontal { left, right, .. } => {
-                match (left.as_ref(), right.as_ref()) {
-                    (SplitLayout::Single(lid), SplitLayout::Single(rid)) => {
-                        assert_eq!((*lid, *rid), (m, b));
-                    },
-                    _ => panic!("unexpected structure after horizontal insert before"),
-                }
+            SplitLayout::Horizontal { left, right, .. } => match (left.as_ref(), right.as_ref()) {
+                (SplitLayout::Single(lid), SplitLayout::Single(rid)) => {
+                    assert_eq!((*lid, *rid), (m, b));
+                },
+                _ => panic!("unexpected structure after horizontal insert before"),
             },
             _ => panic!("expected horizontal split at root"),
         }
@@ -1258,7 +1277,13 @@ mod tests {
             ratio: 0.6,
         };
         // Move A before C horizontally (A should become left of C)
-        assert!(sm.move_pane_to_split(&mut layout, PaneId(1), PaneId(3), SplitAxis::Horizontal, true));
+        assert!(sm.move_pane_to_split(
+            &mut layout,
+            PaneId(1),
+            PaneId(3),
+            SplitAxis::Horizontal,
+            true
+        ));
         // Verify adjacency (A,C) exists with A on the left
         fn has_pair_left_right(node: &SplitLayout, l: PaneId, r: PaneId) -> bool {
             match node {
@@ -1275,7 +1300,13 @@ mod tests {
         }
         assert!(has_pair_left_right(&layout, PaneId(1), PaneId(3)));
         // Now move A after B horizontally (A should become right of B)
-        assert!(sm.move_pane_to_split(&mut layout, PaneId(1), PaneId(2), SplitAxis::Horizontal, false));
+        assert!(sm.move_pane_to_split(
+            &mut layout,
+            PaneId(1),
+            PaneId(2),
+            SplitAxis::Horizontal,
+            false
+        ));
         assert!(has_pair_left_right(&layout, PaneId(2), PaneId(1)));
         // Keep tree valid
         sm.normalize(&mut layout);
@@ -1284,7 +1315,7 @@ mod tests {
 
     #[test]
     fn normalize_rotates_left_horizontal_child_preserving_widths() {
-        let mut sm = SplitManager::new();
+        let sm = SplitManager::new();
         let a = PaneId(1);
         let b = PaneId(2);
         let c = PaneId(3);
@@ -1324,7 +1355,7 @@ mod tests {
 
     #[test]
     fn normalize_rotates_right_horizontal_child_preserving_widths() {
-        let mut sm = SplitManager::new();
+        let sm = SplitManager::new();
         let a = PaneId(1);
         let b = PaneId(2);
         let c = PaneId(3);
@@ -1364,7 +1395,7 @@ mod tests {
 
     #[test]
     fn normalize_vertical_rotations_preserve_heights() {
-        let mut sm = SplitManager::new();
+        let sm = SplitManager::new();
         let a = PaneId(1);
         let b = PaneId(2);
         let c = PaneId(3);
@@ -1425,48 +1456,48 @@ mod tests {
     }
 
     proptest! {
-        #[test]
-        fn prop_normalize_preserves_rects_for_horizontal_chain(
-            r_p in 0.25f32..0.85f32,
-            r_c in 0.25f32..0.85f32,
-        ) {
-            let mut sm = SplitManager::new();
-            let a = PaneId(1);
-            let b = PaneId(2);
-            let c = PaneId(3);
-            // H( H(a,b; r_c), c; r_p )
-            let mut layout = SplitLayout::Horizontal {
-                left: Box::new(SplitLayout::Horizontal {
-                    left: Box::new(SplitLayout::Single(a)),
-                    right: Box::new(SplitLayout::Single(b)),
-                    ratio: r_c,
-                }),
-                right: Box::new(SplitLayout::Single(c)),
-                ratio: r_p,
-            };
-            let container = PaneRect::new(0.0, 0.0, 1000.0, 100.0);
-            let before: std::collections::HashMap<PaneId, (f32, f32)> = sm
-                .calculate_pane_rects(&layout, container)
-                .into_iter()
-                .map(|(id, rect)| (id, (rect.x, rect.width)))
-                .collect();
+            #[test]
+            fn prop_normalize_preserves_rects_for_horizontal_chain(
+                r_p in 0.25f32..0.85f32,
+                r_c in 0.25f32..0.85f32,
+            ) {
+    let sm = SplitManager::new();
+                let a = PaneId(1);
+                let b = PaneId(2);
+                let c = PaneId(3);
+                // H( H(a,b; r_c), c; r_p )
+                let mut layout = SplitLayout::Horizontal {
+                    left: Box::new(SplitLayout::Horizontal {
+                        left: Box::new(SplitLayout::Single(a)),
+                        right: Box::new(SplitLayout::Single(b)),
+                        ratio: r_c,
+                    }),
+                    right: Box::new(SplitLayout::Single(c)),
+                    ratio: r_p,
+                };
+                let container = PaneRect::new(0.0, 0.0, 1000.0, 100.0);
+                let before: std::collections::HashMap<PaneId, (f32, f32)> = sm
+                    .calculate_pane_rects(&layout, container)
+                    .into_iter()
+                    .map(|(id, rect)| (id, (rect.x, rect.width)))
+                    .collect();
 
-            sm.normalize(&mut layout);
-            let after: std::collections::HashMap<PaneId, (f32, f32)> = sm
-                .calculate_pane_rects(&layout, container)
-                .into_iter()
-                .map(|(id, rect)| (id, (rect.x, rect.width)))
-                .collect();
+                sm.normalize(&mut layout);
+                let after: std::collections::HashMap<PaneId, (f32, f32)> = sm
+                    .calculate_pane_rects(&layout, container)
+                    .into_iter()
+                    .map(|(id, rect)| (id, (rect.x, rect.width)))
+                    .collect();
 
-            for id in [a, b, c] {
-                let (bx, bw) = before[&id];
-                let (ax, aw) = after[&id];
-                assert!(approx_eq(bw, aw, 1e-3), "width mismatch for {:?}", id);
-                assert!(approx_eq(bx, ax, 1e-3), "x mismatch for {:?}", id);
+                for id in [a, b, c] {
+                    let (bx, bw) = before[&id];
+                    let (ax, aw) = after[&id];
+                    assert!(approx_eq(bw, aw, 1e-3), "width mismatch for {:?}", id);
+                    assert!(approx_eq(bx, ax, 1e-3), "x mismatch for {:?}", id);
+                }
+
+                // Structural sanity
+                assert!(matches!(layout, SplitLayout::Horizontal { .. }));
             }
-
-            // Structural sanity
-            assert!(matches!(layout, SplitLayout::Horizontal { .. }));
         }
-    }
 }

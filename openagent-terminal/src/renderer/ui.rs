@@ -1,8 +1,4 @@
 use crate::display::color::Rgb;
-use crate::display::SizeInfo;
-use crate::gl;
-use crate::gl::types::*;
-use crate::renderer::shader::{ShaderError, ShaderProgram, ShaderVersion};
 
 #[derive(Clone, Copy, Debug)]
 pub struct UiRoundedRect {
@@ -29,126 +25,7 @@ impl UiRoundedRect {
     }
 }
 
-#[derive(Debug)]
-pub struct UiGlRenderer {
-    vao: GLuint,
-    vbo: GLuint,
-    program: ShaderProgram,
-    u_origin: GLint,
-    u_size: GLint,
-    u_radius: GLint,
-    u_color: GLint,
-}
-
-const UI_SHADER_V: &str = include_str!("../../res/ui_rect.v.glsl");
-const UI_SHADER_F: &str = include_str!("../../res/ui_rect.f.glsl");
-
-impl UiGlRenderer {
-    pub fn new(shader_version: ShaderVersion) -> Result<Self, ShaderError> {
-        let program = ShaderProgram::new(shader_version, None, UI_SHADER_V, UI_SHADER_F)?;
-        let u_origin = program.get_uniform_location(c"uOrigin")?;
-        let u_size = program.get_uniform_location(c"uSize")?;
-        let u_radius = program.get_uniform_location(c"uRadius")?;
-        let u_color = program.get_uniform_location(c"uColor")?;
-
-        let mut vao: GLuint = 0;
-        let mut vbo: GLuint = 0;
-        unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
-            gl::BindVertexArray(vao);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::VertexAttribPointer(
-                0,
-                2,
-                gl::FLOAT,
-                gl::FALSE,
-                (std::mem::size_of::<f32>() * 2) as i32,
-                std::ptr::null(),
-            );
-            gl::EnableVertexAttribArray(0);
-            gl::BindVertexArray(0);
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-        }
-
-        Ok(Self { vao, vbo, program, u_origin, u_size, u_radius, u_color })
-    }
-
-    pub fn draw(&mut self, size_info: &SizeInfo, shapes: &[UiRoundedRect]) {
-        if shapes.is_empty() {
-            return;
-        }
-        let half_w = size_info.width() / 2.0;
-        let half_h = size_info.height() / 2.0;
-
-        unsafe {
-            gl::UseProgram(self.program.id());
-            gl::BindVertexArray(self.vao);
-            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-        }
-
-        for s in shapes {
-            let ndc_x = s.x / half_w - 1.0;
-            let ndc_y = -s.y / half_h + 1.0;
-            let ndc_w = s.width / half_w;
-            let ndc_h = s.height / half_h;
-
-            let quad: [f32; 12] = [
-                ndc_x,
-                ndc_y,
-                ndc_x,
-                ndc_y - ndc_h,
-                ndc_x + ndc_w,
-                ndc_y,
-                ndc_x + ndc_w,
-                ndc_y,
-                ndc_x + ndc_w,
-                ndc_y - ndc_h,
-                ndc_x,
-                ndc_y - ndc_h,
-            ];
-
-            unsafe {
-                gl::Uniform2f(self.u_origin, s.x, s.y);
-                gl::Uniform2f(self.u_size, s.width, s.height);
-                gl::Uniform1f(self.u_radius, s.radius);
-                let (r, g, b) = s.color.as_tuple();
-                gl::Uniform4f(
-                    self.u_color,
-                    r as f32 / 255.0,
-                    g as f32 / 255.0,
-                    b as f32 / 255.0,
-                    s.alpha,
-                );
-
-                gl::BufferData(
-                    gl::ARRAY_BUFFER,
-                    (quad.len() * std::mem::size_of::<f32>()) as isize,
-                    quad.as_ptr().cast(),
-                    gl::STREAM_DRAW,
-                );
-                gl::DrawArrays(gl::TRIANGLES, 0, 6);
-            }
-        }
-
-        unsafe {
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-            gl::UseProgram(0);
-        }
-    }
-}
-
-impl Drop for UiGlRenderer {
-    fn drop(&mut self) {
-        unsafe {
-            gl::DeleteBuffers(1, &self.vbo);
-            gl::DeleteVertexArrays(1, &self.vao);
-        }
-    }
-}
-
-// --- UI Sprite (textured quad) ---
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct UiSprite {
     pub x: f32,
@@ -184,36 +61,7 @@ impl UiSprite {
         Self { x, y, width, height, uv_x, uv_y, uv_w, uv_h, tint, alpha, filter_nearest }
     }
 }
-
-#[derive(Debug)]
-pub struct UiSpriteGlRenderer {
-    vao: GLuint,
-    vbo: GLuint,
-    program: ShaderProgram,
-    texture: GLuint,
-    u_origin: GLint,
-    u_size: GLint,
-    u_uv_rect: GLint,
-    u_tint: GLint,
-    u_viewport: GLint,
-}
-
-const UI_SPRITE_V: &str = r#"#version 330 core
-layout(location = 0) in vec2 aPos; // 0..1 quad
-uniform vec2 uOrigin; // px
-uniform vec2 uSize;   // px
-uniform vec2 uViewport; // px (width, height)
-out vec2 vUV;
-uniform vec4 uUvRect; // x,y,w,h in 0..1
-void main() {
-    vUV = vec2(uUvRect.x, uUvRect.y) + aPos * vec2(uUvRect.z, uUvRect.w);
-    float ndc_x = (uOrigin.x / uViewport.x) * 2.0 - 1.0 + aPos.x * (uSize.x / uViewport.x) * 2.0;
-    float ndc_y = -(uOrigin.y / uViewport.y) * 2.0 + 1.0 - aPos.y * (uSize.y / uViewport.y) * 2.0;
-    gl_Position = vec4(ndc_x, ndc_y, 0.0, 1.0);
-}
-"#;
-
-const UI_SPRITE_F: &str = r#"#version 330 core
+/*
 in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uTex;
@@ -224,7 +72,6 @@ void main() {
 }
 "#;
 
-impl UiSpriteGlRenderer {
     pub fn new(shader_version: ShaderVersion) -> Result<Self, ShaderError> {
         let program = ShaderProgram::new(shader_version, None, UI_SPRITE_V, UI_SPRITE_F)?;
         let u_origin = program.get_uniform_location(c"uOrigin")?;
@@ -551,13 +398,4 @@ impl UiSpriteGlRenderer {
         }
     }
 }
-
-impl Drop for UiSpriteGlRenderer {
-    fn drop(&mut self) {
-        unsafe {
-            gl::DeleteTextures(1, &self.texture);
-            gl::DeleteBuffers(1, &self.vbo);
-            gl::DeleteVertexArrays(1, &self.vao);
-        }
-    }
-}
+*/

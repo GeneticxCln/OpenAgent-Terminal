@@ -9,11 +9,11 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::UiConfig;
+use crate::config::{Action as BindingAction, BindingKey, KeyBinding};
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
-use crate::config::{Action as BindingAction, BindingKey, KeyBinding};
 use winit::keyboard::ModifiersState;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -89,7 +89,6 @@ pub enum GeneralField {
     DefaultShell,
 }
 
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Field {
     #[default]
@@ -98,7 +97,6 @@ pub enum Field {
     Model,
     Endpoint,
 }
-
 
 impl Default for SettingsPanelState {
     fn default() -> Self {
@@ -158,7 +156,11 @@ impl SettingsPanelState {
             .map(|p| match p {
                 crate::config::ui_config::Program::Just(s) => s.clone(),
                 crate::config::ui_config::Program::WithArgs { program, args } => {
-                    if args.is_empty() { program.clone() } else { format!("{} {}", program, args.join(" ")) }
+                    if args.is_empty() {
+                        program.clone()
+                    } else {
+                        format!("{} {}", program, args.join(" "))
+                    }
                 },
             })
             .unwrap_or_default();
@@ -178,16 +180,24 @@ impl SettingsPanelState {
         self.model.clear();
         self.endpoint.clear();
         if let Some(api_var) = envs.api_key_env {
-            if let Some(val) = secrets.get(api_var) { self.api_key = val.clone(); }
+            if let Some(val) = secrets.get(api_var) {
+                self.api_key = val.clone();
+            }
         }
         if let Some(model_var) = envs.model_env {
-            if let Some(val) = secrets.get(model_var) { self.model = val.clone(); }
+            if let Some(val) = secrets.get(model_var) {
+                self.model = val.clone();
+            }
         }
         if let Some(endpoint_var) = envs.endpoint_env {
-            if let Some(val) = secrets.get(endpoint_var) { self.endpoint = val.clone(); }
+            if let Some(val) = secrets.get(endpoint_var) {
+                self.endpoint = val.clone();
+            }
         }
         if self.endpoint.is_empty() {
-            if let Some(def) = envs.default_endpoint { self.endpoint = def.to_string(); }
+            if let Some(def) = envs.default_endpoint {
+                self.endpoint = def.to_string();
+            }
         }
     }
 
@@ -254,7 +264,9 @@ impl SettingsPanelState {
 
     pub fn insert_char(&mut self, ch: char) {
         if self.category == SettingsCategory::Ai {
-            if ch.is_control() { return; }
+            if ch.is_control() {
+                return;
+            }
             match self.selected_field {
                 Field::Provider => {}, // provider is cycled via arrows
                 Field::ApiKey => self.api_key.push(ch),
@@ -263,23 +275,39 @@ impl SettingsPanelState {
             }
         } else if self.category == SettingsCategory::Theme {
             match ch {
-                ' ' => { self.theme_rounded_corners = !self.theme_rounded_corners; },
-                'm' | 'M' => { self.theme_reduce_motion = !self.theme_reduce_motion; },
-                '+' => { self.theme_corner_radius_px = (self.theme_corner_radius_px + 1.0).min(64.0); },
-                '-' => { self.theme_corner_radius_px = (self.theme_corner_radius_px - 1.0).max(0.0); },
-                c if !c.is_control() => { self.theme_name.push(c); },
+                ' ' => {
+                    self.theme_rounded_corners = !self.theme_rounded_corners;
+                },
+                'm' | 'M' => {
+                    self.theme_reduce_motion = !self.theme_reduce_motion;
+                },
+                '+' => {
+                    self.theme_corner_radius_px = (self.theme_corner_radius_px + 1.0).min(64.0);
+                },
+                '-' => {
+                    self.theme_corner_radius_px = (self.theme_corner_radius_px - 1.0).max(0.0);
+                },
+                c if !c.is_control() => {
+                    self.theme_name.push(c);
+                },
                 _ => {},
             }
         } else if self.category == SettingsCategory::General {
             match self.general_selected {
                 GeneralField::LiveReload => {
-                    if ch == ' ' { self.general_live_reload = !self.general_live_reload; }
+                    if ch == ' ' {
+                        self.general_live_reload = !self.general_live_reload;
+                    }
                 },
                 GeneralField::WorkingDirectory => {
-                    if !ch.is_control() { self.general_working_directory.push(ch); }
+                    if !ch.is_control() {
+                        self.general_working_directory.push(ch);
+                    }
                 },
                 GeneralField::DefaultShell => {
-                    if !ch.is_control() { self.general_default_shell.push(ch); }
+                    if !ch.is_control() {
+                        self.general_default_shell.push(ch);
+                    }
                 },
             }
         }
@@ -289,16 +317,26 @@ impl SettingsPanelState {
         if self.category == SettingsCategory::Ai {
             match self.selected_field {
                 Field::Provider => {},
-                Field::ApiKey => { self.api_key.pop(); },
-                Field::Model => { self.model.pop(); },
-                Field::Endpoint => { self.endpoint.pop(); },
+                Field::ApiKey => {
+                    self.api_key.pop();
+                },
+                Field::Model => {
+                    self.model.pop();
+                },
+                Field::Endpoint => {
+                    self.endpoint.pop();
+                },
             }
         } else if self.category == SettingsCategory::Theme {
             self.theme_name.pop();
         } else if self.category == SettingsCategory::General {
             match self.general_selected {
-                GeneralField::WorkingDirectory => { self.general_working_directory.pop(); },
-                GeneralField::DefaultShell => { self.general_default_shell.pop(); },
+                GeneralField::WorkingDirectory => {
+                    self.general_working_directory.pop();
+                },
+                GeneralField::DefaultShell => {
+                    self.general_default_shell.pop();
+                },
                 _ => {},
             }
         }
@@ -310,13 +348,19 @@ impl SettingsPanelState {
                 let envs = provider_env_names(&self.provider);
                 let mut map = read_secrets_file();
                 if let Some(api_var) = envs.api_key_env {
-                    if !self.api_key.is_empty() { map.insert(api_var.to_string(), self.api_key.clone()); }
+                    if !self.api_key.is_empty() {
+                        map.insert(api_var.to_string(), self.api_key.clone());
+                    }
                 }
                 if let Some(model_var) = envs.model_env {
-                    if !self.model.is_empty() { map.insert(model_var.to_string(), self.model.clone()); }
+                    if !self.model.is_empty() {
+                        map.insert(model_var.to_string(), self.model.clone());
+                    }
                 }
                 if let Some(endpoint_var) = envs.endpoint_env {
-                    if !self.endpoint.is_empty() { map.insert(endpoint_var.to_string(), self.endpoint.clone()); }
+                    if !self.endpoint.is_empty() {
+                        map.insert(endpoint_var.to_string(), self.endpoint.clone());
+                    }
                 }
                 write_secrets_file(&map).map_err(|e| format!("Failed to save secrets: {}", e))?;
                 // Write chosen provider into main config
@@ -325,25 +369,29 @@ impl SettingsPanelState {
                 self.message = Some("Saved successfully".to_string());
                 Ok(())
             },
-            SettingsCategory::Theme => {
-                save_theme_to_config(
-                    &self.theme_name,
-                    self.theme_reduce_motion,
-                    self.theme_rounded_corners,
-                    self.theme_corner_radius_px,
-                )
-                .map(|_| self.message = Some("Saved theme".to_string()))
-                .map_err(|e| format!("Failed to save theme: {}", e))
-            },
-            SettingsCategory::General => {
-                save_general_to_config(
-                    self.general_live_reload,
-                    if self.general_working_directory.trim().is_empty() { None } else { Some(self.general_working_directory.clone()) },
-                    if self.general_default_shell.trim().is_empty() { None } else { Some(self.general_default_shell.clone()) },
-                )
-                .map(|_| self.message = Some("Saved general settings".to_string()))
-                .map_err(|e| format!("Failed to save general: {}", e))
-            },
+            SettingsCategory::Theme => save_theme_to_config(
+                &self.theme_name,
+                self.theme_reduce_motion,
+                self.theme_rounded_corners,
+                self.theme_corner_radius_px,
+            )
+            .map(|_| self.message = Some("Saved theme".to_string()))
+            .map_err(|e| format!("Failed to save theme: {}", e)),
+            SettingsCategory::General => save_general_to_config(
+                self.general_live_reload,
+                if self.general_working_directory.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.general_working_directory.clone())
+                },
+                if self.general_default_shell.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.general_default_shell.clone())
+                },
+            )
+            .map(|_| self.message = Some("Saved general settings".to_string()))
+            .map_err(|e| format!("Failed to save general: {}", e)),
             SettingsCategory::Keybindings => {
                 self.message = Some("Saved".to_string());
                 Ok(())
@@ -354,35 +402,39 @@ impl SettingsPanelState {
     pub fn switch_category(&mut self, forward: bool) {
         let cats = SettingsCategory::all();
         if let Some(idx) = cats.iter().position(|c| *c == self.category) {
-            let next = if forward { (idx + 1) % cats.len() } else { (idx + cats.len() - 1) % cats.len() };
+            let next =
+                if forward { (idx + 1) % cats.len() } else { (idx + cats.len() - 1) % cats.len() };
             self.category = cats[next];
         }
     }
 
-pub fn test_connection(&mut self, config: &UiConfig) {
+    pub fn test_connection(&mut self, _config: &UiConfig) {
         // Validate credentials for the selected provider using secure loader
-#[cfg(feature = "ai")]
+        #[cfg(feature = "ai")]
         let provider = self.provider.to_ascii_lowercase();
         #[cfg(feature = "ai")]
         {
-            let prov_cfg = config
-                .ai
-                .providers
-                .get(&provider)
-                .cloned()
-                .unwrap_or_else(|| {
-                    // Fallback to defaults if not present
-                    crate::config::ai_providers::get_default_provider_configs()
-                        .remove(&provider)
-                        .unwrap_or_default()
-                });
-            match crate::config::ai_providers::ProviderCredentials::from_config(&provider, &prov_cfg) {
+            let prov_cfg = _config.ai.providers.get(&provider).cloned().unwrap_or_else(|| {
+                // Fallback to defaults if not present
+                crate::config::ai_providers::get_default_provider_configs()
+                    .remove(&provider)
+                    .unwrap_or_default()
+            });
+            match crate::config::ai_providers::ProviderCredentials::from_config(
+                &provider, &prov_cfg,
+            ) {
                 Ok(creds) => {
                     // Basic checks
                     let mut ok = true;
-                    if provider != "ollama" && creds.api_key.is_none() { ok = false; }
-                    if creds.model.is_none() { ok = false; }
-                    if creds.endpoint.is_none() { ok = false; }
+                    if provider != "ollama" && creds.api_key.is_none() {
+                        ok = false;
+                    }
+                    if creds.model.is_none() {
+                        ok = false;
+                    }
+                    if creds.endpoint.is_none() {
+                        ok = false;
+                    }
                     if ok {
                         self.message = Some(format!("Credentials OK for '{}'.", provider));
                     } else {
@@ -435,12 +487,19 @@ fn provider_env_names(provider: &str) -> ProviderEnvs<'_> {
             endpoint_env: Some("OPENAGENT_OLLAMA_ENDPOINT"),
             default_endpoint: Some("http://localhost:11434"),
         },
-        _ => ProviderEnvs { api_key_env: None, model_env: None, endpoint_env: None, default_endpoint: None },
+        _ => ProviderEnvs {
+            api_key_env: None,
+            model_env: None,
+            endpoint_env: None,
+            default_endpoint: None,
+        },
     }
 }
 
 fn config_path() -> PathBuf {
-    if let Some(path) = crate::config::installed_config("toml") { return path; }
+    if let Some(path) = crate::config::installed_config("toml") {
+        return path;
+    }
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     base.join("openagent-terminal").join("openagent-terminal.toml")
 }
@@ -472,7 +531,9 @@ fn read_secrets_file() -> HashMap<String, String> {
 
 fn write_secrets_file(map: &HashMap<String, String>) -> std::io::Result<()> {
     let path = secrets_path();
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
 
     // Build TOML
     let mut tbl = toml::value::Table::new();
@@ -502,19 +563,25 @@ fn save_theme_to_config(
 ) -> std::io::Result<()> {
     let path = config_path();
     let mut root = if let Ok(text) = fs::read_to_string(&path) {
-        toml::from_str::<toml::Value>(&text).unwrap_or(toml::Value::Table(toml::value::Table::new()))
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
     } else {
         toml::Value::Table(toml::value::Table::new())
     };
-    if !root.is_table() { root = toml::Value::Table(toml::value::Table::new()); }
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
     let tbl = root.as_table_mut().unwrap();
-    let theme_tbl = tbl.entry("theme").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let theme_tbl =
+        tbl.entry("theme").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let theme = theme_tbl.as_table_mut().unwrap();
     theme.insert("name".to_string(), toml::Value::String(name.to_string()));
     theme.insert("reduce_motion".to_string(), toml::Value::Boolean(reduce_motion));
     theme.insert("rounded_corners".to_string(), toml::Value::Boolean(rounded_corners));
     theme.insert("corner_radius_px".to_string(), toml::Value::Float(corner_radius_px as f64));
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
     let s = toml::to_string_pretty(&root).unwrap_or_default();
     fs::write(&path, s)
 }
@@ -522,16 +589,21 @@ fn save_theme_to_config(
 fn save_ai_provider_to_config(provider: &str) -> std::io::Result<()> {
     let path = config_path();
     let mut root = if let Ok(text) = fs::read_to_string(&path) {
-        toml::from_str::<toml::Value>(&text).unwrap_or(toml::Value::Table(toml::value::Table::new()))
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
     } else {
         toml::Value::Table(toml::value::Table::new())
     };
-    if !root.is_table() { root = toml::Value::Table(toml::value::Table::new()); }
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
     let tbl = root.as_table_mut().unwrap();
     let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ai = ai_tbl.as_table_mut().unwrap();
     ai.insert("provider".to_string(), toml::Value::String(provider.to_string()));
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
     let s = toml::to_string_pretty(&root).unwrap_or_default();
     fs::write(&path, s)
 }
@@ -543,33 +615,42 @@ fn save_general_to_config(
 ) -> std::io::Result<()> {
     let path = config_path();
     let mut root = if let Ok(text) = fs::read_to_string(&path) {
-        toml::from_str::<toml::Value>(&text).unwrap_or(toml::Value::Table(toml::value::Table::new()))
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
     } else {
         toml::Value::Table(toml::value::Table::new())
     };
-    if !root.is_table() { root = toml::Value::Table(toml::value::Table::new()); }
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
     let tbl = root.as_table_mut().unwrap();
 
     // general table
-    let general_tbl = tbl.entry("general").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let general_tbl =
+        tbl.entry("general").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let general = general_tbl.as_table_mut().unwrap();
     general.insert("live_config_reload".to_string(), toml::Value::Boolean(live_reload));
     match working_directory {
         Some(dir) if !dir.trim().is_empty() => {
             general.insert("working_directory".to_string(), toml::Value::String(dir));
         },
-        _ => { general.remove("working_directory"); },
+        _ => {
+            general.remove("working_directory");
+        },
     }
 
     // terminal.shell
     if let Some(shell) = default_shell.filter(|s| !s.trim().is_empty()) {
-        let term_tbl = tbl.entry("terminal").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+        let term_tbl =
+            tbl.entry("terminal").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
         let term = term_tbl.as_table_mut().unwrap();
         // Store as simple string for Program::Just
         term.insert("shell".to_string(), toml::Value::String(shell));
     }
 
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
     let s = toml::to_string_pretty(&root).unwrap_or_default();
     fs::write(&path, s)
 }
@@ -599,28 +680,54 @@ impl SettingsPanelState {
         let filtered_len = self
             .kb_items
             .iter()
-            .filter(|it| it.action.contains(&self.kb_filter) || it.binding.contains(&self.kb_filter))
+            .filter(|it| {
+                it.action.contains(&self.kb_filter) || it.binding.contains(&self.kb_filter)
+            })
             .count();
-        if filtered_len == 0 { self.kb_selected = 0; return; }
+        if filtered_len == 0 {
+            self.kb_selected = 0;
+            return;
+        }
         let cur = self.kb_selected as isize;
         let mut next = cur + delta;
-        if next < 0 { next = 0; }
-        if next as usize >= filtered_len { next = filtered_len as isize - 1; }
+        if next < 0 {
+            next = 0;
+        }
+        if next as usize >= filtered_len {
+            next = filtered_len as isize - 1;
+        }
         self.kb_selected = next as usize;
     }
 
-    pub fn begin_kb_capture(&mut self) { self.kb_capture_mode = true; self.message = Some("Press new key combo (Esc to cancel)".into()); }
-    pub fn cancel_kb_capture(&mut self) { self.kb_capture_mode = false; self.message = Some("Capture canceled".into()); }
-    pub fn is_kb_capturing(&self) -> bool { self.kb_capture_mode }
+    pub fn begin_kb_capture(&mut self) {
+        self.kb_capture_mode = true;
+        self.message = Some("Press new key combo (Esc to cancel)".into());
+    }
+    pub fn cancel_kb_capture(&mut self) {
+        self.kb_capture_mode = false;
+        self.message = Some("Capture canceled".into());
+    }
+    pub fn is_kb_capturing(&self) -> bool {
+        self.kb_capture_mode
+    }
 
-    pub fn capture_kb_binding(&mut self, config: &UiConfig, key: winit::keyboard::Key<String>, mods: ModifiersState) -> Result<(), String> {
+    pub fn capture_kb_binding(
+        &mut self,
+        config: &UiConfig,
+        key: winit::keyboard::Key<String>,
+        mods: ModifiersState,
+    ) -> Result<(), String> {
         // Determine selected action under current filter
         let filtered: Vec<&KbItem> = self
             .kb_items
             .iter()
-            .filter(|it| it.action.contains(&self.kb_filter) || it.binding.contains(&self.kb_filter))
+            .filter(|it| {
+                it.action.contains(&self.kb_filter) || it.binding.contains(&self.kb_filter)
+            })
             .collect();
-        if filtered.is_empty() { return Err("No selection".into()); }
+        if filtered.is_empty() {
+            return Err("No selection".into());
+        }
         let target = filtered[self.kb_selected].action.clone();
 
         // Conflict detection: disallow if any existing binding has same mods+trigger
@@ -630,7 +737,10 @@ impl SettingsPanelState {
             let exist_key = key_string_for_config_from_binding(&kb.trigger);
             let exist_mods = mods_string_for_config(kb.mods);
             if exist_key == key_str && exist_mods == mods_str {
-                return Err(format!("Conflict with existing binding for action {}", format_action(&kb.action)));
+                return Err(format!(
+                    "Conflict with existing binding for action {}",
+                    format_action(&kb.action)
+                ));
             }
         }
 
@@ -646,9 +756,12 @@ impl SettingsPanelState {
 
 impl Display {
     pub fn draw_settings_panel_overlay(&mut self, config: &UiConfig, st: &SettingsPanelState) {
-        if !st.active { return; }
+        if !st.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 40% of viewport height, min 8 lines
@@ -682,7 +795,15 @@ impl Display {
             let name = cat.as_str();
             let label = if *cat == st.category { format!("[{}]", name) } else { name.to_string() };
             let color = if *cat == st.category { tokens.accent } else { tokens.text_muted };
-            if ccol < num_cols { self.draw_ai_text(Point::new(line, Column(ccol)), color, bg, &label, num_cols - ccol); }
+            if ccol < num_cols {
+                self.draw_ai_text(
+                    Point::new(line, Column(ccol)),
+                    color,
+                    bg,
+                    &label,
+                    num_cols - ccol,
+                );
+            }
             ccol += label.width() + 2;
         }
         line += 2;
@@ -690,54 +811,88 @@ impl Display {
         match st.category {
             SettingsCategory::Ai => {
                 // Provider selection row
-        let provider_row = format!("Provider: [{}]", st.provider);
-        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &provider_row, num_cols - 2);
-        if st.selected_field == Field::Provider {
-            // simple cursor box
-            let cur_col = 2 + "Provider: [".width();
-            self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
-        }
-        line += 2;
+                let provider_row = format!("Provider: [{}]", st.provider);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &provider_row, num_cols - 2);
+                if st.selected_field == Field::Provider {
+                    // simple cursor box
+                    let cur_col = 2 + "Provider: [".width();
+                    self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
+                }
+                line += 2;
 
-        // API Key
-        let api_lbl = "API Key: ";
-        let masked = if st.api_key.is_empty() { "".to_string() } else { "••••••••".to_string() };
-        let api_row = format!("{}{}", api_lbl, masked);
-        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &api_row, num_cols - 2);
-        if st.selected_field == Field::ApiKey {
-            let cur_col = 2 + api_lbl.width() + masked.width();
-            self.draw_ai_text(Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))), bg, fg, " ", 1);
-        }
-        line += 1;
+                // API Key
+                let api_lbl = "API Key: ";
+                let masked = if st.api_key.is_empty() {
+                    "".to_string()
+                } else {
+                    "••••••••".to_string()
+                };
+                let api_row = format!("{}{}", api_lbl, masked);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &api_row, num_cols - 2);
+                if st.selected_field == Field::ApiKey {
+                    let cur_col = 2 + api_lbl.width() + masked.width();
+                    self.draw_ai_text(
+                        Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))),
+                        bg,
+                        fg,
+                        " ",
+                        1,
+                    );
+                }
+                line += 1;
 
-        // Model
-        let mdl_lbl = "Model: ";
-        let mdl_row = format!("{}{}", mdl_lbl, st.model);
-        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &mdl_row, num_cols - 2);
-        if st.selected_field == Field::Model {
-            let cur_col = 2 + mdl_lbl.width() + st.model.width();
-            self.draw_ai_text(Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))), bg, fg, " ", 1);
-        }
-        line += 1;
+                // Model
+                let mdl_lbl = "Model: ";
+                let mdl_row = format!("{}{}", mdl_lbl, st.model);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &mdl_row, num_cols - 2);
+                if st.selected_field == Field::Model {
+                    let cur_col = 2 + mdl_lbl.width() + st.model.width();
+                    self.draw_ai_text(
+                        Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))),
+                        bg,
+                        fg,
+                        " ",
+                        1,
+                    );
+                }
+                line += 1;
 
-        // Endpoint
-        let ep_lbl = "Endpoint: ";
-        let ep_row = format!("{}{}", ep_lbl, st.endpoint);
-        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &ep_row, num_cols - 2);
-        if st.selected_field == Field::Endpoint {
-            let cur_col = 2 + ep_lbl.width() + st.endpoint.width();
-            self.draw_ai_text(Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))), bg, fg, " ", 1);
-        }
-        line += 2;
+                // Endpoint
+                let ep_lbl = "Endpoint: ";
+                let ep_row = format!("{}{}", ep_lbl, st.endpoint);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &ep_row, num_cols - 2);
+                if st.selected_field == Field::Endpoint {
+                    let cur_col = 2 + ep_lbl.width() + st.endpoint.width();
+                    self.draw_ai_text(
+                        Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))),
+                        bg,
+                        fg,
+                        " ",
+                        1,
+                    );
+                }
+                line += 2;
 
-        // Footer / message
-        if let Some(msg) = &st.message {
-let m = msg.to_string();
-            self.draw_ai_text(Point::new(line, Column(2)), tokens.success, bg, &m, num_cols - 2);
-        } else {
-            let hint = "Enter: Save  •  Esc: Close  •  Tab/Shift+Tab: Next/Prev field  •  Ctrl+Left/Right: Switch category  •  Left/Right: Cycle provider  •  T: Test Connection";
-            self.draw_ai_text(Point::new(line, Column(2)), tokens.text_muted, bg, hint, num_cols - 2);
-        }
+                // Footer / message
+                if let Some(msg) = &st.message {
+                    let m = msg.to_string();
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.success,
+                        bg,
+                        &m,
+                        num_cols - 2,
+                    );
+                } else {
+                    let hint = "Enter: Save  •  Esc: Close  •  Tab/Shift+Tab: Next/Prev field  •  Ctrl+Left/Right: Switch category  •  Left/Right: Cycle provider  •  T: Test Connection";
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.text_muted,
+                        bg,
+                        hint,
+                        num_cols - 2,
+                    );
+                }
             },
             SettingsCategory::Theme => {
                 // Theme Name
@@ -763,10 +918,22 @@ let m = msg.to_string();
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &cr_row, num_cols - 2);
                 line += 2;
                 if let Some(msg) = &st.message {
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.success, bg, msg, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.success,
+                        bg,
+                        msg,
+                        num_cols - 2,
+                    );
                 } else {
                     let hint = "Enter: Save  •  Esc: Close  •  Ctrl+Left/Right: Switch category  •  Type to edit theme name";
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.text_muted, bg, hint, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.text_muted,
+                        bg,
+                        hint,
+                        num_cols - 2,
+                    );
                 }
             },
             SettingsCategory::General => {
@@ -787,7 +954,13 @@ let m = msg.to_string();
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &wd_row, num_cols - 2);
                 if st.general_selected == GeneralField::WorkingDirectory {
                     let cur_col = 2 + wd_lbl.width() + st.general_working_directory.width();
-                    self.draw_ai_text(Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))), bg, fg, " ", 1);
+                    self.draw_ai_text(
+                        Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))),
+                        bg,
+                        fg,
+                        " ",
+                        1,
+                    );
                 }
                 line += 1;
 
@@ -797,15 +970,33 @@ let m = msg.to_string();
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &sh_row, num_cols - 2);
                 if st.general_selected == GeneralField::DefaultShell {
                     let cur_col = 2 + sh_lbl.width() + st.general_default_shell.width();
-                    self.draw_ai_text(Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))), bg, fg, " ", 1);
+                    self.draw_ai_text(
+                        Point::new(line, Column(cur_col.min(num_cols.saturating_sub(1)))),
+                        bg,
+                        fg,
+                        " ",
+                        1,
+                    );
                 }
                 line += 2;
 
                 if let Some(msg) = &st.message {
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.success, bg, msg, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.success,
+                        bg,
+                        msg,
+                        num_cols - 2,
+                    );
                 } else {
                     let hint = "Enter: Save  •  Esc: Close  •  Tab/Shift+Tab: Next/Prev field  •  Ctrl+Left/Right: Switch category";
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.text_muted, bg, hint, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.text_muted,
+                        bg,
+                        hint,
+                        num_cols - 2,
+                    );
                 }
             },
             SettingsCategory::Keybindings => {
@@ -820,10 +1011,14 @@ let m = msg.to_string();
                 let filtered: Vec<&KbItem> = st
                     .kb_items
                     .iter()
-                    .filter(|it| it.action.contains(&st.kb_filter) || it.binding.contains(&st.kb_filter))
+                    .filter(|it| {
+                        it.action.contains(&st.kb_filter) || it.binding.contains(&st.kb_filter)
+                    })
                     .collect();
                 for (shown, (i, it)) in filtered.iter().enumerate().enumerate() {
-                    if shown >= max_rows { break; }
+                    if shown >= max_rows {
+                        break;
+                    }
                     let sel = i == st.kb_selected;
                     let prefix = if sel { "> " } else { "  " };
                     let row = format!("{}{:30} — {}", prefix, it.action, it.binding);
@@ -835,12 +1030,30 @@ let m = msg.to_string();
 
                 if st.kb_capture_mode {
                     let hint = "Capturing: press new key combo (Esc to cancel)";
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.warning, bg, hint, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.warning,
+                        bg,
+                        hint,
+                        num_cols - 2,
+                    );
                 } else if let Some(msg) = &st.message {
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.success, bg, msg, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.success,
+                        bg,
+                        msg,
+                        num_cols - 2,
+                    );
                 } else {
                     let hint = "c: Capture new binding  •  ↑/↓: Move  •  Enter: Save not required (applies on capture)  •  Esc: Close";
-                    self.draw_ai_text(Point::new(line, Column(2)), tokens.text_muted, bg, hint, num_cols - 2);
+                    self.draw_ai_text(
+                        Point::new(line, Column(2)),
+                        tokens.text_muted,
+                        bg,
+                        hint,
+                        num_cols - 2,
+                    );
                 }
             },
         }
@@ -848,20 +1061,34 @@ let m = msg.to_string();
 }
 
 // ---------- Keybindings helpers ----------
-fn format_action(action: &BindingAction) -> String { format!("{:?}", action) }
+fn format_action(action: &BindingAction) -> String {
+    format!("{:?}", action)
+}
 
 fn format_binding_for_display(kb: &KeyBinding) -> String {
     let mods = mods_string_for_display(kb.mods);
     let key = key_string_for_display(&kb.trigger);
-    if mods.is_empty() { key } else { format!("{} + {}", mods, key) }
+    if mods.is_empty() {
+        key
+    } else {
+        format!("{} + {}", mods, key)
+    }
 }
 
 fn mods_string_for_display(mods: ModifiersState) -> String {
     let mut parts = Vec::new();
-    if mods.contains(ModifiersState::CONTROL) { parts.push("Ctrl"); }
-    if mods.contains(ModifiersState::SHIFT) { parts.push("Shift"); }
-    if mods.contains(ModifiersState::ALT) { parts.push("Alt"); }
-    if mods.contains(ModifiersState::SUPER) { parts.push("Super"); }
+    if mods.contains(ModifiersState::CONTROL) {
+        parts.push("Ctrl");
+    }
+    if mods.contains(ModifiersState::SHIFT) {
+        parts.push("Shift");
+    }
+    if mods.contains(ModifiersState::ALT) {
+        parts.push("Alt");
+    }
+    if mods.contains(ModifiersState::SUPER) {
+        parts.push("Super");
+    }
     parts.join("+")
 }
 
@@ -878,19 +1105,29 @@ fn key_string_for_display(trigger: &BindingKey) -> String {
 
 fn mods_string_for_config(mods: ModifiersState) -> String {
     let mut parts = Vec::new();
-    if mods.contains(ModifiersState::CONTROL) { parts.push("Control"); }
-    if mods.contains(ModifiersState::SHIFT) { parts.push("Shift"); }
-    if mods.contains(ModifiersState::ALT) { parts.push("Alt"); }
-    if mods.contains(ModifiersState::SUPER) { parts.push("Super"); }
-    if parts.is_empty() { "None".into() } else { parts.join("|") }
+    if mods.contains(ModifiersState::CONTROL) {
+        parts.push("Control");
+    }
+    if mods.contains(ModifiersState::SHIFT) {
+        parts.push("Shift");
+    }
+    if mods.contains(ModifiersState::ALT) {
+        parts.push("Alt");
+    }
+    if mods.contains(ModifiersState::SUPER) {
+        parts.push("Super");
+    }
+    if parts.is_empty() {
+        "None".into()
+    } else {
+        parts.join("|")
+    }
 }
 
 fn key_string_for_config_from_binding(trigger: &BindingKey) -> String {
     match trigger {
         BindingKey::Keycode { key, .. } => match key {
-            winit::keyboard::Key::Character(s) => {
-                s.to_string()
-            },
+            winit::keyboard::Key::Character(s) => s.to_string(),
             winit::keyboard::Key::Named(named) => match named {
                 winit::keyboard::NamedKey::Enter => "Enter".into(),
                 winit::keyboard::NamedKey::Backspace => "Back".into(),
@@ -910,9 +1147,7 @@ fn key_string_for_config_from_binding(trigger: &BindingKey) -> String {
 
 fn key_string_for_config_from_key(key: &winit::keyboard::Key<String>) -> String {
     match key {
-        winit::keyboard::Key::Character(s) => {
-            s.clone()
-        },
+        winit::keyboard::Key::Character(s) => s.clone(),
         winit::keyboard::Key::Named(named) => match named {
             winit::keyboard::NamedKey::Enter => "Enter".into(),
             winit::keyboard::NamedKey::Backspace => "Back".into(),
@@ -930,21 +1165,30 @@ fn key_string_for_config_from_key(key: &winit::keyboard::Key<String>) -> String 
 fn save_keybinding_override_to_config(action: &str, key: &str, mods: &str) -> std::io::Result<()> {
     let path = config_path();
     let mut root = if let Ok(text) = fs::read_to_string(&path) {
-        toml::from_str::<toml::Value>(&text).unwrap_or(toml::Value::Table(toml::value::Table::new()))
-    } else { toml::Value::Table(toml::value::Table::new()) };
-    if !root.is_table() { root = toml::Value::Table(toml::value::Table::new()); }
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
+    } else {
+        toml::Value::Table(toml::value::Table::new())
+    };
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
     let tbl = root.as_table_mut().unwrap();
-    let keyboard_tbl = tbl.entry("keyboard").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let keyboard_tbl =
+        tbl.entry("keyboard").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let kb = keyboard_tbl.as_table_mut().unwrap();
     let arr = kb.entry("bindings").or_insert_with(|| toml::Value::Array(Vec::new()));
     let arr_mut = arr.as_array_mut().unwrap();
     let mut entry = toml::value::Table::new();
     entry.insert("key".into(), toml::Value::String(key.into()));
-    if mods != "None" { entry.insert("mods".into(), toml::Value::String(mods.into())); }
+    if mods != "None" {
+        entry.insert("mods".into(), toml::Value::String(mods.into()));
+    }
     entry.insert("action".into(), toml::Value::String(action.into()));
     arr_mut.push(toml::Value::Table(entry));
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
     let s = toml::to_string_pretty(&root).unwrap_or_default();
     fs::write(&path, s)
 }
-

@@ -99,7 +99,6 @@ OpenAgent Terminal includes a modern, Warp-like tab strip with optional reserved
 - Enable Warp visuals: set `workspace.warp_style = true` in your config
 - Show the tab bar: set `workspace.tab_bar.show = true`
 - Position: `workspace.tab_bar.position = "Top" | "Bottom" | "Hidden"`
-- Reserve row (no overlay): `workspace.tab_bar.reserve_row = true`
 
 Example config snippet:
 
@@ -117,8 +116,6 @@ close_button_on_hover = false
 show_modified_indicator = true
 show_new_tab_button = true
 show_tab_numbers = false
-# min_tab_width = 10
-# max_tab_width = 30
 max_title_length = 20
 ```
 

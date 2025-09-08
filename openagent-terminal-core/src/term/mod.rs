@@ -275,7 +275,6 @@ pub struct Term<T> {
     /// Track whether the most recent processed pair was CR followed by LF.
     last_was_crlf: bool,
 
-
     /// Cursor for keyboard selection.
     pub vi_mode_cursor: ViModeCursor,
 
@@ -1023,11 +1022,19 @@ impl<T> Term<T> {
         let bg = self.grid.cursor.template.bg;
         let flags = self.grid.cursor.template.flags;
         let extra = self.grid.cursor.template.extra.clone();
-        
-        // Debug: track writes to line 3
-        if self.grid.cursor.point.line.0 == 3 && self.grid.cursor.point.column.0 < 5 {
-            eprintln!("DBG write_at_cursor: line 3, col {}, char '{}', fg={:?}, flags={:?}",
-                self.grid.cursor.point.column.0, c, fg, flags);
+
+        // Debug: optional trace for cursor writes, enabled only when OPENAGENT_TRACE_CURSOR=1
+        if std::env::var("OPENAGENT_TRACE_CURSOR")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+            && self.grid.cursor.point.line.0 == 3
+            && self.grid.cursor.point.column.0 < 5
+        {
+            eprintln!(
+                "DBG write_at_cursor: line 3, col {}, char '{}', fg={:?}, flags={:?}",
+                self.grid.cursor.point.column.0, c, fg, flags
+            );
         }
 
         let mut cursor_cell = self.grid.cursor_cell();
@@ -1107,7 +1114,6 @@ impl<T: EventListener> Handler for Term<T> {
             Some(width) => width,
             None => return,
         };
-
 
         // Handle zero-width characters.
         if width == 0 {
@@ -1194,35 +1200,32 @@ impl<T: EventListener> Handler for Term<T> {
             self.scroll_region.end.0,
             self.last_was_crlf
         );
-        
+
         // Reset SGR attributes to defaults (DECALN should reset text attributes)
         self.grid.cursor.template.fg = Color::Named(NamedColor::Foreground);
         self.grid.cursor.template.bg = Color::Named(NamedColor::Background);
         self.grid.cursor.template.flags = Flags::empty();
         self.grid.cursor.template.set_underline_color(None);
-        
+
         // Also reset saved cursor SGR attributes
         self.grid.saved_cursor.template.fg = Color::Named(NamedColor::Foreground);
         self.grid.saved_cursor.template.bg = Color::Named(NamedColor::Background);
         self.grid.saved_cursor.template.flags = Flags::empty();
         self.grid.saved_cursor.template.set_underline_color(None);
-        
+
         // DECALN fills the entire viewport with 'E's using the default rendition.
         // We don't use clear_screen because it can cause unwanted scrolling.
         let screen_lines = self.screen_lines();
         eprintln!("DBG decaln: filling {} lines with 'E'", screen_lines);
-        
+
         // Debug: show what's on each line before filling
         eprintln!("DBG decaln: content before fill:");
         for line in (0..5.min(screen_lines)).map(Line::from) {
             let end = Column(40.min(self.columns()));
-            let sample: String = self.grid[line][Column(0)..end]
-                .iter()
-                .map(|c| c.c)
-                .collect();
+            let sample: String = self.grid[line][Column(0)..end].iter().map(|c| c.c).collect();
             eprintln!("  line {}: '{}'", line.0, sample);
         }
-        
+
         for line in (0..screen_lines).map(Line::from) {
             for column in 0..self.columns() {
                 let cell = &mut self.grid[line][Column(column)];
@@ -1508,13 +1511,19 @@ impl<T: EventListener> Handler for Term<T> {
         trace!("Carriage return");
         // Mark that we've seen CR; if the next input is LF, we'll consider it CRLF.
         self.saw_cr = true;
-        // Debug instrumentation
-        eprintln!(
-            "DBG CR: before cursor=({}, {}), input_needs_wrap={}",
-            self.grid.cursor.point.line.0,
-            self.grid.cursor.point.column.0,
-            self.grid.cursor.input_needs_wrap
-        );
+        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
+        if std::env::var("OPENAGENT_TRACE_CURSOR")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            eprintln!(
+                "DBG CR: before cursor=({}, {}), input_needs_wrap={}",
+                self.grid.cursor.point.line.0,
+                self.grid.cursor.point.column.0,
+                self.grid.cursor.input_needs_wrap
+            );
+        }
 
         let new_col = 0;
         let line = self.grid.cursor.point.line.0 as usize;
@@ -1522,13 +1531,19 @@ impl<T: EventListener> Handler for Term<T> {
         self.grid.cursor.point.column = Column(new_col);
         self.grid.cursor.input_needs_wrap = false;
 
-        // Debug instrumentation
-        eprintln!(
-            "DBG CR: after cursor=({}, {}), input_needs_wrap={}",
-            self.grid.cursor.point.line.0,
-            self.grid.cursor.point.column.0,
-            self.grid.cursor.input_needs_wrap
-        );
+        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
+        if std::env::var("OPENAGENT_TRACE_CURSOR")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            eprintln!(
+                "DBG CR: after cursor=({}, {}), input_needs_wrap={}",
+                self.grid.cursor.point.line.0,
+                self.grid.cursor.point.column.0,
+                self.grid.cursor.input_needs_wrap
+            );
+        }
     }
 
     /// Linefeed.
@@ -1538,15 +1553,21 @@ impl<T: EventListener> Handler for Term<T> {
         // If the previous input was CR, this forms a CRLF pair.
         self.last_was_crlf = self.saw_cr;
         self.saw_cr = false;
-        // Debug instrumentation
-        eprintln!(
-            "DBG LF: before cursor=({}, {}), scroll_region=({}, {}), screen_lines={}",
-            self.grid.cursor.point.line.0,
-            self.grid.cursor.point.column.0,
-            self.scroll_region.start.0,
-            self.scroll_region.end.0,
-            self.screen_lines()
-        );
+        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
+        if std::env::var("OPENAGENT_TRACE_CURSOR")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            eprintln!(
+                "DBG LF: before cursor=({}, {}), scroll_region=({}, {}), screen_lines={}",
+                self.grid.cursor.point.line.0,
+                self.grid.cursor.point.column.0,
+                self.scroll_region.start.0,
+                self.scroll_region.end.0,
+                self.screen_lines()
+            );
+        }
 
         // Opportunistically apply current rendition to the trailing blank cell (if any) before
         // moving to the next line. This matches the reference expectations for a styled prompt
@@ -1567,13 +1588,19 @@ impl<T: EventListener> Handler for Term<T> {
             self.damage_cursor();
         }
 
-        // Debug instrumentation
-        eprintln!(
-            "DBG LF: after cursor=({}, {}), display_offset={}",
-            self.grid.cursor.point.line.0,
-            self.grid.cursor.point.column.0,
-            self.grid.display_offset()
-        );
+        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
+        if std::env::var("OPENAGENT_TRACE_CURSOR")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            eprintln!(
+                "DBG LF: after cursor=({}, {}), display_offset={}",
+                self.grid.cursor.point.line.0,
+                self.grid.cursor.point.column.0,
+                self.grid.display_offset()
+            );
+        }
     }
 
     /// Set current position as a tabstop.
@@ -1710,7 +1737,10 @@ impl<T: EventListener> Handler for Term<T> {
             let start_dbg = start.saturating_sub(10);
             let end_dbg = (start + count + 10).min(num_cols);
             let before: String = row[start_dbg..end_dbg].iter().map(|c| c.c).collect();
-            eprintln!("DBG DCH BEFORE: line={}, start={}, count={}, segment='{}'", line.0, start, count, before);
+            eprintln!(
+                "DBG DCH BEFORE: line={}, start={}, count={}, segment='{}'",
+                line.0, start, count, before
+            );
         }
 
         // Shift content to the left by `count` cells.
@@ -1729,7 +1759,10 @@ impl<T: EventListener> Handler for Term<T> {
             let start_dbg = start.saturating_sub(10);
             let end_dbg = (start + count + 10).min(num_cols);
             let after: String = row[start_dbg..end_dbg].iter().map(|c| c.c).collect();
-            eprintln!("DBG DCH AFTER:  line={}, start={}, count={}, segment='{}'", line.0, start, count, after);
+            eprintln!(
+                "DBG DCH AFTER:  line={}, start={}, count={}, segment='{}'",
+                line.0, start, count, after
+            );
         }
     }
 

@@ -264,7 +264,6 @@ impl Clone for EditorOverlayState {
     }
 }
 
-
 impl EditorOverlayState {
     pub fn new() -> Self {
         Self::default()
@@ -501,12 +500,8 @@ impl Display {
         if let Some(buf) = &state.buffer {
             // Render visible lines from rope
             let text_all = buf.text();
-            for (yline, (i, raw)) in text_all
-                .lines()
-                .enumerate()
-                .skip(state.scroll_line)
-                .take(content_lines)
-                .enumerate()
+            for (yline, (i, raw)) in
+                text_all.lines().enumerate().skip(state.scroll_line).take(content_lines).enumerate()
             {
                 let line = content_top + yline;
                 let mut text = raw.to_string();
@@ -581,7 +576,6 @@ impl Display {
                         }
                     }
                 }
-
             }
 
             // Caret drawing (vertical bar)

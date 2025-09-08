@@ -4,16 +4,17 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::mem;
-use std::env;
 #[cfg(not(windows))]
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(feature = "gl-backend")]
 use glutin::config::Config as GlutinConfig;
+#[cfg(feature = "gl-backend")]
 use glutin::display::GetGlDisplay;
-#[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+#[cfg(all(feature = "gl-backend", feature = "x11", not(any(target_os = "macos", windows))))]
 use glutin::platform::x11::X11GlConfigExt;
 use log::info;
 use serde_json as json;
@@ -40,11 +41,13 @@ use crate::display::Display;
 use crate::event::{
     ActionContext, Event, EventProxy, InlineSearchState, Mouse, SearchState, TouchPurpose,
 };
+use crate::input;
 #[cfg(unix)]
 use crate::logging::LOG_TARGET_IPC_CONFIG;
 use crate::message_bar::MessageBuffer;
+#[cfg(feature = "gl-backend")]
+use crate::renderer;
 use crate::scheduler::Scheduler;
-use crate::{input, renderer};
 
 /// Event context for one individual OpenAgent Terminal window.
 pub struct WindowContext {
@@ -84,7 +87,7 @@ impl WindowContext {
         config: Rc<UiConfig>,
         mut options: WindowOptions,
     ) -> Result<Self, Box<dyn Error>> {
-        let raw_display_handle = event_loop
+        let _raw_display_handle = event_loop
             .display_handle()
             .expect("display handle not available from event loop")
             .as_raw();
@@ -92,66 +95,7 @@ impl WindowContext {
         let mut identity = config.window.identity.clone();
         options.window_identity.override_identity_config(&mut identity);
 
-        // Determine explicit GL override via env var.
-        let force_gl = env::var("OPENAGENT_FORCE_GL")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        if force_gl {
-            info!("OPENAGENT_FORCE_GL detected; forcing OpenGL backend");
-        }
-        // Allow disabling automatic GL fallback via env var.
-let _disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
-        // If user forces GL, initialize OpenGL backend for maximum compatibility.
-        if force_gl {
-            tracing::info!("OPENAGENT_FORCE_GL set — initializing OpenGL backend…");
-            // Create GL display using winit's raw display handle
-            let gl_display = renderer::platform::create_gl_display(
-                raw_display_handle,
-                None,
-                config.debug.prefer_egl,
-            )?;
-
-            // Pick a GL config compatible with a native window
-            let gl_config = renderer::platform::pick_gl_config(&gl_display, None)
-                .map_err(|e| format!("GL pick config failed: {e}"))
-                .map_err(|e| -> Box<dyn Error> { e.into() })?;
-
-            // Create the winit window, passing X11 visual when applicable
-            #[cfg(windows)]
-            let mut window_opt = Some(Window::new(event_loop, &config, &identity, &mut options)?);
-            #[cfg(windows)]
-            let raw_window_handle = window_opt.as_ref().map(|w| w.raw_window_handle());
-
-            #[cfg(not(windows))]
-            let mut window_opt = Some(Window::new(
-                event_loop,
-                &config,
-                &identity,
-                &mut options,
-                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-                gl_config.x11_visual(),
-            )?);
-            #[cfg(not(windows))]
-            let raw_window_handle = None;
-
-            // Create the GL context and Display wrapper
-            let gl_context = renderer::platform::create_gl_context(
-                &gl_display,
-                &gl_config,
-                raw_window_handle,
-            )?;
-            let window = window_opt.take().expect("window should be available for GL path");
-            let display = Display::new(window, gl_context, &config, false)?;
-            tracing::info!("Render backend selected: OpenGL");
-            return Self::new(display, config, options, proxy);
-        }
-
-        // WGPU-only path: prefer X11/XWayland like Warp to avoid Wayland/EGL pitfalls.
+        // Force WGPU-only mode, no OpenGL fallback.
         #[cfg(feature = "wgpu")]
         {
             // Prefer X11 backend on Unix if not explicitly set.
@@ -160,35 +104,39 @@ let _disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
                 std::env::set_var("WINIT_UNIX_BACKEND", "x11");
             }
 
+            // First attempt: WGPU
             #[cfg(windows)]
-            let window = Window::new(event_loop, &config, &identity, &mut options)?;
+            let window_wgpu = Window::new(event_loop, &config, &identity, &mut options)?;
             #[cfg(not(windows))]
-            let window = Window::new(
+            let window_wgpu = Window::new(
                 event_loop,
                 &config,
                 &identity,
                 &mut options,
-                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                #[cfg(all(
+                    feature = "gl-backend",
+                    feature = "x11",
+                    not(any(target_os = "macos", windows))
+                ))]
                 None,
             )?;
 
-            tracing::info!("Initializing WGPU backend (no fallback)…");
-            let display = Display::new_wgpu(window, &config, false)
-                .map_err(|e| {
-                    tracing::error!("WGPU initialization failed: {e}");
-                    e
-                })?;
-            return Self::new(display, config, options, proxy);
+            tracing::info!("Initializing WGPU backend…");
+            let display = Display::new_wgpu(window_wgpu, &config, false)?;
+            tracing::info!("Render backend selected: WGPU");
+            Self::new(display, config, options, proxy)
         }
 
         // If the build does not include the `wgpu` feature, error clearly.
         #[cfg(not(feature = "wgpu"))]
         {
-            return Err("This build is WGPU-only. Rebuild with --features=wgpu".into());
+            return Err("This build requires WGPU. Rebuild with --features=wgpu".into());
         }
     }
 
     /// Create additional context with the graphics platform other windows are using.
+    #[allow(dead_code)]
+    #[cfg(feature = "gl-backend")]
     pub fn additional(
         gl_config: &GlutinConfig,
         event_loop: &ActiveEventLoop,
@@ -259,7 +207,11 @@ let _disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
                     &config,
                     &identity,
                     &mut options,
-                    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                    #[cfg(all(
+                        feature = "gl-backend",
+                        feature = "x11",
+                        not(any(target_os = "macos", windows))
+                    ))]
                     None,
                 )?
             }
@@ -452,10 +404,15 @@ let _disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
         };
 
         // Apply effective reduce-motion preference from config: override takes precedence over theme
-        let effective_reduce_motion = window_context
-            .config
-            .reduce_motion_override
-            .unwrap_or_else(|| window_context.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false));
+        let effective_reduce_motion =
+            window_context.config.reduce_motion_override.unwrap_or_else(|| {
+                window_context
+                    .config
+                    .resolved_theme
+                    .as_ref()
+                    .map(|t| t.ui.reduce_motion)
+                    .unwrap_or(false)
+            });
         window_context.display.set_reduce_motion(effective_reduce_motion);
 
         // Note: Warp functionality will be initialized later in the event processor
@@ -494,10 +451,9 @@ let _disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
         self.display.window.set_theme(self.config.window.theme());
 
         // Apply effective reduce-motion preference from config: override takes precedence over theme
-        let effective_reduce_motion = self
-            .config
-            .reduce_motion_override
-            .unwrap_or_else(|| self.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false));
+        let effective_reduce_motion = self.config.reduce_motion_override.unwrap_or_else(|| {
+            self.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false)
+        });
         self.display.set_reduce_motion(effective_reduce_motion);
 
         // Update display if either padding options or resize increments were changed.

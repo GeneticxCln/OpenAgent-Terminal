@@ -48,6 +48,7 @@ pub mod ui_confirm;
 pub mod workspace;
 
 // Internal GL bindings used by display/render paths.
+#[cfg(feature = "gl-backend")]
 pub mod gl {
     #![allow(clippy::all, unsafe_op_in_unsafe_fn)]
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));

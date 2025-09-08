@@ -23,8 +23,7 @@ show = true
 position = "Top"                # "Top" | "Bottom" | "Hidden"
 # Visibility behavior: Auto => Always unless fullscreen (then Hover)
 visibility = "Auto"             # "Auto" | "Always" | "Hover"
-# Reserve a terminal row to avoid overlaying terminal content
-reserve_row = true
+# Note: Warp overlay-style tab bar no longer reserves a terminal row
 
 # Button/indicators
 show_close_button = true
@@ -33,9 +32,7 @@ show_modified_indicator = true
 show_new_tab_button = true
 show_tab_numbers = false        # Prefix titles with "1:", "2:", ...
 
-# Width constraints per tab (cells); unset => built-in defaults
-# min_tab_width = 10
-# max_tab_width = 30
+# Width constraints per tab (removed); built-in sizing is applied
 # Title truncation limit (characters)
 max_title_length = 25
 

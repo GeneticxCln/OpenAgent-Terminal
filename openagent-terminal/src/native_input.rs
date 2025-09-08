@@ -26,25 +26,25 @@ use crate::native_renderer::RenderEvent;
 pub struct InputIntegration {
     /// Keyboard handler for immediate key processing
     keyboard_handler: KeyboardHandler,
-    
-    /// Mouse handler for immediate mouse processing  
+
+    /// Mouse handler for immediate mouse processing
     mouse_handler: MouseHandler,
-    
+
     /// Gesture recognizer for advanced interactions
     gesture_recognizer: GestureRecognizer,
-    
+
     /// Shortcut manager for context-aware bindings
     shortcut_manager: ShortcutManager,
-    
+
     /// Focus manager for input routing
     focus_manager: FocusManager,
-    
+
     /// Input state tracker
     state_tracker: InputStateTracker,
-    
+
     /// Event callbacks for immediate responses
     event_callbacks: Vec<Box<dyn Fn(&InputEvent) + Send + Sync>>,
-    
+
     /// Performance statistics
     stats: InputStats,
 }
@@ -52,44 +52,44 @@ pub struct InputIntegration {
 /// Input events for immediate feedback
 #[derive(Debug, Clone)]
 pub enum InputEvent {
-    KeyPressed { 
-        key: KeyInput, 
+    KeyPressed {
+        key: KeyInput,
         target: InputTarget,
         timestamp: Instant,
     },
-    KeyReleased { 
-        key: KeyInput, 
+    KeyReleased {
+        key: KeyInput,
         target: InputTarget,
         timestamp: Instant,
     },
-    MouseClicked { 
-        button: MouseButton, 
+    MouseClicked {
+        button: MouseButton,
         position: Position,
         target: InputTarget,
         timestamp: Instant,
     },
-    MouseMoved { 
+    MouseMoved {
         position: Position,
         target: Option<InputTarget>,
         timestamp: Instant,
     },
-    MouseScrolled { 
+    MouseScrolled {
         direction: ScrollDirection,
         position: Position,
         target: InputTarget,
         timestamp: Instant,
     },
-    GestureDetected { 
+    GestureDetected {
         gesture: Gesture,
         target: InputTarget,
         timestamp: Instant,
     },
-    ShortcutTriggered { 
+    ShortcutTriggered {
         shortcut: Shortcut,
         target: InputTarget,
         timestamp: Instant,
     },
-    FocusChanged { 
+    FocusChanged {
         from: Option<InputTarget>,
         to: InputTarget,
         timestamp: Instant,
@@ -101,19 +101,19 @@ pub enum InputEvent {
 pub struct KeyboardHandler {
     /// Currently pressed keys
     pressed_keys: HashSet<KeyInput>,
-    
+
     /// Key repeat handling
     repeat_handler: KeyRepeatHandler,
-    
+
     /// Key sequence detector
     sequence_detector: KeySequenceDetector,
-    
+
     /// Context-aware key mappings
     key_mappings: HashMap<InputContext, HashMap<KeyInput, KeyAction>>,
-    
+
     /// Key timing for performance analysis
     key_timings: VecDeque<KeyTiming>,
-    
+
     /// Statistics
     total_keys: usize,
     keys_per_second: f64,
@@ -125,22 +125,22 @@ pub struct KeyboardHandler {
 pub struct MouseHandler {
     /// Current mouse position
     current_position: Position,
-    
+
     /// Mouse button states
     button_states: HashMap<MouseButton, ButtonState>,
-    
+
     /// Click detection and tracking
     click_detector: ClickDetector,
-    
+
     /// Drag and drop handling
     drag_handler: DragHandler,
-    
+
     /// Hover detection
     hover_detector: HoverDetector,
-    
+
     /// Mouse timing for performance analysis
     mouse_timings: VecDeque<MouseTiming>,
-    
+
     /// Statistics
     total_clicks: usize,
     total_moves: usize,
@@ -152,16 +152,16 @@ pub struct MouseHandler {
 pub struct GestureRecognizer {
     /// Active gesture tracking
     active_gestures: HashMap<GestureId, ActiveGesture>,
-    
+
     /// Gesture patterns for recognition
     gesture_patterns: Vec<GesturePattern>,
-    
+
     /// Gesture history for learning
     gesture_history: VecDeque<CompletedGesture>,
-    
+
     /// Learning system for adaptive recognition
     learning_system: GestureLearning,
-    
+
     /// Configuration
     sensitivity: f32,
     timeout: Duration,
@@ -172,16 +172,16 @@ pub struct GestureRecognizer {
 pub struct ShortcutManager {
     /// Global shortcuts (always active)
     global_shortcuts: HashMap<KeyCombination, Shortcut>,
-    
+
     /// Context-specific shortcuts
     context_shortcuts: HashMap<InputContext, HashMap<KeyCombination, Shortcut>>,
-    
+
     /// Dynamic shortcuts (runtime created)
     dynamic_shortcuts: HashMap<String, DynamicShortcut>,
-    
+
     /// Shortcut history and usage tracking
     usage_tracker: ShortcutUsageTracker,
-    
+
     /// Conflict resolution
     conflict_resolver: ShortcutConflictResolver,
 }
@@ -191,16 +191,16 @@ pub struct ShortcutManager {
 pub struct FocusManager {
     /// Current focus target
     current_focus: Option<InputTarget>,
-    
+
     /// Focus history for navigation
     focus_history: VecDeque<FocusChange>,
-    
+
     /// Focus tree for hierarchical navigation
     focus_tree: FocusTree,
-    
+
     /// Tab navigation order
     tab_order: Vec<InputTarget>,
-    
+
     /// Focus policies
     focus_policies: HashMap<InputContext, FocusPolicy>,
 }
@@ -210,16 +210,16 @@ pub struct FocusManager {
 pub struct InputStateTracker {
     /// Modifier key states
     modifiers: KeyModifiers,
-    
+
     /// Active input modes
     active_modes: HashSet<InputMode>,
-    
+
     /// Input context stack
     context_stack: Vec<InputContext>,
-    
+
     /// State change history
     state_history: VecDeque<StateChange>,
-    
+
     /// Performance tracking
     state_transitions: usize,
     last_transition: Instant,
@@ -832,7 +832,7 @@ impl InputIntegration {
 
         // Setup default key mappings immediately
         integration.setup_default_mappings();
-        
+
         // Setup default shortcuts immediately
         integration.setup_default_shortcuts();
 
@@ -873,7 +873,7 @@ impl InputIntegration {
             crossterm::event::KeyEventKind::Press => {
                 // Track key press immediately
                 self.keyboard_handler.pressed_keys.insert(key_input);
-                
+
                 // Check for shortcuts first
                 if let Some(shortcut) = self.shortcut_manager.check_shortcut(&key_input, &self.get_current_context()) {
                     self.execute_shortcut(shortcut, &target)?;
@@ -912,7 +912,7 @@ impl InputIntegration {
             crossterm::event::KeyEventKind::Release => {
                 // Track key release immediately
                 self.keyboard_handler.pressed_keys.remove(&key_input);
-                
+
                 // Stop key repeat
                 self.keyboard_handler.repeat_handler.stop_repeat(&key_input);
 
@@ -980,7 +980,7 @@ impl InputIntegration {
                 // Update button state immediately
                 if let Some(button_state) = self.mouse_handler.button_states.get_mut(&button) {
                     button_state.pressed = false;
-                    
+
                     // Detect clicks immediately
                     if let Some(press_time) = button_state.press_time {
                         let click_duration = start_time.duration_since(press_time);
@@ -989,7 +989,7 @@ impl InputIntegration {
                             self.handle_click(click, &target)?;
                         }
                     }
-                    
+
                     button_state.press_time = None;
                     button_state.press_position = None;
                 }
@@ -1055,11 +1055,11 @@ impl InputIntegration {
     /// Set focus target immediately
     pub fn set_focus(&mut self, target: InputTarget) -> Result<()> {
         let old_focus = self.focus_manager.current_focus.clone();
-        
+
         if old_focus.as_ref() != Some(&target) {
             // Update focus immediately
             self.focus_manager.current_focus = Some(target.clone());
-            
+
             // Record focus change
             let focus_change = FocusChange {
                 from: old_focus.clone(),
@@ -1067,7 +1067,7 @@ impl InputIntegration {
                 timestamp: Instant::now(),
                 trigger: FocusTrigger::Programmatic,
             };
-            
+
             self.focus_manager.focus_history.push_back(focus_change);
             if self.focus_manager.focus_history.len() > 100 {
                 self.focus_manager.focus_history.pop_front();
@@ -1093,7 +1093,7 @@ impl InputIntegration {
     pub fn add_shortcut(&mut self, shortcut: Shortcut) -> Result<()> {
         // Check for conflicts immediately
         let conflicts = self.shortcut_manager.conflict_resolver.check_conflicts(&shortcut.combination);
-        
+
         if !conflicts.is_empty() {
             // Handle conflicts based on resolution strategy
             self.shortcut_manager.conflict_resolver.resolve_conflicts(&shortcut, conflicts)?;
@@ -1136,7 +1136,7 @@ impl InputIntegration {
     fn setup_default_mappings(&mut self) {
         // Terminal context mappings
         let mut terminal_mappings = HashMap::new();
-        
+
         // Navigation
         terminal_mappings.insert(
             KeyInput { code: KeyCode::Up, modifiers: KeyModifiers::NONE },
@@ -1175,9 +1175,9 @@ impl InputIntegration {
             id: "new_block".to_string(),
             name: "New Block".to_string(),
             combination: KeyCombination {
-                keys: vec![KeyInput { 
-                    code: KeyCode::Char('n'), 
-                    modifiers: KeyModifiers::CONTROL 
+                keys: vec![KeyInput {
+                    code: KeyCode::Char('n'),
+                    modifiers: KeyModifiers::CONTROL
                 }],
                 sequence: false,
             },
@@ -1191,9 +1191,9 @@ impl InputIntegration {
             id: "close_block".to_string(),
             name: "Close Block".to_string(),
             combination: KeyCombination {
-                keys: vec![KeyInput { 
-                    code: KeyCode::Char('w'), 
-                    modifiers: KeyModifiers::CONTROL 
+                keys: vec![KeyInput {
+                    code: KeyCode::Char('w'),
+                    modifiers: KeyModifiers::CONTROL
                 }],
                 sequence: false,
             },
@@ -1300,7 +1300,7 @@ impl InputIntegration {
     /// Execute movement action
     fn execute_movement_action(&mut self, action: MovementAction, target: &InputTarget) -> Result<()> {
         match action {
-            MovementAction::Up | MovementAction::Down | 
+            MovementAction::Up | MovementAction::Down |
             MovementAction::Left | MovementAction::Right => {
                 // Send to terminal or active block
                 debug!("Movement: {:?} for target: {:?}", action, target);
@@ -1425,7 +1425,7 @@ impl InputIntegration {
 
         if self.state_tracker.context_stack.last() != Some(&new_context) {
             self.state_tracker.context_stack.push(new_context);
-            
+
             // Limit context stack depth
             if self.state_tracker.context_stack.len() > 10 {
                 self.state_tracker.context_stack.remove(0);
@@ -1437,18 +1437,18 @@ impl InputIntegration {
     fn update_performance_stats(&mut self) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.stats.last_reset);
-        
+
         if elapsed >= Duration::from_secs(1) {
             let total_events = self.stats.keys_processed + self.stats.mouse_events_processed;
             self.stats.events_per_second = total_events as f64 / elapsed.as_secs_f64();
-            
+
             // Update average processing times
             if !self.keyboard_handler.key_timings.is_empty() {
                 let total_time: Duration = self.keyboard_handler.key_timings
                     .iter()
                     .map(|t| t.processing_time)
                     .sum();
-                self.stats.average_key_processing_time = 
+                self.stats.average_key_processing_time =
                     total_time / self.keyboard_handler.key_timings.len() as u32;
             }
 
@@ -1457,7 +1457,7 @@ impl InputIntegration {
                     .iter()
                     .map(|t| t.processing_time)
                     .sum();
-                self.stats.average_mouse_processing_time = 
+                self.stats.average_mouse_processing_time =
                     total_time / self.mouse_handler.mouse_timings.len() as u32;
             }
         }
@@ -1525,9 +1525,9 @@ impl ClickDetector {
     fn register_click(&mut self, button: MouseButton, position: Position, timestamp: Instant) -> Click {
         // Find recent clicks for multi-click detection
         let mut click_count = 1;
-        
+
         for recent_click in self.recent_clicks.iter().rev() {
-            if recent_click.button == button && 
+            if recent_click.button == button &&
                timestamp.duration_since(recent_click.timestamp) < self.double_click_threshold &&
                self.distance(position, recent_click.position) < self.click_distance_threshold {
                 click_count = recent_click.count + 1;
@@ -1543,7 +1543,7 @@ impl ClickDetector {
         };
 
         self.recent_clicks.push_back(click.clone());
-        
+
         // Limit recent clicks history
         if self.recent_clicks.len() > 10 {
             self.recent_clicks.pop_front();
@@ -1732,10 +1732,10 @@ impl FocusManager {
             let current_index = self.current_focus.as_ref()
                 .and_then(|focus| self.tab_order.iter().position(|t| t == focus))
                 .unwrap_or(0);
-            
+
             let next_index = (current_index + 1) % self.tab_order.len();
             let next_target = self.tab_order[next_index].clone();
-            
+
             // This would be integrated with the main focus setting
             info!("Navigating to next tab: {:?}", next_target);
         }
@@ -1747,14 +1747,14 @@ impl FocusManager {
             let current_index = self.current_focus.as_ref()
                 .and_then(|focus| self.tab_order.iter().position(|t| t == focus))
                 .unwrap_or(0);
-            
+
             let prev_index = if current_index == 0 {
                 self.tab_order.len() - 1
             } else {
                 current_index - 1
             };
             let prev_target = self.tab_order[prev_index].clone();
-            
+
             info!("Navigating to previous tab: {:?}", prev_target);
         }
         Ok(())
@@ -1835,7 +1835,7 @@ mod tests {
     fn test_focus_manager() {
         let mut focus_manager = FocusManager::new();
         assert!(focus_manager.current_focus.is_none());
-        
+
         // Test would be more comprehensive with actual focus setting
     }
 
@@ -1874,22 +1874,22 @@ use crate::workspace::TabId;
 pub struct NativeInput {
     /// Keyboard state for immediate key handling
     keyboard_state: KeyboardState,
-    
+
     /// Mouse state for immediate mouse handling
     mouse_state: MouseState,
-    
+
     /// Input event callbacks for immediate responses
     event_callbacks: Vec<Box<dyn Fn(&InputEvent) + Send + Sync>>,
-    
+
     /// Hotkey bindings for immediate activation
     hotkey_bindings: HashMap<HotkeyCombo, InputAction>,
-    
+
     /// Mouse gesture recognizer
     gesture_recognizer: GestureRecognizer,
-    
+
     /// Focus management for immediate focus changes
     focus_manager: FocusManager,
-    
+
     /// Input context for context-sensitive shortcuts
     input_context: InputContext,
 }
@@ -1901,19 +1901,19 @@ pub enum InputEvent {
     KeyPressed { key: Key, modifiers: ModifiersState, context: InputContext },
     KeyReleased { key: Key, modifiers: ModifiersState },
     HotkeyTriggered { hotkey: HotkeyCombo, action: InputAction },
-    
+
     // Mouse events
     MousePressed { button: MouseButton, position: (f64, f64), context: MouseContext },
     MouseReleased { button: MouseButton, position: (f64, f64) },
     MouseMoved { position: (f64, f64), delta: (f64, f64) },
     MouseWheel { delta: (f64, f64), position: (f64, f64) },
-    
+
     // Gesture events
     GestureStarted { gesture: Gesture, position: (f64, f64) },
     GestureUpdated { gesture: Gesture, position: (f64, f64), progress: f32 },
     GestureCompleted { gesture: Gesture, position: (f64, f64) },
     GestureCancelled { gesture: Gesture },
-    
+
     // Focus events
     FocusChanged { from: Option<FocusTarget>, to: FocusTarget },
     FocusLost,
@@ -1928,14 +1928,14 @@ pub enum InputAction {
     ToggleBlockCollapse(BlockId),
     FocusBlock(BlockId),
     SearchBlocks,
-    
+
     // Tab actions
     CreateTab,
     CloseTab(Option<TabId>),
     SwitchTab(TabDirection),
     MoveTab(TabId, i32),
     RenameTab(TabId),
-    
+
     // Split actions
     SplitHorizontal,
     SplitVertical,
@@ -1943,13 +1943,13 @@ pub enum InputAction {
     FocusPane(PaneDirection),
     ResizePane(ResizeDirection, i32),
     ToggleZoom,
-    
+
     // Application actions
     ToggleSearch,
     ShowHelp,
     ShowSettings,
     Quit,
-    
+
     // Custom actions
     Custom(String),
 }
@@ -2142,15 +2142,19 @@ impl NativeInput {
     }
 
     /// Handle keyboard input immediately
-    pub fn handle_keyboard_input(&mut self, event: KeyEvent, modifiers: ModifiersState) -> Result<()> {
+    pub fn handle_keyboard_input(
+        &mut self,
+        event: KeyEvent,
+        modifiers: ModifiersState,
+    ) -> Result<()> {
         self.keyboard_state.modifiers = modifiers;
-        
+
         let now = Instant::now();
-        
+
         match event.state {
             ElementState::Pressed => {
                 self.keyboard_state.pressed_keys.insert(event.logical_key.clone());
-                
+
                 // Check for key repeat
                 if Some(&event.logical_key) == self.keyboard_state.repeat_key.as_ref() {
                     self.keyboard_state.repeat_count += 1;
@@ -2158,22 +2162,19 @@ impl NativeInput {
                     self.keyboard_state.repeat_key = Some(event.logical_key.clone());
                     self.keyboard_state.repeat_count = 1;
                 }
-                
+
                 self.keyboard_state.last_key_time = Some(now);
-                
+
                 // Check for hotkey matches immediately
                 let hotkey = HotkeyCombo {
                     modifiers,
                     key: event.logical_key.clone(),
                     context: Some(self.input_context),
                 };
-                
+
                 if let Some(action) = self.hotkey_bindings.get(&hotkey) {
-                    self.emit_event(InputEvent::HotkeyTriggered {
-                        hotkey,
-                        action: action.clone(),
-                    });
-                    
+                    self.emit_event(InputEvent::HotkeyTriggered { hotkey, action: action.clone() });
+
                     // Execute action immediately
                     self.execute_action(action.clone())?;
                 } else {
@@ -2187,32 +2188,34 @@ impl NativeInput {
             },
             ElementState::Released => {
                 self.keyboard_state.pressed_keys.remove(&event.logical_key);
-                
+
                 // Reset repeat state
                 if Some(&event.logical_key) == self.keyboard_state.repeat_key.as_ref() {
                     self.keyboard_state.repeat_key = None;
                     self.keyboard_state.repeat_count = 0;
                 }
-                
-                self.emit_event(InputEvent::KeyReleased {
-                    key: event.logical_key,
-                    modifiers,
-                });
+
+                self.emit_event(InputEvent::KeyReleased { key: event.logical_key, modifiers });
             },
         }
-        
+
         Ok(())
     }
 
     /// Handle mouse input immediately
-    pub fn handle_mouse_input(&mut self, button: MouseButton, state: ElementState, position: (f64, f64)) -> Result<()> {
+    pub fn handle_mouse_input(
+        &mut self,
+        button: MouseButton,
+        state: ElementState,
+        position: (f64, f64),
+    ) -> Result<()> {
         self.mouse_state.position = position;
         let now = Instant::now();
-        
+
         match state {
             ElementState::Pressed => {
                 self.mouse_state.pressed_buttons.insert(button);
-                
+
                 // Detect multi-clicks immediately
                 if let Some(last_click) = self.mouse_state.last_click_time {
                     let time_diff = now.duration_since(last_click);
@@ -2220,10 +2223,11 @@ impl NativeInput {
                         (position.0 - self.mouse_state.last_click_position.0).abs(),
                         (position.1 - self.mouse_state.last_click_position.1).abs(),
                     );
-                    
-                    if time_diff < self.gesture_recognizer.double_click_time 
-                        && pos_diff.0 < self.gesture_recognizer.gesture_threshold 
-                        && pos_diff.1 < self.gesture_recognizer.gesture_threshold {
+
+                    if time_diff < self.gesture_recognizer.double_click_time
+                        && pos_diff.0 < self.gesture_recognizer.gesture_threshold
+                        && pos_diff.1 < self.gesture_recognizer.gesture_threshold
+                    {
                         self.mouse_state.click_count += 1;
                     } else {
                         self.mouse_state.click_count = 1;
@@ -2231,49 +2235,48 @@ impl NativeInput {
                 } else {
                     self.mouse_state.click_count = 1;
                 }
-                
+
                 self.mouse_state.last_click_time = Some(now);
                 self.mouse_state.last_click_position = position;
-                
+
                 // Start potential drag
                 if button == MouseButton::Left {
                     self.mouse_state.drag_start = Some(position);
                 }
-                
+
                 // Detect gesture start immediately
                 if self.mouse_state.click_count == 2 {
                     self.start_gesture(Gesture::DoubleClick, position);
                 } else if self.mouse_state.click_count == 3 {
                     self.start_gesture(Gesture::TripleClick, position);
                 }
-                
+
                 // Determine mouse context
                 let context = self.determine_mouse_context(position);
-                
+
                 self.emit_event(InputEvent::MousePressed { button, position, context });
             },
             ElementState::Released => {
                 self.mouse_state.pressed_buttons.remove(&button);
-                
+
                 // End drag if active
                 if button == MouseButton::Left {
                     if let Some(drag_start) = self.mouse_state.drag_start.take() {
-                        let drag_distance = (
-                            (position.0 - drag_start.0).abs(),
-                            (position.1 - drag_start.1).abs(),
-                        );
-                        
-                        if drag_distance.0 > self.mouse_state.drag_threshold 
-                            || drag_distance.1 > self.mouse_state.drag_threshold {
+                        let drag_distance =
+                            ((position.0 - drag_start.0).abs(), (position.1 - drag_start.1).abs());
+
+                        if drag_distance.0 > self.mouse_state.drag_threshold
+                            || drag_distance.1 > self.mouse_state.drag_threshold
+                        {
                             self.complete_gesture(Gesture::Drag, position);
                         }
                     }
                 }
-                
+
                 self.emit_event(InputEvent::MouseReleased { button, position });
             },
         }
-        
+
         Ok(())
     }
 
@@ -2281,29 +2284,27 @@ impl NativeInput {
     pub fn handle_mouse_move(&mut self, position: (f64, f64)) -> Result<()> {
         let old_position = self.mouse_state.position;
         self.mouse_state.position = position;
-        
+
         let delta = (position.0 - old_position.0, position.1 - old_position.1);
-        
+
         // Update active drag gesture
         if let Some(drag_start) = self.mouse_state.drag_start {
-            let drag_distance = (
-                (position.0 - drag_start.0).abs(),
-                (position.1 - drag_start.1).abs(),
-            );
-            
-            if drag_distance.0 > self.mouse_state.drag_threshold 
-                || drag_distance.1 > self.mouse_state.drag_threshold {
-                
+            let drag_distance =
+                ((position.0 - drag_start.0).abs(), (position.1 - drag_start.1).abs());
+
+            if drag_distance.0 > self.mouse_state.drag_threshold
+                || drag_distance.1 > self.mouse_state.drag_threshold
+            {
                 if self.gesture_recognizer.active_gesture == Gesture::None {
                     self.start_gesture(Gesture::Drag, drag_start);
                 }
-                
+
                 self.update_gesture(Gesture::Drag, position);
             }
         }
-        
+
         self.emit_event(InputEvent::MouseMoved { position, delta });
-        
+
         Ok(())
     }
 
@@ -2325,9 +2326,9 @@ impl NativeInput {
                 self.start_gesture(Gesture::Swipe(SwipeDirection::Down), position);
             }
         }
-        
+
         self.emit_event(InputEvent::MouseWheel { delta, position });
-        
+
         Ok(())
     }
 
@@ -2337,7 +2338,7 @@ impl NativeInput {
         self.gesture_recognizer.gesture_start_time = Some(Instant::now());
         self.gesture_recognizer.gesture_start_position = position;
         self.gesture_recognizer.gesture_current_position = position;
-        
+
         self.emit_event(InputEvent::GestureStarted { gesture, position });
     }
 
@@ -2345,12 +2346,13 @@ impl NativeInput {
     fn update_gesture(&mut self, gesture: Gesture, position: (f64, f64)) {
         if self.gesture_recognizer.active_gesture == gesture {
             self.gesture_recognizer.gesture_current_position = position;
-            
+
             // Calculate progress
             let start_pos = self.gesture_recognizer.gesture_start_position;
-            let distance = ((position.0 - start_pos.0).powi(2) + (position.1 - start_pos.1).powi(2)).sqrt();
+            let distance =
+                ((position.0 - start_pos.0).powi(2) + (position.1 - start_pos.1).powi(2)).sqrt();
             let progress = ((distance / 100.0).clamp(0.0, 1.0)) as f32; // Normalize to 0-1
-            
+
             self.emit_event(InputEvent::GestureUpdated { gesture, position, progress });
         }
     }
@@ -2360,7 +2362,7 @@ impl NativeInput {
         if self.gesture_recognizer.active_gesture == gesture {
             self.gesture_recognizer.active_gesture = Gesture::None;
             self.gesture_recognizer.gesture_start_time = None;
-            
+
             self.emit_event(InputEvent::GestureCompleted { gesture, position });
         }
     }
@@ -2394,7 +2396,7 @@ impl NativeInput {
                 // Handle other actions
             },
         }
-        
+
         Ok(())
     }
 
@@ -2501,20 +2503,20 @@ impl NativeInput {
     /// Set focus immediately
     pub fn set_focus(&mut self, target: FocusTarget) {
         let old_focus = self.focus_manager.current_focus;
-        
+
         // Update focus history
         if let Some(current) = self.focus_manager.current_focus {
             self.focus_manager.previous_focus = Some(current);
             self.focus_manager.focus_history.push(current);
-            
+
             // Limit history size
             if self.focus_manager.focus_history.len() > self.focus_manager.max_history {
                 self.focus_manager.focus_history.remove(0);
             }
         }
-        
+
         self.focus_manager.current_focus = Some(target);
-        
+
         // Update input context based on focus
         self.input_context = match target {
             FocusTarget::Terminal => InputContext::Terminal,
@@ -2524,7 +2526,7 @@ impl NativeInput {
             FocusTarget::SearchBox => InputContext::BlockSearch,
             FocusTarget::Settings => InputContext::Settings,
         };
-        
+
         self.emit_event(InputEvent::FocusChanged { from: old_focus, to: target });
     }
 
@@ -2595,14 +2597,14 @@ mod tests {
     #[test]
     fn test_focus_management() {
         let mut input = NativeInput::new();
-        
+
         // Initially no focus
         assert_eq!(input.get_focus(), None);
-        
+
         // Set focus to tab
         let tab_target = FocusTarget::Tab(TabId(1));
         input.set_focus(tab_target);
-        
+
         assert_eq!(input.get_focus(), Some(tab_target));
         assert_eq!(input.input_context, InputContext::TabBar);
     }
@@ -2610,15 +2612,15 @@ mod tests {
     #[test]
     fn test_gesture_recognition() {
         let mut input = NativeInput::new();
-        
+
         // Start drag gesture
         input.start_gesture(Gesture::Drag, (10.0, 10.0));
         assert_eq!(input.gesture_recognizer.active_gesture, Gesture::Drag);
-        
+
         // Update gesture
         input.update_gesture(Gesture::Drag, (20.0, 20.0));
         assert_eq!(input.gesture_recognizer.gesture_current_position, (20.0, 20.0));
-        
+
         // Complete gesture
         input.complete_gesture(Gesture::Drag, (30.0, 30.0));
         assert_eq!(input.gesture_recognizer.active_gesture, Gesture::None);

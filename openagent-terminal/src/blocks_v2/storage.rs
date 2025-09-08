@@ -447,9 +447,9 @@ struct BlockRow {
 
 impl BlockRow {
     fn into_block(self) -> Result<Block> {
-use super::ShellType;
-use std::str::FromStr;
+        use super::ShellType;
         use std::path::PathBuf;
+        use std::str::FromStr;
 
         Ok(Block {
             id: BlockId::from_string(&self.id)?,
@@ -457,7 +457,7 @@ use std::str::FromStr;
             output: self.output,
             directory: PathBuf::from(self.directory),
             environment: serde_json::from_str(&self.environment)?,
-shell: ShellType::from_str(&self.shell).unwrap_or(ShellType::Bash),
+            shell: ShellType::from_str(&self.shell).unwrap_or(ShellType::Bash),
             created_at: DateTime::parse_from_rfc3339(&self.created_at)?.with_timezone(&Utc),
             modified_at: DateTime::parse_from_rfc3339(&self.modified_at)?.with_timezone(&Utc),
             tags: serde_json::from_str(&self.tags)?,

@@ -16,25 +16,26 @@ mod tests {
         }
     }
 
-#[tokio::test]
-async fn openai_streaming_success() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn openai_streaming_success() {
+        let server = MockServer::start().await;
         let body = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"echo \"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"ls\"}}]}\n\n",
             "data: [DONE]\n\n"
         );
-Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
 
         let provider =
-OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
-                .unwrap();
+            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string()).unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |c: &str| {
@@ -46,9 +47,9 @@ OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
         assert!(collected.contains("ls"));
     }
 
-#[tokio::test]
-async fn anthropic_streaming_success() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn anthropic_streaming_success() {
+        let server = MockServer::start().await;
         let body = concat!(
             "event: content_block_delta\n",
             "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"echo \"}}\n\n",
@@ -56,20 +57,19 @@ let server = MockServer::start().await;
             "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ls\"}}\n\n",
             "data: [DONE]\n\n"
         );
-Mock::given(method("POST")).and(path("/messages")).respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
 
-let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let provider =
+            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
+                .unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |c: &str| {
@@ -81,21 +81,22 @@ let provider = AnthropicProvider::new(
         assert!(collected.contains("ls"));
     }
 
-#[tokio::test]
-async fn openai_streaming_abort_no_done() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn openai_streaming_abort_no_done() {
+        let server = MockServer::start().await;
         let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\" }]}]}\n\n"; // No [DONE]
-Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
 
         let provider =
-OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string())
-                .unwrap();
+            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string()).unwrap();
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
         let mut on_chunk = |c: &str| {

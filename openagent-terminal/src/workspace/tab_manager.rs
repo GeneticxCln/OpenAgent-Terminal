@@ -19,6 +19,8 @@ use crate::window_context::WindowContext;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TabId(pub usize);
 
+type TabEventCallback = Box<dyn Fn(&TabEvent) + Send + Sync>;
+
 /// Context for a single tab
 pub struct TabContext {
     /// Unique identifier for this tab
@@ -92,7 +94,7 @@ pub struct TabManager {
     next_pane_id: usize,
 
     /// Native event callbacks for real-time tab updates
-    event_callbacks: Vec<Box<dyn Fn(&TabEvent) + Send + Sync>>,
+    event_callbacks: Vec<TabEventCallback>,
 
     /// Tab animation states for immediate rendering
     animation_states: HashMap<TabId, TabAnimation>,
@@ -102,7 +104,7 @@ pub struct TabManager {
 
     /// Native persistence state
     persistence_enabled: bool,
-    
+
     /// Tab state cache for immediate access
     cached_state: TabManagerState,
 }
@@ -175,25 +177,21 @@ impl Default for TabManagerState {
 
 impl TabHistory {
     pub fn new(max_history: usize) -> Self {
-        Self {
-            visited_tabs: Vec::new(),
-            current_index: 0,
-            max_history,
-        }
+        Self { visited_tabs: Vec::new(), current_index: 0, max_history }
     }
 
     pub fn visit(&mut self, tab_id: TabId) {
         // Remove tab if it already exists
         self.visited_tabs.retain(|&id| id != tab_id);
-        
+
         // Add to front
         self.visited_tabs.insert(0, tab_id);
-        
+
         // Limit size
         if self.visited_tabs.len() > self.max_history {
             self.visited_tabs.truncate(self.max_history);
         }
-        
+
         self.current_index = 0;
     }
 
@@ -248,7 +246,9 @@ impl TabManager {
             tab_count: self.tabs.len(),
             active_tab: self.active_tab_id,
             tab_titles: self.tabs.iter().map(|(&id, ctx)| (id, ctx.title.clone())).collect(),
-            modified_tabs: self.tabs.iter()
+            modified_tabs: self
+                .tabs
+                .iter()
                 .filter_map(|(&id, ctx)| if ctx.modified { Some(id) } else { None })
                 .collect(),
             last_update: std::time::Instant::now(),
@@ -290,7 +290,8 @@ impl TabManager {
         for tab_id in keys {
             if let Some(anim) = self.animation_states.get(&tab_id).cloned() {
                 let elapsed = now.duration_since(anim.start_time);
-                let progress = (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
+                let progress =
+                    (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
                 if progress >= 1.0 {
                     self.animation_states.remove(&tab_id);
                     changed_tabs.push(tab_id);
@@ -342,10 +343,10 @@ impl TabManager {
 
         // Start creation animation immediately
         self.start_tab_animation(tab_id, TabAnimationType::Create);
-        
+
         // Update cached state immediately
         self.update_cached_state();
-        
+
         // Emit immediate creation event
         self.emit_event(TabEvent::Created(tab_id));
 
@@ -357,7 +358,7 @@ impl TabManager {
         if let Some(_tab) = self.tabs.remove(&tab_id) {
             // Start close animation immediately
             self.start_tab_animation(tab_id, TabAnimationType::Close);
-            
+
             // Remove from tab order
             if let Some(pos) = self.tab_order.iter().position(|&id| id == tab_id) {
                 self.tab_order.remove(pos);
@@ -372,7 +373,9 @@ impl TabManager {
                     self.active_tab_id = None;
                 } else {
                     // Try to switch to previously visited tab, or first available
-                    let next_tab = self.tab_history.get_previous()
+                    let next_tab = self
+                        .tab_history
+                        .get_previous()
                         .filter(|&id| self.tabs.contains_key(&id))
                         .unwrap_or(self.tab_order[0]);
                     self.active_tab_id = Some(next_tab);
@@ -382,7 +385,7 @@ impl TabManager {
 
             // Update cached state immediately
             self.update_cached_state();
-            
+
             // Emit immediate close event
             self.emit_event(TabEvent::Closed(tab_id));
 
@@ -395,21 +398,21 @@ impl TabManager {
     /// Switch to a specific tab with immediate native operations
     pub fn switch_to_tab(&mut self, tab_id: TabId) -> bool {
         if self.tabs.contains_key(&tab_id) {
-let _old_tab = self.active_tab_id;
+            let _old_tab = self.active_tab_id;
             self.active_tab_id = Some(tab_id);
-            
+
             // Update tab history immediately
             self.tab_history.visit(tab_id);
-            
+
             // Start switch animation immediately
             self.start_tab_animation(tab_id, TabAnimationType::Switch);
-            
+
             // Update cached state immediately
             self.update_cached_state();
-            
+
             // Emit immediate activation event
             self.emit_event(TabEvent::Activated(tab_id));
-            
+
             true
         } else {
             false
@@ -506,13 +509,13 @@ let _old_tab = self.active_tab_id;
             if new_position < self.tab_order.len() && current_pos != new_position {
                 let tab = self.tab_order.remove(current_pos);
                 self.tab_order.insert(new_position, tab);
-                
+
                 // Start move animation immediately
                 if let Some(animation) = self.animation_states.get_mut(&tab_id) {
                     animation.from_position = Some(current_pos);
                     animation.to_position = Some(new_position);
                 } else {
-let animation = TabAnimation {
+                    let animation = TabAnimation {
                         animation_type: TabAnimationType::Move,
                         start_time: std::time::Instant::now(),
                         duration: std::time::Duration::from_millis(250),
@@ -522,13 +525,13 @@ let animation = TabAnimation {
                     };
                     self.animation_states.insert(tab_id, animation);
                 }
-                
+
                 // Update cached state immediately
                 self.update_cached_state();
-                
+
                 // Emit immediate move event
                 self.emit_event(TabEvent::Moved(tab_id, new_position));
-                
+
                 return true;
             }
         }
@@ -539,13 +542,13 @@ let animation = TabAnimation {
     pub fn rename_tab(&mut self, tab_id: TabId, new_title: String) -> bool {
         if let Some(tab) = self.tabs.get_mut(&tab_id) {
             tab.title = new_title.clone();
-            
+
             // Update cached state immediately
             self.update_cached_state();
-            
+
             // Emit immediate rename event
             self.emit_event(TabEvent::Renamed(tab_id, new_title));
-            
+
             true
         } else {
             false
@@ -557,14 +560,14 @@ let animation = TabAnimation {
         if let Some(tab) = self.tabs.get_mut(&tab_id) {
             if tab.modified != modified {
                 tab.modified = modified;
-                
+
                 // Update cached state immediately
                 self.update_cached_state();
-                
+
                 // Emit immediate modification event
                 self.emit_event(TabEvent::Modified(tab_id, modified));
             }
-            
+
             true
         } else {
             false
