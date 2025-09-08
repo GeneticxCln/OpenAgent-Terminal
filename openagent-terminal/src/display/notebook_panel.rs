@@ -1,7 +1,6 @@
 // Notebook Panel UI: visual overlay for listing notebooks and cells
 // Feature-gated under `blocks` since notebooks depend on Blocks infra.
 
-
 use crate::config::UiConfig;
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
@@ -41,23 +40,46 @@ pub struct NotebookPanelState {
 }
 
 impl Default for NotebookPanelState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NotebookPanelState {
     pub fn new() -> Self {
-        Self { active: false, notebooks: Vec::new(), selected_notebook: None, cells: Vec::new(), selected_cell: 0, focus: FocusArea::Notebooks }
+        Self {
+            active: false,
+            notebooks: Vec::new(),
+            selected_notebook: None,
+            cells: Vec::new(),
+            selected_cell: 0,
+            focus: FocusArea::Notebooks,
+        }
     }
-    pub fn open(&mut self) { self.active = true; }
-    pub fn close(&mut self) { self.active = false; }
-    pub fn focus_notebooks(&mut self) { self.focus = FocusArea::Notebooks; }
-    pub fn focus_cells(&mut self) { self.focus = FocusArea::Cells; }
+    pub fn open(&mut self) {
+        self.active = true;
+    }
+    pub fn close(&mut self) {
+        self.active = false;
+    }
+    #[allow(dead_code)]
+    pub fn focus_notebooks(&mut self) {
+        self.focus = FocusArea::Notebooks;
+    }
+    #[allow(dead_code)]
+    pub fn focus_cells(&mut self) {
+        self.focus = FocusArea::Cells;
+    }
     pub fn toggle_focus(&mut self) {
-        self.focus = match self.focus { FocusArea::Notebooks => FocusArea::Cells, FocusArea::Cells => FocusArea::Notebooks };
+        self.focus = match self.focus {
+            FocusArea::Notebooks => FocusArea::Cells,
+            FocusArea::Cells => FocusArea::Notebooks,
+        };
     }
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct NotebookEditSession {
     pub cell_id: String,
     pub path: std::path::PathBuf,
@@ -65,14 +87,19 @@ pub struct NotebookEditSession {
 
 impl Display {
     pub fn draw_notebooks_panel_overlay(&mut self, config: &UiConfig, state: &NotebookPanelState) {
-        if !state.active { return; }
+        if !state.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 40% height
         let lines = size_info.screen_lines();
-        if lines == 0 { return; }
+        if lines == 0 {
+            return;
+        }
         let target_lines = ((lines as f32 * 0.40).round() as usize).clamp(8, lines);
         let start_line = lines.saturating_sub(target_lines);
         let y = start_line as f32 * size_info.cell_height();
@@ -94,13 +121,26 @@ impl Display {
         let mut line = start_line;
 
         // Header
-        self.draw_ai_text(Point::new(line, Column(2)), tokens.text, tokens.surface_muted, "Notebooks", cols_total - 4);
+        self.draw_ai_text(
+            Point::new(line, Column(2)),
+            tokens.text,
+            tokens.surface_muted,
+            "Notebooks",
+            cols_total - 4,
+        );
         line += 1;
 
         // Draw notebooks list
         let mut nline = line;
-        let notebooks_header = if matches!(state.focus, FocusArea::Notebooks) { "Notebooks ◉" } else { "Notebooks" };
-        self.draw_ai_text(Point::new(nline, Column(2)), tokens.text_muted, tokens.surface_muted, notebooks_header, left_cols - 4);
+        let notebooks_header =
+            if matches!(state.focus, FocusArea::Notebooks) { "Notebooks ◉" } else { "Notebooks" };
+        self.draw_ai_text(
+            Point::new(nline, Column(2)),
+            tokens.text_muted,
+            tokens.surface_muted,
+            notebooks_header,
+            left_cols - 4,
+        );
         nline += 1;
         let selected_nb_idx = state
             .selected_notebook
@@ -126,18 +166,43 @@ impl Display {
             let prefix = if selected { "▸ " } else { "  " };
             let name = format!("{}{}", prefix, nb.name);
             let color = tokens.text;
-            self.draw_ai_text(Point::new(nline, Column(2)), color, tokens.surface_muted, &name, left_cols - 4);
+            self.draw_ai_text(
+                Point::new(nline, Column(2)),
+                color,
+                tokens.surface_muted,
+                &name,
+                left_cols - 4,
+            );
             nline += 1;
-            if nline >= start_line + target_lines { break; }
+            if nline >= start_line + target_lines {
+                break;
+            }
         }
 
         // Draw selected notebook cells
         let mut cline = line;
-        let header = match &state.selected_notebook { Some(id) => format!("Cells — {}{}", id, if matches!(state.focus, FocusArea::Cells) { " ◉" } else { "" }), None => "Cells".to_string() };
-        self.draw_ai_text(Point::new(cline, Column(left_cols as usize + 4)), tokens.text_muted, tokens.surface_muted, &header, right_cols);
+        let header = match &state.selected_notebook {
+            Some(id) => format!(
+                "Cells — {}{}",
+                id,
+                if matches!(state.focus, FocusArea::Cells) { " ◉" } else { "" }
+            ),
+            None => "Cells".to_string(),
+        };
+        self.draw_ai_text(
+            Point::new(cline, Column(left_cols + 4)),
+            tokens.text_muted,
+            tokens.surface_muted,
+            &header,
+            right_cols,
+        );
         cline += 1;
         for (i, cell) in state.cells.iter().enumerate() {
-            let status = match cell.exit_code { Some(0) => "✔", Some(_) => "✖", None => "…" };
+            let status = match cell.exit_code {
+                Some(0) => "✔",
+                Some(_) => "✖",
+                None => "…",
+            };
             let selected = i == state.selected_cell && matches!(state.focus, FocusArea::Cells);
             if selected {
                 let line_y = y + ((cline - line) as f32) * size_info.cell_height();
@@ -154,20 +219,37 @@ impl Display {
                 self.renderer_draw_rects(&size_copy, &metrics, vec![rect]);
             }
             let label = format!("#{:>2} [{}] {}", cell.idx, cell.cell_type, cell.summary);
-            let full = if selected { format!("▸ {}  {}", status, label) } else { format!("  {}  {}", status, label) };
+            let full = if selected {
+                format!("▸ {}  {}", status, label)
+            } else {
+                format!("  {}  {}", status, label)
+            };
             let color = match cell.exit_code {
                 Some(0) => tokens.accent,
                 Some(_) => tokens.warning,
                 None => tokens.text_muted,
             };
-            self.draw_ai_text(Point::new(cline, Column(left_cols as usize + 4)), color, tokens.surface_muted, &full, right_cols);
+            self.draw_ai_text(
+                Point::new(cline, Column(left_cols + 4)),
+                color,
+                tokens.surface_muted,
+                &full,
+                right_cols,
+            );
             cline += 1;
-            if cline >= start_line + target_lines { break; }
+            if cline >= start_line + target_lines {
+                break;
+            }
         }
 
         // Footer controls hint
         let footer = start_line + target_lines - 1;
-        self.draw_ai_text(Point::new(footer, Column(2)), tokens.text_muted, tokens.surface_muted, "Enter: Run cell   Shift+Enter: Run all   Esc: Close", cols_total - 4);
+        self.draw_ai_text(
+            Point::new(footer, Column(2)),
+            tokens.text_muted,
+            tokens.surface_muted,
+            "Enter: Run cell   Shift+Enter: Run all   Esc: Close",
+            cols_total - 4,
+        );
     }
 }
-

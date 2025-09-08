@@ -120,11 +120,12 @@ impl BlocksSearchState {
             filter_suggestions: Vec::new(),
         }
     }
-
 }
 
 impl Default for BlocksSearchState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BlocksSearchState {
@@ -912,6 +913,7 @@ impl Display {
 
         let size_info_copy = self.size_info;
         match &mut self.backend {
+            #[cfg(feature = "gl-backend")]
             crate::display::Backend::Gl { renderer, .. } => {
                 renderer.draw_string(
                     point,

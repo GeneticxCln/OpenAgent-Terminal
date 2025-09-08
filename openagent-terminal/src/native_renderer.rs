@@ -15,30 +15,30 @@ use crate::blocks_v2::{BlockAnimation, BlockAnimationType, BlockId, BlockRenderS
 use crate::display::color::Rgb;
 use crate::display::{Display, SizeInfo};
 use crate::renderer::ui::{UiRoundedRect, UiSprite};
-use crate::workspace::TabId;
 use crate::workspace::tab_manager::{TabAnimation, TabAnimationType};
-use openagent_terminal_core::index::{Point};
+use crate::workspace::TabId;
+use openagent_terminal_core::index::Point;
 
 /// Native renderer for immediate UI updates without lazy fallbacks
 pub struct NativeRenderer {
     /// Block rendering state for immediate access
     block_render_state: HashMap<BlockId, BlockRenderElement>,
-    
+
     /// Tab rendering state for immediate access
     tab_render_state: HashMap<TabId, TabRenderElement>,
-    
+
     /// Split rendering state for immediate access
     split_render_state: HashMap<String, SplitRenderElement>,
-    
+
     /// Animation timelines for smooth transitions
     animation_timeline: AnimationTimeline,
-    
+
     /// Theme state for immediate theming
     theme_state: NativeThemeState,
-    
+
     /// Cached render primitives for instant drawing
     render_cache: RenderCache,
-    
+
     /// Event callbacks for immediate rendering updates
     render_callbacks: Vec<Box<dyn Fn(&RenderEvent) + Send + Sync>>,
 }
@@ -97,28 +97,10 @@ pub struct SplitRenderElement {
 /// Native rendering primitives for immediate GPU rendering
 #[derive(Debug, Clone)]
 pub enum RenderPrimitive {
-    RoundedRect {
-        rect: UiRoundedRect,
-        layer: u8,
-    },
-    Sprite {
-        sprite: UiSprite,
-        layer: u8,
-    },
-    Text {
-        text: String,
-        position: Point<f32, f32>,
-        color: Rgb,
-        size: f32,
-        layer: u8,
-    },
-    Line {
-        start: Point<f32, f32>,
-        end: Point<f32, f32>,
-        color: Rgb,
-        width: f32,
-        layer: u8,
-    },
+    RoundedRect { rect: UiRoundedRect, layer: u8 },
+    Sprite { sprite: UiSprite, layer: u8 },
+    Text { text: String, position: Point<f32, f32>, color: Rgb, size: f32, layer: u8 },
+    Line { start: Point<f32, f32>, end: Point<f32, f32>, color: Rgb, width: f32, layer: u8 },
 }
 
 /// Animation timeline for smooth transitions
@@ -243,8 +225,8 @@ impl NativeRenderer {
 
         for &block_id in &block_render_state.visible_blocks {
             // Get or create render element
-            let render_element = self.block_render_state.entry(block_id).or_insert_with(|| {
-                BlockRenderElement {
+            let render_element =
+                self.block_render_state.entry(block_id).or_insert_with(|| BlockRenderElement {
                     block_id,
                     position: Point::new(0.0_f32, 0.0_f32),
                     size: (0.0, 0.0),
@@ -254,8 +236,7 @@ impl NativeRenderer {
                     content_hash: 0,
                     render_primitives: Vec::new(),
                     last_render: Instant::now(),
-                }
-            });
+                });
 
             // Update animation state immediately
             if let Some(animation) = block_render_state.animation_states.get(&block_id) {
@@ -282,7 +263,8 @@ impl NativeRenderer {
     fn update_block_animation(&mut self, element: &mut BlockRenderElement, now: Instant) {
         if let Some(ref mut animation) = element.animation_state {
             let elapsed = now.duration_since(animation.start_time);
-            let progress = (elapsed.as_secs_f32() / animation.duration.as_secs_f32()).clamp(0.0, 1.0);
+            let progress =
+                (elapsed.as_secs_f32() / animation.duration.as_secs_f32()).clamp(0.0, 1.0);
             animation.progress = progress;
 
             // Apply animation effects immediately
@@ -362,7 +344,7 @@ impl NativeRenderer {
         };
 
         // Generate background primitive immediately
-            let background = UiRoundedRect::new(
+        let background = UiRoundedRect::new(
             element.position.column,
             element.position.line,
             width,
@@ -372,10 +354,7 @@ impl NativeRenderer {
             alpha,
         );
 
-        element.render_primitives.push(RenderPrimitive::RoundedRect {
-            rect: background,
-            layer: 0,
-        });
+        element.render_primitives.push(RenderPrimitive::RoundedRect { rect: background, layer: 0 });
 
         // Generate border primitive if needed
         if element.collapsed || element.animation_state.is_some() {
@@ -389,10 +368,7 @@ impl NativeRenderer {
                 alpha * 0.5,
             );
 
-            element.render_primitives.push(RenderPrimitive::RoundedRect {
-                rect: border,
-                layer: 0,
-            });
+            element.render_primitives.push(RenderPrimitive::RoundedRect { rect: border, layer: 0 });
         }
 
         // Generate highlight effect if animating
@@ -409,10 +385,9 @@ impl NativeRenderer {
                     highlight_alpha,
                 );
 
-                element.render_primitives.push(RenderPrimitive::RoundedRect {
-                    rect: highlight,
-                    layer: 1,
-                });
+                element
+                    .render_primitives
+                    .push(RenderPrimitive::RoundedRect { rect: highlight, layer: 1 });
             }
         }
 
@@ -453,7 +428,7 @@ impl NativeRenderer {
                     let dx = end.column - start.column;
                     let dy = end.line - start.line;
                     let _length = (dx * dx + dy * dy).sqrt();
-                    
+
                     let _ = (color, width);
                 },
             }
@@ -498,7 +473,8 @@ impl NativeRenderer {
     fn update_tab_animation(&mut self, element: &mut TabRenderElement, now: Instant) {
         if let Some(ref mut animation) = element.animation_state {
             let elapsed = now.duration_since(animation.start_time);
-            let progress = (elapsed.as_secs_f32() / animation.duration.as_secs_f32()).clamp(0.0, 1.0);
+            let progress =
+                (elapsed.as_secs_f32() / animation.duration.as_secs_f32()).clamp(0.0, 1.0);
             animation.progress = progress;
 
             // Apply easing function
@@ -521,8 +497,11 @@ impl NativeRenderer {
                 },
                 TabAnimationType::Move => {
                     // Position interpolation would be handled by the tab manager
-                    if let (Some(from_pos), Some(to_pos)) = (animation.from_position, animation.to_position) {
-                        let current_pos = from_pos as f32 + (to_pos as f32 - from_pos as f32) * eased_progress;
+                    if let (Some(from_pos), Some(to_pos)) =
+                        (animation.from_position, animation.to_position)
+                    {
+                        let current_pos =
+                            from_pos as f32 + (to_pos as f32 - from_pos as f32) * eased_progress;
                         element.position.column = current_pos * 150.0; // Tab width
                     }
                 },
@@ -618,10 +597,7 @@ impl NativeRenderer {
             alpha,
         );
 
-        element.render_primitives.push(RenderPrimitive::RoundedRect {
-            rect: background,
-            layer: 0,
-        });
+        element.render_primitives.push(RenderPrimitive::RoundedRect { rect: background, layer: 0 });
 
         // Modified indicator
         if element.modified {
@@ -636,10 +612,9 @@ impl NativeRenderer {
                 alpha,
             );
 
-            element.render_primitives.push(RenderPrimitive::RoundedRect {
-                rect: indicator,
-                layer: 1,
-            });
+            element
+                .render_primitives
+                .push(RenderPrimitive::RoundedRect { rect: indicator, layer: 1 });
         }
 
         Ok(())
@@ -668,21 +643,20 @@ impl NativeRenderer {
 
     /// Clean up invisible blocks immediately
     fn cleanup_invisible_blocks(&mut self, block_render_state: &BlockRenderState) {
-        let visible_set: std::collections::HashSet<_> = block_render_state.visible_blocks.iter().collect();
-        
-        self.block_render_state.retain(|&block_id, _| {
-            visible_set.contains(&block_id)
-        });
+        let visible_set: std::collections::HashSet<_> =
+            block_render_state.visible_blocks.iter().collect();
+
+        self.block_render_state.retain(|&block_id, _| visible_set.contains(&block_id));
     }
 
     /// Update theme state immediately
     pub fn update_theme(&mut self, theme_state: NativeThemeState) {
         self.theme_state = theme_state;
         self.theme_state.last_update = Instant::now();
-        
+
         // Clear render cache when theme changes
         self.render_cache.cached_primitives.clear();
-        
+
         self.emit_render_event(RenderEvent::ThemeChanged);
     }
 
@@ -694,10 +668,11 @@ impl NativeRenderer {
             active_animations: self.animation_timeline.active_animations.len(),
             cache_hits: self.render_cache.cache_hits,
             cache_misses: self.render_cache.cache_misses,
-            cache_hit_ratio: if self.render_cache.cache_misses == 0 { 
-                0.0 
-            } else { 
-                self.render_cache.cache_hits as f32 / (self.render_cache.cache_hits + self.render_cache.cache_misses) as f32 
+            cache_hit_ratio: if self.render_cache.cache_misses == 0 {
+                0.0
+            } else {
+                self.render_cache.cache_hits as f32
+                    / (self.render_cache.cache_hits + self.render_cache.cache_misses) as f32
             },
         }
     }
@@ -754,13 +729,13 @@ mod tests {
     #[test]
     fn test_easing_functions() {
         let renderer = NativeRenderer::new();
-        
+
         // Test linear easing
         assert_eq!(renderer.apply_easing(0.5, EasingFunction::Linear), 0.5);
-        
+
         // Test ease in
         assert!(renderer.apply_easing(0.5, EasingFunction::EaseIn) < 0.5);
-        
+
         // Test ease out
         assert!(renderer.apply_easing(0.5, EasingFunction::EaseOut) > 0.5);
     }
@@ -768,11 +743,9 @@ mod tests {
     #[test]
     fn test_theme_update() {
         let mut renderer = NativeRenderer::new();
-        let new_theme = NativeThemeState {
-            accent_color: Rgb::new(255, 0, 0),
-            ..Default::default()
-        };
-        
+        let new_theme =
+            NativeThemeState { accent_color: Rgb::new(255, 0, 0), ..Default::default() };
+
         renderer.update_theme(new_theme.clone());
         assert_eq!(renderer.theme_state.accent_color, Rgb::new(255, 0, 0));
     }

@@ -768,12 +768,6 @@ This section documents the *[workspace]* table of the configuration file.
 
 	Default: _true_
 
-*reserve_row* = _true_ | _false_
-
-	Reserve a terminal grid row for the tab bar to avoid overlaying content. When enabled,
-	the top or bottom grid line will be hidden depending on *position*.
-
-	Default: _true_
 
 *visibility* = _"Auto"_ | _"Always"_ | _"Hover"_
 
@@ -819,17 +813,6 @@ This section documents the *[workspace]* table of the configuration file.
 
 	Default: _20_
 
-*min_tab_width* = _<int>_ | _None_
-
-	Minimum width of a tab (cells). When _None_, a built-in default is used.
-
-	Default: _None_
-
-*max_tab_width* = _<int>_ | _None_
-
-	Maximum width of a tab (cells). When _None_, a built-in default is used.
-
-	Default: _None_
 
 *[workspace.splits]*
 

@@ -13,15 +13,13 @@ fn main() {
     }))
     .expect("request_adapter failed");
 
-    let _device_and_queue = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: Some("OpenAgent WGPU Example Device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            memory_hints: Default::default(),
-            trace: Default::default(),
-        }
-    ))
+    let _device_and_queue = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("OpenAgent WGPU Example Device"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: Default::default(),
+        trace: Default::default(),
+    }))
     .expect("Failed to create WGPU device for example");
 }
 

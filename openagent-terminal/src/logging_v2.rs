@@ -107,8 +107,12 @@ fn create_env_filter(level: LevelFilter) -> EnvFilter {
         LevelFilter::Trace => "trace",
     };
 
-    // Default filter: specified level for openagent crates, WARN for others
-    let default_filter = format!("openagent={},warn", level_str);
+    // Default filter: specified level for openagent crates, WARN for others,
+    // but silence noisy third-party WARNs that are informational on many systems.
+    // - calloop warns about transient token mismatches on some backends
+    // - wgpu_hal::vulkan::instance warns when validation layers/extensions are unavailable
+    let default_filter =
+        format!("openagent={},warn,calloop=error,wgpu_hal::vulkan::instance=error", level_str);
 
     EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new(&default_filter))

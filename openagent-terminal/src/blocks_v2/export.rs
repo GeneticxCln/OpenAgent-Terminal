@@ -105,7 +105,9 @@ pub struct ExportManager {
 }
 
 impl Default for ExportManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExportManager {

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use openagent_terminal_core::index::{Column, Point};
-use openagent_terminal_core::term as term;
+use openagent_terminal_core::term;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -46,7 +46,9 @@ impl CompletionsState {
 }
 
 impl Default for CompletionsState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl super::Display {

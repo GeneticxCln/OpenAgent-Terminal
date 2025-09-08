@@ -722,9 +722,9 @@ impl ApiTester {
         let body = if let Some(body_data) = request_data["body"].as_object() {
             let mode = body_data["mode"].as_str().unwrap_or("raw");
             match mode {
-                "raw" => {
-                    body_data["raw"].as_str().map(|raw_body| RequestBody::Text(raw_body.to_string()))
-                },
+                "raw" => body_data["raw"]
+                    .as_str()
+                    .map(|raw_body| RequestBody::Text(raw_body.to_string())),
                 "formdata" => {
                     let mut form_data = HashMap::new();
                     if let Some(formdata_array) = body_data["formdata"].as_array() {

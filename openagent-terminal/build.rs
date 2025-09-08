@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
+#[cfg(feature = "gl-backend")]
 use gl_generator::{Api, Fallbacks, GlobalGenerator, Profile, Registry};
 
 fn main() {
@@ -20,7 +21,8 @@ fn main() {
     // Generate version information
     generate_version_info(&build_config);
 
-    // Generate OpenGL bindings
+    // Generate OpenGL bindings (only when GL backend is enabled)
+    #[cfg(feature = "gl-backend")]
     generate_gl_bindings();
 
     // Generate feature flags configuration
@@ -157,15 +159,18 @@ fn generate_version_info(config: &BuildConfig) {
     println!("cargo:rustc-env=BUILD_TARGET={}-{}", config.target_arch, config.target_os);
 }
 
+#[cfg(feature = "gl-backend")]
 fn generate_gl_bindings() {
     let dest = env::var("OUT_DIR").unwrap();
     let mut file = File::create(Path::new(&dest).join("gl_bindings.rs")).unwrap();
 
-    Registry::new(Api::Gl, (3, 3), Profile::Core, Fallbacks::All, [
-        "GL_ARB_blend_func_extended",
-        "GL_KHR_robustness",
-        "GL_KHR_debug",
-    ])
+    Registry::new(
+        Api::Gl,
+        (3, 3),
+        Profile::Core,
+        Fallbacks::All,
+        ["GL_ARB_blend_func_extended", "GL_KHR_robustness", "GL_KHR_debug"],
+    )
     .write_bindings(GlobalGenerator, &mut file)
     .unwrap();
 }
@@ -207,7 +212,7 @@ fn generate_feature_config(config: &BuildConfig) {
 
     // Rendering backends
     writeln!(file, "pub const HAS_WGPU: bool = {};", config.has_feature("wgpu")).unwrap();
-    writeln!(file, "pub const HAS_OPENGL: bool = true; // Always available").unwrap();
+    writeln!(file, "pub const HAS_OPENGL: bool = {};", config.has_feature("gl-backend")).unwrap();
 
     // Platform support
     writeln!(file, "pub const HAS_WAYLAND: bool = {};", config.has_feature("wayland")).unwrap();
@@ -548,7 +553,15 @@ fn validate_feature_combinations(config: &BuildConfig) {
 
     // Validate rendering backend combinations
     if config.has_feature("wgpu") && !config.is_release {
-        println!("cargo:warning=WGPU backend enabled in debug mode. Performance may be degraded.");
+        let verbose = std::env::var("OPENAGENT_VERBOSE_BUILD")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if verbose {
+            println!(
+                "cargo:warning=WGPU backend enabled in debug mode. Performance may be degraded."
+            );
+        }
     }
 
     // Validate Security Lens combinations

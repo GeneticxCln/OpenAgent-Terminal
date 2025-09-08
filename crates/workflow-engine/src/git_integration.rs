@@ -505,16 +505,16 @@ mod tests {
         let repo_path = temp_dir.path().to_path_buf();
 
         // Initialize git repo
-Command::new("git").current_dir(&repo_path).args(["init"]).output()?;
+        Command::new("git").current_dir(&repo_path).args(["init"]).output()?;
 
         Command::new("git")
             .current_dir(&repo_path)
-.args(["config", "user.name", "Test User"])
+            .args(["config", "user.name", "Test User"])
             .output()?;
 
         Command::new("git")
             .current_dir(&repo_path)
-.args(["config", "user.email", "test@example.com"])
+            .args(["config", "user.email", "test@example.com"])
             .output()?;
 
         let git_integration = GitIntegration::new(repo_path)?;
@@ -529,11 +529,11 @@ Command::new("git").current_dir(&repo_path).args(["init"]).output()?;
         std::fs::write(git_integration.repo_path.join("test.txt"), "Hello, world!")?;
         Command::new("git")
             .current_dir(&git_integration.repo_path)
-.args(["add", "test.txt"])
+            .args(["add", "test.txt"])
             .output()?;
         Command::new("git")
             .current_dir(&git_integration.repo_path)
-.args(["commit", "-m", "Initial commit"])
+            .args(["commit", "-m", "Initial commit"])
             .output()?;
 
         let repo_info = git_integration.get_repository_info().await?;

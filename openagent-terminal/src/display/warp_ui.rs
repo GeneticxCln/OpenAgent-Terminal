@@ -17,7 +17,7 @@ use crate::display::color::Rgb;
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use crate::renderer::ui::UiRoundedRect;
-use crate::workspace::{TabBarPosition, TabManager};
+use crate::workspace::{TabBarPosition, TabId, TabManager};
 
 /// Enhanced tab styling for Warp-like appearance
 #[derive(Debug, Clone, PartialEq)]
@@ -93,11 +93,7 @@ impl WarpTabStyle {
         let ui = theme.ui;
         Self {
             tab_height: ui.tab_bar_height_px.max(16.0),
-            corner_radius: if ui.rounded_corners {
-                ui.tab_bar_corner_radius_px
-            } else {
-                0.0
-            },
+            corner_radius: if ui.rounded_corners { ui.tab_bar_corner_radius_px } else { 0.0 },
             tab_padding: ui.tab_bar_padding_px.max(0.0),
             active_bg: tokens.surface,
             inactive_bg: tokens.surface_muted,
@@ -106,7 +102,11 @@ impl WarpTabStyle {
             inactive_fg: tokens.text,
             separator_color: tokens.border,
             drop_shadow: ui.tab_bar_drop_shadow.unwrap_or(ui.shadow),
-            animation_duration_ms: if ui.reduce_motion { 0 } else { ui.tab_bar_animation_duration_ms },
+            animation_duration_ms: if ui.reduce_motion {
+                0
+            } else {
+                ui.tab_bar_animation_duration_ms
+            },
         }
     }
 }
@@ -179,6 +179,29 @@ pub struct WarpAnimation {
     pub easing: WarpEasing,
 }
 
+// Legacy tab bar interop types moved here to remove the classic module entirely.
+// Geometry info for compatibility with existing call sites.
+#[derive(Debug, Clone, Copy)]
+pub struct TabBarGeometry {
+    pub start_line: usize,
+    pub height: usize,
+    pub tab_width: usize,
+    pub visible_tabs: usize,
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Copy)]
+pub enum TabBarAction {
+    SelectTab(TabId),
+    CloseTab(TabId),
+    CreateTab,
+    OpenSettings,
+    BeginDrag(TabId),
+    DragMove(TabId, usize),
+    EndDrag(TabId),
+    CancelDrag(TabId),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum WarpAnimationType {
     TabOpen,
@@ -231,7 +254,7 @@ impl Display {
         tab_manager: &TabManager,
         position: TabBarPosition,
         style: &WarpTabStyle,
-    ) -> Option<crate::display::tab_bar::TabBarGeometry> {
+    ) -> Option<TabBarGeometry> {
         if position == TabBarPosition::Hidden {
             return None;
         }
@@ -298,7 +321,8 @@ impl Display {
         self.draw_new_tab_button(current_x, start_y, style, create_hover);
 
         // Draw settings gear on far right using sprite atlas, aligned with previous text region
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui;
         let cols = self.size_info.columns;
@@ -307,9 +331,8 @@ impl Display {
             let cw = self.size_info.cell_width();
             let _ch = self.size_info.cell_height();
             let start_col = cols.saturating_sub(gear_cols + 2);
-            let icon_px = ui
-                .tab_bar_settings_icon_px
-                .unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
+            let icon_px =
+                ui.tab_bar_settings_icon_px.unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
             let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
             let iy = start_y + (style.tab_height - icon_px) * 0.5;
             // Atlas slot 8 = gear (atlas has 9 slots)
@@ -321,11 +344,21 @@ impl Display {
             let tint = tokens.text;
             let nearest = (icon_px - 16.0).abs() < 0.5;
             self.stage_ui_sprite(crate::renderer::ui::UiSprite::new(
-                ix, iy, icon_px, icon_px, uv_x, uv_y, uv_w, uv_h, tint, 1.0, Some(nearest),
+                ix,
+                iy,
+                icon_px,
+                icon_px,
+                uv_x,
+                uv_y,
+                uv_w,
+                uv_h,
+                tint,
+                1.0,
+                Some(nearest),
             ));
         }
 
-        Some(crate::display::tab_bar::TabBarGeometry {
+        Some(TabBarGeometry {
             start_line: (start_y / size_info.cell_height()) as usize,
             height: (style.tab_height / size_info.cell_height()) as usize,
             tab_width: (tab_width / size_info.cell_width()) as usize,
@@ -541,7 +574,7 @@ impl Display {
         let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
         if config.workspace.tab_bar.show
-            && config.workspace.tab_bar.reserve_row
+            && !config.workspace.warp_overlay_only
             && config.workspace.tab_bar.position != crate::workspace::TabBarPosition::Hidden
         {
             let ch = si.cell_height();
@@ -780,6 +813,7 @@ impl Display {
 
         let size_info_copy = self.size_info;
         match &mut self.backend {
+            #[cfg(feature = "gl-backend")]
             crate::display::Backend::Gl { renderer, .. } => {
                 renderer.draw_string(
                     point,
@@ -843,6 +877,165 @@ impl Display {
         let size_info = self.size_info;
         let metrics = self.glyph_cache.font_metrics();
         self.renderer_draw_rects(&size_info, &metrics, vec![preview_rect]);
+    }
+
+    // --- Warp tab bar interactions (click/drag) matching legacy signatures ---
+    pub fn handle_tab_bar_click(
+        &self,
+        _config: &UiConfig,
+        _tab_manager: &TabManager,
+        position: TabBarPosition,
+        mouse_x_cols: usize,
+        mouse_y_line: usize,
+    ) -> Option<TabBarAction> {
+        // Map grid coords to pixels
+        let cw = self.size_info.cell_width();
+        let ch = self.size_info.cell_height();
+        let x_px = (mouse_x_cols as f32) * cw;
+        let y_px = (mouse_y_line as f32) * ch;
+        // Determine bar y range
+        let style = WarpTabStyle::from_theme(_config);
+        let bar_y = match position {
+            TabBarPosition::Top => 0.0,
+            TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
+            TabBarPosition::Hidden => return None,
+        };
+        if y_px < bar_y || y_px >= bar_y + style.tab_height {
+            return None;
+        }
+        // Hit test tabs
+        for (tab_id, x, w) in &self.tab_bounds_px {
+            if x_px >= *x && x_px < *x + *w {
+                // Close button approx: last 20px of tab
+                if x_px >= *x + *w - 20.0 {
+                    return Some(TabBarAction::CloseTab(*tab_id));
+                }
+                return Some(TabBarAction::SelectTab(*tab_id));
+            }
+        }
+        // Empty area: create new tab
+        Some(TabBarAction::CreateTab)
+    }
+
+    pub fn handle_tab_bar_mouse_press(
+        &mut self,
+        config: &UiConfig,
+        tab_manager: &TabManager,
+        position: TabBarPosition,
+        mouse_x: usize,
+        mouse_y: usize,
+        button: winit::event::MouseButton,
+    ) -> Option<TabBarAction> {
+        if button != winit::event::MouseButton::Left {
+            return self.handle_tab_bar_click(config, tab_manager, position, mouse_x, mouse_y);
+        }
+        // Convert to pixels
+        let cw = self.size_info.cell_width();
+        let ch = self.size_info.cell_height();
+        let x_px = (mouse_x as f32) * cw;
+        let y_px = (mouse_y as f32) * ch;
+        let style = WarpTabStyle::from_theme(config);
+        let bar_y = match position {
+            TabBarPosition::Top => 0.0,
+            TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
+            TabBarPosition::Hidden => return None,
+        };
+        if y_px < bar_y || y_px >= bar_y + style.tab_height {
+            return None;
+        }
+        // Find tab under cursor
+        if let Some((tab_id, x, w)) =
+            self.tab_bounds_px.iter().copied().find(|(_, x, w)| x_px >= *x && x_px < *x + *w)
+        {
+            // Close button region
+            if x_px >= x + w - 20.0 {
+                return Some(TabBarAction::CloseTab(tab_id));
+            }
+            self.tab_drag_active = Some(super::TabDragState {
+                tab_id,
+                original_position: self.get_tab_position(tab_manager, tab_id),
+                current_position: self.get_tab_position(tab_manager, tab_id),
+                target_position: None,
+                start_mouse_x: mouse_x,
+                start_mouse_y: mouse_y,
+                current_mouse_x: mouse_x,
+                current_mouse_y: mouse_y,
+                visual_offset_x: 0.0,
+                visual_offset_y: 0.0,
+                is_active: false,
+                drag_threshold: 10.0,
+            });
+            return Some(TabBarAction::BeginDrag(tab_id));
+        }
+        Some(TabBarAction::CreateTab)
+    }
+
+    pub fn handle_tab_bar_mouse_move(
+        &mut self,
+        _tab_manager: &TabManager,
+        mouse_x: usize,
+        mouse_y: usize,
+    ) -> Option<TabBarAction> {
+        if let Some(ref mut drag) = self.tab_drag_active {
+            drag.current_mouse_x = mouse_x;
+            drag.current_mouse_y = mouse_y;
+            let dx = (mouse_x as i32 - drag.start_mouse_x as i32).abs() as f32;
+            let dy = (mouse_y as i32 - drag.start_mouse_y as i32).abs() as f32;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if !drag.is_active && dist > drag.drag_threshold {
+                drag.is_active = true;
+                self.tab_drag_anim_start = Some(Instant::now());
+                return Some(TabBarAction::DragMove(drag.tab_id, drag.current_position));
+            }
+            if drag.is_active {
+                // Choose new position by nearest tab center
+                if !self.tab_bounds_px.is_empty() {
+                    let cw = self.size_info.cell_width();
+                    let x_px = mouse_x as f32 * cw;
+                    let mut idx = 0usize;
+                    let mut best = f32::MAX;
+                    for (i, (_tid, x, w)) in self.tab_bounds_px.iter().enumerate() {
+                        let center = *x + *w * 0.5;
+                        let d = (x_px - center).abs();
+                        if d < best {
+                            best = d;
+                            idx = i;
+                        }
+                    }
+                    if idx != drag.current_position {
+                        drag.target_position = Some(idx);
+                        return Some(TabBarAction::DragMove(drag.tab_id, idx));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn handle_tab_bar_mouse_release(
+        &mut self,
+        button: winit::event::MouseButton,
+    ) -> Option<TabBarAction> {
+        if button != winit::event::MouseButton::Left {
+            return None;
+        }
+        if let Some(drag) = self.tab_drag_active.take() {
+            if drag.is_active {
+                if let Some(pos) = drag.target_position {
+                    if pos != drag.original_position {
+                        return Some(TabBarAction::DragMove(drag.tab_id, pos));
+                    }
+                }
+                return Some(TabBarAction::EndDrag(drag.tab_id));
+            } else {
+                return Some(TabBarAction::SelectTab(drag.tab_id));
+            }
+        }
+        None
+    }
+
+    fn get_tab_position(&self, tab_manager: &TabManager, tab_id: TabId) -> usize {
+        tab_manager.tab_order().iter().position(|&id| id == tab_id).unwrap_or(0)
     }
 }
 

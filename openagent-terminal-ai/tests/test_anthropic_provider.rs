@@ -30,9 +30,9 @@ mod anthropic_provider_tests {
         assert!(provider.is_ok());
     }
 
-#[tokio::test]
-async fn test_anthropic_streaming_complete_response() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn test_anthropic_streaming_complete_response() {
+        let server = MockServer::start().await;
         let stream_data = concat!(
             "event: message_start\n",
             "data: {\"type\":\"message_start\",\"message\":{\"role\":\"assistant\",\"content\":[]}}\n\n",
@@ -50,7 +50,9 @@ let server = MockServer::start().await;
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-Mock::given(method("POST")).and(path("/messages")).and(header("x-api-key", "test_key"))
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .and(header("x-api-key", "test_key"))
             .and(header("anthropic-version", "2023-06-01"))
             .and(header("content-type", "application/json"))
             .respond_with(
@@ -61,7 +63,7 @@ Mock::given(method("POST")).and(path("/messages")).and(header("x-api-key", "test
             .mount(&server)
             .await;
 
-let provider = AnthropicProvider::new(
+        let provider = AnthropicProvider::new(
             "test_key".to_string(),
             server.uri(),
             "claude-3-opus".to_string(),
@@ -80,9 +82,9 @@ let provider = AnthropicProvider::new(
         assert_eq!(collected, "find . -type f -size +100M");
     }
 
-#[tokio::test]
-async fn test_anthropic_streaming_with_multiple_blocks() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn test_anthropic_streaming_with_multiple_blocks() {
+        let server = MockServer::start().await;
         // Anthropic can send multiple content blocks
         let stream_data = concat!(
             "event: message_start\n",
@@ -103,15 +105,17 @@ let server = MockServer::start().await;
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-Mock::given(method("POST")).and(path("/messages")).respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(stream_data),
-        )
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(stream_data),
+            )
+            .mount(&server)
+            .await;
 
-let provider = AnthropicProvider::new(
+        let provider = AnthropicProvider::new(
             "test_key".to_string(),
             server.uri(),
             "claude-3-opus".to_string(),
@@ -131,9 +135,9 @@ let provider = AnthropicProvider::new(
         assert!(collected.contains("find /var/log"));
     }
 
-#[tokio::test]
-async fn test_anthropic_error_response() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn test_anthropic_error_response() {
+        let server = MockServer::start().await;
 
         let error_response = r#"{
             "type": "error",
@@ -143,20 +147,19 @@ let server = MockServer::start().await;
             }
         }"#;
 
-Mock::given(method("POST")).and(path("/messages")).respond_with(
-            ResponseTemplate::new(401)
-                .insert_header("content-type", "application/json")
-                .set_body_string(error_response),
-        )
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(401)
+                    .insert_header("content-type", "application/json")
+                    .set_body_string(error_response),
+            )
+            .mount(&server)
+            .await;
 
-let provider = AnthropicProvider::new(
-            "invalid_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let provider =
+            AnthropicProvider::new("invalid_key".to_string(), server.uri(), "claude-3".to_string())
+                .unwrap();
 
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
@@ -171,11 +174,11 @@ let provider = AnthropicProvider::new(
         assert!(error.contains("401") || error.contains("authentication"));
     }
 
-#[tokio::test]
-async fn test_anthropic_rate_limit() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn test_anthropic_rate_limit() {
+        let server = MockServer::start().await;
 
-Mock::given(method("POST")).and(path("/messages")).respond_with(
+        Mock::given(method("POST")).and(path("/messages")).respond_with(
             ResponseTemplate::new(429)
                 .insert_header("retry-after", "30")
                 .insert_header("x-ratelimit-limit", "1000")
@@ -185,12 +188,9 @@ Mock::given(method("POST")).and(path("/messages")).respond_with(
         .mount(&server)
         .await;
 
-let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let provider =
+            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
+                .unwrap();
 
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
@@ -204,9 +204,9 @@ let provider = AnthropicProvider::new(
         assert!(result.unwrap_err().contains("429"));
     }
 
-#[tokio::test]
-async fn test_anthropic_streaming_cancellation() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn test_anthropic_streaming_cancellation() {
+        let server = MockServer::start().await;
         let stream_data = concat!(
             "event: message_start\n",
             "data: {\"type\":\"message_start\"}\n\n",
@@ -220,21 +220,20 @@ let server = MockServer::start().await;
             "data: {\"type\":\"message_stop\"}\n\n"
         );
 
-Mock::given(method("POST")).and(path("/messages")).respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_delay(Duration::from_millis(50))
-                .set_body_string(stream_data),
-        )
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_delay(Duration::from_millis(50))
+                    .set_body_string(stream_data),
+            )
+            .mount(&server)
+            .await;
 
-let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let provider =
+            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
+                .unwrap();
 
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
@@ -256,23 +255,20 @@ let provider = AnthropicProvider::new(
         assert!(!collected.contains("/log"));
     }
 
-#[tokio::test]
-async fn test_anthropic_server_error() {
-let server = MockServer::start().await;
+    #[tokio::test]
+    async fn test_anthropic_server_error() {
+        let server = MockServer::start().await;
 
-Mock::given(method("POST")).and(path("/messages")).respond_with(
+        Mock::given(method("POST")).and(path("/messages")).respond_with(
             ResponseTemplate::new(500)
                 .set_body_string(r#"{"type":"error","error":{"type":"api_error","message":"Internal server error"}}"#),
         )
         .mount(&server)
         .await;
 
-        let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let provider =
+            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
+                .unwrap();
 
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);
@@ -313,12 +309,9 @@ Mock::given(method("POST")).and(path("/messages")).respond_with(
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let provider =
+            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
+                .unwrap();
 
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);

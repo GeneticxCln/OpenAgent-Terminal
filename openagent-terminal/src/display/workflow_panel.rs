@@ -205,7 +205,9 @@ pub struct WorkflowsPanelState {
 }
 
 impl Default for WorkflowsPanelState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WorkflowsPanelState {

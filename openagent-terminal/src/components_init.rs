@@ -4,8 +4,8 @@
 #[allow(unused_imports)]
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
@@ -590,7 +590,10 @@ impl<'a> ComponentIntegration<'a> {
                 command,
                 directory: Some(std::env::current_dir()?),
                 environment: Some(std::env::vars().collect()),
-shell: Some(crate::blocks_v2::ShellType::from_str(shell).unwrap_or(crate::blocks_v2::ShellType::Bash)),
+                shell: Some(
+                    crate::blocks_v2::ShellType::from_str(shell)
+                        .unwrap_or(crate::blocks_v2::ShellType::Bash),
+                ),
                 tags: None,
                 parent_id: None,
                 metadata: None,

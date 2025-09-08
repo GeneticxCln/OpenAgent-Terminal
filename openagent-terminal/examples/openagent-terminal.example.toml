@@ -8,9 +8,8 @@
 
 # --- Workspace: Tab Bar ---
 [workspace.tab_bar]
-# Show the tab bar and reserve a terminal row at the top so it doesn't overlay content.
+# Show the tab bar (Warp overlay-style, no reserved row)
 show = true
-reserve_row = true
 position = "Top" # "Top" | "Bottom" | "Hidden"
 
 # --- Workspace: Pane Drag Gesture ---
@@ -34,6 +33,12 @@ show_resize_handles = true
 # Divider thickness and increment
 border_thickness = 1.0
 resize_increment = 5
+
+# --- Rendering backend ---
+[debug]
+# Prefer WGPU first, with automatic fallback to OpenGL if WGPU init fails
+# Set to false to prefer OpenGL directly (or use OPENAGENT_FORCE_GL=1)
+prefer_wgpu = true
 
 # --- AI (optional) ---
 # [ai]

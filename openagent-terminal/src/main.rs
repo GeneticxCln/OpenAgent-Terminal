@@ -65,12 +65,12 @@ mod native_persistence; // Native persistence layer (experimental)
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_renderer; // Native UI rendering system (experimental)
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
-mod shell_integration; // Native shell integration (experimental)
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_search; // Native search and filtering (experimental)
 #[cfg(feature = "blocks")]
 mod notebooks;
-mod security; // Feature-gated security module wrapper
+mod security;
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
+mod shell_integration; // Native shell integration (experimental) // Feature-gated security module wrapper
 #[cfg(feature = "security-lens")]
 pub use security::security_lens;
 #[cfg(not(feature = "security-lens"))]
@@ -79,6 +79,7 @@ mod text_shaping;
 mod ui_confirm;
 mod workspace;
 
+#[cfg(feature = "gl-backend")]
 mod gl {
     #![allow(clippy::all, unsafe_op_in_unsafe_fn)]
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));

@@ -151,7 +151,8 @@ impl AiProvider for OpenRouterProvider {
         debug!("Sending request to OpenRouter API");
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let retry = RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
+        let retry =
+            RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
         let completion: ChatCompletionResponse = loop {
             let send = self
@@ -165,10 +166,15 @@ impl AiProvider for OpenRouterProvider {
                 Ok(resp) => resp,
                 Err(e) => {
                     let msg = format!("Failed to send request: {}", e);
-                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false))
+                    {
                         let delay = retry.delay_for_attempt(attempt, &msg);
                         if ai_log_summary() {
-                            info!("openrouter_propose_retry attempt={} delay_ms={}", attempt + 1, delay.as_millis());
+                            info!(
+                                "openrouter_propose_retry attempt={} delay_ms={}",
+                                attempt + 1,
+                                delay.as_millis()
+                            );
                         }
                         std::thread::sleep(delay);
                         attempt += 1;
@@ -193,7 +199,11 @@ impl AiProvider for OpenRouterProvider {
                 if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
                     let delay = retry.delay_for_attempt(attempt, &msg);
                     if ai_log_summary() {
-                        info!("openrouter_propose_retry_http attempt={} delay_ms={}", attempt + 1, delay.as_millis());
+                        info!(
+                            "openrouter_propose_retry_http attempt={} delay_ms={}",
+                            attempt + 1,
+                            delay.as_millis()
+                        );
                     }
                     std::thread::sleep(delay);
                     attempt += 1;
@@ -210,7 +220,8 @@ impl AiProvider for OpenRouterProvider {
                 Ok(json) => break json,
                 Err(e) => {
                     let msg = format!("Failed to parse response: {}", e);
-                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
+                    if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false))
+                    {
                         let delay = retry.delay_for_attempt(attempt, &msg);
                         std::thread::sleep(delay);
                         attempt += 1;
@@ -298,7 +309,8 @@ impl AiProvider for OpenRouterProvider {
         };
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let retry = RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
+        let retry =
+            RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
 
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -422,4 +434,3 @@ impl AiProvider for OpenRouterProvider {
         })
     }
 }
-

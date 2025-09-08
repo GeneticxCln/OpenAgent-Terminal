@@ -13,7 +13,6 @@ impl Default for SnippetEngine {
     }
 }
 
-
 impl SnippetEngine {
     pub fn new() -> Self {
         Self { _template_engine: tera::Tera::new("templates/**/*").unwrap_or_default() }

@@ -49,7 +49,6 @@ impl Clone for DapOverlayState {
     }
 }
 
-
 impl DapOverlayState {
     pub fn new() -> Self {
         Self::default()

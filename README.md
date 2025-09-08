@@ -125,6 +125,18 @@ Runtime shortcuts:
 - Perf HUD: Ctrl+Shift+F (Cmd+Shift+F)
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
 
+Backend selection:
+
+- Default (when built with `wgpu`): try WGPU first, auto‑fallback to OpenGL if needed.
+- Force OpenGL only: `OPENAGENT_FORCE_GL=1`
+- Disable fallback: `OPENAGENT_DISABLE_GL_FALLBACK=1`
+- Prefer OpenGL via config:
+
+```toml
+[debug]
+prefer_wgpu = false
+```
+
 Minimal AI config (`~/.config/openagent-terminal/openagent-terminal.toml`):
 
 ```toml

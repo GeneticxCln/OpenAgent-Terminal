@@ -29,6 +29,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let mode = *self.ctx.terminal().mode();
         let mods = self.ctx.modifiers().state();
 
+        // If a pane drag is active, allow Escape to cancel it immediately.
+        if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) = key.logical_key {
+            if self.ctx.display().pane_drag_manager.current_drag().is_some() {
+                self.ctx.display().pane_drag_manager.cancel_drag();
+                self.ctx.display().pending_update.dirty = true;
+                self.ctx.mark_dirty();
+                return;
+            }
+        }
+
         if key.state == ElementState::Released {
             if self.ctx.inline_search_state().char_pending {
                 self.ctx.window().set_ime_allowed(true);
@@ -801,14 +811,17 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().editor_overlay_save();
                         #[cfg(feature = "blocks")]
                         {
-                            if let Some(session) = self.ctx.display().notebooks_edit_session.clone() {
+                            if let Some(session) = self.ctx.display().notebooks_edit_session.clone()
+                            {
                                 let path = session.path.clone();
                                 let cell_id = session.cell_id.clone();
                                 if let Ok(contents) = std::fs::read_to_string(&path) {
-                                    self.ctx.send_user_event(crate::event::EventType::NotebooksEditApply {
-                                        cell_id,
-                                        content: contents,
-                                    });
+                                    self.ctx.send_user_event(
+                                        crate::event::EventType::NotebooksEditApply {
+                                            cell_id,
+                                            content: contents,
+                                        },
+                                    );
                                 }
                                 self.ctx.display().notebooks_edit_session = None;
                             }
@@ -818,37 +831,93 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.mark_dirty();
                         return;
                     },
-                    _ => {}
+                    _ => {},
                 }
             }
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Enter) if mods.shift_key() => { self.ctx.notebooks_panel_run_all(); return; },
-                Key::Named(NamedKey::Enter) => { self.ctx.notebooks_panel_confirm(); return; },
-                Key::Named(NamedKey::Escape) => { self.ctx.notebooks_panel_close(); return; },
-                Key::Named(NamedKey::ArrowUp) => { self.ctx.notebooks_panel_move_selection(-1); return; },
-                Key::Named(NamedKey::ArrowDown) => { self.ctx.notebooks_panel_move_selection(1); return; },
-                Key::Named(NamedKey::PageUp) => { self.ctx.notebooks_panel_move_selection(-5); return; },
-                Key::Named(NamedKey::PageDown) => { self.ctx.notebooks_panel_move_selection(5); return; },
-                Key::Named(NamedKey::Tab) => { self.ctx.notebooks_panel_focus_next(); return; },
-                Key::Named(NamedKey::ArrowLeft) => { self.ctx.notebooks_panel_focus_prev(); return; },
-                Key::Named(NamedKey::ArrowRight) => { self.ctx.notebooks_panel_focus_next(); return; },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("r") => { self.ctx.notebooks_panel_rerun_selected(); return; },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("a") && mods.shift_key() => { self.ctx.notebooks_panel_add_markdown_cell(); return; },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("a") => { self.ctx.notebooks_panel_add_command_cell(); return; },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("e") => {
+                Key::Named(NamedKey::Enter) if mods.shift_key() => {
+                    self.ctx.notebooks_panel_run_all();
+                    return;
+                },
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.notebooks_panel_confirm();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.notebooks_panel_close();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.notebooks_panel_move_selection(-1);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.notebooks_panel_move_selection(1);
+                    return;
+                },
+                Key::Named(NamedKey::PageUp) => {
+                    self.ctx.notebooks_panel_move_selection(-5);
+                    return;
+                },
+                Key::Named(NamedKey::PageDown) => {
+                    self.ctx.notebooks_panel_move_selection(5);
+                    return;
+                },
+                Key::Named(NamedKey::Tab) => {
+                    self.ctx.notebooks_panel_focus_next();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.ctx.notebooks_panel_focus_prev();
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.ctx.notebooks_panel_focus_next();
+                    return;
+                },
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("r") =>
+                {
+                    self.ctx.notebooks_panel_rerun_selected();
+                    return;
+                },
+                Key::Character(c)
+                    if !mods.control_key()
+                        && !mods.alt_key()
+                        && c.eq_ignore_ascii_case("a")
+                        && mods.shift_key() =>
+                {
+                    self.ctx.notebooks_panel_add_markdown_cell();
+                    return;
+                },
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("a") =>
+                {
+                    self.ctx.notebooks_panel_add_command_cell();
+                    return;
+                },
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("e") =>
+                {
                     // Begin edit of the selected cell using the editor overlay when available.
                     #[cfg(all(feature = "blocks", feature = "editor"))]
                     {
                         let idx = self.ctx.display().notebooks_panel.selected_cell;
-                        if let Some(cell) = self.ctx.display().notebooks_panel.cells.get(idx).cloned() {
+                        if let Some(cell) =
+                            self.ctx.display().notebooks_panel.cells.get(idx).cloned()
+                        {
                             // Create a temp file with appropriate extension
                             let ext = if cell.cell_type == "md" { "md" } else { "sh" };
                             let mut path = std::env::temp_dir();
                             path.push(format!("openagent_cell_{}.{}", cell.id, ext));
                             let _ = std::fs::write(&path, cell.summary.clone());
                             // Track edit session and open overlay
-                            self.ctx.display().notebooks_edit_session = Some(crate::display::notebook_panel::NotebookEditSession { cell_id: cell.id.clone(), path: path.clone() });
+                            self.ctx.display().notebooks_edit_session =
+                                Some(crate::display::notebook_panel::NotebookEditSession {
+                                    cell_id: cell.id.clone(),
+                                    path: path.clone(),
+                                });
                             self.ctx.display().editor_overlay_open(path);
                             self.ctx.mark_dirty();
                         }
@@ -863,7 +932,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     }
                     return;
                 },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("d") => {
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("d") =>
+                {
                     // Delete selected cell
                     #[cfg(feature = "blocks")]
                     {
@@ -873,13 +944,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             d.notebooks_panel.cells.get(idx).map(|c| c.id.clone())
                         };
                         if let Some(cell_id) = cell_id_opt {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::NotebooksDeleteCell(cell_id));
+                            self.ctx.send_user_event(crate::event::EventType::NotebooksDeleteCell(
+                                cell_id,
+                            ));
                         }
                     }
                     return;
                 },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("m") => {
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("m") =>
+                {
                     // Convert selected cell to Markdown
                     #[cfg(feature = "blocks")]
                     {
@@ -896,7 +970,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     }
                     return;
                 },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") => {
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") =>
+                {
                     // Convert selected cell to Command
                     #[cfg(feature = "blocks")]
                     {
@@ -913,19 +989,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     }
                     return;
                 },
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("x") => {
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("x") =>
+                {
                     // Export current notebook to Markdown and paste to prompt (fallback)
                     #[cfg(feature = "blocks")]
                     {
-                        let nb_id_opt = { self.ctx.display().notebooks_panel.selected_notebook.clone() };
+                        let nb_id_opt =
+                            { self.ctx.display().notebooks_panel.selected_notebook.clone() };
                         if let Some(nb_id) = nb_id_opt {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::NotebooksExportNotebook(nb_id));
+                            self.ctx.send_user_event(
+                                crate::event::EventType::NotebooksExportNotebook(nb_id),
+                            );
                         }
                     }
                     return;
                 },
-                _ => {}
+                _ => {},
             }
             // Swallow text input while panel active
             return;
@@ -988,13 +1068,19 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // If we're capturing a new keybinding, capture first
             if self.ctx.settings_panel_is_capturing() {
                 match key.logical_key.as_ref() {
-                    Key::Named(NamedKey::Escape) => { self.ctx.settings_panel_cancel_capture(); return; },
+                    Key::Named(NamedKey::Escape) => {
+                        self.ctx.settings_panel_cancel_capture();
+                        return;
+                    },
                     _ => {
                         // Build capture key as owned Key<String>
                         let cap_key = match key.logical_key.as_ref() {
                             Key::Named(n) => Key::Named(n.clone()),
                             Key::Character(s) => Key::Character(s.to_string()),
-                            _ => { self.ctx.settings_panel_cancel_capture(); return; },
+                            _ => {
+                                self.ctx.settings_panel_cancel_capture();
+                                return;
+                            },
                         };
                         self.ctx.settings_panel_capture(cap_key, mods);
                         return;
@@ -1002,28 +1088,75 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 }
             }
             match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Enter) => { self.ctx.settings_panel_save(); return; },
-                Key::Named(NamedKey::Escape) => { self.ctx.close_settings_panel(); return; },
-                Key::Named(NamedKey::Tab) if mods.shift_key() => { self.ctx.settings_panel_prev_field(); return; },
-                Key::Named(NamedKey::Tab) => { self.ctx.settings_panel_next_field(); return; },
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.settings_panel_save();
+                    return;
+                },
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.close_settings_panel();
+                    return;
+                },
+                Key::Named(NamedKey::Tab) if mods.shift_key() => {
+                    self.ctx.settings_panel_prev_field();
+                    return;
+                },
+                Key::Named(NamedKey::Tab) => {
+                    self.ctx.settings_panel_next_field();
+                    return;
+                },
                 // List navigation in Keybindings
-                Key::Named(NamedKey::ArrowUp) => { self.ctx.settings_panel_move_selection(-1); return; },
-                Key::Named(NamedKey::ArrowDown) => { self.ctx.settings_panel_move_selection(1); return; },
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.settings_panel_move_selection(-1);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.settings_panel_move_selection(1);
+                    return;
+                },
                 // Begin capture mode via 'c'
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") => { self.ctx.settings_panel_begin_capture(); return; },
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") =>
+                {
+                    self.ctx.settings_panel_begin_capture();
+                    return;
+                },
                 // Category switching
-                Key::Named(NamedKey::ArrowLeft) if mods.control_key() => { self.ctx.settings_panel_switch_category(false); return; },
-                Key::Named(NamedKey::ArrowRight) if mods.control_key() => { self.ctx.settings_panel_switch_category(true); return; },
+                Key::Named(NamedKey::ArrowLeft) if mods.control_key() => {
+                    self.ctx.settings_panel_switch_category(false);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) if mods.control_key() => {
+                    self.ctx.settings_panel_switch_category(true);
+                    return;
+                },
                 // Provider cycling (AI category)
-                Key::Named(NamedKey::ArrowLeft) => { self.ctx.settings_panel_cycle_provider(false); return; },
-                Key::Named(NamedKey::ArrowRight) => { self.ctx.settings_panel_cycle_provider(true); return; },
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.ctx.settings_panel_cycle_provider(false);
+                    return;
+                },
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.ctx.settings_panel_cycle_provider(true);
+                    return;
+                },
                 // Backspace
-                Key::Named(NamedKey::Backspace) => { self.ctx.settings_panel_backspace(); return; },
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.settings_panel_backspace();
+                    return;
+                },
                 // Test connection (AI)
-                Key::Character(c) if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("t") => { self.ctx.settings_panel_test_connection(); return; },
+                Key::Character(c)
+                    if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("t") =>
+                {
+                    self.ctx.settings_panel_test_connection();
+                    return;
+                },
                 _ => {},
             }
-            for ch in text.chars() { if !ch.is_control() { self.ctx.settings_panel_input(ch); } }
+            for ch in text.chars() {
+                if !ch.is_control() {
+                    self.ctx.settings_panel_input(ch);
+                }
+            }
             return;
         }
 

@@ -307,7 +307,7 @@ impl WorkspaceManager {
         let w = si.width() - 2.0 * si.padding_x();
         let mut h = si.height() - 2.0 * si.padding_y();
         if self.config.workspace.tab_bar.show
-            && self.config.workspace.tab_bar.reserve_row
+            && !self.config.workspace.warp_overlay_only
             && self.config.workspace.tab_bar.position
                 != crate::config::workspace::TabBarPosition::Hidden
         {
@@ -394,7 +394,6 @@ mod tests {
     use super::*;
     use std::rc::Rc;
 
-    use crate::config::workspace::TabBarPosition;
     use crate::config::UiConfig;
     use crate::display::SizeInfo;
 
@@ -434,94 +433,6 @@ mod tests {
                 ratio,
             };
         }
-    }
-
-    #[test]
-    fn hit_test_excludes_reserved_top_row() {
-        let mut config = UiConfig::default();
-        config.workspace.tab_bar.show = true;
-        config.workspace.tab_bar.reserve_row = true;
-        config.workspace.tab_bar.position = TabBarPosition::Top;
-
-        // Geometry: w=1000,h=600, cell 10x20, padding 20x10
-        let si = make_size_info(1000.0, 600.0, 10.0, 20.0, 20.0, 10.0);
-        let mut wm = make_workspace(config.clone(), si);
-        let _tab = wm.create_tab("Test".into(), None);
-        set_simple_horizontal_split(&mut wm, 0.5);
-
-        // Reconstruct expected container
-        let x0 = si.padding_x();
-        let mut y0 = si.padding_y();
-        let w = si.width() - 2.0 * si.padding_x();
-        let mut h = si.height() - 2.0 * si.padding_y();
-        if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row {
-            match config.workspace.tab_bar.position {
-                TabBarPosition::Top => {
-                    y0 += si.cell_height();
-                    h = (h - si.cell_height()).max(0.0);
-                },
-                TabBarPosition::Bottom => {
-                    h = (h - si.cell_height()).max(0.0);
-                },
-                TabBarPosition::Hidden => {},
-            }
-        }
-
-        let split_x = x0 + w * 0.5;
-        let tol = 3.0;
-
-        // Y in reserved top row: should be outside container and not hit
-        let y_reserved_top = si.padding_y() + si.cell_height() * 0.5;
-        assert!(
-            wm.hit_test_split_divider(split_x, y_reserved_top, tol).is_none(),
-            "divider should not be hittable in reserved top row",
-        );
-
-        // Y inside container center: should hit
-        let y_inside = y0 + h * 0.5;
-        let hit = wm.hit_test_split_divider(split_x, y_inside, tol);
-        assert!(hit.is_some(), "divider should be hittable inside content area");
-        let hit = hit.unwrap();
-        assert_eq!(hit.axis, split_manager::SplitAxis::Horizontal);
-    }
-
-    #[test]
-    fn hit_test_excludes_reserved_bottom_row() {
-        let mut config = UiConfig::default();
-        config.workspace.tab_bar.show = true;
-        config.workspace.tab_bar.reserve_row = true;
-        config.workspace.tab_bar.position = TabBarPosition::Bottom;
-
-        let si = make_size_info(800.0, 500.0, 8.0, 16.0, 12.0, 6.0);
-        let mut wm = make_workspace(config.clone(), si);
-        let _tab = wm.create_tab("Test".into(), None);
-        set_simple_vertical_split(&mut wm, 0.5);
-
-        let x0 = si.padding_x();
-        let y0 = si.padding_y();
-        let w = si.width() - 2.0 * si.padding_x();
-        let mut h = si.height() - 2.0 * si.padding_y();
-        if config.workspace.tab_bar.show && config.workspace.tab_bar.reserve_row
-            && config.workspace.tab_bar.position == TabBarPosition::Bottom
-        {
-            h = (h - si.cell_height()).max(0.0);
-        }
-        let split_y = y0 + h * 0.5;
-        let tol = 3.0;
-
-        // Y in reserved bottom row: pick a y below container range; should not hit
-        let y_reserved_bottom = y0 + h + (si.cell_height() * 0.5);
-        let x_inside = x0 + w * 0.5;
-        assert!(
-            wm.hit_test_split_divider(x_inside, y_reserved_bottom, tol).is_none(),
-            "divider should not be hittable in reserved bottom row",
-        );
-
-        // Inside container
-        let hit = wm.hit_test_split_divider(x_inside, split_y, tol);
-        assert!(hit.is_some(), "divider should be hittable inside content area");
-        let hit = hit.unwrap();
-        assert_eq!(hit.axis, split_manager::SplitAxis::Vertical);
     }
 
     #[test]
