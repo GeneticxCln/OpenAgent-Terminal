@@ -41,23 +41,26 @@ impl PaletteState {
 
     /// Append new items, deduplicating by key; then re-run filtering
     pub fn add_items_unique(&mut self, mut new_items: Vec<PaletteItem>) {
-        if new_items.is_empty() { return; }
+        if new_items.is_empty() {
+            return;
+        }
         use std::collections::HashSet;
         let mut existing: HashSet<&str> = HashSet::new();
-        for it in &self.items { existing.insert(it.key.as_str()); }
+        for it in &self.items {
+            existing.insert(it.key.as_str());
+        }
         new_items.retain(|it| !existing.contains(it.key.as_str()));
-        if new_items.is_empty() { return; }
+        if new_items.is_empty() {
+            return;
+        }
         self.items.extend(new_items);
         self.refilter();
     }
 
     /// Return up to `max` recent file paths from MRU counts
     pub fn recent_file_paths(&self, max: usize) -> Vec<String> {
-        let mut pairs: Vec<(&String, &u32)> = self
-            .mru_counts
-            .iter()
-            .filter(|(k, _)| k.starts_with("file:"))
-            .collect();
+        let mut pairs: Vec<(&String, &u32)> =
+            self.mru_counts.iter().filter(|(k, _)| k.starts_with("file:")).collect();
         // Sort by count desc
         pairs.sort_by(|a, b| b.1.cmp(a.1));
         let mut out = Vec::new();
@@ -511,9 +514,23 @@ impl Display {
         // Backdrop, shadow, and panel background
         let rects = vec![
             // Fade backdrop with progress
-            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.22 * progress),
+            RenderRect::new(
+                0.0,
+                0.0,
+                size_info.width(),
+                size_info.height(),
+                tokens.overlay,
+                0.22 * progress,
+            ),
             // Soft shadow
-            RenderRect::new(sx + 3.0, sy + 5.0, scaled_w, scaled_h, tokens.surface, 0.12 * progress),
+            RenderRect::new(
+                sx + 3.0,
+                sy + 5.0,
+                scaled_w,
+                scaled_h,
+                tokens.surface,
+                0.12 * progress,
+            ),
             // Panel background
             RenderRect::new(sx, sy, scaled_w, scaled_h, tokens.surface_muted, 0.97),
         ];

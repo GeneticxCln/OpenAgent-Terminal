@@ -111,7 +111,8 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
                 setting: "OpenRouter".to_string(),
                 message: e,
                 suggestion: Some(
-                    "Check OPENROUTER_API_KEY and OPENROUTER_MODEL environment variables".to_string(),
+                    "Check OPENROUTER_API_KEY and OPENROUTER_MODEL environment variables"
+                        .to_string(),
                 ),
             }),
         _ => Err(AiError::Configuration {

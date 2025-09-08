@@ -62,18 +62,9 @@ Behavioral notes:
 - When dragging over the tab bar, OpenAgent Terminal uses precise, cached pixel bounds of tabs computed during rendering to select the correct drop target. If unavailable (rare), it falls back to even‑width approximations.
 - When dropping into a split, visual edge zones (left/right/top/bottom) determine the split direction and placement (before/after).
 
-## Tab Bar: Reserved Row (Heads‑up)
+## Tab Bar
 
-When `workspace.tab_bar.reserve_row = true`, the tab bar reserves a terminal row at the top or bottom (per `workspace.tab_bar.position`). The terminal cursor is not drawn in the reserved row.
-
-Example:
-
-```toml path=null start=null
-[workspace.tab_bar]
-show = true
-reserve_row = true
-position = "Top"  # or "Bottom" or "Hidden"
-```
+The Warp-style tab bar is drawn as an overlay by default and no longer reserves a terminal row. Visibility can be set to "Auto", "Always", or "Hover"; when set to Auto, fullscreen windows behave like Hover.
 
 ## Rendering (WGPU): Subpixel Text and Gamma
 
@@ -102,4 +93,29 @@ Runtime shortcuts (default):
 - Cycle orientation RGB/BGR: Ctrl+Shift+Y (Cmd+Shift+Y on macOS)
 - Perf HUD toggle: Ctrl+Shift+F (Cmd+Shift+F)
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
+
+## Rendering backend selection and fallback
+
+By default, when built with the `wgpu` feature, OpenAgent Terminal will initialize the WGPU backend first and automatically fall back to the OpenGL backend if WGPU initialization fails.
+
+You can control this behavior via config or environment variables:
+
+- Config (recommended):
+
+```toml
+# ~/.config/openagent-terminal/openagent-terminal.toml
+[debug]
+# Prefer WGPU first, then fallback to OpenGL if WGPU init fails
+prefer_wgpu = true
+```
+
+- Environment variables (override config):
+  - Force OpenGL backend only:
+    - OPENAGENT_FORCE_GL=1
+  - Disable fallback (fail instead of falling back to OpenGL if WGPU init fails):
+    - OPENAGENT_DISABLE_GL_FALLBACK=1
+
+Notes:
+- Building without the `wgpu` feature produces an OpenGL-only binary.
+- RendererPreference in config controls only the OpenGL shader variant (Glsl3/Gles2/Gles2Pure) when the OpenGL backend is active.
 

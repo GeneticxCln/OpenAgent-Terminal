@@ -9,10 +9,12 @@ homepage = "https://github.com/GeneticxCln/OpenAgent-Terminal"
 repository.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+autoexamples = false
 
 [[bin]]
 name = "openagent-terminal"
 path = "src/main.rs"
+
 
 [dependencies.openagent-terminal-core]
 path = "../openagent-terminal-core"
@@ -85,10 +87,12 @@ clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
 crossfont = { workspace = true }
 tracing = { workspace = true }
-# OpenGL stack (existing)
-glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"] }
 # Optional WGPU stack (feature-gated)
 wgpu = { version = "26.0", optional = true }
+# OpenGL stack (moved behind optional feature 'gl-backend')
+glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"], optional = true }
+# OpenGL function loader (optional, only with 'gl-backend')
+gl = { version = "0.14", optional = true }
 pollster = { version = "0.3", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 # Text shaping dependencies
@@ -129,14 +133,15 @@ winit = { workspace = true, features = ["serde"] }
 
 
 [build-dependencies]
-gl_generator = "0.14.0"
 chrono = "0.4"
+# OpenGL bindings generator (optional, enabled only with 'gl-backend' feature)
+gl_generator = { version = "0.14.0", optional = true }
+
 
 [dev-dependencies]
 clap_complete = "4.2.3"
 image = "0.24"
 chrono = { version = "0.4" }
-gl = "0.14"
 sha2 = "0.10"
 criterion = { version = "0.5", features = ["html_reports"] }
 # Ensure examples/tests can directly depend on wgpu APIs regardless of optional feature plumbing
@@ -179,9 +184,18 @@ windows-sys = { version = "0.59", features = [
 embed-resource = "3.0.2"
 
 [features]
-# OpenGL is the practical default renderer. WGPU is experimental and gated behind the 'wgpu' feature.
-# Default feature set keeps core UX stable across platforms.
+# WGPU-only by default.
 default = ["wayland", "x11", "blocks", "workflow", "sync", "wgpu"]
+# Optional OpenGL backend (disabled by default)
+gl-backend = [
+    "dep:glutin",
+    "dep:gl_generator",
+    "dep:gl",
+    # Enable platform integrations for glutin when GL backend is enabled
+    "glutin/x11",
+    "glutin/glx",
+    "glutin/wayland",
+]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Optional background component initialization in a separate task
@@ -202,13 +216,10 @@ ide = ["editor", "lsp", "dap", "indexer"]
 x11 = [
     "copypasta/x11",
     "winit/x11",
-    "glutin/x11",
-    "glutin/glx",
     "png",
 ]
 wayland = [
     "copypasta/wayland",
-    "glutin/wayland",
     "winit/wayland",
     "winit/wayland-dlopen",
     "winit/wayland-csd-adwaita-crossfont",
@@ -279,15 +290,17 @@ required-features = ["preview_ui"]
 [[example]]
 name = "perf_cold_start"
 path = "examples/perf_cold_start.rs"
-required-features = ["preview_ui"]
+required-features = ["gl-backend"]
 
 [[example]]
 name = "perf_latency"
 path = "examples/perf_latency.rs"
+required-features = ["gl-backend"]
 
 [[example]]
 name = "perf_wgpu"
 path = "examples/perf_wgpu.rs"
+required-features = ["wgpu"]
 
 [[example]]
 name = "render_smoke"
@@ -296,6 +309,7 @@ path = "examples/render_smoke.rs"
 [[example]]
 name = "wgpu_snapshot"
 path = "examples/wgpu_snapshot.rs"
+required-features = ["wgpu"]
 
 [[bench]]
 name = "terminal_startup"

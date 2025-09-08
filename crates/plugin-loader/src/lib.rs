@@ -1366,18 +1366,21 @@ impl PluginManager {
         for name in names {
             match self.send_event_to_plugin(&name, event).await {
                 Ok(resp) => results.push((name, resp)),
-                Err(e) => results.push((name, PluginEventResponse {
-                    success: false,
-                    result: None,
-                    error: Some(e.to_string()),
-                })),
+                Err(e) => results.push((
+                    name,
+                    PluginEventResponse {
+                        success: false,
+                        result: None,
+                        error: Some(e.to_string()),
+                    },
+                )),
             }
         }
         results
     }
 
     /// Verify plugin signature if .sig file is present next to the .wasm
-#[allow(dead_code)]
+    #[allow(dead_code)]
     fn verify_signature_if_present(&self, wasm_path: &Path) -> anyhow::Result<()> {
         match self.verify_signature_and_get_key(wasm_path)? {
             Some(_) => Ok(()),

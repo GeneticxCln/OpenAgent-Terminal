@@ -218,7 +218,8 @@ impl Default for ThemeUi {
             composer_pill_alpha_unfocused: 0.14,
             composer_pill_alpha_focused: 0.20,
             composer_focus_ring_alpha: 0.10,
-            composer_band_alpha: 0.98,
+            // Lower by default to avoid bright band on startup
+            composer_band_alpha: 0.18,
             composer_margin_px: 6.0,
             composer_pill_vertical_inset_px: 2.0,
             composer_chip_gap_cols: 2,
@@ -233,8 +234,8 @@ impl Default for ThemeUi {
             tab_bar_animation_duration_ms: 180,
             tab_bar_drop_shadow: None,
             tab_bar_settings_icon_px: None,
-            // Quick Actions bar
-            quick_actions_band_alpha: 0.98,
+            // Quick Actions bar (lower alpha to avoid bright stripe by default)
+            quick_actions_band_alpha: 0.18,
             quick_actions_chip_capsules: false,
             quick_actions_chip_pad_px: None,
             quick_actions_chip_gap_cols: 2,
@@ -403,16 +404,24 @@ impl ThemeConfig {
             resolved.ui.composer_open_mode = mode;
         }
         if let Some(alpha) = self.composer_chip_alpha_unfocused {
-            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_chip_alpha_unfocused = alpha; }
+            if (0.0..=1.0).contains(&alpha) {
+                resolved.ui.composer_chip_alpha_unfocused = alpha;
+            }
         }
         if let Some(alpha) = self.composer_chip_alpha_focused {
-            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_chip_alpha_focused = alpha; }
+            if (0.0..=1.0).contains(&alpha) {
+                resolved.ui.composer_chip_alpha_focused = alpha;
+            }
         }
         if let Some(alpha) = self.composer_pill_alpha_unfocused {
-            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_pill_alpha_unfocused = alpha; }
+            if (0.0..=1.0).contains(&alpha) {
+                resolved.ui.composer_pill_alpha_unfocused = alpha;
+            }
         }
         if let Some(alpha) = self.composer_pill_alpha_focused {
-            if (0.0..=1.0).contains(&alpha) { resolved.ui.composer_pill_alpha_focused = alpha; }
+            if (0.0..=1.0).contains(&alpha) {
+                resolved.ui.composer_pill_alpha_focused = alpha;
+            }
         }
         resolved
     }

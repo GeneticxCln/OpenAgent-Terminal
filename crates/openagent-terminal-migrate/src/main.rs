@@ -137,10 +137,7 @@ fn main() -> Result<()> {
 }
 
 fn show_migration_preview(config: &MigrationConfig) -> Result<()> {
-    println!(
-        "{}",
-        format!("📋 Preview migration from {}", config.terminal_type).cyan()
-    );
+    println!("{}", format!("📋 Preview migration from {}", config.terminal_type).cyan());
 
     let parsed = parsers::parse_config(config)?;
     let generated = generators::generate_openagent_config(&parsed)?;
@@ -158,10 +155,7 @@ fn perform_migration(
     force: bool,
     output_dir: Option<&PathBuf>,
 ) -> Result<()> {
-    println!(
-        "{}",
-        format!("🔄 Migrating from {} configuration", config.terminal_type).cyan()
-    );
+    println!("{}", format!("🔄 Migrating from {} configuration", config.terminal_type).cyan());
 
     let parsed = parsers::parse_config(config)?;
     let generated = generators::generate_openagent_config(&parsed)?;

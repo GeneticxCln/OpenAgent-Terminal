@@ -524,6 +524,7 @@ impl Display {
         // Draw the text using the backend
         let size_info_copy = self.size_info;
         match &mut self.backend {
+            #[cfg(feature = "gl-backend")]
             Backend::Gl { renderer, .. } => {
                 renderer.draw_string(
                     point,

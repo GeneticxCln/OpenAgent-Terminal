@@ -155,7 +155,9 @@ pub struct ActionsMenuState {
 }
 
 impl Default for ActionsMenuState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ActionsMenuState {
@@ -316,7 +318,9 @@ pub enum HelpSection {
 }
 
 impl Default for HelpOverlayState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HelpOverlayState {

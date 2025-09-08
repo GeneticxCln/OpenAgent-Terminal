@@ -1,7 +1,21 @@
 use std::iter::Peekable;
 use std::{cmp, mem};
 
-use glutin::surface::Rect;
+/// Minimal rectangle type for damage tracking (independent of GL/WGPU backends).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Rect {
+    #[inline]
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Self { x, y, width, height }
+    }
+}
 
 use openagent_terminal_core::index::Point;
 use openagent_terminal_core::selection::SelectionRange;
@@ -362,12 +376,10 @@ mod tests {
         let width = 10;
         let size_info = SizeInfo::new(viewport_height, viewport_height, 5., 5., 0., 0., true);
         frame_damage.add_viewport_rect(&size_info, x, y, width, height);
-        assert_eq!(frame_damage.rects[0], Rect {
-            x,
-            y: viewport_height as i32 - y - height,
-            width,
-            height
-        });
+        assert_eq!(
+            frame_damage.rects[0],
+            Rect { x, y: viewport_height as i32 - y - height, width, height }
+        );
         assert_eq!(frame_damage.rects[0].y, viewport_y_to_damage_y(&size_info, y, height));
         assert_eq!(damage_y_to_viewport_y(&size_info, &frame_damage.rects[0]), y);
     }

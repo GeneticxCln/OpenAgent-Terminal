@@ -173,7 +173,11 @@ impl LspClient {
         let (tx_resp, rx_resp) = mpsc::channel();
         self.pending.lock().insert(id, tx_resp);
         self.tx
-            .send(ClientMessage::Request { id, method: method.to_string(), params: serde_json::to_value(params)? })
+            .send(ClientMessage::Request {
+                id,
+                method: method.to_string(),
+                params: serde_json::to_value(params)?,
+            })
             .map_err(|_| anyhow!("tx closed"))?;
 
         let val = rx_resp.recv().map_err(|_| anyhow!("rx closed"))??;

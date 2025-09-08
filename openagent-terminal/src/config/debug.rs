@@ -28,13 +28,16 @@ pub enum SubpixelPreference {
 
 /// Orientation for LCD subpixel rendering.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum SubpixelOrientation {
     RGB,
     BGR,
 }
 
 impl Default for SubpixelOrientation {
-    fn default() -> Self { Self::RGB }
+    fn default() -> Self {
+        Self::RGB
+    }
 }
 
 impl Default for SubpixelPreference {
@@ -56,7 +59,6 @@ impl Default for SrgbPreference {
         Self::Auto
     }
 }
-
 
 /// Render timer color style.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -95,9 +97,8 @@ pub struct Debug {
     /// The renderer OpenAgent Terminal should be using.
     pub renderer: Option<RendererPreference>,
 
-    /// Prefer the WGPU backend. WGPU is the default and the application will not
-    /// automatically fall back to the OpenGL renderer. To force OpenGL explicitly,
-    /// set OPENAGENT_FORCE_GL=1 in the environment or build without the `wgpu` feature.
+    /// Always use WGPU backend. Set to false to force an error if WGPU cannot initialize.
+    /// This is the default and recommended configuration for simplified rendering.
     pub prefer_wgpu: bool,
 
     /// Preview: Enable plugin system (WASI sandbox) integration.
@@ -188,16 +189,15 @@ impl Default for Debug {
 }
 
 /// The renderer configuration options.
-/// OpenGL variants are stable and recommended for production use.
-/// WGPU backend (if enabled via feature flag) is experimental.
+/// WGPU is the only supported backend for simplified architecture.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RendererPreference {
-    /// OpenGL 3.3 renderer (RECOMMENDED - stable, well-tested).
+    /// Deprecated: OpenGL 3.3 renderer (no longer supported).
     Glsl3,
 
-    /// GLES 2 renderer, with optional extensions like dual source blending (stable).
+    /// Deprecated: GLES 2 renderer (no longer supported).
     Gles2,
 
-    /// Pure GLES 2 renderer (stable, maximum compatibility).
+    /// Deprecated: Pure GLES 2 renderer (no longer supported).
     Gles2Pure,
 }

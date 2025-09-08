@@ -543,7 +543,7 @@ impl SyncProvider for SecureSyncProvider {
         let mut status = match self.read_status() {
             Ok(s) => s,
             Err(e) => {
-warn!("Failed to read secure sync status (pull); defaulting: {:?}", e);
+                warn!("Failed to read secure sync status (pull); defaulting: {:?}", e);
                 SyncStatus::default()
             },
         };

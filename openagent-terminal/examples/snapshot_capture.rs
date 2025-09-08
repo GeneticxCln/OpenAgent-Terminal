@@ -115,9 +115,8 @@ impl ApplicationHandler<()> for SnapshotApp {
 
         // Create window
         #[cfg(windows)]
-        let window = {
-            Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window")
-        };
+        let window =
+            { Window::new(event_loop, &config, &identity, &mut win_opts).expect("create window") };
 
         #[cfg(not(windows))]
         let window = {
@@ -377,7 +376,8 @@ fn draw_tab_bar_preview(display: &mut Display, config: &UiConfig) {
     let _ = tm.mark_tab_modified(t3, true);
 
     // Draw top tab bar
-    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+    let style = openagent_terminal::display::warp_ui::WarpTabStyle::from_theme(config);
+    let _ = display.draw_warp_tab_bar(config, &tm, TabBarPosition::Top, &style);
 }
 
 fn draw_tab_bar_hover(display: &mut Display, config: &UiConfig) {
@@ -391,7 +391,8 @@ fn draw_tab_bar_hover(display: &mut Display, config: &UiConfig) {
     // Simulate hover over close button of active tab
     display.tab_hover = Some(TabHoverTarget::Close(t2));
     display.tab_hover_anim_start = Some(std::time::Instant::now());
-    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+    let style = openagent_terminal::display::warp_ui::WarpTabStyle::from_theme(config);
+    let _ = display.draw_warp_tab_bar(config, &tm, TabBarPosition::Top, &style);
 }
 
 fn draw_tab_bar_drag(display: &mut Display, config: &UiConfig) {
@@ -416,7 +417,8 @@ fn draw_tab_bar_drag(display: &mut Display, config: &UiConfig) {
         drag_threshold: 5.0,
     };
     display.tab_drag_active = Some(drag);
-    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+    let style = openagent_terminal::display::warp_ui::WarpTabStyle::from_theme(config);
+    let _ = display.draw_warp_tab_bar(config, &tm, TabBarPosition::Top, &style);
 }
 
 fn draw_tab_bar_overflow(display: &mut Display, config: &UiConfig) {
@@ -425,7 +427,8 @@ fn draw_tab_bar_overflow(display: &mut Display, config: &UiConfig) {
     for i in 0..12 {
         let _ = tm.create_tab(format!("tab-{}", i + 1), None);
     }
-    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+    let style = openagent_terminal::display::warp_ui::WarpTabStyle::from_theme(config);
+    let _ = display.draw_warp_tab_bar(config, &tm, TabBarPosition::Top, &style);
 }
 
 fn draw_tab_bar_bottom(display: &mut Display, config: &UiConfig) {
@@ -434,7 +437,8 @@ fn draw_tab_bar_bottom(display: &mut Display, config: &UiConfig) {
     let _t1 = tm.create_tab("one".to_string(), None);
     let t2 = tm.create_tab("two".to_string(), None);
     let _ = tm.switch_to_tab(t2);
-    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Bottom);
+    let style = openagent_terminal::display::warp_ui::WarpTabStyle::from_theme(config);
+    let _ = display.draw_warp_tab_bar(config, &tm, TabBarPosition::Bottom, &style);
 }
 
 fn draw_tab_bar_reduce_motion(display: &mut Display, config: &UiConfig) {
@@ -444,7 +448,8 @@ fn draw_tab_bar_reduce_motion(display: &mut Display, config: &UiConfig) {
     let t1 = tm.create_tab("stable".to_string(), None);
     let _t2 = tm.create_tab("no-anim".to_string(), None);
     let _ = tm.switch_to_tab(t1);
-    let _ = display.draw_tab_bar(config, &tm, TabBarPosition::Top);
+    let style = openagent_terminal::display::warp_ui::WarpTabStyle::from_theme(config);
+    let _ = display.draw_warp_tab_bar(config, &tm, TabBarPosition::Top, &style);
 }
 
 #[cfg(feature = "ai")]

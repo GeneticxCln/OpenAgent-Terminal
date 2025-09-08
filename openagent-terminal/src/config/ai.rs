@@ -137,7 +137,6 @@ pub struct ProviderConfig {
     pub extra: HashMap<String, String>,
 }
 
-
 /// Ollama-specific configuration.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(default)]

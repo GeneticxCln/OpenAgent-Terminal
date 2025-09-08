@@ -12,7 +12,6 @@ use image::{ImageBuffer, Rgba};
 
 #[cfg(feature = "wgpu")]
 async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()> {
-
     // Create instance and request adapter (headless)
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
@@ -27,15 +26,13 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
         .await?;
 
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("OpenAgent WGPU Device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: Default::default(),
-                trace: Default::default(),
-            }
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("OpenAgent WGPU Device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: Default::default(),
+            trace: Default::default(),
+        })
         .await?;
 
     // Texture we'll render into

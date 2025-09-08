@@ -9,7 +9,9 @@ pub struct EnvironmentManager {
 }
 
 impl Default for EnvironmentManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EnvironmentManager {

@@ -5,7 +5,9 @@ use log::{debug, error, info};
 use std::collections::VecDeque;
 
 use crate::security_lens::{SecurityLens, SecurityPolicy};
-use openagent_terminal_ai::providers::{AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider};
+use openagent_terminal_ai::providers::{
+    AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
+};
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
 
 /// Maximum history entries to keep
@@ -69,9 +71,7 @@ impl AiRuntime {
                 Ok(mut props) => {
                     // Take the first command from the first proposal, if any
                     if let Some(prop) = props.first_mut() {
-prop.proposed_commands
-                            .first()
-                            .map(|cmd| compute_suffix(cmd, &prefix))
+                        prop.proposed_commands.first().map(|cmd| compute_suffix(cmd, &prefix))
                     } else {
                         None
                     }
@@ -173,7 +173,7 @@ impl AiRuntime {
             },
             Err(e) => {
                 error!("Failed to create provider '{}': {}", provider_name, e);
-let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "AI provider initialization failed: {}. Please check your AI settings \
                      (provider, endpoint, api key, model). Consider migrating to secure provider \
@@ -199,7 +199,7 @@ let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
             Ok(creds) => creds,
             Err(e) => {
                 error!("Failed to load secure credentials for provider '{}': {}", provider_name, e);
-let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure credential loading failed for '{}': {}. Check your environment \
                      variables and configuration.",
@@ -215,8 +215,7 @@ let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
                     Err(e) => {
-                        let mut rt =
-Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -228,8 +227,7 @@ Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt =
-Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -241,7 +239,7 @@ Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
                     Err(e) => {
-let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -253,7 +251,7 @@ let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -265,8 +263,7 @@ let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
                     Err(e) => {
-                        let mut rt =
-Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -278,8 +275,7 @@ Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt =
-Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
@@ -295,17 +291,14 @@ Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 let model = match credentials.require_model(provider_name) {
                     Ok(model) => model.to_string(),
                     Err(e) => {
-                        let mut rt =
-Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
                     },
                 };
                 OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
             },
-            "null" => {
-Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>)
-            },
+            "null" => Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>),
             _ => Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -316,7 +309,7 @@ Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>)
             },
             Err(e) => {
                 error!("Failed to create secure provider '{}': {}", provider_name, e);
-let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure AI provider initialization failed: {}. Please verify your \
                      configuration and credentials.",
@@ -582,11 +575,11 @@ let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
         // This is a standalone method that doesn't have access to context provider
         let working_directory =
             std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string());
-let shell_kind = std::env::var("SHELL").ok().map(|s|
+        let shell_kind = std::env::var("SHELL").ok().map(|s| {
             openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s)
                 .to_str()
                 .to_string()
-        );
+        });
         self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
     }
 

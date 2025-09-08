@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #[cfg(feature = "ai")]
 use super::ai::ProviderConfig;
 #[cfg(not(feature = "ai"))]
@@ -13,9 +14,9 @@ pub struct ProviderConfig {
     pub extra: HashMap<String, String>,
 }
 use std::collections::HashMap;
-use tracing::{debug, warn};
 use std::fs;
 use std::path::PathBuf;
+use tracing::{debug, warn};
 
 /// Secure provider credentials container that never mutates global environment
 #[derive(Debug, Clone)]
@@ -46,7 +47,10 @@ impl ProviderCredentials {
                     // Fallback: check secure secrets store
                     match read_secret_from_store(env_name) {
                         Some(key) => {
-                            debug!("Found API key for provider '{}' in secrets store ({}).", provider_name, env_name);
+                            debug!(
+                                "Found API key for provider '{}' in secrets store ({}).",
+                                provider_name, env_name
+                            );
                             Some(key)
                         },
                         None => {
@@ -74,7 +78,10 @@ impl ProviderCredentials {
                 },
                 Err(_) => {
                     if let Some(val) = read_secret_from_store(env_name) {
-                        debug!("Using endpoint for provider '{}' from secrets store ({}).", provider_name, env_name);
+                        debug!(
+                            "Using endpoint for provider '{}' from secrets store ({}).",
+                            provider_name, env_name
+                        );
                         Some(val)
                     } else if let Some(default) = &config.default_endpoint {
                         debug!(
@@ -104,7 +111,10 @@ impl ProviderCredentials {
                 },
                 Err(_) => {
                     if let Some(val) = read_secret_from_store(env_name) {
-                        debug!("Using model for provider '{}' from secrets store ({}).", provider_name, env_name);
+                        debug!(
+                            "Using model for provider '{}' from secrets store ({}).",
+                            provider_name, env_name
+                        );
                         Some(val)
                     } else if let Some(default) = &config.default_model {
                         debug!("Using default model for provider '{}': {}", provider_name, default);
@@ -157,44 +167,56 @@ pub fn get_default_provider_configs() -> HashMap<String, ProviderConfig> {
     let mut configs = HashMap::new();
 
     // OpenAI configuration
-    configs.insert("openai".to_string(), ProviderConfig {
-        api_key_env: Some("OPENAGENT_OPENAI_API_KEY".to_string()),
-        endpoint_env: Some("OPENAGENT_OPENAI_ENDPOINT".to_string()),
-        model_env: Some("OPENAGENT_OPENAI_MODEL".to_string()),
-        default_endpoint: Some("https://api.openai.com/v1".to_string()),
-        default_model: Some("gpt-3.5-turbo".to_string()),
-        extra: HashMap::new(),
-    });
+    configs.insert(
+        "openai".to_string(),
+        ProviderConfig {
+            api_key_env: Some("OPENAGENT_OPENAI_API_KEY".to_string()),
+            endpoint_env: Some("OPENAGENT_OPENAI_ENDPOINT".to_string()),
+            model_env: Some("OPENAGENT_OPENAI_MODEL".to_string()),
+            default_endpoint: Some("https://api.openai.com/v1".to_string()),
+            default_model: Some("gpt-3.5-turbo".to_string()),
+            extra: HashMap::new(),
+        },
+    );
 
     // Anthropic configuration
-    configs.insert("anthropic".to_string(), ProviderConfig {
-        api_key_env: Some("OPENAGENT_ANTHROPIC_API_KEY".to_string()),
-        endpoint_env: Some("OPENAGENT_ANTHROPIC_ENDPOINT".to_string()),
-        model_env: Some("OPENAGENT_ANTHROPIC_MODEL".to_string()),
-        default_endpoint: Some("https://api.anthropic.com/v1".to_string()),
-        default_model: Some("claude-3-haiku-20240307".to_string()),
-        extra: HashMap::new(),
-    });
+    configs.insert(
+        "anthropic".to_string(),
+        ProviderConfig {
+            api_key_env: Some("OPENAGENT_ANTHROPIC_API_KEY".to_string()),
+            endpoint_env: Some("OPENAGENT_ANTHROPIC_ENDPOINT".to_string()),
+            model_env: Some("OPENAGENT_ANTHROPIC_MODEL".to_string()),
+            default_endpoint: Some("https://api.anthropic.com/v1".to_string()),
+            default_model: Some("claude-3-haiku-20240307".to_string()),
+            extra: HashMap::new(),
+        },
+    );
 
     // Ollama configuration
-    configs.insert("ollama".to_string(), ProviderConfig {
-        api_key_env: None, // Ollama typically doesn't require API keys
-        endpoint_env: Some("OPENAGENT_OLLAMA_ENDPOINT".to_string()),
-        model_env: Some("OPENAGENT_OLLAMA_MODEL".to_string()),
-        default_endpoint: Some("http://localhost:11434".to_string()),
-        default_model: Some("codellama".to_string()),
-        extra: HashMap::new(),
-    });
+    configs.insert(
+        "ollama".to_string(),
+        ProviderConfig {
+            api_key_env: None, // Ollama typically doesn't require API keys
+            endpoint_env: Some("OPENAGENT_OLLAMA_ENDPOINT".to_string()),
+            model_env: Some("OPENAGENT_OLLAMA_MODEL".to_string()),
+            default_endpoint: Some("http://localhost:11434".to_string()),
+            default_model: Some("codellama".to_string()),
+            extra: HashMap::new(),
+        },
+    );
 
     // OpenRouter configuration
-    configs.insert("openrouter".to_string(), ProviderConfig {
-        api_key_env: Some("OPENAGENT_OPENROUTER_API_KEY".to_string()),
-        endpoint_env: Some("OPENAGENT_OPENROUTER_ENDPOINT".to_string()),
-        model_env: Some("OPENAGENT_OPENROUTER_MODEL".to_string()),
-        default_endpoint: Some("https://openrouter.ai/api/v1".to_string()),
-        default_model: None, // Force explicit model configuration by default
-        extra: HashMap::new(),
-    });
+    configs.insert(
+        "openrouter".to_string(),
+        ProviderConfig {
+            api_key_env: Some("OPENAGENT_OPENROUTER_API_KEY".to_string()),
+            endpoint_env: Some("OPENAGENT_OPENROUTER_ENDPOINT".to_string()),
+            model_env: Some("OPENAGENT_OPENROUTER_MODEL".to_string()),
+            default_endpoint: Some("https://openrouter.ai/api/v1".to_string()),
+            default_model: None, // Force explicit model configuration by default
+            extra: HashMap::new(),
+        },
+    );
 
     configs
 }

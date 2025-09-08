@@ -58,8 +58,8 @@ pub struct AiPanelGeometry {
 #[cfg(feature = "ai")]
 impl Display {
     /// Draw the AI panel if it's active (legacy helper using caller-owned rect list)
-#[allow(dead_code)]
-pub fn draw_ai_panel(
+    #[allow(dead_code)]
+    pub fn draw_ai_panel(
         &mut self,
         config: &UiConfig,
         ai_state: &crate::ai_runtime::AiUiState,
@@ -503,8 +503,8 @@ pub fn draw_ai_panel(
 
     /// Draw the AI overlay immediately (background rects then text), independent of the main draw
     /// rect pipeline.
-#[allow(dead_code)]
-pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
+    #[allow(dead_code)]
+    pub fn draw_ai_overlay(&mut self, config: &UiConfig, ai_state: &crate::ai_runtime::AiUiState) {
         // Allow drawing during closing animation even if not active.
         let progress = if let Some(start) = self.ai_panel_anim_start {
             let elapsed = start.elapsed().as_millis() as u32;
