@@ -12,7 +12,8 @@ use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
 use openagent_terminal_core::index::Point;
 
 use crate::config::debug::{
-    AtlasEvictionPolicy, RendererPreference, SrgbPreference, SubpixelPreference, SubpixelOrientation,
+    AtlasEvictionPolicy, RendererPreference, SrgbPreference, SubpixelOrientation,
+    SubpixelPreference,
 };
 use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
@@ -500,15 +501,13 @@ impl WgpuRenderer {
             .map_err(|e| Error::Init(format!("adapter: {e}")))?;
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("wgpu-device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                    trace: Default::default(),
-                }
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("wgpu-device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: Default::default(),
+            })
             .await
             .map_err(|e| Error::Init(format!("device: {e}")))?;
 
@@ -724,7 +723,7 @@ fragment: Some(wgpu::FragmentState {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -882,7 +881,13 @@ targets: &[Some(wgpu::ColorTargetState {
         self.queue.write_buffer(
             &self.proj_buffer,
             0,
-            bytemuck::bytes_of(&[proj.offset_x, proj.offset_y, proj.scale_x, proj.scale_y, self.subpixel_gamma]),
+            bytemuck::bytes_of(&[
+                proj.offset_x,
+                proj.offset_y,
+                proj.scale_x,
+                proj.scale_y,
+                self.subpixel_gamma,
+            ]),
         );
     }
 
@@ -933,7 +938,6 @@ targets: &[Some(wgpu::ColorTargetState {
             label: Some("frame-view"),
             ..Default::default()
         });
-
 
         // Build vertices for all rects in NDC coordinates, including staged backgrounds.
         let half_w = size_info.width() / 2.0;
@@ -1070,7 +1074,6 @@ targets: &[Some(wgpu::ColorTargetState {
             }
         }
 
-
         // After the pass, it's safe to clear pending UI vertices.
         if !self.pending_ui.is_empty() {
             self.pending_ui.clear();
@@ -1106,10 +1109,8 @@ targets: &[Some(wgpu::ColorTargetState {
                 pass.draw(0..self.pending_text.len() as u32, 0..1);
             }
 
-
             self.pending_text.clear();
         }
-
 
         self.queue.submit([encoder.finish()]);
         frame.present();
@@ -1123,7 +1124,6 @@ targets: &[Some(wgpu::ColorTargetState {
         }
     }
 
-
     // Stub sprite APIs for parity with GL backend; no-op until implemented in WGPU UI pipeline
     pub fn stage_ui_sprite(&mut self, _sprite: UiSprite) {}
 
@@ -1136,7 +1136,13 @@ targets: &[Some(wgpu::ColorTargetState {
         self.queue.write_buffer(
             &self.proj_buffer,
             0,
-            bytemuck::bytes_of(&[proj.offset_x, proj.offset_y, proj.scale_x, proj.scale_y, self.subpixel_gamma]),
+            bytemuck::bytes_of(&[
+                proj.offset_x,
+                proj.offset_y,
+                proj.scale_x,
+                proj.scale_y,
+                self.subpixel_gamma,
+            ]),
         );
     }
 
@@ -1149,7 +1155,9 @@ targets: &[Some(wgpu::ColorTargetState {
         self.perf_hud_enabled = !self.perf_hud_enabled;
     }
 
-    pub fn perf_hud_enabled(&self) -> bool { self.perf_hud_enabled }
+    pub fn perf_hud_enabled(&self) -> bool {
+        self.perf_hud_enabled
+    }
 
     pub fn toggle_subpixel_enabled(&mut self) -> bool {
         self.subpixel_enabled = !self.subpixel_enabled;
@@ -1162,7 +1170,11 @@ targets: &[Some(wgpu::ColorTargetState {
 
     pub fn cycle_subpixel_orientation(&mut self) -> SubpixelOrientation {
         self.subpixel_bgr = !self.subpixel_bgr;
-        if self.subpixel_bgr { SubpixelOrientation::BGR } else { SubpixelOrientation::RGB }
+        if self.subpixel_bgr {
+            SubpixelOrientation::BGR
+        } else {
+            SubpixelOrientation::RGB
+        }
     }
 
     pub fn set_subpixel_orientation(&mut self, orientation: SubpixelOrientation) {
@@ -1271,8 +1283,9 @@ targets: &[Some(wgpu::ColorTargetState {
                 for ch in zw {
                     key.character = ch;
                     let gzw = glyph_cache.get(key, &mut loader, false);
-                    staged
-                        .extend_from_slice(&build_text_vertices(size_info, &cell, &gzw, subpixel, bgr));
+                    staged.extend_from_slice(&build_text_vertices(
+                        size_info, &cell, &gzw, subpixel, bgr,
+                    ));
                 }
             }
         }

@@ -99,7 +99,7 @@ impl PaneDragState {
             current_pos: start_pos,
             drag_preview_alpha: 0.0,
             drag_preview_scale: 1.0,
-            ghost_pane_alpha: 1.0,
+            ghost_pane_alpha: 0.0,
             current_drop_zone: None,
             drop_zone_highlight_alpha: 0.0,
             drag_threshold: 8.0, // pixels

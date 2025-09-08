@@ -68,14 +68,16 @@ impl Default for Clipboard {
             let selection = match X11ClipboardContext::<X11SelectionClipboard>::new() {
                 Ok(sel) => Some(Box::new(sel) as Box<dyn ClipboardProvider>),
                 Err(err) => {
-                    warn!("X11 selection provider unavailable: {err}; selection clipboard disabled");
+                    warn!(
+                        "X11 selection provider unavailable: {err}; selection clipboard disabled"
+                    );
                     None
                 },
             };
             Self { clipboard, selection }
         }
 
-#[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
+        #[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
         Self::new_nop()
     }
 }

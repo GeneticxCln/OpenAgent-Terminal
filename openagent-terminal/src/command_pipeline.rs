@@ -16,32 +16,31 @@ use chrono::{DateTime, Utc};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
-use crate::blocks_v2::{
-    Block, BlockEvent, BlockId, BlockManager, CreateBlockParams, ExecutionResult, ExecutionStatus,
-    ShellType,
-};
+use crate::blocks_v2::{BlockId, BlockManager, CreateBlockParams, ShellType};
 use crate::workspace::{TabId, TabManager};
 use openagent_terminal_core::event::CommandBlockEvent;
+
+type CommandPipelineEventCallback = Box<dyn Fn(&CommandPipelineEvent) + Send + Sync>;
 
 /// Native command execution pipeline
 pub struct CommandPipeline {
     /// Block manager for immediate block operations
     block_manager: Option<Arc<tokio::sync::Mutex<BlockManager>>>,
-    
+
     /// Tab manager for context tracking
     tab_manager: Option<Arc<tokio::sync::Mutex<TabManager>>>,
-    
+
     /// Active command executions
     active_commands: HashMap<BlockId, CommandExecution>,
-    
+
     /// Event sender for terminal integration
     event_sender: Option<mpsc::UnboundedSender<CommandBlockEvent>>,
-    
+
     /// Native event callbacks
-    event_callbacks: Vec<Box<dyn Fn(&CommandPipelineEvent) + Send + Sync>>,
-    
+    event_callbacks: Vec<CommandPipelineEventCallback>,
+
     /// Real-time output streaming
     output_streams: HashMap<BlockId, mpsc::UnboundedSender<OutputChunk>>,
 }
@@ -130,9 +129,8 @@ impl CommandPipeline {
         tab_id: Option<TabId>,
         shell: Option<ShellType>,
     ) -> Result<BlockId> {
-        let working_dir = working_dir.unwrap_or_else(|| 
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
-        );
+        let working_dir = working_dir
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
         let shell = shell.unwrap_or(ShellType::Bash);
 
         // Create block immediately - no lazy loading
@@ -147,7 +145,7 @@ impl CommandPipeline {
                 parent_id: None,
                 metadata: None,
             };
-            
+
             let block = manager.create_block(params).await?;
             block.id
         } else {
@@ -159,9 +157,7 @@ impl CommandPipeline {
 
         // Send terminal event immediately
         if let Some(ref sender) = self.event_sender {
-            let _ = sender.send(CommandBlockEvent::CommandStart { 
-                cmd: Some(command.clone()) 
-            });
+            let _ = sender.send(CommandBlockEvent::CommandStart { cmd: Some(command.clone()) });
         }
 
         // Start command execution immediately
@@ -234,8 +230,8 @@ impl CommandPipeline {
 
         // Clone references for async tasks
         let block_manager = self.block_manager.clone();
-        let event_sender = self.event_sender.clone();
-        let pipeline_callbacks = self.event_callbacks.len(); // We can't clone the callbacks easily
+        let _event_sender = self.event_sender.clone();
+        let _pipeline_callbacks = self.event_callbacks.len(); // We can't clone the callbacks easily
 
         // Spawn stdout reader
         let stdout_output_buffer = output_buffer.clone();
@@ -243,18 +239,18 @@ impl CommandPipeline {
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
             let mut line = String::new();
-            
+
             while let Ok(bytes_read) = reader.read_line(&mut line).await {
                 if bytes_read == 0 {
                     break; // EOF
                 }
-                
+
                 // Update buffer immediately
                 {
                     let mut buffer = stdout_output_buffer.lock().await;
                     buffer.push_str(&line);
                 }
-                
+
                 // Send output chunk immediately
                 let chunk = OutputChunk {
                     block_id,
@@ -262,7 +258,7 @@ impl CommandPipeline {
                     is_stderr: false,
                     timestamp: Utc::now(),
                 };
-                
+
                 let _ = stdout_output_tx.send(chunk);
                 line.clear();
             }
@@ -274,18 +270,18 @@ impl CommandPipeline {
         tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
             let mut line = String::new();
-            
+
             while let Ok(bytes_read) = reader.read_line(&mut line).await {
                 if bytes_read == 0 {
                     break; // EOF
                 }
-                
+
                 // Update buffer immediately
                 {
                     let mut buffer = stderr_error_buffer.lock().await;
                     buffer.push_str(&line);
                 }
-                
+
                 // Send output chunk immediately
                 let chunk = OutputChunk {
                     block_id,
@@ -293,7 +289,7 @@ impl CommandPipeline {
                     is_stderr: true,
                     timestamp: Utc::now(),
                 };
-                
+
                 let _ = stderr_output_tx.send(chunk);
                 line.clear();
             }
@@ -304,11 +300,10 @@ impl CommandPipeline {
             while let Some(chunk) = output_rx.recv().await {
                 // Process output chunk immediately - no lazy processing
                 debug!("Received output chunk for block {}: {:?}", chunk.block_id, chunk);
-                
+
                 // Update block with output immediately if we have a block manager
                 if let Some(ref manager) = block_manager {
-                    let mut mgr = manager.lock().await;
-                    
+                    let _ = manager.lock().await;
                     // TODO: Stream output to block - for now we'll aggregate
                     // This would be where real-time output streaming occurs
                 }
@@ -317,9 +312,9 @@ impl CommandPipeline {
 
         // Spawn process waiter
         let process_block_id = block_id;
-        let process_block_manager = self.block_manager.clone();
-        let process_event_sender = self.event_sender.clone();
-        
+        let _process_block_manager = self.block_manager.clone();
+        let _process_event_sender = self.event_sender.clone();
+
         tokio::spawn(async move {
             // This would need to be handled differently since we can't move self
             // For now, we'll just wait on the process
@@ -346,10 +341,10 @@ impl CommandPipeline {
             if let Some(ref mut process) = execution.process {
                 process.kill().await?;
             }
-            
+
             // Update block status to cancelled
             if let Some(ref block_manager) = self.block_manager {
-                let mut manager = block_manager.lock().await;
+                let _ = block_manager.lock().await;
                 // TODO: Add method to update block status to cancelled
             }
 
@@ -371,21 +366,13 @@ impl CommandPipeline {
                 let buffer = execution.output_buffer.lock().await;
                 buffer.clone()
             };
-            
-            let error_output = {
-                let buffer = execution.error_buffer.lock().await;
-                buffer.clone()
-            };
 
             // Update block immediately - no lazy updates
             if let Some(ref block_manager) = self.block_manager {
                 let mut manager = block_manager.lock().await;
-                manager.update_block_output(
-                    block_id,
-                    output,
-                    exit_code,
-                    duration.as_millis() as u64,
-                ).await?;
+                manager
+                    .update_block_output(block_id, output, exit_code, duration.as_millis() as u64)
+                    .await?;
             }
 
             // Send terminal event immediately
@@ -419,7 +406,6 @@ impl Default for CommandPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_command_pipeline_creation() {
@@ -429,8 +415,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_execution_setup() {
-        let mut pipeline = CommandPipeline::new();
-        
+        let pipeline = CommandPipeline::new();
+
         // This test would require setting up a full block manager
         // For now, we'll just verify the pipeline can be created
         assert_eq!(pipeline.active_command_count(), 0);

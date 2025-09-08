@@ -111,7 +111,6 @@ impl std::str::FromStr for ShellType {
 }
 
 impl ShellType {
-
     pub fn to_str(self) -> &'static str {
         match self {
             Self::Bash => "bash",
@@ -149,16 +148,19 @@ pub struct BlockMetadata {
     pub custom: HashMap<String, serde_json::Value>,
 }
 
+type BlockEventCallback = Box<dyn Fn(&BlockEvent) + Send + Sync>;
+
 /// Native block manager for creating and managing blocks without lazy fallbacks
 pub struct BlockManager {
     storage: Arc<storage::BlockStorage>,
     environment_manager: environment::EnvironmentManager,
     search_engine: search::SearchEngine,
     export_manager: export::ExportManager,
+    #[allow(dead_code)]
     current_session: SessionId,
     active_blocks: HashMap<BlockId, Arc<Block>>,
     /// Native event callbacks for real-time updates
-    event_callbacks: Vec<Box<dyn Fn(&BlockEvent) + Send + Sync>>,
+    event_callbacks: Vec<BlockEventCallback>,
     /// Real-time block execution state
     executing_blocks: HashMap<BlockId, ExecutionHandle>,
     /// Native rendering state
@@ -170,7 +172,9 @@ pub struct BlockManager {
 pub struct SessionId(Uuid);
 
 impl Default for SessionId {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionId {
@@ -192,6 +196,7 @@ pub enum BlockEvent {
 
 /// Execution handle for tracking running commands
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ExecutionHandle {
     pub block_id: BlockId,
     pub pid: Option<u32>,
@@ -279,16 +284,16 @@ impl BlockManager {
         params: CreateBlockParams,
     ) -> Result<Arc<Block>> {
         let block = self.create_block(params).await?;
-        
+
         // Start execution immediately - no lazy loading
         let command = block.command.clone();
         self.start_native_execution(block.id, command).await?;
-        
+
         Ok(block)
     }
 
     /// Start native command execution without lazy fallbacks
-async fn start_native_execution(&mut self, block_id: BlockId, _command: String) -> Result<()> {
+    async fn start_native_execution(&mut self, block_id: BlockId, _command: String) -> Result<()> {
         let execution_handle = ExecutionHandle {
             block_id,
             pid: None, // Will be set when process starts
@@ -298,14 +303,17 @@ async fn start_native_execution(&mut self, block_id: BlockId, _command: String) 
         };
 
         self.executing_blocks.insert(block_id, execution_handle);
-        
+
         // Emit immediate event - no lazy processing
-        self.emit_event(BlockEvent::Executed(block_id, ExecutionResult {
-            exit_code: -1, // Indicates still running
-            output: String::new(),
-            error_output: String::new(),
-            duration: std::time::Duration::from_secs(0),
-        }));
+        self.emit_event(BlockEvent::Executed(
+            block_id,
+            ExecutionResult {
+                exit_code: -1, // Indicates still running
+                output: String::new(),
+                error_output: String::new(),
+                duration: std::time::Duration::from_secs(0),
+            },
+        ));
 
         // TODO: Start actual process execution in a separate task
         // For now, we'll simulate with a placeholder
@@ -351,8 +359,12 @@ async fn start_native_execution(&mut self, block_id: BlockId, _command: String) 
             animation_type,
             start_time: std::time::Instant::now(),
             duration: match animation_type {
-                BlockAnimationType::FadeIn | BlockAnimationType::FadeOut => std::time::Duration::from_millis(200),
-                BlockAnimationType::Expand | BlockAnimationType::Collapse => std::time::Duration::from_millis(300),
+                BlockAnimationType::FadeIn | BlockAnimationType::FadeOut => {
+                    std::time::Duration::from_millis(200)
+                },
+                BlockAnimationType::Expand | BlockAnimationType::Collapse => {
+                    std::time::Duration::from_millis(300)
+                },
                 BlockAnimationType::Highlight => std::time::Duration::from_millis(150),
                 BlockAnimationType::Update => std::time::Duration::from_millis(100),
             },
@@ -371,12 +383,15 @@ async fn start_native_execution(&mut self, block_id: BlockId, _command: String) 
         for block_id in keys {
             if let Some(anim) = self.render_state.animation_states.get(&block_id).cloned() {
                 let elapsed = now.duration_since(anim.start_time);
-                let progress = (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
+                let progress =
+                    (elapsed.as_secs_f32() / anim.duration.as_secs_f32()).clamp(0.0, 1.0);
                 if progress >= 1.0 {
                     // Animation complete; remove it
                     self.render_state.animation_states.remove(&block_id);
                     changed_blocks.push(block_id);
-                } else if let Some(animation_mut) = self.render_state.animation_states.get_mut(&block_id) {
+                } else if let Some(animation_mut) =
+                    self.render_state.animation_states.get_mut(&block_id)
+                {
                     animation_mut.progress = progress;
                     changed_blocks.push(block_id);
                 }
@@ -465,10 +480,10 @@ async fn start_native_execution(&mut self, block_id: BlockId, _command: String) 
         // Update storage and search without holding a mutable borrow on self
         self.storage.update(&updated_block).await?;
         self.search_engine.update_block(&updated_block).await?;
-        
+
         // Emit immediate update event
         self.emit_event(BlockEvent::Updated(block_id));
-        
+
         Ok(())
     }
 
@@ -506,10 +521,10 @@ async fn start_native_execution(&mut self, block_id: BlockId, _command: String) 
         };
 
         self.storage.update(&updated_block).await?;
-        
+
         // Emit immediate star toggle event
         self.emit_event(BlockEvent::StarToggled(block_id, starred));
-        
+
         info!("Block {} starred: {}", block_id.to_string(), starred);
         Ok(starred)
     }

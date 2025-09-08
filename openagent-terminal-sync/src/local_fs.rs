@@ -199,7 +199,7 @@ impl SyncProvider for LocalFsProvider {
         let mut status = match self.read_status() {
             Ok(s) => s,
             Err(e) => {
-warn!("Failed to read sync status (push); defaulting: {:?}", e);
+                warn!("Failed to read sync status (push); defaulting: {:?}", e);
                 SyncStatus::default()
             },
         };
@@ -237,7 +237,7 @@ warn!("Failed to read sync status (push); defaulting: {:?}", e);
         let mut status = match self.read_status() {
             Ok(s) => s,
             Err(e) => {
-warn!("Failed to read sync status (pull); defaulting: {:?}", e);
+                warn!("Failed to read sync status (pull); defaulting: {:?}", e);
                 SyncStatus::default()
             },
         };

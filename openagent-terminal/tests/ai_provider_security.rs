@@ -1,8 +1,8 @@
 #[cfg(feature = "ai")]
 mod ai_provider_security_tests {
-    use serial_test::serial;
     use openagent_terminal::config::ai::ProviderConfig;
     use openagent_terminal::config::ai_providers::ProviderCredentials;
+    use serial_test::serial;
     use std::collections::{HashMap, HashSet};
 
     // Local copy of the isolation validator for integration tests
@@ -158,7 +158,7 @@ mod ai_provider_security_tests {
 
     /// Test that global environment pollution doesn't occur
     #[test]
-#[serial]
+    #[serial]
     fn test_no_global_environment_pollution() {
         // Ensure legacy env vars are unset to isolate test from developer environment
         std::env::remove_var("OPENAI_API_KEY");
@@ -206,7 +206,7 @@ mod ai_provider_security_tests {
 
     /// Integration test: verify secure runtime creation
     #[test]
-#[serial]
+    #[serial]
     fn test_secure_runtime_creation() {
         // Ensure legacy env vars are unset to isolate test from developer environment
         std::env::remove_var("OPENAI_API_KEY");
@@ -244,12 +244,12 @@ mod ai_provider_security_tests {
 
 #[cfg(feature = "ai")]
 mod legacy_detection_tests {
-    use serial_test::serial;
     use openagent_terminal::config::ai_providers::check_legacy_env_vars;
+    use serial_test::serial;
 
     /// Test that legacy environment variable detection works
     #[test]
-#[serial]
+    #[serial]
     fn test_legacy_detection() {
         // Set some legacy variables
         std::env::set_var("OPENAI_API_KEY", "legacy-key");

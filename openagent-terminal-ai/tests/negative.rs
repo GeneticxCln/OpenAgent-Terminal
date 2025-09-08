@@ -25,7 +25,7 @@ mod http_tests {
     use super::*;
     use openagent_terminal_ai::providers::OpenAiProvider;
     use openagent_terminal_ai::AiProvider;
-use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn base_req() -> AiRequest {
@@ -49,29 +49,28 @@ use wiremock::matchers::{method, path};
         assert!(res.is_err());
     }
 
-#[tokio::test]
-async fn openai_5xx_is_error() {
-let server = MockServer::start().await;
-Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
-                ResponseTemplate::new(500).set_body_string("internal error"),
-            )
+    #[tokio::test]
+    async fn openai_5xx_is_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
             .mount(&server)
             .await;
 
-let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "gpt-3.5-turbo".to_string(),
-        )
-        .unwrap();
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-3.5-turbo".to_string())
+                .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }
 
-#[tokio::test]
-async fn openai_malformed_json_is_error() {
-let server = MockServer::start().await;
-Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
+    #[tokio::test]
+    async fn openai_malformed_json_is_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "application/json")
                     .set_body_string("not json"),
@@ -79,12 +78,9 @@ Mock::given(method("POST")).and(path("/chat/completions")).respond_with(
             .mount(&server)
             .await;
 
-let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "gpt-3.5-turbo".to_string(),
-        )
-        .unwrap();
+        let provider =
+            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-3.5-turbo".to_string())
+                .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }

@@ -981,8 +981,8 @@ impl WorkflowEngine {
     }
 
     /// Render template for logging (with secret redaction)
-#[allow(dead_code)]
-fn render_template_for_logging(&self, template: &str, context: &Context) -> Result<String> {
+    #[allow(dead_code)]
+    fn render_template_for_logging(&self, template: &str, context: &Context) -> Result<String> {
         let rendered = self.render_template(template, context)?;
         Ok(self.redact_common_secrets(&rendered))
     }
@@ -1083,8 +1083,8 @@ fn render_template_for_logging(&self, template: &str, context: &Context) -> Resu
     }
 
     /// Add output value without redaction (for internal use when secrets need to be preserved)
-#[allow(dead_code)]
-async fn add_output_raw(&self, execution_id: &str, name: &str, value: &str) -> Result<()> {
+    #[allow(dead_code)]
+    async fn add_output_raw(&self, execution_id: &str, name: &str, value: &str) -> Result<()> {
         let mut states = self.states.write().await;
         if let Some(state) = states.get_mut(execution_id) {
             state.outputs.insert(name.to_string(), value.to_string());
@@ -1131,8 +1131,8 @@ async fn add_output_raw(&self, execution_id: &str, name: &str, value: &str) -> R
     }
 
     /// Add log entry without redaction (for internal use)
-#[allow(dead_code)]
-async fn log_internal(
+    #[allow(dead_code)]
+    async fn log_internal(
         &self,
         execution_id: &str,
         step_id: Option<&str>,

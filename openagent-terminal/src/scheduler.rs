@@ -61,6 +61,7 @@ pub enum Topic {
     // Autosave workspace sessions periodically
     WorkspaceSessionAutosave,
     // Debounced AI inline suggestion trigger
+    #[allow(dead_code)]
     AiInlineTyping,
 }
 

@@ -18,6 +18,7 @@ use winit::platform::x11;
 use winit::raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
 /// Create the GL display.
+#[cfg(feature = "gl-backend")]
 pub fn create_gl_display(
     raw_display_handle: RawDisplayHandle,
     _raw_window_handle: Option<RawWindowHandle>,
@@ -48,6 +49,7 @@ pub fn create_gl_display(
     Ok(display)
 }
 
+#[cfg(feature = "gl-backend")]
 pub fn pick_gl_config(
     gl_display: &Display,
     raw_window_handle: Option<RawWindowHandle>,
@@ -104,6 +106,7 @@ pub fn pick_gl_config(
     Err(String::from("failed to find suitable GL configuration."))
 }
 
+#[cfg(feature = "gl-backend")]
 pub fn create_gl_context(
     gl_display: &Display,
     gl_config: &Config,
@@ -146,6 +149,7 @@ pub fn create_gl_context(
     picked_context
 }
 
+#[cfg(feature = "gl-backend")]
 pub fn create_gl_surface(
     gl_context: &NotCurrentContext,
     size: PhysicalSize<u32>,

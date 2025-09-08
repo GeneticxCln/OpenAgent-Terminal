@@ -5,7 +5,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::{HashMap, HashSet, BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,32 +16,32 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::blocks_v2::{BlockId, Block};
+use crate::blocks_v2::{Block, BlockId};
 use crate::shell_integration::CommandId;
 
 /// Native search and filtering manager
 pub struct SearchIntegration {
     /// Text search engine for immediate results
     text_search: TextSearchEngine,
-    
+
     /// Command search for shell history
     command_search: CommandSearchEngine,
-    
+
     /// Block content search
     block_search: BlockSearchEngine,
-    
+
     /// File search capabilities
     file_search: FileSearchEngine,
-    
+
     /// Real-time filtering system
     filter_system: FilterSystem,
-    
+
     /// Search index manager
     index_manager: SearchIndexManager,
-    
+
     /// Event callbacks for immediate responses
     event_callbacks: Vec<Box<dyn Fn(&SearchEvent) + Send + Sync>>,
-    
+
     /// Performance statistics
     stats: SearchStats,
 }
@@ -49,30 +49,30 @@ pub struct SearchIntegration {
 /// Search events for immediate feedback
 #[derive(Debug, Clone)]
 pub enum SearchEvent {
-    SearchStarted { 
-        query: String, 
+    SearchStarted {
+        query: String,
         context: SearchContext,
         timestamp: Instant,
     },
-    ResultsFound { 
+    ResultsFound {
         query: String,
         results: Vec<SearchResult>,
         duration: Duration,
         timestamp: Instant,
     },
-    SearchCompleted { 
-        query: String, 
+    SearchCompleted {
+        query: String,
         total_results: usize,
         duration: Duration,
         timestamp: Instant,
     },
-    IndexUpdated { 
+    IndexUpdated {
         context: SearchContext,
         items_added: usize,
         items_removed: usize,
         timestamp: Instant,
     },
-    FilterApplied { 
+    FilterApplied {
         filter: SearchFilter,
         results_count: usize,
         timestamp: Instant,
@@ -84,16 +84,16 @@ pub enum SearchEvent {
 pub struct TextSearchEngine {
     /// Inverted index for fast text search
     inverted_index: InvertedIndex,
-    
+
     /// Fuzzy matching engine
     fuzzy_matcher: FuzzyMatcher,
-    
+
     /// Search algorithms
     algorithms: SearchAlgorithms,
-    
+
     /// Search configuration
     config: TextSearchConfig,
-    
+
     /// Recent searches for optimization
     recent_searches: VecDeque<CachedSearch>,
 }
@@ -103,16 +103,16 @@ pub struct TextSearchEngine {
 pub struct CommandSearchEngine {
     /// Command index for fast lookup
     command_index: CommandIndex,
-    
+
     /// Frequency-based ranking
     frequency_ranker: FrequencyRanker,
-    
+
     /// Context-aware search
     context_matcher: ContextMatcher,
-    
+
     /// Command pattern recognition
     pattern_recognizer: PatternRecognizer,
-    
+
     /// Search cache for performance
     search_cache: HashMap<String, Vec<CommandMatch>>,
 }
@@ -122,13 +122,13 @@ pub struct CommandSearchEngine {
 pub struct BlockSearchEngine {
     /// Block content index
     content_index: BlockContentIndex,
-    
+
     /// Output buffer search
     output_searcher: OutputSearcher,
-    
+
     /// Cross-block search
     cross_block_searcher: CrossBlockSearcher,
-    
+
     /// Block metadata search
     metadata_searcher: MetadataSearcher,
 }
@@ -138,16 +138,16 @@ pub struct BlockSearchEngine {
 pub struct FileSearchEngine {
     /// File name index
     filename_index: FilenameIndex,
-    
+
     /// File content index
     content_index: FileContentIndex,
-    
+
     /// Path-based search
     path_searcher: PathSearcher,
-    
+
     /// Git integration
     git_searcher: GitSearcher,
-    
+
     /// File watchers for real-time updates
     file_watchers: HashMap<String, FileWatcher>,
 }
@@ -157,13 +157,13 @@ pub struct FileSearchEngine {
 pub struct FilterSystem {
     /// Active filters
     active_filters: Vec<SearchFilter>,
-    
+
     /// Filter chain processor
     filter_chain: FilterChain,
-    
+
     /// Filter history
     filter_history: VecDeque<FilterApplication>,
-    
+
     /// Dynamic filter creation
     dynamic_filters: HashMap<String, DynamicFilter>,
 }
@@ -173,13 +173,13 @@ pub struct FilterSystem {
 pub struct SearchIndexManager {
     /// Index registry
     indices: HashMap<String, IndexInfo>,
-    
+
     /// Index update queue
     update_queue: VecDeque<IndexUpdate>,
-    
+
     /// Index statistics
     index_stats: HashMap<String, IndexStats>,
-    
+
     /// Index optimization
     optimizer: IndexOptimizer,
 }
@@ -248,27 +248,29 @@ pub enum SearchFilter {
 impl fmt::Debug for SearchFilter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SearchFilter::TextFilter { pattern, case_sensitive } => {
-                f.debug_struct("TextFilter")
-                    .field("pattern", pattern)
-                    .field("case_sensitive", case_sensitive)
-                    .finish()
-            },
+            SearchFilter::TextFilter { pattern, case_sensitive } => f
+                .debug_struct("TextFilter")
+                .field("pattern", pattern)
+                .field("case_sensitive", case_sensitive)
+                .finish(),
             SearchFilter::RegexFilter { .. } => write!(f, "RegexFilter(..)"),
-            SearchFilter::DateFilter { from, to } => {
-                f.debug_struct("DateFilter")
-                    .field("from", &from.map(|_| ".."))
-                    .field("to", &to.map(|_| ".."))
-                    .finish()
-            },
+            SearchFilter::DateFilter { from, to } => f
+                .debug_struct("DateFilter")
+                .field("from", &from.map(|_| ".."))
+                .field("to", &to.map(|_| ".."))
+                .finish(),
             SearchFilter::TypeFilter { types } => f.debug_tuple("TypeFilter").field(types).finish(),
             SearchFilter::SizeFilter { min_size, max_size } => f
                 .debug_struct("SizeFilter")
                 .field("min_size", min_size)
                 .field("max_size", max_size)
                 .finish(),
-            SearchFilter::ScoreFilter { min_score } => f.debug_tuple("ScoreFilter").field(min_score).finish(),
-            SearchFilter::ContextFilter { contexts } => f.debug_tuple("ContextFilter").field(contexts).finish(),
+            SearchFilter::ScoreFilter { min_score } => {
+                f.debug_tuple("ScoreFilter").field(min_score).finish()
+            },
+            SearchFilter::ContextFilter { contexts } => {
+                f.debug_tuple("ContextFilter").field(contexts).finish()
+            },
             SearchFilter::Custom { name, .. } => f.debug_tuple("Custom").field(name).finish(),
         }
     }
@@ -279,13 +281,13 @@ impl fmt::Debug for SearchFilter {
 pub struct InvertedIndex {
     /// Term to document mapping
     term_docs: HashMap<String, HashSet<String>>,
-    
+
     /// Document to terms mapping
     doc_terms: HashMap<String, HashSet<String>>,
-    
+
     /// Term frequency data
     term_frequencies: HashMap<String, HashMap<String, usize>>,
-    
+
     /// Document lengths for scoring
     doc_lengths: HashMap<String, usize>,
 }
@@ -295,13 +297,13 @@ pub struct InvertedIndex {
 pub struct FuzzyMatcher {
     /// Edit distance calculator
     edit_distance: EditDistanceCalculator,
-    
+
     /// Phonetic matcher
     phonetic_matcher: PhoneticMatcher,
-    
+
     /// Similarity thresholds
     similarity_threshold: f64,
-    
+
     /// Match scoring weights
     scoring_weights: FuzzyWeights,
 }
@@ -311,13 +313,13 @@ pub struct FuzzyMatcher {
 pub struct SearchAlgorithms {
     /// Boolean search
     boolean_search: BooleanSearch,
-    
+
     /// TF-IDF scoring
     tfidf_scorer: TfIdfScorer,
-    
+
     /// BM25 ranking
     bm25_ranker: Bm25Ranker,
-    
+
     /// Vector space search
     vector_search: VectorSpaceSearch,
 }
@@ -349,13 +351,13 @@ pub struct CachedSearch {
 pub struct CommandIndex {
     /// Command to metadata mapping
     command_metadata: HashMap<CommandId, CommandMetadata>,
-    
+
     /// Text to command mapping
     text_index: HashMap<String, Vec<CommandId>>,
-    
+
     /// Category index
     category_index: HashMap<String, Vec<CommandId>>,
-    
+
     /// Time-based index
     time_index: BTreeMap<Instant, Vec<CommandId>>,
 }
@@ -739,7 +741,9 @@ pub enum EditDistanceAlgorithm {
 }
 
 impl Default for EditDistanceAlgorithm {
-    fn default() -> Self { Self::Levenshtein }
+    fn default() -> Self {
+        Self::Levenshtein
+    }
 }
 
 /// Phonetic matcher
@@ -759,7 +763,9 @@ pub enum PhoneticAlgorithm {
 }
 
 impl Default for PhoneticAlgorithm {
-    fn default() -> Self { Self::Soundex }
+    fn default() -> Self {
+        Self::Soundex
+    }
 }
 
 /// Fuzzy matching weights
@@ -854,7 +860,9 @@ pub enum SimilarityMeasure {
 }
 
 impl Default for SimilarityMeasure {
-    fn default() -> Self { Self::Cosine }
+    fn default() -> Self {
+        Self::Cosine
+    }
 }
 
 /// Performance statistics
@@ -896,15 +904,12 @@ impl SearchIntegration {
             filter_system: FilterSystem::new(),
             index_manager: SearchIndexManager::new(),
             event_callbacks: Vec::new(),
-            stats: SearchStats {
-                last_reset: Instant::now(),
-                ..Default::default()
-            },
+            stats: SearchStats { last_reset: Instant::now(), ..Default::default() },
         };
 
         // Initialize indices immediately
         integration.initialize_indices();
-        
+
         integration
     }
 
@@ -926,7 +931,7 @@ impl SearchIntegration {
     /// Perform immediate search across all contexts
     pub fn search(&mut self, query: &str, context: SearchContext) -> Result<Vec<SearchResult>> {
         let start_time = Instant::now();
-        
+
         // Emit search started event
         self.emit_event(SearchEvent::SearchStarted {
             query: query.to_string(),
@@ -1027,7 +1032,7 @@ impl SearchIntegration {
 
         // Search by command text
         let command_matches = self.command_search.search_by_text(query);
-        
+
         // Convert command matches to search results
         for cmd_match in command_matches {
             let result = SearchResult {
@@ -1061,7 +1066,7 @@ impl SearchIntegration {
 
         // Search block content
         let block_matches = self.block_search.search_content(query);
-        
+
         for (block_id, matches) in block_matches {
             if let Some(metadata) = self.block_search.content_index.block_metadata.get(&block_id) {
                 let result = SearchResult {
@@ -1091,7 +1096,7 @@ impl SearchIntegration {
 
         // Search file names
         let filename_matches = self.file_search.search_filenames(query);
-        
+
         for file_entry in filename_matches {
             let result = SearchResult {
                 id: format!("file_{}", file_entry.path),
@@ -1114,9 +1119,10 @@ impl SearchIntegration {
         // Search file content if query is complex enough
         if query.len() > 3 {
             let content_matches = self.file_search.search_content(query);
-            
+
             for (file_path, matches) in content_matches {
-                if let Some(metadata) = self.file_search.content_index.file_metadata.get(&file_path) {
+                if let Some(metadata) = self.file_search.content_index.file_metadata.get(&file_path)
+                {
                     let result = SearchResult {
                         id: format!("file_content_{}", file_path),
                         title: file_path.split('/').last().unwrap_or(&file_path).to_string(),
@@ -1127,7 +1133,14 @@ impl SearchIntegration {
                         metadata: HashMap::from([
                             ("path".to_string(), metadata.path.clone()),
                             ("size".to_string(), metadata.size.to_string()),
-                            ("language".to_string(), metadata.language.as_ref().unwrap_or(&"unknown".to_string()).clone()),
+                            (
+                                "language".to_string(),
+                                metadata
+                                    .language
+                                    .as_ref()
+                                    .unwrap_or(&"unknown".to_string())
+                                    .clone(),
+                            ),
                             ("lines".to_string(), metadata.line_count.to_string()),
                         ]),
                         timestamp: metadata.modified,
@@ -1145,12 +1158,12 @@ impl SearchIntegration {
         for filter in &self.filter_system.active_filters.clone() {
             let start_time = Instant::now();
             let input_count = results.len();
-            
+
             results = self.apply_single_filter(results, filter)?;
-            
+
             let duration = start_time.elapsed();
             let output_count = results.len();
-            
+
             // Record filter application
             self.filter_system.filter_history.push_back(FilterApplication {
                 filter: filter.clone(),
@@ -1159,7 +1172,7 @@ impl SearchIntegration {
                 duration,
                 timestamp: start_time,
             });
-            
+
             // Limit filter history
             if self.filter_system.filter_history.len() > 1000 {
                 self.filter_system.filter_history.pop_front();
@@ -1171,7 +1184,7 @@ impl SearchIntegration {
                 results_count: output_count,
                 timestamp: start_time,
             });
-            
+
             self.stats.filters_applied += 1;
         }
 
@@ -1179,44 +1192,40 @@ impl SearchIntegration {
     }
 
     /// Apply a single filter immediately
-    fn apply_single_filter(&self, results: Vec<SearchResult>, filter: &SearchFilter) -> Result<Vec<SearchResult>> {
-        let filtered = results.into_iter().filter(|result| {
-            match filter {
-                SearchFilter::TextFilter { pattern, case_sensitive } => {
-                    let content = if *case_sensitive {
-                        result.content.clone()
-                    } else {
-                        result.content.to_lowercase()
-                    };
-                    let search_pattern = if *case_sensitive {
-                        pattern.clone()
-                    } else {
-                        pattern.to_lowercase()
-                    };
-                    content.contains(&search_pattern)
-                },
-                SearchFilter::RegexFilter { regex } => {
-                    regex.is_match(&result.content)
-                },
-                SearchFilter::ScoreFilter { min_score } => {
-                    result.relevance_score >= *min_score
-                },
-                SearchFilter::ContextFilter { contexts } => {
-                    contexts.contains(&result.context)
-                },
-                SearchFilter::TypeFilter { types } => {
-                    if let Some(file_type) = result.metadata.get("type") {
-                        types.contains(file_type)
-                    } else {
-                        false
-                    }
-                },
-                SearchFilter::Custom { predicate, .. } => {
-                    predicate(result)
-                },
-                _ => true, // Other filters not implemented yet
-            }
-        }).collect();
+    fn apply_single_filter(
+        &self,
+        results: Vec<SearchResult>,
+        filter: &SearchFilter,
+    ) -> Result<Vec<SearchResult>> {
+        let filtered = results
+            .into_iter()
+            .filter(|result| {
+                match filter {
+                    SearchFilter::TextFilter { pattern, case_sensitive } => {
+                        let content = if *case_sensitive {
+                            result.content.clone()
+                        } else {
+                            result.content.to_lowercase()
+                        };
+                        let search_pattern =
+                            if *case_sensitive { pattern.clone() } else { pattern.to_lowercase() };
+                        content.contains(&search_pattern)
+                    },
+                    SearchFilter::RegexFilter { regex } => regex.is_match(&result.content),
+                    SearchFilter::ScoreFilter { min_score } => result.relevance_score >= *min_score,
+                    SearchFilter::ContextFilter { contexts } => contexts.contains(&result.context),
+                    SearchFilter::TypeFilter { types } => {
+                        if let Some(file_type) = result.metadata.get("type") {
+                            types.contains(file_type)
+                        } else {
+                            false
+                        }
+                    },
+                    SearchFilter::Custom { predicate, .. } => predicate(result),
+                    _ => true, // Other filters not implemented yet
+                }
+            })
+            .collect();
 
         Ok(filtered)
     }
@@ -1241,12 +1250,14 @@ impl SearchIntegration {
     }
 
     /// Update search index immediately
-    pub fn update_index(&mut self, index_name: &str, item_id: &str, content: Option<String>) -> Result<()> {
-        let operation = if content.is_some() {
-            UpdateOperation::Update
-        } else {
-            UpdateOperation::Remove
-        };
+    pub fn update_index(
+        &mut self,
+        index_name: &str,
+        item_id: &str,
+        content: Option<String>,
+    ) -> Result<()> {
+        let operation =
+            if content.is_some() { UpdateOperation::Update } else { UpdateOperation::Remove };
 
         let update = IndexUpdate {
             index_name: index_name.to_string(),
@@ -1279,13 +1290,13 @@ impl SearchIntegration {
     fn initialize_indices(&mut self) {
         // Initialize text search index
         self.text_search.inverted_index = InvertedIndex::default();
-        
+
         // Initialize command search index
         self.command_search.command_index = CommandIndex::default();
-        
+
         // Initialize block search index
         self.block_search.content_index = BlockContentIndex::default();
-        
+
         // Initialize file search index
         self.file_search.filename_index = FilenameIndex::default();
         self.file_search.content_index = FileContentIndex::default();
@@ -1296,20 +1307,18 @@ impl SearchIntegration {
     /// Apply index update immediately
     fn apply_index_update(&mut self, update: &IndexUpdate) -> Result<()> {
         match update.index_name.as_str() {
-            "text" => {
-                match update.operation {
-                    UpdateOperation::Add | UpdateOperation::Update => {
-                        if let Some(content) = &update.content {
-                            self.text_search.inverted_index.add_document(&update.item_id, content);
-                        }
-                    },
-                    UpdateOperation::Remove => {
-                        self.text_search.inverted_index.remove_document(&update.item_id);
-                    },
-                    UpdateOperation::Clear => {
-                        self.text_search.inverted_index = InvertedIndex::default();
-                    },
-                }
+            "text" => match update.operation {
+                UpdateOperation::Add | UpdateOperation::Update => {
+                    if let Some(content) = &update.content {
+                        self.text_search.inverted_index.add_document(&update.item_id, content);
+                    }
+                },
+                UpdateOperation::Remove => {
+                    self.text_search.inverted_index.remove_document(&update.item_id);
+                },
+                UpdateOperation::Clear => {
+                    self.text_search.inverted_index = InvertedIndex::default();
+                },
             },
             "commands" => {
                 // Update command index
@@ -1334,7 +1343,7 @@ impl SearchIntegration {
     /// Update average search time
     fn update_average_search_time(&mut self, duration: Duration) {
         let count = self.stats.searches_performed;
-        self.stats.average_search_time = 
+        self.stats.average_search_time =
             (self.stats.average_search_time * (count - 1) as u32 + duration) / count as u32;
     }
 
@@ -1342,7 +1351,7 @@ impl SearchIntegration {
     fn calculate_block_relevance(&self, matches: &[String], query: &str) -> f64 {
         let match_count = matches.len() as f64;
         let query_len = query.len() as f64;
-        
+
         // Simple relevance calculation
         (match_count * query_len) / 100.0
     }
@@ -1351,24 +1360,29 @@ impl SearchIntegration {
     fn calculate_filename_relevance(&self, file_entry: &FileEntry, query: &str) -> f64 {
         let name_match = file_entry.name.to_lowercase().contains(&query.to_lowercase());
         let path_match = file_entry.path.to_lowercase().contains(&query.to_lowercase());
-        
-        if name_match { 1.0 } else if path_match { 0.5 } else { 0.1 }
+
+        if name_match {
+            1.0
+        } else if path_match {
+            0.5
+        } else {
+            0.1
+        }
     }
 
     /// Calculate content relevance score
     fn calculate_content_relevance(&self, matches: &[String], query: &str) -> f64 {
         let match_count = matches.len() as f64;
-        let total_occurrences = matches.iter()
-            .map(|m| m.matches(query).count())
-            .sum::<usize>() as f64;
-        
+        let total_occurrences =
+            matches.iter().map(|m| m.matches(query).count()).sum::<usize>() as f64;
+
         (match_count + total_occurrences) / 10.0
     }
 
     /// Extract match positions from content
     fn extract_match_positions(&self, matches: &[String], query: &str) -> Vec<MatchPosition> {
         let mut positions = Vec::new();
-        
+
         for content in matches {
             let mut start = 0;
             while let Some(pos) = content[start..].find(query) {
@@ -1382,14 +1396,14 @@ impl SearchIntegration {
                 start = absolute_pos + 1;
             }
         }
-        
+
         positions
     }
 
     /// Extract filename match positions
     fn extract_filename_matches(&self, filename: &str, query: &str) -> Vec<MatchPosition> {
         let mut positions = Vec::new();
-        
+
         if let Some(pos) = filename.to_lowercase().find(&query.to_lowercase()) {
             positions.push(MatchPosition {
                 start: pos,
@@ -1398,7 +1412,7 @@ impl SearchIntegration {
                 context: Some(filename.to_string()),
             });
         }
-        
+
         positions
     }
 
@@ -1423,18 +1437,17 @@ impl TextSearchEngine {
     fn search_exact(&mut self, query: &str) -> Option<Vec<SearchResult>> {
         // Check cache first
         for cached in &self.recent_searches {
-            if cached.query == query && 
-               cached.timestamp.elapsed() < Duration::from_secs(60) {
+            if cached.query == query && cached.timestamp.elapsed() < Duration::from_secs(60) {
                 return Some(cached.results.clone());
             }
         }
 
         // Perform exact search
         let results = self.inverted_index.search_exact(query);
-        
+
         // Cache results
         self.cache_search_results(query.to_string(), results.clone());
-        
+
         Some(results)
     }
 
@@ -1457,9 +1470,9 @@ impl TextSearchEngine {
             timestamp: Instant::now(),
             context: SearchContext::Global,
         };
-        
+
         self.recent_searches.push_back(cached);
-        
+
         // Limit cache size
         if self.recent_searches.len() > 100 {
             self.recent_searches.pop_front();
@@ -1485,7 +1498,7 @@ impl CommandSearchEngine {
         }
 
         let mut matches = Vec::new();
-        
+
         // Search command text index
         if let Some(command_ids) = self.command_index.text_index.get(query) {
             for cmd_id in command_ids {
@@ -1505,7 +1518,7 @@ impl CommandSearchEngine {
 
         // Cache results
         self.search_cache.insert(query.to_string(), matches.clone());
-        
+
         matches
     }
 }
@@ -1522,7 +1535,7 @@ impl BlockSearchEngine {
 
     fn search_content(&self, query: &str) -> HashMap<BlockId, Vec<String>> {
         let mut results = HashMap::new();
-        
+
         // Search content index
         if let Some(block_ids) = self.content_index.content_index.get(query) {
             for block_id in block_ids {
@@ -1534,16 +1547,12 @@ impl BlockSearchEngine {
                 }
             }
         }
-        
+
         results
     }
 
     fn extract_matching_lines(&self, content: &str, query: &str) -> Vec<String> {
-        content
-            .lines()
-            .filter(|line| line.contains(query))
-            .map(|line| line.to_string())
-            .collect()
+        content.lines().filter(|line| line.contains(query)).map(|line| line.to_string()).collect()
     }
 }
 
@@ -1560,20 +1569,20 @@ impl FileSearchEngine {
 
     fn search_filenames(&self, query: &str) -> Vec<FileEntry> {
         let mut results = Vec::new();
-        
+
         // Search name index
         for (name, entries) in &self.filename_index.name_index {
             if name.contains(query) {
                 results.extend(entries.clone());
             }
         }
-        
+
         results
     }
 
     fn search_content(&self, query: &str) -> HashMap<String, Vec<String>> {
         let mut results = HashMap::new();
-        
+
         // Search content index
         if let Some(files) = self.content_index.content_index.get(query) {
             for file_path in files {
@@ -1585,7 +1594,7 @@ impl FileSearchEngine {
                             .filter(|line| line.contains(query))
                             .map(|line| line.to_string())
                             .collect();
-                        
+
                         if !matches.is_empty() {
                             results.insert(file_path.clone(), matches);
                         }
@@ -1593,7 +1602,7 @@ impl FileSearchEngine {
                 }
             }
         }
-        
+
         results
     }
 }
@@ -1622,11 +1631,8 @@ impl SearchIndexManager {
 
 impl InvertedIndex {
     fn add_document(&mut self, doc_id: &str, content: &str) {
-        let terms: HashSet<String> = content
-            .to_lowercase()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        let terms: HashSet<String> =
+            content.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
 
         // Update term-to-document mapping
         for term in &terms {
@@ -1636,7 +1642,8 @@ impl InvertedIndex {
                 .insert(doc_id.to_string());
 
             // Update term frequency
-            *self.term_frequencies
+            *self
+                .term_frequencies
                 .entry(term.clone())
                 .or_insert_with(HashMap::new)
                 .entry(doc_id.to_string())
@@ -1645,7 +1652,7 @@ impl InvertedIndex {
 
         // Update document-to-terms mapping
         self.doc_terms.insert(doc_id.to_string(), terms.clone());
-        
+
         // Update document length
         self.doc_lengths.insert(doc_id.to_string(), content.len());
     }
@@ -1659,7 +1666,7 @@ impl InvertedIndex {
                         self.term_docs.remove(&term);
                     }
                 }
-                
+
                 if let Some(freq_map) = self.term_frequencies.get_mut(&term) {
                     freq_map.remove(doc_id);
                     if freq_map.is_empty() {
@@ -1668,16 +1675,13 @@ impl InvertedIndex {
                 }
             }
         }
-        
+
         self.doc_lengths.remove(doc_id);
     }
 
     fn search_exact(&self, query: &str) -> Vec<SearchResult> {
-        let query_terms: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        let query_terms: Vec<String> =
+            query.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
 
         let mut doc_scores: HashMap<String, f64> = HashMap::new();
 
@@ -1685,17 +1689,18 @@ impl InvertedIndex {
         for term in query_terms {
             if let Some(docs) = self.term_docs.get(&term) {
                 let idf = (self.doc_lengths.len() as f64 / docs.len() as f64).ln();
-                
+
                 for doc_id in docs {
-                    let tf = self.term_frequencies
+                    let tf = self
+                        .term_frequencies
                         .get(&term)
                         .and_then(|freq_map| freq_map.get(doc_id))
                         .copied()
                         .unwrap_or(0) as f64;
-                    
+
                     let doc_len = self.doc_lengths.get(doc_id).copied().unwrap_or(1) as f64;
                     let normalized_tf = tf / doc_len;
-                    
+
                     *doc_scores.entry(doc_id.clone()).or_insert(0.0) += normalized_tf * idf;
                 }
             }
@@ -1740,7 +1745,7 @@ impl FrequencyRanker {
         let recent_boost = self.recent_boost.get(command).copied().unwrap_or(1.0);
         let context_boost = self.context_boost.get(command).copied().unwrap_or(1.0);
         let success_boost = self.success_boost.get(command).copied().unwrap_or(1.0);
-        
+
         base_frequency * recent_boost * context_boost * success_boost
     }
 }
@@ -1774,12 +1779,7 @@ impl Default for FuzzyWeights {
 
 impl Default for Bm25Ranker {
     fn default() -> Self {
-        Self {
-            k1: 1.2,
-            b: 0.75,
-            average_doc_length: 100.0,
-            doc_lengths: HashMap::new(),
-        }
+        Self { k1: 1.2, b: 0.75, average_doc_length: 100.0, doc_lengths: HashMap::new() }
     }
 }
 
@@ -1800,7 +1800,6 @@ impl Default for SearchAlgorithms {
         }
     }
 }
-
 
 impl Default for SearchIntegration {
     fn default() -> Self {
@@ -1823,17 +1822,15 @@ mod tests {
         let mut index = InvertedIndex::default();
         index.add_document("doc1", "hello world");
         index.add_document("doc2", "hello rust");
-        
+
         assert!(index.term_docs.contains_key("hello"));
         assert_eq!(index.term_docs["hello"].len(), 2);
     }
 
     #[test]
     fn test_search_filter() {
-        let filter = SearchFilter::TextFilter {
-            pattern: "test".to_string(),
-            case_sensitive: false,
-        };
+        let filter =
+            SearchFilter::TextFilter { pattern: "test".to_string(), case_sensitive: false };
 
         let result = SearchResult {
             id: "test1".to_string(),
@@ -1881,25 +1878,25 @@ use crate::blocks_v2::{Block, BlockId, ExecutionStatus, SearchQuery, ShellType};
 pub struct NativeSearch {
     /// Indexed blocks for immediate search
     block_index: BlockIndex,
-    
+
     /// Search filters for immediate application
     active_filters: SearchFilters,
-    
+
     /// Search history for immediate access
     search_history: SearchHistory,
-    
+
     /// Real-time search state
     search_state: SearchState,
-    
+
     /// Search event callbacks for immediate responses
     event_callbacks: Vec<Box<dyn Fn(&SearchEvent) + Send + Sync>>,
-    
+
     /// Fuzzy search engine for intelligent matching
     fuzzy_engine: FuzzyEngine,
-    
+
     /// Search suggestions for immediate completion
     suggestion_engine: SuggestionEngine,
-    
+
     /// Performance statistics
     perf_stats: SearchStats,
 }
@@ -1921,31 +1918,31 @@ pub enum SearchEvent {
 pub struct BlockIndex {
     /// Full-text search index
     text_index: HashMap<String, HashSet<BlockId>>,
-    
+
     /// Command-specific index
     command_index: HashMap<String, HashSet<BlockId>>,
-    
+
     /// Output-specific index
     output_index: HashMap<String, HashSet<BlockId>>,
-    
+
     /// Tag index for immediate tag filtering
     tag_index: HashMap<String, HashSet<BlockId>>,
-    
+
     /// Shell type index
     shell_index: HashMap<ShellType, HashSet<BlockId>>,
-    
+
     /// Status index for immediate status filtering
     status_index: HashMap<ExecutionStatus, HashSet<BlockId>>,
-    
+
     /// Date-based index for temporal filtering
     date_index: DateIndex,
-    
+
     /// Directory index for path-based filtering
     directory_index: HashMap<String, HashSet<BlockId>>,
-    
+
     /// Block metadata cache for immediate access
     block_cache: HashMap<BlockId, IndexedBlock>,
-    
+
     /// Index update timestamps
     last_update: Instant,
     update_count: usize,
@@ -1996,28 +1993,28 @@ pub enum SearchFilter {
     CommandContains(String),
     OutputContains(String),
     Regex(String),
-    
+
     // Metadata filters
     HasTag(String),
     Shell(ShellType),
     Status(ExecutionStatus),
     ExitCode(i32),
-    
+
     // Temporal filters
     CreatedAfter(DateTime<Utc>),
     CreatedBefore(DateTime<Utc>),
     CreatedToday,
     CreatedThisWeek,
     CreatedThisMonth,
-    
+
     // Directory filters
     InDirectory(String),
     DirectoryContains(String),
-    
+
     // Duration filters
     DurationLessThan(Duration),
     DurationGreaterThan(Duration),
-    
+
     // Advanced filters
     Starred,
     Failed,
@@ -2169,7 +2166,7 @@ impl NativeSearch {
         // Create indexed block
         let command_tokens = self.tokenize_text(&block.command);
         let output_tokens = self.tokenize_text(&block.output);
-        
+
         let indexed_block = IndexedBlock {
             block_id: block.id,
             command_tokens: command_tokens.clone(),
@@ -2248,7 +2245,7 @@ impl NativeSearch {
         // Update performance stats immediately
         self.perf_stats.total_searches += 1;
         self.perf_stats.total_search_time += duration;
-        self.perf_stats.average_search_time = 
+        self.perf_stats.average_search_time =
             self.perf_stats.total_search_time / self.perf_stats.total_searches as u32;
 
         // Add to search history immediately
@@ -2452,7 +2449,7 @@ impl NativeSearch {
     pub fn remove_filter(&mut self, filter: &SearchFilter) -> Result<()> {
         if let Some(pos) = self.active_filters.active_filters.iter().position(|f| f == filter) {
             let removed_filter = self.active_filters.active_filters.remove(pos);
-            
+
             // Re-run search without filter if query is active
             if let Some(ref query) = self.search_state.current_query {
                 self.search(query)?;
@@ -2467,7 +2464,7 @@ impl NativeSearch {
     /// Clear all filters immediately
     pub fn clear_filters(&mut self) -> Result<()> {
         self.active_filters.active_filters.clear();
-        
+
         // Re-run search without filters if query is active
         if let Some(ref query) = self.search_state.current_query {
             self.search(query)?;
@@ -2550,7 +2547,7 @@ impl NativeSearch {
     /// Update text index immediately
     fn update_text_index(&mut self, command: &str, output: &str, block_id: BlockId) {
         let all_tokens = self.tokenize_text(&format!("{} {}", command, output));
-        
+
         for token in all_tokens {
             self.block_index.text_index
                 .entry(token)
@@ -2663,7 +2660,7 @@ impl NativeSearch {
         // Simple Levenshtein distance-based similarity
         let distance = self.levenshtein_distance(s1, s2);
         let max_len = s1.len().max(s2.len()) as f64;
-        
+
         if max_len == 0.0 {
             1.0
         } else {
@@ -2675,15 +2672,15 @@ impl NativeSearch {
     fn levenshtein_distance(&self, s1: &str, s2: &str) -> usize {
         let len1 = s1.len();
         let len2 = s2.len();
-        
+
         if len1 == 0 { return len2; }
         if len2 == 0 { return len1; }
-        
+
         let mut d = vec![vec![0; len2 + 1]; len1 + 1];
-        
+
         for i in 1..=len1 { d[i][0] = i; }
         for j in 1..=len2 { d[0][j] = j; }
-        
+
         for i in 1..=len1 {
             for j in 1..=len2 {
                 let cost = if s1.chars().nth(i - 1) == s2.chars().nth(j - 1) { 0 } else { 1 };
@@ -2692,7 +2689,7 @@ impl NativeSearch {
                     .min(d[i - 1][j - 1] + cost);
             }
         }
-        
+
         d[len1][len2]
     }
 

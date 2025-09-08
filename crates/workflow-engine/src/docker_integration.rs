@@ -375,7 +375,7 @@ impl DockerIntegration {
     ) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
         if let Some(id) = container_id {
             let output = Command::new("docker")
-            .args(["inspect", "--format", "{{.Config.WorkingDir}}", id])
+                .args(["inspect", "--format", "{{.Config.WorkingDir}}", id])
                 .output()
                 .map_err(|e| anyhow!("Failed to get container working dir: {}", e))?;
 

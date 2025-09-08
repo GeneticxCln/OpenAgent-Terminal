@@ -193,10 +193,32 @@ fn is_valid_color(color: &str) -> bool {
     // Check if it's a named color (basic set)
     matches!(
         color.to_lowercase().as_str(),
-        "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "gray"
-            | "grey" | "darkgray" | "darkgrey" | "lightgray" | "lightgrey" | "darkred"
-            | "darkgreen" | "darkyellow" | "darkblue" | "darkmagenta" | "darkcyan" | "lightred"
-            | "lightgreen" | "lightyellow" | "lightblue" | "lightmagenta" | "lightcyan"
+        "black"
+            | "red"
+            | "green"
+            | "yellow"
+            | "blue"
+            | "magenta"
+            | "cyan"
+            | "white"
+            | "gray"
+            | "grey"
+            | "darkgray"
+            | "darkgrey"
+            | "lightgray"
+            | "lightgrey"
+            | "darkred"
+            | "darkgreen"
+            | "darkyellow"
+            | "darkblue"
+            | "darkmagenta"
+            | "darkcyan"
+            | "lightred"
+            | "lightgreen"
+            | "lightyellow"
+            | "lightblue"
+            | "lightmagenta"
+            | "lightcyan"
     )
 }
 

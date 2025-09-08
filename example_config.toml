@@ -461,14 +461,9 @@ show_modified_indicator = true
 show_new_tab_button = true
 # Show tab numbering (e.g., "1: title")
 show_tab_numbers = false
-# Per-tab width constraints (cells); unset => built-in defaults
-# min_tab_width = 10
-# max_tab_width = 30
 # Maximum tab title length
 max_title_length = 20
-# Reserve a terminal row for the tab bar to avoid overlaying content.
-# For now, this hides the top/bottom grid line depending on position.
-reserve_row = true
+# Note: Warp overlay-style tab bar no longer reserves a terminal row.
 
 # Split pane visuals and behavior (Warp-style)
 # These options control the appearance of split dividers and resize handles.
