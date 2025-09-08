@@ -71,7 +71,59 @@ export ANTHROPIC_API_KEY="your-key"
 - `Alt+f` - Toggle command folding
 - `Alt+j/k` - Navigate between blocks
 
+## Command Notebooks (CLI)
+
+Record and run sequences of shell commands with outputs, like a lightweight terminal notebook.
+
+Examples:
+
+```bash
+openagent-terminal notebook create "Setup"
+openagent-terminal notebook add-command --notebook Setup --command "echo hello"
+openagent-terminal notebook add-markdown --notebook Setup --text "## Step 1"
+openagent-terminal notebook show Setup
+openagent-terminal notebook run --notebook Setup
+```
+
+Data is stored under:
+- Linux: ~/.local/share/openagent-terminal/notebooks/notebooks.db
+
+Note: Command notebooks integrate with Blocks (history) and will link each executed cell to a Block for search/export.
+
 ## Configuration
+
+### Workspace pane drag and precise tab drop targets
+
+- Pane drag gesture is configurable under the workspace section in your config:
+
+```toml path=null start=null
+[workspace.drag]
+# Enable Alt+Left-drag to move panes between splits/tabs (default: true)
+enable_pane_drag = true
+# Modifier required to start a pane drag: "Alt" | "Ctrl" | "Shift" | "None"
+pane_drag_modifier = "Alt"
+# Mouse button used to start a pane drag: "Left" | "Middle" | "Right"
+pane_drag_button = "Left"
+```
+
+- The tab bar now caches precise pixel bounds for all tabs during rendering to improve drag-and-drop accuracy. When dragging a pane over the tab strip, drop targets use these cached bounds (falling back to even-width approximation only when bounds are unavailable).
+
+### Rendering (WGPU): Subpixel text & gamma
+
+When using the WGPU backend, you can enable LCD subpixel text rendering and tune its gamma/orientation under the `[debug]` section:
+
+```toml path=null start=null
+[debug]
+subpixel_text = "Enabled"       # "Auto" | "Enabled" | "Disabled"
+subpixel_orientation = "RGB"     # "RGB" | "BGR"
+subpixel_gamma = 2.2             # Typical range: 1.8 – 2.4
+```
+
+Runtime shortcuts:
+- Toggle subpixel: Ctrl+Shift+L (Cmd+Shift+L on macOS)
+- Cycle RGB/BGR: Ctrl+Shift+Y (Cmd+Shift+Y)
+- Perf HUD: Ctrl+Shift+F (Cmd+Shift+F)
+- Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
 
 Minimal AI config (`~/.config/openagent-terminal/openagent-terminal.toml`):
 
@@ -83,7 +135,7 @@ trigger_key = "Ctrl+Shift+A"
 never_auto_run = true  # Safety first
 ```
 
-See `example_config.toml` for full options.
+See `examples/openagent-terminal.example.toml` for a fuller starter configuration.
 
 ## Installation
 

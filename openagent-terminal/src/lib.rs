@@ -36,6 +36,8 @@ pub mod window_context;
 // New component modules
 pub mod blocks_v2;
 pub mod components_init;
+#[cfg(feature = "blocks")]
+pub mod notebooks;
 pub mod security; // Feature-gated security module
 #[cfg(feature = "security-lens")]
 pub use security::security_lens;

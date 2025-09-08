@@ -12,7 +12,7 @@ use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
 use openagent_terminal_core::index::Point;
 
 use crate::config::debug::{
-    AtlasEvictionPolicy, RendererPreference, SrgbPreference, SubpixelPreference,
+    AtlasEvictionPolicy, RendererPreference, SrgbPreference, SubpixelPreference, SubpixelOrientation,
 };
 use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
@@ -199,7 +199,17 @@ struct Proj {
   offset_y: f32,
   scale_x: f32,
   scale_y: f32,
+  gamma: f32,
 };
+
+fn to_lin_gamma(u: f32, gamma: f32) -> f32 {
+  if (u <= 0.04045) { return u / 12.92; }
+  return pow((u + 0.055) / 1.055, gamma);
+}
+
+fn srgb_to_linear_gamma(c: vec3<f32>, gamma: f32) -> vec3<f32> {
+  return vec3<f32>(to_lin_gamma(c.r, gamma), to_lin_gamma(c.g, gamma), to_lin_gamma(c.b, gamma));
+}
 
 @group(0) @binding(0) var<uniform> proj: Proj;
 @group(0) @binding(1) var atlas: texture_2d_array<f32>;
@@ -238,16 +248,37 @@ fn vs_main(in: VsIn) -> VsOut {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
   let s = textureSample(atlas, atlas_sampler, in.uv, i32(in.layer));
   let is_colored = (in.flags & 1u) != 0u;
+  let subpixel = (in.flags & 2u) != 0u;
+  let bgr = (in.flags & 4u) != 0u;
+
+  let fg_lin = srgb_to_linear_gamma(in.color.rgb, proj.gamma);
 
   // Keep multicolor glyphs (emoji/color fonts) as-is
   if (is_colored) {
     return s;
   }
 
-  // Force reliable grayscale rendering: use alpha coverage only.
-  let a = s.a * in.color.a;
-  // Debug: draw glyphs in solid white to maximize visibility across color schemes.
-  return vec4<f32>(vec3<f32>(1.0, 1.0, 1.0), a);
+  if (subpixel) {
+    // Approximate LCD subpixel rendering by sampling alpha at 3 horizontal subpixel offsets.
+    // Map one screen pixel to UV delta using derivatives.
+    let du = abs(dpdx(in.uv).x);
+    if (du > 0.0) {
+      let off = du / 3.0;
+      let a_l = textureSample(atlas, atlas_sampler, in.uv + vec2<f32>(-off, 0.0), i32(in.layer)).a;
+      let a_m = s.a;
+      let a_r = textureSample(atlas, atlas_sampler, in.uv + vec2<f32>(off, 0.0), i32(in.layer)).a;
+      var cov = vec3<f32>(a_l, a_m, a_r);
+      if (bgr) { cov = vec3<f32>(a_r, a_m, a_l); }
+      let out_rgb_lin = fg_lin * cov;
+      let out_alpha = max(max(cov.r, cov.g), cov.b) * in.color.a;
+      return vec4<f32>(out_rgb_lin, out_alpha);
+    }
+  }
+
+  // Grayscale fallback: use alpha coverage tinted with foreground color.
+  let coverage = s.a;
+  let out_alpha = coverage * in.color.a;
+  return vec4<f32>(fg_lin, out_alpha);
 }
 "#;
 
@@ -287,6 +318,13 @@ pub struct WgpuRenderer {
     // Preferences/state
     is_srgb_surface: bool,
     subpixel_enabled: bool,
+    subpixel_bgr: bool,
+    subpixel_gamma: f32,
+    perf_hud_enabled: bool,
+    // Last-frame stats
+    last_frame_ms: f32,
+    last_draw_calls: u32,
+    last_vertices: u32,
     zero_evicted_layer: bool,
     policy: AtlasEvictionPolicy,
     // Scratch
@@ -305,7 +343,6 @@ pub struct WgpuRenderer {
     pending_ui: Vec<UiVertex>,
     atlas_evicted: Cell<bool>,
 }
-
 impl From<String> for Error {
     fn from(s: String) -> Self {
         Self::Init(s)
@@ -438,15 +475,16 @@ impl WgpuRenderer {
         window_handle: &winit::window::Window,
         size: PhysicalSize<u32>,
         _renderer_preference: Option<RendererPreference>,
-        srgb_pref: SrgbPreference,
+        _srgb_pref: SrgbPreference,
         subpixel_pref: SubpixelPreference,
+        subpixel_orientation: SubpixelOrientation,
         zero_evicted_layer: bool,
         policy: AtlasEvictionPolicy,
         report_interval_frames: u32,
     ) -> Result<Self, Error> {
         // Prefer Vulkan backend explicitly (like Warp) and allow GL as a build fallback only if changed later.
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
+            backends: wgpu::Backends::PRIMARY,
             ..Default::default()
         });
         let surface = instance
@@ -508,6 +546,7 @@ impl WgpuRenderer {
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
         };
+        // Initial configure; surface is recreated per-draw, so this is a sanity check only.
         surface.configure(&device, &config);
 
         // Resolve subpixel rendering mode based on preference and surface format.
@@ -516,6 +555,7 @@ impl WgpuRenderer {
             SubpixelPreference::Disabled => false,
             SubpixelPreference::Auto => is_srgb_surface,
         };
+        let subpixel_bgr = matches!(subpixel_orientation, SubpixelOrientation::BGR);
 
         // Build rectangle pipeline.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -675,6 +715,7 @@ fragment: Some(wgpu::FragmentState {
                 proj.offset_y,
                 proj.scale_x,
                 proj.scale_y,
+                2.2f32,
             ]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -683,7 +724,7 @@ fragment: Some(wgpu::FragmentState {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -756,10 +797,10 @@ fragment: Some(wgpu::FragmentState {
                 module: &text_shader,
                 compilation_options: Default::default(),
                 entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
+targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    // Disable blending for debug visibility (acts as REPLACE).
-                    blend: None,
+                    // Enable standard alpha blending for text rendering.
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -804,6 +845,13 @@ fragment: Some(wgpu::FragmentState {
             text_bind_group,
             is_srgb_surface,
             subpixel_enabled,
+            subpixel_bgr,
+            subpixel_gamma: 2.2,
+            perf_hud_enabled: false,
+            // Init last-frame stats
+            last_frame_ms: 0.0,
+            last_draw_calls: 0,
+            last_vertices: 0,
             zero_evicted_layer: false,                    // set below
             policy: AtlasEvictionPolicy::LruMinOccupancy, // set below
             zero_scratch,
@@ -818,7 +866,6 @@ fragment: Some(wgpu::FragmentState {
             pending_ui: Vec::new(),
             atlas_evicted: Cell::new(false),
         };
-        // Apply constructor preferences that depend on caller config.
         renderer.zero_evicted_layer = zero_evicted_layer;
         renderer.policy = policy;
         renderer.report_interval_frames = report_interval_frames;
@@ -835,9 +882,8 @@ fragment: Some(wgpu::FragmentState {
         self.queue.write_buffer(
             &self.proj_buffer,
             0,
-            bytemuck::bytes_of(&[proj.offset_x, proj.offset_y, proj.scale_x, proj.scale_y]),
+            bytemuck::bytes_of(&[proj.offset_x, proj.offset_y, proj.scale_x, proj.scale_y, self.subpixel_gamma]),
         );
-        // Reconfiguration will happen on the next draw when recreating the surface.
     }
 
     pub fn clear(&self, color: Rgb, _alpha: f32) {
@@ -854,28 +900,24 @@ fragment: Some(wgpu::FragmentState {
 
     pub fn draw_rects(
         &mut self,
-        window_handle: &winit::window::Window,
+        window: &winit::window::Window,
         size_info: &SizeInfo,
         metrics: &Metrics,
         rects_in: Vec<RenderRect>,
     ) {
-        // Acquire frame.
-        // Create a fresh surface for the current frame and (re)configure it.
-        let surface = match self.instance.create_surface(window_handle) {
+        // Create and configure surface for this frame.
+        let surface = match self.instance.create_surface(window) {
             Ok(s) => s,
             Err(_) => return,
         };
-        let mut config = self.config.clone();
-        config.width = self.size.width.max(1);
-        config.height = self.size.height.max(1);
-        surface.configure(&self.device, &config);
-
+        surface.configure(&self.device, &self.config);
+        // Acquire frame from surface.
         let frame = match surface.get_current_texture() {
             Ok(frame) => frame,
             Err(err) => {
                 match err {
                     wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost => {
-                        surface.configure(&self.device, &config);
+                        surface.configure(&self.device, &self.config);
                     },
                     wgpu::SurfaceError::OutOfMemory => return,
                     wgpu::SurfaceError::Timeout => return,
@@ -1087,6 +1129,46 @@ fragment: Some(wgpu::FragmentState {
 
     pub fn set_sprite_filter_nearest(&mut self, _nearest: bool) {}
 
+    pub fn set_subpixel_gamma(&mut self, gamma: f32) {
+        self.subpixel_gamma = gamma.clamp(1.4, 3.0);
+        // Update uniform immediately
+        let proj = projection_from_size(self.size);
+        self.queue.write_buffer(
+            &self.proj_buffer,
+            0,
+            bytemuck::bytes_of(&[proj.offset_x, proj.offset_y, proj.scale_x, proj.scale_y, self.subpixel_gamma]),
+        );
+    }
+
+    pub fn adjust_subpixel_gamma(&mut self, delta: f32) {
+        let g = (self.subpixel_gamma + delta).clamp(1.4, 3.0);
+        self.set_subpixel_gamma(g);
+    }
+
+    pub fn toggle_perf_hud(&mut self) {
+        self.perf_hud_enabled = !self.perf_hud_enabled;
+    }
+
+    pub fn perf_hud_enabled(&self) -> bool { self.perf_hud_enabled }
+
+    pub fn toggle_subpixel_enabled(&mut self) -> bool {
+        self.subpixel_enabled = !self.subpixel_enabled;
+        self.subpixel_enabled
+    }
+
+    pub fn set_subpixel_enabled(&mut self, enabled: bool) {
+        self.subpixel_enabled = enabled;
+    }
+
+    pub fn cycle_subpixel_orientation(&mut self) -> SubpixelOrientation {
+        self.subpixel_bgr = !self.subpixel_bgr;
+        if self.subpixel_bgr { SubpixelOrientation::BGR } else { SubpixelOrientation::RGB }
+    }
+
+    pub fn set_subpixel_orientation(&mut self, orientation: SubpixelOrientation) {
+        self.subpixel_bgr = matches!(orientation, SubpixelOrientation::BGR);
+    }
+
     pub fn stage_ui_rounded_rect(&mut self, size_info: &SizeInfo, rect: UiRoundedRect) {
         let half_w = size_info.width() / 2.0;
         let half_h = size_info.height() / 2.0;
@@ -1139,6 +1221,7 @@ fragment: Some(wgpu::FragmentState {
     ) {
         // Stage text vertices to render on the next draw_rects pass.
         let subpixel = self.subpixel_enabled;
+        let bgr = self.subpixel_bgr;
         let mut loader = WgpuGlyphLoader { renderer: self };
         let mut staged: Vec<TextVertex> = Vec::new();
         let mut staged_bg: Vec<RenderRect> = Vec::new();
@@ -1178,7 +1261,7 @@ fragment: Some(wgpu::FragmentState {
             let glyph_key =
                 GlyphKey { font_key, size: glyph_cache.font_size, character: cell.character };
             let g = glyph_cache.get(glyph_key, &mut loader, true);
-            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel));
+            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel, bgr));
 
             // Zero-width characters.
             if let Some(zw) =
@@ -1189,7 +1272,7 @@ fragment: Some(wgpu::FragmentState {
                     key.character = ch;
                     let gzw = glyph_cache.get(key, &mut loader, false);
                     staged
-                        .extend_from_slice(&build_text_vertices(size_info, &cell, &gzw, subpixel));
+                        .extend_from_slice(&build_text_vertices(size_info, &cell, &gzw, subpixel, bgr));
                 }
             }
         }
@@ -1209,6 +1292,7 @@ fragment: Some(wgpu::FragmentState {
     ) {
         // Minimal implementation: render string via staged text path.
         let subpixel = self.subpixel_enabled;
+        let bgr = self.subpixel_bgr;
         let mut loader = WgpuGlyphLoader { renderer: self };
         let mut col = point.column.0;
         let mut staged: Vec<TextVertex> = Vec::new();
@@ -1241,7 +1325,7 @@ fragment: Some(wgpu::FragmentState {
                 1.0,
             ));
             let g = glyph_cache.get(glyph_key, &mut loader, true);
-            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel));
+            staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel, bgr));
             col += 1;
         }
         self.pending_text.extend(staged);
@@ -1381,6 +1465,7 @@ fn build_text_vertices(
     cell: &RenderableCell,
     glyph: &Glyph,
     subpixel: bool,
+    bgr: bool,
 ) -> [TextVertex; 6] {
     let cell_x = cell.point.column.0 as f32 * size_info.cell_width() + size_info.padding_x();
     let gx = cell_x + glyph.left as f32;
@@ -1402,6 +1487,9 @@ fn build_text_vertices(
     // Enable subpixel path only if configured.
     if subpixel {
         flags |= 2u32;
+    }
+    if bgr {
+        flags |= 4u32;
     }
 
     let layer = if glyph.tex_id > 0 { glyph.tex_id - 1 } else { 0 };

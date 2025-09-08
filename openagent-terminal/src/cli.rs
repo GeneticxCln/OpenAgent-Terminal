@@ -259,6 +259,9 @@ pub enum Subcommands {
     Migrate(MigrateOptions),
     /// Open a native editor window (Monaco) for a file path
     WebEdit(WebEditOptions),
+    /// Command notebooks (create/list/add/run)
+    #[cfg(feature = "blocks")]
+    Notebook(crate::notebooks::NotebookOptions),
 }
 
 /// Send a message to the OpenAgent Terminal socket.

@@ -332,7 +332,20 @@ impl HarfBuzzShaper {
         // Query font from database
         let query = Query { families: &[Family::Name(font_name)], ..Default::default() };
 
-        let font_id = self.font_database.query(&query).context("Font not found in database")?;
+        // Try primary font first; fall back to configured fallback fonts if not found.
+        let font_id = if let Some(id) = self.font_database.query(&query) {
+            id
+        } else {
+            let mut found: Option<fontdb::ID> = None;
+            for fb in &self.config.fallback_fonts {
+                let q = Query { families: &[Family::Name(fb)], ..Default::default() };
+                if let Some(id) = self.font_database.query(&q) {
+                    found = Some(id);
+                    break;
+                }
+            }
+            found.context("Font not found in database")?
+        };
 
         let (source, _index) = self
             .font_database

@@ -359,8 +359,9 @@ impl SettingsPanelState {
         }
     }
 
-    pub fn test_connection(&mut self, config: &UiConfig) {
+pub fn test_connection(&mut self, config: &UiConfig) {
         // Validate credentials for the selected provider using secure loader
+#[cfg(feature = "ai")]
         let provider = self.provider.to_ascii_lowercase();
         #[cfg(feature = "ai")]
         {
@@ -573,10 +574,10 @@ fn save_general_to_config(
     fs::write(&path, s)
 }
 
-fn current_provider_from_config(config: &UiConfig) -> String {
+fn current_provider_from_config(_config: &UiConfig) -> String {
     #[cfg(feature = "ai")]
     {
-        config.ai.provider.as_deref().unwrap_or("openrouter").to_string()
+        _config.ai.provider.as_deref().unwrap_or("openrouter").to_string()
     }
     #[cfg(not(feature = "ai"))]
     {

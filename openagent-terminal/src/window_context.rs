@@ -101,7 +101,7 @@ impl WindowContext {
             info!("OPENAGENT_FORCE_GL detected; forcing OpenGL backend");
         }
         // Allow disabling automatic GL fallback via env var.
-        let disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
+let _disable_gl_fallback = env::var("OPENAGENT_DISABLE_GL_FALLBACK")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -389,7 +389,7 @@ impl WindowContext {
         // Warp mode will create its initial tab during initialization
 
         // Create context for the OpenAgent Terminal window.
-        let window_context = WindowContext {
+        let mut window_context = WindowContext {
             preserve_title,
             terminal,
             display,
@@ -451,6 +451,13 @@ impl WindowContext {
             },
         };
 
+        // Apply effective reduce-motion preference from config: override takes precedence over theme
+        let effective_reduce_motion = window_context
+            .config
+            .reduce_motion_override
+            .unwrap_or_else(|| window_context.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false));
+        window_context.display.set_reduce_motion(effective_reduce_motion);
+
         // Note: Warp functionality will be initialized later in the event processor
         // after the WindowContext is fully set up and Arc-wrapped
 
@@ -485,6 +492,13 @@ impl WindowContext {
 
         // Always reload the theme to account for auto-theme switching.
         self.display.window.set_theme(self.config.window.theme());
+
+        // Apply effective reduce-motion preference from config: override takes precedence over theme
+        let effective_reduce_motion = self
+            .config
+            .reduce_motion_override
+            .unwrap_or_else(|| self.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false));
+        self.display.set_reduce_motion(effective_reduce_motion);
 
         // Update display if either padding options or resize increments were changed.
         let window_config = &old_config.window;
@@ -608,6 +622,11 @@ impl WindowContext {
 
         // Force the display to process any pending display update.
         self.display.process_renderer_update();
+
+        // Update workspace animations; request another frame while animations are active
+        if self.display.update_workspace_animations() && self.display.window.has_frame {
+            self.display.window.request_redraw();
+        }
 
         // Request immediate re-draw if visual bell animation is not finished yet.
         if !self.display.visual_bell.completed() {

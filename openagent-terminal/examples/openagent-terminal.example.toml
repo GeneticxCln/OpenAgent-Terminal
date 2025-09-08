@@ -1,0 +1,44 @@
+# OpenAgent Terminal example configuration (TOML)
+# Save as: ~/.config/openagent-terminal/openagent-terminal.toml
+
+# --- Global UI ---
+# Override theme-provided reduce_motion; when true, minimize/disable animations.
+# When omitted, theme.reduce_motion (if any) applies.
+# reduce_motion_override = true
+
+# --- Workspace: Tab Bar ---
+[workspace.tab_bar]
+# Show the tab bar and reserve a terminal row at the top so it doesn't overlay content.
+show = true
+reserve_row = true
+position = "Top" # "Top" | "Bottom" | "Hidden"
+
+# --- Workspace: Pane Drag Gesture ---
+[workspace.drag]
+# Enable pane drag-and-drop between splits and tabs.
+enable_pane_drag = true
+# Modifier required to start a drag: "Alt" | "Ctrl" | "Shift" | "None"
+pane_drag_modifier = "Alt"
+# Mouse button to start the drag: "Left" | "Middle" | "Right"
+pane_drag_button = "Left"
+
+# Example alternative: Ctrl + Middle-click to drag panes
+# pane_drag_modifier = "Ctrl"
+# pane_drag_button = "Middle"
+
+# --- Splits ---
+[workspace.splits]
+# Visual preview/handles for split dividers
+preview_enabled = true
+show_resize_handles = true
+# Divider thickness and increment
+border_thickness = 1.0
+resize_increment = 5
+
+# --- AI (optional) ---
+# [ai]
+# enabled = true
+# provider = "ollama"  # or "openai", "anthropic"
+# trigger_key = "Ctrl+Shift+A"
+# never_auto_run = true
+

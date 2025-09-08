@@ -46,7 +46,7 @@ impl WarpSplitManager {
 
     /// Split current pane to the right (Warp Cmd+D behavior)
     pub fn split_right(
-        &self,
+        &mut self,
         layout: &mut SplitLayout,
         current_pane: PaneId,
         new_pane_id: PaneId,
@@ -56,7 +56,7 @@ impl WarpSplitManager {
 
     /// Split current pane downward (Warp Cmd+Shift+D behavior)
     pub fn split_down(
-        &self,
+        &mut self,
         layout: &mut SplitLayout,
         current_pane: PaneId,
         new_pane_id: PaneId,
@@ -149,7 +149,7 @@ impl WarpSplitManager {
 
     /// Resize current pane (Warp Cmd+Alt+Arrow with modifiers behavior)
     pub fn resize_pane(
-        &self,
+        &mut self,
         layout: &mut SplitLayout,
         current_pane: PaneId,
         direction: WarpResizeDirection,
@@ -447,7 +447,7 @@ impl Default for WarpSplitManager {
 /// Helper trait to extend base SplitManager functionality
 trait SplitManagerExt {
     fn split_pane(
-        &self,
+        &mut self,
         layout: &mut SplitLayout,
         target_id: PaneId,
         new_pane_id: PaneId,
@@ -458,7 +458,7 @@ trait SplitManagerExt {
 
 impl SplitManagerExt for SplitManager {
     fn split_pane(
-        &self,
+        &mut self,
         layout: &mut SplitLayout,
         target_id: PaneId,
         _new_pane_id: PaneId,

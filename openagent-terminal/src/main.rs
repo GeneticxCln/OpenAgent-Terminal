@@ -56,7 +56,20 @@ mod window_context;
 
 // New component modules
 mod blocks_v2;
+mod command_pipeline; // Native command execution pipeline
 mod components_init;
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
+mod native_input; // Native keyboard/mouse integration (experimental)
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
+mod native_persistence; // Native persistence layer (experimental)
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
+mod native_renderer; // Native UI rendering system (experimental)
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
+mod shell_integration; // Native shell integration (experimental)
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
+mod native_search; // Native search and filtering (experimental)
+#[cfg(feature = "blocks")]
+mod notebooks;
 mod security; // Feature-gated security module wrapper
 #[cfg(feature = "security-lens")]
 pub use security::security_lens;
@@ -105,6 +118,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             // Native overlay editor: set env to request opening after first window init
             std::env::set_var("OPENAGENT_OPEN_FILE", &opts.file);
             run_openagent_terminal(options)?;
+        },
+        #[cfg(feature = "blocks")]
+        Some(Subcommands::Notebook(ref nb_opts)) => {
+            // Run notebooks CLI in a lightweight runtime
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+            let code = rt.block_on(crate::notebooks::run_cli(nb_opts))?;
+            // Return the code by exiting early
+            if code != 0 {
+                // Map non-zero to an error to drive process exit code via main's Ok(()).
+                // We print nothing here; stdout/stderr was handled by run_cli.
+                std::process::exit(code);
+            }
         },
         None => run_openagent_terminal(options)?,
     }

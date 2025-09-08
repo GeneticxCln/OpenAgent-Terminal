@@ -69,6 +69,8 @@ pub struct InitializedComponents {
     pub text_shaper: Option<Arc<tokio::sync::RwLock<HarfBuzzShaper>>>,
     #[cfg(feature = "blocks")]
     pub block_manager: Option<Arc<tokio::sync::RwLock<BlockManager>>>,
+    #[cfg(feature = "blocks")]
+    pub notebook_manager: Option<Arc<tokio::sync::RwLock<crate::notebooks::NotebookManager>>>,
     #[cfg(feature = "workflow")]
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     #[cfg(feature = "plugins")]
@@ -151,6 +153,24 @@ pub async fn initialize_components(
         }
     } else {
         debug!("Blocks 2.0 system disabled");
+        None
+    };
+
+    // Initialize Notebook manager
+    #[cfg(feature = "blocks")]
+    let notebook_manager = if config.enable_blocks {
+        let notebooks_dir = config.data_dir.join("notebooks");
+        match crate::notebooks::NotebookManager::new(&notebooks_dir, block_manager.clone()).await {
+            Ok(mgr) => {
+                info!("✓ Command Notebooks initialized");
+                Some(Arc::new(tokio::sync::RwLock::new(mgr)))
+            },
+            Err(e) => {
+                error!("Failed to initialize Notebooks: {}", e);
+                None
+            },
+        }
+    } else {
         None
     };
 
@@ -240,6 +260,8 @@ pub async fn initialize_components(
         text_shaper,
         #[cfg(feature = "blocks")]
         block_manager,
+        #[cfg(feature = "blocks")]
+        notebook_manager,
         #[cfg(feature = "workflow")]
         workflow_engine,
         #[cfg(feature = "plugins")]

@@ -1,5 +1,6 @@
 #[cfg(feature = "ai")]
 mod ai_provider_security_tests {
+    use serial_test::serial;
     use openagent_terminal::config::ai::ProviderConfig;
     use openagent_terminal::config::ai_providers::ProviderCredentials;
     use std::collections::{HashMap, HashSet};
@@ -157,7 +158,12 @@ mod ai_provider_security_tests {
 
     /// Test that global environment pollution doesn't occur
     #[test]
+#[serial]
     fn test_no_global_environment_pollution() {
+        // Ensure legacy env vars are unset to isolate test from developer environment
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+
         // Set test credentials
         std::env::set_var("TEST_SECURE_OPENAI_KEY", "secure-openai-key");
         std::env::set_var("TEST_SECURE_ANTHROPIC_KEY", "secure-anthropic-key");
@@ -200,7 +206,13 @@ mod ai_provider_security_tests {
 
     /// Integration test: verify secure runtime creation
     #[test]
+#[serial]
     fn test_secure_runtime_creation() {
+        // Ensure legacy env vars are unset to isolate test from developer environment
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("OLLAMA_ENDPOINT");
+
         // Set up secure test environment
         std::env::set_var("TEST_RUNTIME_KEY", "test-runtime-key");
         std::env::set_var("TEST_RUNTIME_MODEL", "test-model");
@@ -232,10 +244,12 @@ mod ai_provider_security_tests {
 
 #[cfg(feature = "ai")]
 mod legacy_detection_tests {
+    use serial_test::serial;
     use openagent_terminal::config::ai_providers::check_legacy_env_vars;
 
     /// Test that legacy environment variable detection works
     #[test]
+#[serial]
     fn test_legacy_detection() {
         // Set some legacy variables
         std::env::set_var("OPENAI_API_KEY", "legacy-key");

@@ -121,6 +121,8 @@ impl Display {
 
         // Draw tabs with animation and drag-and-drop support
         let tab_order = tab_manager.tab_order();
+        // Reset cached tab bounds (px)
+        self.tab_bounds_px.clear();
         let active_tab_id = tab_manager.active_tab_id();
         let hover = self.tab_hover;
         let _now = std::time::Instant::now();
@@ -164,6 +166,12 @@ impl Display {
 
             // Store position for rendering (include index for numbering)
             tab_positions.push((tab_id, index, visual_x, tab_width, alpha, scale));
+            // Cache tab bounds in pixels for hit testing
+            let cw = size_info.cell_width();
+            let x_px = visual_x * cw;
+            let w_px = tab_width as f32 * cw;
+            self.tab_bounds_px.push((tab_id, x_px, w_px));
+
             current_x += tab_width + 1; // +1 for separator
         }
 

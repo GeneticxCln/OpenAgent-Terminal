@@ -255,6 +255,8 @@ impl Display {
 
         // Draw tabs with Warp styling
         let tab_order = tab_manager.tab_order();
+        // Reset cached tab bounds for precision hit testing
+        self.tab_bounds_px.clear();
         let active_tab_id = tab_manager.active_tab_id();
         // Track active tab changes for switch animation
         if self.tab_last_active_id != active_tab_id {
@@ -283,6 +285,9 @@ impl Display {
             };
 
             let is_active = Some(tab_id) == active_tab_id;
+            // Cache tab bounds in pixels
+            self.tab_bounds_px.push((tab_id, current_x, tab_width));
+
             self.draw_warp_tab(current_x, start_y, tab_width, tab, is_active, style);
 
             current_x += tab_width + 8.0; // 8px gap between tabs
