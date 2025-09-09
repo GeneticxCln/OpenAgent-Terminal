@@ -104,7 +104,9 @@ fn ref_test(dir: &Path) {
     let serialized_cfg = fs::read_to_string(dir.join("config.json")).unwrap();
 
     let size: TermSize = json::from_str(&serialized_size).unwrap();
-    let grid: Grid<Cell> = json::from_str(&serialized_grid).unwrap();
+    let mut grid: Grid<Cell> = json::from_str(&serialized_grid).unwrap();
+    grid.initialize_all();
+    grid.truncate();
     let ref_config: RefConfig = json::from_str(&serialized_cfg).unwrap();
 
     let options =
@@ -121,25 +123,37 @@ fn ref_test(dir: &Path) {
     term_grid.truncate();
 
     if grid != term_grid {
-        for i in 0..grid.total_lines() {
-            for j in 0..grid.columns() {
-                let cell = &term_grid[Line(i as i32)][Column(j)];
-                let original_cell = &grid[Line(i as i32)][Column(j)];
-                if original_cell != cell {
-                    println!("[{i}][{j}] {original_cell:?} => {cell:?}",);
+        let bless = std::env::var_os("REF_BLESS").is_some() || std::env::var_os("BLESS").is_some();
+
+        if bless {
+            // Update the snapshot in-place when REF_BLESS (or BLESS) is set.
+            let snapshot_path = dir.join("grid.json");
+            let _ = fs::write(&snapshot_path, json::to_string_pretty(&term_grid).unwrap());
+            eprintln!("REF_BLESS=1 set: updated snapshot {}", snapshot_path.display());
+
+            // Set expected to actual so the assertion below passes in this run.
+            grid = term_grid.clone();
+        } else {
+            for i in 0..grid.total_lines() {
+                for j in 0..grid.columns() {
+                    let cell = &term_grid[Line(i as i32)][Column(j)];
+                    let original_cell = &grid[Line(i as i32)][Column(j)];
+                    if original_cell != cell {
+                        println!("[{i}][{j}] {original_cell:?} => {cell:?}",);
+                    }
                 }
             }
+
+            // Dump actual and expected grids to /tmp for inspection.
+            let name = dir.file_name().unwrap_or_default().to_string_lossy();
+            let actual_path = format!("/tmp/term_grid_{}.json", name);
+            let expected_path = format!("/tmp/expected_grid_{}.json", name);
+            let _ = fs::write(&actual_path, json::to_string_pretty(&term_grid).unwrap());
+            let _ = fs::write(&expected_path, json::to_string_pretty(&grid).unwrap());
+            println!("Dumped actual to {} and expected to {}", actual_path, expected_path);
+
+            panic!("Ref test failed; grid doesn't match");
         }
-
-        // Dump actual and expected grids to /tmp for inspection.
-        let name = dir.file_name().unwrap_or_default().to_string_lossy();
-        let actual_path = format!("/tmp/term_grid_{}.json", name);
-        let expected_path = format!("/tmp/expected_grid_{}.json", name);
-        let _ = fs::write(&actual_path, json::to_string_pretty(&term_grid).unwrap());
-        let _ = fs::write(&expected_path, json::to_string_pretty(&grid).unwrap());
-        println!("Dumped actual to {} and expected to {}", actual_path, expected_path);
-
-        panic!("Ref test failed; grid doesn't match");
     }
 
     assert_eq!(grid, term_grid);
