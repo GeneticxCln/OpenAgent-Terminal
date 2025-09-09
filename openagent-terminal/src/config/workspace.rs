@@ -150,32 +150,24 @@ impl Default for QuickActionsConfig {
 }
 
 /// Quick Actions bar position
-#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 pub enum QuickActionsPosition {
+    #[default]
     Auto,
     Top,
     Bottom,
 }
 
-impl Default for QuickActionsPosition {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Tab bar visibility behavior
-#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 pub enum TabBarVisibility {
+    #[default]
     Auto,
     Always,
     Hover,
 }
 
-impl Default for TabBarVisibility {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 impl Default for TabBarConfig {
     fn default() -> Self {
@@ -348,24 +340,21 @@ impl Default for SessionConfig {
 }
 
 /// Tab bar position
-#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 pub enum TabBarPosition {
+    #[default]
     Top,
     Bottom,
     Hidden,
 }
 
-impl Default for TabBarPosition {
-    fn default() -> Self {
-        Self::Top
-    }
-}
 
 /// Action when creating a new tab
 #[allow(clippy::enum_variant_names)]
-#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 pub enum NewTabAction {
     /// Inherit the working directory from the current tab
+    #[default]
     InheritWorkingDir,
     /// Start in the home directory
     HomeDir,
@@ -375,11 +364,6 @@ pub enum NewTabAction {
     CustomDir,
 }
 
-impl Default for NewTabAction {
-    fn default() -> Self {
-        Self::InheritWorkingDir
-    }
-}
 
 /// Workspace keybindings (for documentation, actual bindings in main keybinding system)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, SerdeReplace)]

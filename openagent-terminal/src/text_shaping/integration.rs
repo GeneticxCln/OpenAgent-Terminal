@@ -195,15 +195,12 @@ impl IntegratedTextShaper {
                     }
                 }
 
-                cache.insert(
-                    key,
-                    ShapedLineInfo {
-                        shaped_text: shaped_text.clone(),
-                        font_name,
-                        font_size,
-                        cell_count: cells_vec.len(),
-                    },
-                );
+                cache.insert(key, ShapedLineInfo {
+                    shaped_text: shaped_text.clone(),
+                    font_name,
+                    font_size,
+                    cell_count: cells_vec.len(),
+                });
             }
         }
 

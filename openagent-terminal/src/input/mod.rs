@@ -2418,7 +2418,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Pane drag gesture starts a pane drag operation (configurable)
                         {
                             let dcfg = {
-                                // Copy drag config to avoid holding immutable borrow across mutable ctx use
+                                // Copy drag config to avoid holding immutable borrow across mutable
+                                // ctx use
                                 self.ctx.config().workspace.drag.clone()
                             };
                             if dcfg.enable_pane_drag {

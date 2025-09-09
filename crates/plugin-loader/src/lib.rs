@@ -1366,14 +1366,11 @@ impl PluginManager {
         for name in names {
             match self.send_event_to_plugin(&name, event).await {
                 Ok(resp) => results.push((name, resp)),
-                Err(e) => results.push((
-                    name,
-                    PluginEventResponse {
-                        success: false,
-                        result: None,
-                        error: Some(e.to_string()),
-                    },
-                )),
+                Err(e) => results.push((name, PluginEventResponse {
+                    success: false,
+                    result: None,
+                    error: Some(e.to_string()),
+                })),
             }
         }
         results

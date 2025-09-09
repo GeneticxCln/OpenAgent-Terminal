@@ -24,6 +24,7 @@ impl NotebookId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+
     pub fn from_string(s: &str) -> Result<Self> {
         Ok(Self(Uuid::parse_str(s)?))
     }
@@ -37,6 +38,7 @@ impl Default for NotebookId {
 
 impl std::str::FromStr for NotebookId {
     type Err = uuid::Error;
+
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         Ok(Self(Uuid::parse_str(s)?))
     }
@@ -56,6 +58,7 @@ impl CellId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+
     pub fn from_string(s: &str) -> Result<Self> {
         Ok(Self(Uuid::parse_str(s)?))
     }
@@ -69,6 +72,7 @@ impl Default for CellId {
 
 impl std::str::FromStr for CellId {
     type Err = uuid::Error;
+
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         Ok(Self(Uuid::parse_str(s)?))
     }

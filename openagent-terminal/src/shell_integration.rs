@@ -806,74 +806,50 @@ impl ExitCodeMonitor {
 
     fn setup_exit_code_meanings(&mut self) {
         // Common exit codes and their meanings
-        self.exit_code_meanings.insert(
-            0,
-            ExitCodeInfo {
-                meaning: "Success".to_string(),
-                severity: ExitCodeSeverity::Success,
-                suggestion: None,
-                common_causes: vec!["Command completed successfully".to_string()],
-            },
-        );
+        self.exit_code_meanings.insert(0, ExitCodeInfo {
+            meaning: "Success".to_string(),
+            severity: ExitCodeSeverity::Success,
+            suggestion: None,
+            common_causes: vec!["Command completed successfully".to_string()],
+        });
 
-        self.exit_code_meanings.insert(
-            1,
-            ExitCodeInfo {
-                meaning: "General error".to_string(),
-                severity: ExitCodeSeverity::Error,
-                suggestion: Some("Check command syntax and arguments".to_string()),
-                common_causes: vec![
-                    "Invalid arguments".to_string(),
-                    "Permission denied".to_string(),
-                ],
-            },
-        );
+        self.exit_code_meanings.insert(1, ExitCodeInfo {
+            meaning: "General error".to_string(),
+            severity: ExitCodeSeverity::Error,
+            suggestion: Some("Check command syntax and arguments".to_string()),
+            common_causes: vec!["Invalid arguments".to_string(), "Permission denied".to_string()],
+        });
 
-        self.exit_code_meanings.insert(
-            2,
-            ExitCodeInfo {
-                meaning: "Misuse of shell builtins".to_string(),
-                severity: ExitCodeSeverity::Error,
-                suggestion: Some("Check command usage with --help".to_string()),
-                common_causes: vec!["Invalid command usage".to_string()],
-            },
-        );
+        self.exit_code_meanings.insert(2, ExitCodeInfo {
+            meaning: "Misuse of shell builtins".to_string(),
+            severity: ExitCodeSeverity::Error,
+            suggestion: Some("Check command usage with --help".to_string()),
+            common_causes: vec!["Invalid command usage".to_string()],
+        });
 
-        self.exit_code_meanings.insert(
-            126,
-            ExitCodeInfo {
-                meaning: "Command not executable".to_string(),
-                severity: ExitCodeSeverity::Error,
-                suggestion: Some("Check file permissions with ls -l".to_string()),
-                common_causes: vec![
-                    "File not executable".to_string(),
-                    "Permission denied".to_string(),
-                ],
-            },
-        );
+        self.exit_code_meanings.insert(126, ExitCodeInfo {
+            meaning: "Command not executable".to_string(),
+            severity: ExitCodeSeverity::Error,
+            suggestion: Some("Check file permissions with ls -l".to_string()),
+            common_causes: vec!["File not executable".to_string(), "Permission denied".to_string()],
+        });
 
-        self.exit_code_meanings.insert(
-            127,
-            ExitCodeInfo {
-                meaning: "Command not found".to_string(),
-                severity: ExitCodeSeverity::Error,
-                suggestion: Some("Check if command is installed and in PATH".to_string()),
-                common_causes: vec![
-                    "Command not installed".to_string(),
-                    "Typo in command name".to_string(),
-                ],
-            },
-        );
+        self.exit_code_meanings.insert(127, ExitCodeInfo {
+            meaning: "Command not found".to_string(),
+            severity: ExitCodeSeverity::Error,
+            suggestion: Some("Check if command is installed and in PATH".to_string()),
+            common_causes: vec![
+                "Command not installed".to_string(),
+                "Typo in command name".to_string(),
+            ],
+        });
 
-        self.exit_code_meanings.insert(
-            130,
-            ExitCodeInfo {
-                meaning: "Script terminated by Control-C".to_string(),
-                severity: ExitCodeSeverity::Warning,
-                suggestion: Some("Command was interrupted by user".to_string()),
-                common_causes: vec!["User interruption".to_string()],
-            },
-        );
+        self.exit_code_meanings.insert(130, ExitCodeInfo {
+            meaning: "Script terminated by Control-C".to_string(),
+            severity: ExitCodeSeverity::Warning,
+            suggestion: Some("Command was interrupted by user".to_string()),
+            common_causes: vec!["User interruption".to_string()],
+        });
     }
 
     fn process_exit_code(&mut self, id: CommandId, exit_code: i32) {
