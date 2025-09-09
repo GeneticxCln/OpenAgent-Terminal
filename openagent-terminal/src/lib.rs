@@ -12,6 +12,7 @@ pub mod ai_context_provider;
 pub mod ai_runtime;
 pub mod cli;
 pub mod clipboard;
+pub mod command_history;
 pub mod config;
 pub mod daemon;
 pub mod display;
@@ -39,6 +40,7 @@ pub mod components_init;
 #[cfg(feature = "blocks")]
 pub mod notebooks;
 pub mod security; // Feature-gated security module
+pub mod security_config;
 #[cfg(feature = "security-lens")]
 pub use security::security_lens;
 #[cfg(not(feature = "security-lens"))]
