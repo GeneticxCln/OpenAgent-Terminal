@@ -4,7 +4,7 @@
 use log::{debug, error, info};
 use std::collections::VecDeque;
 
-use crate::security_lens::{SecurityLens, SecurityPolicy};
+use crate::security::{SecurityLens, SecurityPolicy};
 use openagent_terminal_ai::providers::{
     AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
 };
@@ -617,6 +617,8 @@ impl AiRuntime {
                         "# Security Lens: {:?} - {}\n",
                         risk.level, risk.explanation
                     ));
+                    // Note: factors field is only available in full security-lens feature
+                    #[cfg(feature = "security-lens")]
                     if !risk.factors.is_empty() {
                         annotated.push_str("# Risk factors:\n");
                         for f in &risk.factors {

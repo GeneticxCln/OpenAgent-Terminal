@@ -1044,7 +1044,7 @@ impl Display {
 
         // Labels
         let fg = tokens.text;
-        let muted = tokens.text_muted;
+        let _muted = tokens.text_muted;
 
         // Build labels dynamically to respect configuration and features
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
@@ -1074,7 +1074,7 @@ impl Display {
         let mut col = 1usize;
         for label in labels.iter() {
             // For AI, dim if the build doesn't enable AI feature
-            let is_ai = *label == "[AI]";
+            let _is_ai = *label == "[AI]";
             #[allow(unused_mut)]
             let mut color = fg;
             #[cfg(not(feature = "ai"))]
