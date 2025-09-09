@@ -483,7 +483,8 @@ impl WgpuRenderer {
         policy: AtlasEvictionPolicy,
         report_interval_frames: u32,
     ) -> Result<Self, Error> {
-        // Prefer Vulkan backend explicitly (like Warp) and allow GL as a build fallback only if changed later.
+        // Prefer Vulkan backend explicitly (like Warp) and allow GL as a build fallback only if
+        // changed later.
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()

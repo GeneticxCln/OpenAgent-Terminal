@@ -438,7 +438,8 @@ impl SplitManager {
                         ratio: l_ratio,
                     } = left.as_ref()
                     {
-                        // Only rotate when the right child is not a simple leaf to preserve adjacency semantics
+                        // Only rotate when the right child is not a simple leaf to preserve
+                        // adjacency semantics
                         let right_is_leaf = matches!(right.as_ref(), SplitLayout::Single(_));
                         if !right_is_leaf {
                             // Compute new ratios preserving widths
@@ -480,7 +481,8 @@ impl SplitManager {
                     if let SplitLayout::Vertical { top: t_top, bottom: t_bottom, ratio: t_ratio } =
                         top.as_ref()
                     {
-                        // Only rotate when the bottom child is not a simple leaf to preserve adjacency semantics
+                        // Only rotate when the bottom child is not a simple leaf to preserve
+                        // adjacency semantics
                         let bottom_is_leaf = matches!(bottom.as_ref(), SplitLayout::Single(_));
                         if !bottom_is_leaf {
                             let r_p = *ratio;

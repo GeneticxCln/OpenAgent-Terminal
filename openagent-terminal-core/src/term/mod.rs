@@ -777,15 +777,33 @@ impl<T> Term<T> {
     #[inline]
     fn scroll_up_relative(&mut self, origin: Line, mut lines: usize) {
         trace!("Scrolling up relative: origin={origin}, lines={lines}");
+        eprintln!(
+            "DBG term::scroll_up_relative: origin={}, lines(before clip)={}, scroll_region=({}, {}), screen_lines={}",
+            origin.0,
+            lines,
+            self.scroll_region.start.0,
+            self.scroll_region.end.0,
+            self.screen_lines()
+        );
 
         lines = cmp::min(lines, (self.scroll_region.end - self.scroll_region.start).0 as usize);
 
         let region = origin..self.scroll_region.end;
+        eprintln!(
+            "DBG term::scroll_up_relative: region=({}, {}), lines(clamped)={}",
+            region.start.0, region.end.0, lines
+        );
 
         // Scroll selection.
         self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
 
+        let old_off = self.grid.display_offset();
         self.grid.scroll_up(&region, lines);
+        let new_off = self.grid.display_offset();
+        eprintln!(
+            "DBG term::scroll_up_relative: display_offset {} -> {}",
+            old_off, new_off
+        );
 
         // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
@@ -1569,15 +1587,6 @@ impl<T: EventListener> Handler for Term<T> {
             );
         }
 
-        // Opportunistically apply current rendition to the trailing blank cell (if any) before
-        // moving to the next line. This matches the reference expectations for a styled prompt
-        // followed by a single space, without overwriting real characters.
-        if !self.grid.cursor.input_needs_wrap && self.grid.cursor.point.column > Column(0) {
-            let point = self.grid.cursor.point;
-            if self.grid[point.line][point.column].c == ' ' {
-                self.write_at_cursor(' ');
-            }
-        }
 
         let next = self.grid.cursor.point.line + 1;
         if next == self.scroll_region.end {
@@ -2376,6 +2385,13 @@ impl<T: EventListener> Handler for Term<T> {
         let screen_lines = Line(self.screen_lines() as i32);
         self.scroll_region.start = cmp::min(start, screen_lines);
         self.scroll_region.end = cmp::min(end, screen_lines);
+        eprintln!(
+            "DBG term::set_scrolling_region: set to start={}, end={} (from top={}, bottom={:?})",
+            self.scroll_region.start.0,
+            self.scroll_region.end.0,
+            top,
+            bottom
+        );
         self.goto(0, 0);
     }
 

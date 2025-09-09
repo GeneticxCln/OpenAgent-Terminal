@@ -254,6 +254,18 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         T: ResetDiscriminant<D>,
         D: PartialEq,
     {
+        eprintln!(
+            "DBG grid::scroll_up: region=({}, {}), positions={}, display_offset={}, history_size={}, lines={}, total_lines={}, max_scroll_limit={}",
+            region.start.0,
+            region.end.0,
+            positions,
+            self.display_offset,
+            self.history_size(),
+            self.lines,
+            self.total_lines(),
+            self.max_scroll_limit
+        );
+
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
@@ -263,39 +275,50 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             return;
         }
 
-        // Update display offset when not pinned to active area.
-        if self.display_offset != 0 {
+        // Update display offset only when the scroll affects the viewport starting at the top (full-screen or top-anchored scroll).
+        // Scrolling a subregion (region.start > 0) must not affect the visible history/viewport.
+        if self.display_offset != 0 && region.start == Line(0) {
+            let old = self.display_offset;
             self.display_offset = min(self.display_offset + positions, self.max_scroll_limit);
+            eprintln!(
+                "DBG grid::scroll_up: display_offset updated {} -> {} (top-anchored)",
+                old, self.display_offset
+            );
         }
 
-        // Only rotate the entire history if the active region starts at the top.
         if region.start == 0 {
-            // Create scrollback for the new lines.
-            self.increase_scroll_limit(positions);
+            if self.max_scroll_limit == 0 {
+                // No history: perform an in-place subregion scroll to preserve buffer layout.
+                for i in (0..region.end.0 - positions as i32).rev().map(Line::from) {
+                    self.raw.swap(i, i + positions);
+                }
+            } else {
+                // History enabled: scroll into history by growing it first and rotating the buffer.
+                // Create scrollback for the new lines first.
+                let before_hist = self.history_size();
+                self.increase_scroll_limit(positions);
+                let after_hist = self.history_size();
+                let added = after_hist.saturating_sub(before_hist);
+                eprintln!(
+                    "DBG grid::scroll_up: increased history {} -> {} (requested {}, added {})",
+                    before_hist,
+                    after_hist,
+                    positions,
+                    added
+                );
 
-            // Swap the lines fixed at the top to their target positions after rotation.
-            //
-            // Since we've made sure that the rotation will never rotate away the entire region, we
-            // know that the position of the fixed lines before the rotation must already be
-            // visible.
-            //
-            // We need to start from the bottom, to make sure the fixed lines aren't swapped with
-            // each other.
-            for i in (0..region.start.0).rev().map(Line::from) {
-                self.raw.swap(i, i + positions);
-            }
+                // Rotate the entire line buffer upward so that scrolled-out lines become history first.
+                self.raw.rotate(-(positions as isize));
 
-            // Rotate the entire line buffer upward.
-            self.raw.rotate(-(positions as isize));
-
-            // Swap the fixed lines at the bottom back into position.
-            let screen_lines = self.screen_lines() as i32;
-            for i in (region.end.0..screen_lines).rev().map(Line::from) {
-                self.raw.swap(i, i - positions);
+                // Swap the fixed lines at the bottom back into position.
+                let screen_lines = self.screen_lines() as i32;
+                for i in (region.end.0..screen_lines).rev().map(Line::from) {
+                    self.raw.swap(i, i - positions);
+                }
             }
         } else {
             // Rotate lines without moving anything into history.
-            for i in (region.start.0..region.end.0 - positions as i32).map(Line::from) {
+            for i in (region.start.0..region.end.0 - positions as i32).rev().map(Line::from) {
                 self.raw.swap(i, i + positions);
             }
         }
@@ -304,6 +327,12 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         for i in (region.end.0 - positions as i32..region.end.0).map(Line::from) {
             self.raw[i].reset(&self.cursor.template);
         }
+
+        eprintln!(
+            "DBG grid::scroll_up: cleared new lines in [{}, {})",
+            (region.end.0 - positions as i32),
+            region.end.0
+        );
     }
 
     pub fn clear_viewport<D>(&mut self)
@@ -326,7 +355,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         // Clear the viewport.
         self.scroll_up(&region, positions);
 
-        // Reset rotated lines.
+        // Reset rotated lines to fully clear the viewport.
         for line in (0..(self.lines - positions)).map(Line::from) {
             self.raw[line].reset(&self.cursor.template);
         }
@@ -394,22 +423,56 @@ impl<T> Grid<T> {
     where
         T: GridCell + Default,
     {
-        // Remove all cached lines to clear them of any content.
-        self.truncate();
+        let before_hist = self.history_size();
+        let to_add = self.max_scroll_limit.saturating_sub(before_hist);
+        eprintln!(
+            "DBG grid::initialize_all: before total_lines={}, history_size={}, to_add={}",
+            self.total_lines(),
+            before_hist,
+            to_add
+        );
 
-        // Initialize everything with empty new lines.
-        self.raw.initialize(self.max_scroll_limit - self.history_size(), self.columns);
+        // Append empty rows to reach max_scroll_limit history before final alignment.
+        // Storage::initialize will rezero when reallocating, which places existing content at
+        // the head of the underlying vector and appends new rows at the tail. This preserves
+        // absolute ordering for ref tests.
+        let to_add = self.max_scroll_limit.saturating_sub(self.history_size());
+        if to_add > 0 {
+            self.raw.initialize(to_add, self.columns);
+        }
+
+        eprintln!(
+            "DBG grid::initialize_all: after total_lines={}, history_size={}",
+            self.total_lines(),
+            self.history_size()
+        );
     }
 
     /// This is used only for truncating before saving ref-tests.
     #[inline]
     pub fn truncate(&mut self) {
+        eprintln!(
+            "DBG grid::truncate: before total_lines={}, history_size={}, display_offset={}, lines={}",
+            self.total_lines(),
+            self.history_size(),
+            self.display_offset,
+            self.lines
+        );
+
         // Compact storage to the active length and normalize ring offset.
         self.raw.truncate();
 
         // Switch storage into absolute indexing mode for ref-tests.
         self.raw.align_visible_with_len();
         // NOTE: Do NOT modify `self.lines` here; keep the viewport height intact.
+
+        eprintln!(
+            "DBG grid::truncate: after total_lines={}, history_size={}, display_offset={}, lines={}",
+            self.total_lines(),
+            self.history_size(),
+            self.display_offset,
+            self.lines
+        );
     }
 
     /// Iterate over all cells in the grid starting at a specific point.

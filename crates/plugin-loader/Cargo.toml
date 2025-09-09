@@ -9,7 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-plugin-api = { path = "../plugin-api" }
+plugin-api = { path = "../plugin-api", version = "0.1.0" }
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
 anyhow.workspace = true

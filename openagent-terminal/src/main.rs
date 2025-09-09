@@ -263,11 +263,13 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
 
     // Windows shutdown notes:
     // The historical ConPTY drop-order deadlock has been resolved in openagent-terminal-core
-    // using a typestate-enforced PTY lifecycle (see openagent-terminal-core/src/tty/windows/pty_lifecycle.rs).
-    // Drop order is now guaranteed (ConPTY before conout), independent of outer owners.
+    // using a typestate-enforced PTY lifecycle (see
+    // openagent-terminal-core/src/tty/windows/pty_lifecycle.rs). Drop order is now guaranteed
+    // (ConPTY before conout), independent of outer owners.
     //
-    // We still call FreeConsole() on Windows to ensure shells like cmd/powershell redraw their prompt
-    // after detaching, but there is no longer a requirement to manually drop Processor first.
+    // We still call FreeConsole() on Windows to ensure shells like cmd/powershell redraw their
+    // prompt after detaching, but there is no longer a requirement to manually drop Processor
+    // first.
 
     // Terminate the config monitor.
     if let Some(config_monitor) = processor.config_monitor.take() {

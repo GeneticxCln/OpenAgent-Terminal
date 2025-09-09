@@ -8,8 +8,7 @@ use std::path::PathBuf;
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::config::UiConfig;
-use crate::config::{Action as BindingAction, BindingKey, KeyBinding};
+use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
@@ -703,10 +702,12 @@ impl SettingsPanelState {
         self.kb_capture_mode = true;
         self.message = Some("Press new key combo (Esc to cancel)".into());
     }
+
     pub fn cancel_kb_capture(&mut self) {
         self.kb_capture_mode = false;
         self.message = Some("Capture canceled".into());
     }
+
     pub fn is_kb_capturing(&self) -> bool {
         self.kb_capture_mode
     }

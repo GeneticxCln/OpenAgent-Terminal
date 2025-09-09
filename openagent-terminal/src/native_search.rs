@@ -1855,1050 +1855,1048 @@ mod tests {
     }
 }
 
-/*
-//! Native Search and Filtering System for OpenAgent Terminal
-//!
-//! This module provides real-time search and filtering for command blocks with
-//! instant results and no lazy loading or background processing.
-
-#![allow(dead_code)]
-
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use anyhow::Result;
-use chrono::{DateTime, Utc};
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-
-use crate::blocks_v2::{Block, BlockId, ExecutionStatus, SearchQuery, ShellType};
-
-/// Native search engine for immediate block filtering
-pub struct NativeSearch {
-    /// Indexed blocks for immediate search
-    block_index: BlockIndex,
-
-    /// Search filters for immediate application
-    active_filters: SearchFilters,
-
-    /// Search history for immediate access
-    search_history: SearchHistory,
-
-    /// Real-time search state
-    search_state: SearchState,
-
-    /// Search event callbacks for immediate responses
-    event_callbacks: Vec<Box<dyn Fn(&SearchEvent) + Send + Sync>>,
-
-    /// Fuzzy search engine for intelligent matching
-    fuzzy_engine: FuzzyEngine,
-
-    /// Search suggestions for immediate completion
-    suggestion_engine: SuggestionEngine,
-
-    /// Performance statistics
-    perf_stats: SearchStats,
-}
-
-/// Search events for immediate feedback
-#[derive(Debug, Clone)]
-pub enum SearchEvent {
-    SearchStarted { query: String, filter_count: usize },
-    SearchCompleted { query: String, result_count: usize, duration: Duration },
-    FilterApplied { filter: SearchFilter, result_count: usize },
-    FilterRemoved { filter: SearchFilter },
-    SuggestionsUpdated { suggestions: Vec<SearchSuggestion> },
-    IndexUpdated { block_count: usize, duration: Duration },
-    SearchCleared,
-}
-
-/// Block index for immediate search operations
-#[derive(Debug, Default)]
-pub struct BlockIndex {
-    /// Full-text search index
-    text_index: HashMap<String, HashSet<BlockId>>,
-
-    /// Command-specific index
-    command_index: HashMap<String, HashSet<BlockId>>,
-
-    /// Output-specific index
-    output_index: HashMap<String, HashSet<BlockId>>,
-
-    /// Tag index for immediate tag filtering
-    tag_index: HashMap<String, HashSet<BlockId>>,
-
-    /// Shell type index
-    shell_index: HashMap<ShellType, HashSet<BlockId>>,
-
-    /// Status index for immediate status filtering
-    status_index: HashMap<ExecutionStatus, HashSet<BlockId>>,
-
-    /// Date-based index for temporal filtering
-    date_index: DateIndex,
-
-    /// Directory index for path-based filtering
-    directory_index: HashMap<String, HashSet<BlockId>>,
-
-    /// Block metadata cache for immediate access
-    block_cache: HashMap<BlockId, IndexedBlock>,
-
-    /// Index update timestamps
-    last_update: Instant,
-    update_count: usize,
-}
-
-/// Indexed block for immediate search
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IndexedBlock {
-    pub block_id: BlockId,
-    pub command_tokens: Vec<String>,
-    pub output_tokens: Vec<String>,
-    pub tags: HashSet<String>,
-    pub shell: ShellType,
-    pub status: ExecutionStatus,
-    pub created_at: DateTime<Utc>,
-    pub directory: String,
-    pub exit_code: Option<i32>,
-    pub duration_ms: Option<u64>,
-    pub search_score: f64,
-}
-
-/// Date-based index for temporal filtering
-#[derive(Debug, Default)]
-pub struct DateIndex {
-    /// Blocks by year
-    by_year: HashMap<i32, HashSet<BlockId>>,
-    /// Blocks by month
-    by_month: HashMap<(i32, u32), HashSet<BlockId>>,
-    /// Blocks by day
-    by_day: HashMap<(i32, u32, u32), HashSet<BlockId>>,
-    /// Recent blocks (last N hours)
-    recent_blocks: Vec<(DateTime<Utc>, BlockId)>,
-}
-
-/// Search filters for immediate application
-#[derive(Debug, Default, Clone)]
-pub struct SearchFilters {
-    pub active_filters: Vec<SearchFilter>,
-    pub filter_mode: FilterMode,
-    pub last_applied: Instant,
-}
-
-/// Individual search filter
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SearchFilter {
-    // Text filters
-    TextContains(String),
-    CommandContains(String),
-    OutputContains(String),
-    Regex(String),
-
-    // Metadata filters
-    HasTag(String),
-    Shell(ShellType),
-    Status(ExecutionStatus),
-    ExitCode(i32),
-
-    // Temporal filters
-    CreatedAfter(DateTime<Utc>),
-    CreatedBefore(DateTime<Utc>),
-    CreatedToday,
-    CreatedThisWeek,
-    CreatedThisMonth,
-
-    // Directory filters
-    InDirectory(String),
-    DirectoryContains(String),
-
-    // Duration filters
-    DurationLessThan(Duration),
-    DurationGreaterThan(Duration),
-
-    // Advanced filters
-    Starred,
-    Failed,
-    Successful,
-    LongRunning(Duration),
-}
-
-/// Filter application mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FilterMode {
-    And, // All filters must match
-    Or,  // Any filter can match
-}
-
-/// Search history for immediate access
-#[derive(Debug, Default)]
-pub struct SearchHistory {
-    pub queries: Vec<SearchHistoryEntry>,
-    pub max_entries: usize,
-    pub last_access: Instant,
-}
-
-/// Search history entry
-#[derive(Debug, Clone)]
-pub struct SearchHistoryEntry {
-    pub query: String,
-    pub filters: Vec<SearchFilter>,
-    pub result_count: usize,
-    pub timestamp: DateTime<Utc>,
-    pub execution_time: Duration,
-}
-
-/// Real-time search state
-#[derive(Debug, Default)]
-pub struct SearchState {
-    pub current_query: Option<String>,
-    pub current_results: Vec<BlockId>,
-    pub total_matches: usize,
-    pub search_duration: Option<Duration>,
-    pub is_searching: bool,
-    pub last_search: Option<Instant>,
-}
-
-/// Fuzzy search engine for intelligent matching
-#[derive(Debug)]
-pub struct FuzzyEngine {
-    pub similarity_threshold: f64,
-    pub max_edit_distance: usize,
-    pub word_boundaries: bool,
-    pub case_sensitive: bool,
-}
-
-/// Search suggestions for immediate completion
-#[derive(Debug, Default)]
-pub struct SuggestionEngine {
-    pub command_suggestions: Vec<String>,
-    pub tag_suggestions: Vec<String>,
-    pub directory_suggestions: Vec<String>,
-    pub pattern_suggestions: Vec<SearchPattern>,
-    pub last_update: Instant,
-}
-
-/// Search suggestion
-#[derive(Debug, Clone)]
-pub struct SearchSuggestion {
-    pub text: String,
-    pub suggestion_type: SuggestionType,
-    pub score: f64,
-    pub preview: Option<String>,
-}
-
-/// Suggestion types for categorization
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SuggestionType {
-    Command,
-    Tag,
-    Directory,
-    Pattern,
-    RecentQuery,
-    Filter,
-}
-
-/// Search patterns for intelligent suggestions
-#[derive(Debug, Clone)]
-pub struct SearchPattern {
-    pub pattern: String,
-    pub description: String,
-    pub example: String,
-    pub frequency: usize,
-}
-
-/// Performance statistics for search operations
-#[derive(Debug, Default, Clone)]
-pub struct SearchStats {
-    pub total_searches: usize,
-    pub total_search_time: Duration,
-    pub average_search_time: Duration,
-    pub index_size: usize,
-    pub cache_hits: usize,
-    pub cache_misses: usize,
-    pub last_reset: Instant,
-}
-
-impl NativeSearch {
-    /// Create new native search engine with immediate capabilities
-    pub fn new() -> Self {
-        Self {
-            block_index: BlockIndex::default(),
-            active_filters: SearchFilters::default(),
-            search_history: SearchHistory {
-                max_entries: 100,
-                ..Default::default()
-            },
-            search_state: SearchState::default(),
-            event_callbacks: Vec::new(),
-            fuzzy_engine: FuzzyEngine {
-                similarity_threshold: 0.7,
-                max_edit_distance: 2,
-                word_boundaries: true,
-                case_sensitive: false,
-            },
-            suggestion_engine: SuggestionEngine::default(),
-            perf_stats: SearchStats {
-                last_reset: Instant::now(),
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Register search event callback for immediate responses
-    pub fn register_event_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(&SearchEvent) + Send + Sync + 'static,
-    {
-        self.event_callbacks.push(Box::new(callback));
-    }
-
-    /// Emit search event immediately
-    fn emit_event(&self, event: SearchEvent) {
-        for callback in &self.event_callbacks {
-            callback(&event);
-        }
-    }
-
-    /// Index block immediately for instant search availability
-    pub fn index_block(&mut self, block: &Block) -> Result<()> {
-        let start_time = Instant::now();
-
-        // Create indexed block
-        let command_tokens = self.tokenize_text(&block.command);
-        let output_tokens = self.tokenize_text(&block.output);
-
-        let indexed_block = IndexedBlock {
-            block_id: block.id,
-            command_tokens: command_tokens.clone(),
-            output_tokens: output_tokens.clone(),
-            tags: block.tags.clone(),
-            shell: block.shell,
-            status: block.status,
-            created_at: block.created_at,
-            directory: block.directory.to_string_lossy().to_string(),
-            exit_code: block.exit_code,
-            duration_ms: block.duration_ms,
-            search_score: 1.0,
-        };
-
-        // Update all indices immediately
-        self.update_text_index(&block.command, &block.output, block.id);
-        self.update_command_index(&command_tokens, block.id);
-        self.update_output_index(&output_tokens, block.id);
-        self.update_tag_index(&block.tags, block.id);
-        self.update_shell_index(block.shell, block.id);
-        self.update_status_index(block.status, block.id);
-        self.update_date_index(block.created_at, block.id);
-        self.update_directory_index(&block.directory.to_string_lossy(), block.id);
-
-        // Cache indexed block
-        self.block_index.block_cache.insert(block.id, indexed_block);
-
-        // Update index metadata
-        self.block_index.last_update = Instant::now();
-        self.block_index.update_count += 1;
-        self.perf_stats.index_size += 1;
-
-        // Update suggestions immediately
-        self.update_suggestions();
-
-        let duration = start_time.elapsed();
-
-        // Emit index update event
-        self.emit_event(SearchEvent::IndexUpdated {
-            block_count: self.block_index.block_cache.len(),
-            duration,
-        });
-
-        Ok(())
-    }
-
-    /// Search blocks immediately with instant results
-    pub fn search(&mut self, query: &str) -> Result<Vec<BlockId>> {
-        let start_time = Instant::now();
-        self.search_state.is_searching = true;
-
-        // Emit search started event
-        self.emit_event(SearchEvent::SearchStarted {
-            query: query.to_string(),
-            filter_count: self.active_filters.active_filters.len(),
-        });
-
-        let results = if query.is_empty() {
-            // No query - apply filters only
-            self.apply_filters_only()
-        } else {
-            // Full text search with filters
-            self.perform_full_search(query)?
-        };
-
-        // Update search state immediately
-        self.search_state.current_query = Some(query.to_string());
-        self.search_state.current_results = results.clone();
-        self.search_state.total_matches = results.len();
-        self.search_state.is_searching = false;
-        self.search_state.last_search = Some(start_time);
-
-        let duration = start_time.elapsed();
-        self.search_state.search_duration = Some(duration);
-
-        // Update performance stats immediately
-        self.perf_stats.total_searches += 1;
-        self.perf_stats.total_search_time += duration;
-        self.perf_stats.average_search_time =
-            self.perf_stats.total_search_time / self.perf_stats.total_searches as u32;
-
-        // Add to search history immediately
-        self.add_to_history(query, results.len(), duration);
-
-        // Emit search completed event
-        self.emit_event(SearchEvent::SearchCompleted {
-            query: query.to_string(),
-            result_count: results.len(),
-            duration,
-        });
-
-        Ok(results)
-    }
-
-    /// Perform full text search with immediate results
-    fn perform_full_search(&mut self, query: &str) -> Result<Vec<BlockId>> {
-        let query_tokens = self.tokenize_text(query);
-        let mut candidates = HashSet::new();
-
-        // Search in text index
-        for token in &query_tokens {
-            if let Some(block_ids) = self.block_index.text_index.get(token) {
-                candidates.extend(block_ids);
-            }
-
-            // Fuzzy matching for similar tokens
-            if candidates.is_empty() {
-                candidates.extend(self.fuzzy_search_token(token));
-            }
-        }
-
-        // Search in command index
-        for token in &query_tokens {
-            if let Some(block_ids) = self.block_index.command_index.get(token) {
-                candidates.extend(block_ids);
-            }
-        }
-
-        // Search in output index
-        for token in &query_tokens {
-            if let Some(block_ids) = self.block_index.output_index.get(token) {
-                candidates.extend(block_ids);
-            }
-        }
-
-        // Apply filters immediately
-        let filtered_results = self.apply_filters(&candidates.into_iter().collect());
-
-        // Score and sort results immediately
-        let mut scored_results: Vec<(BlockId, f64)> = filtered_results
-            .into_iter()
-            .map(|id| {
-                let score = self.calculate_relevance_score(id, query);
-                (id, score)
-            })
-            .collect();
-
-        // Sort by relevance score (highest first)
-        scored_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        Ok(scored_results.into_iter().map(|(id, _)| id).collect())
-    }
-
-    /// Apply filters only (no text search)
-    fn apply_filters_only(&self) -> Vec<BlockId> {
-        let all_blocks: Vec<BlockId> = self.block_index.block_cache.keys().copied().collect();
-        self.apply_filters(&all_blocks)
-    }
-
-    /// Apply active filters to block list immediately
-    fn apply_filters(&self, blocks: &[BlockId]) -> Vec<BlockId> {
-        if self.active_filters.active_filters.is_empty() {
-            return blocks.to_vec();
-        }
-
-        blocks
-            .iter()
-            .filter(|&&block_id| self.matches_filters(block_id))
-            .copied()
-            .collect()
-    }
-
-    /// Check if block matches all active filters immediately
-    fn matches_filters(&self, block_id: BlockId) -> bool {
-        let Some(indexed_block) = self.block_index.block_cache.get(&block_id) else {
-            return false;
-        };
-
-        match self.active_filters.filter_mode {
-            FilterMode::And => {
-                // All filters must match
-                self.active_filters
-                    .active_filters
-                    .iter()
-                    .all(|filter| self.matches_filter(indexed_block, filter))
-            },
-            FilterMode::Or => {
-                // Any filter can match
-                self.active_filters
-                    .active_filters
-                    .iter()
-                    .any(|filter| self.matches_filter(indexed_block, filter))
-            },
-        }
-    }
-
-    /// Check if block matches specific filter immediately
-    fn matches_filter(&self, block: &IndexedBlock, filter: &SearchFilter) -> bool {
-        match filter {
-            SearchFilter::TextContains(text) => {
-                block.command_tokens.iter().any(|t| t.contains(text))
-                    || block.output_tokens.iter().any(|t| t.contains(text))
-            },
-            SearchFilter::CommandContains(text) => {
-                block.command_tokens.iter().any(|t| t.contains(text))
-            },
-            SearchFilter::OutputContains(text) => {
-                block.output_tokens.iter().any(|t| t.contains(text))
-            },
-            SearchFilter::Regex(pattern) => {
-                if let Ok(regex) = Regex::new(pattern) {
-                    block.command_tokens.iter().any(|t| regex.is_match(t))
-                        || block.output_tokens.iter().any(|t| regex.is_match(t))
-                } else {
-                    false
-                }
-            },
-            SearchFilter::HasTag(tag) => block.tags.contains(tag),
-            SearchFilter::Shell(shell) => block.shell == *shell,
-            SearchFilter::Status(status) => block.status == *status,
-            SearchFilter::ExitCode(code) => block.exit_code == Some(*code),
-            SearchFilter::CreatedAfter(date) => block.created_at > *date,
-            SearchFilter::CreatedBefore(date) => block.created_at < *date,
-            SearchFilter::CreatedToday => {
-                let now = Utc::now();
-                block.created_at.date_naive() == now.date_naive()
-            },
-            SearchFilter::CreatedThisWeek => {
-                let now = Utc::now();
-                let week_start = now - chrono::Duration::days(7);
-                block.created_at > week_start
-            },
-            SearchFilter::CreatedThisMonth => {
-                let now = Utc::now();
-                block.created_at.year() == now.year() && block.created_at.month() == now.month()
-            },
-            SearchFilter::InDirectory(dir) => block.directory == *dir,
-            SearchFilter::DirectoryContains(text) => block.directory.contains(text),
-            SearchFilter::DurationLessThan(duration) => {
-                if let Some(block_duration) = block.duration_ms {
-                    Duration::from_millis(block_duration) < *duration
-                } else {
-                    false
-                }
-            },
-            SearchFilter::DurationGreaterThan(duration) => {
-                if let Some(block_duration) = block.duration_ms {
-                    Duration::from_millis(block_duration) > *duration
-                } else {
-                    false
-                }
-            },
-            SearchFilter::Starred => {
-                // Would need to check if block is starred - placeholder
-                false
-            },
-            SearchFilter::Failed => block.exit_code.map_or(false, |code| code != 0),
-            SearchFilter::Successful => block.exit_code.map_or(false, |code| code == 0),
-            SearchFilter::LongRunning(threshold) => {
-                if let Some(block_duration) = block.duration_ms {
-                    Duration::from_millis(block_duration) > *threshold
-                } else {
-                    false
-                }
-            },
-        }
-    }
-
-    /// Add filter immediately
-    pub fn add_filter(&mut self, filter: SearchFilter) -> Result<()> {
-        if !self.active_filters.active_filters.contains(&filter) {
-            self.active_filters.active_filters.push(filter.clone());
-            self.active_filters.last_applied = Instant::now();
-
-            // Re-run search with new filter if query is active
-            let result_count = if let Some(ref query) = self.search_state.current_query {
-                let results = self.search(query)?;
-                results.len()
-            } else {
-                self.apply_filters_only().len()
-            };
-
-            self.emit_event(SearchEvent::FilterApplied { filter, result_count });
-        }
-
-        Ok(())
-    }
-
-    /// Remove filter immediately
-    pub fn remove_filter(&mut self, filter: &SearchFilter) -> Result<()> {
-        if let Some(pos) = self.active_filters.active_filters.iter().position(|f| f == filter) {
-            let removed_filter = self.active_filters.active_filters.remove(pos);
-
-            // Re-run search without filter if query is active
-            if let Some(ref query) = self.search_state.current_query {
-                self.search(query)?;
-            }
-
-            self.emit_event(SearchEvent::FilterRemoved { filter: removed_filter });
-        }
-
-        Ok(())
-    }
-
-    /// Clear all filters immediately
-    pub fn clear_filters(&mut self) -> Result<()> {
-        self.active_filters.active_filters.clear();
-
-        // Re-run search without filters if query is active
-        if let Some(ref query) = self.search_state.current_query {
-            self.search(query)?;
-        }
-
-        Ok(())
-    }
-
-    /// Clear search and reset state immediately
-    pub fn clear_search(&mut self) {
-        self.search_state = SearchState::default();
-        self.emit_event(SearchEvent::SearchCleared);
-    }
-
-    /// Generate search suggestions immediately
-    pub fn get_suggestions(&mut self, partial_query: &str) -> Vec<SearchSuggestion> {
-        let mut suggestions = Vec::new();
-
-        // Command suggestions
-        suggestions.extend(
-            self.suggestion_engine
-                .command_suggestions
-                .iter()
-                .filter(|cmd| cmd.starts_with(partial_query))
-                .map(|cmd| SearchSuggestion {
-                    text: cmd.clone(),
-                    suggestion_type: SuggestionType::Command,
-                    score: self.calculate_suggestion_score(cmd, partial_query),
-                    preview: Some(format!("Search commands containing '{}'", cmd)),
-                })
-        );
-
-        // Tag suggestions
-        suggestions.extend(
-            self.suggestion_engine
-                .tag_suggestions
-                .iter()
-                .filter(|tag| tag.starts_with(partial_query))
-                .map(|tag| SearchSuggestion {
-                    text: format!("tag:{}", tag),
-                    suggestion_type: SuggestionType::Tag,
-                    score: self.calculate_suggestion_score(tag, partial_query),
-                    preview: Some(format!("Filter by tag '{}'", tag)),
-                })
-        );
-
-        // Directory suggestions
-        suggestions.extend(
-            self.suggestion_engine
-                .directory_suggestions
-                .iter()
-                .filter(|dir| dir.contains(partial_query))
-                .map(|dir| SearchSuggestion {
-                    text: format!("dir:{}", dir),
-                    suggestion_type: SuggestionType::Directory,
-                    score: self.calculate_suggestion_score(dir, partial_query),
-                    preview: Some(format!("Filter by directory '{}'", dir)),
-                })
-        );
-
-        // Sort by score
-        suggestions.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Emit suggestions update event
-        self.emit_event(SearchEvent::SuggestionsUpdated {
-            suggestions: suggestions.clone(),
-        });
-
-        suggestions
-    }
-
-    /// Tokenize text for indexing and search
-    fn tokenize_text(&self, text: &str) -> Vec<String> {
-        text.split_whitespace()
-            .map(|s| s.to_lowercase())
-            .filter(|s| !s.is_empty())
-            .collect()
-    }
-
-    /// Update text index immediately
-    fn update_text_index(&mut self, command: &str, output: &str, block_id: BlockId) {
-        let all_tokens = self.tokenize_text(&format!("{} {}", command, output));
-
-        for token in all_tokens {
-            self.block_index.text_index
-                .entry(token)
-                .or_insert_with(HashSet::new)
-                .insert(block_id);
-        }
-    }
-
-    /// Update command index immediately
-    fn update_command_index(&mut self, tokens: &[String], block_id: BlockId) {
-        for token in tokens {
-            self.block_index.command_index
-                .entry(token.clone())
-                .or_insert_with(HashSet::new)
-                .insert(block_id);
-        }
-    }
-
-    /// Update output index immediately
-    fn update_output_index(&mut self, tokens: &[String], block_id: BlockId) {
-        for token in tokens {
-            self.block_index.output_index
-                .entry(token.clone())
-                .or_insert_with(HashSet::new)
-                .insert(block_id);
-        }
-    }
-
-    /// Update tag index immediately
-    fn update_tag_index(&mut self, tags: &HashSet<String>, block_id: BlockId) {
-        for tag in tags {
-            self.block_index.tag_index
-                .entry(tag.clone())
-                .or_insert_with(HashSet::new)
-                .insert(block_id);
-        }
-    }
-
-    /// Update shell index immediately
-    fn update_shell_index(&mut self, shell: ShellType, block_id: BlockId) {
-        self.block_index.shell_index
-            .entry(shell)
-            .or_insert_with(HashSet::new)
-            .insert(block_id);
-    }
-
-    /// Update status index immediately
-    fn update_status_index(&mut self, status: ExecutionStatus, block_id: BlockId) {
-        self.block_index.status_index
-            .entry(status)
-            .or_insert_with(HashSet::new)
-            .insert(block_id);
-    }
-
-    /// Update date index immediately
-    fn update_date_index(&mut self, created_at: DateTime<Utc>, block_id: BlockId) {
-        let year = created_at.year();
-        let month = created_at.month();
-        let day = created_at.day();
-
-        // Update year index
-        self.block_index.date_index.by_year
-            .entry(year)
-            .or_insert_with(HashSet::new)
-            .insert(block_id);
-
-        // Update month index
-        self.block_index.date_index.by_month
-            .entry((year, month))
-            .or_insert_with(HashSet::new)
-            .insert(block_id);
-
-        // Update day index
-        self.block_index.date_index.by_day
-            .entry((year, month, day))
-            .or_insert_with(HashSet::new)
-            .insert(block_id);
-
-        // Update recent blocks (keep only last 100)
-        self.block_index.date_index.recent_blocks.push((created_at, block_id));
-        self.block_index.date_index.recent_blocks.sort_by(|a, b| b.0.cmp(&a.0));
-        if self.block_index.date_index.recent_blocks.len() > 100 {
-            self.block_index.date_index.recent_blocks.truncate(100);
-        }
-    }
-
-    /// Update directory index immediately
-    fn update_directory_index(&mut self, directory: &str, block_id: BlockId) {
-        self.block_index.directory_index
-            .entry(directory.to_string())
-            .or_insert_with(HashSet::new)
-            .insert(block_id);
-    }
-
-    /// Perform fuzzy search on token
-    fn fuzzy_search_token(&self, token: &str) -> HashSet<BlockId> {
-        let mut results = HashSet::new();
-
-        for (indexed_token, block_ids) in &self.block_index.text_index {
-            if self.calculate_similarity(token, indexed_token) >= self.fuzzy_engine.similarity_threshold {
-                results.extend(block_ids);
-            }
-        }
-
-        results
-    }
-
-    /// Calculate string similarity for fuzzy search
-    fn calculate_similarity(&self, s1: &str, s2: &str) -> f64 {
-        // Simple Levenshtein distance-based similarity
-        let distance = self.levenshtein_distance(s1, s2);
-        let max_len = s1.len().max(s2.len()) as f64;
-
-        if max_len == 0.0 {
-            1.0
-        } else {
-            1.0 - (distance as f64 / max_len)
-        }
-    }
-
-    /// Calculate Levenshtein distance
-    fn levenshtein_distance(&self, s1: &str, s2: &str) -> usize {
-        let len1 = s1.len();
-        let len2 = s2.len();
-
-        if len1 == 0 { return len2; }
-        if len2 == 0 { return len1; }
-
-        let mut d = vec![vec![0; len2 + 1]; len1 + 1];
-
-        for i in 1..=len1 { d[i][0] = i; }
-        for j in 1..=len2 { d[0][j] = j; }
-
-        for i in 1..=len1 {
-            for j in 1..=len2 {
-                let cost = if s1.chars().nth(i - 1) == s2.chars().nth(j - 1) { 0 } else { 1 };
-                d[i][j] = (d[i - 1][j] + 1)
-                    .min(d[i][j - 1] + 1)
-                    .min(d[i - 1][j - 1] + cost);
-            }
-        }
-
-        d[len1][len2]
-    }
-
-    /// Calculate relevance score for search result
-    fn calculate_relevance_score(&self, block_id: BlockId, query: &str) -> f64 {
-        let Some(indexed_block) = self.block_index.block_cache.get(&block_id) else {
-            return 0.0;
-        };
-
-        let mut score = 0.0;
-        let query_tokens = self.tokenize_text(query);
-
-        // Command match bonus
-        for token in &query_tokens {
-            if indexed_block.command_tokens.iter().any(|t| t.contains(token)) {
-                score += 2.0;
-            }
-        }
-
-        // Output match
-        for token in &query_tokens {
-            if indexed_block.output_tokens.iter().any(|t| t.contains(token)) {
-                score += 1.0;
-            }
-        }
-
-        // Tag match bonus
-        for token in &query_tokens {
-            if indexed_block.tags.iter().any(|t| t.contains(token)) {
-                score += 1.5;
-            }
-        }
-
-        // Recency bonus
-        let age_days = (Utc::now() - indexed_block.created_at).num_days();
-        if age_days < 7 {
-            score += 0.5;
-        }
-
-        // Success bonus
-        if indexed_block.status == ExecutionStatus::Success {
-            score += 0.2;
-        }
-
-        score
-    }
-
-    /// Calculate suggestion score
-    fn calculate_suggestion_score(&self, suggestion: &str, query: &str) -> f64 {
-        if suggestion.starts_with(query) {
-            1.0
-        } else if suggestion.contains(query) {
-            0.8
-        } else {
-            self.calculate_similarity(suggestion, query)
-        }
-    }
-
-    /// Update search suggestions immediately
-    fn update_suggestions(&mut self) {
-        // Update command suggestions
-        self.suggestion_engine.command_suggestions = self.block_index.command_index
-            .keys()
-            .take(50) // Limit to top 50
-            .cloned()
-            .collect();
-
-        // Update tag suggestions
-        self.suggestion_engine.tag_suggestions = self.block_index.tag_index
-            .keys()
-            .cloned()
-            .collect();
-
-        // Update directory suggestions
-        self.suggestion_engine.directory_suggestions = self.block_index.directory_index
-            .keys()
-            .cloned()
-            .collect();
-
-        self.suggestion_engine.last_update = Instant::now();
-    }
-
-    /// Add search to history immediately
-    fn add_to_history(&mut self, query: &str, result_count: usize, execution_time: Duration) {
-        let entry = SearchHistoryEntry {
-            query: query.to_string(),
-            filters: self.active_filters.active_filters.clone(),
-            result_count,
-            timestamp: Utc::now(),
-            execution_time,
-        };
-
-        self.search_history.queries.push(entry);
-
-        // Limit history size
-        if self.search_history.queries.len() > self.search_history.max_entries {
-            self.search_history.queries.remove(0);
-        }
-
-        self.search_history.last_access = Instant::now();
-    }
-
-    /// Get search statistics
-    pub fn get_stats(&self) -> SearchStats {
-        self.perf_stats.clone()
-    }
-
-    /// Get current search results
-    pub fn get_current_results(&self) -> &[BlockId] {
-        &self.search_state.current_results
-    }
-
-    /// Check if currently searching
-    pub fn is_searching(&self) -> bool {
-        self.search_state.is_searching
-    }
-}
-
-impl Default for NativeSearch {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::blocks_v2::{BlockMetadata, ShellType};
-    use std::path::PathBuf;
-
-    fn create_test_block(id: u32, command: &str, output: &str) -> Block {
-        Block {
-            id: BlockId::from_string(&format!("test-{}", id)).unwrap(),
-            command: command.to_string(),
-            output: output.to_string(),
-            directory: PathBuf::from("/test"),
-            environment: HashMap::new(),
-            shell: ShellType::Bash,
-            created_at: Utc::now(),
-            modified_at: Utc::now(),
-            tags: HashSet::new(),
-            starred: false,
-            parent_id: None,
-            children: Vec::new(),
-            metadata: BlockMetadata::default(),
-            status: ExecutionStatus::Success,
-            exit_code: Some(0),
-            duration_ms: Some(100),
-        }
-    }
-
-    #[test]
-    fn test_native_search_creation() {
-        let search = NativeSearch::new();
-        assert_eq!(search.block_index.block_cache.len(), 0);
-        assert!(!search.search_state.is_searching);
-    }
-
-    #[test]
-    fn test_block_indexing() {
-        let mut search = NativeSearch::new();
-        let block = create_test_block(1, "echo hello", "hello world");
-
-        search.index_block(&block).unwrap();
-
-        assert_eq!(search.block_index.block_cache.len(), 1);
-        assert!(search.block_index.text_index.contains_key("hello"));
-        assert!(search.block_index.command_index.contains_key("echo"));
-    }
-
-    #[test]
-    fn test_immediate_search() {
-        let mut search = NativeSearch::new();
-        let block = create_test_block(1, "echo test", "test output");
-
-        search.index_block(&block).unwrap();
-
-        let results = search.search("echo").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0], block.id);
-    }
-
-    #[test]
-    fn test_filter_application() {
-        let mut search = NativeSearch::new();
-        let mut block = create_test_block(1, "ls -la", "file listing");
-        block.status = ExecutionStatus::Success;
-
-        search.index_block(&block).unwrap();
-
-        search.add_filter(SearchFilter::Status(ExecutionStatus::Success)).unwrap();
-        let results = search.search("").unwrap();
-        assert_eq!(results.len(), 1);
-
-        search.add_filter(SearchFilter::Status(ExecutionStatus::Failed)).unwrap();
-        let results = search.search("").unwrap();
-        assert_eq!(results.len(), 0); // AND mode, so no results
-    }
-
-    #[test]
-    fn test_suggestion_generation() {
-        let mut search = NativeSearch::new();
-        let block = create_test_block(1, "git status", "clean working directory");
-
-        search.index_block(&block).unwrap();
-
-        let suggestions = search.get_suggestions("git");
-        assert!(!suggestions.is_empty());
-        assert!(suggestions.iter().any(|s| s.text.contains("git")));
-    }
-}
-*/
+// Native Search and Filtering System for OpenAgent Terminal
+//
+// This module provides real-time search and filtering for command blocks with
+// instant results and no lazy loading or background processing.
+//
+// #![allow(dead_code)]
+//
+// use std::collections::{HashMap, HashSet};
+// use std::sync::Arc;
+// use std::time::{Duration, Instant};
+//
+// use anyhow::Result;
+// use chrono::{DateTime, Utc};
+// use regex::Regex;
+// use serde::{Deserialize, Serialize};
+//
+// use crate::blocks_v2::{Block, BlockId, ExecutionStatus, SearchQuery, ShellType};
+//
+// Native search engine for immediate block filtering
+// pub struct NativeSearch {
+// Indexed blocks for immediate search
+// block_index: BlockIndex,
+//
+// Search filters for immediate application
+// active_filters: SearchFilters,
+//
+// Search history for immediate access
+// search_history: SearchHistory,
+//
+// Real-time search state
+// search_state: SearchState,
+//
+// Search event callbacks for immediate responses
+// event_callbacks: Vec<Box<dyn Fn(&SearchEvent) + Send + Sync>>,
+//
+// Fuzzy search engine for intelligent matching
+// fuzzy_engine: FuzzyEngine,
+//
+// Search suggestions for immediate completion
+// suggestion_engine: SuggestionEngine,
+//
+// Performance statistics
+// perf_stats: SearchStats,
+// }
+//
+// Search events for immediate feedback
+// #[derive(Debug, Clone)]
+// pub enum SearchEvent {
+// SearchStarted { query: String, filter_count: usize },
+// SearchCompleted { query: String, result_count: usize, duration: Duration },
+// FilterApplied { filter: SearchFilter, result_count: usize },
+// FilterRemoved { filter: SearchFilter },
+// SuggestionsUpdated { suggestions: Vec<SearchSuggestion> },
+// IndexUpdated { block_count: usize, duration: Duration },
+// SearchCleared,
+// }
+//
+// Block index for immediate search operations
+// #[derive(Debug, Default)]
+// pub struct BlockIndex {
+// Full-text search index
+// text_index: HashMap<String, HashSet<BlockId>>,
+//
+// Command-specific index
+// command_index: HashMap<String, HashSet<BlockId>>,
+//
+// Output-specific index
+// output_index: HashMap<String, HashSet<BlockId>>,
+//
+// Tag index for immediate tag filtering
+// tag_index: HashMap<String, HashSet<BlockId>>,
+//
+// Shell type index
+// shell_index: HashMap<ShellType, HashSet<BlockId>>,
+//
+// Status index for immediate status filtering
+// status_index: HashMap<ExecutionStatus, HashSet<BlockId>>,
+//
+// Date-based index for temporal filtering
+// date_index: DateIndex,
+//
+// Directory index for path-based filtering
+// directory_index: HashMap<String, HashSet<BlockId>>,
+//
+// Block metadata cache for immediate access
+// block_cache: HashMap<BlockId, IndexedBlock>,
+//
+// Index update timestamps
+// last_update: Instant,
+// update_count: usize,
+// }
+//
+// Indexed block for immediate search
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// pub struct IndexedBlock {
+// pub block_id: BlockId,
+// pub command_tokens: Vec<String>,
+// pub output_tokens: Vec<String>,
+// pub tags: HashSet<String>,
+// pub shell: ShellType,
+// pub status: ExecutionStatus,
+// pub created_at: DateTime<Utc>,
+// pub directory: String,
+// pub exit_code: Option<i32>,
+// pub duration_ms: Option<u64>,
+// pub search_score: f64,
+// }
+//
+// Date-based index for temporal filtering
+// #[derive(Debug, Default)]
+// pub struct DateIndex {
+// Blocks by year
+// by_year: HashMap<i32, HashSet<BlockId>>,
+// Blocks by month
+// by_month: HashMap<(i32, u32), HashSet<BlockId>>,
+// Blocks by day
+// by_day: HashMap<(i32, u32, u32), HashSet<BlockId>>,
+// Recent blocks (last N hours)
+// recent_blocks: Vec<(DateTime<Utc>, BlockId)>,
+// }
+//
+// Search filters for immediate application
+// #[derive(Debug, Default, Clone)]
+// pub struct SearchFilters {
+// pub active_filters: Vec<SearchFilter>,
+// pub filter_mode: FilterMode,
+// pub last_applied: Instant,
+// }
+//
+// Individual search filter
+// #[derive(Debug, Clone, PartialEq, Eq)]
+// pub enum SearchFilter {
+// Text filters
+// TextContains(String),
+// CommandContains(String),
+// OutputContains(String),
+// Regex(String),
+//
+// Metadata filters
+// HasTag(String),
+// Shell(ShellType),
+// Status(ExecutionStatus),
+// ExitCode(i32),
+//
+// Temporal filters
+// CreatedAfter(DateTime<Utc>),
+// CreatedBefore(DateTime<Utc>),
+// CreatedToday,
+// CreatedThisWeek,
+// CreatedThisMonth,
+//
+// Directory filters
+// InDirectory(String),
+// DirectoryContains(String),
+//
+// Duration filters
+// DurationLessThan(Duration),
+// DurationGreaterThan(Duration),
+//
+// Advanced filters
+// Starred,
+// Failed,
+// Successful,
+// LongRunning(Duration),
+// }
+//
+// Filter application mode
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum FilterMode {
+// And, // All filters must match
+// Or,  // Any filter can match
+// }
+//
+// Search history for immediate access
+// #[derive(Debug, Default)]
+// pub struct SearchHistory {
+// pub queries: Vec<SearchHistoryEntry>,
+// pub max_entries: usize,
+// pub last_access: Instant,
+// }
+//
+// Search history entry
+// #[derive(Debug, Clone)]
+// pub struct SearchHistoryEntry {
+// pub query: String,
+// pub filters: Vec<SearchFilter>,
+// pub result_count: usize,
+// pub timestamp: DateTime<Utc>,
+// pub execution_time: Duration,
+// }
+//
+// Real-time search state
+// #[derive(Debug, Default)]
+// pub struct SearchState {
+// pub current_query: Option<String>,
+// pub current_results: Vec<BlockId>,
+// pub total_matches: usize,
+// pub search_duration: Option<Duration>,
+// pub is_searching: bool,
+// pub last_search: Option<Instant>,
+// }
+//
+// Fuzzy search engine for intelligent matching
+// #[derive(Debug)]
+// pub struct FuzzyEngine {
+// pub similarity_threshold: f64,
+// pub max_edit_distance: usize,
+// pub word_boundaries: bool,
+// pub case_sensitive: bool,
+// }
+//
+// Search suggestions for immediate completion
+// #[derive(Debug, Default)]
+// pub struct SuggestionEngine {
+// pub command_suggestions: Vec<String>,
+// pub tag_suggestions: Vec<String>,
+// pub directory_suggestions: Vec<String>,
+// pub pattern_suggestions: Vec<SearchPattern>,
+// pub last_update: Instant,
+// }
+//
+// Search suggestion
+// #[derive(Debug, Clone)]
+// pub struct SearchSuggestion {
+// pub text: String,
+// pub suggestion_type: SuggestionType,
+// pub score: f64,
+// pub preview: Option<String>,
+// }
+//
+// Suggestion types for categorization
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum SuggestionType {
+// Command,
+// Tag,
+// Directory,
+// Pattern,
+// RecentQuery,
+// Filter,
+// }
+//
+// Search patterns for intelligent suggestions
+// #[derive(Debug, Clone)]
+// pub struct SearchPattern {
+// pub pattern: String,
+// pub description: String,
+// pub example: String,
+// pub frequency: usize,
+// }
+//
+// Performance statistics for search operations
+// #[derive(Debug, Default, Clone)]
+// pub struct SearchStats {
+// pub total_searches: usize,
+// pub total_search_time: Duration,
+// pub average_search_time: Duration,
+// pub index_size: usize,
+// pub cache_hits: usize,
+// pub cache_misses: usize,
+// pub last_reset: Instant,
+// }
+//
+// impl NativeSearch {
+// Create new native search engine with immediate capabilities
+// pub fn new() -> Self {
+// Self {
+// block_index: BlockIndex::default(),
+// active_filters: SearchFilters::default(),
+// search_history: SearchHistory {
+// max_entries: 100,
+// ..Default::default()
+// },
+// search_state: SearchState::default(),
+// event_callbacks: Vec::new(),
+// fuzzy_engine: FuzzyEngine {
+// similarity_threshold: 0.7,
+// max_edit_distance: 2,
+// word_boundaries: true,
+// case_sensitive: false,
+// },
+// suggestion_engine: SuggestionEngine::default(),
+// perf_stats: SearchStats {
+// last_reset: Instant::now(),
+// ..Default::default()
+// },
+// }
+// }
+//
+// Register search event callback for immediate responses
+// pub fn register_event_callback<F>(&mut self, callback: F)
+// where
+// F: Fn(&SearchEvent) + Send + Sync + 'static,
+// {
+// self.event_callbacks.push(Box::new(callback));
+// }
+//
+// Emit search event immediately
+// fn emit_event(&self, event: SearchEvent) {
+// for callback in &self.event_callbacks {
+// callback(&event);
+// }
+// }
+//
+// Index block immediately for instant search availability
+// pub fn index_block(&mut self, block: &Block) -> Result<()> {
+// let start_time = Instant::now();
+//
+// Create indexed block
+// let command_tokens = self.tokenize_text(&block.command);
+// let output_tokens = self.tokenize_text(&block.output);
+//
+// let indexed_block = IndexedBlock {
+// block_id: block.id,
+// command_tokens: command_tokens.clone(),
+// output_tokens: output_tokens.clone(),
+// tags: block.tags.clone(),
+// shell: block.shell,
+// status: block.status,
+// created_at: block.created_at,
+// directory: block.directory.to_string_lossy().to_string(),
+// exit_code: block.exit_code,
+// duration_ms: block.duration_ms,
+// search_score: 1.0,
+// };
+//
+// Update all indices immediately
+// self.update_text_index(&block.command, &block.output, block.id);
+// self.update_command_index(&command_tokens, block.id);
+// self.update_output_index(&output_tokens, block.id);
+// self.update_tag_index(&block.tags, block.id);
+// self.update_shell_index(block.shell, block.id);
+// self.update_status_index(block.status, block.id);
+// self.update_date_index(block.created_at, block.id);
+// self.update_directory_index(&block.directory.to_string_lossy(), block.id);
+//
+// Cache indexed block
+// self.block_index.block_cache.insert(block.id, indexed_block);
+//
+// Update index metadata
+// self.block_index.last_update = Instant::now();
+// self.block_index.update_count += 1;
+// self.perf_stats.index_size += 1;
+//
+// Update suggestions immediately
+// self.update_suggestions();
+//
+// let duration = start_time.elapsed();
+//
+// Emit index update event
+// self.emit_event(SearchEvent::IndexUpdated {
+// block_count: self.block_index.block_cache.len(),
+// duration,
+// });
+//
+// Ok(())
+// }
+//
+// Search blocks immediately with instant results
+// pub fn search(&mut self, query: &str) -> Result<Vec<BlockId>> {
+// let start_time = Instant::now();
+// self.search_state.is_searching = true;
+//
+// Emit search started event
+// self.emit_event(SearchEvent::SearchStarted {
+// query: query.to_string(),
+// filter_count: self.active_filters.active_filters.len(),
+// });
+//
+// let results = if query.is_empty() {
+// No query - apply filters only
+// self.apply_filters_only()
+// } else {
+// Full text search with filters
+// self.perform_full_search(query)?
+// };
+//
+// Update search state immediately
+// self.search_state.current_query = Some(query.to_string());
+// self.search_state.current_results = results.clone();
+// self.search_state.total_matches = results.len();
+// self.search_state.is_searching = false;
+// self.search_state.last_search = Some(start_time);
+//
+// let duration = start_time.elapsed();
+// self.search_state.search_duration = Some(duration);
+//
+// Update performance stats immediately
+// self.perf_stats.total_searches += 1;
+// self.perf_stats.total_search_time += duration;
+// self.perf_stats.average_search_time =
+// self.perf_stats.total_search_time / self.perf_stats.total_searches as u32;
+//
+// Add to search history immediately
+// self.add_to_history(query, results.len(), duration);
+//
+// Emit search completed event
+// self.emit_event(SearchEvent::SearchCompleted {
+// query: query.to_string(),
+// result_count: results.len(),
+// duration,
+// });
+//
+// Ok(results)
+// }
+//
+// Perform full text search with immediate results
+// fn perform_full_search(&mut self, query: &str) -> Result<Vec<BlockId>> {
+// let query_tokens = self.tokenize_text(query);
+// let mut candidates = HashSet::new();
+//
+// Search in text index
+// for token in &query_tokens {
+// if let Some(block_ids) = self.block_index.text_index.get(token) {
+// candidates.extend(block_ids);
+// }
+//
+// Fuzzy matching for similar tokens
+// if candidates.is_empty() {
+// candidates.extend(self.fuzzy_search_token(token));
+// }
+// }
+//
+// Search in command index
+// for token in &query_tokens {
+// if let Some(block_ids) = self.block_index.command_index.get(token) {
+// candidates.extend(block_ids);
+// }
+// }
+//
+// Search in output index
+// for token in &query_tokens {
+// if let Some(block_ids) = self.block_index.output_index.get(token) {
+// candidates.extend(block_ids);
+// }
+// }
+//
+// Apply filters immediately
+// let filtered_results = self.apply_filters(&candidates.into_iter().collect());
+//
+// Score and sort results immediately
+// let mut scored_results: Vec<(BlockId, f64)> = filtered_results
+// .into_iter()
+// .map(|id| {
+// let score = self.calculate_relevance_score(id, query);
+// (id, score)
+// })
+// .collect();
+//
+// Sort by relevance score (highest first)
+// scored_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+//
+// Ok(scored_results.into_iter().map(|(id, _)| id).collect())
+// }
+//
+// Apply filters only (no text search)
+// fn apply_filters_only(&self) -> Vec<BlockId> {
+// let all_blocks: Vec<BlockId> = self.block_index.block_cache.keys().copied().collect();
+// self.apply_filters(&all_blocks)
+// }
+//
+// Apply active filters to block list immediately
+// fn apply_filters(&self, blocks: &[BlockId]) -> Vec<BlockId> {
+// if self.active_filters.active_filters.is_empty() {
+// return blocks.to_vec();
+// }
+//
+// blocks
+// .iter()
+// .filter(|&&block_id| self.matches_filters(block_id))
+// .copied()
+// .collect()
+// }
+//
+// Check if block matches all active filters immediately
+// fn matches_filters(&self, block_id: BlockId) -> bool {
+// let Some(indexed_block) = self.block_index.block_cache.get(&block_id) else {
+// return false;
+// };
+//
+// match self.active_filters.filter_mode {
+// FilterMode::And => {
+// All filters must match
+// self.active_filters
+// .active_filters
+// .iter()
+// .all(|filter| self.matches_filter(indexed_block, filter))
+// },
+// FilterMode::Or => {
+// Any filter can match
+// self.active_filters
+// .active_filters
+// .iter()
+// .any(|filter| self.matches_filter(indexed_block, filter))
+// },
+// }
+// }
+//
+// Check if block matches specific filter immediately
+// fn matches_filter(&self, block: &IndexedBlock, filter: &SearchFilter) -> bool {
+// match filter {
+// SearchFilter::TextContains(text) => {
+// block.command_tokens.iter().any(|t| t.contains(text))
+// || block.output_tokens.iter().any(|t| t.contains(text))
+// },
+// SearchFilter::CommandContains(text) => {
+// block.command_tokens.iter().any(|t| t.contains(text))
+// },
+// SearchFilter::OutputContains(text) => {
+// block.output_tokens.iter().any(|t| t.contains(text))
+// },
+// SearchFilter::Regex(pattern) => {
+// if let Ok(regex) = Regex::new(pattern) {
+// block.command_tokens.iter().any(|t| regex.is_match(t))
+// || block.output_tokens.iter().any(|t| regex.is_match(t))
+// } else {
+// false
+// }
+// },
+// SearchFilter::HasTag(tag) => block.tags.contains(tag),
+// SearchFilter::Shell(shell) => block.shell == *shell,
+// SearchFilter::Status(status) => block.status == *status,
+// SearchFilter::ExitCode(code) => block.exit_code == Some(*code),
+// SearchFilter::CreatedAfter(date) => block.created_at > *date,
+// SearchFilter::CreatedBefore(date) => block.created_at < *date,
+// SearchFilter::CreatedToday => {
+// let now = Utc::now();
+// block.created_at.date_naive() == now.date_naive()
+// },
+// SearchFilter::CreatedThisWeek => {
+// let now = Utc::now();
+// let week_start = now - chrono::Duration::days(7);
+// block.created_at > week_start
+// },
+// SearchFilter::CreatedThisMonth => {
+// let now = Utc::now();
+// block.created_at.year() == now.year() && block.created_at.month() == now.month()
+// },
+// SearchFilter::InDirectory(dir) => block.directory == *dir,
+// SearchFilter::DirectoryContains(text) => block.directory.contains(text),
+// SearchFilter::DurationLessThan(duration) => {
+// if let Some(block_duration) = block.duration_ms {
+// Duration::from_millis(block_duration) < *duration
+// } else {
+// false
+// }
+// },
+// SearchFilter::DurationGreaterThan(duration) => {
+// if let Some(block_duration) = block.duration_ms {
+// Duration::from_millis(block_duration) > *duration
+// } else {
+// false
+// }
+// },
+// SearchFilter::Starred => {
+// Would need to check if block is starred - placeholder
+// false
+// },
+// SearchFilter::Failed => block.exit_code.map_or(false, |code| code != 0),
+// SearchFilter::Successful => block.exit_code.map_or(false, |code| code == 0),
+// SearchFilter::LongRunning(threshold) => {
+// if let Some(block_duration) = block.duration_ms {
+// Duration::from_millis(block_duration) > *threshold
+// } else {
+// false
+// }
+// },
+// }
+// }
+//
+// Add filter immediately
+// pub fn add_filter(&mut self, filter: SearchFilter) -> Result<()> {
+// if !self.active_filters.active_filters.contains(&filter) {
+// self.active_filters.active_filters.push(filter.clone());
+// self.active_filters.last_applied = Instant::now();
+//
+// Re-run search with new filter if query is active
+// let result_count = if let Some(ref query) = self.search_state.current_query {
+// let results = self.search(query)?;
+// results.len()
+// } else {
+// self.apply_filters_only().len()
+// };
+//
+// self.emit_event(SearchEvent::FilterApplied { filter, result_count });
+// }
+//
+// Ok(())
+// }
+//
+// Remove filter immediately
+// pub fn remove_filter(&mut self, filter: &SearchFilter) -> Result<()> {
+// if let Some(pos) = self.active_filters.active_filters.iter().position(|f| f == filter) {
+// let removed_filter = self.active_filters.active_filters.remove(pos);
+//
+// Re-run search without filter if query is active
+// if let Some(ref query) = self.search_state.current_query {
+// self.search(query)?;
+// }
+//
+// self.emit_event(SearchEvent::FilterRemoved { filter: removed_filter });
+// }
+//
+// Ok(())
+// }
+//
+// Clear all filters immediately
+// pub fn clear_filters(&mut self) -> Result<()> {
+// self.active_filters.active_filters.clear();
+//
+// Re-run search without filters if query is active
+// if let Some(ref query) = self.search_state.current_query {
+// self.search(query)?;
+// }
+//
+// Ok(())
+// }
+//
+// Clear search and reset state immediately
+// pub fn clear_search(&mut self) {
+// self.search_state = SearchState::default();
+// self.emit_event(SearchEvent::SearchCleared);
+// }
+//
+// Generate search suggestions immediately
+// pub fn get_suggestions(&mut self, partial_query: &str) -> Vec<SearchSuggestion> {
+// let mut suggestions = Vec::new();
+//
+// Command suggestions
+// suggestions.extend(
+// self.suggestion_engine
+// .command_suggestions
+// .iter()
+// .filter(|cmd| cmd.starts_with(partial_query))
+// .map(|cmd| SearchSuggestion {
+// text: cmd.clone(),
+// suggestion_type: SuggestionType::Command,
+// score: self.calculate_suggestion_score(cmd, partial_query),
+// preview: Some(format!("Search commands containing '{}'", cmd)),
+// })
+// );
+//
+// Tag suggestions
+// suggestions.extend(
+// self.suggestion_engine
+// .tag_suggestions
+// .iter()
+// .filter(|tag| tag.starts_with(partial_query))
+// .map(|tag| SearchSuggestion {
+// text: format!("tag:{}", tag),
+// suggestion_type: SuggestionType::Tag,
+// score: self.calculate_suggestion_score(tag, partial_query),
+// preview: Some(format!("Filter by tag '{}'", tag)),
+// })
+// );
+//
+// Directory suggestions
+// suggestions.extend(
+// self.suggestion_engine
+// .directory_suggestions
+// .iter()
+// .filter(|dir| dir.contains(partial_query))
+// .map(|dir| SearchSuggestion {
+// text: format!("dir:{}", dir),
+// suggestion_type: SuggestionType::Directory,
+// score: self.calculate_suggestion_score(dir, partial_query),
+// preview: Some(format!("Filter by directory '{}'", dir)),
+// })
+// );
+//
+// Sort by score
+// suggestions.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+//
+// Emit suggestions update event
+// self.emit_event(SearchEvent::SuggestionsUpdated {
+// suggestions: suggestions.clone(),
+// });
+//
+// suggestions
+// }
+//
+// Tokenize text for indexing and search
+// fn tokenize_text(&self, text: &str) -> Vec<String> {
+// text.split_whitespace()
+// .map(|s| s.to_lowercase())
+// .filter(|s| !s.is_empty())
+// .collect()
+// }
+//
+// Update text index immediately
+// fn update_text_index(&mut self, command: &str, output: &str, block_id: BlockId) {
+// let all_tokens = self.tokenize_text(&format!("{} {}", command, output));
+//
+// for token in all_tokens {
+// self.block_index.text_index
+// .entry(token)
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+// }
+//
+// Update command index immediately
+// fn update_command_index(&mut self, tokens: &[String], block_id: BlockId) {
+// for token in tokens {
+// self.block_index.command_index
+// .entry(token.clone())
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+// }
+//
+// Update output index immediately
+// fn update_output_index(&mut self, tokens: &[String], block_id: BlockId) {
+// for token in tokens {
+// self.block_index.output_index
+// .entry(token.clone())
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+// }
+//
+// Update tag index immediately
+// fn update_tag_index(&mut self, tags: &HashSet<String>, block_id: BlockId) {
+// for tag in tags {
+// self.block_index.tag_index
+// .entry(tag.clone())
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+// }
+//
+// Update shell index immediately
+// fn update_shell_index(&mut self, shell: ShellType, block_id: BlockId) {
+// self.block_index.shell_index
+// .entry(shell)
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+//
+// Update status index immediately
+// fn update_status_index(&mut self, status: ExecutionStatus, block_id: BlockId) {
+// self.block_index.status_index
+// .entry(status)
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+//
+// Update date index immediately
+// fn update_date_index(&mut self, created_at: DateTime<Utc>, block_id: BlockId) {
+// let year = created_at.year();
+// let month = created_at.month();
+// let day = created_at.day();
+//
+// Update year index
+// self.block_index.date_index.by_year
+// .entry(year)
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+//
+// Update month index
+// self.block_index.date_index.by_month
+// .entry((year, month))
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+//
+// Update day index
+// self.block_index.date_index.by_day
+// .entry((year, month, day))
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+//
+// Update recent blocks (keep only last 100)
+// self.block_index.date_index.recent_blocks.push((created_at, block_id));
+// self.block_index.date_index.recent_blocks.sort_by(|a, b| b.0.cmp(&a.0));
+// if self.block_index.date_index.recent_blocks.len() > 100 {
+// self.block_index.date_index.recent_blocks.truncate(100);
+// }
+// }
+//
+// Update directory index immediately
+// fn update_directory_index(&mut self, directory: &str, block_id: BlockId) {
+// self.block_index.directory_index
+// .entry(directory.to_string())
+// .or_insert_with(HashSet::new)
+// .insert(block_id);
+// }
+//
+// Perform fuzzy search on token
+// fn fuzzy_search_token(&self, token: &str) -> HashSet<BlockId> {
+// let mut results = HashSet::new();
+//
+// for (indexed_token, block_ids) in &self.block_index.text_index {
+// if self.calculate_similarity(token, indexed_token) >= self.fuzzy_engine.similarity_threshold {
+// results.extend(block_ids);
+// }
+// }
+//
+// results
+// }
+//
+// Calculate string similarity for fuzzy search
+// fn calculate_similarity(&self, s1: &str, s2: &str) -> f64 {
+// Simple Levenshtein distance-based similarity
+// let distance = self.levenshtein_distance(s1, s2);
+// let max_len = s1.len().max(s2.len()) as f64;
+//
+// if max_len == 0.0 {
+// 1.0
+// } else {
+// 1.0 - (distance as f64 / max_len)
+// }
+// }
+//
+// Calculate Levenshtein distance
+// fn levenshtein_distance(&self, s1: &str, s2: &str) -> usize {
+// let len1 = s1.len();
+// let len2 = s2.len();
+//
+// if len1 == 0 { return len2; }
+// if len2 == 0 { return len1; }
+//
+// let mut d = vec![vec![0; len2 + 1]; len1 + 1];
+//
+// for i in 1..=len1 { d[i][0] = i; }
+// for j in 1..=len2 { d[0][j] = j; }
+//
+// for i in 1..=len1 {
+// for j in 1..=len2 {
+// let cost = if s1.chars().nth(i - 1) == s2.chars().nth(j - 1) { 0 } else { 1 };
+// d[i][j] = (d[i - 1][j] + 1)
+// .min(d[i][j - 1] + 1)
+// .min(d[i - 1][j - 1] + cost);
+// }
+// }
+//
+// d[len1][len2]
+// }
+//
+// Calculate relevance score for search result
+// fn calculate_relevance_score(&self, block_id: BlockId, query: &str) -> f64 {
+// let Some(indexed_block) = self.block_index.block_cache.get(&block_id) else {
+// return 0.0;
+// };
+//
+// let mut score = 0.0;
+// let query_tokens = self.tokenize_text(query);
+//
+// Command match bonus
+// for token in &query_tokens {
+// if indexed_block.command_tokens.iter().any(|t| t.contains(token)) {
+// score += 2.0;
+// }
+// }
+//
+// Output match
+// for token in &query_tokens {
+// if indexed_block.output_tokens.iter().any(|t| t.contains(token)) {
+// score += 1.0;
+// }
+// }
+//
+// Tag match bonus
+// for token in &query_tokens {
+// if indexed_block.tags.iter().any(|t| t.contains(token)) {
+// score += 1.5;
+// }
+// }
+//
+// Recency bonus
+// let age_days = (Utc::now() - indexed_block.created_at).num_days();
+// if age_days < 7 {
+// score += 0.5;
+// }
+//
+// Success bonus
+// if indexed_block.status == ExecutionStatus::Success {
+// score += 0.2;
+// }
+//
+// score
+// }
+//
+// Calculate suggestion score
+// fn calculate_suggestion_score(&self, suggestion: &str, query: &str) -> f64 {
+// if suggestion.starts_with(query) {
+// 1.0
+// } else if suggestion.contains(query) {
+// 0.8
+// } else {
+// self.calculate_similarity(suggestion, query)
+// }
+// }
+//
+// Update search suggestions immediately
+// fn update_suggestions(&mut self) {
+// Update command suggestions
+// self.suggestion_engine.command_suggestions = self.block_index.command_index
+// .keys()
+// .take(50) // Limit to top 50
+// .cloned()
+// .collect();
+//
+// Update tag suggestions
+// self.suggestion_engine.tag_suggestions = self.block_index.tag_index
+// .keys()
+// .cloned()
+// .collect();
+//
+// Update directory suggestions
+// self.suggestion_engine.directory_suggestions = self.block_index.directory_index
+// .keys()
+// .cloned()
+// .collect();
+//
+// self.suggestion_engine.last_update = Instant::now();
+// }
+//
+// Add search to history immediately
+// fn add_to_history(&mut self, query: &str, result_count: usize, execution_time: Duration) {
+// let entry = SearchHistoryEntry {
+// query: query.to_string(),
+// filters: self.active_filters.active_filters.clone(),
+// result_count,
+// timestamp: Utc::now(),
+// execution_time,
+// };
+//
+// self.search_history.queries.push(entry);
+//
+// Limit history size
+// if self.search_history.queries.len() > self.search_history.max_entries {
+// self.search_history.queries.remove(0);
+// }
+//
+// self.search_history.last_access = Instant::now();
+// }
+//
+// Get search statistics
+// pub fn get_stats(&self) -> SearchStats {
+// self.perf_stats.clone()
+// }
+//
+// Get current search results
+// pub fn get_current_results(&self) -> &[BlockId] {
+// &self.search_state.current_results
+// }
+//
+// Check if currently searching
+// pub fn is_searching(&self) -> bool {
+// self.search_state.is_searching
+// }
+// }
+//
+// impl Default for NativeSearch {
+// fn default() -> Self {
+// Self::new()
+// }
+// }
+//
+// #[cfg(test)]
+// mod tests {
+// use super::*;
+// use crate::blocks_v2::{BlockMetadata, ShellType};
+// use std::path::PathBuf;
+//
+// fn create_test_block(id: u32, command: &str, output: &str) -> Block {
+// Block {
+// id: BlockId::from_string(&format!("test-{}", id)).unwrap(),
+// command: command.to_string(),
+// output: output.to_string(),
+// directory: PathBuf::from("/test"),
+// environment: HashMap::new(),
+// shell: ShellType::Bash,
+// created_at: Utc::now(),
+// modified_at: Utc::now(),
+// tags: HashSet::new(),
+// starred: false,
+// parent_id: None,
+// children: Vec::new(),
+// metadata: BlockMetadata::default(),
+// status: ExecutionStatus::Success,
+// exit_code: Some(0),
+// duration_ms: Some(100),
+// }
+// }
+//
+// #[test]
+// fn test_native_search_creation() {
+// let search = NativeSearch::new();
+// assert_eq!(search.block_index.block_cache.len(), 0);
+// assert!(!search.search_state.is_searching);
+// }
+//
+// #[test]
+// fn test_block_indexing() {
+// let mut search = NativeSearch::new();
+// let block = create_test_block(1, "echo hello", "hello world");
+//
+// search.index_block(&block).unwrap();
+//
+// assert_eq!(search.block_index.block_cache.len(), 1);
+// assert!(search.block_index.text_index.contains_key("hello"));
+// assert!(search.block_index.command_index.contains_key("echo"));
+// }
+//
+// #[test]
+// fn test_immediate_search() {
+// let mut search = NativeSearch::new();
+// let block = create_test_block(1, "echo test", "test output");
+//
+// search.index_block(&block).unwrap();
+//
+// let results = search.search("echo").unwrap();
+// assert_eq!(results.len(), 1);
+// assert_eq!(results[0], block.id);
+// }
+//
+// #[test]
+// fn test_filter_application() {
+// let mut search = NativeSearch::new();
+// let mut block = create_test_block(1, "ls -la", "file listing");
+// block.status = ExecutionStatus::Success;
+//
+// search.index_block(&block).unwrap();
+//
+// search.add_filter(SearchFilter::Status(ExecutionStatus::Success)).unwrap();
+// let results = search.search("").unwrap();
+// assert_eq!(results.len(), 1);
+//
+// search.add_filter(SearchFilter::Status(ExecutionStatus::Failed)).unwrap();
+// let results = search.search("").unwrap();
+// assert_eq!(results.len(), 0); // AND mode, so no results
+// }
+//
+// #[test]
+// fn test_suggestion_generation() {
+// let mut search = NativeSearch::new();
+// let block = create_test_block(1, "git status", "clean working directory");
+//
+// search.index_block(&block).unwrap();
+//
+// let suggestions = search.get_suggestions("git");
+// assert!(!suggestions.is_empty());
+// assert!(suggestions.iter().any(|s| s.text.contains("git")));
+// }
+// }

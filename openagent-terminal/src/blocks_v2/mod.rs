@@ -93,6 +93,7 @@ pub enum ShellType {
 
 impl std::str::FromStr for ShellType {
     type Err = ();
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.to_lowercase().as_str() {
             "bash" => Self::Bash,
@@ -305,15 +306,12 @@ impl BlockManager {
         self.executing_blocks.insert(block_id, execution_handle);
 
         // Emit immediate event - no lazy processing
-        self.emit_event(BlockEvent::Executed(
-            block_id,
-            ExecutionResult {
-                exit_code: -1, // Indicates still running
-                output: String::new(),
-                error_output: String::new(),
-                duration: std::time::Duration::from_secs(0),
-            },
-        ));
+        self.emit_event(BlockEvent::Executed(block_id, ExecutionResult {
+            exit_code: -1, // Indicates still running
+            output: String::new(),
+            error_output: String::new(),
+            duration: std::time::Duration::from_secs(0),
+        }));
 
         // TODO: Start actual process execution in a separate task
         // For now, we'll simulate with a placeholder
