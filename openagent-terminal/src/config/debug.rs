@@ -4,76 +4,56 @@ use serde::Serialize;
 use openagent_terminal_config_derive::ConfigDeserialize;
 
 /// Eviction policy for WGPU multipage glyph atlas.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum AtlasEvictionPolicy {
     /// Rotate through pages regardless of usage.
     RoundRobin,
     /// Choose least-recently-used page; break ties by smallest occupancy.
+    #[default]
     LruMinOccupancy,
 }
 
-impl Default for AtlasEvictionPolicy {
-    fn default() -> Self {
-        Self::LruMinOccupancy
-    }
-}
 
 /// Preference for enabling subpixel text rendering.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum SubpixelPreference {
+    #[default]
     Auto,
     Enabled,
     Disabled,
 }
 
 /// Orientation for LCD subpixel rendering.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum SubpixelOrientation {
+    #[default]
     RGB,
     BGR,
 }
 
-impl Default for SubpixelOrientation {
-    fn default() -> Self {
-        Self::RGB
-    }
-}
 
-impl Default for SubpixelPreference {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Preference for using an sRGB swapchain/surface when available.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum SrgbPreference {
+    #[default]
     Auto,
     Enabled,
     Disabled,
 }
 
-impl Default for SrgbPreference {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Render timer color style.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RenderTimerStyle {
     /// Subtle, unobtrusive background using surface_muted with text color.
+    #[default]
     LowContrast,
     /// Attention-grabbing highlight using warning background.
     Warning,
 }
 
-impl Default for RenderTimerStyle {
-    fn default() -> Self {
-        Self::LowContrast
-    }
-}
 
 /// Debugging options.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq)]
@@ -166,7 +146,8 @@ impl Default for Debug {
             highlight_damage: Default::default(),
             ref_test: Default::default(),
             renderer: Default::default(),
-            // Default to WGPU preferred (the app will attempt WGPU first when compiled with `wgpu`).
+            // Default to WGPU preferred (the app will attempt WGPU first when compiled with
+            // `wgpu`).
             prefer_wgpu: true,
             plugins_preview: false,
             prefer_egl: Default::default(),

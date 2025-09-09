@@ -5,22 +5,18 @@ use openagent_terminal_config_derive::ConfigDeserialize;
 use crate::display::color::Rgb;
 use openagent_terminal_config::SerdeReplace;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum WordBoundaryStyle {
     /// Letters, numbers and underscore are treated as word characters; punctuation separates
     /// words.
+    #[default]
     Alnum,
     /// Treat most symbols and punctuation as separate words; jumps stop at transitions of unicode
     /// categories.
     Unicode,
 }
 
-impl Default for WordBoundaryStyle {
-    fn default() -> Self {
-        Self::Alnum
-    }
-}
 
 impl SerdeReplace for WordBoundaryStyle {
     fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
@@ -29,20 +25,16 @@ impl SerdeReplace for WordBoundaryStyle {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ComposerOpenMode {
     /// Warp-like: click opens panel immediately; any keystroke seeds and opens panel
+    #[default]
     Instant,
     /// Buffered in composer and committed on Enter
     Commit,
 }
 
-impl Default for ComposerOpenMode {
-    fn default() -> Self {
-        Self::Instant
-    }
-}
 
 impl SerdeReplace for ComposerOpenMode {
     fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
@@ -140,13 +132,15 @@ pub struct ThemeUi {
     pub composer_band_alpha: f32,
     /// Horizontal margin (left/right) of the composer pill in px.
     pub composer_margin_px: f32,
-    /// Vertical inset on the bottom line for the composer pill in px (top/bottom each this amount).
+    /// Vertical inset on the bottom line for the composer pill in px (top/bottom each this
+    /// amount).
     pub composer_pill_vertical_inset_px: f32,
     /// Columns of gap between action chips when right-aligned.
     pub composer_chip_gap_cols: u32,
     /// Optional override for chip padding in px (fallbacks to palette_chip_pad_px when None).
     pub composer_chip_pad_px: Option<f32>,
-    /// Optional override for composer pill radius in px (fallbacks to palette_pill_radius_px when None).
+    /// Optional override for composer pill radius in px (fallbacks to palette_pill_radius_px when
+    /// None).
     pub composer_pill_radius_px: Option<f32>,
     /// Optional leading icon/glyph string at start of composer (e.g., "✦ ").
     pub composer_star_glyph: Option<String>,

@@ -403,7 +403,8 @@ impl WindowContext {
             },
         };
 
-        // Apply effective reduce-motion preference from config: override takes precedence over theme
+        // Apply effective reduce-motion preference from config: override takes precedence over
+        // theme
         let effective_reduce_motion =
             window_context.config.reduce_motion_override.unwrap_or_else(|| {
                 window_context
@@ -450,7 +451,8 @@ impl WindowContext {
         // Always reload the theme to account for auto-theme switching.
         self.display.window.set_theme(self.config.window.theme());
 
-        // Apply effective reduce-motion preference from config: override takes precedence over theme
+        // Apply effective reduce-motion preference from config: override takes precedence over
+        // theme
         let effective_reduce_motion = self.config.reduce_motion_override.unwrap_or_else(|| {
             self.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false)
         });

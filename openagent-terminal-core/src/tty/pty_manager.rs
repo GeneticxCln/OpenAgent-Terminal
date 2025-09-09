@@ -516,7 +516,7 @@ mod tests {
         assert_eq!(context.shell_kind, ShellKind::Unknown);
         assert!(
             context.working_directory.is_absolute()
-                || context.working_directory == PathBuf::from("/")
+                || context.working_directory == std::path::Path::new("/")
         );
         assert!(context.last_command.is_none());
     }

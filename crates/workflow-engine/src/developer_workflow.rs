@@ -435,129 +435,113 @@ impl DeveloperWorkflow {
         let mut workflows = self.available_workflows.lock().await;
 
         // Git workflows
-        workflows.insert(
-            "git_resolve_conflicts".to_string(),
-            WorkflowAction {
-                id: Uuid::new_v4(),
-                name: "Resolve Git Conflicts".to_string(),
-                description: "Interactive conflict resolution with visual diff".to_string(),
-                category: WorkflowCategory::Git,
-                inputs: vec![WorkflowInput {
-                    name: "auto_resolve".to_string(),
-                    input_type: InputType::Boolean,
-                    required: false,
-                    default_value: Some("false".to_string()),
-                    description: "Automatically resolve simple conflicts".to_string(),
-                }],
-                outputs: vec![WorkflowOutput {
-                    name: "conflicts_resolved".to_string(),
-                    output_type: OutputType::Status,
-                    description: "Number of conflicts resolved".to_string(),
-                }],
-                prerequisites: vec!["git".to_string()],
-                estimated_duration: std::time::Duration::from_secs(300),
-            },
-        );
+        workflows.insert("git_resolve_conflicts".to_string(), WorkflowAction {
+            id: Uuid::new_v4(),
+            name: "Resolve Git Conflicts".to_string(),
+            description: "Interactive conflict resolution with visual diff".to_string(),
+            category: WorkflowCategory::Git,
+            inputs: vec![WorkflowInput {
+                name: "auto_resolve".to_string(),
+                input_type: InputType::Boolean,
+                required: false,
+                default_value: Some("false".to_string()),
+                description: "Automatically resolve simple conflicts".to_string(),
+            }],
+            outputs: vec![WorkflowOutput {
+                name: "conflicts_resolved".to_string(),
+                output_type: OutputType::Status,
+                description: "Number of conflicts resolved".to_string(),
+            }],
+            prerequisites: vec!["git".to_string()],
+            estimated_duration: std::time::Duration::from_secs(300),
+        });
 
-        workflows.insert(
-            "git_branch_visualization".to_string(),
-            WorkflowAction {
-                id: Uuid::new_v4(),
-                name: "Visualize Git Branches".to_string(),
-                description: "Display branch graph with commit information and signatures"
-                    .to_string(),
-                category: WorkflowCategory::Git,
-                inputs: vec![WorkflowInput {
-                    name: "max_branches".to_string(),
-                    input_type: InputType::Integer,
-                    required: false,
-                    default_value: Some("20".to_string()),
-                    description: "Maximum number of branches to show".to_string(),
-                }],
-                outputs: vec![WorkflowOutput {
-                    name: "branch_graph".to_string(),
-                    output_type: OutputType::Data("visualization".to_string()),
-                    description: "ASCII art branch visualization".to_string(),
-                }],
-                prerequisites: vec!["git".to_string()],
-                estimated_duration: std::time::Duration::from_secs(10),
-            },
-        );
+        workflows.insert("git_branch_visualization".to_string(), WorkflowAction {
+            id: Uuid::new_v4(),
+            name: "Visualize Git Branches".to_string(),
+            description: "Display branch graph with commit information and signatures".to_string(),
+            category: WorkflowCategory::Git,
+            inputs: vec![WorkflowInput {
+                name: "max_branches".to_string(),
+                input_type: InputType::Integer,
+                required: false,
+                default_value: Some("20".to_string()),
+                description: "Maximum number of branches to show".to_string(),
+            }],
+            outputs: vec![WorkflowOutput {
+                name: "branch_graph".to_string(),
+                output_type: OutputType::Data("visualization".to_string()),
+                description: "ASCII art branch visualization".to_string(),
+            }],
+            prerequisites: vec!["git".to_string()],
+            estimated_duration: std::time::Duration::from_secs(10),
+        });
 
         // Docker workflows
-        workflows.insert(
-            "docker_context_switch".to_string(),
-            WorkflowAction {
-                id: Uuid::new_v4(),
-                name: "Switch Docker Context".to_string(),
-                description: "Switch execution context between host and containers".to_string(),
-                category: WorkflowCategory::Docker,
-                inputs: vec![WorkflowInput {
-                    name: "target_container".to_string(),
-                    input_type: InputType::DockerContainer,
-                    required: true,
-                    default_value: None,
-                    description: "Target container for execution context".to_string(),
-                }],
-                outputs: vec![WorkflowOutput {
-                    name: "context_switched".to_string(),
-                    output_type: OutputType::Status,
-                    description: "New execution context".to_string(),
-                }],
-                prerequisites: vec!["docker".to_string()],
-                estimated_duration: std::time::Duration::from_secs(5),
-            },
-        );
+        workflows.insert("docker_context_switch".to_string(), WorkflowAction {
+            id: Uuid::new_v4(),
+            name: "Switch Docker Context".to_string(),
+            description: "Switch execution context between host and containers".to_string(),
+            category: WorkflowCategory::Docker,
+            inputs: vec![WorkflowInput {
+                name: "target_container".to_string(),
+                input_type: InputType::DockerContainer,
+                required: true,
+                default_value: None,
+                description: "Target container for execution context".to_string(),
+            }],
+            outputs: vec![WorkflowOutput {
+                name: "context_switched".to_string(),
+                output_type: OutputType::Status,
+                description: "New execution context".to_string(),
+            }],
+            prerequisites: vec!["docker".to_string()],
+            estimated_duration: std::time::Duration::from_secs(5),
+        });
 
         // Database workflows
-        workflows.insert(
-            "db_query_builder".to_string(),
-            WorkflowAction {
-                id: Uuid::new_v4(),
-                name: "Interactive Query Builder".to_string(),
-                description: "Build and execute database queries with schema awareness".to_string(),
-                category: WorkflowCategory::Database,
-                inputs: vec![WorkflowInput {
-                    name: "connection".to_string(),
-                    input_type: InputType::DatabaseConnection,
-                    required: true,
-                    default_value: None,
-                    description: "Database connection to use".to_string(),
-                }],
-                outputs: vec![WorkflowOutput {
-                    name: "query_result".to_string(),
-                    output_type: OutputType::Data("table".to_string()),
-                    description: "Query execution results".to_string(),
-                }],
-                prerequisites: vec!["database_connection".to_string()],
-                estimated_duration: std::time::Duration::from_secs(60),
-            },
-        );
+        workflows.insert("db_query_builder".to_string(), WorkflowAction {
+            id: Uuid::new_v4(),
+            name: "Interactive Query Builder".to_string(),
+            description: "Build and execute database queries with schema awareness".to_string(),
+            category: WorkflowCategory::Database,
+            inputs: vec![WorkflowInput {
+                name: "connection".to_string(),
+                input_type: InputType::DatabaseConnection,
+                required: true,
+                default_value: None,
+                description: "Database connection to use".to_string(),
+            }],
+            outputs: vec![WorkflowOutput {
+                name: "query_result".to_string(),
+                output_type: OutputType::Data("table".to_string()),
+                description: "Query execution results".to_string(),
+            }],
+            prerequisites: vec!["database_connection".to_string()],
+            estimated_duration: std::time::Duration::from_secs(60),
+        });
 
         // API workflows
-        workflows.insert(
-            "api_test_suite".to_string(),
-            WorkflowAction {
-                id: Uuid::new_v4(),
-                name: "Run API Test Suite".to_string(),
-                description: "Execute API tests with assertions and reporting".to_string(),
-                category: WorkflowCategory::API,
-                inputs: vec![WorkflowInput {
-                    name: "collection_name".to_string(),
-                    input_type: InputType::String,
-                    required: true,
-                    default_value: None,
-                    description: "API collection to test".to_string(),
-                }],
-                outputs: vec![WorkflowOutput {
-                    name: "test_results".to_string(),
-                    output_type: OutputType::Data("test_report".to_string()),
-                    description: "Test execution results and assertions".to_string(),
-                }],
-                prerequisites: vec!["api_collection".to_string()],
-                estimated_duration: std::time::Duration::from_secs(120),
-            },
-        );
+        workflows.insert("api_test_suite".to_string(), WorkflowAction {
+            id: Uuid::new_v4(),
+            name: "Run API Test Suite".to_string(),
+            description: "Execute API tests with assertions and reporting".to_string(),
+            category: WorkflowCategory::API,
+            inputs: vec![WorkflowInput {
+                name: "collection_name".to_string(),
+                input_type: InputType::String,
+                required: true,
+                default_value: None,
+                description: "API collection to test".to_string(),
+            }],
+            outputs: vec![WorkflowOutput {
+                name: "test_results".to_string(),
+                output_type: OutputType::Data("test_report".to_string()),
+                description: "Test execution results and assertions".to_string(),
+            }],
+            prerequisites: vec!["api_collection".to_string()],
+            estimated_duration: std::time::Duration::from_secs(120),
+        });
 
         Ok(())
     }

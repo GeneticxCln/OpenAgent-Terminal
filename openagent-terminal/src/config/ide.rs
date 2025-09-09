@@ -1,5 +1,7 @@
 //! IDE feature configuration (editor, LSP, DAP, indexer)
 
+#![cfg_attr(not(feature = "ide"), allow(dead_code))]
+
 use openagent_terminal_config_derive::ConfigDeserialize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -39,36 +41,27 @@ pub struct IdeConfig {
 impl Default for IdeConfig {
     fn default() -> Self {
         let mut language_servers = HashMap::new();
-        language_servers.insert(
-            "rust".into(),
-            LanguageServerCommand {
-                command: "rust-analyzer".into(),
-                args: vec![],
-                initialization_options: None,
-            },
-        );
-        language_servers.insert(
-            "typescript".into(),
-            LanguageServerCommand {
-                command: "typescript-language-server".into(),
-                args: vec!["--stdio".into()],
-                initialization_options: None,
-            },
-        );
-        language_servers.insert(
-            "python".into(),
-            LanguageServerCommand {
-                command: "pyright-langserver".into(),
-                args: vec!["--stdio".into()],
-                initialization_options: None,
-            },
-        );
+        language_servers.insert("rust".into(), LanguageServerCommand {
+            command: "rust-analyzer".into(),
+            args: vec![],
+            initialization_options: None,
+        });
+        language_servers.insert("typescript".into(), LanguageServerCommand {
+            command: "typescript-language-server".into(),
+            args: vec!["--stdio".into()],
+            initialization_options: None,
+        });
+        language_servers.insert("python".into(), LanguageServerCommand {
+            command: "pyright-langserver".into(),
+            args: vec!["--stdio".into()],
+            initialization_options: None,
+        });
 
         let mut debug_adapters = HashMap::new();
-        debug_adapters.insert(
-            "codelldb".into(),
-            DebugAdapterCommand { command: "codelldb".into(), args: vec![] },
-        );
+        debug_adapters.insert("codelldb".into(), DebugAdapterCommand {
+            command: "codelldb".into(),
+            args: vec![],
+        });
 
         Self {
             enabled: true,

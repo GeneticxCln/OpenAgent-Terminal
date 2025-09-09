@@ -1,15 +1,14 @@
 //! The display subsystem including window management, font rasterization, and
 //! GPU drawing.
 
-use std::cmp;
 use std::fmt::{self, Formatter};
-use std::mem;
 #[cfg(feature = "gl-backend")]
 use std::mem::ManuallyDrop;
 use std::num::NonZeroU32;
 #[cfg(feature = "gl-backend")]
 use std::ops::Deref;
 use std::time::{Duration, Instant};
+use std::{cmp, mem};
 
 #[cfg(feature = "gl-backend")]
 use glutin::config::GetGlConfig;
@@ -1983,7 +1982,8 @@ impl Display {
         for cell in &mut content {
             grid_cells.push(cell);
         }
-        // Remember if we observed any non-empty content; assign after releasing borrows from `content`.
+        // Remember if we observed any non-empty content; assign after releasing borrows from
+        // `content`.
         let had_nonempty = !grid_cells.is_empty();
         let selection_range = content.selection_range();
         let _foreground_color = content.color(NamedColor::Foreground as usize);
@@ -2105,7 +2105,8 @@ impl Display {
                     }
                 },
             };
-            // Suppress reserving rows during clean startup to avoid a template-like top/bottom band.
+            // Suppress reserving rows during clean startup to avoid a template-like top/bottom
+            // band.
             let (reserve_top, reserve_bottom) = if suppress_reserve {
                 (0usize, 0usize)
             } else if tab_cfg.show
@@ -2602,7 +2603,8 @@ impl Display {
 
         // Transient overlays: draw last, after tab bar, quick actions, and composer.
         if !self.clean_startup_active() {
-            // Draw pane drag overlay (preview and drop-zone highlights) if a pane drag is in progress
+            // Draw pane drag overlay (preview and drop-zone highlights) if a pane drag is in
+            // progress
             if let Some(tm) = tab_manager {
                 if let Some(active_tab) = tm.active_tab() {
                     self.draw_pane_drag_overlay(config, active_tab);
@@ -2817,9 +2819,10 @@ impl Display {
                     self.raw_window_handle,
                     RawWindowHandle::Xcb(_) | RawWindowHandle::Xlib(_)
                 ) {
-                    // On X11 `swap_buffers` does not block for vsync. However the next OpenGl command
-                    // will block to synchronize (this is `glClear` in OpenAgent Terminal), which causes
-                    // a permanent one frame delay.
+                    // On X11 `swap_buffers` does not block for vsync. However the next OpenGl
+                    // command will block to synchronize (this is `glClear` in
+                    // OpenAgent Terminal), which causes a permanent one frame
+                    // delay.
                     self.renderer_finish();
                 }
             }

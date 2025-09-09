@@ -2574,7 +2574,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
 
-        // Files from current working directory (basic, non-recursive, capped) for immediate feedback
+        // Files from current working directory (basic, non-recursive, capped) for immediate
+        // feedback
         if let Ok(cwd) = std::env::current_dir() {
             if let Ok(rd) = std::fs::read_dir(&cwd) {
                 for (i, entry) in rd.flatten().enumerate() {
@@ -3320,18 +3321,22 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.settings_panel.insert_char(c);
         self.mark_dirty();
     }
+
     fn settings_panel_backspace(&mut self) {
         self.display.settings_panel.backspace();
         self.mark_dirty();
     }
+
     fn settings_panel_next_field(&mut self) {
         self.display.settings_panel.next_field();
         self.mark_dirty();
     }
+
     fn settings_panel_prev_field(&mut self) {
         self.display.settings_panel.prev_field();
         self.mark_dirty();
     }
+
     fn settings_panel_cycle_provider(&mut self, forward: bool) {
         if self.display.settings_panel.selected_field
             == crate::display::settings_panel::Field::Provider
@@ -3340,30 +3345,37 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.mark_dirty();
         }
     }
+
     fn settings_panel_switch_category(&mut self, forward: bool) {
         self.display.settings_panel.switch_category(forward);
         self.mark_dirty();
     }
+
     fn settings_panel_test_connection(&mut self) {
         let cfg_ref: &UiConfig = self.config;
         self.display.settings_panel.test_connection(cfg_ref);
         self.mark_dirty();
     }
+
     fn settings_panel_move_selection(&mut self, delta: isize) {
         self.display.settings_panel.move_kb_selection(delta);
         self.mark_dirty();
     }
+
     fn settings_panel_begin_capture(&mut self) {
         self.display.settings_panel.begin_kb_capture();
         self.mark_dirty();
     }
+
     fn settings_panel_cancel_capture(&mut self) {
         self.display.settings_panel.cancel_kb_capture();
         self.mark_dirty();
     }
+
     fn settings_panel_is_capturing(&self) -> bool {
         self.display.settings_panel.is_kb_capturing()
     }
+
     fn settings_panel_capture(
         &mut self,
         key: winit::keyboard::Key<String>,
@@ -3382,6 +3394,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
         self.mark_dirty();
     }
+
     fn settings_panel_save(&mut self) {
         let need_reload;
         let category = self.display.settings_panel.category;
@@ -4780,7 +4793,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     target_split: target_opt,
                     before,
                 }) => {
-                    // Move semantics within the active tab: re-parent the dragged pane next to target
+                    // Move semantics within the active tab: re-parent the dragged pane next to
+                    // target
                     if let Some(target_pid) = target_opt {
                         if let Some(active_tab) = self.workspace.active_tab_mut() {
                             // Map SplitDirection to SplitAxis
@@ -4810,7 +4824,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     }
                 },
                 Some(crate::display::pane_drag_drop::PaneDropZone::Tab { tab_id, .. }) => {
-                    // Cross-tab move: remove from source tab and insert next to the destination tab's active pane
+                    // Cross-tab move: remove from source tab and insert next to the destination
+                    // tab's active pane
                     // 1) Remove from the source tab's layout (from drag_state.source_tab)
                     if let Some(src_tab) = self.workspace.tabs.get_tab_mut(drag_state.source_tab) {
                         let mut sm = crate::workspace::SplitManager::new();
@@ -5459,8 +5474,9 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
 }
 
 /// Identified purpose of the touch input.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum TouchPurpose {
+    #[default]
     None,
     Select(TouchEvent),
     Scroll(TouchEvent),
@@ -5468,12 +5484,6 @@ pub enum TouchPurpose {
     ZoomPendingSlot(TouchEvent),
     Tap(TouchEvent),
     Invalid(HashSet<u64, RandomState>),
-}
-
-impl Default for TouchPurpose {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Touch zooming state.

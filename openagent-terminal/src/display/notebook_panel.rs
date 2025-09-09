@@ -56,20 +56,25 @@ impl NotebookPanelState {
             focus: FocusArea::Notebooks,
         }
     }
+
     pub fn open(&mut self) {
         self.active = true;
     }
+
     pub fn close(&mut self) {
         self.active = false;
     }
+
     #[allow(dead_code)]
     pub fn focus_notebooks(&mut self) {
         self.focus = FocusArea::Notebooks;
     }
+
     #[allow(dead_code)]
     pub fn focus_cells(&mut self) {
         self.focus = FocusArea::Cells;
     }
+
     pub fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             FocusArea::Notebooks => FocusArea::Cells,

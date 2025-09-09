@@ -26,8 +26,13 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Format (rustfmt)
-        run: cargo fmt --all -- --check
+      - name: Install nightly toolchain for rustfmt
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Format (rustfmt, nightly)
+        run: cargo +nightly fmt --all -- --check
 
       - name: Determine feature arguments
         id: features

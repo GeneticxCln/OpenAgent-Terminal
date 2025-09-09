@@ -244,7 +244,8 @@ impl NativeRenderer {
                 // Animation update deferred to avoid borrow issues
             }
 
-            // Primitive generation/rendering deferred in experimental renderer to avoid borrow conflicts
+            // Primitive generation/rendering deferred in experimental renderer to avoid borrow
+            // conflicts
             let _ = size_info;
 
             render_element.last_render = now;
@@ -461,7 +462,8 @@ impl NativeRenderer {
 
             // Update animation immediately
             render_element.animation_state = Some(animation.clone());
-            // Animation/primitive generation deferred in experimental renderer to avoid borrow conflicts
+            // Animation/primitive generation deferred in experimental renderer to avoid borrow
+            // conflicts
 
             self.emit_render_event(RenderEvent::TabRendered(tab_id));
         }
