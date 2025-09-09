@@ -159,10 +159,6 @@ cargo install --git https://github.com/GeneticxCln/OpenAgent-Terminal.git
 **Releases:**
 Download prebuilt binaries from [GitHub Releases](https://github.com/GeneticxCln/OpenAgent-Terminal/releases).
 
-**Requirements:**
-- OpenGL ES 2.0+
-- Windows: ConPTY support (Win10 1809+)
-
 ## Privacy & Security
 
 - **Local by default** - Ollama runs entirely on your machine
