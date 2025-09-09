@@ -2,9 +2,10 @@
 name = "docker-helper"
 version = "1.0.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
-plugin-api = { path = "../../crates/plugin-api" }
+plugin-api = { path = "../../crates/plugin-api", version = "0.1.0" }
 serde_json = "1.0"
 regex = "1.10"
 

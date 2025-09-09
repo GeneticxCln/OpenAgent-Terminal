@@ -82,6 +82,7 @@ impl Renderer {
     }
 
     pub fn stage_ui_rounded_rect(&mut self, _rect: ui::UiRoundedRect) {}
+
     pub fn stage_ui_sprite(&mut self, _sprite: ui::UiSprite) {}
 
     pub fn set_sprite_filter_nearest(&mut self, _nearest: bool) {}
@@ -91,6 +92,7 @@ impl Renderer {
     pub fn was_context_reset(&self) -> bool {
         false
     }
+
     pub fn finish(&self) {}
 
     pub fn set_viewport(&self, _size: &crate::display::SizeInfo) {}

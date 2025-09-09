@@ -91,10 +91,12 @@ impl DevToolsPlugin {
         }
 
         // Update Kubernetes namespaces
-        if let Ok(output) = self.run_command(
-            "kubectl",
-            &["get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"],
-        ) {
+        if let Ok(output) = self.run_command("kubectl", &[
+            "get",
+            "namespaces",
+            "-o",
+            "jsonpath={.items[*].metadata.name}",
+        ]) {
             self.cache.k8s_namespaces = output.split_whitespace().map(String::from).collect();
         }
 
@@ -561,9 +563,12 @@ impl Plugin for DevToolsPlugin {
                 }
 
                 // Pod status
-                if let Ok(pods) = self
-                    .run_command("kubectl", &["get", "pods", "--all-namespaces", "--no-headers"])
-                {
+                if let Ok(pods) = self.run_command("kubectl", &[
+                    "get",
+                    "pods",
+                    "--all-namespaces",
+                    "--no-headers",
+                ]) {
                     let pod_count = pods.lines().count();
                     let running = pods.lines().filter(|l| l.contains("Running")).count();
                     output

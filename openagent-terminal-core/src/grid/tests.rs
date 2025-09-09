@@ -118,6 +118,33 @@ fn scroll_down_with_history() {
     assert_eq!(grid[Line(9)].occ, 1);
 }
 
+/// Top-anchored scroll_up with history moves the scrolled-out line into history,
+/// shifts the region up, and clears the bottom of the region.
+#[test]
+fn scroll_up_with_history_top_anchored() {
+    // 3 visible lines, 1 column, allow 2 lines of history.
+    let mut grid = Grid::<usize>::new(3, 1, 2);
+    // Initialize visible content: [1, 2, 3].
+    grid[Line(0)][Column(0)] = 1;
+    grid[Line(1)][Column(0)] = 2;
+    grid[Line(2)][Column(0)] = 3;
+
+    // Perform an upward scroll by 1 over the full screen (top-anchored).
+    grid.scroll_up::<usize>(&(Line(0)..Line(3)), 1);
+
+    // The topmost visible line becomes the newest history entry.
+    assert_eq!(grid.history_size(), 1);
+    assert_eq!(grid[Line(-1)][Column(0)], 1);
+
+    // Visible lines shift up; bottom line is cleared (template is 0 for usize instances).
+    assert_eq!(grid[Line(0)][Column(0)], 2);
+    assert_eq!(grid[Line(1)][Column(0)], 3);
+    assert_eq!(grid[Line(2)][Column(0)], 0);
+
+    // Occupancy reflects the cleared bottom line.
+    assert_eq!(grid[Line(2)].occ, 0);
+}
+
 // Test that GridIterator works.
 #[test]
 fn test_iter() {

@@ -43,6 +43,7 @@ impl LoadGlyph for LoaderApi<'_> {
             uv_height: 0.0,
         }
     }
+
     fn clear(&mut self) {}
 }
 

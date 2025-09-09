@@ -137,10 +137,11 @@ impl AiProvider for OpenAiProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![
-            ChatMessage { role: "system".to_string(), content: system_prompt },
-            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
-        ];
+        let messages =
+            vec![ChatMessage { role: "system".to_string(), content: system_prompt }, ChatMessage {
+                role: "user".to_string(),
+                content: req.scratch_text.clone(),
+            }];
 
         let request_body = ChatCompletionRequest {
             model: self.model.clone(),
@@ -300,10 +301,11 @@ impl AiProvider for OpenAiProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![
-            ChatMessage { role: "system".to_string(), content: system_prompt },
-            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
-        ];
+        let messages =
+            vec![ChatMessage { role: "system".to_string(), content: system_prompt }, ChatMessage {
+                role: "user".to_string(),
+                content: req.scratch_text.clone(),
+            }];
 
         let request_body = ChatCompletionRequest {
             model: self.model.clone(),
