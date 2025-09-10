@@ -45,11 +45,13 @@ pub struct ComponentConfig {
 
 impl Default for ComponentConfig {
     fn default() -> Self {
-        let data_dir =
-            dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
+        let data_dir = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("openagent-terminal");
 
-        let config_dir =
-            dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("openagent-terminal");
 
         Self {
             enable_wgpu: true,
@@ -87,15 +89,24 @@ impl std::fmt::Debug for InitializedComponents {
         }
         #[cfg(feature = "blocks")]
         {
-            let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some"));
+            let _ = ds.field(
+                "block_manager",
+                &self.block_manager.as_ref().map(|_| "Some"),
+            );
         }
         #[cfg(feature = "workflow")]
         {
-            let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some"));
+            let _ = ds.field(
+                "workflow_engine",
+                &self.workflow_engine.as_ref().map(|_| "Some"),
+            );
         }
         #[cfg(feature = "plugins")]
         {
-            let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some"));
+            let _ = ds.field(
+                "plugin_manager",
+                &self.plugin_manager.as_ref().map(|_| "Some"),
+            );
         }
         ds.field("runtime", &"<runtime>").finish()
     }
@@ -110,7 +121,10 @@ pub async fn initialize_components(
 
     // Create async runtime for components
     let runtime = Arc::new(
-        tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build()?,
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()?,
     );
 
     // Create directories
@@ -126,11 +140,11 @@ pub async fn initialize_components(
             Ok(shaper) => {
                 info!("✓ HarfBuzz text shaping initialized");
                 Some(Arc::new(tokio::sync::RwLock::new(shaper)))
-            },
+            }
             Err(e) => {
                 warn!("Failed to initialize HarfBuzz: {}", e);
                 None
-            },
+            }
         }
     } else {
         debug!("HarfBuzz text shaping disabled");
@@ -145,11 +159,11 @@ pub async fn initialize_components(
             Ok(manager) => {
                 info!("✓ Blocks 2.0 system initialized");
                 Some(Arc::new(tokio::sync::RwLock::new(manager)))
-            },
+            }
             Err(e) => {
                 error!("Failed to initialize Blocks system: {}", e);
                 None
-            },
+            }
         }
     } else {
         debug!("Blocks 2.0 system disabled");
@@ -164,11 +178,11 @@ pub async fn initialize_components(
             Ok(mgr) => {
                 info!("✓ Command Notebooks initialized");
                 Some(Arc::new(tokio::sync::RwLock::new(mgr)))
-            },
+            }
             Err(e) => {
                 error!("Failed to initialize Notebooks: {}", e);
                 None
-            },
+            }
         }
     } else {
         None
@@ -181,11 +195,11 @@ pub async fn initialize_components(
             Ok(engine) => {
                 info!("✓ Workflow engine initialized");
                 Some(Arc::new(engine))
-            },
+            }
             Err(e) => {
                 error!("Failed to initialize workflow engine: {}", e);
                 None
-            },
+            }
         }
     } else {
         debug!("Workflow engine disabled");
@@ -198,14 +212,17 @@ pub async fn initialize_components(
         let plugins_dir = config.data_dir.join("plugins");
         // Plugin policy toggles (Warp-like defaults with env overrides for releases)
         let enforce_signatures = true;
+        // Default to strict in release builds: require signatures for all, disable hot reload.
+        let require_all_default = if cfg!(debug_assertions) { false } else { true };
+        let hot_reload_default = if cfg!(debug_assertions) { true } else { false };
         let require_all = std::env::var("OPENAGENT_PLUGINS_REQUIRE_ALL")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+            .unwrap_or(require_all_default);
         let hot_reload = std::env::var("OPENAGENT_PLUGINS_HOT_RELOAD")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
+            .unwrap_or(hot_reload_default);
         let require_system = true;
         let require_user = std::env::var("OPENAGENT_PLUGINS_USER_REQUIRE_SIGNED")
             .ok()
@@ -242,11 +259,11 @@ pub async fn initialize_components(
                     spawn_plugin_watchers(Arc::clone(&pm), watcher_dirs);
                 }
                 Some(pm)
-            },
+            }
             Err(e) => {
                 error!("Failed to initialize plugin system: {}", e);
                 None
-            },
+            }
         }
     } else {
         debug!("Plugin system disabled");
@@ -313,10 +330,28 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
                     Ok(id) => {
                         debug!("Loaded workflow: {}", id);
                         count += 1;
-                    },
+                    }
                     Err(e) => {
                         warn!("Failed to load workflow {:?}: {}", path, e);
-                    },
+                    }
+                }
+            }
+        }
+
+        if count == 0 {
+            // Seed curated samples on first run
+            debug!("Seeding curated workflow samples in {:?}", workflows_dir);
+            seed_default_workflows(&workflows_dir).await?;
+            // Reload after seeding
+            let mut reentries = tokio::fs::read_dir(&workflows_dir).await?;
+            while let Some(entry) = reentries.next_entry().await? {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("yaml")
+                    || path.extension().and_then(|s| s.to_str()) == Some("yml")
+                {
+                    if let Ok(id) = engine.load_workflow(&path).await {
+                        debug!("Loaded workflow: {}", id);
+                    }
                 }
             }
         }
@@ -325,9 +360,45 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
     } else {
         debug!("No workflows directory found, creating it");
         tokio::fs::create_dir_all(&workflows_dir).await?;
+        // Seed curated samples on first run
+        seed_default_workflows(&workflows_dir).await?;
     }
 
     Ok(engine)
+}
+
+#[cfg(feature = "workflow")]
+async fn seed_default_workflows(dir: &std::path::Path) -> Result<()> {
+    let rust = r#"name: Cargo build
+on: manual
+steps:
+  - run: cargo build --workspace --release
+    description: Build Rust workspace in release mode
+"#;
+    let node = r#"name: Node test
+on: manual
+steps:
+  - run: npm ci
+  - run: npm test
+"#;
+    let python = r#"name: Python lint
+on: manual
+steps:
+  - run: pip install -r requirements.txt
+  - run: ruff check .
+"#;
+    let files = [
+        ("rust.yaml", rust),
+        ("node.yaml", node),
+        ("python.yaml", python),
+    ];
+    for (name, content) in files {
+        let path = dir.join(name);
+        if !path.exists() {
+            tokio::fs::write(&path, content).await?;
+        }
+    }
+    Ok(())
 }
 
 /// Initialize plugin manager
@@ -365,7 +436,9 @@ async fn initialize_plugin_manager(
 
     // Create plugin host with storage dir
     let storage_dir = if let Some(data) = dirs::data_dir() {
-        data.join("openagent-terminal").join("plugins").join("storage")
+        data.join("openagent-terminal")
+            .join("plugins")
+            .join("storage")
     } else {
         PathBuf::from("./.openagent-terminal/plugins/storage")
     };
@@ -417,10 +490,10 @@ async fn initialize_plugin_manager(
                     Err(e) => warn!("Failed to load plugin {:?}: {}", plugin_path, e),
                 }
             }
-        },
+        }
         Err(e) => {
             warn!("Failed to discover plugins: {}", e);
-        },
+        }
     }
 
     Ok(manager)
@@ -471,7 +544,10 @@ impl PluginHost for TerminalPluginHost {
             )));
         }
         // Interactive confirmation if required by policy
-        let require_confirm = *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
+        let require_confirm = *policy
+            .require_confirmation
+            .get(&risk.level)
+            .unwrap_or(&false);
         if require_confirm {
             let mut body = String::new();
             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -486,13 +562,13 @@ impl PluginHost for TerminalPluginHost {
             let title = match risk.level {
                 crate::security_lens::RiskLevel::Critical => {
                     "CRITICAL: Confirm plugin command".into()
-                },
+                }
                 crate::security_lens::RiskLevel::Warning => {
                     "Warning: Confirm plugin command".into()
-                },
+                }
                 crate::security_lens::RiskLevel::Caution => {
                     "Caution: Confirm plugin command".into()
-                },
+                }
                 crate::security_lens::RiskLevel::Safe => "Confirm plugin command".into(),
             };
             match crate::ui_confirm::request_confirm(
@@ -502,13 +578,16 @@ impl PluginHost for TerminalPluginHost {
                 Some("Cancel".into()),
                 Some(30_000),
             ) {
-                Ok(true) => {},
+                Ok(true) => {}
                 Ok(false) => {
                     return Err(PluginError::CommandFailed("User canceled command".into()));
-                },
+                }
                 Err(e) => {
-                    return Err(PluginError::CommandFailed(format!("Confirmation failed: {}", e)));
-                },
+                    return Err(PluginError::CommandFailed(format!(
+                        "Confirmation failed: {}",
+                        e
+                    )));
+                }
             }
         }
 
@@ -528,7 +607,10 @@ impl PluginHost for TerminalPluginHost {
 
     fn get_terminal_state(&self) -> TerminalState {
         TerminalState {
-            current_dir: std::env::current_dir().unwrap_or_default().to_string_lossy().to_string(),
+            current_dir: std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             environment: std::env::vars().collect(),
             shell: std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()),
             terminal_size: (80, 24),
@@ -538,7 +620,10 @@ impl PluginHost for TerminalPluginHost {
     }
 
     fn show_notification(&self, notification: Notification) -> Result<(), PluginError> {
-        info!("[Notification] {}: {}", notification.title, notification.body);
+        info!(
+            "[Notification] {}: {}",
+            notification.title, notification.body
+        );
         Ok(())
     }
 
@@ -559,7 +644,10 @@ impl PluginHost for TerminalPluginHost {
     }
 
     fn register_command(&self, command: CommandDefinition) -> Result<(), PluginError> {
-        debug!("Registered command: {} - {}", command.name, command.description);
+        debug!(
+            "Registered command: {} - {}",
+            command.name, command.description
+        );
         Ok(())
     }
 
@@ -682,7 +770,7 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
             move |res: NotifyResult<Event>| match res {
                 Ok(ev) => {
                     let _ = tx.send(ev);
-                },
+                }
                 Err(e) => warn!("Plugin watcher error: {}", e),
             },
             NotifyConfig::default(),
@@ -706,8 +794,10 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
             tokio::spawn(async move {
                 if p.extension().and_then(|s| s.to_str()) == Some("wasm") {
                     // Unload if already loaded (by name) to trigger cleanup
-                    if let Some(name) =
-                        p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+                    if let Some(name) = p
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
                     {
                         let loaded = mgr.loaded_names_and_paths().await;
                         if loaded.iter().any(|(n, _)| n == &name) {
@@ -747,16 +837,16 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
                         match &event.kind {
                             EventKind::Create(_) | EventKind::Modify(_) => {
                                 handle_create_or_modify(path)
-                            },
+                            }
                             EventKind::Remove(_) => handle_remove(path),
-                            _ => {},
+                            _ => {}
                         }
                     }
-                },
+                }
                 Err(e) => {
                     warn!("Plugin watcher recv error: {}", e);
                     break;
-                },
+                }
             }
         }
     });

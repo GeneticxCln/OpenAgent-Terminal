@@ -120,7 +120,12 @@ impl SecureSyncProvider {
         let metadata = Self::load_or_create_metadata(&base_dir, &rng)?;
         let peers = Self::load_peers(&base_dir)?;
 
-        Ok(Self { base_dir, metadata, rng, peers })
+        Ok(Self {
+            base_dir,
+            metadata,
+            rng,
+            peers,
+        })
     }
 
     /// Get the base directory for sync data
@@ -128,8 +133,9 @@ impl SecureSyncProvider {
         let base_dir = if let Some(ref dir) = config.data_dir {
             dir.clone()
         } else {
-            let state_dir =
-                std::env::var("XDG_STATE_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+            let state_dir = std::env::var("XDG_STATE_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
                     let home = std::env::var("HOME")
                         .map(PathBuf::from)
                         .unwrap_or_else(|_| PathBuf::from("."));
@@ -231,7 +237,7 @@ impl SecureSyncProvider {
                     &mut key,
                 );
                 Ok(key)
-            },
+            }
             _ => Err(SyncError::Other(format!(
                 "Unsupported KDF algorithm: {}",
                 self.metadata.kdf_params.algorithm
@@ -356,7 +362,10 @@ impl SecureSyncProvider {
 
     /// Get the current Unix timestamp
     fn current_timestamp() -> u64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
     }
 
     /// Get the encrypted data directory for a scope
@@ -400,25 +409,27 @@ impl SecureSyncProvider {
     fn source_dir(&self, scope: SyncScope) -> PathBuf {
         match scope {
             SyncScope::Settings => {
-                let config_dir =
-                    std::env::var("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+                let config_dir = std::env::var("XDG_CONFIG_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
                         let home = std::env::var("HOME")
                             .map(PathBuf::from)
                             .unwrap_or_else(|_| PathBuf::from("."));
                         home.join(".config")
                     });
                 config_dir.join("openagent-terminal")
-            },
+            }
             SyncScope::History => {
-                let data_dir =
-                    std::env::var("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+                let data_dir = std::env::var("XDG_DATA_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
                         let home = std::env::var("HOME")
                             .map(PathBuf::from)
                             .unwrap_or_else(|_| PathBuf::from("."));
                         home.join(".local").join("share")
                     });
                 data_dir.join("openagent-terminal")
-            },
+            }
         }
     }
 
@@ -513,8 +524,9 @@ impl SyncProvider for SecureSyncProvider {
 
         entries.sort_by_key(|e| e.file_name());
 
-        let latest_file =
-            entries.last().ok_or_else(|| SyncError::Other("No payload files found".to_string()))?;
+        let latest_file = entries
+            .last()
+            .ok_or_else(|| SyncError::Other("No payload files found".to_string()))?;
 
         // Load and decrypt payload
         let payload_content = fs::read_to_string(latest_file.path())?;
@@ -543,9 +555,12 @@ impl SyncProvider for SecureSyncProvider {
         let mut status = match self.read_status() {
             Ok(s) => s,
             Err(e) => {
-                warn!("Failed to read secure sync status (pull); defaulting: {:?}", e);
+                warn!(
+                    "Failed to read secure sync status (pull); defaulting: {:?}",
+                    e
+                );
                 SyncStatus::default()
-            },
+            }
         };
         status.last_pull = Some(Self::current_timestamp());
         self.write_status(&status)?;
@@ -623,7 +638,9 @@ mod tests {
         let test_data = b"Hello, secure sync!";
         let password = b"test-password-123";
 
-        let encrypted = provider.encrypt_data(test_data, password, SyncScope::Settings).unwrap();
+        let encrypted = provider
+            .encrypt_data(test_data, password, SyncScope::Settings)
+            .unwrap();
         let decrypted = provider.decrypt_data(&encrypted, password).unwrap();
 
         assert_eq!(test_data, &decrypted[..]);

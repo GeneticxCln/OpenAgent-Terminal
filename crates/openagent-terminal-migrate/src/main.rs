@@ -68,7 +68,11 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Commands::Auto { preview, force, output } => {
+        Commands::Auto {
+            preview,
+            force,
+            output,
+        } => {
             println!("{}", "🔍 Auto-detecting terminal configurations...".cyan());
 
             let detected = detectors::auto_detect_configs()?;
@@ -97,8 +101,14 @@ fn main() -> Result<()> {
                     perform_migration(&config, force, output.as_ref())?;
                 }
             }
-        },
-        Commands::From { terminal, config, preview, force, output } => {
+        }
+        Commands::From {
+            terminal,
+            config,
+            preview,
+            force,
+            output,
+        } => {
             let config_path = if let Some(path) = config {
                 path
             } else {
@@ -117,10 +127,10 @@ fn main() -> Result<()> {
             } else {
                 perform_migration(&migration_config, force, output.as_ref())?;
             }
-        },
+        }
         Commands::List => {
             show_supported_terminals();
-        },
+        }
         Commands::Validate { config } => {
             let config_path = config.unwrap_or_else(|| {
                 dirs::config_dir()
@@ -130,14 +140,17 @@ fn main() -> Result<()> {
             });
 
             validation::validate_config(&config_path)?;
-        },
+        }
     }
 
     Ok(())
 }
 
 fn show_migration_preview(config: &MigrationConfig) -> Result<()> {
-    println!("{}", format!("📋 Preview migration from {}", config.terminal_type).cyan());
+    println!(
+        "{}",
+        format!("📋 Preview migration from {}", config.terminal_type).cyan()
+    );
 
     let parsed = parsers::parse_config(config)?;
     let generated = generators::generate_openagent_config(&parsed)?;
@@ -155,7 +168,10 @@ fn perform_migration(
     force: bool,
     output_dir: Option<&PathBuf>,
 ) -> Result<()> {
-    println!("{}", format!("🔄 Migrating from {} configuration", config.terminal_type).cyan());
+    println!(
+        "{}",
+        format!("🔄 Migrating from {} configuration", config.terminal_type).cyan()
+    );
 
     let parsed = parsers::parse_config(config)?;
     let generated = generators::generate_openagent_config(&parsed)?;
@@ -165,7 +181,11 @@ fn perform_migration(
     if output_path.exists() && !force {
         println!(
             "{}",
-            format!("❌ Configuration file already exists: {}", output_path.display()).red()
+            format!(
+                "❌ Configuration file already exists: {}",
+                output_path.display()
+            )
+            .red()
         );
         println!("    Use --force to overwrite or specify a different --output directory");
         return Ok(());
@@ -180,8 +200,11 @@ fn perform_migration(
 
     println!(
         "{}",
-        format!("✅ Migration complete! Configuration written to: {}", output_path.display())
-            .green()
+        format!(
+            "✅ Migration complete! Configuration written to: {}",
+            output_path.display()
+        )
+        .green()
     );
     println!("    You can now use this configuration with OpenAgent Terminal");
 
@@ -196,15 +219,19 @@ fn determine_output_path(output_dir: Option<&PathBuf>) -> Result<PathBuf> {
         Ok(dir.join("openagent-terminal.toml"))
     } else {
         // Use default OpenAgent Terminal config location
-        let config_dir =
-            dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("openagent-terminal");
 
         Ok(config_dir.join("openagent-terminal.toml"))
     }
 }
 
 fn show_supported_terminals() {
-    println!("{}", "📱 Supported terminals and their configuration locations:".cyan());
+    println!(
+        "{}",
+        "📱 Supported terminals and their configuration locations:".cyan()
+    );
     println!();
 
     for terminal in TerminalType::all() {
@@ -225,7 +252,10 @@ fn show_supported_terminals() {
         "  {}",
         "openagent-migrate auto                    # Auto-detect and migrate".dimmed()
     );
-    println!("  {}", "openagent-migrate from alacritty          # Migrate from Alacritty".dimmed());
+    println!(
+        "  {}",
+        "openagent-migrate from alacritty          # Migrate from Alacritty".dimmed()
+    );
     println!(
         "  {}",
         "openagent-migrate from iterm2 --preview   # Preview iTerm2 migration".dimmed()

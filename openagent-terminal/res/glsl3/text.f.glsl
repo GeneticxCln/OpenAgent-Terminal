@@ -1,4 +1,3 @@
-#if defined(GLES2_RENDERER)
 // Require extension for dual source blending to work on GLES2.
 #extension GL_EXT_blend_func_extended: require
 

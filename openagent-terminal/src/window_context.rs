@@ -10,12 +10,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-#[cfg(feature = "gl-backend")]
-use glutin::config::Config as GlutinConfig;
-#[cfg(feature = "gl-backend")]
-use glutin::display::GetGlDisplay;
-#[cfg(all(feature = "gl-backend", feature = "x11", not(any(target_os = "macos", windows))))]
-use glutin::platform::x11::X11GlConfigExt;
 use log::info;
 use serde_json as json;
 use winit::event::{Event as WinitEvent, Modifiers, WindowEvent};
@@ -45,8 +39,6 @@ use crate::input;
 #[cfg(unix)]
 use crate::logging::LOG_TARGET_IPC_CONFIG;
 use crate::message_bar::MessageBuffer;
-#[cfg(feature = "gl-backend")]
-use crate::renderer;
 use crate::scheduler::Scheduler;
 
 /// Event context for one individual OpenAgent Terminal window.
@@ -93,38 +85,36 @@ impl WindowContext {
             .as_raw();
 
         let mut identity = config.window.identity.clone();
-        options.window_identity.override_identity_config(&mut identity);
+        options
+            .window_identity
+            .override_identity_config(&mut identity);
 
-        // Force WGPU-only mode, no OpenGL fallback.
+        // Prefer X11 on Unix if not set (reduces Wayland surface quirks for WGPU/GL)
+        #[cfg(all(unix, not(target_os = "macos")))]
+        if std::env::var("WINIT_UNIX_BACKEND").is_err() {
+            std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+        }
+
+        // Try WGPU first when built with that feature; gracefully fall back to GL if available.
         #[cfg(feature = "wgpu")]
         {
-            // Prefer X11 backend on Unix if not explicitly set.
-            #[cfg(all(unix, not(target_os = "macos")))]
-            if std::env::var("WINIT_UNIX_BACKEND").is_err() {
-                std::env::set_var("WINIT_UNIX_BACKEND", "x11");
-            }
-
-            // First attempt: WGPU
-            #[cfg(windows)]
+            // Create a winit window for WGPU path (visual selection not required)
             let window_wgpu = Window::new(event_loop, &config, &identity, &mut options)?;
-            #[cfg(not(windows))]
-            let window_wgpu = Window::new(
-                event_loop,
-                &config,
-                &identity,
-                &mut options,
-                #[cfg(all(
-                    feature = "gl-backend",
-                    feature = "x11",
-                    not(any(target_os = "macos", windows))
-                ))]
-                None,
-            )?;
 
             tracing::info!("Initializing WGPU backend…");
-            let display = Display::new_wgpu(window_wgpu, &config, false)?;
-            tracing::info!("Render backend selected: WGPU");
-            Self::new(display, config, options, proxy)
+            match Display::new_wgpu(window_wgpu, &config, false) {
+                Ok(display) => {
+                    tracing::info!("Render backend selected: WGPU");
+                    Self::new(display, config, options, proxy)
+                }
+                Err(e) => {
+                    tracing::error!("WGPU init failed: {e:?}");
+                    Err(
+                        "WGPU initialization failed; OpenGL fallback is removed in this build"
+                            .into(),
+                    )
+                }
+            }
         }
 
         // If the build does not include the `wgpu` feature, error clearly.
@@ -132,55 +122,12 @@ impl WindowContext {
         {
             return Err("This build requires WGPU. Rebuild with --features=wgpu".into());
         }
-    }
 
-    /// Create additional context with the graphics platform other windows are using.
-    #[allow(dead_code)]
-    #[cfg(feature = "gl-backend")]
-    pub fn additional(
-        gl_config: &GlutinConfig,
-        event_loop: &ActiveEventLoop,
-        proxy: EventLoopProxy<Event>,
-        config: Rc<UiConfig>,
-        mut options: WindowOptions,
-        config_overrides: ParsedOptions,
-    ) -> Result<Self, Box<dyn Error>> {
-        let gl_display = gl_config.display();
-
-        let mut identity = config.window.identity.clone();
-        options.window_identity.override_identity_config(&mut identity);
-
-        // Check if new window will be opened as a tab.
-        // This must be done before `Window::new()`, which unsets `window_tabbing_id`.
-        #[cfg(target_os = "macos")]
-        let tabbed = options.window_tabbing_id.is_some();
-        #[cfg(not(target_os = "macos"))]
-        let tabbed = false;
-
-        let window = Window::new(
-            event_loop,
-            &config,
-            &identity,
-            &mut options,
-            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-            gl_config.x11_visual(),
-        )?;
-
-        // Create context.
-        let raw_window_handle = window.raw_window_handle();
-        let gl_context =
-            renderer::platform::create_gl_context(&gl_display, gl_config, Some(raw_window_handle))?;
-
-        let display = Display::new(window, gl_context, &config, tabbed)?;
-
-        let mut window_context = Self::new(display, config, options, proxy)?;
-
-        // Set the config overrides at startup.
-        //
-        // These are already applied to `config`, so no update is necessary.
-        window_context.window_config = config_overrides;
-
-        Ok(window_context)
+        // If the build does not include the `wgpu` feature, error clearly.
+        #[cfg(not(feature = "wgpu"))]
+        {
+            return Err("This build requires WGPU. Rebuild with --features=wgpu".into());
+        }
     }
 
     /// Create additional context using the WGPU backend.
@@ -193,29 +140,11 @@ impl WindowContext {
         config_overrides: ParsedOptions,
     ) -> Result<Self, Box<dyn Error>> {
         let mut identity = config.window.identity.clone();
-        options.window_identity.override_identity_config(&mut identity);
+        options
+            .window_identity
+            .override_identity_config(&mut identity);
 
-        let window = {
-            #[cfg(windows)]
-            {
-                Window::new(event_loop, &config, &identity, &mut options)?
-            }
-            #[cfg(not(windows))]
-            {
-                Window::new(
-                    event_loop,
-                    &config,
-                    &identity,
-                    &mut options,
-                    #[cfg(all(
-                        feature = "gl-backend",
-                        feature = "x11",
-                        not(any(target_os = "macos", windows))
-                    ))]
-                    None,
-                )?
-            }
-        };
+        let window = Window::new(event_loop, &config, &identity, &mut options)?;
 
         let display = Display::new_wgpu(window, &config, false)?;
 
@@ -233,7 +162,9 @@ impl WindowContext {
         proxy: EventLoopProxy<Event>,
     ) -> Result<Self, Box<dyn Error>> {
         let mut pty_config = config.pty_config();
-        options.terminal_options.override_pty_config(&mut pty_config);
+        options
+            .terminal_options
+            .override_pty_config(&mut pty_config);
 
         let preserve_title = options.window_identity.title.is_some();
 
@@ -250,7 +181,11 @@ impl WindowContext {
         // This object contains all of the state about what's being displayed. It's
         // wrapped in a clonable mutex since both the I/O loop and display need to
         // access it.
-        let terminal = Term::new(config.term_options(), &display.size_info, event_proxy.clone());
+        let terminal = Term::new(
+            config.term_options(),
+            &display.size_info,
+            event_proxy.clone(),
+        );
         let terminal = Arc::new(FairMutex::new(terminal));
 
         // Create the PTY.
@@ -258,7 +193,11 @@ impl WindowContext {
         // The PTY forks a process to run the shell on the slave side of the
         // pseudoterminal. A file descriptor for the master side is retained for
         // reading/writing to the shell.
-        let pty = tty::new(&pty_config, display.size_info.into(), display.window.id().into())?;
+        let pty = tty::new(
+            &pty_config,
+            display.size_info.into(),
+            display.window.id().into(),
+        )?;
 
         #[cfg(not(windows))]
         let master_fd = pty.file().as_raw_fd();
@@ -406,15 +345,20 @@ impl WindowContext {
         // Apply effective reduce-motion preference from config: override takes precedence over
         // theme
         let effective_reduce_motion =
-            window_context.config.reduce_motion_override.unwrap_or_else(|| {
-                window_context
-                    .config
-                    .resolved_theme
-                    .as_ref()
-                    .map(|t| t.ui.reduce_motion)
-                    .unwrap_or(false)
-            });
-        window_context.display.set_reduce_motion(effective_reduce_motion);
+            window_context
+                .config
+                .reduce_motion_override
+                .unwrap_or_else(|| {
+                    window_context
+                        .config
+                        .resolved_theme
+                        .as_ref()
+                        .map(|t| t.ui.reduce_motion)
+                        .unwrap_or(false)
+                });
+        window_context
+            .display
+            .set_reduce_motion(effective_reduce_motion);
 
         // Note: Warp functionality will be initialized later in the event processor
         // after the WindowContext is fully set up and Arc-wrapped
@@ -454,7 +398,11 @@ impl WindowContext {
         // Apply effective reduce-motion preference from config: override takes precedence over
         // theme
         let effective_reduce_motion = self.config.reduce_motion_override.unwrap_or_else(|| {
-            self.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false)
+            self.config
+                .resolved_theme
+                .as_ref()
+                .map(|t| t.ui.reduce_motion)
+                .unwrap_or(false)
         });
         self.display.set_reduce_motion(effective_reduce_motion);
 
@@ -478,7 +426,9 @@ impl WindowContext {
             && (!self.config.window.dynamic_title
                 || self.display.window.title() == old_config.window.identity.title)
         {
-            self.display.window.set_title(self.config.window.identity.title.clone());
+            self.display
+                .window
+                .set_title(self.config.window.identity.title.clone());
         }
 
         let opaque = self.config.window_opacity() >= 1.;
@@ -488,14 +438,18 @@ impl WindowContext {
         self.display.window.set_has_shadow(opaque);
 
         #[cfg(target_os = "macos")]
-        self.display.window.set_option_as_alt(self.config.window.option_as_alt());
+        self.display
+            .window
+            .set_option_as_alt(self.config.window.option_as_alt());
 
         // Change opacity and blur state.
         self.display.window.set_transparent(!opaque);
         self.display.window.set_blur(self.config.window.blur);
 
         // Update hint keys.
-        self.display.hint_state.update_alphabet(self.config.hints.alphabet());
+        self.display
+            .hint_state
+            .update_alphabet(self.config.hints.alphabet());
 
         // Update cursor blinking.
         let event = Event::new(TerminalEvent::CursorBlinkingChange.into(), None);
@@ -624,18 +578,21 @@ impl WindowContext {
     ) {
         match event {
             WinitEvent::AboutToWait
-            | WinitEvent::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+            | WinitEvent::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                ..
+            } => {
                 // Skip further event handling with no staged updates.
                 if self.event_queue.is_empty() {
                     return;
                 }
 
                 // Continue to process all pending events.
-            },
+            }
             event => {
                 self.event_queue.push(event);
                 return;
-            },
+            }
         }
 
         let mut terminal = self.terminal.lock();
@@ -706,7 +663,13 @@ impl WindowContext {
         if self.dirty
             && self.display.window.has_frame
             && !self.occluded
-            && !matches!(event, WinitEvent::WindowEvent { event: WindowEvent::RedrawRequested, .. })
+            && !matches!(
+                event,
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::RedrawRequested,
+                    ..
+                }
+            )
         {
             self.display.window.request_redraw();
         }
@@ -737,7 +700,10 @@ impl WindowContext {
                 // This is a simplified approach - in production code we'd need a different pattern
                 // to avoid the Arc<Mutex<WindowContext>> dependency
                 info!("Warp-style workspace enabled but initialization requires architectural changes");
-                info!("Warp session file: {:?}", self.config.workspace.warp_session_file);
+                info!(
+                    "Warp session file: {:?}",
+                    self.config.workspace.warp_session_file
+                );
             }
         }
         Ok(())

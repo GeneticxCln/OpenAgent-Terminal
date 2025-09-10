@@ -20,7 +20,11 @@ pub fn auto_detect_configs() -> Result<Vec<MigrationConfig>> {
     }
 
     // Sort by terminal type for consistent output
-    detected.sort_by(|a, b| a.terminal_type.to_string().cmp(&b.terminal_type.to_string()));
+    detected.sort_by(|a, b| {
+        a.terminal_type
+            .to_string()
+            .cmp(&b.terminal_type.to_string())
+    });
 
     Ok(detected)
 }
@@ -50,40 +54,40 @@ pub fn get_typical_config_locations(terminal_type: &TerminalType) -> Result<Vec<
     match terminal_type {
         TerminalType::Alacritty => {
             locations.extend(get_alacritty_locations()?);
-        },
+        }
         TerminalType::ITerm2 => {
             locations.extend(get_iterm2_locations()?);
-        },
+        }
         TerminalType::WindowsTerminal => {
             locations.extend(get_windows_terminal_locations()?);
-        },
+        }
         TerminalType::Kitty => {
             locations.extend(get_kitty_locations()?);
-        },
+        }
         TerminalType::Hyper => {
             locations.extend(get_hyper_locations()?);
-        },
+        }
         TerminalType::Warp => {
             locations.extend(get_warp_locations()?);
-        },
+        }
         TerminalType::WezTerm => {
             locations.extend(get_wezterm_locations()?);
-        },
+        }
         TerminalType::GnomeTerminal => {
             locations.extend(get_gnome_terminal_locations()?);
-        },
+        }
         TerminalType::Konsole => {
             locations.extend(get_konsole_locations()?);
-        },
+        }
         TerminalType::Terminator => {
             locations.extend(get_terminator_locations()?);
-        },
+        }
         TerminalType::Tilix => {
             locations.extend(get_tilix_locations()?);
-        },
+        }
         TerminalType::Tabby => {
             locations.extend(get_tabby_locations()?);
-        },
+        }
     }
 
     Ok(locations)
@@ -297,7 +301,11 @@ pub fn search_configs_by_pattern(terminal_type: &TerminalType) -> Result<Vec<Pat
         }
 
         // Use walkdir for recursive search with depth limit
-        for entry in WalkDir::new(&search_dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&search_dir)
+            .max_depth(3)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
 
             // Skip if it's not a file
@@ -382,11 +390,15 @@ mod tests {
         assert!(!locations.is_empty());
 
         // Should contain both .config/alacritty/* and ~/.alacritty.* patterns
-        let has_config_dir =
-            locations.iter().any(|p| p.to_string_lossy().contains("alacritty/alacritty"));
-        let has_home_file = locations
+        let has_config_dir = locations
             .iter()
-            .any(|p| p.file_name().unwrap().to_string_lossy().starts_with(".alacritty"));
+            .any(|p| p.to_string_lossy().contains("alacritty/alacritty"));
+        let has_home_file = locations.iter().any(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".alacritty")
+        });
 
         assert!(has_config_dir || has_home_file);
     }
@@ -397,7 +409,11 @@ mod tests {
         for terminal in TerminalType::all() {
             if terminal.is_platform_compatible() {
                 let result = get_default_config_path(&terminal);
-                assert!(result.is_ok(), "Failed to get default path for {}", terminal);
+                assert!(
+                    result.is_ok(),
+                    "Failed to get default path for {}",
+                    terminal
+                );
             }
         }
     }

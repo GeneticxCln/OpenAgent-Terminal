@@ -163,15 +163,15 @@ impl WarpIntegration {
                 Ok(true) => {
                     info!("Loaded Warp session successfully");
                     self.restore_session_terminals()?;
-                },
+                }
                 Ok(false) => {
                     info!("No previous Warp session found, creating default tab");
                     self.create_default_tab()?;
-                },
+                }
                 Err(e) => {
                     warn!("Failed to load Warp session: {}, creating default tab", e);
                     self.create_default_tab()?;
-                },
+                }
             }
         } else {
             info!("Session restore disabled; creating default tab");
@@ -216,7 +216,12 @@ impl WarpIntegration {
             .tab_manager
             .all_tabs()
             .map(|tab| {
-                (tab.id, tab.working_directory.clone(), tab.split_layout.clone(), tab.title.clone())
+                (
+                    tab.id,
+                    tab.working_directory.clone(),
+                    tab.split_layout.clone(),
+                    tab.title.clone(),
+                )
             })
             .collect();
 
@@ -225,8 +230,10 @@ impl WarpIntegration {
             // Determine working directory to use
             let mut effective_dir = working_dir.clone();
             if !working_dir.exists() {
-                let error_msg =
-                    format!("Working directory no longer exists: {}", working_dir.display());
+                let error_msg = format!(
+                    "Working directory no longer exists: {}",
+                    working_dir.display()
+                );
                 warn!("{}", error_msg);
                 errors.push(WarpIntegrationError::WorkingDirectoryError {
                     path: working_dir.to_string_lossy().to_string(),
@@ -234,10 +241,12 @@ impl WarpIntegration {
                 });
 
                 // Try to fallback to home directory and update manager state
-                let fallback_dir =
-                    std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/"));
+                let fallback_dir = std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from("/"));
                 effective_dir = fallback_dir.clone();
-                self.tab_manager.update_tab_working_directory(tab_id, fallback_dir);
+                self.tab_manager
+                    .update_tab_working_directory(tab_id, fallback_dir);
             }
 
             // Collect all pane IDs from the split layout
@@ -252,11 +261,11 @@ impl WarpIntegration {
                     Ok(()) => {
                         restored_panes += 1;
                         debug!("Successfully restored pane {:?}", pane_id);
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to restore pane {:?}: {}", pane_id, e);
                         errors.push(e);
-                    },
+                    }
                 }
             }
         }
@@ -285,10 +294,17 @@ impl WarpIntegration {
                 total: total_panes,
             })
         } else {
-            error!("Session restoration failed completely: 0/{} panes restored", total_panes);
+            error!(
+                "Session restoration failed completely: 0/{} panes restored",
+                total_panes
+            );
             Err(WarpIntegrationError::SessionRestore(format!(
                 "Failed to restore any panes. Errors: {}",
-                errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+                errors
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )))
         }
     }
@@ -318,11 +334,17 @@ impl WarpIntegration {
         };
 
         // Add the pane to the tab
-        if !self.tab_manager.add_pane_to_tab(tab_id, pane_id, pane_context) {
+        if !self
+            .tab_manager
+            .add_pane_to_tab(tab_id, pane_id, pane_context)
+        {
             return Err(WarpIntegrationError::InvalidTabId(tab_id));
         }
 
-        debug!("Successfully restored terminal for pane {:?} in tab {:?}", pane_id, tab_id);
+        debug!(
+            "Successfully restored terminal for pane {:?} in tab {:?}",
+            pane_id, tab_id
+        );
 
         Ok(())
     }
@@ -355,8 +377,11 @@ impl WarpIntegration {
         let size_info = *size_info;
 
         // Create terminal instance
-        let terminal =
-            Arc::new(FairMutex::new(Term::new(term_config, &size_info, terminal_event_proxy)));
+        let terminal = Arc::new(FairMutex::new(Term::new(
+            term_config,
+            &size_info,
+            terminal_event_proxy,
+        )));
 
         // Store terminal reference
         self.terminals.insert(pane_id, terminal);
@@ -380,8 +405,13 @@ impl WarpIntegration {
                         std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
                     }
                 }),
-            args: self.config.terminal.shell.as_ref().map(|s| s.args().to_vec()).unwrap_or_else(
-                || {
+            args: self
+                .config
+                .terminal
+                .shell
+                .as_ref()
+                .map(|s| s.args().to_vec())
+                .unwrap_or_else(|| {
                     #[cfg(target_os = "windows")]
                     {
                         vec!["-NoProfile".to_string()]
@@ -390,8 +420,7 @@ impl WarpIntegration {
                     {
                         vec!["-l".to_string()]
                     }
-                },
-            ),
+                }),
             env_vars: HashMap::new(),
             prompt_pattern: None,
         };
@@ -404,14 +433,19 @@ impl WarpIntegration {
 
         // Add shell integration environment if available
         if let Some(integration_path) = self.get_shell_integration_path() {
-            environment
-                .insert("OPENAGENT_TERMINAL_SHELL_INTEGRATION".to_string(), integration_path);
+            environment.insert(
+                "OPENAGENT_TERMINAL_SHELL_INTEGRATION".to_string(),
+                integration_path,
+            );
         }
 
         let pty_id = self
             .pty_managers
             .create_pty_manager(working_dir.to_path_buf(), shell_config, environment)
-            .map_err(|e| WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() })?;
+            .map_err(|e| WarpIntegrationError::PtyCreation {
+                pane_id,
+                reason: e.to_string(),
+            })?;
 
         // Create actual PTY process with window size conversion
         if let Some(manager) = self.pty_managers.get_manager(pty_id) {
@@ -425,9 +459,12 @@ impl WarpIntegration {
                 cell_height: size_info.cell_height() as u16,
             };
 
-            manager_guard.create_pty(window_size, (*window_id).into()).map_err(|e| {
-                WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() }
-            })?;
+            manager_guard
+                .create_pty(window_size, (*window_id).into())
+                .map_err(|e| WarpIntegrationError::PtyCreation {
+                    pane_id,
+                    reason: e.to_string(),
+                })?;
 
             debug!(
                 "Created PTY for pane {:?} with shell: {} in {}",
@@ -479,11 +516,11 @@ impl WarpIntegration {
             WarpAction::NavigatePane(_) => self.perf_stats.navigation_time_ms = elapsed,
             WarpAction::SplitRight | WarpAction::SplitDown => {
                 self.perf_stats.split_creation_time_ms = elapsed
-            },
+            }
             WarpAction::SaveSession | WarpAction::LoadSession => {
                 self.perf_stats.session_save_time_ms = elapsed
-            },
-            _ => {},
+            }
+            _ => {}
         }
 
         self.update_activity();
@@ -555,7 +592,8 @@ impl WarpIntegration {
 
         // Create split in the layout
         let split_success =
-            self.split_manager.split_right(&mut layout, active_pane_id, new_pane_id);
+            self.split_manager
+                .split_right(&mut layout, active_pane_id, new_pane_id);
 
         if split_success {
             // Update the tab with new layout
@@ -572,7 +610,10 @@ impl WarpIntegration {
             }
 
             // Send UI update event
-            self.send_ui_update_event(WarpUiUpdateType::PaneSplit { tab_id, new_pane_id });
+            self.send_ui_update_event(WarpUiUpdateType::PaneSplit {
+                tab_id,
+                new_pane_id,
+            });
 
             info!("Split right created pane {:?}", new_pane_id);
             Ok(true)
@@ -602,7 +643,9 @@ impl WarpIntegration {
         let new_pane_id = self.generate_pane_id();
 
         // Create split in the layout
-        let split_success = self.split_manager.split_down(&mut layout, active_pane_id, new_pane_id);
+        let split_success = self
+            .split_manager
+            .split_down(&mut layout, active_pane_id, new_pane_id);
 
         if split_success {
             // Update the tab with new layout
@@ -619,7 +662,10 @@ impl WarpIntegration {
             }
 
             // Send UI update event
-            self.send_ui_update_event(WarpUiUpdateType::PaneSplit { tab_id, new_pane_id });
+            self.send_ui_update_event(WarpUiUpdateType::PaneSplit {
+                tab_id,
+                new_pane_id,
+            });
 
             info!("Split down created pane {:?}", new_pane_id);
             Ok(true)
@@ -637,11 +683,16 @@ impl WarpIntegration {
                 info!("No active tab for navigate pane");
                 return Ok(false);
             };
-            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
+            (
+                active_tab.id,
+                active_tab.active_pane,
+                active_tab.split_layout.clone(),
+            )
         };
 
         let navigation_success =
-            self.split_manager.navigate_pane(&layout_clone, &mut current_pane, direction);
+            self.split_manager
+                .navigate_pane(&layout_clone, &mut current_pane, direction);
 
         if navigation_success {
             // Update active pane in tab
@@ -656,7 +707,10 @@ impl WarpIntegration {
             info!("Navigated to pane {:?}", current_pane);
             Ok(true)
         } else {
-            info!("Navigate pane failed - no pane in {:?} direction", direction);
+            info!(
+                "Navigate pane failed - no pane in {:?} direction",
+                direction
+            );
             Ok(false)
         }
     }
@@ -669,10 +723,16 @@ impl WarpIntegration {
                 info!("No active tab for resize pane");
                 return Ok(false);
             };
-            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
+            (
+                active_tab.id,
+                active_tab.active_pane,
+                active_tab.split_layout.clone(),
+            )
         };
 
-        let resize_success = self.split_manager.resize_pane(&mut layout, current_pane, direction);
+        let resize_success = self
+            .split_manager
+            .resize_pane(&mut layout, current_pane, direction);
 
         if resize_success {
             // Update the tab with new layout
@@ -700,10 +760,16 @@ impl WarpIntegration {
                 info!("No active tab for zoom pane");
                 return Ok(false);
             };
-            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
+            (
+                active_tab.id,
+                active_tab.active_pane,
+                active_tab.split_layout.clone(),
+            )
         };
 
-        let zoom_success = self.split_manager.toggle_pane_zoom(&mut layout, current_pane);
+        let zoom_success = self
+            .split_manager
+            .toggle_pane_zoom(&mut layout, current_pane);
 
         if zoom_success {
             // Update the tab with new layout
@@ -718,7 +784,10 @@ impl WarpIntegration {
                 zoomed: is_zoomed,
             });
 
-            info!("Toggled zoom for pane {:?} (zoomed: {})", current_pane, is_zoomed);
+            info!(
+                "Toggled zoom for pane {:?} (zoomed: {})",
+                current_pane, is_zoomed
+            );
             Ok(true)
         } else {
             info!("Zoom pane failed");
@@ -788,13 +857,18 @@ impl WarpIntegration {
                 info!("No active tab for close pane");
                 return Ok(false);
             };
-            (active_tab.id, active_tab.active_pane, active_tab.split_layout.clone())
+            (
+                active_tab.id,
+                active_tab.active_pane,
+                active_tab.split_layout.clone(),
+            )
         };
 
         let mut active_pane_id = current_pane;
 
         let close_success =
-            self.split_manager.close_pane_smart(&mut layout, current_pane, &mut active_pane_id);
+            self.split_manager
+                .close_pane_smart(&mut layout, current_pane, &mut active_pane_id);
 
         if close_success {
             // Clean up terminal resources for the closed pane
@@ -825,7 +899,10 @@ impl WarpIntegration {
                 new_active_pane_id: active_pane_id,
             });
 
-            info!("Closed pane {:?}, new active: {:?}", current_pane, active_pane_id);
+            info!(
+                "Closed pane {:?}, new active: {:?}",
+                current_pane, active_pane_id
+            );
             Ok(true)
         } else {
             info!("Close pane failed");
@@ -842,11 +919,11 @@ impl WarpIntegration {
                 self.perf_stats.session_save_time_ms = start.elapsed().as_millis() as u64;
                 info!("Warp session saved successfully");
                 Ok(true)
-            },
+            }
             Err(e) => {
                 error!("Failed to save Warp session: {}", e);
                 Err(WarpIntegrationError::SessionFile(e))
-            },
+            }
         }
     }
 
@@ -860,11 +937,11 @@ impl WarpIntegration {
                 self.restore_session_terminals()?;
                 info!("Warp session loaded successfully");
                 Ok(true)
-            },
+            }
             Ok(false) => {
                 self.create_default_tab()?;
                 Ok(false)
-            },
+            }
             Err(e) => Err(WarpIntegrationError::SessionFile(e)),
         }
     }
@@ -872,13 +949,19 @@ impl WarpIntegration {
     /// Handle other standard actions
     fn handle_next_tab(&mut self) -> WarpResult<bool> {
         let ok = self.tab_manager.next_tab();
-        let msg = if ok { "Switched to next tab" } else { "Switch to next tab failed" };
+        let msg = if ok {
+            "Switched to next tab"
+        } else {
+            "Switch to next tab failed"
+        };
         info!("{}", msg);
 
         if ok {
             // Send UI update event
             if let Some(active_tab) = self.tab_manager.active_tab() {
-                self.send_ui_update_event(WarpUiUpdateType::TabSwitched { tab_id: active_tab.id });
+                self.send_ui_update_event(WarpUiUpdateType::TabSwitched {
+                    tab_id: active_tab.id,
+                });
             }
         }
 
@@ -887,13 +970,19 @@ impl WarpIntegration {
 
     fn handle_previous_tab(&mut self) -> WarpResult<bool> {
         let ok = self.tab_manager.previous_tab();
-        let msg = if ok { "Switched to previous tab" } else { "Switch to previous tab failed" };
+        let msg = if ok {
+            "Switched to previous tab"
+        } else {
+            "Switch to previous tab failed"
+        };
         info!("{}", msg);
 
         if ok {
             // Send UI update event
             if let Some(active_tab) = self.tab_manager.active_tab() {
-                self.send_ui_update_event(WarpUiUpdateType::TabSwitched { tab_id: active_tab.id });
+                self.send_ui_update_event(WarpUiUpdateType::TabSwitched {
+                    tab_id: active_tab.id,
+                });
             }
         }
 
@@ -966,7 +1055,8 @@ impl WarpIntegration {
     /// Update command for current tab (for smart tab naming)
     pub fn update_current_command(&mut self, command: &str) {
         if let Some(active_tab) = self.tab_manager.active_tab() {
-            self.tab_manager.update_tab_for_command(active_tab.id, command);
+            self.tab_manager
+                .update_tab_for_command(active_tab.id, command);
             self.update_activity();
         }
     }
@@ -998,7 +1088,8 @@ impl WarpIntegration {
     pub fn update_command_context(&mut self, command: &str) {
         // Update tab for smart naming
         if let Some(active_tab) = self.tab_manager.active_tab() {
-            self.tab_manager.update_tab_for_command(active_tab.id, command);
+            self.tab_manager
+                .update_tab_for_command(active_tab.id, command);
         }
 
         // Update PTY manager context
@@ -1025,7 +1116,12 @@ impl WarpIntegration {
     /// Generate unique pane ID
     fn generate_pane_id(&self) -> PaneId {
         use std::time::{SystemTime, UNIX_EPOCH};
-        PaneId(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as usize)
+        PaneId(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as usize,
+        )
     }
 
     /// Get current tab and split layout info for debugging
@@ -1139,7 +1235,7 @@ impl ActionExt for Action {
             Action::ResizePaneLeft => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandLeft)),
             Action::ResizePaneRight => {
                 Some(WarpAction::ResizePane(WarpResizeDirection::ExpandRight))
-            },
+            }
             Action::ResizePaneUp => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandUp)),
             Action::ResizePaneDown => Some(WarpAction::ResizePane(WarpResizeDirection::ExpandDown)),
             Action::ClosePane => Some(WarpAction::ClosePane),

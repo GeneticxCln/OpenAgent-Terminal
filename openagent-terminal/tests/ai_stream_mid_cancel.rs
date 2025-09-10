@@ -45,7 +45,7 @@ impl ApplicationHandler<Event> for CaptureApp {
         self.events.lock().unwrap().push(ev.payload().clone());
         match ev.payload() {
             EventType::AiStreamFinished | EventType::AiStreamError(_) => el.exit(),
-            _ => {},
+            _ => {}
         }
     }
 
@@ -84,15 +84,24 @@ fn ai_stream_chunks_then_cancel_finishes_gracefully() {
     rt.start_propose_stream(None, None, proxy.clone(), win);
 
     let events = Arc::new(Mutex::new(Vec::<EventType>::new()));
-    let mut app = CaptureApp { events: events.clone() };
+    let mut app = CaptureApp {
+        events: events.clone(),
+    };
     let _ = el.run_app(&mut app);
 
     let evs = events.lock().unwrap();
-    let saw_chunks = evs.iter().filter(|e| matches!(e, EventType::AiStreamChunk(_))).count();
+    let saw_chunks = evs
+        .iter()
+        .filter(|e| matches!(e, EventType::AiStreamChunk(_)))
+        .count();
     let saw_finished = evs.iter().any(|e| matches!(e, EventType::AiStreamFinished));
     let saw_error = evs.iter().any(|e| matches!(e, EventType::AiStreamError(_)));
 
-    assert!(saw_chunks >= 2, "expected at least two chunk events: {:?}", *evs);
+    assert!(
+        saw_chunks >= 2,
+        "expected at least two chunk events: {:?}",
+        *evs
+    );
     assert!(saw_finished, "expected AiStreamFinished: {:?}", *evs);
     assert!(!saw_error, "did not expect AiStreamError: {:?}", *evs);
 }

@@ -1,4 +1,3 @@
-varying mediump vec2 TexCoords;
 varying mediump vec3 fg;
 varying highp float colored;
 varying mediump vec4 bg;

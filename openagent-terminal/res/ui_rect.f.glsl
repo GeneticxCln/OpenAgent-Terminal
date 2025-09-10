@@ -1,4 +1,3 @@
-#if defined(GLES2_RENDERER)
 #define float_t mediump float
 #define vec2_t mediump vec2
 #define vec4_t mediump vec4

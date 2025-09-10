@@ -1,0 +1,17 @@
+name: Build and Test (Rust)
+vars:
+  - name: PROFILE
+    default: release
+  - name: FEATURES
+    default: ""
+steps:
+  - name: fmt
+    run: cargo fmt --all -- --check
+    dry_run: true
+  - name: clippy
+    run: cargo clippy --all-targets --all-features -- -D warnings
+    dry_run: true
+  - name: test
+    run: cargo test --workspace --no-fail-fast --profile ${PROFILE} ${FEATURES}
+    dry_run: true
+

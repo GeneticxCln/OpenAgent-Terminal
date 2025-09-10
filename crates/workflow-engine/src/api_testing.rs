@@ -124,14 +124,28 @@ pub struct ApiTest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Assertion {
     StatusCode(u16),
-    StatusCodeRange { min: u16, max: u16 },
+    StatusCodeRange {
+        min: u16,
+        max: u16,
+    },
     HeaderExists(String),
-    HeaderEquals { header: String, value: String },
-    HeaderContains { header: String, substring: String },
+    HeaderEquals {
+        header: String,
+        value: String,
+    },
+    HeaderContains {
+        header: String,
+        substring: String,
+    },
     BodyContains(String),
     BodyEquals(String),
-    BodyJsonPath { path: String, expected: serde_json::Value },
-    ResponseTime { max_ms: u64 },
+    BodyJsonPath {
+        path: String,
+        expected: serde_json::Value,
+    },
+    ResponseTime {
+        max_ms: u64,
+    },
     ContentType(String),
 }
 
@@ -202,8 +216,9 @@ impl ApiTester {
         request.updated_at = request.created_at;
 
         let mut collections = self.collections.lock().await;
-        let collection =
-            collections.get_mut(&collection_id).ok_or_else(|| anyhow!("Collection not found"))?;
+        let collection = collections
+            .get_mut(&collection_id)
+            .ok_or_else(|| anyhow!("Collection not found"))?;
 
         let request_id = request.id;
         collection.requests.push(request);
@@ -216,7 +231,9 @@ impl ApiTester {
         let start_time = Instant::now();
 
         // Build the request
-        let mut req_builder = self.client.request(request.method.clone().into(), &request.url);
+        let mut req_builder = self
+            .client
+            .request(request.method.clone().into(), &request.url);
 
         // Add headers
         for (key, value) in &request.headers {
@@ -234,7 +251,7 @@ impl ApiTester {
                 Authentication::Bearer(token) => req_builder.bearer_auth(token),
                 Authentication::Basic { username, password } => {
                     req_builder.basic_auth(username, Some(password))
-                },
+                }
                 Authentication::ApiKey { key, value } => req_builder.header(key, value),
                 Authentication::OAuth2(token) => req_builder.bearer_auth(token),
             };
@@ -254,13 +271,20 @@ impl ApiTester {
         req_builder = req_builder.timeout(request.timeout);
 
         // Execute the request
-        let response = req_builder.send().await.map_err(|e| anyhow!("Request failed: {}", e))?;
+        let response = req_builder
+            .send()
+            .await
+            .map_err(|e| anyhow!("Request failed: {}", e))?;
 
         let response_time = start_time.elapsed();
 
         // Process response
         let status_code = response.status().as_u16();
-        let status_text = response.status().canonical_reason().unwrap_or("Unknown").to_string();
+        let status_text = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown")
+            .to_string();
         let http_version = format!("{:?}", response.version());
 
         let mut headers = HashMap::new();
@@ -268,8 +292,10 @@ impl ApiTester {
             headers.insert(name.to_string(), value.to_str().unwrap_or("").to_string());
         }
 
-        let body_bytes =
-            response.bytes().await.map_err(|e| anyhow!("Failed to read response body: {}", e))?;
+        let body_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| anyhow!("Failed to read response body: {}", e))?;
 
         let size_bytes = body_bytes.len();
 
@@ -323,7 +349,7 @@ impl ApiTester {
                         Ok(text) => Ok(ResponseBody::Text(text)),
                         Err(_) => Ok(ResponseBody::Binary(body)),
                     }
-                },
+                }
             }
         } else if content_type.starts_with("text/") || content_type.contains("xml") {
             match String::from_utf8(body.clone()) {
@@ -343,7 +369,7 @@ impl ApiTester {
                         }
                     }
                     Ok(ResponseBody::Text(text))
-                },
+                }
                 Err(_) => Ok(ResponseBody::Binary(body)),
             }
         }
@@ -381,7 +407,11 @@ impl ApiTester {
 
         // Run setup requests
         for setup_request_id in &test_suite.setup_requests {
-            if let Some(request) = collection.requests.iter().find(|r| r.id == *setup_request_id) {
+            if let Some(request) = collection
+                .requests
+                .iter()
+                .find(|r| r.id == *setup_request_id)
+            {
                 let _response = self.execute_request(request).await?;
             }
         }
@@ -394,7 +424,9 @@ impl ApiTester {
 
             if let Some(request) = collection.requests.iter().find(|r| r.id == test.request_id) {
                 let response = self.execute_request(request).await?;
-                let test_result = self.evaluate_assertions(&test.assertions, &response).await?;
+                let test_result = self
+                    .evaluate_assertions(&test.assertions, &response)
+                    .await?;
 
                 let result = TestResult {
                     test_id: test.id,
@@ -410,7 +442,10 @@ impl ApiTester {
 
         // Run teardown requests
         for teardown_request_id in &test_suite.teardown_requests {
-            if let Some(request) = collection.requests.iter().find(|r| r.id == *teardown_request_id)
+            if let Some(request) = collection
+                .requests
+                .iter()
+                .find(|r| r.id == *teardown_request_id)
             {
                 let _response = self.execute_request(request).await?;
             }
@@ -442,7 +477,7 @@ impl ApiTester {
                             )
                         },
                     }
-                },
+                }
                 Assertion::StatusCodeRange { min, max } => {
                     let passed = response.status_code >= *min && response.status_code <= *max;
                     AssertionResult {
@@ -460,7 +495,7 @@ impl ApiTester {
                             )
                         },
                     }
-                },
+                }
                 Assertion::HeaderExists(header_name) => {
                     let passed = response.headers.contains_key(header_name);
                     AssertionResult {
@@ -472,7 +507,7 @@ impl ApiTester {
                             format!("Header '{}' does not exist", header_name)
                         },
                     }
-                },
+                }
                 Assertion::HeaderEquals { header, value } => {
                     let actual_value = response.headers.get(header);
                     let passed = actual_value == Some(value);
@@ -490,7 +525,7 @@ impl ApiTester {
                             )
                         },
                     }
-                },
+                }
                 Assertion::HeaderContains { header, substring } => {
                     let passed = response
                         .headers
@@ -507,7 +542,7 @@ impl ApiTester {
                             format!("Header '{}' does not contain '{}'", header, substring)
                         },
                     }
-                },
+                }
                 Assertion::BodyContains(substring) => {
                     let body_text = self.response_body_as_text(&response.body);
                     let passed = body_text.contains(substring);
@@ -520,7 +555,7 @@ impl ApiTester {
                             format!("Response body does not contain '{}'", substring)
                         },
                     }
-                },
+                }
                 Assertion::BodyEquals(expected) => {
                     let body_text = self.response_body_as_text(&response.body);
                     let passed = body_text.trim() == expected.trim();
@@ -533,12 +568,12 @@ impl ApiTester {
                             "Response body does not match expected value".to_string()
                         },
                     }
-                },
+                }
                 Assertion::BodyJsonPath { path, expected } => {
                     let passed = match &response.body {
                         ResponseBody::JSON(json) => {
                             self.evaluate_json_path(json, path, expected)?
-                        },
+                        }
                         _ => false,
                     };
                     AssertionResult {
@@ -550,7 +585,7 @@ impl ApiTester {
                             format!("JSON path '{}' does not match expected value", path)
                         },
                     }
-                },
+                }
                 Assertion::ResponseTime { max_ms } => {
                     let response_time_ms = response.response_time.as_millis() as u64;
                     let passed = response_time_ms <= *max_ms;
@@ -569,7 +604,7 @@ impl ApiTester {
                             )
                         },
                     }
-                },
+                }
                 Assertion::ContentType(expected) => {
                     let actual = response
                         .headers
@@ -589,7 +624,7 @@ impl ApiTester {
                             )
                         },
                     }
-                },
+                }
             };
 
             results.push(result);
@@ -624,17 +659,22 @@ impl ApiTester {
 
             if let Some(array_start) = part.find('[') {
                 let field_name = &part[..array_start];
-                let array_end = part.find(']').ok_or_else(|| anyhow!("Invalid array syntax"))?;
+                let array_end = part
+                    .find(']')
+                    .ok_or_else(|| anyhow!("Invalid array syntax"))?;
                 let index_str = &part[array_start + 1..array_end];
-                let index: usize =
-                    index_str.parse().map_err(|_| anyhow!("Invalid array index: {}", index_str))?;
+                let index: usize = index_str
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid array index: {}", index_str))?;
 
                 current = current
                     .get(field_name)
                     .and_then(|v| v.get(index))
                     .ok_or_else(|| anyhow!("Path not found: {}", path))?;
             } else {
-                current = current.get(part).ok_or_else(|| anyhow!("Path not found: {}", path))?;
+                current = current
+                    .get(part)
+                    .ok_or_else(|| anyhow!("Path not found: {}", path))?;
             }
         }
 
@@ -645,10 +685,14 @@ impl ApiTester {
         let postman_data: serde_json::Value = serde_json::from_str(postman_json)
             .map_err(|e| anyhow!("Failed to parse Postman collection: {}", e))?;
 
-        let collection_name =
-            postman_data["info"]["name"].as_str().unwrap_or("Imported Collection").to_string();
+        let collection_name = postman_data["info"]["name"]
+            .as_str()
+            .unwrap_or("Imported Collection")
+            .to_string();
 
-        let description = postman_data["info"]["description"].as_str().map(|s| s.to_string());
+        let description = postman_data["info"]["description"]
+            .as_str()
+            .map(|s| s.to_string());
 
         let mut api_collection = ApiCollection {
             id: Uuid::new_v4(),
@@ -666,7 +710,9 @@ impl ApiTester {
         if let Some(variables) = postman_data["variable"].as_array() {
             for var in variables {
                 if let (Some(key), Some(value)) = (var["key"].as_str(), var["value"].as_str()) {
-                    api_collection.variables.insert(key.to_string(), value.to_string());
+                    api_collection
+                        .variables
+                        .insert(key.to_string(), value.to_string());
                 }
             }
         }
@@ -684,7 +730,10 @@ impl ApiTester {
     }
 
     fn parse_postman_item(&self, item: &serde_json::Value) -> Result<Option<ApiRequest>> {
-        let name = item["name"].as_str().unwrap_or("Unnamed Request").to_string();
+        let name = item["name"]
+            .as_str()
+            .unwrap_or("Unnamed Request")
+            .to_string();
 
         let request_data = &item["request"];
         if request_data.is_null() {
@@ -737,7 +786,7 @@ impl ApiTester {
                         }
                     }
                     Some(RequestBody::FormData(form_data))
-                },
+                }
                 _ => None,
             }
         } else {
@@ -763,8 +812,9 @@ impl ApiTester {
 
     pub async fn export_collection_as_postman(&self, collection_id: Uuid) -> Result<String> {
         let collections = self.collections.lock().await;
-        let collection =
-            collections.get(&collection_id).ok_or_else(|| anyhow!("Collection not found"))?;
+        let collection = collections
+            .get(&collection_id)
+            .ok_or_else(|| anyhow!("Collection not found"))?;
 
         let mut postman_collection = serde_json::json!({
             "info": {
@@ -778,10 +828,13 @@ impl ApiTester {
 
         // Add variables
         for (key, value) in &collection.variables {
-            postman_collection["variable"].as_array_mut().unwrap().push(serde_json::json!({
-                "key": key,
-                "value": value
-            }));
+            postman_collection["variable"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "key": key,
+                    "value": value
+                }));
         }
 
         // Add requests
@@ -805,12 +858,13 @@ impl ApiTester {
 
             // Add headers
             for (key, value) in &request.headers {
-                postman_request["request"]["header"].as_array_mut().unwrap().push(
-                    serde_json::json!({
+                postman_request["request"]["header"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
                         "key": key,
                         "value": value
-                    }),
-                );
+                    }));
             }
 
             // Add body
@@ -819,12 +873,12 @@ impl ApiTester {
                     RequestBody::Text(text) => {
                         postman_request["request"]["body"]["raw"] =
                             serde_json::Value::String(text.clone());
-                    },
+                    }
                     RequestBody::JSON(json) => {
                         postman_request["request"]["body"]["raw"] = serde_json::Value::String(
                             serde_json::to_string_pretty(json).unwrap_or_default(),
                         );
-                    },
+                    }
                     RequestBody::FormData(form) => {
                         postman_request["request"]["body"]["mode"] =
                             serde_json::Value::String("formdata".to_string());
@@ -838,15 +892,18 @@ impl ApiTester {
                         }
                         postman_request["request"]["body"]["formdata"] =
                             serde_json::Value::Array(formdata);
-                    },
+                    }
                     RequestBody::Binary(_) => {
                         postman_request["request"]["body"]["mode"] =
                             serde_json::Value::String("file".to_string());
-                    },
+                    }
                 }
             }
 
-            postman_collection["item"].as_array_mut().unwrap().push(postman_request);
+            postman_collection["item"]
+                .as_array_mut()
+                .unwrap()
+                .push(postman_request);
         }
 
         Ok(serde_json::to_string_pretty(&postman_collection)?)
@@ -865,16 +922,16 @@ impl ApiTester {
             match auth {
                 Authentication::Bearer(token) => {
                     command.push_str(&format!(" -H 'Authorization: Bearer {}'", token));
-                },
+                }
                 Authentication::Basic { username, password } => {
                     command.push_str(&format!(" -u '{}:{}'", username, password));
-                },
+                }
                 Authentication::ApiKey { key, value } => {
                     command.push_str(&format!(" -H '{}: {}'", key, value));
-                },
+                }
                 Authentication::OAuth2(token) => {
                     command.push_str(&format!(" -H 'Authorization: Bearer {}'", token));
-                },
+                }
             }
         }
 
@@ -883,22 +940,22 @@ impl ApiTester {
             match body {
                 RequestBody::Text(text) => {
                     command.push_str(&format!(" -d '{}'", text.replace("'", "'\\''")));
-                },
+                }
                 RequestBody::JSON(json) => {
                     let json_string = serde_json::to_string(json)?;
                     command.push_str(&format!(
                         " -H 'Content-Type: application/json' -d '{}'",
                         json_string.replace("'", "'\\''")
                     ));
-                },
+                }
                 RequestBody::FormData(form) => {
                     for (key, value) in form {
                         command.push_str(&format!(" -d '{}={}'", key, value));
                     }
-                },
+                }
                 RequestBody::Binary(_) => {
                     command.push_str(" --data-binary @file.bin");
-                },
+                }
             }
         }
 
@@ -934,7 +991,10 @@ impl ApiTester {
 
     pub async fn get_collection(&self, id: Uuid) -> Result<ApiCollection> {
         let collections = self.collections.lock().await;
-        collections.get(&id).cloned().ok_or_else(|| anyhow!("Collection not found"))
+        collections
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Collection not found"))
     }
 
     pub fn format_response_summary(&self, response: &ApiResponse) -> String {
@@ -976,12 +1036,14 @@ mod tests {
         let headers = HashMap::from([("content-type".to_string(), "application/json".to_string())]);
 
         let json_body = b"{\"message\": \"hello\"}";
-        let result = api_tester.parse_response_body(&headers, json_body.to_vec()).unwrap();
+        let result = api_tester
+            .parse_response_body(&headers, json_body.to_vec())
+            .unwrap();
 
         match result {
             ResponseBody::JSON(json) => {
                 assert_eq!(json["message"], "hello");
-            },
+            }
             _ => panic!("Expected JSON response body"),
         }
     }

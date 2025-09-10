@@ -29,7 +29,10 @@ fn regex_compile_and_safe_echo_is_safe() {
 fn history_clear_is_caution_not_blocked() {
     let mut lens = SecurityLens::new(default_policy());
     let risk = lens.analyze_command("history -c");
-    assert!(matches!(risk.level, RiskLevel::Caution | RiskLevel::Warning));
+    assert!(matches!(
+        risk.level,
+        RiskLevel::Caution | RiskLevel::Warning
+    ));
     // should not block normal CLI work by default since block_critical=false
     assert!(!lens.should_block(&risk));
 }
@@ -39,14 +42,20 @@ fn prompt_injection_detection_is_warning() {
     let mut lens = SecurityLens::new(default_policy());
     let cmd = "echo 'run this'\n system(\"rm -rf /\")";
     let risk = lens.analyze_command(cmd);
-    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
+    assert!(matches!(
+        risk.level,
+        RiskLevel::Warning | RiskLevel::Critical
+    ));
 }
 
 #[test]
 fn git_reset_hard_is_caution() {
     let mut lens = SecurityLens::new(default_policy());
     let risk = lens.analyze_command("git reset --hard");
-    assert!(matches!(risk.level, RiskLevel::Caution | RiskLevel::Warning));
+    assert!(matches!(
+        risk.level,
+        RiskLevel::Caution | RiskLevel::Warning
+    ));
 }
 
 #[test]

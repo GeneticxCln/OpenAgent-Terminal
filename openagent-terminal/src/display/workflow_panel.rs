@@ -41,8 +41,11 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Fixed-height bar at bottom: 5 lines
@@ -57,7 +60,14 @@ impl Display {
 
         // Background
         let rects = vec![
-            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.12),
+            RenderRect::new(
+                0.0,
+                0.0,
+                size_info.width(),
+                size_info.height(),
+                tokens.overlay,
+                0.12,
+            ),
             RenderRect::new(0.0, y, size_info.width(), h, tokens.surface, 0.96),
         ];
         let metrics = self.glyph_cache.font_metrics();
@@ -89,12 +99,12 @@ impl Display {
             let (badge, color) = match status.as_str() {
                 s if s.eq_ignore_ascii_case("running") || s.eq_ignore_ascii_case("starting") => {
                     ("● ", tokens.accent)
-                },
+                }
                 s if s.eq_ignore_ascii_case("success") => ("✔ ", tokens.success),
                 s if s.eq_ignore_ascii_case("failed") => ("✖ ", tokens.error),
                 s if s.eq_ignore_ascii_case("cancelled") || s.eq_ignore_ascii_case("canceled") => {
                     ("⚠ ", tokens.warning)
-                },
+                }
                 _ => ("• ", tokens.text_muted),
             };
             let status_text = format!("{}{}", badge, status);
@@ -156,8 +166,11 @@ impl Display {
 
         // Logs and optional footer hint on the last line when in terminal status
         let mut line = start_line + 2;
-        let available_log_lines =
-            if terminal_status { lines.saturating_sub(3) } else { lines.saturating_sub(2) };
+        let available_log_lines = if terminal_status {
+            lines.saturating_sub(3)
+        } else {
+            lines.saturating_sub(2)
+        };
         let max_log_line = start_line + 1 + available_log_lines; // exclusive upper bound
         let skip = st.logs.len().saturating_sub(available_log_lines);
         for log in st.logs.iter().skip(skip) {
@@ -212,7 +225,12 @@ impl Default for WorkflowsPanelState {
 
 impl WorkflowsPanelState {
     pub fn new() -> Self {
-        Self { active: false, query: String::new(), results: Vec::new(), selected: 0 }
+        Self {
+            active: false,
+            query: String::new(),
+            results: Vec::new(),
+            selected: 0,
+        }
     }
 
     pub fn open(&mut self) {
@@ -248,8 +266,11 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 35% of viewport height, min 6 lines
@@ -260,11 +281,23 @@ impl Display {
         let panel_h = target_lines as f32 * size_info.cell_height();
 
         // Backdrop dim
-        let backdrop =
-            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.20);
+        let backdrop = RenderRect::new(
+            0.0,
+            0.0,
+            size_info.width(),
+            size_info.height(),
+            tokens.overlay,
+            0.20,
+        );
         // Panel background
-        let panel_bg =
-            RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.95);
+        let panel_bg = RenderRect::new(
+            0.0,
+            panel_y,
+            size_info.width(),
+            panel_h,
+            tokens.surface_muted,
+            0.95,
+        );
 
         // Stage rects then draw them
         let rects = vec![backdrop, panel_bg];
@@ -339,6 +372,12 @@ impl Display {
         let hint = "Enter: Paste  •  Esc: Close  •  ↑/↓/PgUp/PgDn: Navigate  •  Ctrl+N/Ctrl+P: \
                     Navigate  •  Backspace: Delete";
         let hint_fg = tokens.text_muted;
-        self.draw_ai_text(Point::new(footer_line, Column(2)), hint_fg, bg, hint, num_cols - 2);
+        self.draw_ai_text(
+            Point::new(footer_line, Column(2)),
+            hint_fg,
+            bg,
+            hint,
+            num_cols - 2,
+        );
     }
 }

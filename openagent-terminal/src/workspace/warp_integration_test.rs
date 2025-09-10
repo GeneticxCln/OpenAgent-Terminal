@@ -89,9 +89,13 @@ fn test_warp_actions_uninitialized() {
 
     // These should return Ok(false) since Warp isn't initialized
     // Note: Currently returns true for some actions, update test to match current behavior
-    assert!(workspace.execute_warp_action(&WarpAction::CreateTab).is_ok());
+    assert!(workspace
+        .execute_warp_action(&WarpAction::CreateTab)
+        .is_ok());
     assert!(workspace.execute_warp_action(&WarpAction::NextTab).is_ok());
-    assert!(workspace.execute_warp_action(&WarpAction::SplitRight).is_ok());
+    assert!(workspace
+        .execute_warp_action(&WarpAction::SplitRight)
+        .is_ok());
 }
 
 /// Mock window context for testing
@@ -101,7 +105,9 @@ struct MockWindowContext {
 
 impl MockWindowContext {
     fn new() -> Arc<Self> {
-        Arc::new(Self { _id: winit::window::WindowId::dummy() })
+        Arc::new(Self {
+            _id: winit::window::WindowId::dummy(),
+        })
     }
 }
 
@@ -123,17 +129,35 @@ fn test_session_file_handling() {
 #[test]
 fn test_warp_actions() {
     // Test conversion from standard actions to Warp actions
-    assert_eq!(Action::CreateTab.to_warp_action(), Some(WarpAction::CreateTab));
-    assert_eq!(Action::CloseTab.to_warp_action(), Some(WarpAction::CloseTab));
+    assert_eq!(
+        Action::CreateTab.to_warp_action(),
+        Some(WarpAction::CreateTab)
+    );
+    assert_eq!(
+        Action::CloseTab.to_warp_action(),
+        Some(WarpAction::CloseTab)
+    );
     assert_eq!(Action::NextTab.to_warp_action(), Some(WarpAction::NextTab));
-    assert_eq!(Action::PreviousTab.to_warp_action(), Some(WarpAction::PreviousTab));
-    assert_eq!(Action::SplitHorizontal.to_warp_action(), Some(WarpAction::SplitRight));
-    assert_eq!(Action::SplitVertical.to_warp_action(), Some(WarpAction::SplitDown));
+    assert_eq!(
+        Action::PreviousTab.to_warp_action(),
+        Some(WarpAction::PreviousTab)
+    );
+    assert_eq!(
+        Action::SplitHorizontal.to_warp_action(),
+        Some(WarpAction::SplitRight)
+    );
+    assert_eq!(
+        Action::SplitVertical.to_warp_action(),
+        Some(WarpAction::SplitDown)
+    );
     assert_eq!(
         Action::FocusNextPane.to_warp_action(),
         Some(WarpAction::NavigatePane(WarpNavDirection::Right))
     );
-    assert_eq!(Action::ClosePane.to_warp_action(), Some(WarpAction::ClosePane));
+    assert_eq!(
+        Action::ClosePane.to_warp_action(),
+        Some(WarpAction::ClosePane)
+    );
 
     // Test that non-Warp actions return None
     assert_eq!(Action::Copy.to_warp_action(), None);

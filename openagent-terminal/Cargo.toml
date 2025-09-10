@@ -87,12 +87,9 @@ clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
 crossfont = { workspace = true }
 tracing = { workspace = true }
-# Optional WGPU stack (feature-gated)
+# WGPU renderer
 wgpu = { version = "26.0", optional = true }
-# OpenGL stack (moved behind optional feature 'gl-backend')
-glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"], optional = true }
-# OpenGL function loader (optional, only with 'gl-backend')
-gl = { version = "0.14", optional = true }
+# WGPU utilities
 pollster = { version = "0.3", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 # Text shaping dependencies
@@ -134,8 +131,6 @@ winit = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 chrono = "0.4"
-# OpenGL bindings generator (optional, enabled only with 'gl-backend' feature)
-gl_generator = { version = "0.14.0", optional = true }
 
 
 [dev-dependencies]
@@ -184,23 +179,13 @@ windows-sys = { version = "0.59", features = [
 embed-resource = "3.0.2"
 
 [features]
-# WGPU-only by default.
+# WGPU-only default. No OpenGL backend.
 default = ["wayland", "x11", "blocks", "workflow", "sync", "wgpu"]
-# Optional OpenGL backend (disabled by default)
-gl-backend = [
-    "dep:glutin",
-    "dep:gl_generator",
-    "dep:gl",
-    # Enable platform integrations for glutin when GL backend is enabled
-    "glutin/x11",
-    "glutin/glx",
-    "glutin/wayland",
-]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Optional background component initialization in a separate task
 background-components = []
-# WGPU rendering backend (default via `default` feature set)
+# WGPU rendering backend
 wgpu = ["dep:wgpu", "dep:pollster"]
 # Convenience preset: enable experimental WGPU backend with one flag (alias)
 renderer-wgpu = ["wgpu"]
@@ -290,12 +275,12 @@ required-features = ["preview_ui"]
 [[example]]
 name = "perf_cold_start"
 path = "examples/perf_cold_start.rs"
-required-features = ["gl-backend"]
+required-features = ["wgpu"]
 
 [[example]]
 name = "perf_latency"
 path = "examples/perf_latency.rs"
-required-features = ["gl-backend"]
+required-features = ["wgpu"]
 
 [[example]]
 name = "perf_wgpu"

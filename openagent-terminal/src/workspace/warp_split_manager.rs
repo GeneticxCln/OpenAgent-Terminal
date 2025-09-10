@@ -51,7 +51,8 @@ impl WarpSplitManager {
         current_pane: PaneId,
         new_pane_id: PaneId,
     ) -> bool {
-        self.base.split_pane(layout, current_pane, new_pane_id, 0.5, true)
+        self.base
+            .split_pane(layout, current_pane, new_pane_id, 0.5, true)
     }
 
     /// Split current pane downward (Warp Cmd+Shift+D behavior)
@@ -61,7 +62,8 @@ impl WarpSplitManager {
         current_pane: PaneId,
         new_pane_id: PaneId,
     ) -> bool {
-        self.base.split_pane(layout, current_pane, new_pane_id, 0.5, false)
+        self.base
+            .split_pane(layout, current_pane, new_pane_id, 0.5, false)
     }
 
     /// Navigate to pane in direction (Warp Cmd+Alt+Arrow behavior)
@@ -73,8 +75,10 @@ impl WarpSplitManager {
     ) -> bool {
         let pane_rects =
             self.calculate_pane_positions(layout, PaneRect::new(0.0, 0.0, 100.0, 100.0));
-        let current_rect =
-            pane_rects.iter().find(|(id, _)| *id == *current_pane).map(|(_, rect)| *rect);
+        let current_rect = pane_rects
+            .iter()
+            .find(|(id, _)| *id == *current_pane)
+            .map(|(_, rect)| *rect);
 
         let Some(current_rect) = current_rect else {
             return false;
@@ -126,11 +130,11 @@ impl WarpSplitManager {
                     WarpNavDirection::Left | WarpNavDirection::Right => {
                         // For horizontal movement, prefer vertically aligned panes
                         1.0 / (1.0 + (pane_center_y - current_center_y).abs())
-                    },
+                    }
                     WarpNavDirection::Up | WarpNavDirection::Down => {
                         // For vertical movement, prefer horizontally aligned panes
                         1.0 / (1.0 + (pane_center_x - current_center_x).abs())
-                    },
+                    }
                 };
 
                 candidates.push((pane_id, distance, alignment_score));
@@ -292,7 +296,7 @@ impl WarpSplitManager {
                 // Recursively check children
                 self.swap_adjacent_panes(left, pane1, pane2)
                     || self.swap_adjacent_panes(right, pane1, pane2)
-            },
+            }
             SplitLayout::Vertical { top, bottom, .. } => {
                 if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) =
                     (top.as_ref(), bottom.as_ref())
@@ -305,7 +309,7 @@ impl WarpSplitManager {
                 // Recursively check children
                 self.swap_adjacent_panes(top, pane1, pane2)
                     || self.swap_adjacent_panes(bottom, pane1, pane2)
-            },
+            }
             SplitLayout::Single(_) => false,
         }
     }
@@ -323,15 +327,15 @@ impl WarpSplitManager {
                 *ratio = 0.5;
                 self.equalize_splits_recursive(left);
                 self.equalize_splits_recursive(right);
-            },
+            }
             SplitLayout::Vertical { top, bottom, ratio } => {
                 *ratio = 0.5;
                 self.equalize_splits_recursive(top);
                 self.equalize_splits_recursive(bottom);
-            },
+            }
             SplitLayout::Single(_) => {
                 // Nothing to equalize
-            },
+            }
         }
     }
 

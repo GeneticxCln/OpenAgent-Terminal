@@ -26,8 +26,10 @@ impl ConfigParser for AlacrittyParser {
 
         // Parse window settings
         if let Some(window) = alacritty_config.get("window") {
-            config.window.opacity =
-                window.get("opacity").and_then(|v| v.as_f64()).map(|v| v as f32);
+            config.window.opacity = window
+                .get("opacity")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32);
 
             if let Some(padding) = window.get("padding") {
                 let x = padding.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
@@ -37,14 +39,20 @@ impl ConfigParser for AlacrittyParser {
                 }
             }
 
-            config.window.decorations =
-                window.get("decorations").and_then(|v| v.as_str()).map(|s| s.to_string());
+            config.window.decorations = window
+                .get("decorations")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-            config.window.startup_mode =
-                window.get("startup_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+            config.window.startup_mode = window
+                .get("startup_mode")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-            config.window.title =
-                window.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
+            config.window.title = window
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             config.window.dynamic_title = window.get("dynamic_title").and_then(|v| v.as_bool());
         }
@@ -59,22 +67,40 @@ impl ConfigParser for AlacrittyParser {
             // Parse font faces
             if let Some(normal) = font.get("normal") {
                 config.font.normal = Some(FontFaceConfig {
-                    family: normal.get("family").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    style: normal.get("style").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    family: normal
+                        .get("family")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    style: normal
+                        .get("style")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
             if let Some(bold) = font.get("bold") {
                 config.font.bold = Some(FontFaceConfig {
-                    family: bold.get("family").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    style: bold.get("style").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    family: bold
+                        .get("family")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    style: bold
+                        .get("style")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
             if let Some(italic) = font.get("italic") {
                 config.font.italic = Some(FontFaceConfig {
-                    family: italic.get("family").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    style: italic.get("style").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    family: italic
+                        .get("family")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    style: italic
+                        .get("style")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
@@ -84,7 +110,10 @@ impl ConfigParser for AlacrittyParser {
                         .get("family")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
-                    style: bold_italic.get("style").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    style: bold_italic
+                        .get("style")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
         }
@@ -116,43 +145,100 @@ impl ConfigParser for AlacrittyParser {
             // Normal colors
             if let Some(normal) = colors.get("normal") {
                 config.colors.normal = Some(NormalColors {
-                    black: normal.get("black").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    red: normal.get("red").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    green: normal.get("green").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    yellow: normal.get("yellow").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    blue: normal.get("blue").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    magenta: normal.get("magenta").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    cyan: normal.get("cyan").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    white: normal.get("white").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    black: normal
+                        .get("black")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    red: normal
+                        .get("red")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    green: normal
+                        .get("green")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    yellow: normal
+                        .get("yellow")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    blue: normal
+                        .get("blue")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    magenta: normal
+                        .get("magenta")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    cyan: normal
+                        .get("cyan")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    white: normal
+                        .get("white")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
             // Bright colors
             if let Some(bright) = colors.get("bright") {
                 config.colors.bright = Some(BrightColors {
-                    black: bright.get("black").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    red: bright.get("red").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    green: bright.get("green").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    yellow: bright.get("yellow").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    blue: bright.get("blue").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    magenta: bright.get("magenta").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    cyan: bright.get("cyan").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    white: bright.get("white").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    black: bright
+                        .get("black")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    red: bright
+                        .get("red")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    green: bright
+                        .get("green")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    yellow: bright
+                        .get("yellow")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    blue: bright
+                        .get("blue")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    magenta: bright
+                        .get("magenta")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    cyan: bright
+                        .get("cyan")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    white: bright
+                        .get("white")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
             // Cursor colors
             if let Some(cursor) = colors.get("cursor") {
                 config.colors.cursor = Some(CursorColors {
-                    text: cursor.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    cursor: cursor.get("cursor").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    text: cursor
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    cursor: cursor
+                        .get("cursor")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
             // Selection colors
             if let Some(selection) = colors.get("selection") {
                 config.colors.selection = Some(SelectionColors {
-                    text: selection.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    text: selection
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     background: selection
                         .get("background")
                         .and_then(|v| v.as_str())
@@ -164,28 +250,52 @@ impl ConfigParser for AlacrittyParser {
         // Parse scrolling settings
         if let Some(scrolling) = alacritty_config.get("scrolling") {
             config.terminal.scrolling = Some(ScrollingConfig {
-                history: scrolling.get("history").and_then(|v| v.as_u64()).map(|v| v as u32),
-                multiplier: scrolling.get("multiplier").and_then(|v| v.as_u64()).map(|v| v as u32),
+                history: scrolling
+                    .get("history")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
+                multiplier: scrolling
+                    .get("multiplier")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
             });
         }
 
         // Parse cursor settings
         if let Some(cursor) = alacritty_config.get("cursor") {
             let cursor_style = cursor.get("style").map(|style| CursorStyle {
-                shape: style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                blinking: style.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                shape: style
+                    .get("shape")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                blinking: style
+                    .get("blinking")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
 
             let vi_mode_style = cursor.get("vi_mode_style").map(|vi_style| CursorStyle {
-                shape: vi_style.get("shape").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                blinking: vi_style.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                shape: vi_style
+                    .get("shape")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                blinking: vi_style
+                    .get("blinking")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
 
             config.terminal.cursor = Some(CursorConfig {
                 style: cursor_style,
                 vi_mode_style,
-                blinking: cursor.get("blinking").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                thickness: cursor.get("thickness").and_then(|v| v.as_f64()).map(|v| v as f32),
+                blinking: cursor
+                    .get("blinking")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                thickness: cursor
+                    .get("thickness")
+                    .and_then(|v| v.as_f64())
+                    .map(|v| v as f32),
             });
         }
 
@@ -322,9 +432,18 @@ shell:
 
         assert_eq!(config.window.opacity, Some(0.9));
         assert_eq!(config.font.size, Some(12.0));
-        assert_eq!(config.font.normal.as_ref().unwrap().family, Some("JetBrains Mono".to_string()));
-        assert_eq!(config.colors.primary.as_ref().unwrap().background, Some("#1e1e2e".to_string()));
-        assert_eq!(config.terminal.scrolling.as_ref().unwrap().history, Some(10000));
+        assert_eq!(
+            config.font.normal.as_ref().unwrap().family,
+            Some("JetBrains Mono".to_string())
+        );
+        assert_eq!(
+            config.colors.primary.as_ref().unwrap().background,
+            Some("#1e1e2e".to_string())
+        );
+        assert_eq!(
+            config.terminal.scrolling.as_ref().unwrap().history,
+            Some(10000)
+        );
         assert_eq!(config.shell.program, Some("/bin/zsh".to_string()));
     }
 
@@ -359,7 +478,10 @@ foreground = '#abb2bf'
 
         assert_eq!(config.window.opacity, Some(0.95));
         assert_eq!(config.font.size, Some(11.0));
-        assert_eq!(config.font.normal.as_ref().unwrap().family, Some("Fira Code".to_string()));
+        assert_eq!(
+            config.font.normal.as_ref().unwrap().family,
+            Some("Fira Code".to_string())
+        );
     }
 
     #[test]

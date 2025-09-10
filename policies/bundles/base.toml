@@ -1,0 +1,30 @@
+# Base Security Lens policy bundle (balanced)
+
+[require_confirmation]
+# Use TOML-friendly string keys for serialization if not using internal RiskLevel
+Safe = false
+Caution = true
+Warning = true
+Critical = true
+
+[gates]
+# Paste gating
+paste = true
+
+[rate_limit]
+max_detections = 10
+window_seconds = 300
+enabled = true
+
+[custom_patterns]
+# Example: cautious recursive delete on cloud buckets
+# [[custom_patterns]]
+# pattern = "(?i)aws\s+s3\s+rm\s+.*--recursive"
+# risk_level = "Warning"
+# message = "Recursive S3 deletion can affect many files"
+
+docs_base_url = "https://docs.openagent.dev/security"
+
+enabled = true
+block_critical = false
+

@@ -10,7 +10,8 @@ use std::sync::{Arc, RwLock};
 use crate::config::font::Font as FontConfig;
 use crate::display::content::RenderableCell;
 use crate::display::SizeInfo;
-use crate::renderer::{Glyph, GlyphCache, LoadGlyph};
+use crate::renderer::text::glyph_cache::Glyph;
+use crate::renderer::{GlyphCache, LoadGlyph};
 // use crate::renderer::text::builtin_font; // Commented out - private module
 use crate::text_shaping::harfbuzz::{
     HarfBuzzShaper, ShapedGlyph, ShapedText, ShapingConfig, TextDirection,
@@ -134,7 +135,10 @@ impl IntegratedTextShaper {
         let cells_vec: Vec<RenderableCell> = cells.collect();
 
         // Extract text content from cells
-        let text = cells_vec.iter().map(|cell| cell.character).collect::<String>();
+        let text = cells_vec
+            .iter()
+            .map(|cell| cell.character)
+            .collect::<String>();
 
         // Check cache if enabled
         let cache_key = if self.config.cache_shaped_lines {
@@ -166,12 +170,15 @@ impl IntegratedTextShaper {
         let font_size = glyph_cache.font_size.as_pt();
 
         let shaped_text = if self.should_use_harfbuzz_shaping(&text) {
-            match self.harfbuzz_shaper.shape_text_with_fallback(&text, &font_name, font_size) {
+            match self
+                .harfbuzz_shaper
+                .shape_text_with_fallback(&text, &font_name, font_size)
+            {
                 Ok(shaped) => shaped,
                 Err(_) if self.config.fallback_to_basic_rendering => {
                     // Fall back to basic shaping
                     return self.shape_line_basic(cells_vec.into_iter(), glyph_cache, size_info);
-                },
+                }
                 Err(e) => return Err(e),
             }
         } else {
@@ -195,12 +202,15 @@ impl IntegratedTextShaper {
                     }
                 }
 
-                cache.insert(key, ShapedLineInfo {
-                    shaped_text: shaped_text.clone(),
-                    font_name,
-                    font_size,
-                    cell_count: cells_vec.len(),
-                });
+                cache.insert(
+                    key,
+                    ShapedLineInfo {
+                        shaped_text: shaped_text.clone(),
+                        font_name,
+                        font_size,
+                        cell_count: cells_vec.len(),
+                    },
+                );
             }
         }
 
@@ -235,7 +245,11 @@ impl IntegratedTextShaper {
                 vec![self.create_basic_cell_glyph(cell, glyph_cache)?]
             };
 
-            shaped_cells.push(ShapedCell { cell_index, shaped_glyphs, cell_width });
+            shaped_cells.push(ShapedCell {
+                cell_index,
+                shaped_glyphs,
+                cell_width,
+            });
         }
 
         Ok(ShapedLine {

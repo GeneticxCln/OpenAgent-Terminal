@@ -96,8 +96,11 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 40% height
@@ -112,7 +115,14 @@ impl Display {
 
         // Backdrop and panel BG
         let rects = vec![
-            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.15),
+            RenderRect::new(
+                0.0,
+                0.0,
+                size_info.width(),
+                size_info.height(),
+                tokens.overlay,
+                0.15,
+            ),
             RenderRect::new(0.0, y, size_info.width(), h, tokens.surface_muted, 0.95),
         ];
         let metrics = self.glyph_cache.font_metrics();
@@ -137,8 +147,11 @@ impl Display {
 
         // Draw notebooks list
         let mut nline = line;
-        let notebooks_header =
-            if matches!(state.focus, FocusArea::Notebooks) { "Notebooks ◉" } else { "Notebooks" };
+        let notebooks_header = if matches!(state.focus, FocusArea::Notebooks) {
+            "Notebooks ◉"
+        } else {
+            "Notebooks"
+        };
         self.draw_ai_text(
             Point::new(nline, Column(2)),
             tokens.text_muted,
@@ -190,7 +203,11 @@ impl Display {
             Some(id) => format!(
                 "Cells — {}{}",
                 id,
-                if matches!(state.focus, FocusArea::Cells) { " ◉" } else { "" }
+                if matches!(state.focus, FocusArea::Cells) {
+                    " ◉"
+                } else {
+                    ""
+                }
             ),
             None => "Cells".to_string(),
         };

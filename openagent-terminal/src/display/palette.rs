@@ -59,8 +59,11 @@ impl PaletteState {
 
     /// Return up to `max` recent file paths from MRU counts
     pub fn recent_file_paths(&self, max: usize) -> Vec<String> {
-        let mut pairs: Vec<(&String, &u32)> =
-            self.mru_counts.iter().filter(|(k, _)| k.starts_with("file:")).collect();
+        let mut pairs: Vec<(&String, &u32)> = self
+            .mru_counts
+            .iter()
+            .filter(|(k, _)| k.starts_with("file:"))
+            .collect();
         // Sort by count desc
         pairs.sort_by(|a, b| b.1.cmp(a.1));
         let mut out = Vec::new();
@@ -161,7 +164,9 @@ impl PaletteState {
     }
 
     pub fn save_mru_to_config(&self, _config: &UiConfig) {
-        let state = PalettePersistentState { mru_counts: self.mru_counts.clone() };
+        let state = PalettePersistentState {
+            mru_counts: self.mru_counts.clone(),
+        };
         if let Some(dir) = dirs::config_dir() {
             let base = dir.join("openagent-terminal");
             let _ = std::fs::create_dir_all(&base);
@@ -178,20 +183,48 @@ impl PaletteState {
             .filtered_indices
             .iter()
             .filter_map(|&i| self.items.get(i))
-            .map(|it| PaletteItemView { title: it.title.clone(), subtitle: it.subtitle.clone() })
+            .map(|it| PaletteItemView {
+                title: it.title.clone(),
+                subtitle: it.subtitle.clone(),
+            })
             .collect::<Vec<_>>();
-        (self.filter.clone(), self.selected.min(visible.len().saturating_sub(1)), visible)
+        (
+            self.filter.clone(),
+            self.selected.min(visible.len().saturating_sub(1)),
+            visible,
+        )
     }
 
     fn refilter(&mut self) {
         let q = self.filter.to_lowercase();
         // Prefix filters
         let (filter_type, term) = if q.starts_with("w:") || q.starts_with("workflows:") {
-            (Some("workflow"), q.split_once(':').map(|(_, t)| t).unwrap_or("").trim().to_string())
+            (
+                Some("workflow"),
+                q.split_once(':')
+                    .map(|(_, t)| t)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            )
         } else if q.starts_with("a:") || q.starts_with("actions:") {
-            (Some("action"), q.split_once(':').map(|(_, t)| t).unwrap_or("").trim().to_string())
+            (
+                Some("action"),
+                q.split_once(':')
+                    .map(|(_, t)| t)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            )
         } else if q.starts_with("f:") || q.starts_with("files:") {
-            (Some("file"), q.split_once(':').map(|(_, t)| t).unwrap_or("").trim().to_string())
+            (
+                Some("file"),
+                q.split_once(':')
+                    .map(|(_, t)| t)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            )
         } else {
             (None, q)
         };
@@ -201,9 +234,9 @@ impl PaletteState {
         for (i, it) in self.items.iter().enumerate() {
             if let Some(ft) = filter_type {
                 match (&it.entry, ft) {
-                    (PaletteEntry::Action(_), "action") => {},
-                    (PaletteEntry::Workflow(_), "workflow") => {},
-                    (PaletteEntry::File(_), "file") => {},
+                    (PaletteEntry::Action(_), "action") => {}
+                    (PaletteEntry::Workflow(_), "workflow") => {}
+                    (PaletteEntry::File(_), "file") => {}
                     _ => continue,
                 }
             }
@@ -258,7 +291,8 @@ impl PaletteState {
             })
         });
         self.filtered_indices.clear();
-        self.filtered_indices.extend(ranked.into_iter().map(|(i, _)| i));
+        self.filtered_indices
+            .extend(ranked.into_iter().map(|(i, _)| i));
         if self.selected >= self.filtered_indices.len() {
             self.selected = self.filtered_indices.len().saturating_sub(1);
         }
@@ -419,7 +453,7 @@ fn binding_to_hint(binding: &KeyBinding) -> Option<String> {
                 } else {
                     ss
                 }
-            },
+            }
             _ => return None,
         },
         _ => return None,
@@ -464,8 +498,11 @@ impl Display {
             return;
         }
         let size_info: SizeInfo = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui.clone();
 
@@ -479,7 +516,11 @@ impl Display {
             let t = (elapsed as f32 / dur as f32).clamp(0.0, 1.0);
             // ease-out cubic
             let eased = 1.0 - (1.0 - t).powi(3);
-            progress = if self.palette_anim_opening { eased } else { 1.0 - eased };
+            progress = if self.palette_anim_opening {
+                eased
+            } else {
+                1.0 - eased
+            };
             if t >= 1.0 {
                 self.palette_anim_start = None;
             }
@@ -490,7 +531,9 @@ impl Display {
         if num_lines == 0 {
             return;
         }
-        let panel_lines = ((num_lines as f32 * 0.45).round() as usize).clamp(8, 16).min(num_lines);
+        let panel_lines = ((num_lines as f32 * 0.45).round() as usize)
+            .clamp(8, 16)
+            .min(num_lines);
         let cols = size_info.columns();
         let panel_cols = ((cols as f32 * 0.7).round() as usize).clamp(40, cols.saturating_sub(2));
         let panel_start_line = (num_lines.saturating_sub(panel_lines)) / 2;
@@ -546,9 +589,15 @@ impl Display {
             t: f32,
         ) -> crate::display::color::Rgb {
             let t = t.clamp(0.0, 1.0);
-            let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t).round().clamp(0.0, 255.0) as u8;
-            let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t).round().clamp(0.0, 255.0) as u8;
-            let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t).round().clamp(0.0, 255.0) as u8;
+            let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t)
+                .round()
+                .clamp(0.0, 255.0) as u8;
             crate::display::color::Rgb::new(r, g, bb)
         }
         let fade_t = progress; // 0..1
@@ -762,7 +811,11 @@ impl Display {
 
         let max_lines = footer_line.saturating_sub(1);
         for (idx, item) in views.iter().enumerate() {
-            let row_sel_p = if idx == selected_visible { sel_anim_eased } else { 0.0 };
+            let row_sel_p = if idx == selected_visible {
+                sel_anim_eased
+            } else {
+                0.0
+            };
             // Compute hints for actions (right-aligned), allow up to 3 and render as pills
             let mut hints: Vec<String> = Vec::new();
             if let Some(&orig_i) = self.palette.filtered_indices.get(idx) {
@@ -778,7 +831,9 @@ impl Display {
             } else {
                 hints.iter().map(|h| h.width() + 2).sum::<usize>() + 1
             };
-            let content_max_cols = panel_cols.saturating_sub(2).saturating_sub(hints_cols_approx);
+            let content_max_cols = panel_cols
+                .saturating_sub(2)
+                .saturating_sub(hints_cols_approx);
             if line > max_lines {
                 break;
             }
@@ -797,7 +852,11 @@ impl Display {
 
             // Build row: marker + title + subtitle
             let mut col_cursor = panel_start_col + 1;
-            let marker = if idx == selected_visible { "▶ " } else { "  " };
+            let marker = if idx == selected_visible {
+                "▶ "
+            } else {
+                "  "
+            };
             self.draw_ai_text(Point::new(line, Column(col_cursor)), fg, bg, marker, 2);
             col_cursor += 2;
 
@@ -828,7 +887,7 @@ impl Display {
                                 _ => 0,
                             };
                             uv_for_slot(slot)
-                        },
+                        }
                     };
                     let cw = size_info.cell_width();
                     let ch = size_info.cell_height();
@@ -879,8 +938,11 @@ impl Display {
             let q = filter.trim().to_lowercase();
             let title = &item.title;
             let title_lower = title.to_lowercase();
-            let hl_positions =
-                if q.is_empty() { Vec::new() } else { fuzzy_highlight_positions(&q, &title_lower) };
+            let hl_positions = if q.is_empty() {
+                Vec::new()
+            } else {
+                fuzzy_highlight_positions(&q, &title_lower)
+            };
             // Compute visible title and width under budget
             let mut visible = String::new();
             let mut visible_w = 0usize;
@@ -966,11 +1028,21 @@ impl Display {
 
             // Row-level color dimming + selection brightness animation
             let white = crate::display::color::Rgb::new(255, 255, 255);
-            let row_fg_base = if idx == selected_visible { fg } else { lerp_rgb(bg, fg, 0.7) };
-            let row_acc_base =
-                if idx == selected_visible { accent_fg } else { lerp_rgb(bg, accent_fg, 0.7) };
-            let row_mut_base =
-                if idx == selected_visible { muted_fg } else { lerp_rgb(bg, muted_fg, 0.7) };
+            let row_fg_base = if idx == selected_visible {
+                fg
+            } else {
+                lerp_rgb(bg, fg, 0.7)
+            };
+            let row_acc_base = if idx == selected_visible {
+                accent_fg
+            } else {
+                lerp_rgb(bg, accent_fg, 0.7)
+            };
+            let row_mut_base = if idx == selected_visible {
+                muted_fg
+            } else {
+                lerp_rgb(bg, muted_fg, 0.7)
+            };
             let row_fg = if idx == selected_visible {
                 lerp_rgb(row_fg_base, white, 0.10 * row_sel_p)
             } else {

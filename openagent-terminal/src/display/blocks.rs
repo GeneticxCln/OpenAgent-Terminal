@@ -34,7 +34,10 @@ pub struct Blocks {
 
 impl Blocks {
     pub fn new() -> Self {
-        Self { enabled: false, blocks: Vec::new() }
+        Self {
+            enabled: false,
+            blocks: Vec::new(),
+        }
     }
 
     pub fn on_event(&mut self, total_lines: usize, ev: &CommandBlockEvent) {
@@ -47,7 +50,7 @@ impl Blocks {
                         last.ended_at = Some(Instant::now());
                     }
                 }
-            },
+            }
             CommandBlockEvent::CommandStart { cmd } => {
                 let block = CommandBlock {
                     start_total_line: total_lines,
@@ -63,7 +66,7 @@ impl Blocks {
                     anim_duration_ms: 140,
                 };
                 self.blocks.push(block);
-            },
+            }
             CommandBlockEvent::CommandEnd { exit, cwd } => {
                 if let Some(last) = self.blocks.last_mut() {
                     last.exit = *exit;
@@ -80,10 +83,10 @@ impl Blocks {
                         }
                     }
                 }
-            },
+            }
             CommandBlockEvent::PromptEnd => {
                 // Nothing special for now.
-            },
+            }
         }
     }
 
@@ -93,8 +96,11 @@ impl Blocks {
         viewport_point: Point<usize>,
     ) -> bool {
         let total_line = display_offset + viewport_point.line;
-        if let Some(block) =
-            self.blocks.iter_mut().rev().find(|b| b.contains_total_line(total_line))
+        if let Some(block) = self
+            .blocks
+            .iter_mut()
+            .rev()
+            .find(|b| b.contains_total_line(total_line))
         {
             block.folded = !block.folded;
             block.anim_start = Some(Instant::now());
@@ -118,8 +124,14 @@ impl Blocks {
                 if total_line == block.start_total_line {
                     let end = block.end_total_line.unwrap_or(total_line);
                     let lines = end.saturating_sub(block.start_total_line) + 1;
-                    let status = block.exit.map(|c| if c == 0 { "✓" } else { "✗" }).unwrap_or("…");
-                    let cmd = block.cmd.clone().unwrap_or_else(|| String::from("(command)"));
+                    let status = block
+                        .exit
+                        .map(|c| if c == 0 { "✓" } else { "✗" })
+                        .unwrap_or("…");
+                    let cmd = block
+                        .cmd
+                        .clone()
+                        .unwrap_or_else(|| String::from("(command)"));
                     return Some(format!("⟞ Folded {lines} lines [{status}] {cmd}"));
                 }
             }
@@ -130,7 +142,9 @@ impl Blocks {
     /// Is this viewport line within a folded block region (including header line)?
     pub fn is_viewport_line_elided(&self, display_offset: usize, viewport_line: usize) -> bool {
         let total_line = display_offset + viewport_line;
-        self.blocks.iter().any(|b| b.folded && b.contains_total_line(total_line))
+        self.blocks
+            .iter()
+            .any(|b| b.folded && b.contains_total_line(total_line))
     }
 
     /// Toggle folding if the viewport line corresponds to a block header.
@@ -141,7 +155,11 @@ impl Blocks {
         viewport_line: usize,
     ) -> bool {
         let total_line = display_offset + viewport_line;
-        if let Some(block) = self.blocks.iter_mut().find(|b| total_line == b.start_total_line) {
+        if let Some(block) = self
+            .blocks
+            .iter_mut()
+            .find(|b| total_line == b.start_total_line)
+        {
             block.folded = !block.folded;
             block.anim_start = Some(Instant::now());
             block.anim_opening = !block.folded; // opening when unfolding
@@ -153,8 +171,10 @@ impl Blocks {
 
     /// Ensure the block containing `total_line` is unfolded; returns true if state changed.
     pub fn ensure_unfold_at_total_line(&mut self, total_line: usize) -> bool {
-        if let Some(block) =
-            self.blocks.iter_mut().find(|b| b.folded && b.contains_total_line(total_line))
+        if let Some(block) = self
+            .blocks
+            .iter_mut()
+            .find(|b| b.folded && b.contains_total_line(total_line))
         {
             block.folded = false;
             return true;
@@ -164,7 +184,10 @@ impl Blocks {
 
     /// Find next block starting after current display_offset and return its start total_line.
     pub fn next_block_after(&self, display_offset: usize) -> Option<usize> {
-        self.blocks.iter().find(|b| b.start_total_line > display_offset).map(|b| b.start_total_line)
+        self.blocks
+            .iter()
+            .find(|b| b.start_total_line > display_offset)
+            .map(|b| b.start_total_line)
     }
 
     /// Find previous block starting before current display_offset and return its start total_line.
@@ -188,10 +211,15 @@ impl Blocks {
             if !block.folded && total_line == block.start_total_line {
                 // Only show header for blocks that have a command and are long enough
                 if block.cmd.is_some()
-                    && block.end_total_line.is_some_and(|end| end > block.start_total_line)
+                    && block
+                        .end_total_line
+                        .is_some_and(|end| end > block.start_total_line)
                 {
                     let cmd = block.cmd.as_ref().unwrap();
-                    let status = block.exit.map(|c| if c == 0 { "✓" } else { "✗" }).unwrap_or("…");
+                    let status = block
+                        .exit
+                        .map(|c| if c == 0 { "✓" } else { "✗" })
+                        .unwrap_or("…");
 
                     // Calculate elapsed time
                     let elapsed = if let Some(ended_at) = block.ended_at {
@@ -205,7 +233,11 @@ impl Blocks {
                     } else if elapsed.as_secs() < 3600 {
                         format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
                     } else {
-                        format!("{}h{}m", elapsed.as_secs() / 3600, (elapsed.as_secs() % 3600) / 60)
+                        format!(
+                            "{}h{}m",
+                            elapsed.as_secs() / 3600,
+                            (elapsed.as_secs() % 3600) / 60
+                        )
                     };
 
                     // Format working directory (show last component if too long)
@@ -230,7 +262,9 @@ impl Blocks {
     #[allow(dead_code)]
     pub fn is_viewport_line_header(&self, display_offset: usize, viewport_line: usize) -> bool {
         let total_line = display_offset + viewport_line;
-        self.blocks.iter().any(|b| !b.folded && total_line == b.start_total_line && b.cmd.is_some())
+        self.blocks
+            .iter()
+            .any(|b| !b.folded && total_line == b.start_total_line && b.cmd.is_some())
     }
 }
 

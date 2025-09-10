@@ -31,9 +31,150 @@ pub struct AiUiState {
     pub streaming_text: String,
     /// Inline suggestion text to render as ghost text at the terminal prompt (suffix suggestion)
     pub inline_suggestion: Option<String>,
+    /// Current provider id (e.g., "openrouter", "openai", "anthropic", "ollama") for UI display
+    pub current_provider: String,
+    /// Current model identifier used by the provider (for compact model badge in UI)
+    pub current_model: String,
 }
 
 impl AiRuntime {
+    /// Reconfigure this runtime to a new provider using secure config, preserving UI scratch/cursor/history.
+    pub fn reconfigure_to(
+        &mut self,
+        provider_name: &str,
+        config: &crate::config::ai::ProviderConfig,
+    ) {
+        use crate::config::ai_providers::ProviderCredentials;
+        self.ui.error_message = None;
+        // Load credentials
+        let credentials = match ProviderCredentials::from_config(provider_name, config) {
+            Ok(creds) => creds,
+            Err(e) => {
+                self.ui.error_message = Some(format!(
+                    "Secure credential loading failed for '{}': {}",
+                    provider_name, e
+                ));
+                return;
+            }
+        };
+        // Create provider for new config
+        let new_provider: Result<Box<dyn AiProvider>, String> = match provider_name {
+            "openai" => {
+                let api_key = match credentials.require_api_key(provider_name) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        self.ui.error_message =
+                            Some(format!("{} provider config error: {}", provider_name, e));
+                        return;
+                    }
+                };
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string();
+                let model = match credentials.require_model(provider_name) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        self.ui.error_message =
+                            Some(format!("{} provider config error: {}", provider_name, e));
+                        return;
+                    }
+                };
+                self.ui.current_model = model.clone();
+                OpenAiProvider::new(api_key, endpoint, model)
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            }
+            "openrouter" => {
+                let api_key = match credentials.require_api_key(provider_name) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        self.ui.error_message =
+                            Some(format!("{} provider config error: {}", provider_name, e));
+                        return;
+                    }
+                };
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://openrouter.ai/api/v1")
+                    .to_string();
+                let model = match credentials.require_model(provider_name) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        self.ui.error_message =
+                            Some(format!("{} provider config error: {}", provider_name, e));
+                        return;
+                    }
+                };
+                self.ui.current_model = model.clone();
+                OpenRouterProvider::new(api_key, endpoint, model)
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            }
+            "anthropic" => {
+                let api_key = match credentials.require_api_key(provider_name) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        self.ui.error_message =
+                            Some(format!("{} provider config error: {}", provider_name, e));
+                        return;
+                    }
+                };
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://api.anthropic.com")
+                    .to_string();
+                let model = match credentials.require_model(provider_name) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        self.ui.error_message =
+                            Some(format!("{} provider config error: {}", provider_name, e));
+                        return;
+                    }
+                };
+                self.ui.current_model = model.clone();
+                AnthropicProvider::new(api_key, endpoint, model)
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+            }
+            "ollama" => {
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("http://localhost:11434")
+                    .to_string();
+                let model = credentials
+                    .require_model(provider_name)
+                    .map(|s| s.to_string())
+                    .or_else(|_| {
+                        config
+                            .default_model
+                            .clone()
+                            .ok_or_else(|| "Model required".to_string())
+                    })
+                    .unwrap_or_else(|_| "".to_string());
+                self.ui.current_model = model.clone();
+                OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
+            }
+            _ => Err(format!("Unknown provider: {}", provider_name)),
+        };
+        match new_provider {
+            Ok(p) => {
+                self.provider = Arc::from(p);
+                self.ui.current_provider = provider_name.to_string();
+                // Reset transient result state
+                self.ui.proposals.clear();
+                self.ui.selected_proposal = 0;
+                self.ui.is_loading = false;
+                self.ui.streaming_active = false;
+                self.ui.streaming_text.clear();
+                self.ui.error_message = None;
+            }
+            Err(e) => {
+                self.ui.error_message = Some(format!(
+                    "Failed to reconfigure provider to '{}': {}",
+                    provider_name, e
+                ));
+            }
+        }
+    }
+
     /// Start background computation of an inline suggestion based on the current prompt prefix.
     /// The provider is invoked in a separate thread to avoid blocking the UI.
     pub fn start_inline_suggest(
@@ -64,25 +205,30 @@ impl AiRuntime {
             ],
         };
 
-        let _ = std::thread::Builder::new().name("ai-inline".into()).spawn(move || {
-            // Non-streaming, single-shot proposal
-            let result = provider.propose(req);
-            let suggestion = match result {
-                Ok(mut props) => {
-                    // Take the first command from the first proposal, if any
-                    if let Some(prop) = props.first_mut() {
-                        prop.proposed_commands.first().map(|cmd| compute_suffix(cmd, &prefix))
-                    } else {
-                        None
+        let _ = std::thread::Builder::new()
+            .name("ai-inline".into())
+            .spawn(move || {
+                // Non-streaming, single-shot proposal
+                let result = provider.propose(req);
+                let suggestion = match result {
+                    Ok(mut props) => {
+                        // Take the first command from the first proposal, if any
+                        if let Some(prop) = props.first_mut() {
+                            prop.proposed_commands
+                                .first()
+                                .map(|cmd| compute_suffix(cmd, &prefix))
+                        } else {
+                            None
+                        }
                     }
-                },
-                Err(_) => None,
-            };
+                    Err(_) => None,
+                };
 
-            let payload =
-                crate::event::EventType::AiInlineSuggestionReady(suggestion.unwrap_or_default());
-            let _ = event_proxy.send_event(Event::new(payload, window_id));
-        });
+                let payload = crate::event::EventType::AiInlineSuggestionReady(
+                    suggestion.unwrap_or_default(),
+                );
+                let _ = event_proxy.send_event(Event::new(payload, window_id));
+            });
 
         // Helper to compute the suffix not yet typed
         fn compute_suffix(candidate: &str, typed: &str) -> String {
@@ -116,6 +262,8 @@ impl Default for AiUiState {
             streaming_active: false,
             streaming_text: String::new(),
             inline_suggestion: None,
+            current_provider: "null".to_string(),
+            current_model: String::new(),
         }
     }
 }
@@ -137,8 +285,12 @@ pub struct AiRuntime {
 impl AiRuntime {
     pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
+        let mut ui = AiUiState::default();
+        ui.current_provider = provider.name().to_string();
+        // Model is provider-specific; when constructed via from_secure_config we will set it.
+        ui.current_model.clear();
         Self {
-            ui: AiUiState::default(),
+            ui,
             provider: Arc::from(provider),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             security_lens: SecurityLens::new(SecurityPolicy::default()),
@@ -170,7 +322,7 @@ impl AiRuntime {
             Ok(p) => {
                 info!("Successfully created AI provider: {}", provider_name);
                 Self::new(p)
-            },
+            }
             Err(e) => {
                 error!("Failed to create provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
@@ -181,7 +333,7 @@ impl AiRuntime {
                     e
                 ));
                 rt
-            },
+            }
         }
     }
 
@@ -192,13 +344,19 @@ impl AiRuntime {
     ) -> Self {
         use crate::config::ai_providers::ProviderCredentials;
 
-        info!("Initializing AI runtime with secure provider configuration: {}", provider_name);
+        info!(
+            "Initializing AI runtime with secure provider configuration: {}",
+            provider_name
+        );
 
         // Extract credentials securely without polluting global environment
         let credentials = match ProviderCredentials::from_config(provider_name, config) {
             Ok(creds) => creds,
             Err(e) => {
-                error!("Failed to load secure credentials for provider '{}': {}", provider_name, e);
+                error!(
+                    "Failed to load secure credentials for provider '{}': {}",
+                    provider_name, e
+                );
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure credential loading failed for '{}': {}. Check your environment \
@@ -206,10 +364,11 @@ impl AiRuntime {
                     provider_name, e
                 ));
                 return rt;
-            },
+            }
         };
 
         // Create provider with isolated credentials
+        let mut selected_model: Option<String> = None;
         let provider_result = match provider_name {
             "openai" => {
                 let api_key = match credentials.require_api_key(provider_name) {
@@ -218,7 +377,7 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
                 let endpoint = credentials
                     .require_endpoint(provider_name)
@@ -230,11 +389,12 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
+                selected_model = Some(model.clone());
                 OpenAiProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            },
+            }
             "openrouter" => {
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
@@ -242,7 +402,7 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
                 let endpoint = credentials
                     .require_endpoint(provider_name)
@@ -254,11 +414,12 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
+                selected_model = Some(model.clone());
                 OpenRouterProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            },
+            }
             "anthropic" => {
                 let api_key = match credentials.require_api_key(provider_name) {
                     Ok(key) => key.to_string(),
@@ -266,7 +427,7 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
                 let endpoint = credentials
                     .require_endpoint(provider_name)
@@ -278,11 +439,12 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
+                selected_model = Some(model.clone());
                 AnthropicProvider::new(api_key, endpoint, model)
                     .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            },
+            }
             "ollama" => {
                 let endpoint = credentials
                     .require_endpoint(provider_name)
@@ -294,10 +456,11 @@ impl AiRuntime {
                         let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                         rt.ui.error_message = Some(e);
                         return rt;
-                    },
+                    }
                 };
+                selected_model = Some(model.clone());
                 OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
-            },
+            }
             "null" => Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>),
             _ => Err(format!("Unknown provider: {}", provider_name)),
         };
@@ -305,10 +468,24 @@ impl AiRuntime {
         match provider_result {
             Ok(provider) => {
                 info!("Successfully created secure AI provider: {}", provider_name);
-                Self::new(provider)
-            },
+                let mut rt = Self::new(provider);
+                rt.ui.current_provider = provider_name.to_string();
+                if let Some(m) = selected_model.take() {
+                    rt.ui.current_model = m;
+                } else {
+                    // Fallback to config default if available
+                    rt.ui.current_model = config
+                        .default_model
+                        .clone()
+                        .unwrap_or_else(|| String::new());
+                }
+                rt
+            }
             Err(e) => {
-                error!("Failed to create secure provider '{}': {}", provider_name, e);
+                error!(
+                    "Failed to create secure provider '{}': {}",
+                    provider_name, e
+                );
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure AI provider initialization failed: {}. Please verify your \
@@ -316,7 +493,7 @@ impl AiRuntime {
                     e
                 ));
                 rt
-            },
+            }
         }
     }
 
@@ -358,56 +535,64 @@ impl AiRuntime {
         };
 
         // Spawn background worker
-        let _ = thread::Builder::new().name("ai-stream".into()).spawn(move || {
-            // First try streaming
-            let mut on_chunk = |chunk: &str| {
-                // Send chunk event
-                let _ = event_proxy
-                    .send_event(Event::new(EventType::AiStreamChunk(chunk.to_string()), window_id));
-            };
-            match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
-                Ok(true) => {
-                    info!("ai_runtime_stream_finished provider={}", provider.name());
-                    let _ =
-                        event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
-                },
-                Ok(false) => {
-                    info!("ai_runtime_fallback_blocking provider={}", provider.name());
-                    let result = provider.propose(req);
-                    match result {
-                        Ok(proposals) => {
-                            info!("ai_runtime_blocking_complete proposals={}", proposals.len());
-                            let _ = event_proxy.send_event(Event::new(
-                                EventType::AiProposals(proposals),
-                                window_id,
-                            ));
-                        },
-                        Err(e) => {
-                            error!("ai_runtime_blocking_error error={}", e);
-                            let _ = event_proxy
-                                .send_event(Event::new(EventType::AiStreamError(e), window_id));
-                        },
-                    }
-                },
-                Err(e) => {
-                    if e.eq_ignore_ascii_case("cancelled") || e.eq_ignore_ascii_case("canceled") {
-                        info!("ai_runtime_stream_cancelled provider={}", provider.name());
-                        // Treat cancellation as a graceful finish, do not surface an error
+        let _ = thread::Builder::new()
+            .name("ai-stream".into())
+            .spawn(move || {
+                // First try streaming
+                let mut on_chunk = |chunk: &str| {
+                    // Send chunk event
+                    let _ = event_proxy.send_event(Event::new(
+                        EventType::AiStreamChunk(chunk.to_string()),
+                        window_id,
+                    ));
+                };
+                match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
+                    Ok(true) => {
+                        info!("ai_runtime_stream_finished provider={}", provider.name());
                         let _ = event_proxy
                             .send_event(Event::new(EventType::AiStreamFinished, window_id));
-                    } else {
-                        error!("ai_runtime_stream_error error={}", e);
-                        let _ = event_proxy
-                            .send_event(Event::new(EventType::AiStreamError(e), window_id));
                     }
-                },
-            }
-        });
+                    Ok(false) => {
+                        info!("ai_runtime_fallback_blocking provider={}", provider.name());
+                        let result = provider.propose(req);
+                        match result {
+                            Ok(proposals) => {
+                                info!("ai_runtime_blocking_complete proposals={}", proposals.len());
+                                let _ = event_proxy.send_event(Event::new(
+                                    EventType::AiProposals(proposals),
+                                    window_id,
+                                ));
+                            }
+                            Err(e) => {
+                                error!("ai_runtime_blocking_error error={}", e);
+                                let _ = event_proxy
+                                    .send_event(Event::new(EventType::AiStreamError(e), window_id));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if e.eq_ignore_ascii_case("cancelled") || e.eq_ignore_ascii_case("canceled")
+                        {
+                            info!("ai_runtime_stream_cancelled provider={}", provider.name());
+                            // Treat cancellation as a graceful finish, do not surface an error
+                            let _ = event_proxy
+                                .send_event(Event::new(EventType::AiStreamFinished, window_id));
+                        } else {
+                            error!("ai_runtime_stream_error error={}", e);
+                            let _ = event_proxy
+                                .send_event(Event::new(EventType::AiStreamError(e), window_id));
+                        }
+                    }
+                }
+            });
     }
 
     /// Cancel any in-flight streaming.
     pub fn cancel(&mut self) {
-        info!("ai_runtime_cancel_requested provider={}", self.provider.name());
+        info!(
+            "ai_runtime_cancel_requested provider={}",
+            self.provider.name()
+        );
         self.cancel_flag.store(true, Ordering::SeqCst);
         self.ui.streaming_active = false;
         self.ui.is_loading = false;
@@ -446,12 +631,12 @@ impl AiRuntime {
                 info!("Received {} proposals", proposals.len());
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
-            },
+            }
             Err(e) => {
                 error!("AI query failed: {}", e);
                 self.ui.error_message = Some(format!("Query failed: {}", e));
                 self.ui.is_loading = false;
-            },
+            }
         }
     }
 
@@ -526,7 +711,7 @@ impl AiRuntime {
                 self.ui.history_index = None;
                 self.ui.scratch.clear();
                 self.ui.cursor_position = 0;
-            },
+            }
             Some(i) => {
                 let new_index = i - 1;
                 if let Some(entry) = self.ui.history.get(new_index) {
@@ -534,8 +719,8 @@ impl AiRuntime {
                     self.ui.cursor_position = self.ui.scratch.len();
                     self.ui.history_index = Some(new_index);
                 }
-            },
-            None => {},
+            }
+            None => {}
         }
     }
 
@@ -559,7 +744,10 @@ impl AiRuntime {
 
     /// Get selected proposal commands
     pub fn get_selected_commands(&self) -> Option<String> {
-        self.ui.proposals.get(self.ui.selected_proposal).map(|p| p.proposed_commands.join("\n"))
+        self.ui
+            .proposals
+            .get(self.ui.selected_proposal)
+            .map(|p| p.proposed_commands.join("\n"))
     }
 
     /// Regenerate the last proposal
@@ -573,8 +761,9 @@ impl AiRuntime {
         // Restart the proposal stream with the same scratch text
         // Note: Context should be provided by the caller in real usage
         // This is a standalone method that doesn't have access to context provider
-        let working_directory =
-            std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string());
+        let working_directory = std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string());
         let shell_kind = std::env::var("SHELL").ok().map(|s| {
             openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s)
                 .to_str()
@@ -663,7 +852,7 @@ impl AiRuntime {
             AiCopyFormat::Code => {
                 // Format as code block
                 format!("```bash\n{}\n```", content)
-            },
+            }
             AiCopyFormat::Markdown => {
                 // Format as markdown with title and description
                 let mut md = String::new();
@@ -686,7 +875,7 @@ impl AiRuntime {
                     md.push_str("\n```\n");
                 }
                 md
-            },
+            }
         })
     }
 
@@ -734,12 +923,12 @@ impl AiRuntime {
                 info!("Received {} proposals with context", proposals.len());
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
-            },
+            }
             Err(e) => {
                 error!("AI query with context failed: {}", e);
                 self.ui.error_message = Some(format!("Query failed: {}", e));
                 self.ui.is_loading = false;
-            },
+            }
         }
     }
 
@@ -812,11 +1001,11 @@ impl AiRuntime {
             Ok(proposals) => {
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
-            },
+            }
             Err(e) => {
                 self.ui.error_message = Some(format!("Explain failed: {}", e));
                 self.ui.is_loading = false;
-            },
+            }
         }
     }
 
@@ -854,22 +1043,30 @@ impl AiRuntime {
         }
 
         let prompt = if let Some(fc) = &failed_command {
-            format!("Error encountered while running '{}':\n{}\nSuggest a fix.", fc, error_text)
+            format!(
+                "Error encountered while running '{}':\n{}\nSuggest a fix.",
+                fc, error_text
+            )
         } else {
             format!("Error: {}\nSuggest a fix.", error_text)
         };
 
-        let req = AiRequest { scratch_text: prompt, working_directory, shell_kind, context };
+        let req = AiRequest {
+            scratch_text: prompt,
+            working_directory,
+            shell_kind,
+            context,
+        };
 
         match self.provider.propose(req) {
             Ok(proposals) => {
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
-            },
+            }
             Err(e) => {
                 self.ui.error_message = Some(format!("Fix suggestion failed: {}", e));
                 self.ui.is_loading = false;
-            },
+            }
         }
     }
 }

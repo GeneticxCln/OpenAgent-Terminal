@@ -337,15 +337,21 @@ impl Default for NotificationConfig {
 impl ThemeCompatibility {
     pub fn is_compatible(&self, current_version: &str) -> bool {
         // Simple semver compatibility check
-        let Ok(current) = semver::Version::parse(current_version) else { return false };
-        let Ok(min) = semver::Version::parse(&self.min_version) else { return false };
+        let Ok(current) = semver::Version::parse(current_version) else {
+            return false;
+        };
+        let Ok(min) = semver::Version::parse(&self.min_version) else {
+            return false;
+        };
 
         if current < min {
             return false;
         }
 
         if let Some(max_version) = &self.max_version {
-            let Ok(max) = semver::Version::parse(max_version) else { return false };
+            let Ok(max) = semver::Version::parse(max_version) else {
+                return false;
+            };
             if current > max {
                 return false;
             }

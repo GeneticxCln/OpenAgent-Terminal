@@ -41,7 +41,9 @@ mod tests {
         let mut on_chunk = |c: &str| {
             collected.push_str(c);
         };
-        let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
+        let ok = provider
+            .propose_stream(base_req(), &mut on_chunk, &cancel)
+            .unwrap();
         assert!(ok);
         assert!(collected.contains("echo "));
         assert!(collected.contains("ls"));
@@ -75,7 +77,9 @@ mod tests {
         let mut on_chunk = |c: &str| {
             collected.push_str(c);
         };
-        let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
+        let ok = provider
+            .propose_stream(base_req(), &mut on_chunk, &cancel)
+            .unwrap();
         assert!(ok);
         assert!(collected.contains("echo "));
         assert!(collected.contains("ls"));
@@ -103,7 +107,9 @@ mod tests {
             collected.push_str(c);
         };
         // Should still return Ok(true) after stream ends
-        let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
+        let ok = provider
+            .propose_stream(base_req(), &mut on_chunk, &cancel)
+            .unwrap();
         assert!(ok);
         assert!(collected.contains("partial"));
     }

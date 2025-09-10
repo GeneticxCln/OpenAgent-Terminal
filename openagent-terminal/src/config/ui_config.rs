@@ -197,9 +197,15 @@ pub struct PluginsPaths {
 impl Default for PluginsPaths {
     fn default() -> Self {
         Self {
-            system: PluginsPathPolicy { require_signatures: true },
-            user: PluginsPathPolicy { require_signatures: false },
-            project: PluginsPathPolicy { require_signatures: false },
+            system: PluginsPathPolicy {
+                require_signatures: true,
+            },
+            user: PluginsPathPolicy {
+                require_signatures: false,
+            },
+            project: PluginsPathPolicy {
+                require_signatures: false,
+            },
         }
     }
 }
@@ -244,9 +250,16 @@ impl UiConfig {
 
     /// Derive [`PtyOptions`] from the config.
     pub fn pty_config(&self) -> PtyOptions {
-        let shell = self.terminal.shell.clone().or_else(|| self.shell.clone()).map(Into::into);
-        let working_directory =
-            self.working_directory.clone().or_else(|| self.general.working_directory.clone());
+        let shell = self
+            .terminal
+            .shell
+            .clone()
+            .or_else(|| self.shell.clone())
+            .map(Into::into);
+        let working_directory = self
+            .working_directory
+            .clone()
+            .or_else(|| self.general.working_directory.clone());
         PtyOptions {
             working_directory,
             shell,
@@ -274,7 +287,8 @@ impl UiConfig {
 
     #[inline]
     pub fn live_config_reload(&self) -> bool {
-        self.live_config_reload.unwrap_or(self.general.live_config_reload)
+        self.live_config_reload
+            .unwrap_or(self.general.live_config_reload)
     }
 
     #[cfg(unix)]
@@ -328,7 +342,7 @@ where
             Ok(binding) => bindings.push(binding),
             Err(err) => {
                 error!(target: LOG_TARGET_CONFIG, "Config error: {err}; ignoring binding");
-            },
+            }
         }
     }
 
@@ -384,7 +398,10 @@ impl Default for Hints {
                 action,
                 persist: false,
                 post_processing: true,
-                mouse: Some(HintMouse { enabled: true, mods: Default::default() }),
+                mouse: Some(HintMouse {
+                    enabled: true,
+                    mods: Default::default(),
+                }),
                 binding: Some(HintBinding {
                     key: BindingKey::Keycode {
                         key: Key::Character("o".into()),
@@ -534,7 +551,7 @@ impl<'de> Deserialize<'de> for HintContent {
                                     target: LOG_TARGET_CONFIG,
                                     "Config error: hint's regex: {err}"
                                 );
-                            },
+                            }
                         },
                         "hyperlinks" => match bool::deserialize(value) {
                             Ok(hyperlink) => content.hyperlinks = hyperlink,
@@ -543,7 +560,7 @@ impl<'de> Deserialize<'de> for HintContent {
                                     target: LOG_TARGET_CONFIG,
                                     "Config error: hint's hyperlinks: {err}"
                                 );
-                            },
+                            }
                         },
                         "command" | "action" => (),
                         key => warn!(target: LOG_TARGET_CONFIG, "Unrecognized hint field: {key}"),
@@ -682,7 +699,7 @@ impl LazyRegexVariant {
                 error!("could not compile hint regex: {err}");
                 *self = Self::Uncompilable(regex);
                 return None;
-            },
+            }
         };
         *self = Self::Compiled(regex, Box::new(regex_search));
 

@@ -113,7 +113,7 @@ impl Display {
                                 self.pending_update.dirty = true;
                             }
                         }
-                    },
+                    }
                 }
             }
         }
@@ -150,10 +150,10 @@ impl Display {
                     let items: Vec<String> = match resp {
                         lsp_types::CompletionResponse::Array(v) => {
                             v.into_iter().map(|i| i.label).collect()
-                        },
+                        }
                         lsp_types::CompletionResponse::List(l) => {
                             l.items.into_iter().map(|i| i.label).collect()
-                        },
+                        }
                     };
                     self.editor_overlay.completion_items = items;
                 }
@@ -316,10 +316,10 @@ impl EditorOverlayState {
                             }
                         }
                     }
-                },
+                }
                 Err(_e) => {
                     self.active = false;
-                },
+                }
             }
         }
         #[cfg(not(feature = "editor"))]
@@ -397,7 +397,7 @@ impl Display {
                         };
                         rope_mut.insert(s, &text);
                         inserted = true;
-                    },
+                    }
                     lsp_types::CompletionTextEdit::InsertAndReplace(ir) => {
                         let s = self.lsp_pos_to_char_index_buf(buf, ir.replace.start);
                         let eidx = self.lsp_pos_to_char_index_buf(buf, ir.replace.end);
@@ -412,7 +412,7 @@ impl Display {
                         };
                         rope_mut.insert(s, &text);
                         inserted = true;
-                    },
+                    }
                 }
             }
             if !inserted {
@@ -429,9 +429,10 @@ impl Display {
                 }
             }
             // Full sync
-            if let (Some(client), Some(uri)) =
-                (self.editor_overlay.lsp.as_ref(), self.editor_overlay.lsp_uri.clone())
-            {
+            if let (Some(client), Some(uri)) = (
+                self.editor_overlay.lsp.as_ref(),
+                self.editor_overlay.lsp_uri.clone(),
+            ) {
                 let version = buf.meta.read().version;
                 let change = lsp_types::TextDocumentContentChangeEvent {
                     range: None,
@@ -450,8 +451,11 @@ impl Display {
             return;
         }
         let size = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Backdrop
@@ -500,8 +504,12 @@ impl Display {
         if let Some(buf) = &state.buffer {
             // Render visible lines from rope
             let text_all = buf.text();
-            for (yline, (i, raw)) in
-                text_all.lines().enumerate().skip(state.scroll_line).take(content_lines).enumerate()
+            for (yline, (i, raw)) in text_all
+                .lines()
+                .enumerate()
+                .skip(state.scroll_line)
+                .take(content_lines)
+                .enumerate()
             {
                 let line = content_top + yline;
                 let mut text = raw.to_string();
@@ -740,7 +748,10 @@ impl Display {
             let size_copy = self.size_info;
             self.renderer_draw_rects(&size_copy, &metrics, rects);
             self.draw_ai_text(
-                Point::new(start_line + panel_lines.saturating_sub(3), Column(start_col + 3)),
+                Point::new(
+                    start_line + panel_lines.saturating_sub(3),
+                    Column(start_col + 3),
+                ),
                 tokens.text,
                 tokens.surface_muted,
                 &content,
@@ -843,7 +854,10 @@ impl Display {
         let uri = self.editor_overlay.lsp_uri.clone()?;
         let buf = self.editor_overlay.buffer.as_ref()?;
         let cur = buf.cursor.read().clone();
-        let pos = lsp_types::Position { line: cur.line as u32, character: cur.column as u32 };
+        let pos = lsp_types::Position {
+            line: cur.line as u32,
+            character: cur.column as u32,
+        };
         Some(lsp_types::TextDocumentPositionParams {
             text_document: lsp_types::TextDocumentIdentifier { uri },
             position: pos,
@@ -862,7 +876,7 @@ impl Display {
                         if let Some(loc) = arr.pop() {
                             self.jump_to_location(loc)
                         }
-                    },
+                    }
                     lsp_types::GotoDefinitionResponse::Link(mut links) => {
                         if let Some(link) = links.pop() {
                             self.jump_to_location(lsp_types::Location {
@@ -870,7 +884,7 @@ impl Display {
                                 range: link.target_range,
                             })
                         }
-                    },
+                    }
                 }
             }
         }
@@ -901,7 +915,9 @@ impl Display {
         if let (Some(client), Some(tdpp)) =
             (self.editor_overlay.lsp.as_ref(), self.lsp_tdpp_at_cursor())
         {
-            let context = lsp_types::ReferenceContext { include_declaration: true };
+            let context = lsp_types::ReferenceContext {
+                include_declaration: true,
+            };
             let params = lsp_types::ReferenceParams {
                 text_document_position: tdpp,
                 context,
@@ -939,8 +955,11 @@ impl Display {
         if !self.editor_overlay.references_active {
             return;
         }
-        if let Some(loc) =
-            self.editor_overlay.references.get(self.editor_overlay.references_selected).cloned()
+        if let Some(loc) = self
+            .editor_overlay
+            .references
+            .get(self.editor_overlay.references_selected)
+            .cloned()
         {
             self.editor_overlay.references_active = false;
             self.jump_to_location(loc);

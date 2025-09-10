@@ -106,7 +106,7 @@ impl std::str::FromStr for ShellType {
                 use std::hash::{Hash, Hasher};
                 other.hash(&mut hasher);
                 Self::Custom(hasher.finish() as u32)
-            },
+            }
         })
     }
 }
@@ -306,12 +306,15 @@ impl BlockManager {
         self.executing_blocks.insert(block_id, execution_handle);
 
         // Emit immediate event - no lazy processing
-        self.emit_event(BlockEvent::Executed(block_id, ExecutionResult {
-            exit_code: -1, // Indicates still running
-            output: String::new(),
-            error_output: String::new(),
-            duration: std::time::Duration::from_secs(0),
-        }));
+        self.emit_event(BlockEvent::Executed(
+            block_id,
+            ExecutionResult {
+                exit_code: -1, // Indicates still running
+                output: String::new(),
+                error_output: String::new(),
+                duration: std::time::Duration::from_secs(0),
+            },
+        ));
 
         // TODO: Start actual process execution in a separate task
         // For now, we'll simulate with a placeholder
@@ -359,17 +362,19 @@ impl BlockManager {
             duration: match animation_type {
                 BlockAnimationType::FadeIn | BlockAnimationType::FadeOut => {
                     std::time::Duration::from_millis(200)
-                },
+                }
                 BlockAnimationType::Expand | BlockAnimationType::Collapse => {
                     std::time::Duration::from_millis(300)
-                },
+                }
                 BlockAnimationType::Highlight => std::time::Duration::from_millis(150),
                 BlockAnimationType::Update => std::time::Duration::from_millis(100),
             },
             progress: 0.0,
         };
 
-        self.render_state.animation_states.insert(block_id, animation);
+        self.render_state
+            .animation_states
+            .insert(block_id, animation);
     }
 
     /// Update animation progress and return blocks that need rerendering
@@ -405,8 +410,9 @@ impl BlockManager {
         let now = Utc::now();
 
         // Capture current environment if not provided
-        let environment =
-            params.environment.unwrap_or_else(|| self.environment_manager.capture_current());
+        let environment = params
+            .environment
+            .unwrap_or_else(|| self.environment_manager.capture_current());
 
         let block = Block {
             id: block_id,
@@ -467,8 +473,11 @@ impl BlockManager {
             owned.output = output;
             owned.exit_code = Some(exit_code);
             owned.duration_ms = Some(duration_ms);
-            owned.status =
-                if exit_code == 0 { ExecutionStatus::Success } else { ExecutionStatus::Failed };
+            owned.status = if exit_code == 0 {
+                ExecutionStatus::Success
+            } else {
+                ExecutionStatus::Failed
+            };
             owned.modified_at = Utc::now();
             let arc_new = Arc::new(owned.clone());
             *entry = arc_new.clone();
@@ -605,7 +614,9 @@ impl BlockManager {
             self.active_blocks.insert(block_id, block);
         }
 
-        self.active_blocks.get_mut(&block_id).context("Block not found in cache")
+        self.active_blocks
+            .get_mut(&block_id)
+            .context("Block not found in cache")
     }
 
     /// Add child to parent block
@@ -629,7 +640,8 @@ impl BlockManager {
         let deleted = self.storage.delete_before(cutoff).await?;
 
         // Clear from cache
-        self.active_blocks.retain(|_, block| block.created_at > cutoff);
+        self.active_blocks
+            .retain(|_, block| block.created_at > cutoff);
 
         info!("Deleted {} old blocks", deleted);
 
@@ -748,7 +760,9 @@ mod tests {
     #[tokio::test]
     async fn test_block_creation() {
         let temp_dir = TempDir::new().unwrap();
-        let mut manager = BlockManager::new(temp_dir.path().to_path_buf()).await.unwrap();
+        let mut manager = BlockManager::new(temp_dir.path().to_path_buf())
+            .await
+            .unwrap();
 
         let params = CreateBlockParams {
             command: "echo 'Hello, World!'".to_string(),
@@ -768,7 +782,9 @@ mod tests {
     #[tokio::test]
     async fn test_block_search() {
         let temp_dir = TempDir::new().unwrap();
-        let mut manager = BlockManager::new(temp_dir.path().to_path_buf()).await.unwrap();
+        let mut manager = BlockManager::new(temp_dir.path().to_path_buf())
+            .await
+            .unwrap();
 
         // Create test blocks
         for i in 0..5 {
@@ -785,7 +801,10 @@ mod tests {
         }
 
         // Search by text
-        let query = SearchQuery { text: Some("command".to_string()), ..Default::default() };
+        let query = SearchQuery {
+            text: Some("command".to_string()),
+            ..Default::default()
+        };
 
         let results = manager.search(query).await.unwrap();
         assert_eq!(results.len(), 5);

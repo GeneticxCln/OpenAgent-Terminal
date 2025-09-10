@@ -33,6 +33,12 @@ pub use openagent_terminal_config::SerdeReplace;
 #[cfg(feature = "ai")]
 mod ai_runtime;
 mod cli;
+#[cfg(feature = "ai")]
+mod cli_ai;
+#[cfg(feature = "security-lens")]
+mod cli_security;
+#[cfg(feature = "sync")]
+mod cli_sync;
 mod clipboard;
 mod config;
 mod daemon;
@@ -79,14 +85,12 @@ mod text_shaping;
 mod ui_confirm;
 mod workspace;
 
-#[cfg(feature = "gl-backend")]
-mod gl {
-    #![allow(clippy::all, unsafe_op_in_unsafe_fn)]
-    include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
-}
-
+#[cfg(feature = "ai")]
+use crate::cli::AiOptions;
 #[cfg(unix)]
 use crate::cli::MessageOptions;
+#[cfg(feature = "security-lens")]
+use crate::cli::SecurityCliOptions;
 #[cfg(not(any(target_os = "macos", windows)))]
 use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
@@ -115,15 +119,48 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(unix)]
         Some(Subcommands::Msg(options)) => msg(options)?,
         Some(Subcommands::Migrate(options)) => migrate::migrate(options),
+        #[cfg(feature = "ai")]
+        Some(Subcommands::Ai(ref ai_opts)) => {
+            // Load configuration for validation/migration context
+            let mut tmp = Options::new();
+            tmp.subcommands = None;
+            let cfg = config::load(&mut tmp);
+            let code = cli_ai::run_ai_cli(ai_opts, &cfg)?;
+            if code != 0 {
+                std::process::exit(code)
+            };
+        }
+        #[cfg(feature = "sync")]
+        Some(Subcommands::Sync(ref sync_opts)) => {
+            let mut tmp = Options::new();
+            tmp.subcommands = None;
+            let cfg = config::load(&mut tmp);
+            let code = cli_sync::run_sync_cli(sync_opts, &cfg)?;
+            if code != 0 {
+                std::process::exit(code)
+            };
+        }
+        #[cfg(feature = "security-lens")]
+        Some(Subcommands::Security(ref sec_opts)) => {
+            let mut tmp = Options::new();
+            tmp.subcommands = None;
+            let cfg = config::load(&mut tmp);
+            let code = cli_security::run_security_cli(sec_opts, &cfg)?;
+            if code != 0 {
+                std::process::exit(code)
+            };
+        }
         Some(Subcommands::WebEdit(ref opts)) => {
             // Native overlay editor: set env to request opening after first window init
             std::env::set_var("OPENAGENT_OPEN_FILE", &opts.file);
             run_openagent_terminal(options)?;
-        },
+        }
         #[cfg(feature = "blocks")]
         Some(Subcommands::Notebook(ref nb_opts)) => {
             // Run notebooks CLI in a lightweight runtime
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
             let code = rt.block_on(crate::notebooks::run_cli(nb_opts))?;
             // Return the code by exiting early
             if code != 0 {
@@ -131,7 +168,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // We print nothing here; stdout/stderr was handled by run_cli.
                 std::process::exit(code);
             }
-        },
+        }
         None => run_openagent_terminal(options)?,
     }
 
@@ -144,8 +181,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn msg(mut options: MessageOptions) -> Result<(), Box<dyn Error>> {
     #[cfg(not(any(target_os = "macos", windows)))]
     if let SocketMessage::CreateWindow(window_options) = &mut options.message {
-        window_options.activation_token =
-            env::var("XDG_ACTIVATION_TOKEN").or_else(|_| env::var("DESKTOP_STARTUP_ID")).ok();
+        window_options.activation_token = env::var("XDG_ACTIVATION_TOKEN")
+            .or_else(|_| env::var("DESKTOP_STARTUP_ID"))
+            .ok();
     }
     ipc::send_message(options.socket, options.message).map_err(|err| err.into())
 }
@@ -170,7 +208,11 @@ impl Drop for TemporaryFiles {
         // Clean up logfile.
         if let Some(log_file) = &self.log_file {
             if fs::remove_file(log_file).is_ok() {
-                let _ = writeln!(io::stdout(), "Deleted log file at \"{}\"", log_file.display());
+                let _ = writeln!(
+                    io::stdout(),
+                    "Deleted log file at \"{}\"",
+                    log_file.display()
+                );
             }
         }
     }
@@ -238,7 +280,7 @@ fn run_openagent_terminal(mut options: Options) -> Result<(), Box<dyn Error>> {
             Err(err) => {
                 log::warn!("Unable to create socket: {err:?}");
                 None
-            },
+            }
         }
     } else {
         None

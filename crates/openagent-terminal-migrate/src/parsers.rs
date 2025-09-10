@@ -18,7 +18,11 @@ pub use windows_terminal::WindowsTerminalParser;
 /// Parse a configuration file based on the terminal type
 pub fn parse_config(migration_config: &MigrationConfig) -> Result<UnifiedConfig> {
     let content = fs::read_to_string(&migration_config.config_path).map_err(|e| {
-        anyhow!("Failed to read config file {}: {}", migration_config.config_path.display(), e)
+        anyhow!(
+            "Failed to read config file {}: {}",
+            migration_config.config_path.display(),
+            e
+        )
     })?;
 
     match migration_config.terminal_type {
@@ -30,7 +34,10 @@ pub fn parse_config(migration_config: &MigrationConfig) -> Result<UnifiedConfig>
         TerminalType::Hyper => parse_hyper_config(&content),
         TerminalType::Warp => parse_warp_config(&content),
         TerminalType::Tabby => parse_tabby_config(&content),
-        _ => Err(anyhow!("Parser for {} is not yet implemented", migration_config.terminal_type)),
+        _ => Err(anyhow!(
+            "Parser for {} is not yet implemented",
+            migration_config.terminal_type
+        )),
     }
 }
 
@@ -105,9 +112,10 @@ fn parse_warp_config(content: &str) -> Result<UnifiedConfig> {
     if let Some(theme) = warp_config.get("theme") {
         if let Some(theme_name) = theme.as_str() {
             // Store theme name in custom config for later processing
-            config
-                .custom
-                .insert("theme".to_string(), serde_json::Value::String(theme_name.to_string()));
+            config.custom.insert(
+                "theme".to_string(),
+                serde_json::Value::String(theme_name.to_string()),
+            );
         }
     }
 
@@ -212,7 +220,7 @@ pub fn parse_by_extension(extension: &str, content: &str) -> Result<UnifiedConfi
                 // Default to Tabby if indeterminate
                 parse_tabby_config(content)
             }
-        },
+        }
         "toml" => {
             // Could be Alacritty or WezTerm
             if content.contains("[window]") && content.contains("[font]") {
@@ -220,7 +228,7 @@ pub fn parse_by_extension(extension: &str, content: &str) -> Result<UnifiedConfi
             } else {
                 WezTermParser::new().parse(content)
             }
-        },
+        }
         "json" => {
             // Could be Windows Terminal, iTerm2, or others
             if content.contains("profiles") && content.contains("schemes") {
@@ -230,23 +238,23 @@ pub fn parse_by_extension(extension: &str, content: &str) -> Result<UnifiedConfi
             } else {
                 parse_tabby_config(content)
             }
-        },
+        }
         "conf" => {
             // Likely Kitty
             KittyParser::new().parse(content)
-        },
+        }
         "js" => {
             // Hyper terminal
             parse_hyper_config(content)
-        },
+        }
         "lua" => {
             // WezTerm
             WezTermParser::new().parse(content)
-        },
+        }
         "plist" => {
             // iTerm2
             ITerm2Parser::new().parse(content)
-        },
+        }
         _ => Err(anyhow!("Unsupported file extension: {}", extension)),
     }
 }
@@ -311,6 +319,9 @@ window:
     fn test_unsupported_extension() {
         let result = parse_by_extension("unknown", "content");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported file extension"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported file extension"));
     }
 }

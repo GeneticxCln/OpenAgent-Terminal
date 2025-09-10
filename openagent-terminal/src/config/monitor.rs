@@ -42,7 +42,8 @@ impl ConfigMonitor {
         // a regular file.
         paths.retain(|path| {
             // Call `metadata` to resolve symbolic links.
-            path.metadata().is_ok_and(|metadata| metadata.file_type().is_file())
+            path.metadata()
+                .is_ok_and(|metadata| metadata.file_type().is_file())
         });
 
         // Canonicalize paths, keeping the base paths for symlinks.
@@ -65,7 +66,7 @@ impl ConfigMonitor {
             Err(err) => {
                 error!("Unable to watch config file: {err}");
                 return None;
-            },
+            }
         };
 
         let join_handle = thread::spawn_named("config watcher", move || {
@@ -106,7 +107,7 @@ impl ConfigMonitor {
                         // Set the debouncing deadline after receiving the event.
                         debouncing_deadline = Some(Instant::now() + DEBOUNCE_DELAY);
                         event
-                    },
+                    }
                 };
 
                 match event {
@@ -117,7 +118,7 @@ impl ConfigMonitor {
                         | EventKind::Modify(_)
                         | EventKind::Other => {
                             received_events.push(event);
-                        },
+                        }
                         _ => (),
                     },
                     Err(RecvTimeoutError::Timeout) => {
@@ -133,19 +134,23 @@ impl ConfigMonitor {
                             let event = Event::new(EventType::ConfigReload(paths[0].clone()), None);
                             let _ = event_proxy.send_event(event);
                         }
-                    },
+                    }
                     Ok(Err(err)) => {
                         debug!("Config watcher errors: {err:?}");
-                    },
+                    }
                     Err(err) => {
                         debug!("Config watcher channel dropped unexpectedly: {err}");
                         break;
-                    },
+                    }
                 };
             }
         });
 
-        Some(Self { watched_hash, thread: join_handle, shutdown_tx: tx })
+        Some(Self {
+            watched_hash,
+            thread: join_handle,
+            shutdown_tx: tx,
+        })
     }
 
     /// Synchronously shut down the monitor.

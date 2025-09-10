@@ -470,16 +470,16 @@ impl<T: EventListener> Execute<T> for Action {
             Action::Hint(hint) => {
                 ctx.display().hint_state.start(hint.clone());
                 ctx.mark_dirty();
-            },
+            }
             Action::ToggleViMode => {
                 ctx.on_typing_start();
                 ctx.toggle_vi_mode()
-            },
+            }
             action @ (Action::ViMotion(_) | Action::Vi(_))
                 if !ctx.terminal().mode().contains(TermMode::VI) =>
             {
                 debug!("Ignoring {action:?}: Vi mode inactive");
-            },
+            }
             Action::ViMotion(motion) => {
                 ctx.on_typing_start();
                 ctx.terminal_mut().vi_motion(*motion);
@@ -501,19 +501,19 @@ impl<T: EventListener> Execute<T> for Action {
                         }
                     }
                 }
-            },
+            }
             Action::Vi(ViAction::ToggleNormalSelection) => {
                 Self::toggle_selection(ctx, SelectionType::Simple);
-            },
+            }
             Action::Vi(ViAction::ToggleLineSelection) => {
                 Self::toggle_selection(ctx, SelectionType::Lines);
-            },
+            }
             Action::Vi(ViAction::ToggleBlockSelection) => {
                 Self::toggle_selection(ctx, SelectionType::Block);
-            },
+            }
             Action::Vi(ViAction::ToggleSemanticSelection) => {
                 Self::toggle_selection(ctx, SelectionType::Semantic);
-            },
+            }
             Action::Vi(ViAction::Open) => {
                 let hint = ctx.display().vi_highlighted_hint.take();
                 if let Some(hint) = &hint {
@@ -521,7 +521,7 @@ impl<T: EventListener> Execute<T> for Action {
                     ctx.trigger_hint(hint);
                 }
                 ctx.display().vi_highlighted_hint = hint;
-            },
+            }
             Action::Vi(ViAction::SearchNext) => {
                 ctx.on_typing_start();
 
@@ -554,7 +554,7 @@ impl<T: EventListener> Execute<T> for Action {
                         }
                     }
                 }
-            },
+            }
             Action::Vi(ViAction::SearchPrevious) => {
                 ctx.on_typing_start();
 
@@ -587,10 +587,13 @@ impl<T: EventListener> Execute<T> for Action {
                         }
                     }
                 }
-            },
+            }
             Action::Vi(ViAction::SearchStart) => {
                 let terminal = ctx.terminal();
-                let origin = terminal.vi_mode_cursor.point.sub(terminal, Boundary::None, 1);
+                let origin = terminal
+                    .vi_mode_cursor
+                    .point
+                    .sub(terminal, Boundary::None, 1);
 
                 if let Some(regex_match) = ctx.search_next(origin, Direction::Left, Side::Left) {
                     ctx.terminal_mut().vi_goto_point(*regex_match.start());
@@ -613,10 +616,13 @@ impl<T: EventListener> Execute<T> for Action {
                         }
                     }
                 }
-            },
+            }
             Action::Vi(ViAction::SearchEnd) => {
                 let terminal = ctx.terminal();
-                let origin = terminal.vi_mode_cursor.point.add(terminal, Boundary::None, 1);
+                let origin = terminal
+                    .vi_mode_cursor
+                    .point
+                    .add(terminal, Boundary::None, 1);
 
                 if let Some(regex_match) = ctx.search_next(origin, Direction::Right, Side::Right) {
                     ctx.terminal_mut().vi_goto_point(*regex_match.end());
@@ -639,7 +645,7 @@ impl<T: EventListener> Execute<T> for Action {
                         }
                     }
                 }
-            },
+            }
             Action::Vi(ViAction::CenterAroundViCursor) => {
                 let term = ctx.terminal();
                 let display_offset = term.grid().display_offset() as i32;
@@ -648,19 +654,19 @@ impl<T: EventListener> Execute<T> for Action {
                 let scroll_lines = target - line.0;
 
                 ctx.scroll(Scroll::Delta(scroll_lines));
-            },
+            }
             Action::Vi(ViAction::InlineSearchForward) => {
                 ctx.start_inline_search(Direction::Right, false)
-            },
+            }
             Action::Vi(ViAction::InlineSearchBackward) => {
                 ctx.start_inline_search(Direction::Left, false)
-            },
+            }
             Action::Vi(ViAction::InlineSearchForwardShort) => {
                 ctx.start_inline_search(Direction::Right, true)
-            },
+            }
             Action::Vi(ViAction::InlineSearchBackwardShort) => {
                 ctx.start_inline_search(Direction::Left, true)
-            },
+            }
             Action::Vi(ViAction::InlineSearchNext) => ctx.inline_search_next(),
             Action::Vi(ViAction::InlineSearchPrevious) => ctx.inline_search_previous(),
             Action::Vi(ViAction::SemanticSearchForward | ViAction::SemanticSearchBackward) => {
@@ -677,24 +683,24 @@ impl<T: EventListener> Execute<T> for Action {
                     };
                     ctx.start_seeded_search(direction, seed_text);
                 }
-            },
+            }
             action @ Action::Search(_) if !ctx.search_active() => {
                 debug!("Ignoring {action:?}: Search mode inactive");
-            },
+            }
             Action::Search(SearchAction::SearchFocusNext) => {
                 ctx.advance_search_origin(ctx.search_direction());
-            },
+            }
             Action::Search(SearchAction::SearchFocusPrevious) => {
                 let direction = ctx.search_direction().opposite();
                 ctx.advance_search_origin(direction);
-            },
+            }
             Action::Search(SearchAction::SearchConfirm) => ctx.confirm_search(),
             Action::Search(SearchAction::SearchCancel) => ctx.cancel_search(),
             Action::Search(SearchAction::SearchClear) => {
                 let direction = ctx.search_direction();
                 ctx.cancel_search();
                 ctx.start_search(direction);
-            },
+            }
             Action::Search(SearchAction::SearchDeleteWord) => ctx.search_pop_word(),
             Action::Search(SearchAction::SearchHistoryPrevious) => ctx.search_history_previous(),
             Action::Search(SearchAction::SearchHistoryNext) => ctx.search_history_next(),
@@ -707,28 +713,28 @@ impl<T: EventListener> Execute<T> for Action {
                 } else {
                     ctx.open_blocks_search_panel();
                 }
-            },
+            }
             Action::OpenWorkflowsPanel => {
                 if ctx.workflows_panel_active() {
                     ctx.workflows_panel_cancel();
                 } else {
                     ctx.open_workflows_panel();
                 }
-            },
+            }
             Action::OpenFileTree => {
                 if ctx.file_tree_active() {
                     ctx.close_file_tree_panel();
                 } else {
                     ctx.open_file_tree_panel();
                 }
-            },
+            }
             Action::OpenSettingsPanel => {
                 if ctx.settings_panel_active() {
                     ctx.close_settings_panel();
                 } else {
                     ctx.open_settings_panel();
                 }
-            },
+            }
             Action::ToggleAiPanel => ctx.open_ai_panel(),
             Action::OpenDebugPanel => {
                 // Toggle DAP overlay
@@ -744,7 +750,7 @@ impl<T: EventListener> Execute<T> for Action {
                         ctx.mark_dirty();
                     }
                 }
-            },
+            }
             #[cfg(feature = "ai")]
             Action::AiExplain => {
                 // Get selected text or last command output for explanation
@@ -765,7 +771,7 @@ impl<T: EventListener> Execute<T> for Action {
                     runtime.ui.cursor_position = runtime.ui.scratch.len();
                 }
                 ctx.mark_dirty();
-            },
+            }
             #[cfg(feature = "ai")]
             Action::AiFix => {
                 // Get selected text or error output for fixing suggestions
@@ -785,7 +791,7 @@ impl<T: EventListener> Execute<T> for Action {
                     runtime.ui.cursor_position = runtime.ui.scratch.len();
                 }
                 ctx.mark_dirty();
-            },
+            }
             Action::SearchForward => ctx.start_search(Direction::Right),
             Action::SearchBackward => ctx.start_search(Direction::Left),
             Action::Copy => ctx.copy_selection(ClipboardType::Clipboard),
@@ -819,8 +825,11 @@ impl<T: EventListener> Execute<T> for Action {
                         }
 
                         // Require confirmation if policy says so
-                        let requires_confirmation =
-                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
+                        let requires_confirmation = policy
+                            .require_confirmation
+                            .get(&risk.level)
+                            .copied()
+                            .unwrap_or(false);
 
                         if requires_confirmation {
                             // Prepare confirmation body
@@ -854,10 +863,10 @@ impl<T: EventListener> Execute<T> for Action {
                             ) {
                                 Ok(true) => {
                                     ctx.paste(&text, true);
-                                },
+                                }
                                 Ok(false) => {
                                     // User canceled: do nothing
-                                },
+                                }
                                 Err(e) => {
                                     // On error, surface a message and do not paste
                                     let message = message_bar::Message::new(
@@ -865,7 +874,7 @@ impl<T: EventListener> Execute<T> for Action {
                                         message_bar::MessageType::Warning,
                                     );
                                     ctx.send_user_event(crate::event::EventType::Message(message));
-                                },
+                                }
                             }
                             return;
                         }
@@ -873,7 +882,7 @@ impl<T: EventListener> Execute<T> for Action {
                 }
                 // Default path: paste directly
                 ctx.paste(&text, true);
-            },
+            }
             Action::PasteSelection => {
                 let text = ctx.clipboard_mut().load(ClipboardType::Selection);
                 if !text.is_empty() && ctx.config().security.gate_paste_events {
@@ -898,8 +907,11 @@ impl<T: EventListener> Execute<T> for Action {
                             ctx.send_user_event(crate::event::EventType::Message(message));
                             return;
                         }
-                        let requires_confirmation =
-                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
+                        let requires_confirmation = policy
+                            .require_confirmation
+                            .get(&risk.level)
+                            .copied()
+                            .unwrap_or(false);
                         if requires_confirmation {
                             let mut body = String::new();
                             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -930,22 +942,22 @@ impl<T: EventListener> Execute<T> for Action {
                             ) {
                                 Ok(true) => {
                                     ctx.paste(&text, true);
-                                },
-                                Ok(false) => {},
+                                }
+                                Ok(false) => {}
                                 Err(e) => {
                                     let message = message_bar::Message::new(
                                         format!("Paste confirmation failed: {}", e),
                                         message_bar::MessageType::Warning,
                                     );
                                     ctx.send_user_event(crate::event::EventType::Message(message));
-                                },
+                                }
                             }
                             return;
                         }
                     }
                 }
                 ctx.paste(&text, true);
-            },
+            }
             Action::ToggleFullscreen => ctx.window().toggle_fullscreen(),
             Action::ToggleMaximized => ctx.window().toggle_maximized(),
             #[cfg(target_os = "macos")]
@@ -960,7 +972,7 @@ impl<T: EventListener> Execute<T> for Action {
             Action::Quit => {
                 ctx.window().hold = false;
                 ctx.terminal_mut().exit();
-            },
+            }
             Action::IncreaseFontSize => ctx.change_font_size(FONT_SIZE_STEP),
             Action::DecreaseFontSize => ctx.change_font_size(-FONT_SIZE_STEP),
             Action::ResetFontSize => ctx.reset_font_size(),
@@ -976,11 +988,11 @@ impl<T: EventListener> Execute<T> for Action {
                     Action::ScrollHalfPageUp => {
                         let amount = term.screen_lines() as i32 / 2;
                         (Scroll::Delta(amount), amount)
-                    },
+                    }
                     Action::ScrollHalfPageDown => {
                         let amount = -(term.screen_lines() as i32 / 2);
                         (Scroll::Delta(amount), amount)
-                    },
+                    }
                     _ => unreachable!(),
                 };
 
@@ -991,7 +1003,7 @@ impl<T: EventListener> Execute<T> for Action {
                 }
 
                 ctx.scroll(scroll);
-            },
+            }
             Action::ScrollLineUp => ctx.scroll(Scroll::Delta(1)),
             Action::ScrollLineDown => ctx.scroll(Scroll::Delta(-1)),
             Action::ScrollToTop => {
@@ -1002,7 +1014,7 @@ impl<T: EventListener> Execute<T> for Action {
                 ctx.terminal_mut().vi_mode_cursor.point.line = topmost_line;
                 ctx.terminal_mut().vi_motion(ViMotion::FirstOccupied);
                 ctx.mark_dirty();
-            },
+            }
             Action::ScrollToBottom => {
                 ctx.scroll(Scroll::Bottom);
 
@@ -1014,12 +1026,12 @@ impl<T: EventListener> Execute<T> for Action {
                 term.vi_motion(ViMotion::FirstOccupied);
                 term.vi_motion(ViMotion::FirstOccupied);
                 ctx.mark_dirty();
-            },
+            }
             Action::ClearHistory => ctx.terminal_mut().clear_screen(ClearMode::Saved),
             Action::ClearLogNotice => (),
             Action::DumpAtlasStats => {
                 ctx.display().dump_atlas_stats();
-            },
+            }
             Action::TogglePerfHud => {
                 if ctx.display().toggle_perf_hud() {
                     let msg = message_bar::Message::new(
@@ -1028,7 +1040,7 @@ impl<T: EventListener> Execute<T> for Action {
                     );
                     ctx.send_user_event(crate::event::EventType::Message(msg));
                 }
-            },
+            }
             Action::IncreaseSubpixelGamma => {
                 if ctx.display().adjust_subpixel_gamma(0.1) {
                     let msg = message_bar::Message::new(
@@ -1037,7 +1049,7 @@ impl<T: EventListener> Execute<T> for Action {
                     );
                     ctx.send_user_event(crate::event::EventType::Message(msg));
                 }
-            },
+            }
             Action::DecreaseSubpixelGamma => {
                 if ctx.display().adjust_subpixel_gamma(-0.1) {
                     let msg = message_bar::Message::new(
@@ -1046,7 +1058,7 @@ impl<T: EventListener> Execute<T> for Action {
                     );
                     ctx.send_user_event(crate::event::EventType::Message(msg));
                 }
-            },
+            }
             Action::ResetSubpixelGamma => {
                 if ctx.display().reset_subpixel_gamma() {
                     let msg = message_bar::Message::new(
@@ -1055,7 +1067,7 @@ impl<T: EventListener> Execute<T> for Action {
                     );
                     ctx.send_user_event(crate::event::EventType::Message(msg));
                 }
-            },
+            }
             Action::ToggleSubpixelText => {
                 let applied = ctx.display().toggle_subpixel_text();
                 if applied {
@@ -1066,7 +1078,7 @@ impl<T: EventListener> Execute<T> for Action {
                     ctx.send_user_event(crate::event::EventType::Message(msg));
                     ctx.mark_dirty();
                 }
-            },
+            }
             Action::CycleSubpixelOrientation => {
                 if let Some(next) = ctx.display().cycle_subpixel_orientation() {
                     let label = match next {
@@ -1080,7 +1092,7 @@ impl<T: EventListener> Execute<T> for Action {
                     ctx.send_user_event(crate::event::EventType::Message(msg));
                     ctx.mark_dirty();
                 }
-            },
+            }
             #[cfg(not(target_os = "macos"))]
             Action::CreateNewWindow => ctx.create_new_window(),
             Action::SpawnNewInstance => ctx.spawn_new_instance(),
@@ -1093,7 +1105,7 @@ impl<T: EventListener> Execute<T> for Action {
                     let tabbing_id = Some(ctx.window().tabbing_id());
                     ctx.create_new_window(tabbing_id);
                 }
-            },
+            }
             #[cfg(target_os = "macos")]
             Action::SelectNextTab => ctx.window().select_next_tab(),
             #[cfg(target_os = "macos")]
@@ -1130,7 +1142,9 @@ impl<T: EventListener> Execute<T> for Action {
                         // Compute display offset without holding the display borrow.
                         let display_offset = { ctx.terminal().grid().display_offset() };
                         let display = ctx.display();
-                        display.blocks.toggle_fold_at_viewport_point(display_offset, viewport_point)
+                        display
+                            .blocks
+                            .toggle_fold_at_viewport_point(display_offset, viewport_point)
                     };
 
                     if toggled {
@@ -1139,7 +1153,7 @@ impl<T: EventListener> Execute<T> for Action {
                         ctx.mark_dirty();
                     }
                 }
-            },
+            }
             Action::NextBlock => {
                 if ctx.display().blocks.enabled {
                     let display_offset = ctx.terminal().grid().display_offset();
@@ -1149,7 +1163,7 @@ impl<T: EventListener> Execute<T> for Action {
                         ctx.scroll(Scroll::Delta(delta));
                     }
                 }
-            },
+            }
             Action::PreviousBlock => {
                 if ctx.display().blocks.enabled {
                     let display_offset = ctx.terminal().grid().display_offset();
@@ -1159,35 +1173,35 @@ impl<T: EventListener> Execute<T> for Action {
                         ctx.scroll(Scroll::Delta(delta));
                     }
                 }
-            },
+            }
             Action::CopyBlockOutput => {
                 if ctx.display().blocks.enabled {
                     if let Some(text) = ctx.terminal().extract_current_block_output() {
                         ctx.copy_to_clipboard(text);
                     }
                 }
-            },
+            }
             Action::CopyBlockCommand => {
                 if ctx.display().blocks.enabled {
                     if let Some(cmd) = ctx.terminal().current_block_command() {
                         ctx.copy_to_clipboard(cmd);
                     }
                 }
-            },
+            }
             Action::RerunBlockCommand => {
                 if ctx.display().blocks.enabled {
                     if let Some((cmd, cwd)) = ctx.terminal().current_block_cmd_and_cwd() {
                         ctx.spawn_shell_command_in_cwd(cmd, cwd);
                     }
                 }
-            },
+            }
             Action::ExportBlockOutput => {
                 if ctx.display().blocks.enabled {
                     if let Some(text) = ctx.terminal().extract_current_block_output() {
                         ctx.prompt_and_export_block_output(text);
                     }
                 }
-            },
+            }
             // Workspace / pane management actions
             Action::SplitHorizontal => ctx.workspace_split_horizontal(),
             Action::SplitVertical => ctx.workspace_split_vertical(),
@@ -1213,7 +1227,10 @@ impl<T: EventListener> Execute<T> for Action {
 
 impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     pub fn new(ctx: A) -> Self {
-        Self { ctx, _phantom: Default::default() }
+        Self {
+            ctx,
+            _phantom: Default::default(),
+        }
     }
 
     /// Handle clicks on the tab bar (top or bottom)
@@ -1238,25 +1255,25 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             match action {
                 TabBarAction::SelectTab(tab_id) => {
                     self.ctx.workspace_switch_to_tab(tab_id);
-                },
+                }
                 TabBarAction::CloseTab(tab_id) => {
                     // Ensure we close the correct tab: switch to it, then close
                     self.ctx.workspace_switch_to_tab(tab_id);
                     self.ctx.workspace_close_tab();
-                },
+                }
                 TabBarAction::CreateTab => {
                     self.ctx.workspace_create_tab();
-                },
+                }
                 // Drag-related actions are handled by dedicated handlers; treat as handled here
                 TabBarAction::BeginDrag(_)
                 | TabBarAction::DragMove(..)
                 | TabBarAction::EndDrag(_)
                 | TabBarAction::CancelDrag(_) => {
                     // no-op: considered handled
-                },
+                }
                 TabBarAction::OpenSettings => {
                     self.ctx.open_settings_panel();
-                },
+                }
             }
             return true;
         }
@@ -1294,12 +1311,65 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let line_idx = point.line.0 as usize;
         let bottom_line = lines.saturating_sub(1);
 
+        // If provider dropdown is open, handle selection on the overlay row (line above)
+        if self.ctx.display().ai_provider_dropdown_open {
+            if line_idx + 1 == bottom_line {
+                // Same provider list as draw routine
+                let providers: &[(&str, &str)] = &[
+                    ("openrouter", "OpenRouter"),
+                    ("openai", "OpenAI"),
+                    ("anthropic", "Anthropic"),
+                    ("ollama", "Ollama"),
+                ];
+                // Start column accounts for star glyph width on overlay row
+                let theme = self
+                    .ctx
+                    .config()
+                    .resolved_theme
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| self.ctx.config().theme.resolve());
+                let ui = theme.ui;
+                let star = ui.composer_star_glyph.as_deref().unwrap_or("✦ ");
+                let mut col = 2 + star.width();
+                for (_pid, label) in providers.iter() {
+                    let chip = format!("[{}]", label);
+                    let wcols = chip.width();
+                    let start = col;
+                    let end = col + wcols;
+                    if mouse_col >= start && mouse_col < end {
+                        // Switch provider
+                        #[cfg(feature = "ai")]
+                        {
+                            self.ctx
+                                .send_user_event(crate::event::EventType::AiSwitchProvider(
+                                    (*_pid).to_string(),
+                                ));
+                        }
+                        self.ctx.display().ai_provider_dropdown_open = false;
+                        self.ctx.mark_dirty();
+                        return true;
+                    }
+                    col = end + ui.composer_chip_gap_cols as usize;
+                }
+                // Click elsewhere on overlay just closes it
+                self.ctx.display().ai_provider_dropdown_open = false;
+                self.ctx.mark_dirty();
+                return true;
+            } else {
+                // Click outside overlay closes it
+                self.ctx.display().ai_provider_dropdown_open = false;
+                self.ctx.mark_dirty();
+                // do not return; continue normal handling of click
+            }
+        }
+
         // Chip hit-testing: right-aligned inside the pill
         if inside && line_idx == bottom_line {
             let cols = size_info.columns();
             let mut col_end = cols.saturating_sub(2);
-            // order: [Palette] [AI] [Run] drawn from right to left
-            let chips = ["[Palette]", "[AI]", "[Run]"];
+            // order: [Palette] [Run] drawn from right to left
+            let chips = ["[Palette]", "[Run]"];
             for label in chips.iter() {
                 let wcols = label.width();
                 if wcols + 1 >= col_end {
@@ -1312,14 +1382,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         "[Palette]" => {
                             self.ctx.open_command_palette();
                             return true;
-                        },
-                        "[AI]" => {
-                            #[cfg(feature = "ai")]
-                            {
-                                self.ctx.open_ai_panel();
-                                return true;
-                            }
-                        },
+                        }
                         "[Run]" => {
                             #[cfg(feature = "ai")]
                             {
@@ -1342,14 +1405,52 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 self.ctx.mark_dirty();
                                 return true;
                             }
-                        },
-                        _ => {},
+                        }
+                        _ => {}
                     }
                 }
                 if start <= 2 {
                     break;
                 }
                 col_end = start.saturating_sub(2);
+            }
+
+            // Provider chip on the left: toggle dropdown when clicked
+            let theme = self
+                .ctx
+                .config()
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.ctx.config().theme.resolve());
+            let star = theme.ui.composer_star_glyph.as_deref().unwrap_or("✦ ");
+            let col = 2 + star.width();
+            let provider_label = {
+                let pid = self.ctx.display().ai_current_provider.as_str();
+                match pid {
+                    "openai" => "OpenAI",
+                    "openrouter" => "OpenRouter",
+                    "anthropic" => "Anthropic",
+                    "ollama" => "Ollama",
+                    _ => {
+                        if pid.is_empty() {
+                            "Provider"
+                        } else {
+                            pid
+                        }
+                    }
+                }
+            };
+            let provider_chip = format!("[{} ▾]", provider_label);
+            let wcols = provider_chip.width();
+            let start = col;
+            let end = col + wcols;
+            if mouse_col >= start && mouse_col < end {
+                // Toggle overlay dropdown
+                let open = self.ctx.display().ai_provider_dropdown_open;
+                self.ctx.display().ai_provider_dropdown_open = !open;
+                self.ctx.mark_dirty();
+                return true;
             }
         }
 
@@ -1398,25 +1499,31 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let effective_visibility = match tab_cfg.visibility {
             crate::config::workspace::TabBarVisibility::Always => {
                 crate::config::workspace::TabBarVisibility::Always
-            },
+            }
             crate::config::workspace::TabBarVisibility::Hover => {
                 crate::config::workspace::TabBarVisibility::Hover
-            },
+            }
             crate::config::workspace::TabBarVisibility::Auto => {
                 if is_fs {
                     crate::config::workspace::TabBarVisibility::Hover
                 } else {
                     crate::config::workspace::TabBarVisibility::Always
                 }
-            },
+            }
         };
         let reserve_top = tab_cfg.show
             && !cfg.workspace.warp_overlay_only
-            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && matches!(
+                effective_visibility,
+                crate::config::workspace::TabBarVisibility::Always
+            )
             && tab_cfg.position == crate::workspace::TabBarPosition::Top;
         let reserve_bottom = tab_cfg.show
             && !cfg.workspace.warp_overlay_only
-            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && matches!(
+                effective_visibility,
+                crate::config::workspace::TabBarVisibility::Always
+            )
             && tab_cfg.position == crate::workspace::TabBarPosition::Bottom;
 
         let mut line = match cfg.workspace.quick_actions.position {
@@ -1426,7 +1533,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 } else {
                     0
                 }
-            },
+            }
             crate::config::workspace::QuickActionsPosition::Bottom => {
                 let base = lines.saturating_sub(1);
                 if reserve_bottom {
@@ -1434,7 +1541,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 } else {
                     base
                 }
-            },
+            }
             crate::config::workspace::QuickActionsPosition::Auto => {
                 let base = lines.saturating_sub(1);
                 if reserve_bottom {
@@ -1442,7 +1549,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 } else {
                     base
                 }
-            },
+            }
         };
         if line >= lines {
             line = lines.saturating_sub(1);
@@ -1476,7 +1583,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().quick_actions_press_flash_until =
                             Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
-                    },
+                    }
                     "[Blocks]" => {
                         #[cfg(feature = "blocks")]
                         {
@@ -1485,13 +1592,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().quick_actions_press_flash_until =
                             Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
-                    },
+                    }
                     "[Palette]" => {
                         self.ctx.open_command_palette();
                         self.ctx.display().quick_actions_press_flash_until =
                             Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
-                    },
+                    }
                     "[AI]" => {
                         #[cfg(feature = "ai")]
                         {
@@ -1500,8 +1607,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().quick_actions_press_flash_until =
                             Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
             start = end + 2;
@@ -1585,28 +1692,35 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 let mut ratio = match hit.axis {
                     crate::workspace::split_manager::SplitAxis::Horizontal => {
                         (mx - rect.x) / rect.width
-                    },
+                    }
                     crate::workspace::split_manager::SplitAxis::Vertical => {
                         (my - rect.y) / rect.height
-                    },
+                    }
                 };
                 ratio = ratio.clamp(0.1, 0.9);
-                self.ctx.workspace_set_split_ratio_at_path(hit.path.clone(), hit.axis, ratio);
+                self.ctx
+                    .workspace_set_split_ratio_at_path(hit.path.clone(), hit.axis, ratio);
                 // Set appropriate cursor while dragging
                 match hit.axis {
                     crate::workspace::split_manager::SplitAxis::Horizontal => {
                         self.ctx.window().set_mouse_cursor(CursorIcon::ColResize)
-                    },
+                    }
                     crate::workspace::split_manager::SplitAxis::Vertical => {
                         self.ctx.window().set_mouse_cursor(CursorIcon::RowResize)
-                    },
+                    }
                 }
                 return; // Do not process other hover logic while dragging
             }
         }
 
         // If a pane drag is active, update drag and short-circuit other hover logic
-        if self.ctx.display().pane_drag_manager.current_drag().is_some() {
+        if self
+            .ctx
+            .display()
+            .pane_drag_manager
+            .current_drag()
+            .is_some()
+        {
             let handled = self.ctx.workspace_pane_drag_move(x as f32, y as f32);
             if handled {
                 return;
@@ -1643,17 +1757,17 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 let effective_visibility = match tab_cfg.visibility {
                     crate::config::workspace::TabBarVisibility::Always => {
                         crate::config::workspace::TabBarVisibility::Always
-                    },
+                    }
                     crate::config::workspace::TabBarVisibility::Hover => {
                         crate::config::workspace::TabBarVisibility::Hover
-                    },
+                    }
                     crate::config::workspace::TabBarVisibility::Auto => {
                         if is_fs {
                             crate::config::workspace::TabBarVisibility::Hover
                         } else {
                             crate::config::workspace::TabBarVisibility::Always
                         }
-                    },
+                    }
                 };
                 let reserve_top = tab_cfg.show
                     && !cfg.workspace.warp_overlay_only
@@ -1676,7 +1790,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         } else {
                             0
                         }
-                    },
+                    }
                     crate::config::workspace::QuickActionsPosition::Bottom => {
                         let base = lines.saturating_sub(1);
                         if reserve_bottom {
@@ -1684,7 +1798,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         } else {
                             base
                         }
-                    },
+                    }
                     crate::config::workspace::QuickActionsPosition::Auto => {
                         let base = lines.saturating_sub(1);
                         if reserve_bottom {
@@ -1692,7 +1806,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         } else {
                             base
                         }
-                    },
+                    }
                 };
                 if line >= lines {
                     line = lines.saturating_sub(1);
@@ -1744,10 +1858,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             match hit.axis {
                 crate::workspace::split_manager::SplitAxis::Horizontal => {
                     self.ctx.window().set_mouse_cursor(CursorIcon::ColResize)
-                },
+                }
                 crate::workspace::split_manager::SplitAxis::Vertical => {
                     self.ctx.window().set_mouse_cursor(CursorIcon::RowResize)
-                },
+                }
             }
         } else {
             // Update mouse state and check for URL change.
@@ -1763,16 +1877,26 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Derive hover tolerance from configuration so users can tune indicator/handle sizes.
         let splits = &self.ctx.config().workspace.splits;
         let base_line = splits.indicator_line_width.max(1.0);
-        let base_handle =
-            if splits.show_resize_handles { splits.handle_size.max(1.0) } else { 0.0 };
+        let base_handle = if splits.show_resize_handles {
+            splits.handle_size.max(1.0)
+        } else {
+            0.0
+        };
         // Use half of the larger visual element as tolerance, with sane bounds.
         let mut tol = (base_line.max(base_handle)) * 0.5;
         // Slightly increase tolerance to ease hover acquisition, but clamp to reasonable range.
         tol = (tol + 2.0).clamp(3.0, 12.0);
 
         let split_hover_new = self.ctx.workspace_split_hit(x as f32, y as f32, tol);
-        if self.ctx.display().split_hover.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
-            != split_hover_new.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
+        if self
+            .ctx
+            .display()
+            .split_hover
+            .as_ref()
+            .map(|h| (h.axis, h.rect.x, h.rect.y))
+            != split_hover_new
+                .as_ref()
+                .map(|h| (h.axis, h.rect.x, h.rect.y))
         {
             self.ctx.display().split_hover = split_hover_new;
             // Start hover animation timestamp for split indicators
@@ -1785,7 +1909,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let size_info = self.ctx.size_info();
             let display_offset = self.ctx.terminal().grid().display_offset();
             let p = self.ctx.mouse().point(&size_info, display_offset);
-            let _ = self.ctx.workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
+            let _ = self
+                .ctx
+                .workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
         }
 
         // Update tab hover state for visuals and damage tab bar line when it changes
@@ -1824,15 +1950,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 crate::workspace::TabBarPosition::Top => 0,
                 crate::workspace::TabBarPosition::Bottom => {
                     self.ctx.size_info().screen_lines().saturating_sub(1)
-                },
+                }
                 crate::workspace::TabBarPosition::Hidden => 0,
             };
             let cols = self.ctx.size_info().columns();
-            self.ctx
-                .display()
-                .damage_tracker
-                .frame()
-                .damage_line(openagent_terminal_core::term::LineDamageBounds::new(line, 0, cols));
+            self.ctx.display().damage_tracker.frame().damage_line(
+                openagent_terminal_core::term::LineDamageBounds::new(line, 0, cols),
+            );
             self.ctx.mark_dirty();
         }
 
@@ -1847,7 +1971,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         {
             self.ctx.update_selection(point, cell_side);
         } else if cell_changed
-            && self.ctx.terminal().mode().intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
+            && self
+                .ctx
+                .terminal()
+                .mode()
+                .intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
         {
             if lmb_pressed {
                 self.mouse_report(32, ElementState::Pressed);
@@ -1885,7 +2013,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
     fn mouse_report(&mut self, button: u8, state: ElementState) {
         let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+        let point = self
+            .ctx
+            .mouse()
+            .point(&self.ctx.size_info(), display_offset);
 
         // Assure the mouse point is not in the scrollback.
         if point.line < 0 {
@@ -1955,7 +2086,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             ElementState::Released => 'm',
         };
 
-        let msg = format!("\x1b[<{};{};{}{}", button, point.column + 1, point.line + 1, c);
+        let msg = format!(
+            "\x1b[<{};{};{}{}",
+            button,
+            point.column + 1,
+            point.line + 1,
+            c
+        );
         self.ctx.write_to_pty(msg.into_bytes());
     }
 
@@ -1985,7 +2122,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 _ if button != self.ctx.mouse().last_click_button => {
                     self.ctx.mouse_mut().last_click_button = button;
                     ClickState::Click
-                },
+                }
                 ClickState::Click if elapsed < CLICK_THRESHOLD => ClickState::DoubleClick,
                 ClickState::DoubleClick if elapsed < CLICK_THRESHOLD => ClickState::TripleClick,
                 _ => ClickState::Click,
@@ -1993,7 +2130,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
             // Load mouse point, treating message bar and padding as the closest cell.
             let display_offset = self.ctx.terminal().grid().display_offset();
-            let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+            let point = self
+                .ctx
+                .mouse()
+                .point(&self.ctx.size_info(), display_offset);
 
             // Handle AI panel header controls first (stop, regenerate, close).
             #[cfg(feature = "ai")]
@@ -2018,7 +2158,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         };
                         if toggled {
                             // Fully damage and mark dirty; skip normal selection behavior.
-                            self.ctx.display().damage_tracker.frame().mark_fully_damaged();
+                            self.ctx
+                                .display()
+                                .damage_tracker
+                                .frame()
+                                .mark_fully_damaged();
                             self.ctx.mark_dirty();
                             return;
                         }
@@ -2050,15 +2194,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 } else {
                     self.ctx.start_selection(SelectionType::Simple, point, side);
                 }
-            },
+            }
             ClickState::DoubleClick if !control => {
                 self.ctx.mouse_mut().block_hint_launcher = true;
-                self.ctx.start_selection(SelectionType::Semantic, point, side);
-            },
+                self.ctx
+                    .start_selection(SelectionType::Semantic, point, side);
+            }
             ClickState::TripleClick if !control => {
                 self.ctx.mouse_mut().block_hint_launcher = true;
                 self.ctx.start_selection(SelectionType::Lines, point, side);
-            },
+            }
             _ => (),
         };
 
@@ -2123,13 +2268,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     new_scroll_px_y as f64,
                     multiplier as f64,
                 );
-            },
+            }
             MouseScrollDelta::PixelDelta(mut lpos) => {
                 match phase {
                     TouchPhase::Started => {
                         // Reset offset to zero.
                         self.ctx.mouse_mut().accumulated_scroll = Default::default();
-                    },
+                    }
                     TouchPhase::Moved => {
                         // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
                         // (cosine is larger that 0.9) we consider this scrolling as horizontal.
@@ -2140,10 +2285,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
 
                         self.scroll_terminal(lpos.x, lpos.y, multiplier as f64);
-                    },
+                    }
                     _ => (),
                 }
-            },
+            }
         }
     }
 
@@ -2160,14 +2305,22 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             self.ctx.mouse_mut().accumulated_scroll.x += new_scroll_x_px;
             self.ctx.mouse_mut().accumulated_scroll.y += new_scroll_y_px;
 
-            let code = if new_scroll_y_px > 0. { MOUSE_WHEEL_UP } else { MOUSE_WHEEL_DOWN };
+            let code = if new_scroll_y_px > 0. {
+                MOUSE_WHEEL_UP
+            } else {
+                MOUSE_WHEEL_DOWN
+            };
             let lines = (self.ctx.mouse().accumulated_scroll.y / height).abs() as i32;
 
             for _ in 0..lines {
                 self.mouse_report(code, ElementState::Pressed);
             }
 
-            let code = if new_scroll_x_px > 0. { MOUSE_WHEEL_LEFT } else { MOUSE_WHEEL_RIGHT };
+            let code = if new_scroll_x_px > 0. {
+                MOUSE_WHEEL_LEFT
+            } else {
+                MOUSE_WHEEL_RIGHT
+            };
             let columns = (self.ctx.mouse().accumulated_scroll.x / width).abs() as i32;
 
             for _ in 0..columns {
@@ -2245,23 +2398,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             TouchPurpose::Tap(start) => TouchPurpose::Zoom(TouchZoom::new((start, touch))),
             TouchPurpose::ZoomPendingSlot(slot) => {
                 TouchPurpose::Zoom(TouchZoom::new((slot, touch)))
-            },
+            }
             TouchPurpose::Zoom(zoom) => {
                 let slots = zoom.slots();
                 let mut set = HashSet::default();
                 set.insert(slots.0.id);
                 set.insert(slots.1.id);
                 TouchPurpose::Invalid(set)
-            },
+            }
             TouchPurpose::Scroll(event) | TouchPurpose::Select(event) => {
                 let mut set = HashSet::default();
                 set.insert(event.id);
                 TouchPurpose::Invalid(set)
-            },
+            }
             TouchPurpose::Invalid(mut slots) => {
                 slots.insert(touch.id);
                 TouchPurpose::Invalid(slots)
-            },
+            }
         };
     }
 
@@ -2292,11 +2445,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     // Apply motion since touch start.
                     self.on_touch_motion(touch);
                 }
-            },
+            }
             TouchPurpose::Zoom(zoom) => {
                 let font_delta = zoom.font_delta(touch);
                 self.ctx.change_font_size(font_delta);
-            },
+            }
             TouchPurpose::Scroll(last_touch) => {
                 // Calculate delta and update last touch position.
                 let delta_y = touch.location.y - last_touch.location.y;
@@ -2304,7 +2457,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
                 // Use a fixed scroll factor for touchscreens, to accurately track finger motion.
                 self.scroll_terminal(0., delta_y, 1.0);
-            },
+            }
             TouchPurpose::Select(_) => self.mouse_moved(touch.location),
             TouchPurpose::ZoomPendingSlot(_) | TouchPurpose::Invalid(_) => (),
         }
@@ -2325,13 +2478,17 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 self.mouse_moved(start_location);
                 self.mouse_input(ElementState::Pressed, MouseButton::Left);
                 self.mouse_input(ElementState::Released, MouseButton::Left);
-            },
+            }
             // Transition zoom to pending state once a finger was released.
             TouchPurpose::Zoom(zoom) => {
                 let slots = zoom.slots();
-                let remaining = if slots.0.id == touch.id { slots.1 } else { slots.0 };
+                let remaining = if slots.0.id == touch.id {
+                    slots.1
+                } else {
+                    slots.0
+                };
                 *touch_purpose = TouchPurpose::ZoomPendingSlot(remaining);
-            },
+            }
             TouchPurpose::ZoomPendingSlot(_) => *touch_purpose = Default::default(),
             // Reset touch state once all slots were released.
             TouchPurpose::Invalid(slots) => {
@@ -2339,12 +2496,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 if slots.is_empty() {
                     *touch_purpose = Default::default();
                 }
-            },
+            }
             // Release simulated LMB.
             TouchPurpose::Select(_) => {
                 *touch_purpose = Default::default();
                 self.mouse_input(ElementState::Released, MouseButton::Left);
-            },
+            }
             // Reset touch state on scroll finish.
             TouchPurpose::Scroll(_) => *touch_purpose = Default::default(),
             TouchPurpose::None => (),
@@ -2401,7 +2558,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     } else {
                         CursorIcon::Text
                     }
-                },
+                }
             };
 
             self.ctx.window().set_mouse_cursor(new_icon);
@@ -2427,25 +2584,25 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 let modifier_ok = match dcfg.pane_drag_modifier {
                                     crate::config::workspace::DragModifier::None => {
                                         !mods.alt_key() && !mods.control_key() && !mods.shift_key()
-                                    },
+                                    }
                                     crate::config::workspace::DragModifier::Alt => mods.alt_key(),
                                     crate::config::workspace::DragModifier::Ctrl => {
                                         mods.control_key()
-                                    },
+                                    }
                                     crate::config::workspace::DragModifier::Shift => {
                                         mods.shift_key()
-                                    },
+                                    }
                                 };
                                 let button_ok = match dcfg.pane_drag_button {
                                     crate::config::workspace::DragButton::Left => {
                                         button == MouseButton::Left
-                                    },
+                                    }
                                     crate::config::workspace::DragButton::Middle => {
                                         button == MouseButton::Middle
-                                    },
+                                    }
                                     crate::config::workspace::DragButton::Right => {
                                         button == MouseButton::Right
-                                    },
+                                    }
                                 };
                                 if modifier_ok && button_ok {
                                     let mx = self.ctx.display().last_mouse_x as f32;
@@ -2463,7 +2620,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         let point = self.ctx.mouse().point(&size_info, display_offset);
                         let mouse_x = point.column.0;
                         let mouse_y = point.line.0 as usize;
-                        if self.ctx.workspace_tab_bar_drag_press(mouse_x, mouse_y, button) {
+                        if self
+                            .ctx
+                            .workspace_tab_bar_drag_press(mouse_x, mouse_y, button)
+                        {
                             return;
                         }
                         // Bottom composer click handling (opens AI panel)
@@ -2479,14 +2639,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     // Process mouse press before bindings to update the `click_state`.
                     self.on_mouse_press(button);
                     self.process_mouse_bindings(button);
-                },
+                }
                 ElementState::Released => {
                     // Finish any active tab drag operation if present
                     if self.ctx.workspace_tab_bar_drag_release(button) {
                         return;
                     }
                     self.on_mouse_release(button)
-                },
+                }
             }
         }
     }
@@ -2535,7 +2695,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         let mouse = self.ctx.mouse();
         let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+        let point = self
+            .ctx
+            .mouse()
+            .point(&self.ctx.size_info(), display_offset);
 
         if self.ctx.message().is_none() || (mouse.y <= terminal_end) {
             None
@@ -2551,7 +2714,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Icon state of the cursor.
     fn cursor_state(&mut self) -> CursorIcon {
         let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+        let point = self
+            .ctx
+            .mouse()
+            .point(&self.ctx.size_info(), display_offset);
         let hyperlink = self.ctx.terminal().grid()[point].hyperlink();
 
         // Function to check if mouse is on top of a hint.
@@ -2560,7 +2726,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if let Some(mouse_state) = self.message_bar_cursor_state() {
             mouse_state
         } else if cfg!(not(test))
-            && self.ctx.display().highlighted_hint.as_ref().is_some_and(hint_highlighted)
+            && self
+                .ctx
+                .display()
+                .highlighted_hint
+                .as_ref()
+                .is_some_and(hint_highlighted)
         {
             CursorIcon::Pointer
         } else if !self.ctx.modifiers().state().shift_key() && self.ctx.mouse_mode() {
@@ -2597,7 +2768,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         };
 
         // Scale number of lines scrolled based on distance to boundary.
-        let event = Event::new(EventType::Scroll(Scroll::Delta(delta / step)), Some(window_id));
+        let event = Event::new(
+            EventType::Scroll(Scroll::Delta(delta / step)),
+            Some(window_id),
+        );
 
         // Schedule event.
         let timer_id = TimerId::new(Topic::SelectionScrolling, window_id);

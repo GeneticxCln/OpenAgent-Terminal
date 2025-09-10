@@ -4,10 +4,16 @@ use std::path::Path;
 
 /// Validate an OpenAgent Terminal configuration file
 pub fn validate_config(config_path: &Path) -> Result<()> {
-    println!("{}", format!("🔍 Validating configuration: {}", config_path.display()).cyan());
+    println!(
+        "{}",
+        format!("🔍 Validating configuration: {}", config_path.display()).cyan()
+    );
 
     if !config_path.exists() {
-        return Err(anyhow!("Configuration file does not exist: {}", config_path.display()));
+        return Err(anyhow!(
+            "Configuration file does not exist: {}",
+            config_path.display()
+        ));
     }
 
     let content = std::fs::read_to_string(config_path)?;
@@ -24,11 +30,11 @@ pub fn validate_config(config_path: &Path) -> Result<()> {
 
             println!("{}", "✅ Configuration validation passed".green());
             Ok(())
-        },
+        }
         Err(e) => {
             println!("{}", format!("❌ TOML parsing error: {}", e).red());
             Err(anyhow!("Invalid TOML configuration: {}", e))
-        },
+        }
     }
 }
 
@@ -94,13 +100,20 @@ fn validate_sections(config: &toml::Value) -> Result<()> {
     }
 
     if !errors.is_empty() {
-        return Err(anyhow!("Configuration validation failed with {} error(s)", errors.len()));
+        return Err(anyhow!(
+            "Configuration validation failed with {} error(s)",
+            errors.len()
+        ));
     }
 
     if !warnings.is_empty() {
         println!(
             "{}",
-            format!("Configuration is valid but has {} warning(s)", warnings.len()).yellow()
+            format!(
+                "Configuration is valid but has {} warning(s)",
+                warnings.len()
+            )
+            .yellow()
         );
     }
 
@@ -111,7 +124,10 @@ fn validate_font_section(font: &toml::Value) -> Result<()> {
     if let Some(size) = font.get("size") {
         if let Some(size_val) = size.as_float() {
             if size_val <= 0.0 || size_val > 144.0 {
-                return Err(anyhow!("Font size {} is outside reasonable range (0-144)", size_val));
+                return Err(anyhow!(
+                    "Font size {} is outside reasonable range (0-144)",
+                    size_val
+                ));
             }
         }
     }
@@ -135,7 +151,10 @@ fn validate_window_section(window: &toml::Value) -> Result<()> {
     if let Some(opacity) = window.get("opacity") {
         if let Some(opacity_val) = opacity.as_float() {
             if !(0.0..=1.0).contains(&opacity_val) {
-                return Err(anyhow!("Window opacity {} must be between 0.0 and 1.0", opacity_val));
+                return Err(anyhow!(
+                    "Window opacity {} must be between 0.0 and 1.0",
+                    opacity_val
+                ));
             }
         }
     }
@@ -143,7 +162,7 @@ fn validate_window_section(window: &toml::Value) -> Result<()> {
     if let Some(decorations) = window.get("decorations") {
         if let Some(decorations_str) = decorations.as_str() {
             match decorations_str.to_lowercase().as_str() {
-                "full" | "none" | "transparent" | "buttonless" => {},
+                "full" | "none" | "transparent" | "buttonless" => {}
                 _ => return Err(anyhow!("Invalid decorations value: {}", decorations_str)),
             }
         }
@@ -243,7 +262,7 @@ fn validate_terminal_section(terminal: &toml::Value) -> Result<()> {
             if let Some(shape) = style.get("shape") {
                 if let Some(shape_str) = shape.as_str() {
                     match shape_str.to_lowercase().as_str() {
-                        "block" | "underline" | "beam" => {},
+                        "block" | "underline" | "beam" => {}
                         _ => return Err(anyhow!("Invalid cursor shape: {}", shape_str)),
                     }
                 }
@@ -292,7 +311,7 @@ fn validate_ai_section(ai: &toml::Value) -> Result<()> {
                 if let Some(provider) = ai.get("provider") {
                     if let Some(provider_str) = provider.as_str() {
                         match provider_str.to_lowercase().as_str() {
-                            "null" | "ollama" | "openai" | "anthropic" => {},
+                            "null" | "ollama" | "openai" | "anthropic" => {}
                             _ => return Err(anyhow!("Invalid AI provider: {}", provider_str)),
                         }
 

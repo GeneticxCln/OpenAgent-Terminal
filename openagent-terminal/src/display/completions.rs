@@ -91,8 +91,11 @@ impl super::Display {
         // Tokenize to get current token and first word (command)
         let tokens: Vec<&str> = prefix.split_whitespace().collect();
         let first = tokens.first().copied().unwrap_or("");
-        let cur_token =
-            if prefix.ends_with(' ') { "" } else { tokens.last().copied().unwrap_or("") };
+        let cur_token = if prefix.ends_with(' ') {
+            ""
+        } else {
+            tokens.last().copied().unwrap_or("")
+        };
         let is_flag_context = cur_token.starts_with('-');
 
         // 1) Flags: minimal spec for a few common commands, else generic
@@ -127,7 +130,11 @@ impl super::Display {
                             None => continue,
                         };
                         let is_dir = path.is_dir();
-                        let label = if is_dir { format!("{}/", name) } else { name.clone() };
+                        let label = if is_dir {
+                            format!("{}/", name)
+                        } else {
+                            name.clone()
+                        };
                         let score = Self::fuzzy_score(cur_token, &name);
                         if score > 0.0 {
                             out.push(CompletionItem {
@@ -168,7 +175,11 @@ impl super::Display {
         }
 
         // Sort by score desc and truncate
-        out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        out.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         out.truncate(12);
         out
     }
@@ -189,7 +200,10 @@ impl super::Display {
                 ("-R", "List subdirectories recursively"),
             ],
             "cargo" => vec![
-                ("--help", "Print this message or the help of the given subcommand(s)"),
+                (
+                    "--help",
+                    "Print this message or the help of the given subcommand(s)",
+                ),
                 ("-v", "Use verbose output (-vv very verbose)"),
                 ("-q", "No output printed to stdout"),
             ],
@@ -243,8 +257,11 @@ impl super::Display {
         };
 
         // Theme tokens
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let fg = tokens.text;
         let muted = tokens.text_muted;
@@ -288,7 +305,13 @@ impl super::Display {
 
         // Items
         let mut line = start_line + 1;
-        let items_to_draw: Vec<_> = self.completions.items.iter().take(max_rows).cloned().collect();
+        let items_to_draw: Vec<_> = self
+            .completions
+            .items
+            .iter()
+            .take(max_rows)
+            .cloned()
+            .collect();
         for item in items_to_draw {
             let icon = item.icon;
             let mut row = String::new();
@@ -297,7 +320,13 @@ impl super::Display {
             row.push_str(&item.label);
             // Reserve space for details preview tail
             let avail = box_width_cols;
-            self.draw_ai_text(Point::new(line, Column(start_col)), fg, tokens.surface, &row, avail);
+            self.draw_ai_text(
+                Point::new(line, Column(start_col)),
+                fg,
+                tokens.surface,
+                &row,
+                avail,
+            );
             line += 1;
         }
 

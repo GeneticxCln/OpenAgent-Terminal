@@ -30,13 +30,13 @@ pub fn compute_progress(
             } else {
                 1.0 - eased
             }
-        },
+        }
         None => {
             if active {
                 1.0
             } else {
                 0.0
             }
-        },
+        }
     }
 }

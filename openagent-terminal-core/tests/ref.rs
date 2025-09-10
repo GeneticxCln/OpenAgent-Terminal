@@ -80,7 +80,10 @@ where
     P: AsRef<Path>,
 {
     let mut res = Vec::new();
-    File::open(path.as_ref()).unwrap().read_to_end(&mut res).unwrap();
+    File::open(path.as_ref())
+        .unwrap()
+        .read_to_end(&mut res)
+        .unwrap();
 
     res
 }
@@ -109,8 +112,10 @@ fn ref_test(dir: &Path) {
     grid.truncate();
     let ref_config: RefConfig = json::from_str(&serialized_cfg).unwrap();
 
-    let options =
-        Config { scrolling_history: ref_config.history_size as usize, ..Default::default() };
+    let options = Config {
+        scrolling_history: ref_config.history_size as usize,
+        ..Default::default()
+    };
 
     let mut terminal = Term::new(options, &size, Mock);
     let mut parser: ansi::Processor = ansi::Processor::new();
@@ -129,7 +134,10 @@ fn ref_test(dir: &Path) {
             // Update the snapshot in-place when REF_BLESS (or BLESS) is set.
             let snapshot_path = dir.join("grid.json");
             let _ = fs::write(&snapshot_path, json::to_string_pretty(&term_grid).unwrap());
-            eprintln!("REF_BLESS=1 set: updated snapshot {}", snapshot_path.display());
+            eprintln!(
+                "REF_BLESS=1 set: updated snapshot {}",
+                snapshot_path.display()
+            );
 
             // Set expected to actual so the assertion below passes in this run.
             grid = term_grid.clone();
@@ -150,7 +158,10 @@ fn ref_test(dir: &Path) {
             let expected_path = format!("/tmp/expected_grid_{}.json", name);
             let _ = fs::write(&actual_path, json::to_string_pretty(&term_grid).unwrap());
             let _ = fs::write(&expected_path, json::to_string_pretty(&grid).unwrap());
-            println!("Dumped actual to {} and expected to {}", actual_path, expected_path);
+            println!(
+                "Dumped actual to {} and expected to {}",
+                actual_path, expected_path
+            );
 
             panic!("Ref test failed; grid doesn't match");
         }

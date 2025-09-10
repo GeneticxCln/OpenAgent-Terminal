@@ -199,7 +199,13 @@ jobs:
         run: |
           set -euo pipefail
           cargo run -p openagent-terminal -F wgpu --release --example render_smoke -- --backend=wgpu | tee /tmp/smoke.log
-          grep -E "backend:(wgpu)" /tmp/smoke.log
+          # Accept fallback to GL if WGPU adapter unavailable on runner
+          grep -E "backend:(wgpu|fallback-gl)" /tmp/smoke.log
+      - name: Offscreen WGPU snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p openagent-terminal -F wgpu --release --example wgpu_snapshot | tee /tmp/offscreen.json || true
 
       - name: GPU snapshots (Linux via xvfb, WGPU)
         if: matrix.os == 'ubuntu-latest'

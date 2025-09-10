@@ -1,8 +1,8 @@
 //! Security configuration for OpenAgent Terminal
 //! Provides easy configuration access for security features
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[cfg(feature = "security-lens")]
 use crate::security::{RiskLevel, SecurityPolicy as InternalSecurityPolicy};
@@ -69,7 +69,7 @@ impl SecurityConfig {
     /// Convert to internal security policy format
     pub fn to_internal_policy(&self) -> InternalSecurityPolicy {
         let mut require_confirmation = HashMap::new();
-        
+
         for (level_str, required) in &self.require_confirmation {
             if let Ok(level) = self.parse_risk_level(level_str) {
                 require_confirmation.insert(level, *required);
@@ -78,7 +78,9 @@ impl SecurityConfig {
 
         #[cfg(feature = "security-lens")]
         {
-            let custom_patterns = self.custom_patterns.iter()
+            let custom_patterns = self
+                .custom_patterns
+                .iter()
                 .filter_map(|pattern| {
                     self.parse_risk_level(&pattern.risk_level)
                         .ok()
@@ -127,18 +129,20 @@ impl SecurityConfig {
 
     /// Get a preset configuration for different security levels
     pub fn preset_conservative() -> Self {
-        let mut config = Self::default();
-        config.block_critical = true;
-        config.require_confirmation.insert("Caution".to_string(), true);
-        config
+        SecurityConfig {
+            block_critical: true,
+            ..Default::default()
+        }
     }
 
     pub fn preset_permissive() -> Self {
-        let mut config = Self::default();
-        config.block_critical = false;
-        config.require_confirmation.insert("Caution".to_string(), false);
-        config.require_confirmation.insert("Warning".to_string(), true);
-        config
+        let mut require_confirmation = SecurityConfig::default().require_confirmation;
+        require_confirmation.insert("Caution".to_string(), false);
+        SecurityConfig {
+            block_critical: false,
+            require_confirmation,
+            ..Default::default()
+        }
     }
 
     pub fn preset_disabled() -> Self {
@@ -155,19 +159,22 @@ impl SecurityConfig {
     pub fn validate(&self) -> Result<(), String> {
         // Validate custom patterns
         for pattern in &self.custom_patterns {
-            if let Err(_) = regex::Regex::new(&pattern.pattern) {
+            if regex::Regex::new(&pattern.pattern).is_err() {
                 return Err(format!("Invalid regex pattern: {}", pattern.pattern));
             }
-            
-            if let Err(_) = self.parse_risk_level(&pattern.risk_level) {
+
+            if self.parse_risk_level(&pattern.risk_level).is_err() {
                 return Err(format!("Invalid risk level: {}", pattern.risk_level));
             }
         }
 
         // Validate risk level mappings
         for level_str in self.require_confirmation.keys() {
-            if let Err(_) = self.parse_risk_level(level_str) {
-                return Err(format!("Invalid risk level in confirmation settings: {}", level_str));
+            if self.parse_risk_level(level_str).is_err() {
+                return Err(format!(
+                    "Invalid risk level in confirmation settings: {}",
+                    level_str
+                ));
             }
         }
 
@@ -177,11 +184,11 @@ impl SecurityConfig {
     /// Add a custom security pattern
     pub fn add_custom_pattern(&mut self, pattern: CustomSecurityPattern) -> Result<(), String> {
         // Validate the pattern
-        if let Err(_) = regex::Regex::new(&pattern.pattern) {
+        if regex::Regex::new(&pattern.pattern).is_err() {
             return Err(format!("Invalid regex pattern: {}", pattern.pattern));
         }
 
-        if let Err(_) = self.parse_risk_level(&pattern.risk_level) {
+        if self.parse_risk_level(&pattern.risk_level).is_err() {
             return Err(format!("Invalid risk level: {}", pattern.risk_level));
         }
 
@@ -194,7 +201,7 @@ impl SecurityConfig {
         if index >= self.custom_patterns.len() {
             return Err("Pattern index out of bounds".to_string());
         }
-        
+
         self.custom_patterns.remove(index);
         Ok(())
     }
@@ -207,7 +214,7 @@ impl SecurityConfig {
 
         let confirmation_count = self.require_confirmation.values().filter(|&&v| v).count();
         let custom_patterns_count = self.custom_patterns.len();
-        
+
         if self.block_critical {
             format!(
                 "High Security: Critical blocking enabled, {} confirmation levels, {} custom patterns", 
@@ -215,12 +222,12 @@ impl SecurityConfig {
             )
         } else if confirmation_count >= 3 {
             format!(
-                "Medium Security: {} confirmation levels, {} custom patterns", 
+                "Medium Security: {} confirmation levels, {} custom patterns",
                 confirmation_count, custom_patterns_count
             )
         } else {
             format!(
-                "Basic Security: {} confirmation levels, {} custom patterns", 
+                "Basic Security: {} confirmation levels, {} custom patterns",
                 confirmation_count, custom_patterns_count
             )
         }
@@ -246,10 +253,13 @@ impl SecurityLensFactory {
     }
 
     /// Test a command against the security configuration
-    pub fn test_command(config: &SecurityConfig, command: &str) -> Result<SecurityTestResult, String> {
+    pub fn test_command(
+        config: &SecurityConfig,
+        command: &str,
+    ) -> Result<SecurityTestResult, String> {
         let mut lens = Self::create(config);
         let risk = lens.analyze_command(command);
-        
+
         Ok(SecurityTestResult {
             risk_level: format!("{:?}", risk.level),
             explanation: risk.explanation.clone(),
@@ -279,7 +289,10 @@ mod tests {
         assert!(config.enabled);
         assert!(!config.block_critical);
         assert!(config.gate_paste_events);
-        assert!(config.require_confirmation.get("Critical").unwrap_or(&false));
+        assert!(config
+            .require_confirmation
+            .get("Critical")
+            .unwrap_or(&false));
     }
 
     #[test]
@@ -297,7 +310,7 @@ mod tests {
     #[test]
     fn test_custom_pattern_validation() {
         let mut config = SecurityConfig::default();
-        
+
         // Valid pattern
         let valid_pattern = CustomSecurityPattern {
             pattern: r"rm\s+-rf".to_string(),
@@ -326,16 +339,28 @@ mod tests {
     #[test]
     fn test_security_lens_factory() {
         let config = SecurityConfig::default();
-        
+
         // Test a dangerous command
         let result = SecurityLensFactory::test_command(&config, "rm -rf /").unwrap();
-        assert_eq!(result.risk_level, "Critical");
-        assert!(result.requires_confirmation);
-        assert!(!result.mitigations.is_empty());
-        
+        #[cfg(feature = "security-lens")]
+        {
+            assert_eq!(result.risk_level, "Critical");
+            assert!(result.requires_confirmation);
+            assert!(!result.mitigations.is_empty());
+        }
+        #[cfg(not(feature = "security-lens"))]
+        {
+            // Stub security lens marks all commands as Safe
+            assert_eq!(result.risk_level, "Safe");
+            assert!(!result.requires_confirmation);
+        }
+
         // Test with conservative config
         let conservative_config = SecurityConfig::preset_conservative();
         let result = SecurityLensFactory::test_command(&conservative_config, "rm -rf /").unwrap();
+        #[cfg(feature = "security-lens")]
         assert!(result.would_block);
+        #[cfg(not(feature = "security-lens"))]
+        assert!(!result.would_block);
     }
 }

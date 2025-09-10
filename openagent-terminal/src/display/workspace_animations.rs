@@ -47,16 +47,34 @@ pub enum TabAnimationType {
 /// Animation-specific data
 #[derive(Debug, Clone)]
 pub enum TabAnimationData {
-    Open { target_width: f32, current_width: f32 },
-    Close { initial_width: f32, current_width: f32 },
-    Switch { highlight_alpha: f32 },
-    Drag { offset_x: f32, offset_y: f32, scale: f32, shadow_alpha: f32 },
-    Hover { background_alpha: f32, border_alpha: f32 },
+    Open {
+        target_width: f32,
+        current_width: f32,
+    },
+    Close {
+        initial_width: f32,
+        current_width: f32,
+    },
+    Switch {
+        highlight_alpha: f32,
+    },
+    Drag {
+        offset_x: f32,
+        offset_y: f32,
+        scale: f32,
+        shadow_alpha: f32,
+    },
+    Hover {
+        background_alpha: f32,
+        border_alpha: f32,
+    },
 }
 
 impl Default for TabAnimationData {
     fn default() -> Self {
-        TabAnimationData::Switch { highlight_alpha: 0.0 }
+        TabAnimationData::Switch {
+            highlight_alpha: 0.0,
+        }
     }
 }
 
@@ -122,7 +140,9 @@ impl WorkspaceAnimationManager {
                 initial_width: 200.0, // Will be updated with actual width
                 current_width: 200.0,
             },
-            TabAnimationType::Switch => TabAnimationData::Switch { highlight_alpha: 0.0 },
+            TabAnimationType::Switch => TabAnimationData::Switch {
+                highlight_alpha: 0.0,
+            },
             TabAnimationType::DragStart
             | TabAnimationType::DragMove
             | TabAnimationType::DragEnd => TabAnimationData::Drag {
@@ -131,10 +151,13 @@ impl WorkspaceAnimationManager {
                 scale: 1.0,
                 shadow_alpha: 0.0,
             },
-            TabAnimationType::Hover => {
-                TabAnimationData::Hover { background_alpha: 0.0, border_alpha: 0.0 }
+            TabAnimationType::Hover => TabAnimationData::Hover {
+                background_alpha: 0.0,
+                border_alpha: 0.0,
             },
-            TabAnimationType::Focus => TabAnimationData::Switch { highlight_alpha: 1.0 },
+            TabAnimationType::Focus => TabAnimationData::Switch {
+                highlight_alpha: 1.0,
+            },
         });
 
         let animation = TabAnimationState {
@@ -201,10 +224,10 @@ impl WorkspaceAnimationManager {
         for tab_id in completed_animations {
             if let Some(animation) = self.tab_animations.get(&tab_id) {
                 match animation.animation_type {
-                    TabAnimationType::Hover => {}, // Keep hover animations
+                    TabAnimationType::Hover => {} // Keep hover animations
                     _ => {
                         self.tab_animations.remove(&tab_id);
-                    },
+                    }
                 }
             }
         }
@@ -217,32 +240,45 @@ impl WorkspaceAnimationManager {
         let progress = animation.progress;
 
         match &mut animation.data {
-            TabAnimationData::Open { target_width, current_width } => {
+            TabAnimationData::Open {
+                target_width,
+                current_width,
+            } => {
                 *current_width = *target_width * progress;
-            },
-            TabAnimationData::Close { initial_width, current_width } => {
+            }
+            TabAnimationData::Close {
+                initial_width,
+                current_width,
+            } => {
                 *current_width = *initial_width * (1.0 - progress);
-            },
+            }
             TabAnimationData::Switch { highlight_alpha } => {
                 *highlight_alpha = progress;
-            },
-            TabAnimationData::Drag { scale, shadow_alpha, .. } => {
+            }
+            TabAnimationData::Drag {
+                scale,
+                shadow_alpha,
+                ..
+            } => {
                 match animation.animation_type {
                     TabAnimationType::DragStart => {
                         *scale = 1.0 + progress * 0.05; // Slight scale up
                         *shadow_alpha = progress * 0.3;
-                    },
+                    }
                     TabAnimationType::DragEnd => {
                         *scale = 1.05 - progress * 0.05; // Scale back down
                         *shadow_alpha = 0.3 - progress * 0.3;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
-            },
-            TabAnimationData::Hover { background_alpha, border_alpha } => {
+            }
+            TabAnimationData::Hover {
+                background_alpha,
+                border_alpha,
+            } => {
                 *background_alpha = progress * 0.8;
                 *border_alpha = progress;
-            },
+            }
         }
     }
 
@@ -278,8 +314,11 @@ impl WorkspaceAnimationManager {
     /// Update drag position for active drag animation
     pub fn update_drag_position(&mut self, tab_id: TabId, offset_x: f32, offset_y: f32) {
         if let Some(animation) = self.tab_animations.get_mut(&tab_id) {
-            if let TabAnimationData::Drag { offset_x: ref mut ox, offset_y: ref mut oy, .. } =
-                animation.data
+            if let TabAnimationData::Drag {
+                offset_x: ref mut ox,
+                offset_y: ref mut oy,
+                ..
+            } = animation.data
             {
                 *ox = offset_x;
                 *oy = offset_y;

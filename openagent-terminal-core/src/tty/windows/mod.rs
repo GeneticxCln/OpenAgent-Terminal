@@ -74,7 +74,9 @@ impl EventedReadWrite for Pty {
         if let Some(conout) = self.safe_pty.reader() {
             conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
         }
-        self.safe_pty.child_watcher().register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
+        self.safe_pty
+            .child_watcher()
+            .register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
     }
@@ -92,7 +94,9 @@ impl EventedReadWrite for Pty {
         if let Some(conout) = self.safe_pty.reader() {
             conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
         }
-        self.safe_pty.child_watcher().register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
+        self.safe_pty
+            .child_watcher()
+            .register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
     }
@@ -112,12 +116,16 @@ impl EventedReadWrite for Pty {
 
     #[inline]
     fn reader(&mut self) -> &mut Self::Reader {
-        self.safe_pty.reader().expect("PTY should be active during normal operations")
+        self.safe_pty
+            .reader()
+            .expect("PTY should be active during normal operations")
     }
 
     #[inline]
     fn writer(&mut self) -> &mut Self::Writer {
-        self.safe_pty.writer().expect("PTY should be active during normal operations")
+        self.safe_pty
+            .writer()
+            .expect("PTY should be active during normal operations")
     }
 }
 

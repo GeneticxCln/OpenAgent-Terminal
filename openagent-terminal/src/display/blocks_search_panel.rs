@@ -245,8 +245,10 @@ impl BlocksSearchState {
     /// Open actions menu for currently selected item
     pub fn open_actions_menu(&mut self) {
         if let Some(item) = self.get_selected_item().cloned() {
-            let position =
-                Point::new(self.selected.min(self.results.len().saturating_sub(1)), Column(0));
+            let position = Point::new(
+                self.selected.min(self.results.len().saturating_sub(1)),
+                Column(0),
+            );
             self.actions_menu.open_for_block(&item, position);
         }
     }
@@ -402,8 +404,11 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 40% of viewport height for advanced UI, min 8 lines
@@ -418,10 +423,22 @@ impl Display {
         let panel_h = target_lines as f32 * size_info.cell_height();
 
         // Backdrop and panel background
-        let backdrop =
-            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.20);
-        let panel_bg =
-            RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.95);
+        let backdrop = RenderRect::new(
+            0.0,
+            0.0,
+            size_info.width(),
+            size_info.height(),
+            tokens.overlay,
+            0.20,
+        );
+        let panel_bg = RenderRect::new(
+            0.0,
+            panel_y,
+            size_info.width(),
+            panel_h,
+            tokens.surface_muted,
+            0.95,
+        );
 
         let rects = vec![backdrop, panel_bg];
         let metrics = self.glyph_cache.font_metrics();
@@ -462,7 +479,11 @@ impl Display {
         line += 1;
 
         // Results list with enhanced display
-        let footer_lines = if state.mode == SearchMode::Advanced { 2 } else { 1 };
+        let footer_lines = if state.mode == SearchMode::Advanced {
+            2
+        } else {
+            1
+        };
         let footer_start = start_line + target_lines - footer_lines;
         let max_result_lines = footer_start.saturating_sub(1);
 
@@ -519,7 +540,10 @@ impl Display {
         let header = if state.total_results == 1 {
             format!("Blocks Search [{}] — 1 result {}", mode_str, status)
         } else {
-            format!("Blocks Search [{}] — {} results {}", mode_str, state.total_results, status)
+            format!(
+                "Blocks Search [{}] — {} results {}",
+                mode_str, state.total_results, status
+            )
         };
 
         self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &header, num_cols - 2);
@@ -639,7 +663,11 @@ impl Display {
 
         self.draw_ai_text(
             Point::new(line, Column(2)),
-            if filter_parts.is_empty() { muted_fg } else { accent_fg },
+            if filter_parts.is_empty() {
+                muted_fg
+            } else {
+                accent_fg
+            },
             bg,
             &filter_text,
             num_cols - 2,
@@ -676,7 +704,13 @@ impl Display {
             sort_str, order_str, current_page, total_pages, state.items_per_page
         );
 
-        self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, &info, num_cols - 2);
+        self.draw_ai_text(
+            Point::new(line, Column(2)),
+            muted_fg,
+            bg,
+            &info,
+            num_cols - 2,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -704,7 +738,13 @@ impl Display {
             // Selection indicator
             let selection_indicator = if is_selected { "▶ " } else { "  " };
             let mut col = 0;
-            self.draw_ai_text(Point::new(line, Column(col)), row_fg, bg, selection_indicator, 2);
+            self.draw_ai_text(
+                Point::new(line, Column(col)),
+                row_fg,
+                bg,
+                selection_indicator,
+                2,
+            );
             col += 2;
 
             // Status indicator
@@ -713,7 +753,13 @@ impl Display {
                 Some(_) => ("✗", error_fg),
                 None => ("…", muted_fg),
             };
-            self.draw_ai_text(Point::new(line, Column(col)), status_color, bg, status_icon, 1);
+            self.draw_ai_text(
+                Point::new(line, Column(col)),
+                status_color,
+                bg,
+                status_icon,
+                1,
+            );
             col += 1;
 
             // Star indicator
@@ -728,8 +774,10 @@ impl Display {
             let remaining_width = num_cols.saturating_sub(col + 15); // Reserve space for metadata
             let cmd = &item.command;
             let truncated_cmd = if cmd.width() > remaining_width {
-                let mut truncated: String =
-                    cmd.chars().take(remaining_width.saturating_sub(3)).collect();
+                let mut truncated: String = cmd
+                    .chars()
+                    .take(remaining_width.saturating_sub(3))
+                    .collect();
                 truncated.push_str("...");
                 truncated
             } else {
@@ -797,7 +845,13 @@ impl Display {
             // Basic navigation shortcuts
             let basic_hint = "Enter: Paste • Esc: Close • ↑/↓/j/k: Navigate • PgUp/PgDn: Page • \
                               Tab: Mode • ?: Help";
-            self.draw_ai_text(Point::new(line, Column(2)), muted_fg, bg, basic_hint, num_cols - 2);
+            self.draw_ai_text(
+                Point::new(line, Column(2)),
+                muted_fg,
+                bg,
+                basic_hint,
+                num_cols - 2,
+            );
         }
     }
 
@@ -913,18 +967,6 @@ impl Display {
 
         let size_info_copy = self.size_info;
         match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            crate::display::Backend::Gl { renderer, .. } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    truncated_text.chars(),
-                    &size_info_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-            #[cfg(feature = "wgpu")]
             crate::display::Backend::Wgpu { renderer } => {
                 renderer.draw_string(
                     point,
@@ -934,7 +976,7 @@ impl Display {
                     &size_info_copy,
                     &mut self.glyph_cache,
                 );
-            },
+            }
         }
     }
 }

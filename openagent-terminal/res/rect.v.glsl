@@ -1,4 +1,3 @@
-#if defined(GLES2_RENDERER)
 attribute vec2 aPos;
 attribute vec4 aColor;
 

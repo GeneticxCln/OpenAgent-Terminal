@@ -13,7 +13,10 @@ pub enum CommandBlockEvent {
     /// Command start (OSC 133;B). Optional raw command string.
     CommandStart { cmd: Option<String> },
     /// Command end (OSC 133;C). Optional exit code and working directory.
-    CommandEnd { exit: Option<i32>, cwd: Option<String> },
+    CommandEnd {
+        exit: Option<i32>,
+        cwd: Option<String>,
+    },
     /// Prompt end (OSC 133;D).
     PromptEnd,
 }
@@ -40,7 +43,10 @@ pub enum Event {
     ///
     /// The attached function is a formatter which will correctly transform the clipboard content
     /// into the expected escape sequence format.
-    ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Sync + Send + 'static>),
+    ClipboardLoad(
+        ClipboardType,
+        Arc<dyn Fn(&str) -> String + Sync + Send + 'static>,
+    ),
 
     /// Request to write the RGB value of a color to the PTY.
     ///

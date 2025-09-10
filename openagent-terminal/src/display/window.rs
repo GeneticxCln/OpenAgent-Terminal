@@ -16,8 +16,6 @@ use {
     winit::window::Icon,
     png::Decoder,
 };
-#[cfg(all(feature = "gl-backend", feature = "x11", not(any(target_os = "macos", windows))))]
-use glutin::platform::x11::X11VisualInfo;
 
 use std::fmt::{self, Display, Formatter};
 
@@ -79,7 +77,7 @@ impl std::error::Error for Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Error::WindowCreation(err) => write!(f, "Error creating GL context; {err}"),
+            Error::WindowCreation(err) => write!(f, "Error creating window; {err}"),
             Error::Font(err) => err.fmt(f),
         }
     }
@@ -158,24 +156,11 @@ impl Window {
         config: &UiConfig,
         identity: &Identity,
         options: &mut WindowOptions,
-        #[rustfmt::skip]
-        #[cfg(all(
-            feature = "gl-backend",
-            feature = "x11",
-            not(any(target_os = "macos", windows))
-        ))]
-        x11_visual: Option<X11VisualInfo>,
     ) -> Result<Window> {
         let identity = identity.clone();
         let mut window_attributes = Window::get_platform_window(
             &identity,
             &config.window,
-            #[cfg(all(
-                feature = "gl-backend",
-                feature = "x11",
-                not(any(target_os = "macos", windows))
-            ))]
-            x11_visual,
             #[cfg(target_os = "macos")]
             &options.window_tabbing_id.take(),
         );
@@ -234,7 +219,10 @@ impl Window {
 
         let scale_factor = window.scale_factor();
         log::info!("Window scale factor: {scale_factor}");
-        let is_x11 = matches!(window.window_handle().unwrap().as_raw(), RawWindowHandle::Xlib(_));
+        let is_x11 = matches!(
+            window.window_handle().unwrap().as_raw(),
+            RawWindowHandle::Xlib(_)
+        );
 
         Ok(Self {
             hold: options.terminal_options.hold,
@@ -323,12 +311,6 @@ impl Window {
     pub fn get_platform_window(
         identity: &Identity,
         window_config: &WindowConfig,
-        #[cfg(all(
-            feature = "gl-backend",
-            feature = "x11",
-            not(any(target_os = "macos", windows))
-        ))]
-        x11_visual: Option<X11VisualInfo>,
     ) -> WindowAttributes {
         #[cfg(feature = "x11")]
         let icon = {
@@ -347,12 +329,6 @@ impl Window {
 
         #[cfg(feature = "x11")]
         let builder = builder.with_window_icon(Some(icon));
-
-        #[cfg(all(feature = "gl-backend", feature = "x11"))]
-        let builder = match x11_visual {
-            Some(visual) => builder.with_x11_visual(visual.visual_id() as u32),
-            None => builder,
-        };
 
         builder
     }
@@ -396,7 +372,11 @@ impl Window {
     }
 
     pub fn set_urgent(&self, is_urgent: bool) {
-        let attention = if is_urgent { Some(UserAttentionType::Critical) } else { None };
+        let attention = if is_urgent {
+            Some(UserAttentionType::Critical)
+        } else {
+            None
+        };
 
         self.window.request_user_attention(attention);
     }
@@ -436,8 +416,7 @@ impl Window {
     }
 
     /// Inform windowing system about presenting to the window.
-    ///
-    /// Should be called right before presenting to the window with e.g. `eglSwapBuffers`.
+    /// Call immediately before the surface presents the frame (WGPU handles this internally).
     pub fn pre_present_notify(&self) {
         self.window.pre_present_notify();
     }
@@ -458,7 +437,8 @@ impl Window {
 
     pub fn set_fullscreen(&self, fullscreen: bool) {
         if fullscreen {
-            self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            self.window
+                .set_fullscreen(Some(Fullscreen::Borderless(None)));
         } else {
             self.window.set_fullscreen(None);
         }
@@ -510,7 +490,7 @@ impl Window {
             RawWindowHandle::AppKit(handle) => {
                 assert!(MainThreadMarker::new().is_some());
                 unsafe { handle.ns_view.cast::<NSView>().as_ref() }
-            },
+            }
             _ => return,
         };
 
@@ -553,11 +533,13 @@ fn use_srgb_color_space(window: &WinitWindow) {
         RawWindowHandle::AppKit(handle) => {
             assert!(MainThreadMarker::new().is_some());
             unsafe { handle.ns_view.cast::<NSView>().as_ref() }
-        },
+        }
         _ => return,
     };
 
     unsafe {
-        view.window().unwrap().setColorSpace(Some(&NSColorSpace::sRGBColorSpace()));
+        view.window()
+            .unwrap()
+            .setColorSpace(Some(&NSColorSpace::sRGBColorSpace()));
     }
 }

@@ -157,9 +157,12 @@ mod anthropic_provider_tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("invalid_key".to_string(), server.uri(), "claude-3".to_string())
-                .unwrap();
+        let provider = AnthropicProvider::new(
+            "invalid_key".to_string(),
+            server.uri(),
+            "claude-3".to_string(),
+        )
+        .unwrap();
 
         let mut collected = String::new();
         let cancel = AtomicBool::new(false);

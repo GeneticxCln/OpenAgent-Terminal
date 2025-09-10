@@ -19,6 +19,15 @@ Security considerations
 
 - Treat workflows like scripts: review before running
 - Use the Security Lens to validate generated shell commands
+
+Samples
+- See openagent-terminal/examples/workflows for curated templates:
+  - rust.yaml
+  - node.yaml
+  - python.yaml
+
+Dry-run support
+- Each step supports `dry_run: true` to preview commands without executing them.
 - Prefer dry-run gates before executing destructive operations
 
 See also: docs/security_lens.md and crates/workflow-engine/ for API details

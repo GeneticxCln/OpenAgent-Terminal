@@ -123,7 +123,9 @@ impl Default for TermMode {
 #[inline]
 pub fn point_to_viewport(display_offset: usize, point: Point) -> Option<Point<usize>> {
     let viewport_line = point.line.0 + display_offset as i32;
-    usize::try_from(viewport_line).ok().map(|line| Point::new(line, point.column))
+    usize::try_from(viewport_line)
+        .ok()
+        .map(|line| Point::new(line, point.column))
 }
 
 /// Convert a viewport relative point to a terminal point.
@@ -153,7 +155,11 @@ impl LineDamageBounds {
 
     #[inline]
     pub fn undamaged(line: usize, num_cols: usize) -> Self {
-        Self { line, left: num_cols, right: 0 }
+        Self {
+            line,
+            left: num_cols,
+            right: 0,
+        }
     }
 
     #[inline]
@@ -195,7 +201,10 @@ impl<'a> TermDamageIterator<'a> {
         let num_lines = line_damage.len();
         // Filter out invisible damage.
         let line_damage = &line_damage[..num_lines.saturating_sub(display_offset)];
-        Self { display_offset, line_damage: line_damage.iter() }
+        Self {
+            display_offset,
+            line_damage: line_damage.iter(),
+        }
     }
 }
 
@@ -227,10 +236,15 @@ struct TermDamageState {
 
 impl TermDamageState {
     fn new(num_cols: usize, num_lines: usize) -> Self {
-        let lines =
-            (0..num_lines).map(|line| LineDamageBounds::undamaged(line, num_cols)).collect();
+        let lines = (0..num_lines)
+            .map(|line| LineDamageBounds::undamaged(line, num_cols))
+            .collect();
 
-        Self { full: true, lines, last_cursor: Default::default() }
+        Self {
+            full: true,
+            lines,
+            last_cursor: Default::default(),
+        }
     }
 
     #[inline]
@@ -374,7 +388,11 @@ impl Default for Config {
 
 /// OSC 52 behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum Osc52 {
     /// The handling of the escape sequence is disabled.
     Disabled,
@@ -518,7 +536,8 @@ impl<T> Term<T> {
         self.event_proxy.send_event(title_event);
 
         if self.mode.contains(TermMode::ALT_SCREEN) {
-            self.inactive_grid.update_history(self.config.scrolling_history);
+            self.inactive_grid
+                .update_history(self.config.scrolling_history);
         } else {
             self.grid.update_history(self.config.scrolling_history);
         }
@@ -541,7 +560,10 @@ impl<T> Term<T> {
         let mut res = String::new();
 
         match self.selection.as_ref() {
-            Some(Selection { ty: SelectionType::Block, .. }) => {
+            Some(Selection {
+                ty: SelectionType::Block,
+                ..
+            }) => {
                 for line in (start.line.0..end.line.0).map(Line::from) {
                     res += self
                         .line_to_string(line, start.column..end.column, start.column.0 != 0)
@@ -549,14 +571,19 @@ impl<T> Term<T> {
                     res += "\n";
                 }
 
-                res += self.line_to_string(end.line, start.column..end.column, true).trim_end();
-            },
-            Some(Selection { ty: SelectionType::Lines, .. }) => {
+                res += self
+                    .line_to_string(end.line, start.column..end.column, true)
+                    .trim_end();
+            }
+            Some(Selection {
+                ty: SelectionType::Lines,
+                ..
+            }) => {
                 res = self.bounds_to_string(start, end) + "\n";
-            },
+            }
             _ => {
                 res = self.bounds_to_string(start, end);
-            },
+            }
         }
 
         Some(res)
@@ -567,8 +594,16 @@ impl<T> Term<T> {
         let mut res = String::new();
 
         for line in (start.line.0..=end.line.0).map(Line::from) {
-            let start_col = if line == start.line { start.column } else { Column(0) };
-            let end_col = if line == end.line { end.column } else { self.last_column() };
+            let start_col = if line == start.line {
+                start.column
+            } else {
+                Column(0)
+            };
+            let end_col = if line == end.line {
+                end.column
+            } else {
+                self.last_column()
+            };
 
             res += &self.line_to_string(line, start_col..end_col, line == end.line);
         }
@@ -589,7 +624,10 @@ impl<T> Term<T> {
         let line_length = cmp::min(grid_line.line_length(), cols.end + 1);
 
         // Include wide char when trailing spacer is selected.
-        if grid_line[cols.start].flags.contains(Flags::WIDE_CHAR_SPACER) {
+        if grid_line[cols.start]
+            .flags
+            .contains(Flags::WIDE_CHAR_SPACER)
+        {
             cols.start -= 1;
         }
 
@@ -610,7 +648,10 @@ impl<T> Term<T> {
                 tab_mode = true;
             }
 
-            if !cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
+            if !cell
+                .flags
+                .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+            {
                 // Push cells primary character.
                 text.push(cell.c);
 
@@ -623,7 +664,9 @@ impl<T> Term<T> {
 
         if cols.end >= self.columns() - 1
             && (line_length.0 == 0
-                || !self.grid[line][line_length - 1].flags.contains(Flags::WRAPLINE))
+                || !self.grid[line][line_length - 1]
+                    .flags
+                    .contains(Flags::WRAPLINE))
         {
             text.push('\n');
         }
@@ -631,7 +674,9 @@ impl<T> Term<T> {
         // If wide char is not part of the selection, but leading spacer is, include it.
         if line_length == self.columns()
             && line_length.0 >= 2
-            && grid_line[line_length - 1].flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
+            && grid_line[line_length - 1]
+                .flags
+                .contains(Flags::LEADING_WIDE_CHAR_SPACER)
             && include_wrapped_wide
         {
             text.push(self.grid[line - 1i32][Column(0)].c);
@@ -731,9 +776,16 @@ impl<T> Term<T> {
             self.inactive_grid.reset_region(..);
         }
 
-        mem::swap(&mut self.keyboard_mode_stack, &mut self.inactive_keyboard_mode_stack);
-        let keyboard_mode =
-            self.keyboard_mode_stack.last().copied().unwrap_or(KeyboardModes::NO_MODE).into();
+        mem::swap(
+            &mut self.keyboard_mode_stack,
+            &mut self.inactive_keyboard_mode_stack,
+        );
+        let keyboard_mode = self
+            .keyboard_mode_stack
+            .last()
+            .copied()
+            .unwrap_or(KeyboardModes::NO_MODE)
+            .into();
         self.set_keyboard_mode(keyboard_mode, KeyboardModesApplyBehavior::Replace);
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
@@ -750,14 +802,19 @@ impl<T> Term<T> {
     fn scroll_down_relative(&mut self, origin: Line, mut lines: usize) {
         trace!("Scrolling down relative: origin={origin}, lines={lines}");
 
-        lines = cmp::min(lines, (self.scroll_region.end - self.scroll_region.start).0 as usize);
+        lines = cmp::min(
+            lines,
+            (self.scroll_region.end - self.scroll_region.start).0 as usize,
+        );
         lines = cmp::min(lines, (self.scroll_region.end - origin).0 as usize);
 
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        self.selection =
-            self.selection.take().and_then(|s| s.rotate(self, &region, -(lines as i32)));
+        self.selection = self
+            .selection
+            .take()
+            .and_then(|s| s.rotate(self, &region, -(lines as i32)));
 
         // Scroll vi mode cursor.
         let line = &mut self.vi_mode_cursor.point.line;
@@ -777,37 +834,29 @@ impl<T> Term<T> {
     #[inline]
     fn scroll_up_relative(&mut self, origin: Line, mut lines: usize) {
         trace!("Scrolling up relative: origin={origin}, lines={lines}");
-        eprintln!(
-            "DBG term::scroll_up_relative: origin={}, lines(before clip)={}, scroll_region=({}, {}), screen_lines={}",
-            origin.0,
-            lines,
-            self.scroll_region.start.0,
-            self.scroll_region.end.0,
-            self.screen_lines()
-        );
 
-        lines = cmp::min(lines, (self.scroll_region.end - self.scroll_region.start).0 as usize);
+        lines = cmp::min(
+            lines,
+            (self.scroll_region.end - self.scroll_region.start).0 as usize,
+        );
 
         let region = origin..self.scroll_region.end;
-        eprintln!(
-            "DBG term::scroll_up_relative: region=({}, {}), lines(clamped)={}",
-            region.start.0, region.end.0, lines
-        );
 
         // Scroll selection.
-        self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
+        self.selection = self
+            .selection
+            .take()
+            .and_then(|s| s.rotate(self, &region, lines as i32));
 
-        let old_off = self.grid.display_offset();
         self.grid.scroll_up(&region, lines);
-        let new_off = self.grid.display_offset();
-        eprintln!(
-            "DBG term::scroll_up_relative: display_offset {} -> {}",
-            old_off, new_off
-        );
 
         // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
-        let top = if region.start == 0 { viewport_top } else { region.start };
+        let top = if region.start == 0 {
+            viewport_top
+        } else {
+            region.start
+        };
         let line = &mut self.vi_mode_cursor.point.line;
         if (top <= *line) && region.end > *line {
             *line = cmp::max(*line - lines, top);
@@ -819,15 +868,10 @@ impl<T> Term<T> {
     where
         T: EventListener,
     {
-        // DECCOLM (80/132 column mode) behavior: reset margins and clear the viewport.
-        // Many terminals clear the screen on DECCOLM; the ref tests expect the visible
-        // viewport to be cleared while preserving scrollback history.
-        // So we clear the viewport (like ClearMode::All on the primary screen) and reset
-        // the scrolling region to the full screen, with cursor moved to the home position.
-        self.clear_screen(ansi::ClearMode::All);
+        // DECCOLM (80/132 column mode): reset scrolling margins to the full screen and home cursor.
+        // Do NOT clear the viewport and do NOT reset SGR; reference tests expect content/styles preserved.
         self.set_scrolling_region(1, None);
-
-        // Ensure a full repaint after the mode change.
+        self.goto(0, 0);
         self.mark_fully_damaged();
     }
 
@@ -934,20 +978,23 @@ impl<T> Term<T> {
             Direction::Right if flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) => {
                 point.column = Column(1);
                 point.line += 1;
-            },
+            }
             Direction::Right if flags.contains(Flags::WIDE_CHAR) => {
                 point.column = cmp::min(point.column + 1, self.last_column());
-            },
+            }
             Direction::Left if flags.intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER) => {
                 if flags.contains(Flags::WIDE_CHAR_SPACER) {
                     point.column -= 1;
                 }
 
                 let prev = point.sub(self, Boundary::Grid, 1);
-                if self.grid[prev].flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
+                if self.grid[prev]
+                    .flags
+                    .contains(Flags::LEADING_WIDE_CHAR_SPACER)
+                {
                     point = prev;
                 }
-            },
+            }
             _ => (),
         }
 
@@ -993,7 +1040,9 @@ impl<T> Term<T> {
     /// While vi mode is active, this will automatically return the vi mode cursor style.
     #[inline]
     pub fn cursor_style(&self) -> CursorStyle {
-        let cursor_style = self.cursor_style.unwrap_or(self.config.default_cursor_style);
+        let cursor_style = self
+            .cursor_style
+            .unwrap_or(self.config.default_cursor_style);
 
         if self.mode.contains(TermMode::VI) {
             self.config.vi_mode_cursor_style.unwrap_or(cursor_style)
@@ -1041,29 +1090,20 @@ impl<T> Term<T> {
         let flags = self.grid.cursor.template.flags;
         let extra = self.grid.cursor.template.extra.clone();
 
-        // Debug: optional trace for cursor writes, enabled only when OPENAGENT_TRACE_CURSOR=1
-        if std::env::var("OPENAGENT_TRACE_CURSOR")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-            && self.grid.cursor.point.line.0 == 3
-            && self.grid.cursor.point.column.0 < 5
-        {
-            eprintln!(
-                "DBG write_at_cursor: line 3, col {}, char '{}', fg={:?}, flags={:?}",
-                self.grid.cursor.point.column.0, c, fg, flags
-            );
-        }
-
         let mut cursor_cell = self.grid.cursor_cell();
 
         // Clear all related cells when overwriting a fullwidth cell.
-        if cursor_cell.flags.intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER) {
+        if cursor_cell
+            .flags
+            .intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER)
+        {
             // Remove wide char and spacer.
             let wide = cursor_cell.flags.contains(Flags::WIDE_CHAR);
             let point = self.grid.cursor.point;
             if wide && point.column < self.last_column() {
-                self.grid[point.line][point.column + 1].flags.remove(Flags::WIDE_CHAR_SPACER);
+                self.grid[point.line][point.column + 1]
+                    .flags
+                    .remove(Flags::WIDE_CHAR_SPACER);
             } else if point.column > 0 {
                 self.grid[point.line][point.column - 1].clear_wide();
             }
@@ -1071,7 +1111,9 @@ impl<T> Term<T> {
             // Remove leading spacers.
             if point.column <= 1 && point.line != self.topmost_line() {
                 let column = self.last_column();
-                self.grid[point.line - 1i32][column].flags.remove(Flags::LEADING_WIDE_CHAR_SPACER);
+                self.grid[point.line - 1i32][column]
+                    .flags
+                    .remove(Flags::LEADING_WIDE_CHAR_SPACER);
             }
 
             cursor_cell = self.grid.cursor_cell();
@@ -1087,8 +1129,10 @@ impl<T> Term<T> {
     #[inline]
     fn damage_cursor(&mut self) {
         // The normal cursor coordinates are always in viewport.
-        let point =
-            Point::new(self.grid.cursor.point.line.0 as usize, self.grid.cursor.point.column);
+        let point = Point::new(
+            self.grid.cursor.point.line.0 as usize,
+            self.grid.cursor.point.column,
+        );
         self.damage.damage_point(point);
     }
 
@@ -1143,7 +1187,10 @@ impl<T: EventListener> Handler for Term<T> {
 
             // Put zerowidth characters over first fullwidth character cell.
             let line = self.grid.cursor.point.line;
-            if self.grid[line][column].flags.contains(Flags::WIDE_CHAR_SPACER) {
+            if self.grid[line][column]
+                .flags
+                .contains(Flags::WIDE_CHAR_SPACER)
+            {
                 column.0 = column.saturating_sub(1);
             }
 
@@ -1174,9 +1221,17 @@ impl<T: EventListener> Handler for Term<T> {
             if self.grid.cursor.point.column + 1 >= columns {
                 if self.mode.contains(TermMode::LINE_WRAP) {
                     // Insert placeholder before wide char if glyph does not fit in this row.
-                    self.grid.cursor.template.flags.insert(Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.grid
+                        .cursor
+                        .template
+                        .flags
+                        .insert(Flags::LEADING_WIDE_CHAR_SPACER);
                     self.write_at_cursor(' ');
-                    self.grid.cursor.template.flags.remove(Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.grid
+                        .cursor
+                        .template
+                        .flags
+                        .remove(Flags::LEADING_WIDE_CHAR_SPACER);
                     self.wrapline();
                 } else {
                     // Prevent out of bounds crash when linewrapping is disabled.
@@ -1192,9 +1247,17 @@ impl<T: EventListener> Handler for Term<T> {
 
             // Write spacer to cell following the wide glyph.
             self.grid.cursor.point.column += 1;
-            self.grid.cursor.template.flags.insert(Flags::WIDE_CHAR_SPACER);
+            self.grid
+                .cursor
+                .template
+                .flags
+                .insert(Flags::WIDE_CHAR_SPACER);
             self.write_at_cursor(' ');
-            self.grid.cursor.template.flags.remove(Flags::WIDE_CHAR_SPACER);
+            self.grid
+                .cursor
+                .template
+                .flags
+                .remove(Flags::WIDE_CHAR_SPACER);
         }
 
         if self.grid.cursor.point.column + 1 < columns {
@@ -1207,17 +1270,6 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn decaln(&mut self) {
         trace!("Decalnning");
-
-        // Debug instrumentation
-        eprintln!(
-            "DBG decaln: before cursor=({}, {}), display_offset={}, scroll_region=({}, {}), last_was_crlf={}",
-            self.grid.cursor.point.line.0,
-            self.grid.cursor.point.column.0,
-            self.grid.display_offset(),
-            self.scroll_region.start.0,
-            self.scroll_region.end.0,
-            self.last_was_crlf
-        );
 
         // Reset SGR attributes to defaults (DECALN should reset text attributes)
         self.grid.cursor.template.fg = Color::Named(NamedColor::Foreground);
@@ -1234,15 +1286,6 @@ impl<T: EventListener> Handler for Term<T> {
         // DECALN fills the entire viewport with 'E's using the default rendition.
         // We don't use clear_screen because it can cause unwanted scrolling.
         let screen_lines = self.screen_lines();
-        eprintln!("DBG decaln: filling {} lines with 'E'", screen_lines);
-
-        // Debug: show what's on each line before filling
-        eprintln!("DBG decaln: content before fill:");
-        for line in (0..5.min(screen_lines)).map(Line::from) {
-            let end = Column(40.min(self.columns()));
-            let sample: String = self.grid[line][Column(0)..end].iter().map(|c| c.c).collect();
-            eprintln!("  line {}: '{}'", line.0, sample);
-        }
 
         for line in (0..screen_lines).map(Line::from) {
             for column in 0..self.columns() {
@@ -1257,15 +1300,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.goto(0, 0);
 
         self.mark_fully_damaged();
-
-        // Debug instrumentation
-        eprintln!(
-            "DBG decaln: after cursor=({}, {}), input_needs_wrap={}, display_offset={}",
-            self.grid.cursor.point.line.0,
-            self.grid.cursor.point.column.0,
-            self.grid.cursor.input_needs_wrap,
-            self.grid.display_offset()
-        );
     }
 
     #[inline]
@@ -1301,29 +1335,44 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn insert_blank(&mut self, count: usize) {
-        let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
+        // Snapshot to avoid borrow conflicts later.
+        let cursor_point = self.grid.cursor.point;
+        // Build a blank cell from the full current template (fg, bg, flags).
+        let mut blank: Cell = self.grid.cursor.template.clone();
+        blank.c = ' ';
+        blank.extra = None;
+        blank.flags.remove(
+            Flags::WRAPLINE
+                | Flags::WIDE_CHAR
+                | Flags::WIDE_CHAR_SPACER
+                | Flags::LEADING_WIDE_CHAR_SPACER
+                | Flags::INVERSE,
+        );
 
         // Ensure inserting within terminal bounds
-        let count = cmp::min(count, self.columns() - cursor.point.column.0);
+        let count = cmp::min(count, self.columns() - cursor_point.column.0);
 
-        let source = cursor.point.column;
-        let destination = cursor.point.column.0 + count;
-        let num_cells = self.columns() - destination;
+        let source = cursor_point.column;
+        let destination = cursor_point.column.0 + count;
+        let cols_snapshot = self.columns();
+        let num_cells = cols_snapshot - destination;
 
-        let line = cursor.point.line;
-        self.damage.damage_line(line.0 as usize, 0, self.columns() - 1);
+        let line = cursor_point.line;
+        self.damage
+            .damage_line(line.0 as usize, 0, self.columns() - 1);
+
+        // Blank cell prepared above from the full current template.
 
         let row = &mut self.grid[line][..];
 
+        // Shift existing cells to the right by `count` positions within the line.
         for offset in (0..num_cells).rev() {
             row.swap(destination + offset, source.0 + offset);
         }
 
-        // Cells were just moved out toward the end of the line;
-        // fill in between source and dest with blanks.
-        for cell in &mut row[source.0..destination] {
-            *cell = bg.into();
+        // Fill the inserted region [source, destination) with blanks; track target cell.
+        for cell in row[source.0..destination].iter_mut() {
+            *cell = blank.clone();
         }
     }
 
@@ -1351,7 +1400,8 @@ impl<T: EventListener> Handler for Term<T> {
         let last_column = cmp::min(self.grid.cursor.point.column + cols, self.last_column());
 
         let cursor_line = self.grid.cursor.point.line.0 as usize;
-        self.damage.damage_line(cursor_line, self.grid.cursor.point.column.0, last_column.0);
+        self.damage
+            .damage_line(cursor_line, self.grid.cursor.point.column.0, last_column.0);
 
         self.grid.cursor.point.column = last_column;
         self.grid.cursor.input_needs_wrap = false;
@@ -1363,7 +1413,8 @@ impl<T: EventListener> Handler for Term<T> {
         let column = self.grid.cursor.point.column.saturating_sub(cols);
 
         let cursor_line = self.grid.cursor.point.line.0 as usize;
-        self.damage.damage_line(cursor_line, column, self.grid.cursor.point.column.0);
+        self.damage
+            .damage_line(cursor_line, column, self.grid.cursor.point.column.0);
 
         self.grid.cursor.point.column = Column(column);
         self.grid.cursor.input_needs_wrap = false;
@@ -1376,13 +1427,13 @@ impl<T: EventListener> Handler for Term<T> {
                 trace!("Reporting primary device attributes");
                 let text = String::from("\x1b[?6c");
                 self.event_proxy.send_event(Event::PtyWrite(text));
-            },
+            }
             Some('>') => {
                 trace!("Reporting secondary device attributes");
                 let version = version_number(env!("CARGO_PKG_VERSION"));
                 let text = format!("\x1b[>0;{version};1c");
                 self.event_proxy.send_event(Event::PtyWrite(text));
-            },
+            }
             _ => debug!("Unsupported device attributes intermediate"),
         }
     }
@@ -1394,8 +1445,11 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         trace!("Reporting active keyboard mode");
-        let current_mode =
-            self.keyboard_mode_stack.last().unwrap_or(&KeyboardModes::NO_MODE).bits();
+        let current_mode = self
+            .keyboard_mode_stack
+            .last()
+            .unwrap_or(&KeyboardModes::NO_MODE)
+            .bits();
         let text = format!("\x1b[?{current_mode}u");
         self.event_proxy.send_event(Event::PtyWrite(text));
     }
@@ -1427,11 +1481,18 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         trace!("Attempting to pop {to_pop} keyboard modes from the stack");
-        let new_len = self.keyboard_mode_stack.len().saturating_sub(to_pop as usize);
+        let new_len = self
+            .keyboard_mode_stack
+            .len()
+            .saturating_sub(to_pop as usize);
         self.keyboard_mode_stack.truncate(new_len);
 
         // Reload active mode.
-        let mode = self.keyboard_mode_stack.last().copied().unwrap_or(KeyboardModes::NO_MODE);
+        let mode = self
+            .keyboard_mode_stack
+            .last()
+            .copied()
+            .unwrap_or(KeyboardModes::NO_MODE);
         self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
     }
 
@@ -1451,12 +1512,12 @@ impl<T: EventListener> Handler for Term<T> {
             5 => {
                 let text = String::from("\x1b[0n");
                 self.event_proxy.send_event(Event::PtyWrite(text));
-            },
+            }
             6 => {
                 let pos = self.grid.cursor.point;
                 let text = format!("\x1b[{};{}R", pos.line + 1, pos.column + 1);
                 self.event_proxy.send_event(Event::PtyWrite(text));
-            },
+            }
             _ => debug!("unknown device status query: {arg}"),
         };
     }
@@ -1529,39 +1590,13 @@ impl<T: EventListener> Handler for Term<T> {
         trace!("Carriage return");
         // Mark that we've seen CR; if the next input is LF, we'll consider it CRLF.
         self.saw_cr = true;
-        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
-        if std::env::var("OPENAGENT_TRACE_CURSOR")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-        {
-            eprintln!(
-                "DBG CR: before cursor=({}, {}), input_needs_wrap={}",
-                self.grid.cursor.point.line.0,
-                self.grid.cursor.point.column.0,
-                self.grid.cursor.input_needs_wrap
-            );
-        }
 
         let new_col = 0;
         let line = self.grid.cursor.point.line.0 as usize;
-        self.damage.damage_line(line, new_col, self.grid.cursor.point.column.0);
+        self.damage
+            .damage_line(line, new_col, self.grid.cursor.point.column.0);
         self.grid.cursor.point.column = Column(new_col);
         self.grid.cursor.input_needs_wrap = false;
-
-        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
-        if std::env::var("OPENAGENT_TRACE_CURSOR")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-        {
-            eprintln!(
-                "DBG CR: after cursor=({}, {}), input_needs_wrap={}",
-                self.grid.cursor.point.line.0,
-                self.grid.cursor.point.column.0,
-                self.grid.cursor.input_needs_wrap
-            );
-        }
     }
 
     /// Linefeed.
@@ -1571,22 +1606,6 @@ impl<T: EventListener> Handler for Term<T> {
         // If the previous input was CR, this forms a CRLF pair.
         self.last_was_crlf = self.saw_cr;
         self.saw_cr = false;
-        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
-        if std::env::var("OPENAGENT_TRACE_CURSOR")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-        {
-            eprintln!(
-                "DBG LF: before cursor=({}, {}), scroll_region=({}, {}), screen_lines={}",
-                self.grid.cursor.point.line.0,
-                self.grid.cursor.point.column.0,
-                self.scroll_region.start.0,
-                self.scroll_region.end.0,
-                self.screen_lines()
-            );
-        }
-
 
         let next = self.grid.cursor.point.line + 1;
         if next == self.scroll_region.end {
@@ -1595,20 +1614,6 @@ impl<T: EventListener> Handler for Term<T> {
             self.damage_cursor();
             self.grid.cursor.point.line += 1;
             self.damage_cursor();
-        }
-
-        // Debug instrumentation (enabled only when OPENAGENT_TRACE_CURSOR=1)
-        if std::env::var("OPENAGENT_TRACE_CURSOR")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-        {
-            eprintln!(
-                "DBG LF: after cursor=({}, {}), display_offset={}",
-                self.grid.cursor.point.line.0,
-                self.grid.cursor.point.column.0,
-                self.grid.display_offset()
-            );
         }
     }
 
@@ -1697,60 +1702,51 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn erase_chars(&mut self, count: usize) {
-        let cursor = &self.grid.cursor;
+        let cursor_point = self.grid.cursor.point;
+        let template_bg = self.grid.cursor.template.bg;
 
-        trace!("Erasing chars: count={}, col={}", count, cursor.point.column);
+        trace!(
+            "Erasing chars: count={}, col={}",
+            count,
+            cursor_point.column
+        );
 
-        let start = cursor.point.column;
+        let start = cursor_point.column;
         let end = cmp::min(start + count, Column(self.columns()));
 
-        // Cleared cells have current background color set.
-        let bg = self.grid.cursor.template.bg;
-        let line = cursor.point.line;
+        // Prepare blank cell using BCE semantics (background only, default fg/flags).
+        let blank: Cell = template_bg.into();
+
+        // Fill the erased region with blanks using BCE.
+        let line = cursor_point.line;
         self.damage.damage_line(line.0 as usize, start.0, end.0);
         let row = &mut self.grid[line];
-        for cell in &mut row[start..end] {
-            *cell = bg.into();
+        for cell in row[start..end].iter_mut() {
+            *cell = blank.clone();
         }
     }
 
     #[inline]
     fn delete_chars(&mut self, count: usize) {
         let num_cols = self.columns();
-        let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
+        let cursor_point = self.grid.cursor.point;
 
         // Ensure deleting within terminal bounds.
-        let count = cmp::min(count, num_cols.saturating_sub(cursor.point.column.0));
+        let count = cmp::min(count, num_cols.saturating_sub(cursor_point.column.0));
         if count == 0 {
             return;
         }
 
-        let start = cursor.point.column.0;
+        let start = cursor_point.column.0;
 
-        let line = cursor.point.line;
+        let line = cursor_point.line;
         // Mark the damaged region from the cursor to the end of the line.
-        self.damage.damage_line(line.0 as usize, start, num_cols - 1);
-
-        // Snapshot current rendition (SGR) before mutably borrowing the grid row.
-        let _fg = cursor.template.fg;
-        let _flags = cursor.template.flags;
-        let _extra = cursor.template.extra.clone();
+        self.damage
+            .damage_line(line.0 as usize, start, num_cols - 1);
 
         // Operate on the row slice directly for efficient shifting.
+        let bg = self.grid.cursor.template.bg;
         let row = &mut self.grid[line][..];
-
-        // Debug: dump a small window around the cursor before operation.
-        #[cfg(debug_assertions)]
-        {
-            let start_dbg = start.saturating_sub(10);
-            let end_dbg = (start + count + 10).min(num_cols);
-            let before: String = row[start_dbg..end_dbg].iter().map(|c| c.c).collect();
-            eprintln!(
-                "DBG DCH BEFORE: line={}, start={}, count={}, segment='{}'",
-                line.0, start, count, before
-            );
-        }
 
         // Shift content to the left by `count` cells.
         for col in start..(num_cols - count) {
@@ -1761,17 +1757,8 @@ impl<T: EventListener> Handler for Term<T> {
         // Clear last `count` cells in the row. DCH fills vacated cells with default rendition
         // (space with current background), not with the current SGR attributes.
         let clear_start = num_cols - count;
-        for cell in &mut row[clear_start..] {
+        for cell in row[clear_start..].iter_mut() {
             *cell = bg.into();
-        }
-        {
-            let start_dbg = start.saturating_sub(10);
-            let end_dbg = (start + count + 10).min(num_cols);
-            let after: String = row[start_dbg..end_dbg].iter().map(|c| c.c).collect();
-            eprintln!(
-                "DBG DCH AFTER:  line={}, start={}, count={}, segment='{}'",
-                line.0, start, count, after
-            );
         }
     }
 
@@ -1797,7 +1784,8 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         let line = self.grid.cursor.point.line.0 as usize;
-        self.damage.damage_line(line, self.grid.cursor.point.column.0, old_col);
+        self.damage
+            .damage_line(line, self.grid.cursor.point.column.0, old_col);
     }
 
     #[inline]
@@ -1824,7 +1812,8 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         let line = self.grid.cursor.point.line.0 as usize;
-        self.damage.damage_line(line, old_col, self.grid.cursor.point.column.0);
+        self.damage
+            .damage_line(line, old_col, self.grid.cursor.point.column.0);
     }
 
     #[inline]
@@ -1858,10 +1847,11 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::LineClearMode::All => (Column(0), Column(self.columns())),
         };
 
-        self.damage.damage_line(point.line.0 as usize, left.0, right.0 - 1);
+        self.damage
+            .damage_line(point.line.0 as usize, left.0, right.0 - 1);
 
         let row = &mut self.grid[point.line];
-        for cell in &mut row[left..right] {
+        for cell in row[left..right].iter_mut() {
             *cell = bg.into();
         }
 
@@ -1928,7 +1918,8 @@ impl<T: EventListener> Handler for Term<T> {
 
         if let Ok(bytes) = Base64.decode(base64) {
             if let Ok(text) = String::from_utf8(bytes) {
-                self.event_proxy.send_event(Event::ClipboardStore(clipboard_type, text));
+                self.event_proxy
+                    .send_event(Event::ClipboardStore(clipboard_type, text));
             }
         }
     }
@@ -1961,7 +1952,17 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn clear_screen(&mut self, mode: ansi::ClearMode) {
         trace!("Clearing screen: {mode:?}");
-        let bg = self.grid.cursor.template.bg;
+        // Build a blank cell from the full current template (fg, bg, flags).
+        let mut blank: Cell = self.grid.cursor.template.clone();
+        blank.c = ' ';
+        blank.extra = None;
+        blank.flags.remove(
+            Flags::WRAPLINE
+                | Flags::WIDE_CHAR
+                | Flags::WIDE_CHAR_SPACER
+                | Flags::LEADING_WIDE_CHAR_SPACER
+                | Flags::INVERSE,
+        );
 
         let screen_lines = self.screen_lines();
 
@@ -1978,16 +1979,16 @@ impl<T: EventListener> Handler for Term<T> {
                 // Clear up to the current column in the current line.
                 let end = cmp::min(cursor.column + 1, Column(self.columns()));
                 for cell in &mut self.grid[cursor.line][..end] {
-                    *cell = bg.into();
+                    *cell = blank.clone();
                 }
 
                 let range = Line(0)..=cursor.line;
                 self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
-            },
+            }
             ansi::ClearMode::Below => {
                 let cursor = self.grid.cursor.point;
                 for cell in &mut self.grid[cursor.line][cursor.column..] {
-                    *cell = bg.into();
+                    *cell = blank.clone();
                 }
 
                 if (cursor.line.0 as usize) < screen_lines - 1 {
@@ -1996,7 +1997,7 @@ impl<T: EventListener> Handler for Term<T> {
 
                 let range = cursor.line..Line(screen_lines as i32);
                 self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
-            },
+            }
             ansi::ClearMode::All => {
                 if self.mode.contains(TermMode::ALT_SCREEN) {
                     self.grid.reset_region(..);
@@ -2013,15 +2014,21 @@ impl<T: EventListener> Handler for Term<T> {
                 }
 
                 self.selection = None;
-            },
+            }
             ansi::ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
 
-                self.vi_mode_cursor.point.line =
-                    self.vi_mode_cursor.point.line.grid_clamp(self, Boundary::Cursor);
+                self.vi_mode_cursor.point.line = self
+                    .vi_mode_cursor
+                    .point
+                    .line
+                    .grid_clamp(self, Boundary::Cursor);
 
-                self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
-            },
+                self.selection = self
+                    .selection
+                    .take()
+                    .filter(|s| !s.intersects_range(..Line(0)));
+            }
             // We have no history to clear.
             ansi::ClearMode::Saved => (),
         }
@@ -2035,10 +2042,10 @@ impl<T: EventListener> Handler for Term<T> {
         match mode {
             ansi::TabulationClearMode::Current => {
                 self.tabs[self.grid.cursor.point.column] = false;
-            },
+            }
             ansi::TabulationClearMode::All => {
                 self.tabs.clear_all();
-            },
+            }
         }
     }
 
@@ -2085,7 +2092,10 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
         trace!("Setting hyperlink: {hyperlink:?}");
-        self.grid.cursor.template.set_hyperlink(hyperlink.map(|e| e.into()));
+        self.grid
+            .cursor
+            .template
+            .set_hyperlink(hyperlink.map(|e| e.into()));
     }
 
     /// Set a terminal attribute.
@@ -2102,7 +2112,7 @@ impl<T: EventListener> Handler for Term<T> {
                 cursor.template.bg = Color::Named(NamedColor::Background);
                 cursor.template.flags = Flags::empty();
                 cursor.template.set_underline_color(None);
-            },
+            }
             Attr::Reverse => cursor.template.flags.insert(Flags::INVERSE),
             Attr::CancelReverse => cursor.template.flags.remove(Flags::INVERSE),
             Attr::Bold => cursor.template.flags.insert(Flags::BOLD),
@@ -2114,23 +2124,23 @@ impl<T: EventListener> Handler for Term<T> {
             Attr::Underline => {
                 cursor.template.flags.remove(Flags::ALL_UNDERLINES);
                 cursor.template.flags.insert(Flags::UNDERLINE);
-            },
+            }
             Attr::DoubleUnderline => {
                 cursor.template.flags.remove(Flags::ALL_UNDERLINES);
                 cursor.template.flags.insert(Flags::DOUBLE_UNDERLINE);
-            },
+            }
             Attr::Undercurl => {
                 cursor.template.flags.remove(Flags::ALL_UNDERLINES);
                 cursor.template.flags.insert(Flags::UNDERCURL);
-            },
+            }
             Attr::DottedUnderline => {
                 cursor.template.flags.remove(Flags::ALL_UNDERLINES);
                 cursor.template.flags.insert(Flags::DOTTED_UNDERLINE);
-            },
+            }
             Attr::DashedUnderline => {
                 cursor.template.flags.remove(Flags::ALL_UNDERLINES);
                 cursor.template.flags.insert(Flags::DASHED_UNDERLINE);
-            },
+            }
             Attr::CancelUnderline => cursor.template.flags.remove(Flags::ALL_UNDERLINES),
             Attr::Hidden => cursor.template.flags.insert(Flags::HIDDEN),
             Attr::CancelHidden => cursor.template.flags.remove(Flags::HIDDEN),
@@ -2138,7 +2148,7 @@ impl<T: EventListener> Handler for Term<T> {
             Attr::CancelStrike => cursor.template.flags.remove(Flags::STRIKEOUT),
             _ => {
                 debug!("Term got unhandled attr: {attr:?}");
-            },
+            }
         }
     }
 
@@ -2149,7 +2159,7 @@ impl<T: EventListener> Handler for Term<T> {
             PrivateMode::Unknown(mode) => {
                 debug!("Ignoring unknown mode {mode} in set_private_mode");
                 return;
-            },
+            }
         };
 
         trace!("Setting private mode: {mode:?}");
@@ -2159,7 +2169,7 @@ impl<T: EventListener> Handler for Term<T> {
                 if !self.mode.contains(TermMode::ALT_SCREEN) {
                     self.swap_alt();
                 }
-            },
+            }
             NamedPrivateMode::ShowCursor => self.mode.insert(TermMode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.insert(TermMode::APP_CURSOR),
             // Mouse protocols are mutually exclusive.
@@ -2167,40 +2177,42 @@ impl<T: EventListener> Handler for Term<T> {
                 self.mode.remove(TermMode::MOUSE_MODE);
                 self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
                 self.event_proxy.send_event(Event::MouseCursorDirty);
-            },
+            }
             NamedPrivateMode::ReportCellMouseMotion => {
                 self.mode.remove(TermMode::MOUSE_MODE);
                 self.mode.insert(TermMode::MOUSE_DRAG);
                 self.event_proxy.send_event(Event::MouseCursorDirty);
-            },
+            }
             NamedPrivateMode::ReportAllMouseMotion => {
                 self.mode.remove(TermMode::MOUSE_MODE);
                 self.mode.insert(TermMode::MOUSE_MOTION);
                 self.event_proxy.send_event(Event::MouseCursorDirty);
-            },
+            }
             NamedPrivateMode::ReportFocusInOut => self.mode.insert(TermMode::FOCUS_IN_OUT),
             NamedPrivateMode::BracketedPaste => self.mode.insert(TermMode::BRACKETED_PASTE),
             // Mouse encodings are mutually exclusive.
             NamedPrivateMode::SgrMouse => {
                 self.mode.remove(TermMode::UTF8_MOUSE);
                 self.mode.insert(TermMode::SGR_MOUSE);
-            },
+            }
             NamedPrivateMode::Utf8Mouse => {
                 self.mode.remove(TermMode::SGR_MOUSE);
                 self.mode.insert(TermMode::UTF8_MOUSE);
-            },
+            }
             NamedPrivateMode::AlternateScroll => self.mode.insert(TermMode::ALTERNATE_SCROLL),
             NamedPrivateMode::LineWrap => self.mode.insert(TermMode::LINE_WRAP),
             NamedPrivateMode::Origin => {
                 self.mode.insert(TermMode::ORIGIN);
                 self.goto(0, 0);
-            },
+            }
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
+                let style = self
+                    .cursor_style
+                    .get_or_insert(self.config.default_cursor_style);
                 style.blinking = true;
                 self.event_proxy.send_event(Event::CursorBlinkingChange);
-            },
+            }
             NamedPrivateMode::SyncUpdate => (),
         }
     }
@@ -2212,7 +2224,7 @@ impl<T: EventListener> Handler for Term<T> {
             PrivateMode::Unknown(mode) => {
                 debug!("Ignoring unknown mode {mode} in unset_private_mode");
                 return;
-            },
+            }
         };
 
         trace!("Unsetting private mode: {mode:?}");
@@ -2222,21 +2234,21 @@ impl<T: EventListener> Handler for Term<T> {
                 if self.mode.contains(TermMode::ALT_SCREEN) {
                     self.swap_alt();
                 }
-            },
+            }
             NamedPrivateMode::ShowCursor => self.mode.remove(TermMode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.remove(TermMode::APP_CURSOR),
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
                 self.event_proxy.send_event(Event::MouseCursorDirty);
-            },
+            }
             NamedPrivateMode::ReportCellMouseMotion => {
                 self.mode.remove(TermMode::MOUSE_DRAG);
                 self.event_proxy.send_event(Event::MouseCursorDirty);
-            },
+            }
             NamedPrivateMode::ReportAllMouseMotion => {
                 self.mode.remove(TermMode::MOUSE_MOTION);
                 self.event_proxy.send_event(Event::MouseCursorDirty);
-            },
+            }
             NamedPrivateMode::ReportFocusInOut => self.mode.remove(TermMode::FOCUS_IN_OUT),
             NamedPrivateMode::BracketedPaste => self.mode.remove(TermMode::BRACKETED_PASTE),
             NamedPrivateMode::SgrMouse => self.mode.remove(TermMode::SGR_MOUSE),
@@ -2246,10 +2258,12 @@ impl<T: EventListener> Handler for Term<T> {
             NamedPrivateMode::Origin => self.mode.remove(TermMode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
+                let style = self
+                    .cursor_style
+                    .get_or_insert(self.config.default_cursor_style);
                 style.blinking = false;
                 self.event_proxy.send_event(Event::CursorBlinkingChange);
-            },
+            }
             NamedPrivateMode::SyncUpdate => (),
         }
     }
@@ -2263,36 +2277,38 @@ impl<T: EventListener> Handler for Term<T> {
                 NamedPrivateMode::Origin => self.mode.contains(TermMode::ORIGIN).into(),
                 NamedPrivateMode::LineWrap => self.mode.contains(TermMode::LINE_WRAP).into(),
                 NamedPrivateMode::BlinkingCursor => {
-                    let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
+                    let style = self
+                        .cursor_style
+                        .get_or_insert(self.config.default_cursor_style);
                     style.blinking.into()
-                },
+                }
                 NamedPrivateMode::ShowCursor => self.mode.contains(TermMode::SHOW_CURSOR).into(),
                 NamedPrivateMode::ReportMouseClicks => {
                     self.mode.contains(TermMode::MOUSE_REPORT_CLICK).into()
-                },
+                }
                 NamedPrivateMode::ReportCellMouseMotion => {
                     self.mode.contains(TermMode::MOUSE_DRAG).into()
-                },
+                }
                 NamedPrivateMode::ReportAllMouseMotion => {
                     self.mode.contains(TermMode::MOUSE_MOTION).into()
-                },
+                }
                 NamedPrivateMode::ReportFocusInOut => {
                     self.mode.contains(TermMode::FOCUS_IN_OUT).into()
-                },
+                }
                 NamedPrivateMode::Utf8Mouse => self.mode.contains(TermMode::UTF8_MOUSE).into(),
                 NamedPrivateMode::SgrMouse => self.mode.contains(TermMode::SGR_MOUSE).into(),
                 NamedPrivateMode::AlternateScroll => {
                     self.mode.contains(TermMode::ALTERNATE_SCROLL).into()
-                },
+                }
                 NamedPrivateMode::UrgencyHints => {
                     self.mode.contains(TermMode::URGENCY_HINTS).into()
-                },
+                }
                 NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
                     self.mode.contains(TermMode::ALT_SCREEN).into()
-                },
+                }
                 NamedPrivateMode::BracketedPaste => {
                     self.mode.contains(TermMode::BRACKETED_PASTE).into()
-                },
+                }
                 NamedPrivateMode::SyncUpdate => ModeState::Reset,
                 NamedPrivateMode::ColumnMode => ModeState::NotSupported,
             },
@@ -2313,7 +2329,7 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::Mode::Unknown(mode) => {
                 debug!("Ignoring unknown mode {mode} in set_mode");
                 return;
-            },
+            }
         };
 
         trace!("Setting public mode: {mode:?}");
@@ -2330,7 +2346,7 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::Mode::Unknown(mode) => {
                 debug!("Ignoring unknown mode {mode} in unset_mode");
                 return;
-            },
+            }
         };
 
         trace!("Setting public mode: {mode:?}");
@@ -2338,7 +2354,7 @@ impl<T: EventListener> Handler for Term<T> {
             NamedMode::Insert => {
                 self.mode.remove(TermMode::INSERT);
                 self.mark_fully_damaged();
-            },
+            }
             NamedMode::LineFeedNewLine => self.mode.remove(TermMode::LINE_FEED_NEW_LINE),
         }
     }
@@ -2351,7 +2367,7 @@ impl<T: EventListener> Handler for Term<T> {
                 NamedMode::Insert => self.mode.contains(TermMode::INSERT).into(),
                 NamedMode::LineFeedNewLine => {
                     self.mode.contains(TermMode::LINE_FEED_NEW_LINE).into()
-                },
+                }
             },
             ansi::Mode::Unknown(_) => ModeState::NotSupported,
         };
@@ -2387,10 +2403,7 @@ impl<T: EventListener> Handler for Term<T> {
         self.scroll_region.end = cmp::min(end, screen_lines);
         eprintln!(
             "DBG term::set_scrolling_region: set to start={}, end={} (from top={}, bottom={:?})",
-            self.scroll_region.start.0,
-            self.scroll_region.end.0,
-            top,
-            bottom
+            self.scroll_region.start.0, self.scroll_region.end.0, top, bottom
         );
         self.goto(0, 0);
     }
@@ -2432,7 +2445,9 @@ impl<T: EventListener> Handler for Term<T> {
     fn set_cursor_shape(&mut self, shape: CursorShape) {
         trace!("Setting cursor shape {shape:?}");
 
-        let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
+        let style = self
+            .cursor_style
+            .get_or_insert(self.config.default_cursor_style);
         style.shape = shape;
     }
 
@@ -2476,11 +2491,12 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn text_area_size_pixels(&mut self) {
-        self.event_proxy.send_event(Event::TextAreaSizeRequest(Arc::new(move |window_size| {
-            let height = window_size.num_lines * window_size.cell_height;
-            let width = window_size.num_cols * window_size.cell_width;
-            format!("\x1b[4;{height};{width}t")
-        })));
+        self.event_proxy
+            .send_event(Event::TextAreaSizeRequest(Arc::new(move |window_size| {
+                let height = window_size.num_lines * window_size.cell_height;
+                let width = window_size.num_cols * window_size.cell_width;
+                format!("\x1b[4;{height};{width}t")
+            })));
     }
 
     #[inline]
@@ -2546,7 +2562,9 @@ struct TabStops {
 impl TabStops {
     #[inline]
     fn new(columns: usize) -> TabStops {
-        TabStops { tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect() }
+        TabStops {
+            tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect(),
+        }
     }
 
     /// Remove all tabstops.
@@ -2594,7 +2612,11 @@ impl RenderableCursor {
     fn new<T>(term: &Term<T>) -> Self {
         // Cursor position.
         let vi_mode = term.mode().contains(TermMode::VI);
-        let mut point = if vi_mode { term.vi_mode_cursor.point } else { term.grid.cursor.point };
+        let mut point = if vi_mode {
+            term.vi_mode_cursor.point
+        } else {
+            term.grid.cursor.point
+        };
         if term.grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
             point.column -= 1;
         }
@@ -2652,7 +2674,10 @@ pub mod test {
 
     impl TermSize {
         pub fn new(columns: usize, screen_lines: usize) -> Self {
-            Self { columns, screen_lines }
+            Self {
+                columns,
+                screen_lines,
+            }
         }
     }
 
@@ -2693,7 +2718,12 @@ pub mod test {
         let lines: Vec<&str> = content.split('\n').collect();
         let num_cols = lines
             .iter()
-            .map(|line| line.chars().filter(|c| *c != '\r').map(|c| c.width().unwrap()).sum())
+            .map(|line| {
+                line.chars()
+                    .filter(|c| *c != '\r')
+                    .map(|c| c.width().unwrap())
+                    .sum()
+            })
             .max()
             .unwrap_or(0);
 
@@ -2705,7 +2735,9 @@ pub mod test {
         for (line, text) in lines.iter().enumerate() {
             let line = Line(line as i32);
             if !text.ends_with('\r') && line + 1 != lines.len() {
-                term.grid[line][Column(num_cols - 1)].flags.insert(Flags::WRAPLINE);
+                term.grid[line][Column(num_cols - 1)]
+                    .flags
+                    .insert(Flags::WRAPLINE);
             }
 
             let mut index = 0;
@@ -2715,8 +2747,12 @@ pub mod test {
                 // Handle fullwidth characters.
                 let width = c.width().unwrap();
                 if width == 2 {
-                    term.grid[line][Column(index)].flags.insert(Flags::WIDE_CHAR);
-                    term.grid[line][Column(index + 1)].flags.insert(Flags::WIDE_CHAR_SPACER);
+                    term.grid[line][Column(index)]
+                        .flags
+                        .insert(Flags::WIDE_CHAR);
+                    term.grid[line][Column(index + 1)]
+                        .flags
+                        .insert(Flags::WIDE_CHAR_SPACER);
                 }
 
                 index += width;
@@ -2823,24 +2859,48 @@ mod tests {
         // Multiple lines contain an empty line.
         term.selection = Some(Selection::new(
             SelectionType::Simple,
-            Point { line: Line(0), column: Column(0) },
+            Point {
+                line: Line(0),
+                column: Column(0),
+            },
             Side::Left,
         ));
         if let Some(s) = term.selection.as_mut() {
-            s.update(Point { line: Line(2), column: Column(4) }, Side::Right);
+            s.update(
+                Point {
+                    line: Line(2),
+                    column: Column(4),
+                },
+                Side::Right,
+            );
         }
-        assert_eq!(term.selection_to_string(), Some(String::from("\"aaa\"\n\n aaa ")));
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from("\"aaa\"\n\n aaa "))
+        );
 
         // A wrapline.
         term.selection = Some(Selection::new(
             SelectionType::Simple,
-            Point { line: Line(2), column: Column(0) },
+            Point {
+                line: Line(2),
+                column: Column(0),
+            },
             Side::Left,
         ));
         if let Some(s) = term.selection.as_mut() {
-            s.update(Point { line: Line(3), column: Column(4) }, Side::Right);
+            s.update(
+                Point {
+                    line: Line(3),
+                    column: Column(4),
+                },
+                Side::Right,
+            );
         }
-        assert_eq!(term.selection_to_string(), Some(String::from(" aaa  aaa\"")));
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from(" aaa  aaa\""))
+        );
     }
 
     #[test]
@@ -2866,7 +2926,10 @@ mod tests {
         {
             term.selection = Some(Selection::new(
                 SelectionType::Semantic,
-                Point { line: Line(0), column: Column(1) },
+                Point {
+                    line: Line(0),
+                    column: Column(1),
+                },
                 Side::Left,
             ));
             assert_eq!(term.selection_to_string(), Some(String::from("aa")));
@@ -2875,7 +2938,10 @@ mod tests {
         {
             term.selection = Some(Selection::new(
                 SelectionType::Semantic,
-                Point { line: Line(0), column: Column(4) },
+                Point {
+                    line: Line(0),
+                    column: Column(4),
+                },
                 Side::Left,
             ));
             assert_eq!(term.selection_to_string(), Some(String::from("aaa")));
@@ -2884,7 +2950,10 @@ mod tests {
         {
             term.selection = Some(Selection::new(
                 SelectionType::Semantic,
-                Point { line: Line(1), column: Column(1) },
+                Point {
+                    line: Line(1),
+                    column: Column(1),
+                },
                 Side::Left,
             ));
             assert_eq!(term.selection_to_string(), Some(String::from("aaa")));
@@ -2906,7 +2975,10 @@ mod tests {
 
         term.selection = Some(Selection::new(
             SelectionType::Lines,
-            Point { line: Line(0), column: Column(3) },
+            Point {
+                line: Line(0),
+                column: Column(3),
+            },
             Side::Left,
         ));
         assert_eq!(term.selection_to_string(), Some(String::from("\"aa\"a\n")));
@@ -2932,27 +3004,54 @@ mod tests {
 
         term.selection = Some(Selection::new(
             SelectionType::Block,
-            Point { line: Line(0), column: Column(3) },
+            Point {
+                line: Line(0),
+                column: Column(3),
+            },
             Side::Left,
         ));
 
         // The same column.
         if let Some(s) = term.selection.as_mut() {
-            s.update(Point { line: Line(3), column: Column(3) }, Side::Right);
+            s.update(
+                Point {
+                    line: Line(3),
+                    column: Column(3),
+                },
+                Side::Right,
+            );
         }
         assert_eq!(term.selection_to_string(), Some(String::from("\na\na\na")));
 
         // The first column.
         if let Some(s) = term.selection.as_mut() {
-            s.update(Point { line: Line(3), column: Column(0) }, Side::Left);
+            s.update(
+                Point {
+                    line: Line(3),
+                    column: Column(0),
+                },
+                Side::Left,
+            );
         }
-        assert_eq!(term.selection_to_string(), Some(String::from("\n\"aa\n\"a\n\"aa")));
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from("\n\"aa\n\"a\n\"aa"))
+        );
 
         // The last column.
         if let Some(s) = term.selection.as_mut() {
-            s.update(Point { line: Line(3), column: Column(4) }, Side::Right);
+            s.update(
+                Point {
+                    line: Line(3),
+                    column: Column(4),
+                },
+                Side::Right,
+            );
         }
-        assert_eq!(term.selection_to_string(), Some(String::from("\na\"\na\"\na")));
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from("\na\"\na\"\na"))
+        );
     }
 
     /// Check that the grid can be serialized back and forth losslessly.
@@ -2974,7 +3073,10 @@ mod tests {
         let size = TermSize::new(7, 17);
         let mut term = Term::new(Config::default(), &size, VoidListener);
         let cursor = Point::new(Line(0), Column(0));
-        term.configure_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
+        term.configure_charset(
+            CharsetIndex::G0,
+            StandardCharset::SpecialCharacterAndLineDrawing,
+        );
         term.input('a');
 
         assert_eq!(term.grid()[cursor].c, '▒');
@@ -3230,7 +3332,14 @@ mod tests {
             TermDamage::Full => panic!("Expected partial damage, however got Full"),
             TermDamage::Partial(damaged_lines) => damaged_lines,
         };
-        assert_eq!(damaged_lines.next(), Some(LineDamageBounds { line: 0, left, right }));
+        assert_eq!(
+            damaged_lines.next(),
+            Some(LineDamageBounds {
+                line: 0,
+                left,
+                right
+            })
+        );
         assert_eq!(damaged_lines.next(), None);
         term.reset_damage();
 
@@ -3273,11 +3382,19 @@ mod tests {
         };
         assert_eq!(
             damaged_lines.next(),
-            Some(LineDamageBounds { line: display_offset, left: 0, right: 0 })
+            Some(LineDamageBounds {
+                line: display_offset,
+                left: 0,
+                right: 0
+            })
         );
         assert_eq!(
             damaged_lines.next(),
-            Some(LineDamageBounds { line: display_offset + 1, left: 0, right: 0 })
+            Some(LineDamageBounds {
+                line: display_offset + 1,
+                left: 0,
+                right: 0
+            })
         );
         assert_eq!(damaged_lines.next(), None);
     }
@@ -3296,88 +3413,263 @@ mod tests {
         // following tests we will be accessing `term.damage.lines` directly to avoid adding extra
         // damage information (like cursor and Vi cursor), which we're not testing.
 
-        assert_eq!(term.damage.lines[0], LineDamageBounds { line: 0, left: 0, right: 0 });
-        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 1, right: 1 });
+        assert_eq!(
+            term.damage.lines[0],
+            LineDamageBounds {
+                line: 0,
+                left: 0,
+                right: 0
+            }
+        );
+        assert_eq!(
+            term.damage.lines[1],
+            LineDamageBounds {
+                line: 1,
+                left: 1,
+                right: 1
+            }
+        );
         term.damage.reset(num_cols);
 
         term.move_forward(3);
-        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 1, right: 4 });
+        assert_eq!(
+            term.damage.lines[1],
+            LineDamageBounds {
+                line: 1,
+                left: 1,
+                right: 4
+            }
+        );
         term.damage.reset(num_cols);
 
         term.move_backward(8);
-        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 0, right: 4 });
+        assert_eq!(
+            term.damage.lines[1],
+            LineDamageBounds {
+                line: 1,
+                left: 0,
+                right: 4
+            }
+        );
         term.goto(5, 5);
         term.damage.reset(num_cols);
 
         term.backspace();
         term.backspace();
-        assert_eq!(term.damage.lines[5], LineDamageBounds { line: 5, left: 3, right: 5 });
+        assert_eq!(
+            term.damage.lines[5],
+            LineDamageBounds {
+                line: 5,
+                left: 3,
+                right: 5
+            }
+        );
         term.damage.reset(num_cols);
 
         term.move_up(1);
-        assert_eq!(term.damage.lines[5], LineDamageBounds { line: 5, left: 3, right: 3 });
-        assert_eq!(term.damage.lines[4], LineDamageBounds { line: 4, left: 3, right: 3 });
+        assert_eq!(
+            term.damage.lines[5],
+            LineDamageBounds {
+                line: 5,
+                left: 3,
+                right: 3
+            }
+        );
+        assert_eq!(
+            term.damage.lines[4],
+            LineDamageBounds {
+                line: 4,
+                left: 3,
+                right: 3
+            }
+        );
         term.damage.reset(num_cols);
 
         term.move_down(1);
         term.move_down(1);
-        assert_eq!(term.damage.lines[4], LineDamageBounds { line: 4, left: 3, right: 3 });
-        assert_eq!(term.damage.lines[5], LineDamageBounds { line: 5, left: 3, right: 3 });
-        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 3, right: 3 });
+        assert_eq!(
+            term.damage.lines[4],
+            LineDamageBounds {
+                line: 4,
+                left: 3,
+                right: 3
+            }
+        );
+        assert_eq!(
+            term.damage.lines[5],
+            LineDamageBounds {
+                line: 5,
+                left: 3,
+                right: 3
+            }
+        );
+        assert_eq!(
+            term.damage.lines[6],
+            LineDamageBounds {
+                line: 6,
+                left: 3,
+                right: 3
+            }
+        );
         term.damage.reset(num_cols);
 
         term.wrapline();
-        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 3, right: 3 });
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 0 });
+        assert_eq!(
+            term.damage.lines[6],
+            LineDamageBounds {
+                line: 6,
+                left: 3,
+                right: 3
+            }
+        );
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 0,
+                right: 0
+            }
+        );
         term.move_forward(3);
         term.move_up(1);
         term.damage.reset(num_cols);
 
         term.linefeed();
-        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 3, right: 3 });
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 3, right: 3 });
+        assert_eq!(
+            term.damage.lines[6],
+            LineDamageBounds {
+                line: 6,
+                left: 3,
+                right: 3
+            }
+        );
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 3,
+                right: 3
+            }
+        );
         term.damage.reset(num_cols);
 
         term.carriage_return();
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 3 });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 0,
+                right: 3
+            }
+        );
         term.damage.reset(num_cols);
 
         term.erase_chars(5);
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 5 });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 0,
+                right: 5
+            }
+        );
         term.damage.reset(num_cols);
 
         term.delete_chars(3);
         let right = term.columns() - 1;
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 0,
+                right
+            }
+        );
         term.move_forward(term.columns());
         term.damage.reset(num_cols);
 
         term.move_backward_tabs(1);
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 8,
+                right
+            }
+        );
         term.save_cursor_position();
         term.goto(1, 1);
         term.damage.reset(num_cols);
 
         term.restore_cursor_position();
-        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 1, right: 1 });
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right: 8 });
+        assert_eq!(
+            term.damage.lines[1],
+            LineDamageBounds {
+                line: 1,
+                left: 1,
+                right: 1
+            }
+        );
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 8,
+                right: 8
+            }
+        );
         term.damage.reset(num_cols);
 
         term.clear_line(ansi::LineClearMode::All);
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 0,
+                right
+            }
+        );
         term.damage.reset(num_cols);
 
         term.clear_line(ansi::LineClearMode::Left);
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 8 });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 0,
+                right: 8
+            }
+        );
         term.damage.reset(num_cols);
 
         term.clear_line(ansi::LineClearMode::Right);
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 8,
+                right
+            }
+        );
         term.damage.reset(num_cols);
 
         term.reverse_index();
-        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right: 8 });
-        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 8, right: 8 });
+        assert_eq!(
+            term.damage.lines[7],
+            LineDamageBounds {
+                line: 7,
+                left: 8,
+                right: 8
+            }
+        );
+        assert_eq!(
+            term.damage.lines[6],
+            LineDamageBounds {
+                line: 6,
+                left: 8,
+                right: 8
+            }
+        );
     }
 
     #[test]

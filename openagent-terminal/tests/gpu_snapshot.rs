@@ -41,7 +41,11 @@ impl SnapshotTest {
         fs::create_dir_all(&golden_path).ok();
         fs::create_dir_all(&output_path).ok();
 
-        Self { config, golden_path, output_path }
+        Self {
+            config,
+            golden_path,
+            output_path,
+        }
     }
 
     /// Capture a snapshot of the current terminal render
@@ -50,8 +54,9 @@ impl SnapshotTest {
         renderer: &impl TerminalRenderer,
     ) -> Result<DynamicImage, String> {
         // Get framebuffer from renderer
-        let framebuffer =
-            renderer.get_framebuffer().map_err(|e| format!("Failed to get framebuffer: {}", e))?;
+        let framebuffer = renderer
+            .get_framebuffer()
+            .map_err(|e| format!("Failed to get framebuffer: {}", e))?;
 
         // Convert to image
         let (width, height) = self.config.dimensions;
@@ -77,7 +82,7 @@ impl SnapshotTest {
                     max_difference: 0,
                     diff_image: None,
                 };
-            },
+            }
         };
 
         self.compare_images(&golden, snapshot)
@@ -149,7 +154,9 @@ impl SnapshotTest {
     /// Update golden image with current snapshot
     pub fn update_golden(&self, snapshot: &DynamicImage) -> Result<(), String> {
         let golden_file = self.get_golden_path();
-        snapshot.save(&golden_file).map_err(|e| format!("Failed to save golden image: {}", e))
+        snapshot
+            .save(&golden_file)
+            .map_err(|e| format!("Failed to save golden image: {}", e))
     }
 
     /// Save comparison results
@@ -159,18 +166,24 @@ impl SnapshotTest {
         snapshot: &DynamicImage,
     ) -> Result<(), String> {
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let result_dir = self.output_path.join(format!("{}_{}", self.config.name, timestamp));
+        let result_dir = self
+            .output_path
+            .join(format!("{}_{}", self.config.name, timestamp));
         fs::create_dir_all(&result_dir)
             .map_err(|e| format!("Failed to create result directory: {}", e))?;
 
         // Save snapshot
         let snapshot_file = result_dir.join("snapshot.png");
-        snapshot.save(&snapshot_file).map_err(|e| format!("Failed to save snapshot: {}", e))?;
+        snapshot
+            .save(&snapshot_file)
+            .map_err(|e| format!("Failed to save snapshot: {}", e))?;
 
         // Save diff image if it exists
         if let Some(ref diff_image) = result.diff_image {
             let diff_file = result_dir.join("diff.png");
-            diff_image.save(&diff_file).map_err(|e| format!("Failed to save diff image: {}", e))?;
+            diff_image
+                .save(&diff_file)
+                .map_err(|e| format!("Failed to save diff image: {}", e))?;
         }
 
         // Save result metadata
@@ -185,8 +198,11 @@ impl SnapshotTest {
         });
 
         let metadata_file = result_dir.join("result.json");
-        fs::write(&metadata_file, serde_json::to_string_pretty(&metadata).unwrap())
-            .map_err(|e| format!("Failed to save metadata: {}", e))?;
+        fs::write(
+            &metadata_file,
+            serde_json::to_string_pretty(&metadata).unwrap(),
+        )
+        .map_err(|e| format!("Failed to save metadata: {}", e))?;
 
         Ok(())
     }
@@ -212,7 +228,10 @@ pub struct SnapshotTestRunner {
 
 impl SnapshotTestRunner {
     pub fn new(update_golden: bool) -> Self {
-        Self { tests: Vec::new(), update_golden }
+        Self {
+            tests: Vec::new(),
+            update_golden,
+        }
     }
 
     pub fn add_test(&mut self, config: SnapshotConfig) {
@@ -227,28 +246,34 @@ impl SnapshotTestRunner {
                 Ok(img) => img,
                 Err(e) => {
                     eprintln!("Failed to capture snapshot for {}: {}", test.config.name, e);
-                    results.push((test.config.name.clone(), ComparisonResult {
-                        passed: false,
-                        similarity: 0.0,
-                        diff_pixels: 0,
-                        max_difference: 0,
-                        diff_image: None,
-                    }));
+                    results.push((
+                        test.config.name.clone(),
+                        ComparisonResult {
+                            passed: false,
+                            similarity: 0.0,
+                            diff_pixels: 0,
+                            max_difference: 0,
+                            diff_image: None,
+                        },
+                    ));
                     continue;
-                },
+                }
             };
 
             if self.update_golden {
                 if let Err(e) = test.update_golden(&snapshot) {
                     eprintln!("Failed to update golden for {}: {}", test.config.name, e);
                 }
-                results.push((test.config.name.clone(), ComparisonResult {
-                    passed: true,
-                    similarity: 1.0,
-                    diff_pixels: 0,
-                    max_difference: 0,
-                    diff_image: None,
-                }));
+                results.push((
+                    test.config.name.clone(),
+                    ComparisonResult {
+                        passed: true,
+                        similarity: 1.0,
+                        diff_pixels: 0,
+                        max_difference: 0,
+                        diff_image: None,
+                    },
+                ));
             } else {
                 let result = test.compare_with_golden(&snapshot);
 
@@ -277,14 +302,22 @@ impl SnapshotTestRunner {
         if failed > 0 {
             println!("\nFailed tests:");
             for (name, result) in results.iter().filter(|(_, r)| !r.passed) {
-                println!("  ❌ {} (similarity: {:.2}%)", name, result.similarity * 100.0);
+                println!(
+                    "  ❌ {} (similarity: {:.2}%)",
+                    name,
+                    result.similarity * 100.0
+                );
             }
         }
 
         if passed > 0 {
             println!("\nPassed tests:");
             for (name, result) in results.iter().filter(|(_, r)| r.passed) {
-                println!("  ✅ {} (similarity: {:.2}%)", name, result.similarity * 100.0);
+                println!(
+                    "  ✅ {} (similarity: {:.2}%)",
+                    name,
+                    result.similarity * 100.0
+                );
             }
         }
     }
@@ -330,7 +363,10 @@ mod tests {
             framebuffer[i * 4 + 3] = 255; // A
         }
 
-        let renderer = MockRenderer { framebuffer, dimensions: (100, 50) };
+        let renderer = MockRenderer {
+            framebuffer,
+            dimensions: (100, 50),
+        };
 
         let snapshot = test.capture_snapshot(&renderer).unwrap();
         assert_eq!(snapshot.dimensions(), (100, 50));
@@ -354,7 +390,9 @@ mod tests {
         let mut img2 = DynamicImage::new_rgba8(10, 10);
 
         // Modify one pixel
-        img2.as_mut_rgba8().unwrap().put_pixel(5, 5, Rgba([255, 0, 0, 255]));
+        img2.as_mut_rgba8()
+            .unwrap()
+            .put_pixel(5, 5, Rgba([255, 0, 0, 255]));
 
         let result = test.compare_images(&img1, &img2);
         assert!(!result.passed); // Should fail due to difference at threshold 1.0
