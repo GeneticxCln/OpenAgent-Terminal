@@ -145,7 +145,11 @@ pub struct QuickActionsConfig {
 impl Default for QuickActionsConfig {
     fn default() -> Self {
         // Turn off by default; can be enabled in config
-        Self { show: false, position: QuickActionsPosition::Auto, show_palette: true }
+        Self {
+            show: false,
+            position: QuickActionsPosition::Auto,
+            show_palette: true,
+        }
     }
 }
 
@@ -158,7 +162,6 @@ pub enum QuickActionsPosition {
     Bottom,
 }
 
-
 /// Tab bar visibility behavior
 #[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 pub enum TabBarVisibility {
@@ -167,7 +170,6 @@ pub enum TabBarVisibility {
     Always,
     Hover,
 }
-
 
 impl Default for TabBarConfig {
     fn default() -> Self {
@@ -348,7 +350,6 @@ pub enum TabBarPosition {
     Hidden,
 }
 
-
 /// Action when creating a new tab
 #[allow(clippy::enum_variant_names)]
 #[derive(ConfigDeserialize, Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
@@ -363,7 +364,6 @@ pub enum NewTabAction {
     /// Use a specific directory (configured separately)
     CustomDir,
 }
-
 
 /// Workspace keybindings (for documentation, actual bindings in main keybinding system)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, SerdeReplace)]

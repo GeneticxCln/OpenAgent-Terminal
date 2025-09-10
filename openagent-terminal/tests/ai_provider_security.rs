@@ -63,7 +63,10 @@ mod ai_provider_security_tests {
 
         // Verify that credentials are properly isolated
         assert_eq!(openai_creds.api_key.as_ref().unwrap(), "openai-secret-key");
-        assert_eq!(anthropic_creds.api_key.as_ref().unwrap(), "anthropic-secret-key");
+        assert_eq!(
+            anthropic_creds.api_key.as_ref().unwrap(),
+            "anthropic-secret-key"
+        );
         assert!(ollama_creds.api_key.is_none()); // Ollama doesn't use API keys
 
         // Verify models are isolated
@@ -150,7 +153,10 @@ mod ai_provider_security_tests {
         let result = ProviderCredentials::from_config("test_provider", &config).unwrap();
 
         assert_eq!(result.api_key.as_ref().unwrap(), "test-key");
-        assert_eq!(result.endpoint.as_ref().unwrap(), "https://default.endpoint.com");
+        assert_eq!(
+            result.endpoint.as_ref().unwrap(),
+            "https://default.endpoint.com"
+        );
         assert_eq!(result.model.as_ref().unwrap(), "default-model");
 
         std::env::remove_var("MISSING_API_KEY");
@@ -196,8 +202,14 @@ mod ai_provider_security_tests {
         assert!(std::env::var("ANTHROPIC_API_KEY").is_err());
 
         // But our test variables should still exist
-        assert_eq!(std::env::var("TEST_SECURE_OPENAI_KEY").unwrap(), "secure-openai-key");
-        assert_eq!(std::env::var("TEST_SECURE_ANTHROPIC_KEY").unwrap(), "secure-anthropic-key");
+        assert_eq!(
+            std::env::var("TEST_SECURE_OPENAI_KEY").unwrap(),
+            "secure-openai-key"
+        );
+        assert_eq!(
+            std::env::var("TEST_SECURE_ANTHROPIC_KEY").unwrap(),
+            "secure-anthropic-key"
+        );
 
         // Clean up
         std::env::remove_var("TEST_SECURE_OPENAI_KEY");
@@ -230,7 +242,10 @@ mod ai_provider_security_tests {
 
         assert_eq!(credentials.api_key.as_ref().unwrap(), "test-runtime-key");
         assert_eq!(credentials.model.as_ref().unwrap(), "test-model");
-        assert_eq!(credentials.endpoint.as_ref().unwrap(), "https://test.api.com");
+        assert_eq!(
+            credentials.endpoint.as_ref().unwrap(),
+            "https://test.api.com"
+        );
 
         // Verify global env is not polluted
         assert!(std::env::var("OPENAI_API_KEY").is_err());

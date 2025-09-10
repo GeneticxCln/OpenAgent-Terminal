@@ -235,20 +235,43 @@ pub enum MatchType {
 /// Search filters for refinement
 #[derive(Clone)]
 pub enum SearchFilter {
-    TextFilter { pattern: String, case_sensitive: bool },
-    RegexFilter { regex: Regex },
-    DateFilter { from: Option<Instant>, to: Option<Instant> },
-    TypeFilter { types: HashSet<String> },
-    SizeFilter { min_size: Option<usize>, max_size: Option<usize> },
-    ScoreFilter { min_score: f64 },
-    ContextFilter { contexts: HashSet<SearchContext> },
-    Custom { name: String, predicate: Arc<dyn Fn(&SearchResult) -> bool + Send + Sync> },
+    TextFilter {
+        pattern: String,
+        case_sensitive: bool,
+    },
+    RegexFilter {
+        regex: Regex,
+    },
+    DateFilter {
+        from: Option<Instant>,
+        to: Option<Instant>,
+    },
+    TypeFilter {
+        types: HashSet<String>,
+    },
+    SizeFilter {
+        min_size: Option<usize>,
+        max_size: Option<usize>,
+    },
+    ScoreFilter {
+        min_score: f64,
+    },
+    ContextFilter {
+        contexts: HashSet<SearchContext>,
+    },
+    Custom {
+        name: String,
+        predicate: Arc<dyn Fn(&SearchResult) -> bool + Send + Sync>,
+    },
 }
 
 impl fmt::Debug for SearchFilter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SearchFilter::TextFilter { pattern, case_sensitive } => f
+            SearchFilter::TextFilter {
+                pattern,
+                case_sensitive,
+            } => f
                 .debug_struct("TextFilter")
                 .field("pattern", pattern)
                 .field("case_sensitive", case_sensitive)
@@ -267,10 +290,10 @@ impl fmt::Debug for SearchFilter {
                 .finish(),
             SearchFilter::ScoreFilter { min_score } => {
                 f.debug_tuple("ScoreFilter").field(min_score).finish()
-            },
+            }
             SearchFilter::ContextFilter { contexts } => {
                 f.debug_tuple("ContextFilter").field(contexts).finish()
-            },
+            }
             SearchFilter::Custom { name, .. } => f.debug_tuple("Custom").field(name).finish(),
         }
     }
@@ -904,7 +927,10 @@ impl SearchIntegration {
             filter_system: FilterSystem::new(),
             index_manager: SearchIndexManager::new(),
             event_callbacks: Vec::new(),
-            stats: SearchStats { last_reset: Instant::now(), ..Default::default() },
+            stats: SearchStats {
+                last_reset: Instant::now(),
+                ..Default::default()
+            },
         };
 
         // Initialize indices immediately
@@ -949,23 +975,23 @@ impl SearchIntegration {
                 all_results.extend(self.search_commands(query)?);
                 all_results.extend(self.search_blocks(query)?);
                 all_results.extend(self.search_files(query)?);
-            },
+            }
             SearchContext::CommandHistory => {
                 all_results = self.search_commands(query)?;
-            },
+            }
             SearchContext::AllBlocks | SearchContext::CurrentBlock => {
                 all_results = self.search_blocks(query)?;
-            },
+            }
             SearchContext::FileSystem => {
                 all_results = self.search_files(query)?;
-            },
+            }
             SearchContext::Terminal => {
                 all_results.extend(self.search_text(query)?);
                 all_results.extend(self.search_commands(query)?);
-            },
+            }
             _ => {
                 all_results = self.search_text(query)?;
-            },
+            }
         }
 
         // Apply active filters immediately
@@ -1048,8 +1074,14 @@ impl SearchIntegration {
                     context: Some(cmd_match.context),
                 }],
                 metadata: HashMap::from([
-                    ("exit_code".to_string(), cmd_match.metadata.exit_code.to_string()),
-                    ("duration".to_string(), format!("{:?}", cmd_match.metadata.duration)),
+                    (
+                        "exit_code".to_string(),
+                        cmd_match.metadata.exit_code.to_string(),
+                    ),
+                    (
+                        "duration".to_string(),
+                        format!("{:?}", cmd_match.metadata.duration),
+                    ),
                     ("working_dir".to_string(), cmd_match.metadata.working_dir),
                 ]),
                 timestamp: cmd_match.metadata.timestamp,
@@ -1068,7 +1100,12 @@ impl SearchIntegration {
         let block_matches = self.block_search.search_content(query);
 
         for (block_id, matches) in block_matches {
-            if let Some(metadata) = self.block_search.content_index.block_metadata.get(&block_id) {
+            if let Some(metadata) = self
+                .block_search
+                .content_index
+                .block_metadata
+                .get(&block_id)
+            {
                 let result = SearchResult {
                     id: format!("block_{:?}", block_id),
                     title: metadata.title.clone(),
@@ -1109,7 +1146,10 @@ impl SearchIntegration {
                     ("path".to_string(), file_entry.path),
                     ("size".to_string(), file_entry.size.to_string()),
                     ("type".to_string(), format!("{:?}", file_entry.file_type)),
-                    ("extension".to_string(), file_entry.extension.unwrap_or_default()),
+                    (
+                        "extension".to_string(),
+                        file_entry.extension.unwrap_or_default(),
+                    ),
                 ]),
                 timestamp: file_entry.modified,
             };
@@ -1125,7 +1165,11 @@ impl SearchIntegration {
                 {
                     let result = SearchResult {
                         id: format!("file_content_{}", file_path),
-                        title: file_path.split('/').last().unwrap_or(&file_path).to_string(),
+                        title: file_path
+                            .split('/')
+                            .last()
+                            .unwrap_or(&file_path)
+                            .to_string(),
                         content: matches.join("\n"),
                         context: SearchContext::FileSystem,
                         relevance_score: self.calculate_content_relevance(&matches, query),
@@ -1165,13 +1209,15 @@ impl SearchIntegration {
             let output_count = results.len();
 
             // Record filter application
-            self.filter_system.filter_history.push_back(FilterApplication {
-                filter: filter.clone(),
-                input_count,
-                output_count,
-                duration,
-                timestamp: start_time,
-            });
+            self.filter_system
+                .filter_history
+                .push_back(FilterApplication {
+                    filter: filter.clone(),
+                    input_count,
+                    output_count,
+                    duration,
+                    timestamp: start_time,
+                });
 
             // Limit filter history
             if self.filter_system.filter_history.len() > 1000 {
@@ -1201,16 +1247,22 @@ impl SearchIntegration {
             .into_iter()
             .filter(|result| {
                 match filter {
-                    SearchFilter::TextFilter { pattern, case_sensitive } => {
+                    SearchFilter::TextFilter {
+                        pattern,
+                        case_sensitive,
+                    } => {
                         let content = if *case_sensitive {
                             result.content.clone()
                         } else {
                             result.content.to_lowercase()
                         };
-                        let search_pattern =
-                            if *case_sensitive { pattern.clone() } else { pattern.to_lowercase() };
+                        let search_pattern = if *case_sensitive {
+                            pattern.clone()
+                        } else {
+                            pattern.to_lowercase()
+                        };
                         content.contains(&search_pattern)
-                    },
+                    }
                     SearchFilter::RegexFilter { regex } => regex.is_match(&result.content),
                     SearchFilter::ScoreFilter { min_score } => result.relevance_score >= *min_score,
                     SearchFilter::ContextFilter { contexts } => contexts.contains(&result.context),
@@ -1220,7 +1272,7 @@ impl SearchIntegration {
                         } else {
                             false
                         }
-                    },
+                    }
                     SearchFilter::Custom { predicate, .. } => predicate(result),
                     _ => true, // Other filters not implemented yet
                 }
@@ -1256,8 +1308,11 @@ impl SearchIntegration {
         item_id: &str,
         content: Option<String>,
     ) -> Result<()> {
-        let operation =
-            if content.is_some() { UpdateOperation::Update } else { UpdateOperation::Remove };
+        let operation = if content.is_some() {
+            UpdateOperation::Update
+        } else {
+            UpdateOperation::Remove
+        };
 
         let update = IndexUpdate {
             index_name: index_name.to_string(),
@@ -1310,31 +1365,35 @@ impl SearchIntegration {
             "text" => match update.operation {
                 UpdateOperation::Add | UpdateOperation::Update => {
                     if let Some(content) = &update.content {
-                        self.text_search.inverted_index.add_document(&update.item_id, content);
+                        self.text_search
+                            .inverted_index
+                            .add_document(&update.item_id, content);
                     }
-                },
+                }
                 UpdateOperation::Remove => {
-                    self.text_search.inverted_index.remove_document(&update.item_id);
-                },
+                    self.text_search
+                        .inverted_index
+                        .remove_document(&update.item_id);
+                }
                 UpdateOperation::Clear => {
                     self.text_search.inverted_index = InvertedIndex::default();
-                },
+                }
             },
             "commands" => {
                 // Update command index
                 debug!("Updating command index for: {}", update.item_id);
-            },
+            }
             "blocks" => {
                 // Update block index
                 debug!("Updating block index for: {}", update.item_id);
-            },
+            }
             "files" => {
                 // Update file index
                 debug!("Updating file index for: {}", update.item_id);
-            },
+            }
             _ => {
                 warn!("Unknown index: {}", update.index_name);
-            },
+            }
         }
 
         Ok(())
@@ -1358,8 +1417,14 @@ impl SearchIntegration {
 
     /// Calculate filename relevance score
     fn calculate_filename_relevance(&self, file_entry: &FileEntry, query: &str) -> f64 {
-        let name_match = file_entry.name.to_lowercase().contains(&query.to_lowercase());
-        let path_match = file_entry.path.to_lowercase().contains(&query.to_lowercase());
+        let name_match = file_entry
+            .name
+            .to_lowercase()
+            .contains(&query.to_lowercase());
+        let path_match = file_entry
+            .path
+            .to_lowercase()
+            .contains(&query.to_lowercase());
 
         if name_match {
             1.0
@@ -1373,8 +1438,10 @@ impl SearchIntegration {
     /// Calculate content relevance score
     fn calculate_content_relevance(&self, matches: &[String], query: &str) -> f64 {
         let match_count = matches.len() as f64;
-        let total_occurrences =
-            matches.iter().map(|m| m.matches(query).count()).sum::<usize>() as f64;
+        let total_occurrences = matches
+            .iter()
+            .map(|m| m.matches(query).count())
+            .sum::<usize>() as f64;
 
         (match_count + total_occurrences) / 10.0
     }
@@ -1552,7 +1619,11 @@ impl BlockSearchEngine {
     }
 
     fn extract_matching_lines(&self, content: &str, query: &str) -> Vec<String> {
-        content.lines().filter(|line| line.contains(query)).map(|line| line.to_string()).collect()
+        content
+            .lines()
+            .filter(|line| line.contains(query))
+            .map(|line| line.to_string())
+            .collect()
     }
 }
 
@@ -1631,8 +1702,11 @@ impl SearchIndexManager {
 
 impl InvertedIndex {
     fn add_document(&mut self, doc_id: &str, content: &str) {
-        let terms: HashSet<String> =
-            content.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+        let terms: HashSet<String> = content
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         // Update term-to-document mapping
         for term in &terms {
@@ -1680,8 +1754,11 @@ impl InvertedIndex {
     }
 
     fn search_exact(&self, query: &str) -> Vec<SearchResult> {
-        let query_terms: Vec<String> =
-            query.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+        let query_terms: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         let mut doc_scores: HashMap<String, f64> = HashMap::new();
 
@@ -1779,7 +1856,12 @@ impl Default for FuzzyWeights {
 
 impl Default for Bm25Ranker {
     fn default() -> Self {
-        Self { k1: 1.2, b: 0.75, average_doc_length: 100.0, doc_lengths: HashMap::new() }
+        Self {
+            k1: 1.2,
+            b: 0.75,
+            average_doc_length: 100.0,
+            doc_lengths: HashMap::new(),
+        }
     }
 }
 
@@ -1829,8 +1911,10 @@ mod tests {
 
     #[test]
     fn test_search_filter() {
-        let filter =
-            SearchFilter::TextFilter { pattern: "test".to_string(), case_sensitive: false };
+        let filter = SearchFilter::TextFilter {
+            pattern: "test".to_string(),
+            case_sensitive: false,
+        };
 
         let result = SearchResult {
             id: "test1".to_string(),

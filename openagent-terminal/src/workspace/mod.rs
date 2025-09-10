@@ -280,7 +280,10 @@ impl WorkspaceManager {
 
     /// Check if the active tab is currently zoomed
     pub fn active_tab_zoomed(&self) -> bool {
-        self.tabs.active_tab_id().map(|id| self.tabs.is_tab_zoomed(id)).unwrap_or(false)
+        self.tabs
+            .active_tab_id()
+            .map(|id| self.tabs.is_tab_zoomed(id))
+            .unwrap_or(false)
     }
 
     /// Mark active tab as having last command error (non-zero exit)
@@ -317,17 +320,17 @@ impl WorkspaceManager {
             let eff_vis = match self.config.workspace.tab_bar.visibility {
                 crate::config::workspace::TabBarVisibility::Always => {
                     crate::config::workspace::TabBarVisibility::Always
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Hover => {
                     crate::config::workspace::TabBarVisibility::Hover
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Auto => {
                     if is_fs {
                         crate::config::workspace::TabBarVisibility::Hover
                     } else {
                         crate::config::workspace::TabBarVisibility::Always
                     }
-                },
+                }
             };
             if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
                 let ch = si.cell_height();
@@ -335,11 +338,11 @@ impl WorkspaceManager {
                     crate::config::workspace::TabBarPosition::Top => {
                         y0 += ch;
                         h = (h - ch).max(0.0);
-                    },
+                    }
                     crate::config::workspace::TabBarPosition::Bottom => {
                         h = (h - ch).max(0.0);
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
         }
@@ -355,7 +358,8 @@ impl WorkspaceManager {
         new_ratio: f32,
     ) -> bool {
         if let Some(tab) = self.active_tab_mut() {
-            tab.split_layout.set_ratio_at_path_internal(path, axis, new_ratio)
+            tab.split_layout
+                .set_ratio_at_path_internal(path, axis, new_ratio)
         } else {
             false
         }
@@ -456,7 +460,10 @@ mod tests {
         let tol = 2.0;
 
         let hit = wm.hit_test_split_divider(split_x, y_inside, tol);
-        assert!(hit.is_some(), "divider should be hittable at correct x considering padding");
+        assert!(
+            hit.is_some(),
+            "divider should be hittable at correct x considering padding"
+        );
         assert_eq!(hit.unwrap().axis, split_manager::SplitAxis::Horizontal);
     }
 }

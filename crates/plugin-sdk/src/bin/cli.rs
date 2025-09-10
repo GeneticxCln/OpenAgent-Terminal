@@ -21,10 +21,10 @@ fn main() {
                 return;
             }
             create_new_plugin(&args[2]);
-        },
+        }
         "build" => {
             build_plugin();
-        },
+        }
         "install" => {
             if args.len() < 3 {
                 eprintln!("Usage: plugin-sdk-cli install <url|path>");
@@ -35,7 +35,7 @@ fn main() {
             } else {
                 println!("Installed plugin from {}", &args[2]);
             }
-        },
+        }
         "add-key" => {
             if args.len() < 3 {
                 eprintln!("Usage: plugin-sdk-cli add-key <hex|file>");
@@ -46,7 +46,7 @@ fn main() {
             } else {
                 println!("Key added");
             }
-        },
+        }
         "verify" => {
             if args.len() < 2 + 1 {
                 eprintln!("Usage: plugin-sdk-cli verify <wasm> [--sig <sigfile>]");
@@ -67,7 +67,7 @@ fn main() {
                 Ok(false) => println!("Signature: NOT VERIFIED"),
                 Err(e) => eprintln!("Verification error: {}", e),
             }
-        },
+        }
         "sign" => {
             if args.len() < 4 {
                 eprintln!(
@@ -91,14 +91,14 @@ fn main() {
                 Ok(sig_path) => println!("Wrote signature to {}", sig_path.display()),
                 Err(e) => eprintln!("Sign error: {}", e),
             }
-        },
+        }
         "help" | "--help" | "-h" => {
             print_help();
-        },
+        }
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             print_help();
-        },
+        }
     }
 }
 
@@ -334,12 +334,16 @@ fn sign_wasm(
     let digest = Sha256::digest(&wasm_bytes);
 
     let sk = SigningKey::from_bytes(
-        &key_bytes.clone().try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?,
+        &key_bytes
+            .clone()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid key length"))?,
     );
     let sig = sk.sign(&digest);
     let sig_hex = hex::encode(sig.to_bytes());
-    let out_path =
-        sig_out.map(std::path::PathBuf::from).unwrap_or_else(|| wasm_path.with_extension("sig"));
+    let out_path = sig_out
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| wasm_path.with_extension("sig"));
     std::fs::write(&out_path, sig_hex.as_bytes())?;
     Ok(out_path)
 }
@@ -349,8 +353,9 @@ fn verify_signature(wasm: &str, sig_file: Option<&str>) -> anyhow::Result<bool> 
     use sha2::{Digest, Sha256};
 
     let wasm_path = std::path::Path::new(wasm);
-    let sig_path =
-        sig_file.map(std::path::PathBuf::from).unwrap_or_else(|| wasm_path.with_extension("sig"));
+    let sig_path = sig_file
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| wasm_path.with_extension("sig"));
     if !sig_path.exists() {
         anyhow::bail!("Signature file not found: {}", sig_path.display());
     }
@@ -374,7 +379,9 @@ fn verify_signature(wasm: &str, sig_file: Option<&str>) -> anyhow::Result<bool> 
             let key_hex = std::fs::read_to_string(entry.path())?;
             let key_bytes = hex::decode(key_hex.trim())?;
             if let Ok(vk) = VerifyingKey::from_bytes(
-                &key_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?,
+                &key_bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("invalid key length"))?,
             ) {
                 if vk.verify(&digest, &signature).is_ok() {
                     return Ok(true);

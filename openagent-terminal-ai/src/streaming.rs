@@ -112,15 +112,15 @@ impl SseParser {
             "data" => {
                 // Handle multi-line data fields
                 self.current_event.data.push(value.to_string());
-            },
+            }
             "retry" => {
                 if let Ok(ms) = value.parse::<u64>() {
                     self.current_event.retry = Some(ms);
                 }
-            },
+            }
             _ => {
                 debug!("Unknown SSE field: {}", field);
-            },
+            }
         }
 
         None
@@ -263,11 +263,20 @@ pub enum RetryStrategy {
     /// Standard exponential backoff
     Standard(RetryConfig),
     /// OpenAI-specific (respects rate limit headers)
-    OpenAI { config: RetryConfig, respect_retry_after: bool },
+    OpenAI {
+        config: RetryConfig,
+        respect_retry_after: bool,
+    },
     /// Anthropic-specific (handles overload responses)
-    Anthropic { config: RetryConfig, overload_backoff: Duration },
+    Anthropic {
+        config: RetryConfig,
+        overload_backoff: Duration,
+    },
     /// Ollama-specific (handles local resource constraints)
-    Ollama { config: RetryConfig, resource_wait: Duration },
+    Ollama {
+        config: RetryConfig,
+        resource_wait: Duration,
+    },
 }
 
 impl RetryStrategy {
@@ -293,28 +302,37 @@ impl RetryStrategy {
     pub fn delay_for_attempt(&self, attempt: usize, error: &str) -> Duration {
         match self {
             Self::Standard(config) => config.delay_for_attempt(attempt),
-            Self::OpenAI { config, respect_retry_after } => {
+            Self::OpenAI {
+                config,
+                respect_retry_after,
+            } => {
                 if *respect_retry_after {
                     if let Some(d) = Self::parse_retry_after(error) {
                         return d;
                     }
                 }
                 config.delay_for_attempt(attempt)
-            },
-            Self::Anthropic { config, overload_backoff } => {
+            }
+            Self::Anthropic {
+                config,
+                overload_backoff,
+            } => {
                 if error.contains("overloaded") {
                     *overload_backoff
                 } else {
                     config.delay_for_attempt(attempt)
                 }
-            },
-            Self::Ollama { config, resource_wait } => {
+            }
+            Self::Ollama {
+                config,
+                resource_wait,
+            } => {
                 if error.contains("resource") || error.contains("memory") {
                     *resource_wait
                 } else {
                     config.delay_for_attempt(attempt)
                 }
-            },
+            }
         }
     }
 
@@ -406,11 +424,14 @@ mod tests {
         let events = parser.parse_chunk(data);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].data, vec![
-            "line1".to_string(),
-            "line2".to_string(),
-            "line3".to_string(),
-        ]);
+        assert_eq!(
+            events[0].data,
+            vec![
+                "line1".to_string(),
+                "line2".to_string(),
+                "line3".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -464,7 +485,10 @@ mod tests {
             max_delay: Duration::from_secs(10),
             ..Default::default()
         };
-        let strat = RetryStrategy::OpenAI { config: cfg.clone(), respect_retry_after: true };
+        let strat = RetryStrategy::OpenAI {
+            config: cfg.clone(),
+            respect_retry_after: true,
+        };
 
         // With retry-after present, strategy should return the header value (seconds)
         let d_with = strat.delay_for_attempt(0, "API error 429; retry-after: 60");
@@ -483,7 +507,10 @@ mod tests {
             ..Default::default()
         };
         let backoff = Duration::from_secs(3);
-        let strat = RetryStrategy::Anthropic { config: cfg.clone(), overload_backoff: backoff };
+        let strat = RetryStrategy::Anthropic {
+            config: cfg.clone(),
+            overload_backoff: backoff,
+        };
 
         // Overload error should use overload_backoff delay
         let d_over = strat.delay_for_attempt(0, "server overloaded, please retry");
@@ -502,7 +529,10 @@ mod tests {
             ..Default::default()
         };
         let wait = Duration::from_secs(2);
-        let strat = RetryStrategy::Ollama { config: cfg.clone(), resource_wait: wait };
+        let strat = RetryStrategy::Ollama {
+            config: cfg.clone(),
+            resource_wait: wait,
+        };
 
         // Resource error should use resource_wait delay
         let d_res = strat.delay_for_attempt(0, "resource busy: GPU memory");

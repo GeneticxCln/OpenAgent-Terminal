@@ -88,7 +88,6 @@ impl TracingConfig {
 
             // External dependencies at warn level to reduce noise.
             "winit=warn".to_string(),
-            "glutin=warn".to_string(),
             "mio=warn".to_string(),
             "notify=warn".to_string(),
         ];

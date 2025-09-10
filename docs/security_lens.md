@@ -2,6 +2,17 @@
 
 This document summarizes the Security Lens policy and the interactive confirmation overlay UX.
 
+Prebuilt policy bundles
+- policies/bundles/base.toml – balanced defaults suitable for most users
+- policies/bundles/strict.toml – enterprise defaults (block critical, confirmations on risky)
+
+Validate a policy
+- In the terminal: `openagent-terminal security validate --policy policies/bundles/base.toml`
+- Add `--json` to get a machine-readable report.
+
+Org documentation links
+- You can set docs_base_url to point to your organization’s internal guidance. Links shown in the overlay will be prefixed with this base URL.
+
 Policy (UiConfig.security)
 - enabled: whether risk analysis is active. If false, all commands are treated as Safe.
 - block_critical: when true, commands detected as Critical are blocked outright.

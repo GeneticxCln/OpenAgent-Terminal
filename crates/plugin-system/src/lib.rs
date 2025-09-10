@@ -170,23 +170,33 @@ impl PluginAbi {
             cleanup: instance.get_typed_func(&mut *store, "plugin_cleanup").ok(),
 
             // Metadata
-            get_metadata: instance.get_typed_func(&mut *store, "plugin_get_metadata").ok(),
-            get_capabilities: instance.get_typed_func(&mut *store, "plugin_get_capabilities").ok(),
+            get_metadata: instance
+                .get_typed_func(&mut *store, "plugin_get_metadata")
+                .ok(),
+            get_capabilities: instance
+                .get_typed_func(&mut *store, "plugin_get_capabilities")
+                .ok(),
 
             // Commands
-            execute_command: instance.get_typed_func(&mut *store, "plugin_execute_command").ok(),
+            execute_command: instance
+                .get_typed_func(&mut *store, "plugin_execute_command")
+                .ok(),
             execute_command_ex: instance
                 .get_typed_func(&mut *store, "plugin_execute_command_ex")
                 .ok(),
 
             // Events
-            handle_event: instance.get_typed_func(&mut *store, "plugin_handle_event").ok(),
+            handle_event: instance
+                .get_typed_func(&mut *store, "plugin_handle_event")
+                .ok(),
 
             // Context and completions
             provide_completions: instance
                 .get_typed_func(&mut *store, "plugin_provide_completions")
                 .ok(),
-            collect_context: instance.get_typed_func(&mut *store, "plugin_collect_context").ok(),
+            collect_context: instance
+                .get_typed_func(&mut *store, "plugin_collect_context")
+                .ok(),
 
             // Response retrieval
             get_last_response: instance
@@ -357,7 +367,7 @@ impl UnifiedPluginManager {
                     "Unsupported plugin type: {}",
                     extension
                 )))
-            },
+            }
         };
 
         let plugin_id = loaded_plugin.metadata.id.clone();
@@ -429,7 +439,10 @@ impl UnifiedPluginManager {
         Ok(LoadedPlugin {
             metadata,
             state: PluginState::Ready,
-            wasm_data: Some(WasmPluginData { instance, store: tokio::sync::Mutex::new(store) }),
+            wasm_data: Some(WasmPluginData {
+                instance,
+                store: tokio::sync::Mutex::new(store),
+            }),
             #[cfg(feature = "host-integration")]
             host_data: None,
             abi,
@@ -447,7 +460,9 @@ impl UnifiedPluginManager {
     ) -> Result<LoadedPlugin, PluginSystemError> {
         // This would load native plugins using libloading
         // For now, return an error as it's not implemented
-        Err(PluginSystemError::Runtime("Native plugin loading not yet implemented".to_string()))
+        Err(PluginSystemError::Runtime(
+            "Native plugin loading not yet implemented".to_string(),
+        ))
     }
 
     /// Load plugin permissions from manifest
@@ -505,19 +520,24 @@ impl UnifiedPluginManager {
                 .get_export(&mut *store, "memory")
                 .and_then(|e| e.into_memory())
                 .ok_or_else(|| {
-                PluginSystemError::Runtime("Plugin missing memory export".to_string())
-            })?;
+                    PluginSystemError::Runtime("Plugin missing memory export".to_string())
+                })?;
 
             let mut buffer = vec![0u8; len as usize];
-            memory.read(&mut *store, ptr as usize, &mut buffer).map_err(|_| {
-                PluginSystemError::Runtime("Failed to read plugin metadata".to_string())
-            })?;
+            memory
+                .read(&mut *store, ptr as usize, &mut buffer)
+                .map_err(|_| {
+                    PluginSystemError::Runtime("Failed to read plugin metadata".to_string())
+                })?;
 
             let metadata: PluginMetadata = serde_json::from_slice(&buffer)?;
             Ok(metadata)
         } else {
             // Return default metadata if function not available
-            Ok(PluginMetadata { name: "Unknown Plugin".to_string(), ..Default::default() })
+            Ok(PluginMetadata {
+                name: "Unknown Plugin".to_string(),
+                ..Default::default()
+            })
         }
     }
 
@@ -536,26 +556,37 @@ impl UnifiedPluginManager {
         drop(plugins);
 
         match plugin.state {
-            PluginState::Ready => {},
+            PluginState::Ready => {}
             PluginState::Error(ref e) => {
-                return Err(PluginSystemError::Runtime(format!("Plugin in error state: {}", e)));
-            },
+                return Err(PluginSystemError::Runtime(format!(
+                    "Plugin in error state: {}",
+                    e
+                )));
+            }
             _ => {
-                return Err(PluginSystemError::Runtime("Plugin not in ready state".to_string()));
-            },
+                return Err(PluginSystemError::Runtime(
+                    "Plugin not in ready state".to_string(),
+                ));
+            }
         }
 
         #[cfg(feature = "wasm-runtime")]
         if let Some(wasm_data) = &plugin.wasm_data {
-            return self.execute_wasm_command(plugin_id, command, args, wasm_data).await;
+            return self
+                .execute_wasm_command(plugin_id, command, args, wasm_data)
+                .await;
         }
 
         #[cfg(feature = "host-integration")]
         if let Some(host_data) = &plugin.host_data {
-            return self.execute_host_command(plugin_id, command, args, host_data).await;
+            return self
+                .execute_host_command(plugin_id, command, args, host_data)
+                .await;
         }
 
-        Err(PluginSystemError::Runtime("No execution context available".to_string()))
+        Err(PluginSystemError::Runtime(
+            "No execution context available".to_string(),
+        ))
     }
 
     /// Execute command on WASM plugin
@@ -590,7 +621,9 @@ impl UnifiedPluginManager {
         _host_data: &HostPluginData,
     ) -> Result<CommandOutput, PluginSystemError> {
         // This would implement native plugin command execution
-        Err(PluginSystemError::Runtime("Native plugin execution not implemented".to_string()))
+        Err(PluginSystemError::Runtime(
+            "Native plugin execution not implemented".to_string(),
+        ))
     }
 
     /// List all loaded plugins

@@ -291,7 +291,7 @@ impl Plugin for DockerHelperPlugin {
                                 icon: Some("💾".to_string()),
                             });
                         }
-                    },
+                    }
 
                     "exec" | "stop" | "start" | "rm" | "logs" | "inspect" => {
                         // Suggest container names/IDs
@@ -306,12 +306,16 @@ impl Plugin for DockerHelperPlugin {
                                 kind: CompletionKind::Argument,
                                 score: 0.9,
                                 icon: Some(
-                                    if container.status.contains("Up") { "🟢" } else { "🔴" }
-                                        .to_string(),
+                                    if container.status.contains("Up") {
+                                        "🟢"
+                                    } else {
+                                        "🔴"
+                                    }
+                                    .to_string(),
                                 ),
                             });
                         }
-                    },
+                    }
 
                     "rmi" => {
                         // Suggest image names/IDs
@@ -326,7 +330,7 @@ impl Plugin for DockerHelperPlugin {
                                 icon: Some("📦".to_string()),
                             });
                         }
-                    },
+                    }
 
                     "network" => {
                         if parts.len() == 2 {
@@ -350,9 +354,9 @@ impl Plugin for DockerHelperPlugin {
                                 });
                             }
                         }
-                    },
+                    }
 
-                    _ => {},
+                    _ => {}
                 }
             }
         }
@@ -441,7 +445,10 @@ impl Plugin for DockerHelperPlugin {
                     "container_count".to_string(),
                     self.cached_containers.len().to_string(),
                 );
-                meta.insert("image_count".to_string(), self.cached_images.len().to_string());
+                meta.insert(
+                    "image_count".to_string(),
+                    self.cached_images.len().to_string(),
+                );
                 meta
             },
             sensitivity: SensitivityLevel::Internal,
@@ -467,8 +474,11 @@ impl Plugin for DockerHelperPlugin {
                 }
 
                 // Running containers
-                let running: Vec<_> =
-                    self.cached_containers.iter().filter(|c| c.status.contains("Up")).collect();
+                let running: Vec<_> = self
+                    .cached_containers
+                    .iter()
+                    .filter(|c| c.status.contains("Up"))
+                    .collect();
 
                 output.push_str(&format!("🟢 Running Containers: {}\n", running.len()));
                 for container in running.iter().take(5) {
@@ -517,7 +527,7 @@ impl Plugin for DockerHelperPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
             "docker-stats" => match self.get_docker_stats() {
                 Ok(stats) => {
@@ -553,7 +563,7 @@ impl Plugin for DockerHelperPlugin {
                         exit_code: 0,
                         execution_time_ms: start.elapsed().as_millis() as u64,
                     })
-                },
+                }
                 Err(e) => Ok(CommandOutput {
                     stdout: String::new(),
                     stderr: format!("Failed to get stats: {}", e),
@@ -594,9 +604,12 @@ impl Plugin for DockerHelperPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
-            _ => Err(PluginError::CommandError(format!("Unknown command: {}", cmd))),
+            _ => Err(PluginError::CommandError(format!(
+                "Unknown command: {}",
+                cmd
+            ))),
         }
     }
 
@@ -615,7 +628,7 @@ impl Plugin for DockerHelperPlugin {
                     prevent_execution: false,
                     messages: vec![],
                 })
-            },
+            }
             _ => Ok(HookResponse {
                 modified_command: None,
                 prevent_execution: false,

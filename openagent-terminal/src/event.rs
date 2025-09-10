@@ -2,8 +2,6 @@
 //! Process window events.
 
 use crate::ConfigMonitor;
-#[cfg(feature = "gl-backend")]
-use glutin::config::GetGlConfig;
 use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
@@ -24,10 +22,6 @@ use std::{env, f32, mem};
 
 use ahash::RandomState;
 use crossfont::Size as FontSize;
-#[cfg(feature = "gl-backend")]
-use glutin::config::Config as GlutinConfig;
-#[cfg(feature = "gl-backend")]
-use glutin::display::GetGlDisplay;
 use log::{debug, error, info, warn};
 use winit::application::ApplicationHandler;
 use winit::event::{
@@ -115,8 +109,6 @@ pub struct Processor {
     initial_window_error: Option<Box<dyn Error>>,
     windows: HashMap<WindowId, WindowContext, RandomState>,
     proxy: EventLoopProxy<Event>,
-    #[cfg(feature = "gl-backend")]
-    gl_config: Option<GlutinConfig>,
     components: Option<Arc<InitializedComponents>>,
     #[cfg(unix)]
     global_ipc_options: ParsedOptions,
@@ -171,8 +163,6 @@ impl Processor {
             cli_options,
             proxy,
             scheduler,
-            #[cfg(feature = "gl-backend")]
-            gl_config: None,
             components: None,
             config: Rc::new(config),
             clipboard,
@@ -210,7 +200,10 @@ impl Processor {
             // Use the winit Window reference for any OS integrations required during init
             let winit_win = window_context.display.window.winit_window();
             // Provide a Tokio runtime to drive async initialization that uses tokio::fs and friends
-            if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
                 let _ = rt.block_on(self.initialize_components(winit_win));
             }
             if let Some(components) = &self.components {
@@ -218,13 +211,6 @@ impl Processor {
             }
         }
 
-        // Cache GL config only when using the GL backend; on WGPU this is unavailable.
-        #[cfg(feature = "gl-backend")]
-        {
-            if !window_context.display.is_wgpu_backend() {
-                self.gl_config = Some(window_context.display.gl_context().config());
-            }
-        }
         let window_id = window_context.id();
         // Set default window for confirmations (first window)
         crate::ui_confirm::set_default_window_id(window_id);
@@ -253,7 +239,26 @@ impl Processor {
                 .to_string();
             let message =
                 crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
-            let _ = self.proxy.send_event(Event::new(EventType::Message(message), window_id));
+            let _ = self
+                .proxy
+                .send_event(Event::new(EventType::Message(message), window_id));
+            // Copy onboarding examples to ~/.config on first run
+            if let Some(cfg_dir) = dirs::config_dir().map(|d| d.join("openagent-terminal")) {
+                let examples_dst = cfg_dir.join("examples").join("workflows");
+                if !examples_dst.exists() {
+                    let _ = std::fs::create_dir_all(&examples_dst);
+                    // Copy curated workflow samples (best-effort)
+                    for name in ["rust.yaml", "node.yaml", "python.yaml"] {
+                        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("openagent-terminal")
+                            .join("examples")
+                            .join("workflows")
+                            .join(name);
+                        let dst = examples_dst.join(name);
+                        let _ = std::fs::copy(src, dst);
+                    }
+                }
+            }
             // Auto-open Workflows panel and trigger an initial search
             #[cfg(feature = "workflow")]
             if let Some(win) = self.windows.get_mut(&window_id) {
@@ -367,12 +372,12 @@ impl Processor {
                 self.components = Some(Arc::new(components));
                 info!("✓ All components initialized successfully");
                 Ok(())
-            },
+            }
             Err(e) => {
                 warn!("Component initialization failed: {}", e);
                 warn!("Continuing with basic functionality...");
                 Ok(()) // Don't fail completely, just continue without enhanced features
-            },
+            }
         }
     }
 
@@ -397,8 +402,10 @@ impl Processor {
     fn skip_window_event(event: &WindowEvent) -> bool {
         matches!(
             event,
-            WindowEvent::KeyboardInput { is_synthetic: true, .. }
-                | WindowEvent::ActivationTokenDone { .. }
+            WindowEvent::KeyboardInput {
+                is_synthetic: true,
+                ..
+            } | WindowEvent::ActivationTokenDone { .. }
                 | WindowEvent::DoubleTapGesture { .. }
                 | WindowEvent::TouchpadPressure { .. }
                 | WindowEvent::RotationGesture { .. }
@@ -481,9 +488,10 @@ impl Processor {
         {
             test_posted_events::record(EventType::BlocksSearchResults(Vec::new()));
         }
-        let _ = self
-            .proxy
-            .send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), window_id));
+        let _ = self.proxy.send_event(Event::new(
+            EventType::BlocksSearchResults(Vec::new()),
+            window_id,
+        ));
     }
 
     fn build_search_query_from_state(
@@ -520,16 +528,16 @@ impl Processor {
             match state.mode {
                 SearchMode::Basic => {
                     sq.text = Some(query.to_string());
-                },
+                }
                 SearchMode::Command => {
                     sq.command_text = Some(query.to_string());
-                },
+                }
                 SearchMode::Output => {
                     sq.output_text = Some(query.to_string());
-                },
+                }
                 SearchMode::Advanced => {
                     sq.text = Some(query.to_string());
-                },
+                }
             }
         }
 
@@ -556,8 +564,10 @@ impl Processor {
                 });
             }
         }
-        let _ =
-            self.proxy.send_event(Event::new(EventType::WorkflowsSearchResults(items), window_id));
+        let _ = self.proxy.send_event(Event::new(
+            EventType::WorkflowsSearchResults(items),
+            window_id,
+        ));
     }
 }
 
@@ -607,7 +617,7 @@ impl Processor {
                                 let summary = match c.cell_type {
                                     crate::notebooks::CellType::Markdown => {
                                         c.content.lines().next().unwrap_or("").to_string()
-                                    },
+                                    }
                                     crate::notebooks::CellType::Command => c.content.clone(),
                                 };
                                 let cell_type = match c.cell_type {
@@ -732,14 +742,16 @@ impl ApplicationHandler<Event> for Processor {
                         self.global_ipc_options.append(&mut options);
                     }
                 }
-            },
+            }
             // Process IPC config requests.
             #[cfg(unix)]
             (EventType::IpcGetConfig(stream), window_id) => {
                 // Get the config for the requested window ID.
                 let config = match self.windows.iter().find(|(id, _)| window_id == Some(*id)) {
                     Some((_, window_context)) => window_context.config(),
-                    None => &self.global_ipc_options.override_config_rc(self.config.clone()),
+                    None => &self
+                        .global_ipc_options
+                        .override_config_rc(self.config.clone()),
                 };
 
                 // Convert config to JSON format.
@@ -748,14 +760,14 @@ impl ApplicationHandler<Event> for Processor {
                     Err(err) => {
                         error!("Failed config serialization: {err}");
                         return;
-                    },
+                    }
                 };
 
                 // Send JSON config to the socket.
                 if let Ok(mut stream) = stream.try_clone() {
                     ipc::send_reply(&mut stream, SocketReply::GetConfig(config_json));
                 }
-            },
+            }
             // Process sync IPC commands.
             #[cfg(all(unix, feature = "sync"))]
             (EventType::IpcSync(sync_type, stream), _) => {
@@ -781,7 +793,7 @@ impl ApplicationHandler<Event> for Processor {
                             ipc::send_reply(&mut stream, reply);
                         }
                         return;
-                    },
+                    }
                 };
 
                 // Convert scope argument to sync scope.
@@ -802,7 +814,7 @@ impl ApplicationHandler<Event> for Processor {
                                     ipc::SocketReply::SyncStatus(status_json),
                                 );
                             }
-                        },
+                        }
                         Err(err) => {
                             if let Ok(mut stream) = stream.try_clone() {
                                 let reply = ipc::SocketReply::SyncResult(Err(format!(
@@ -811,7 +823,7 @@ impl ApplicationHandler<Event> for Processor {
                                 )));
                                 ipc::send_reply(&mut stream, reply);
                             }
-                        },
+                        }
                     },
                     IpcSyncType::Push(_) => {
                         let scope = scope.unwrap_or(SyncScope::Settings);
@@ -824,7 +836,7 @@ impl ApplicationHandler<Event> for Processor {
                                     )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
-                            },
+                            }
                             Err(err) => {
                                 if let Ok(mut stream) = stream.try_clone() {
                                     let reply = ipc::SocketReply::SyncResult(Err(format!(
@@ -833,9 +845,9 @@ impl ApplicationHandler<Event> for Processor {
                                     )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
-                            },
+                            }
                         }
-                    },
+                    }
                     IpcSyncType::Pull(_) => {
                         let scope = scope.unwrap_or(SyncScope::Settings);
                         match provider.pull(scope) {
@@ -847,7 +859,7 @@ impl ApplicationHandler<Event> for Processor {
                                     )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
-                            },
+                            }
                             Err(err) => {
                                 if let Ok(mut stream) = stream.try_clone() {
                                     let reply = ipc::SocketReply::SyncResult(Err(format!(
@@ -856,16 +868,18 @@ impl ApplicationHandler<Event> for Processor {
                                     )));
                                     ipc::send_reply(&mut stream, reply);
                                 }
-                            },
+                            }
                         }
-                    },
+                    }
                 };
-            },
+            }
             (EventType::ConfigReload(path), _) => {
                 // Clear config logs from message bar for all terminals.
                 for window_context in self.windows.values_mut() {
                     if !window_context.message_buffer.is_empty() {
-                        window_context.message_buffer.remove_target(LOG_TARGET_CONFIG);
+                        window_context
+                            .message_buffer
+                            .remove_target(LOG_TARGET_CONFIG);
                         window_context.display.pending_update.dirty = true;
                     }
                 }
@@ -892,7 +906,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.update_config(self.config.clone());
                     }
                 }
-            },
+            }
             // Handle component initialization completion
             (EventType::ComponentsInitialized(components), _) => {
                 info!("Components initialized, updating window contexts...");
@@ -902,7 +916,7 @@ impl ApplicationHandler<Event> for Processor {
                 for window_context in self.windows.values_mut() {
                     window_context.set_components(components.clone());
                 }
-            },
+            }
             // Create a new terminal window.
             (EventType::CreateWindow(options), _) => {
                 // XXX Ensure that no context is current when creating a new window,
@@ -923,7 +937,7 @@ impl ApplicationHandler<Event> for Processor {
                 } else if let Err(err) = self.create_window(event_loop, options) {
                     error!("Could not open window: {err:?}");
                 }
-            },
+            }
             // Process events affecting all windows.
             #[cfg(feature = "ai")]
             (EventType::SecurityCheckAiApply { command, dry_run }, Some(window_id)) => {
@@ -947,13 +961,16 @@ impl ApplicationHandler<Event> for Processor {
                         ),
                         crate::message_bar::MessageType::Warning,
                     );
-                    let _ =
-                        self.proxy.send_event(Event::new(EventType::Message(message), *window_id));
+                    let _ = self
+                        .proxy
+                        .send_event(Event::new(EventType::Message(message), *window_id));
                     return;
                 }
 
-                let require_confirm =
-                    *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
+                let require_confirm = *policy
+                    .require_confirmation
+                    .get(&risk.level)
+                    .unwrap_or(&false);
 
                 if require_confirm && risk.level != RiskLevel::Safe {
                     // Create a confirmation overlay request for this window
@@ -995,7 +1012,7 @@ impl ApplicationHandler<Event> for Processor {
                         *window_id,
                     ));
                 }
-            },
+            }
             // Intercept paste commands for Security Lens gating before forwarding to windows
             (EventType::PasteCommand(text), Some(window_id)) => {
                 let policy: SecurityPolicy = self.config.security.clone();
@@ -1013,7 +1030,11 @@ impl ApplicationHandler<Event> for Processor {
                             return;
                         }
                         // Require confirmation path
-                        if *policy.require_confirmation.get(&risk.level).unwrap_or(&false) {
+                        if *policy
+                            .require_confirmation
+                            .get(&risk.level)
+                            .unwrap_or(&false)
+                        {
                             let id = crate::ui_confirm::generate_id();
                             // Track pending paste action
                             self.pending_security_paste
@@ -1053,7 +1074,7 @@ impl ApplicationHandler<Event> for Processor {
                 let _ = self
                     .proxy
                     .send_event(Event::new(EventType::PasteCommandChecked(text), *window_id));
-            },
+            }
 
             (payload, None) => {
                 // For broadcast events that modify UI state (like ConfirmResolved), handle here
@@ -1078,12 +1099,12 @@ impl ApplicationHandler<Event> for Processor {
                         event.clone(),
                     );
                 }
-            },
+            }
             // Notebooks UI events
             #[cfg(feature = "blocks")]
             (EventType::NotebooksOpen, Some(window_id)) => {
                 self.notebooks_open(*window_id);
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksList(items), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
@@ -1095,7 +1116,7 @@ impl ApplicationHandler<Event> for Processor {
                         win.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksSelect(id), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
@@ -1103,7 +1124,7 @@ impl ApplicationHandler<Event> for Processor {
                     win.display.notebooks_panel.cells.clear();
                 }
                 self.notebooks_load_cells(*window_id, id);
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksCells(cells), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
@@ -1113,7 +1134,7 @@ impl ApplicationHandler<Event> for Processor {
                         win.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksRunCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1129,7 +1150,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksRunNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1145,7 +1166,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksAddCommand(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1173,7 +1194,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksAddMarkdown(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1194,7 +1215,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
 
             #[cfg(feature = "blocks")]
             (EventType::NotebooksDeleteCell(cell_id), Some(window_id)) => {
@@ -1212,7 +1233,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksConvertCellToMarkdown(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1232,7 +1253,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksConvertCellToCommand(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1252,7 +1273,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksExportNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1276,7 +1297,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksEditApply { cell_id, content }, Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1292,7 +1313,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
 
             // Warp UI update events
             (EventType::WarpUiUpdate(update_type), Some(window_id)) => {
@@ -1309,7 +1330,7 @@ impl ApplicationHandler<Event> for Processor {
                                     );
                                 }
                             }
-                        },
+                        }
 
                         // Tab-related events
                         WarpUiUpdateType::TabCreated(_tab_id) => {
@@ -1319,7 +1340,7 @@ impl ApplicationHandler<Event> for Processor {
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
                         WarpUiUpdateType::TabClosed(_tab_id) => {
                             // Tab closed - trigger UI redraw
@@ -1328,7 +1349,7 @@ impl ApplicationHandler<Event> for Processor {
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
                         WarpUiUpdateType::TabSwitched { tab_id: _ } => {
                             // Tab switched - update UI state
@@ -1337,42 +1358,55 @@ impl ApplicationHandler<Event> for Processor {
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
                         // Pane-related events
-                        WarpUiUpdateType::PaneSplit { tab_id: _, new_pane_id: _ } => {
+                        WarpUiUpdateType::PaneSplit {
+                            tab_id: _,
+                            new_pane_id: _,
+                        } => {
                             // Pane split - major layout change
                             info!("Warp pane split created");
                             window_context.dirty = true;
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
-                        WarpUiUpdateType::PaneFocused { tab_id: _, pane_id: _ } => {
+                        WarpUiUpdateType::PaneFocused {
+                            tab_id: _,
+                            pane_id: _,
+                        } => {
                             // Pane focused - update focus indicators
                             window_context.dirty = true;
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
-                        WarpUiUpdateType::PaneResized { tab_id: _, pane_id: _ } => {
+                        WarpUiUpdateType::PaneResized {
+                            tab_id: _,
+                            pane_id: _,
+                        } => {
                             // Pane resized - layout change
                             window_context.dirty = true;
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
-                        WarpUiUpdateType::PaneZoomed { tab_id: _, pane_id: _, zoomed } => {
+                        WarpUiUpdateType::PaneZoomed {
+                            tab_id: _,
+                            pane_id: _,
+                            zoomed,
+                        } => {
                             // Pane zoom toggled - major layout change
                             info!("Warp pane zoom toggled: {}", zoomed);
                             window_context.dirty = true;
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
                         WarpUiUpdateType::PaneClosed {
                             tab_id: _,
@@ -1385,7 +1419,7 @@ impl ApplicationHandler<Event> for Processor {
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
 
                         WarpUiUpdateType::SplitsEqualized { tab_id: _ } => {
                             // Splits equalized - layout change
@@ -1394,15 +1428,15 @@ impl ApplicationHandler<Event> for Processor {
                             if window_context.display.window.has_frame {
                                 window_context.display.window.request_redraw();
                             }
-                        },
+                        }
                     }
                 }
-            },
+            }
             // Blocks search events handled at processor level
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, *window_id);
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1412,12 +1446,12 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             // Workflows panel events
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
                 self.process_workflows_search_perform(query, *window_id);
-            },
+            }
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1427,7 +1461,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (
                 EventType::WorkflowsProgressUpdate {
@@ -1483,7 +1517,8 @@ impl ApplicationHandler<Event> for Processor {
                             EventType::WorkflowsProgressClear(execution_id.clone()),
                             *window_id,
                         );
-                        self.scheduler.schedule(evt, WORKFLOWS_OVERLAY_RETAIN, false, tid);
+                        self.scheduler
+                            .schedule(evt, WORKFLOWS_OVERLAY_RETAIN, false, tid);
                     }
 
                     window_context.dirty = true;
@@ -1491,7 +1526,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsProgressClear(execution_id), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1504,7 +1539,7 @@ impl ApplicationHandler<Event> for Processor {
                         }
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsExecuteByName(name), Some(window_id)) => {
                 // Try engine first; on failure, fallback to config command paste
@@ -1567,7 +1602,7 @@ impl ApplicationHandler<Event> for Processor {
                                                         },
                                                         win,
                                                     ));
-                                                },
+                                                }
                                                 WorkflowEvent::StepStarted {
                                                     execution_id,
                                                     step_id,
@@ -1583,7 +1618,7 @@ impl ApplicationHandler<Event> for Processor {
                                                         },
                                                         win,
                                                     ));
-                                                },
+                                                }
                                                 WorkflowEvent::StepCompleted {
                                                     execution_id,
                                                     step_id,
@@ -1600,7 +1635,7 @@ impl ApplicationHandler<Event> for Processor {
                                                         },
                                                         win,
                                                     ));
-                                                },
+                                                }
                                                 WorkflowEvent::StepFailed {
                                                     execution_id,
                                                     step_id,
@@ -1617,7 +1652,7 @@ impl ApplicationHandler<Event> for Processor {
                                                         },
                                                         win,
                                                     ));
-                                                },
+                                                }
                                                 WorkflowEvent::Completed {
                                                     execution_id,
                                                     status,
@@ -1635,7 +1670,7 @@ impl ApplicationHandler<Event> for Processor {
                                                         win,
                                                     ));
                                                     break;
-                                                },
+                                                }
                                                 WorkflowEvent::Log {
                                                     execution_id,
                                                     step_id: _,
@@ -1652,16 +1687,16 @@ impl ApplicationHandler<Event> for Processor {
                                                         },
                                                         win,
                                                     ));
-                                                },
-                                                _ => {},
+                                                }
+                                                _ => {}
                                             },
                                             Err(_e) => {
                                                 // Receiver closed; stop forwarding
                                                 break;
-                                            },
+                                            }
                                         }
                                     }
-                                },
+                                }
                                 Err(_e) => {
                                     // Fallback to config command paste
                                     if let Some((cmd_template, params)) = fallback_workflow {
@@ -1683,7 +1718,7 @@ impl ApplicationHandler<Event> for Processor {
                                         let _ = proxy
                                             .send_event(Event::new(EventType::Message(msg), win));
                                     }
-                                },
+                                }
                             }
                         });
                         return;
@@ -1736,11 +1771,19 @@ impl ApplicationHandler<Event> for Processor {
                         format!("Workflow not found: {}", name),
                         crate::message_bar::MessageType::Warning,
                     );
-                    let _ = self.proxy.send_event(Event::new(EventType::Message(msg), *window_id));
+                    let _ = self
+                        .proxy
+                        .send_event(Event::new(EventType::Message(msg), *window_id));
                 }
-            },
+            }
             (
-                EventType::ConfirmOpen { id, title, body, confirm_label, cancel_label },
+                EventType::ConfirmOpen {
+                    id,
+                    title,
+                    body,
+                    confirm_label,
+                    cancel_label,
+                },
                 Some(window_id),
             ) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1756,14 +1799,17 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
                 // If this is an AI pending confirm, handle it
                 #[cfg(feature = "ai")]
                 if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
                     if accepted {
                         let _ = self.proxy.send_event(Event::new(
-                            EventType::AiApplyAsCommandChecked { command: cmd, dry_run },
+                            EventType::AiApplyAsCommandChecked {
+                                command: cmd,
+                                dry_run,
+                            },
                             win,
                         ));
                     } else {
@@ -1772,7 +1818,9 @@ impl ApplicationHandler<Event> for Processor {
                             "Command canceled".into(),
                             crate::message_bar::MessageType::Warning,
                         );
-                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                        let _ = self
+                            .proxy
+                            .send_event(Event::new(EventType::Message(message), win));
                     }
                 }
                 // If this is a pending paste confirmation, handle it
@@ -1786,7 +1834,9 @@ impl ApplicationHandler<Event> for Processor {
                             "Paste canceled".into(),
                             crate::message_bar::MessageType::Warning,
                         );
-                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                        let _ = self
+                            .proxy
+                            .send_event(Event::new(EventType::Message(message), win));
                     }
                 }
 
@@ -1814,17 +1864,20 @@ impl ApplicationHandler<Event> for Processor {
                             "Workflow canceled".into(),
                             crate::message_bar::MessageType::Warning,
                         );
-                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
+                        let _ = self
+                            .proxy
+                            .send_event(Event::new(EventType::Message(message), win));
                     }
                 }
 
                 // Resolve for plugin-host waiters if any
                 let _ = crate::ui_confirm::resolve(&id, accepted);
                 // Broadcast resolution to close overlays in all windows
-                let _ = self
-                    .proxy
-                    .send_event(Event::new(EventType::ConfirmResolved { id, accepted }, None));
-            },
+                let _ = self.proxy.send_event(Event::new(
+                    EventType::ConfirmResolved { id, accepted },
+                    None,
+                ));
+            }
             (EventType::Terminal(TerminalEvent::Wakeup), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.dirty = true;
@@ -1832,7 +1885,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             (EventType::Terminal(TerminalEvent::Exit), Some(window_id)) => {
                 // Remove the closed terminal.
                 let window_context = match self.windows.entry(*window_id) {
@@ -1841,7 +1894,7 @@ impl ApplicationHandler<Event> for Processor {
                         if !window_context.get().display.window.hold =>
                     {
                         window_context.remove()
-                    },
+                    }
                     _ => return,
                 };
 
@@ -1857,7 +1910,7 @@ impl ApplicationHandler<Event> for Processor {
 
                     event_loop.exit();
                 }
-            },
+            }
             // NOTE: This event bypasses batching to minimize input latency.
             (EventType::Frame, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1866,7 +1919,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             (payload, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.handle_event(
@@ -1878,7 +1931,7 @@ impl ApplicationHandler<Event> for Processor {
                         WinitEvent::UserEvent(Event::new(payload, *window_id)),
                     );
                 }
-            },
+            }
         };
     }
 
@@ -1913,23 +1966,6 @@ impl ApplicationHandler<Event> for Processor {
             info!("Exiting the event loop");
         }
 
-        #[cfg(feature = "gl-backend")]
-        match self.gl_config.take().map(|config| config.display()) {
-            #[cfg(not(target_os = "macos"))]
-            Some(glutin::display::Display::Egl(display)) => {
-                // Ensure that all the windows are dropped, so the destructors for
-                // Renderer and contexts ran.
-                self.windows.clear();
-
-                // SAFETY: the display is being destroyed after destroying all the
-                // windows, thus no attempt to access the EGL state will be made.
-                unsafe {
-                    display.terminate();
-                }
-            },
-            _ => (),
-        }
-
         // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
         // as a safe placeholder.
         self.clipboard = Clipboard::new_nop();
@@ -1948,7 +1984,10 @@ pub struct Event {
 
 impl Event {
     pub fn new<I: Into<Option<WindowId>>>(payload: EventType, window_id: I) -> Self {
-        Self { window_id: window_id.into(), payload }
+        Self {
+            window_id: window_id.into(),
+            payload,
+        }
     }
 
     /// Get a reference to the payload (event type)
@@ -2041,6 +2080,8 @@ pub enum EventType {
     AiCopyCode,
     #[cfg(feature = "ai")]
     AiCopyAll,
+    #[cfg(feature = "ai")]
+    AiSwitchProvider(String),
     // Inline AI suggestions
     #[cfg(feature = "ai")]
     AiInlineDebounced,
@@ -2156,7 +2197,7 @@ impl IpcSyncType {
         match self {
             IpcSyncType::Status(scope) | IpcSyncType::Push(scope) | IpcSyncType::Pull(scope) => {
                 *scope
-            },
+            }
         }
     }
 }
@@ -2224,7 +2265,8 @@ impl SearchState {
 
     /// Search regex text if a search is active.
     fn regex_mut(&mut self) -> Option<&mut String> {
-        self.history_index.and_then(move |index| self.history.get_mut(index))
+        self.history_index
+            .and_then(move |index| self.history.get_mut(index))
     }
 }
 
@@ -2326,7 +2368,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let vi_mode = self.terminal.mode().contains(TermMode::VI);
 
         // Update selection.
-        if vi_mode && self.terminal.selection.as_ref().is_some_and(|s| !s.is_empty()) {
+        if vi_mode
+            && self
+                .terminal
+                .selection
+                .as_ref()
+                .is_some_and(|s| !s.is_empty())
+        {
             self.update_selection(self.terminal.vi_mode_cursor.point, Side::Right);
         } else if self.mouse.left_button_state == ElementState::Pressed
             || self.mouse.right_button_state == ElementState::Pressed
@@ -2348,7 +2396,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     // Copy text selection.
     fn copy_selection(&mut self, ty: ClipboardType) {
-        let text = match self.terminal.selection_to_string().filter(|s| !s.is_empty()) {
+        let text = match self
+            .terminal
+            .selection_to_string()
+            .filter(|s| !s.is_empty())
+        {
             Some(text) => text,
             None => return,
         };
@@ -2360,7 +2412,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn selection_is_empty(&self) -> bool {
-        self.terminal.selection.as_ref().map_or(true, Selection::is_empty)
+        self.terminal
+            .selection
+            .as_ref()
+            .map_or(true, Selection::is_empty)
     }
 
     fn clear_selection(&mut self) {
@@ -2418,13 +2473,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         match &mut self.terminal.selection {
             Some(selection) if selection.ty == ty && !selection.is_empty() => {
                 self.clear_selection();
-            },
+            }
             Some(selection) if !selection.is_empty() => {
                 selection.ty = ty;
                 *self.dirty = true;
 
                 self.copy_selection(ClipboardType::Selection);
-            },
+            }
             _ => self.start_selection(ty, point, side),
         }
     }
@@ -2562,9 +2617,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 if !path.exists() {
                     continue;
                 }
-                let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or(&p).to_string();
-                let subtitle =
-                    path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
+                let file_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&p)
+                    .to_string();
+                let subtitle = path
+                    .strip_prefix(&cwd)
+                    .ok()
+                    .map(|rel| rel.to_string_lossy().to_string());
                 items.push(PaletteItem {
                     key: format!("file:{}", p),
                     title: format!("File: {}", file_name),
@@ -2584,8 +2645,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     }
                     let path = entry.path();
                     let file_name = entry.file_name().to_string_lossy().to_string();
-                    let subtitle =
-                        path.strip_prefix(&cwd).ok().map(|rel| rel.to_string_lossy().to_string());
+                    let subtitle = path
+                        .strip_prefix(&cwd)
+                        .ok()
+                        .map(|rel| rel.to_string_lossy().to_string());
                     items.push(PaletteItem {
                         key: format!("file:{}", path.to_string_lossy()),
                         title: format!("File: {}", file_name),
@@ -2697,7 +2760,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn palette_confirm(&mut self) {
         use BindingAction as BA;
         // Note usage for MRU boost
-        if let Some(key) = self.display.palette.selected_item_key().map(|s| s.to_string()) {
+        if let Some(key) = self
+            .display
+            .palette
+            .selected_item_key()
+            .map(|s| s.to_string())
+        {
             self.display.palette.note_used(&key);
         }
         if let Some(entry) = self.display.palette.selected_entry().cloned() {
@@ -2716,22 +2784,22 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                             } else {
                                 self.open_blocks_search_panel()
                             }
-                        },
+                        }
                         BA::OpenWorkflowsPanel => {
                             if self.workflows_panel_active() {
                                 self.workflows_panel_cancel()
                             } else {
                                 self.open_workflows_panel()
                             }
-                        },
+                        }
                         BA::TogglePaneSync => {
                             self.workspace_toggle_sync();
-                        },
+                        }
                         _ => {
                             // Unsupported action here; fall back to sending a message
-                        },
+                        }
                     }
-                },
+                }
                 PaletteEntry::Workflow(name) => {
                     // Ask processor to execute via engine if available
                     #[cfg(feature = "workflow")]
@@ -2745,11 +2813,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     {
                         // Workflow feature not enabled; ignore selection or surface a small message
                     }
-                },
+                }
                 PaletteEntry::File(_path) => {
                     // Default action: open the File Tree overlay
                     self.open_file_tree_panel();
-                },
+                }
             }
         }
         // Start close animation before hiding
@@ -2772,14 +2840,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         // Alt+Enter: for file entries, paste "cd <dir>" into the prompt; otherwise fallback
         if let Some(PaletteEntry::File(path)) = self.display.palette.selected_entry().cloned() {
             // Mark usage
-            if let Some(key) = self.display.palette.selected_item_key().map(|s| s.to_string()) {
+            if let Some(key) = self
+                .display
+                .palette
+                .selected_item_key()
+                .map(|s| s.to_string())
+            {
                 self.display.palette.note_used(&key);
             }
             let p = std::path::PathBuf::from(&path);
             let target_dir = if p.is_dir() {
                 p
             } else {
-                p.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+                p.parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
             };
             // Inline shell quote for POSIX
             let target_str = target_dir.to_string_lossy();
@@ -2873,7 +2948,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()),
             window_id,
         );
-        self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
+        self.scheduler
+            .schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "blocks")]
@@ -2889,7 +2965,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             EventType::BlocksSearchPerform(self.display.blocks_search.query.clone()),
             window_id,
         );
-        self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
+        self.scheduler
+            .schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "blocks")]
@@ -2997,7 +3074,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[cfg(feature = "blocks")]
     fn blocks_search_copy_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
-            self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
+            self.clipboard
+                .store(ClipboardType::Clipboard, item.command.clone());
         }
     }
 
@@ -3005,7 +3083,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn blocks_search_copy_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
-                self.clipboard.store(ClipboardType::Clipboard, item.output.clone());
+                self.clipboard
+                    .store(ClipboardType::Clipboard, item.output.clone());
             }
         }
     }
@@ -3045,7 +3124,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let content = format!(
                 "Command: {}\n\nOutput:\n{}",
                 item.command,
-                if item.output.is_empty() { "<no output>" } else { &item.output }
+                if item.output.is_empty() {
+                    "<no output>"
+                } else {
+                    &item.output
+                }
             );
             self.prompt_and_export_block_output(content);
         }
@@ -3064,7 +3147,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let both = format!(
                 "$ {}\n{}",
                 item.command,
-                if item.output.is_empty() { "<no output>" } else { &item.output }
+                if item.output.is_empty() {
+                    "<no output>"
+                } else {
+                    &item.output
+                }
             );
             self.clipboard.store(ClipboardType::Clipboard, both);
         }
@@ -3084,7 +3171,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             if !item.output.is_empty() {
                 // Create a temporary viewer for the output
                 // For now, copy to clipboard as fallback
-                self.clipboard.store(ClipboardType::Clipboard, item.output.clone());
+                self.clipboard
+                    .store(ClipboardType::Clipboard, item.output.clone());
             }
         }
     }
@@ -3095,10 +3183,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let share_content = format!(
                 "Command: {}\nOutput: {}",
                 item.command,
-                if item.output.is_empty() { "<no output>" } else { &item.output }
+                if item.output.is_empty() {
+                    "<no output>"
+                } else {
+                    &item.output
+                }
             );
             // For now, copy to clipboard as sharing mechanism
-            self.clipboard.store(ClipboardType::Clipboard, share_content);
+            self.clipboard
+                .store(ClipboardType::Clipboard, share_content);
         }
     }
 
@@ -3107,7 +3200,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             // Create snippet from command - would integrate with snippet system
             // For now, copy command to clipboard
-            self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
+            self.clipboard
+                .store(ClipboardType::Clipboard, item.command.clone());
         }
     }
 
@@ -3229,9 +3323,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
         // Trigger initial search with current query (may be empty)
         let q = self.display.workflows_panel.query.clone();
-        let _ = self
-            .event_proxy
-            .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
+        let _ = self.event_proxy.send_event(Event::new(
+            EventType::WorkflowsSearchPerform(q),
+            self.display.window.id(),
+        ));
     }
 
     #[cfg(feature = "workflow")]
@@ -3256,7 +3351,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.unschedule(timer_id);
         let q = self.display.workflows_panel.query.clone();
         let evt = Event::new(EventType::WorkflowsSearchPerform(q), window_id);
-        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+        self.scheduler
+            .schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "workflow")]
@@ -3270,7 +3366,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.unschedule(timer_id);
         let q = self.display.workflows_panel.query.clone();
         let evt = Event::new(EventType::WorkflowsSearchPerform(q), window_id);
-        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+        self.scheduler
+            .schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "workflow")]
@@ -3381,16 +3478,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         key: winit::keyboard::Key<String>,
         mods: winit::keyboard::ModifiersState,
     ) {
-        let res = self.display.settings_panel.capture_kb_binding(self.config, key, mods);
+        let res = self
+            .display
+            .settings_panel
+            .capture_kb_binding(self.config, key, mods);
         if res.is_ok() {
             // Reload config to apply keybinding
             let path = crate::config::installed_config("toml").unwrap_or_else(|| {
                 let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-                base.join("openagent-terminal").join("openagent-terminal.toml")
+                base.join("openagent-terminal")
+                    .join("openagent-terminal.toml")
             });
-            let _ = self
-                .event_proxy
-                .send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::ConfigReload(path),
+                self.display.window.id(),
+            ));
         }
         self.mark_dirty();
     }
@@ -3407,21 +3509,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         | crate::display::settings_panel::SettingsCategory::Theme
                         | crate::display::settings_panel::SettingsCategory::General
                 );
-            },
+            }
             Err(e) => {
                 need_reload = false;
                 self.display.settings_panel.message = Some(e);
-            },
+            }
         }
         if need_reload {
             // Compute primary config path and request reload
             let path = crate::config::installed_config("toml").unwrap_or_else(|| {
                 let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-                base.join("openagent-terminal").join("openagent-terminal.toml")
+                base.join("openagent-terminal")
+                    .join("openagent-terminal.toml")
             });
-            let _ = self
-                .event_proxy
-                .send_event(Event::new(EventType::ConfigReload(path), self.display.window.id()));
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::ConfigReload(path),
+                self.display.window.id(),
+            ));
         }
         self.mark_dirty();
     }
@@ -3480,7 +3584,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn confirm_overlay_cancel(&mut self) {
         if let Some(id) = self.display.confirm_overlay.id.clone() {
             let _ = self.event_proxy.send_event(Event::new(
-                EventType::ConfirmRespond { id, accepted: false },
+                EventType::ConfirmRespond {
+                    id,
+                    accepted: false,
+                },
                 self.display.window.id(),
             ));
         }
@@ -3496,9 +3603,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.notebooks_panel.open();
         self.mark_dirty();
         // Kick off list load
-        let _ = self
-            .event_proxy
-            .send_event(Event::new(EventType::NotebooksOpen, self.display.window.id()));
+        let _ = self.event_proxy.send_event(Event::new(
+            EventType::NotebooksOpen,
+            self.display.window.id(),
+        ));
     }
 
     #[cfg(feature = "blocks")]
@@ -3526,7 +3634,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             if len == 0 {
                 return;
             }
-            let cur = self.display.notebooks_panel.selected_cell.min(len.saturating_sub(1));
+            let cur = self
+                .display
+                .notebooks_panel
+                .selected_cell
+                .min(len.saturating_sub(1));
             let new_idx = if delta.is_negative() {
                 cur.saturating_sub(delta.unsigned_abs())
             } else {
@@ -3541,9 +3653,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 return;
             }
             // Find current index as None => -1
-            let cur_opt = self.display.notebooks_panel.selected_notebook.as_ref().and_then(|id| {
-                self.display.notebooks_panel.notebooks.iter().position(|n| &n.id == id)
-            });
+            let cur_opt = self
+                .display
+                .notebooks_panel
+                .selected_notebook
+                .as_ref()
+                .and_then(|id| {
+                    self.display
+                        .notebooks_panel
+                        .notebooks
+                        .iter()
+                        .position(|n| &n.id == id)
+                });
             let cur = cur_opt.unwrap_or(0);
             let new_idx = if delta.is_negative() {
                 cur.saturating_sub(delta.unsigned_abs())
@@ -3650,7 +3771,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[inline]
     fn send_user_event(&self, event: crate::event::EventType) {
-        let _ = self.event_proxy.send_event(Event::new(event, self.display.window.id()));
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(event, self.display.window.id()));
     }
 
     #[cfg(feature = "ai")]
@@ -3711,14 +3834,17 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             options.window_tabbing_id = tabbing_id;
         }
 
-        let _ = self.event_proxy.send_event(Event::new(EventType::CreateWindow(options), None));
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(EventType::CreateWindow(options), None));
     }
 
     #[cfg(windows)]
     fn create_new_window(&mut self) {
-        let _ = self
-            .event_proxy
-            .send_event(Event::new(EventType::CreateWindow(WindowOptions::default()), None));
+        let _ = self.event_proxy.send_event(Event::new(
+            EventType::CreateWindow(WindowOptions::default()),
+            None,
+        ));
     }
 
     fn spawn_daemon<I, S>(&self, program: &str, args: I)
@@ -3764,7 +3890,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     #[inline]
     fn start_search(&mut self, direction: Direction) {
         // Only create new history entry if the previous regex wasn't empty.
-        if self.search_state.history.front().map_or(true, |regex| !regex.is_empty()) {
+        if self
+            .search_state
+            .history
+            .front()
+            .map_or(true, |regex| !regex.is_empty())
+        {
             self.search_state.history.push_front(String::new());
             self.search_state.history.truncate(MAX_SEARCH_HISTORY_SIZE);
         }
@@ -3824,19 +3955,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
         // Find the target vi cursor point by going to the next match to the right of the origin,
         // then jump to the next search match in the target direction.
-        let target = self.search_next(origin, Direction::Right, Side::Right).and_then(|rm| {
-            let regex_match = match direction {
-                Direction::Right => {
-                    let origin = rm.end().add(self.terminal, Boundary::None, 1);
-                    self.search_next(origin, Direction::Right, Side::Left)?
-                },
-                Direction::Left => {
-                    let origin = rm.start().sub(self.terminal, Boundary::None, 1);
-                    self.search_next(origin, Direction::Left, Side::Left)?
-                },
-            };
-            Some(*regex_match.start())
-        });
+        let target = self
+            .search_next(origin, Direction::Right, Side::Right)
+            .and_then(|rm| {
+                let regex_match = match direction {
+                    Direction::Right => {
+                        let origin = rm.end().add(self.terminal, Boundary::None, 1);
+                        self.search_next(origin, Direction::Right, Side::Left)?
+                    }
+                    Direction::Left => {
+                        let origin = rm.start().sub(self.terminal, Boundary::None, 1);
+                        self.search_next(origin, Direction::Left, Side::Left)?
+                    }
+                };
+                Some(*regex_match.start())
+            });
 
         // Move the vi cursor to the target position.
         if let Some(target) = target {
@@ -3889,7 +4022,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             Some(index) => {
                 self.search_state.history[0] = self.search_state.history[index].clone();
                 self.search_state.history_index = Some(0);
-            },
+            }
             None => return,
         }
         let regex = &mut self.search_state.history[0];
@@ -3898,7 +4031,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             // Handle backspace/ctrl+h.
             '\x08' | '\x7f' => {
                 let _ = regex.pop();
-            },
+            }
             // Add ascii and unicode text.
             ' '..='~' | '\u{a0}'..='\u{10ffff}' => regex.push(c),
             // Ignore non-printable characters.
@@ -3988,16 +4121,17 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.search_state.display_offset_delta = new_display_offset - old_display_offset;
 
         // Store origin and scroll back to the match.
-        self.terminal.scroll_display(Scroll::Delta(-self.search_state.display_offset_delta));
+        self.terminal
+            .scroll_display(Scroll::Delta(-self.search_state.display_offset_delta));
         self.search_state.origin = new_origin;
     }
 
     /// Find the next search match.
     fn search_next(&mut self, origin: Point, direction: Direction, side: Side) -> Option<Match> {
-        self.search_state
-            .dfas
-            .as_mut()
-            .and_then(|dfas| self.terminal.search_next(dfas, origin, direction, side, None))
+        self.search_state.dfas.as_mut().and_then(|dfas| {
+            self.terminal
+                .search_next(dfas, origin, direction, side, None)
+        })
     }
 
     #[inline]
@@ -4064,11 +4198,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 let mut args = command.args().to_vec();
                 args.push(text.into());
                 self.spawn_daemon(command.program(), &args);
-            },
+            }
             // Copy the text to the clipboard.
             HintAction::Action(HintInternalAction::Copy) => {
                 self.clipboard.store(ClipboardType::Clipboard, text);
-            },
+            }
             // Write the text to the PTY/search.
             HintAction::Action(HintInternalAction::Paste) => self.paste(&text, true),
             // Select the text.
@@ -4076,7 +4210,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 self.start_selection(SelectionType::Simple, *hint_bounds.start(), Side::Left);
                 self.update_selection(*hint_bounds.end(), Side::Right);
                 self.copy_selection(ClipboardType::Selection);
-            },
+            }
             // Move the vi mode cursor.
             HintAction::Action(HintInternalAction::MoveViModeCursor) => {
                 // Enter vi mode if we're not in it already.
@@ -4086,7 +4220,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
                 self.terminal.vi_goto_point(*hint_bounds.start());
                 self.mark_dirty();
-            },
+            }
         }
     }
 
@@ -4333,9 +4467,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             format!("Workflow not found: {}", name),
             crate::message_bar::MessageType::Warning,
         );
-        let _ = self
-            .event_proxy
-            .send_event(Event::new(EventType::Message(msg), self.display.window.id()));
+        let _ = self.event_proxy.send_event(Event::new(
+            EventType::Message(msg),
+            self.display.window.id(),
+        ));
         self.display.pending_update.dirty = true;
     }
 
@@ -4348,7 +4483,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else {
             "Split pane horizontally failed".into()
         };
-        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
+        self.message_buffer
+            .push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4361,70 +4497,113 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else {
             "Split pane vertically failed".into()
         };
-        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
+        self.message_buffer
+            .push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_focus_next_pane(&mut self) {
         let ok = self.workspace.focus_next_pane();
-        let msg = if ok { "Focused next pane" } else { "Focus next pane failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Focused next pane"
+        } else {
+            "Focus next pane failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_focus_previous_pane(&mut self) {
         let ok = self.workspace.focus_previous_pane();
-        let msg = if ok { "Focused previous pane" } else { "Focus previous pane failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Focused previous pane"
+        } else {
+            "Focus previous pane failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_close_pane(&mut self) {
         let ok = self.workspace.close_pane();
-        let msg = if ok { "Closed pane" } else { "Close pane failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Closed pane"
+        } else {
+            "Close pane failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_resize_left(&mut self) {
         let ok = self.workspace.resize_left();
-        let msg = if ok { "Resized pane left" } else { "Resize left failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Resized pane left"
+        } else {
+            "Resize left failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_resize_right(&mut self) {
         let ok = self.workspace.resize_right();
-        let msg = if ok { "Resized pane right" } else { "Resize right failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Resized pane right"
+        } else {
+            "Resize right failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_resize_up(&mut self) {
         let ok = self.workspace.resize_up();
-        let msg = if ok { "Resized pane up" } else { "Resize up failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Resized pane up"
+        } else {
+            "Resize up failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_resize_down(&mut self) {
         let ok = self.workspace.resize_down();
-        let msg = if ok { "Resized pane down" } else { "Resize down failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Resized pane down"
+        } else {
+            "Resize down failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4434,7 +4613,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let working_dir = std::env::current_dir().ok();
         let tab_id = self.workspace.create_tab(title.clone(), working_dir);
         let msg = format!("Created new tab '{}' with ID {:?}", title, tab_id);
-        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
+        self.message_buffer
+            .push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4444,9 +4624,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
             let ok = self.workspace.close_tab(tab_id);
-            let msg =
-                if ok { format!("Closed tab '{}'", tab_title) } else { "Close tab failed".into() };
-            self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
+            let msg = if ok {
+                format!("Closed tab '{}'", tab_title)
+            } else {
+                "Close tab failed".into()
+            };
+            self.message_buffer
+                .push(Message::new(msg, crate::message_bar::MessageType::Warning));
             self.display.pending_update.dirty = true;
             *self.dirty = true;
         }
@@ -4454,18 +4638,30 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn workspace_next_tab(&mut self) {
         let ok = self.workspace.next_tab();
-        let msg = if ok { "Switched to next tab" } else { "Switch to next tab failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Switched to next tab"
+        } else {
+            "Switch to next tab failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_previous_tab(&mut self) {
         let ok = self.workspace.previous_tab();
-        let msg = if ok { "Switched to previous tab" } else { "Switch to previous tab failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Switched to previous tab"
+        } else {
+            "Switch to previous tab failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4477,16 +4673,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else {
             "Switch to tab failed".into()
         };
-        self.message_buffer.push(Message::new(msg, crate::message_bar::MessageType::Warning));
+        self.message_buffer
+            .push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
 
     fn workspace_toggle_zoom(&mut self) {
         let ok = self.workspace.toggle_zoom();
-        let msg = if ok { "Toggled pane zoom" } else { "Toggle zoom failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Toggled pane zoom"
+        } else {
+            "Toggle zoom failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4498,9 +4701,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn workspace_toggle_sync(&mut self) {
         let ok = self.workspace.toggle_active_tab_sync();
-        let msg = if ok { "Toggled pane sync" } else { "Toggle pane sync failed" };
-        self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+        let msg = if ok {
+            "Toggled pane sync"
+        } else {
+            "Toggle pane sync failed"
+        };
+        self.message_buffer.push(Message::new(
+            msg.into(),
+            crate::message_bar::MessageType::Warning,
+        ));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4511,7 +4720,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         mouse_y_px: f32,
         tolerance_px: f32,
     ) -> Option<crate::workspace::split_manager::SplitDividerHit> {
-        self.workspace.hit_test_split_divider(mouse_x_px, mouse_y_px, tolerance_px)
+        self.workspace
+            .hit_test_split_divider(mouse_x_px, mouse_y_px, tolerance_px)
     }
 
     fn workspace_set_split_ratio_at_path(
@@ -4520,7 +4730,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         axis: crate::workspace::split_manager::SplitAxis,
         new_ratio: f32,
     ) {
-        let _ = self.workspace.set_split_ratio_at_path(&path, axis, new_ratio);
+        let _ = self
+            .workspace
+            .set_split_ratio_at_path(&path, axis, new_ratio);
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -4560,27 +4772,27 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 TBA::SelectTab(id) => {
                     self.workspace_switch_to_tab(id);
                     return true;
-                },
+                }
                 TBA::CloseTab(id) => {
                     self.workspace_switch_to_tab(id);
                     self.workspace_close_tab();
                     return true;
-                },
+                }
                 TBA::CreateTab => {
                     self.workspace_create_tab();
                     return true;
-                },
+                }
                 TBA::OpenSettings => {
                     self.open_settings_panel();
                     return true;
-                },
+                }
                 // Drag-related actions are handled by dedicated handlers; treat as handled here
                 TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::EndDrag(_) | TBA::CancelDrag(_) => {
                     // Mark dirty for visuals; actual drag is handled elsewhere
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                     return true;
-                },
+                }
             }
         }
         false
@@ -4588,7 +4800,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn workspace_tab_bar_drag_move(&mut self, mouse_x: usize, mouse_y: usize) -> bool {
         if let Some(action) =
-            self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
+            self.display
+                .handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
         {
             use crate::display::warp_ui::TabBarAction as TBA;
             if let TBA::DragMove(tab_id, new_pos) = action {
@@ -4599,7 +4812,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         crate::workspace::TabBarPosition::Top => 0,
                         crate::workspace::TabBarPosition::Bottom => {
                             self.display.size_info.screen_lines().saturating_sub(1)
-                        },
+                        }
                         crate::workspace::TabBarPosition::Hidden => 0,
                     };
                     let cols = self.display.size_info.columns();
@@ -4623,28 +4836,28 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                     return true;
-                },
+                }
                 TBA::SelectTab(id) => {
                     self.workspace_switch_to_tab(id);
                     return true;
-                },
+                }
                 TBA::CloseTab(id) => {
                     self.workspace_switch_to_tab(id);
                     self.workspace_close_tab();
                     return true;
-                },
+                }
                 TBA::CreateTab => {
                     self.workspace_create_tab();
                     return true;
-                },
+                }
                 TBA::OpenSettings => {
                     self.open_settings_panel();
                     return true;
-                },
+                }
                 TBA::BeginDrag(_) | TBA::DragMove(..) | TBA::CancelDrag(_) => {
                     // Shouldn't happen on release; ignore
                     return false;
-                },
+                }
             }
         }
         false
@@ -4720,21 +4933,24 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let effective_visibility = match tab_cfg.visibility {
             crate::config::workspace::TabBarVisibility::Always => {
                 crate::config::workspace::TabBarVisibility::Always
-            },
+            }
             crate::config::workspace::TabBarVisibility::Hover => {
                 crate::config::workspace::TabBarVisibility::Hover
-            },
+            }
             crate::config::workspace::TabBarVisibility::Auto => {
                 if is_fs {
                     crate::config::workspace::TabBarVisibility::Hover
                 } else {
                     crate::config::workspace::TabBarVisibility::Always
                 }
-            },
+            }
         };
         if tab_cfg.show
             && !self.config.workspace.warp_overlay_only
-            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
+            && matches!(
+                effective_visibility,
+                crate::config::workspace::TabBarVisibility::Always
+            )
             && tab_cfg.position != crate::workspace::TabBarPosition::Hidden
         {
             let ch_row = si.cell_height();
@@ -4742,15 +4958,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 crate::workspace::TabBarPosition::Top => {
                     y0 += ch_row;
                     ch = (ch - ch_row).max(0.0);
-                },
+                }
                 crate::workspace::TabBarPosition::Bottom => {
                     ch = (ch - ch_row).max(0.0);
-                },
-                crate::workspace::TabBarPosition::Hidden => {},
+                }
+                crate::workspace::TabBarPosition::Hidden => {}
             }
         }
         let container = crate::workspace::split_manager::PaneRect::new(x0, y0, cw, ch);
-        let split_areas_raw = self.workspace.splits.calculate_pane_rects(split_layout, container);
+        let split_areas_raw = self
+            .workspace
+            .splits
+            .calculate_pane_rects(split_layout, container);
         let mut split_areas: Vec<(
             crate::workspace::TabId,
             crate::workspace::PaneId,
@@ -4769,7 +4988,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             &tab_positions,
             &split_areas,
         );
-        let updated = self.display.pane_drag_manager.update_drag((mouse_x_px, mouse_y_px), dz);
+        let updated = self
+            .display
+            .pane_drag_manager
+            .update_drag((mouse_x_px, mouse_y_px), dz);
         if updated {
             self.display.pending_update.dirty = true;
             *self.dirty = true;
@@ -4801,10 +5023,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                             let axis = match direction {
                                 SplitDirection::Vertical => {
                                     crate::workspace::split_manager::SplitAxis::Horizontal
-                                },
+                                }
                                 SplitDirection::Horizontal => {
                                     crate::workspace::split_manager::SplitAxis::Vertical
-                                },
+                                }
                             };
                             let mut sm = crate::workspace::SplitManager::new();
                             let _ok = sm.move_pane_to_split(
@@ -4822,7 +5044,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                             return true;
                         }
                     }
-                },
+                }
                 Some(crate::display::pane_drag_drop::PaneDropZone::Tab { tab_id, .. }) => {
                     // Cross-tab move: remove from source tab and insert next to the destination
                     // tab's active pane
@@ -4862,7 +5084,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                     return true;
-                },
+                }
                 Some(crate::display::pane_drag_drop::PaneDropZone::NewTab { position: _ }) => {
                     // Move to a new tab: create tab and set its layout to the moved pane
                     let new_id = self.workspace.create_tab("New Tab".into(), None);
@@ -4895,11 +5117,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     self.display.pending_update.dirty = true;
                     *self.dirty = true;
                     return true;
-                },
+                }
                 None => {
                     // No drop target: just end drag
                     return true;
-                },
+                }
             }
         }
         false
@@ -4914,8 +5136,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         };
 
         let shell = if cfg!(windows) { "cmd" } else { "sh" };
-        let shell_args =
-            if cfg!(windows) { vec!["/c", &shell_cmd] } else { vec!["-c", &shell_cmd] };
+        let shell_args = if cfg!(windows) {
+            vec!["/c", &shell_cmd]
+        } else {
+            vec!["-c", &shell_cmd]
+        };
 
         self.spawn_daemon(shell, &shell_args);
     }
@@ -4930,13 +5155,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             format!("Block output copied to clipboard ({} chars)", text.len()),
             crate::message_bar::MessageType::Warning,
         );
-        let _ = self.event_proxy.send_event(Event::new(EventType::Message(message), None));
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(EventType::Message(message), None));
     }
 
     // Inline AI suggestions integration
     #[cfg(feature = "ai")]
     fn inline_suggestion_visible(&self) -> bool {
-        self.ai_runtime.as_ref().map(|rt| rt.ui.inline_suggestion.is_some()).unwrap_or(false)
+        self.ai_runtime
+            .as_ref()
+            .map(|rt| rt.ui.inline_suggestion.is_some())
+            .unwrap_or(false)
     }
 
     #[cfg(feature = "ai")]
@@ -4952,8 +5182,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_word(&mut self) {
-        let suggestion_data =
-            if let Some(rt) = &mut self.ai_runtime { rt.ui.inline_suggestion.take() } else { None };
+        let suggestion_data = if let Some(rt) = &mut self.ai_runtime {
+            rt.ui.inline_suggestion.take()
+        } else {
+            None
+        };
 
         if let Some(suf) = suggestion_data {
             let (accept, rest) = next_word(&suf);
@@ -4995,8 +5228,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     #[cfg(feature = "ai")]
     fn accept_inline_suggestion_char(&mut self) {
-        let suggestion_data =
-            if let Some(rt) = &mut self.ai_runtime { rt.ui.inline_suggestion.take() } else { None };
+        let suggestion_data = if let Some(rt) = &mut self.ai_runtime {
+            rt.ui.inline_suggestion.take()
+        } else {
+            None
+        };
 
         if let Some(mut suf) = suggestion_data {
             if let Some(first) = suf.chars().next() {
@@ -5031,7 +5267,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let timer_id = TimerId::new(Topic::AiInlineTyping, window_id);
         self.scheduler.unschedule(timer_id);
         let evt = Event::new(EventType::AiInlineDebounced, window_id);
-        self.scheduler.schedule(evt, AI_INLINE_SUGGEST_DEBOUNCE, false, timer_id);
+        self.scheduler
+            .schedule(evt, AI_INLINE_SUGGEST_DEBOUNCE, false, timer_id);
     }
 
     #[cfg(feature = "ai")]
@@ -5102,6 +5339,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn ai_try_handle_header_click(&mut self) -> bool {
         #[cfg(feature = "ai")]
         {
+            use unicode_width::UnicodeWidthStr as _;
             // Precompute values requiring only &self to avoid borrow conflicts.
             let display_offset = self.terminal.grid().display_offset();
             let grid_point = self.mouse.point(&self.size_info(), display_offset);
@@ -5125,11 +5363,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 None => return false,
             };
 
-            // Hit header row
+            // Only header line is interactive
             if vpoint.line != geom.header_line {
                 return false;
             }
-            // If column within controls region
+
+            // Provider selection has moved to the bottom composer; header contains only controls now.
+
+            // Fallback: header controls region on the right if the click wasn't on a chip
             let col = vpoint.column.0;
             if col < geom.controls_col_start || col > geom.controls_col_end {
                 return false;
@@ -5150,9 +5391,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 *self.dirty = true;
                 return true;
             } else if (col == regen_col || col == regen_col + 1) && regen_enabled {
-                let _ = self
-                    .event_proxy
-                    .send_event(Event::new(EventType::AiRegenerate, self.display.window.id()));
+                let _ = self.event_proxy.send_event(Event::new(
+                    EventType::AiRegenerate,
+                    self.display.window.id(),
+                ));
                 *self.dirty = true;
                 return true;
             } else if (col == stop_col || col == stop_col + 1) && stop_enabled {
@@ -5189,7 +5431,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         *self.dirty = true;
                     }
                     return false;
-                },
+                }
             };
 
             let runtime = match &mut self.ai_runtime {
@@ -5199,7 +5441,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         *self.dirty = true;
                     }
                     return false;
-                },
+                }
             };
 
             let geom = match self.display.ai_panel_geometry(self.config, &runtime.ui) {
@@ -5209,7 +5451,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         *self.dirty = true;
                     }
                     return false;
-                },
+                }
             };
 
             // Only on header line and within controls band
@@ -5311,7 +5553,8 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
 
         // Reset display offset and cursor position.
         self.terminal.vi_mode_cursor.point = self.search_state.origin;
-        self.terminal.scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
+        self.terminal
+            .scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
         self.search_state.display_offset_delta = 0;
 
         *self.dirty = true;
@@ -5329,8 +5572,14 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
 
         // Jump to the next match.
         let direction = self.search_state.direction;
-        let clamped_origin = self.search_state.origin.grid_clamp(self.terminal, Boundary::Grid);
-        match self.terminal.search_next(dfas, clamped_origin, direction, Side::Left, limit) {
+        let clamped_origin = self
+            .search_state
+            .origin
+            .grid_clamp(self.terminal, Boundary::Grid);
+        match self
+            .terminal
+            .search_next(dfas, clamped_origin, direction, Side::Left, limit)
+        {
             Some(regex_match) => {
                 let old_offset = self.terminal.grid().display_offset() as i32;
 
@@ -5352,7 +5601,7 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
                 // Since we found a result, we require no delayed re-search.
                 let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
                 self.scheduler.unschedule(timer_id);
-            },
+            }
             // Reset viewport only when we know there is no match, to prevent unnecessary jumping.
             None if limit.is_none() => self.search_reset_state(),
             None => {
@@ -5360,12 +5609,13 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
                 let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
                 if !self.scheduler.scheduled(timer_id) {
                     let event = Event::new(EventType::SearchNext, self.display.window.id());
-                    self.scheduler.schedule(event, TYPING_SEARCH_DELAY, false, timer_id);
+                    self.scheduler
+                        .schedule(event, TYPING_SEARCH_DELAY, false, timer_id);
                 }
 
                 // Clear focused match.
                 self.search_state.focused_match = None;
-            },
+            }
         }
 
         *self.dirty = true;
@@ -5395,14 +5645,18 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
 
         // Check terminal cursor style.
         let terminal_blinking = self.terminal.cursor_style().blinking;
-        let mut blinking = cursor_style.blinking_override().unwrap_or(terminal_blinking);
+        let mut blinking = cursor_style
+            .blinking_override()
+            .unwrap_or(terminal_blinking);
         blinking &= (vi_mode || self.terminal().mode().contains(TermMode::SHOW_CURSOR))
             && self.display().ime.preedit().is_none();
 
         // Update cursor blinking state.
         let window_id = self.display.window.id();
-        self.scheduler.unschedule(TimerId::new(Topic::BlinkCursor, window_id));
-        self.scheduler.unschedule(TimerId::new(Topic::BlinkTimeout, window_id));
+        self.scheduler
+            .unschedule(TimerId::new(Topic::BlinkCursor, window_id));
+        self.scheduler
+            .unschedule(TimerId::new(Topic::BlinkTimeout, window_id));
 
         // Reset blinking timeout.
         *self.cursor_blink_timed_out = false;
@@ -5421,7 +5675,8 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         let timer_id = TimerId::new(Topic::BlinkCursor, window_id);
         let event = Event::new(EventType::BlinkCursor, window_id);
         let blinking_interval = Duration::from_millis(self.config.cursor.blink_interval());
-        self.scheduler.schedule(event, blinking_interval, true, timer_id);
+        self.scheduler
+            .schedule(event, blinking_interval, true, timer_id);
     }
 
     fn schedule_blinking_timeout(&mut self) {
@@ -5434,7 +5689,8 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         let event = Event::new(EventType::BlinkCursorTimeout, window_id);
         let timer_id = TimerId::new(Topic::BlinkTimeout, window_id);
 
-        self.scheduler.schedule(event, blinking_timeout, false, timer_id);
+        self.scheduler
+            .schedule(event, blinking_timeout, false, timer_id);
     }
 
     /// Perform vi mode inline search in the specified direction.
@@ -5449,7 +5705,9 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         // Find next match in this line.
         let vi_point = self.terminal.vi_mode_cursor.point;
         let point = match direction {
-            Direction::Right => self.terminal.inline_search_right(vi_point, search_character),
+            Direction::Right => self
+                .terminal
+                .inline_search_right(vi_point, search_character),
             Direction::Left => self.terminal.inline_search_left(vi_point, search_character),
         };
 
@@ -5458,12 +5716,14 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
             if self.inline_search_state.stop_short {
                 let grid = self.terminal.grid();
                 point = match direction {
-                    Direction::Right => {
-                        grid.iter_from(point).prev().map_or(point, |cell| cell.point)
-                    },
-                    Direction::Left => {
-                        grid.iter_from(point).next().map_or(point, |cell| cell.point)
-                    },
+                    Direction::Right => grid
+                        .iter_from(point)
+                        .prev()
+                        .map_or(point, |cell| cell.point),
+                    Direction::Left => grid
+                        .iter_from(point)
+                        .next()
+                        .map_or(point, |cell| cell.point),
                 };
             }
 
@@ -5495,7 +5755,10 @@ pub struct TouchZoom {
 
 impl TouchZoom {
     pub fn new(slots: (TouchEvent, TouchEvent)) -> Self {
-        Self { slots, fractions: Default::default() }
+        Self {
+            slots,
+            fractions: Default::default(),
+        }
     }
 
     /// Get slot distance change since last update.
@@ -5618,7 +5881,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         self.ctx.display.cursor_hidden ^= true;
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 EventType::BlinkCursorTimeout => {
                     // Disable blinking after timeout reached.
                     let timer_id = TimerId::new(Topic::BlinkCursor, self.ctx.display.window.id());
@@ -5626,18 +5889,18 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     *self.ctx.cursor_blink_timed_out = true;
                     self.ctx.display.cursor_hidden = false;
                     *self.ctx.dirty = true;
-                },
+                }
                 // Add message only if it's not already queued.
                 EventType::Message(message) if !self.ctx.message_buffer.is_queued(&message) => {
                     self.ctx.message_buffer.push(message);
                     self.ctx.display.pending_update.dirty = true;
-                },
+                }
                 EventType::Terminal(event) => match event {
                     TerminalEvent::Title(title) => {
                         if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
                             self.ctx.window().set_title(title);
                         }
-                    },
+                    }
                     TerminalEvent::CommandBlock(ev) => {
                         // Enable blocks manager on first event and update index.
                         self.ctx.display().blocks.enabled = true;
@@ -5649,13 +5912,16 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.workspace_mark_active_tab_error(non_zero);
                         }
                         *self.ctx.dirty = true;
-                    },
+                    }
                     TerminalEvent::ResetTitle => {
                         let window_config = &self.ctx.config.window;
                         if !self.ctx.preserve_title && window_config.dynamic_title {
-                            self.ctx.display.window.set_title(window_config.identity.title.clone());
+                            self.ctx
+                                .display
+                                .window
+                                .set_title(window_config.identity.title.clone());
                         }
-                    },
+                    }
                     TerminalEvent::Bell => {
                         // Set window urgency hint when window is not focused.
                         let focused = self.ctx.terminal.is_focused;
@@ -5674,23 +5940,24 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 .as_ref()
                                 .map_or(true, |i| i.elapsed() >= BELL_CMD_COOLDOWN)
                             {
-                                self.ctx.spawn_daemon(bell_command.program(), bell_command.args());
+                                self.ctx
+                                    .spawn_daemon(bell_command.program(), bell_command.args());
 
                                 *self.ctx.prev_bell_cmd = Some(Instant::now());
                             }
                         }
-                    },
+                    }
                     TerminalEvent::ClipboardStore(clipboard_type, content) => {
                         if self.ctx.terminal.is_focused {
                             self.ctx.clipboard.store(clipboard_type, content);
                         }
-                    },
+                    }
                     TerminalEvent::ClipboardLoad(clipboard_type, format) => {
                         if self.ctx.terminal.is_focused {
                             let text = format(self.ctx.clipboard.load(clipboard_type).as_str());
                             self.ctx.write_to_pty(text.into_bytes());
                         }
-                    },
+                    }
                     TerminalEvent::ColorRequest(index, format) => {
                         let color = match self.ctx.terminal().colors()[index] {
                             Some(color) => Rgb(color),
@@ -5699,11 +5966,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             None => self.ctx.display.colors[index],
                         };
                         self.ctx.write_to_pty(format(color.0).into_bytes());
-                    },
+                    }
                     TerminalEvent::TextAreaSizeRequest(format) => {
                         let text = format(self.ctx.size_info().into());
                         self.ctx.write_to_pty(text.into_bytes());
-                    },
+                    }
                     TerminalEvent::PtyWrite(text) => self.ctx.write_to_pty(text.into_bytes()),
                     TerminalEvent::MouseCursorDirty => self.reset_mouse_cursor(),
                     TerminalEvent::CursorBlinkingChange => self.ctx.update_cursor_blinking(),
@@ -5721,12 +5988,12 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     // Legacy direct paste path (may be gated in Processor before reaching here)
                     self.ctx.paste(&text, true);
                     *self.ctx.dirty = true;
-                },
+                }
                 EventType::PasteCommandChecked(text) => {
                     // Paste content that already passed Security Lens gating
                     self.ctx.paste(&text, true);
                     *self.ctx.dirty = true;
-                },
+                }
                 // Palette: append results from async file scan
                 EventType::PaletteAppendFiles(paths) => {
                     // Build PaletteItems from paths on the main thread
@@ -5754,12 +6021,12 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         .collect();
                     self.ctx.display.palette.add_items_unique(items);
                     *self.ctx.dirty = true;
-                },
+                }
                 // Warp-style workspace events
                 EventType::WarpUiUpdate(_update_type) => {
                     // Warp UI updates are handled at the display level
                     *self.ctx.dirty = true;
-                },
+                }
                 // Confirmation overlay events are handled at the window-processor level
                 EventType::ConfirmOpen { .. }
                 | EventType::ConfirmRespond { .. }
@@ -5770,7 +6037,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::BlocksToggleStar(_block_id) => {
                     // Star toggling is handled at the processor level, not in input processor
                     // This event should already be processed there
-                },
+                }
                 #[cfg(feature = "blocks")]
                 EventType::NotebooksOpen
                 | EventType::NotebooksList(_)
@@ -5787,11 +6054,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::NotebooksEditApply { .. } => {
                     // Notebooks UI events are handled at the processor level
                     *self.ctx.dirty = true;
-                },
+                }
                 // Blocks quick actions
                 EventType::BlocksToggleFoldUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
-                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    let grid_point = self
+                        .ctx
+                        .mouse()
+                        .point(&self.ctx.size_info(), display_offset);
                     if let Some(vp) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
                     {
@@ -5805,10 +6075,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             *self.ctx.dirty = true;
                         }
                     }
-                },
+                }
                 EventType::BlocksCopyHeaderUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
-                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    let grid_point = self
+                        .ctx
+                        .mouse()
+                        .point(&self.ctx.size_info(), display_offset);
                     if let Some(vp) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
                     {
@@ -5821,10 +6094,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.copy_to_clipboard(header);
                         }
                     }
-                },
+                }
                 EventType::BlocksExportHeaderUnderCursor => {
                     let display_offset = self.ctx.terminal().grid().display_offset();
-                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    let grid_point = self
+                        .ctx
+                        .mouse()
+                        .point(&self.ctx.size_info(), display_offset);
                     if let Some(vp) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
                     {
@@ -5837,7 +6113,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.prompt_and_export_block_output(header);
                         }
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -5857,7 +6133,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.ui.streaming_text.push_str(&chunk);
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiStreamFinished => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -5874,7 +6150,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.ui.is_loading = false;
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiStreamError(err) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -5884,7 +6160,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.ui.error_message = Some(err);
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiProposals(props) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -5899,7 +6175,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.ui.proposals = props;
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiRegenerate => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -5908,20 +6184,20 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.regenerate(proxy, window_id);
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiStop => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.cancel();
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiInsertToPrompt(text) => {
                     // Insert generated content into the shell prompt via paste
                     self.ctx.paste(&text, true);
                     *self.ctx.dirty = true;
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiApplyAsCommand { command, dry_run } => {
                     // Route through Security Lens check
@@ -5930,7 +6206,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         self.ctx.display.window.id(),
                     ));
                     *self.ctx.dirty = true;
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::SecurityCheckAiApply { command, dry_run } => {
                     // Integrate SecurityLens analysis and confirmation overlay
@@ -5944,10 +6220,12 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         && risk_analysis.level == RiskLevel::Critical
                     {
                         // Block critical commands if policy requires it
-                        self.ctx.message_buffer.push(crate::message_bar::Message::new(
-                            format!("Blocked critical command: {}", risk_analysis.explanation),
-                            crate::message_bar::MessageType::Error,
-                        ));
+                        self.ctx
+                            .message_buffer
+                            .push(crate::message_bar::Message::new(
+                                format!("Blocked critical command: {}", risk_analysis.explanation),
+                                crate::message_bar::MessageType::Error,
+                            ));
                         *self.ctx.dirty = true;
                         return;
                     }
@@ -6013,13 +6291,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         ));
                     }
                     *self.ctx.dirty = true;
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiApplyAsCommandChecked { command, .. } => {
                     // Confirmed or safe; paste to prompt
                     self.ctx.paste(&command, true);
                     *self.ctx.dirty = true;
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiCopyOutput { format } => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
@@ -6027,34 +6305,34 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.copy_to_clipboard(text);
                         }
                     }
-                },
+                }
                 // New AI panel events
                 #[cfg(feature = "ai")]
                 EventType::AiToggle => {
                     self.ctx.open_ai_panel();
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiSubmit => {
                     self.ctx.ai_propose();
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiClose => {
                     self.ctx.close_ai_panel();
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiSelectNext => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.next_proposal();
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiSelectPrev => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.previous_proposal();
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiApplyDryRun => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -6079,7 +6357,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             ));
                         }
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiCopyCode => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
@@ -6087,7 +6365,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.copy_to_clipboard(text);
                         }
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiCopyAll => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
@@ -6095,7 +6373,44 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.copy_to_clipboard(text);
                         }
                     }
-                },
+                }
+                #[cfg(feature = "ai")]
+                EventType::AiSwitchProvider(provider_name) => {
+                    // Warp-like: hot-swap runtime provider immediately, preserve scratch/cursor.
+                    let name = provider_name.to_ascii_lowercase();
+                    // Resolve provider config from user config or defaults
+                    let prov_cfg = self
+                        .ctx
+                        .config()
+                        .ai
+                        .providers
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| {
+                            crate::config::ai_providers::get_default_provider_configs()
+                                .get(&name)
+                                .cloned()
+                        })
+                        .unwrap_or_default();
+
+                    if let Some(rt) = &mut self.ctx.ai_runtime {
+                        // Preserve scratch/cursor already in rt; just reconfigure and update UI fields
+                        rt.reconfigure_to(&name, &prov_cfg);
+                        // Update composer display cache
+                        self.ctx.display.ai_current_provider = name.clone();
+                        self.ctx.display.ai_current_model = if !rt.ui.current_model.is_empty() {
+                            rt.ui.current_model.clone()
+                        } else {
+                            prov_cfg.default_model.unwrap_or_default()
+                        };
+                    } else {
+                        // If runtime wasn't initialized, just update the display; runtime will be created when AI opens
+                        self.ctx.display.ai_current_provider = name.clone();
+                        self.ctx.display.ai_current_model =
+                            prov_cfg.default_model.unwrap_or_default();
+                    }
+                    *self.ctx.dirty = true;
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiInlineDebounced => {
                     // Only compute when inline suggestions are enabled and panel is not active
@@ -6153,7 +6468,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             *self.ctx.dirty = true;
                         }
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiInlineSuggestionReady(suffix) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -6164,7 +6479,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiExplain(target) => {
                     // Extract selection before mutable borrow
@@ -6180,7 +6495,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.propose_explain(text_to_explain, None, None);
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiFix(target) => {
                     // Extract selection before mutable borrow
@@ -6198,30 +6513,30 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         runtime.propose_fix(error_text, None, None, None);
                         *self.ctx.dirty = true;
                     }
-                },
+                }
                 // Workflow panel events
                 #[cfg(feature = "workflow")]
                 EventType::WorkflowsSearchPerform(_) => {
                     // Workflow search is handled at the processor level
-                },
+                }
                 #[cfg(feature = "workflow")]
                 EventType::WorkflowsSearchResults(_) => {
                     // Workflow search results are handled at the processor level
-                },
+                }
                 #[cfg(feature = "workflow")]
                 EventType::WorkflowsExecuteByName(_) => {
                     // Workflow execution is handled at the processor level
-                },
+                }
                 #[cfg(feature = "workflow")]
                 EventType::WorkflowsProgressUpdate { .. } => {
                     // Workflow progress updates are handled at the processor level
                     *self.ctx.dirty = true;
-                },
+                }
                 #[cfg(feature = "workflow")]
                 EventType::WorkflowsProgressClear(_) => {
                     // Workflow progress clearing is handled at the processor level
                     *self.ctx.dirty = true;
-                },
+                }
             },
             WinitEvent::WindowEvent { event, .. } => {
                 match event {
@@ -6229,7 +6544,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         // User asked to close the window, so no need to hold it.
                         self.ctx.window().hold = false;
                         self.ctx.terminal.exit();
-                    },
+                    }
                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                         let old_scale_factor =
                             mem::replace(&mut self.ctx.window().scale_factor, scale_factor);
@@ -6242,7 +6557,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                         let font = self.ctx.config.font.clone();
                         display_update_pending.set_font(font.with_size(self.ctx.display.font_size));
-                    },
+                    }
                     WindowEvent::Resized(size) => {
                         // Ignore resize events to zero in any dimension, to avoid issues with Winit
                         // and the ConPTY. A 0x0 resize will also occur when the window is minimized
@@ -6252,23 +6567,27 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
 
                         self.ctx.display.pending_update.set_dimensions(size);
-                    },
-                    WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => {
+                    }
+                    WindowEvent::KeyboardInput {
+                        event,
+                        is_synthetic: false,
+                        ..
+                    } => {
                         self.key_input(event);
-                    },
+                    }
                     WindowEvent::ModifiersChanged(modifiers) => self.modifiers_input(modifiers),
                     WindowEvent::MouseInput { state, button, .. } => {
                         self.ctx.window().set_mouse_visible(true);
                         self.mouse_input(state, button);
-                    },
+                    }
                     WindowEvent::CursorMoved { position, .. } => {
                         self.ctx.window().set_mouse_visible(true);
                         self.mouse_moved(position);
-                    },
+                    }
                     WindowEvent::MouseWheel { delta, phase, .. } => {
                         self.ctx.window().set_mouse_visible(true);
                         self.mouse_wheel_input(delta, phase);
-                    },
+                    }
                     WindowEvent::Touch(touch) => self.touch(touch),
                     WindowEvent::Focused(is_focused) => {
                         self.ctx.terminal.is_focused = is_focused;
@@ -6292,14 +6611,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                         self.ctx.update_cursor_blinking();
                         self.on_focus_change(is_focused);
-                    },
+                    }
                     WindowEvent::Occluded(occluded) => {
                         *self.ctx.occluded = occluded;
-                    },
+                    }
                     WindowEvent::DroppedFile(path) => {
                         let path: String = path.to_string_lossy().into();
                         self.ctx.paste(&(path + " "), true);
-                    },
+                    }
                     WindowEvent::CursorLeft { .. } => {
                         self.ctx.mouse.inside_text_area = false;
 
@@ -6311,7 +6630,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         if self.ctx.display().highlighted_hint.is_some() {
                             *self.ctx.dirty = true;
                         }
-                    },
+                    }
                     WindowEvent::Ime(ime) => match ime {
                         Ime::Commit(text) => {
                             // If composer is focused, route IME commit according to
@@ -6345,7 +6664,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                         *self.ctx.dirty = true;
                                         self.ctx.update_cursor_blinking();
                                         return;
-                                    },
+                                    }
                                     crate::config::theme::ComposerOpenMode::Commit => {
                                         // Insert committed text into composer buffer at cursor
                                         let cur = self.ctx.display.composer_cursor;
@@ -6354,14 +6673,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                         *self.ctx.dirty = true;
                                         self.ctx.update_cursor_blinking();
                                         return;
-                                    },
+                                    }
                                 }
                             }
                             *self.ctx.dirty = true;
                             // Don't use bracketed paste for single char input.
                             self.ctx.paste(&text, text.chars().count() > 1);
                             self.ctx.update_cursor_blinking();
-                        },
+                        }
                         Ime::Preedit(text, cursor_offset) => {
                             let preedit =
                                 (!text.is_empty()).then(|| Preedit::new(text, cursor_offset));
@@ -6371,17 +6690,19 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 self.ctx.update_cursor_blinking();
                                 *self.ctx.dirty = true;
                             }
-                        },
+                        }
                         Ime::Enabled => {
                             self.ctx.display.ime.set_enabled(true);
                             *self.ctx.dirty = true;
-                        },
+                        }
                         Ime::Disabled => {
                             self.ctx.display.ime.set_enabled(false);
                             *self.ctx.dirty = true;
-                        },
+                        }
                     },
-                    WindowEvent::KeyboardInput { is_synthetic: true, .. }
+                    WindowEvent::KeyboardInput {
+                        is_synthetic: true, ..
+                    }
                     | WindowEvent::ActivationTokenDone { .. }
                     | WindowEvent::DoubleTapGesture { .. }
                     | WindowEvent::TouchpadPressure { .. }
@@ -6397,7 +6718,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     | WindowEvent::RedrawRequested
                     | WindowEvent::Moved(_) => (),
                 }
-            },
+            }
             WinitEvent::Suspended
             | WinitEvent::NewEvents { .. }
             | WinitEvent::DeviceEvent { .. }
@@ -6428,7 +6749,9 @@ impl EventProxy {
 
 impl EventListener for EventProxy {
     fn send_event(&self, event: TerminalEvent) {
-        let _ = self.proxy.send_event(Event::new(event.into(), self.window_id));
+        let _ = self
+            .proxy
+            .send_event(Event::new(event.into(), self.window_id));
     }
 }
 
@@ -6464,8 +6787,8 @@ impl Processor {
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, window_id);
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 }

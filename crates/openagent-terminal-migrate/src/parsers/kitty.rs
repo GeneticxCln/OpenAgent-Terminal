@@ -30,22 +30,24 @@ impl ConfigParser for KittyParser {
                         if let Ok(size) = value.parse::<f32>() {
                             config.font.size = Some(size);
                         }
-                    },
+                    }
                     "font_family" => {
-                        config.font.normal =
-                            Some(FontFaceConfig { family: Some(value.to_string()), style: None });
-                    },
+                        config.font.normal = Some(FontFaceConfig {
+                            family: Some(value.to_string()),
+                            style: None,
+                        });
+                    }
                     "background_opacity" => {
                         if let Ok(opacity) = value.parse::<f32>() {
                             config.window.opacity = Some(opacity);
                         }
-                    },
+                    }
                     "background" => {
                         config.colors.primary = Some(PrimaryColors {
                             background: Some(value.to_string()),
                             ..Default::default()
                         });
-                    },
+                    }
                     "foreground" => {
                         if let Some(primary) = &mut config.colors.primary {
                             primary.foreground = Some(value.to_string());
@@ -55,8 +57,8 @@ impl ConfigParser for KittyParser {
                                 ..Default::default()
                             });
                         }
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
         }

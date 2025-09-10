@@ -1,4 +1,3 @@
-#if defined(GLES2_RENDERER)
 #define float_t mediump float
 #define color_t mediump vec4
 #define FRAG_COLOR gl_FragColor

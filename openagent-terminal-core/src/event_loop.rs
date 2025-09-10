@@ -82,7 +82,10 @@ where
     }
 
     pub fn channel(&self) -> EventLoopSender {
-        EventLoopSender { sender: self.tx.clone(), poller: self.poll.clone() }
+        EventLoopSender {
+            sender: self.tx.clone(),
+            poller: self.poll.clone(),
+        }
     }
 
     /// Drain the channel.
@@ -129,7 +132,7 @@ where
                         if unprocessed == 0 {
                             break;
                         }
-                    },
+                    }
                     _ => return Err(err),
                 },
             }
@@ -182,21 +185,21 @@ where
                     Ok(0) => {
                         state.set_current(Some(current));
                         break 'write_many;
-                    },
+                    }
                     Ok(n) => {
                         current.advance(n);
                         if current.finished() {
                             state.goto_next();
                             break 'write_one;
                         }
-                    },
+                    }
                     Err(err) => {
                         state.set_current(Some(current));
                         match err.kind() {
                             ErrorKind::Interrupted | ErrorKind::WouldBlock => break 'write_many,
                             _ => return Err(err),
                         }
-                    },
+                    }
                 }
             }
         }
@@ -296,9 +299,10 @@ where
         }
         match payload[0] as char {
             'A' => {
-                self.event_proxy
-                    .send_event(event::Event::CommandBlock(event::CommandBlockEvent::PromptStart));
-            },
+                self.event_proxy.send_event(event::Event::CommandBlock(
+                    event::CommandBlockEvent::PromptStart,
+                ));
+            }
             'B' => {
                 // Parse optional cmd
                 let mut cmd_val: Option<String> = None;
@@ -318,7 +322,7 @@ where
                 self.event_proxy.send_event(event::Event::CommandBlock(
                     event::CommandBlockEvent::CommandStart { cmd: cmd_val },
                 ));
-            },
+            }
             'C' => {
                 let mut exit: Option<i32> = None;
                 let mut cwd: Option<String> = None;
@@ -340,11 +344,12 @@ where
                 self.event_proxy.send_event(event::Event::CommandBlock(
                     event::CommandBlockEvent::CommandEnd { exit, cwd },
                 ));
-            },
+            }
             'D' => {
-                self.event_proxy
-                    .send_event(event::Event::CommandBlock(event::CommandBlockEvent::PromptEnd));
-            },
+                self.event_proxy.send_event(event::Event::CommandBlock(
+                    event::CommandBlockEvent::PromptEnd,
+                ));
+            }
             _ => (),
         }
     }
@@ -377,8 +382,9 @@ where
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
                 let handler = state.parser.sync_timeout();
-                let timeout =
-                    handler.sync_timeout().map(|st| st.saturating_duration_since(Instant::now()));
+                let timeout = handler
+                    .sync_timeout()
+                    .map(|st| st.saturating_duration_since(Instant::now()));
 
                 events.clear();
                 if let Err(err) = self.poll.wait(&mut events, timeout) {
@@ -387,7 +393,7 @@ where
                         _ => {
                             error!("Event loop polling error: {err}");
                             break 'event_loop;
-                        },
+                        }
                     }
                 }
 
@@ -418,7 +424,7 @@ where
                                 self.event_proxy.send_event(Event::Wakeup);
                                 break 'event_loop;
                             }
-                        },
+                        }
 
                         tty::PTY_READ_WRITE_TOKEN => {
                             if event.is_interrupt() {
@@ -450,7 +456,7 @@ where
                                     break 'event_loop;
                                 }
                             }
-                        },
+                        }
                         _ => (),
                     }
                 }
@@ -461,7 +467,9 @@ where
                     interest.writable = needs_write;
 
                     // Re-register with new interest.
-                    self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
+                    self.pty
+                        .reregister(&self.poll, interest, poll_opts)
+                        .unwrap();
                 }
             }
 
@@ -587,7 +595,10 @@ impl State {
 impl Writing {
     #[inline]
     fn new(c: Cow<'static, [u8]>) -> Writing {
-        Writing { source: c, written: 0 }
+        Writing {
+            source: c,
+            written: 0,
+        }
     }
 
     #[inline]
@@ -635,7 +646,7 @@ impl<T> PeekableReceiver<T> {
                     // Graceful shutdown: treat a disconnected channel as no further messages
                     // and let the event loop wind down without panicking.
                     None
-                },
+                }
             }
         }
     }

@@ -79,8 +79,9 @@ impl BlockStorage {
         output_content: Option<&str>,
     ) -> StorageResult<i64> {
         let started_at = system_time_to_millis(instant_to_system_time(block.started_at));
-        let ended_at =
-            block.ended_at.map(|instant| system_time_to_millis(instant_to_system_time(instant)));
+        let ended_at = block
+            .ended_at
+            .map(|instant| system_time_to_millis(instant_to_system_time(instant)));
 
         let (output_preview, output_hash) = if let Some(content) = output_content {
             let preview = if content.len() > 1000 {
@@ -131,8 +132,9 @@ impl BlockStorage {
         output_content: Option<&str>,
     ) -> StorageResult<()> {
         let started_at = system_time_to_millis(instant_to_system_time(block.started_at));
-        let ended_at =
-            block.ended_at.map(|instant| system_time_to_millis(instant_to_system_time(instant)));
+        let ended_at = block
+            .ended_at
+            .map(|instant| system_time_to_millis(instant_to_system_time(instant)));
 
         let (output_preview, output_hash) = if let Some(content) = output_content {
             let preview = if content.len() > 1000 {
@@ -307,13 +309,13 @@ impl BlockStorage {
                         "SELECT * FROM blocks WHERE 1=1 ORDER BY working_directory DESC LIMIT ?",
                     )
                     .bind(filter.limit.unwrap_or(100))
-                },
+                }
                 BlockSort::WorkingDirectory(SortOrder::Asc) => {
                     sqlx::query_as::<Sqlite, PersistedBlock>(
                         "SELECT * FROM blocks WHERE 1=1 ORDER BY working_directory ASC LIMIT ?",
                     )
                     .bind(filter.limit.unwrap_or(100))
-                },
+                }
                 BlockSort::ExitCode(SortOrder::Desc) => sqlx::query_as::<Sqlite, PersistedBlock>(
                     "SELECT * FROM blocks WHERE 1=1 ORDER BY exit_code DESC LIMIT ?",
                 )
@@ -341,7 +343,10 @@ impl BlockStorage {
 
     /// Delete a block by ID
     pub async fn delete_block(&self, id: i64) -> StorageResult<()> {
-        sqlx::query("DELETE FROM blocks WHERE id = ?").bind(id).execute(&self.pool).await?;
+        sqlx::query("DELETE FROM blocks WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
@@ -382,7 +387,9 @@ fn instant_to_system_time(_instant: Instant) -> SystemTime {
 
 /// Convert SystemTime to milliseconds since epoch
 fn system_time_to_millis(time: SystemTime) -> i64 {
-    time.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+    time.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 impl FromRow<'_, sqlx::sqlite::SqliteRow> for PersistedBlock {

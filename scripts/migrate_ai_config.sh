@@ -89,6 +89,11 @@ export OPENAGENT_ANTHROPIC_ENDPOINT="https://api.anthropic.com/v1"  # optional
 export OPENAGENT_OLLAMA_ENDPOINT="http://localhost:11434"  # optional
 export OPENAGENT_OLLAMA_MODEL="codellama"
 
+# Ollama server performance (set in the environment where 'ollama serve' runs)
+# Enable Flash Attention if supported and use f16 KV cache
+export OLLAMA_FLASH_ATTENTION=true
+export OLLAMA_KV_CACHE_TYPE=f16
+
 # OpenRouter Configuration
 export OPENAGENT_OPENROUTER_API_KEY="sk-or-your-openrouter-key-here"
 export OPENAGENT_OPENROUTER_MODEL="openai/gpt-4o-mini"  # choose a model slug supported by OpenRouter

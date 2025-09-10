@@ -1,0 +1,22 @@
+[workspace]
+enabled = true
+warp_style = true
+warp_overlay_only = true
+clean_startup = false  # Disable to always show UI
+
+[workspace.tab_bar]
+show = true
+position = "Top"
+visibility = "Always"
+
+[workspace.quick_actions]
+show = true
+position = "Bottom"
+show_palette = true
+
+[colors.primary]
+background = "#1a202c"
+foreground = "#f7fafc"
+
+[font]
+size = 12

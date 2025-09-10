@@ -1,0 +1,15 @@
+name: CI (Python)
+vars:
+  - name: PYTHON
+    default: 3.11
+steps:
+  - name: venv
+    run: python -m venv .venv && . .venv/bin/activate && pip install -U pip
+    dry_run: true
+  - name: install
+    run: . .venv/bin/activate && pip install -r requirements.txt
+    dry_run: true
+  - name: test
+    run: . .venv/bin/activate && pytest -q
+    dry_run: true
+

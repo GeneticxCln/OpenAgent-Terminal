@@ -86,7 +86,7 @@ impl Display for Error {
         match self {
             Error::ReadingEnvHome(err) => {
                 write!(f, "Unable to read $HOME environment variable: {err}")
-            },
+            }
             Error::Io(err) => write!(f, "Error reading config file: {err}"),
             Error::Toml(err) => write!(f, "Config error: {err}"),
             Error::TomlSe(err) => write!(f, "Yaml conversion error: {err}"),
@@ -195,11 +195,11 @@ fn load_from(path: &Path) -> Result<UiConfig> {
         Err(Error::Io(io)) if io.kind() == io::ErrorKind::NotFound => {
             error!(target: LOG_TARGET_CONFIG, "Unable to load config {path:?}: File not found");
             Err(Error::Io(io))
-        },
+        }
         Err(err) => {
             error!(target: LOG_TARGET_CONFIG, "Unable to load config {path:?}: {err}");
             Err(err)
-        },
+        }
     }
 }
 
@@ -272,7 +272,7 @@ fn load_imports(
         Err(err) => {
             error!(target: LOG_TARGET_CONFIG, "{err}");
             return Value::Table(Table::new());
-        },
+        }
     };
 
     // Parse configs for all imports recursively.
@@ -283,7 +283,7 @@ fn load_imports(
             Err(err) => {
                 error!(target: LOG_TARGET_CONFIG, "{err}");
                 continue;
-            },
+            }
         };
 
         match parse_config(&path, config_paths, recursion_limit - 1) {
@@ -291,10 +291,10 @@ fn load_imports(
             Err(Error::Io(io)) if io.kind() == io::ErrorKind::NotFound => {
                 info!(target: LOG_TARGET_CONFIG, "Config import not found:\n  {:?}", path.display());
                 continue;
-            },
+            }
             Err(err) => {
                 error!(target: LOG_TARGET_CONFIG, "Unable to import config {path:?}: {err}")
-            },
+            }
         }
     }
 
@@ -307,8 +307,9 @@ pub fn imports(
     base_path: &Path,
     recursion_limit: usize,
 ) -> StdResult<Vec<StdResult<PathBuf, String>>, String> {
-    let imports =
-        config.get("import").or_else(|| config.get("general").and_then(|g| g.get("import")));
+    let imports = config
+        .get("import")
+        .or_else(|| config.get("general").and_then(|g| g.get("import")));
     let imports = match imports {
         Some(Value::Array(imports)) => imports,
         Some(_) => return Err("Invalid import type: expected a sequence".into()),
@@ -326,9 +327,11 @@ pub fn imports(
         let path = match import {
             Value::String(path) => PathBuf::from(path),
             _ => {
-                import_paths.push(Err("Invalid import element type: expected path string".into()));
+                import_paths.push(Err(
+                    "Invalid import element type: expected path string".into()
+                ));
                 continue;
-            },
+            }
         };
 
         let normalized = normalize_import(base_path, path);
@@ -364,7 +367,7 @@ fn prune_yaml_nulls(value: &mut serde_yaml::Value, warn_pruned: bool) {
             serde_yaml::Value::Sequence(sequence) => {
                 sequence.retain_mut(|value| !walk(value, warn_pruned));
                 sequence.is_empty()
-            },
+            }
             serde_yaml::Value::Mapping(mapping) => {
                 mapping.retain(|key, value| {
                     let retain = !walk(value, warn_pruned);
@@ -374,7 +377,7 @@ fn prune_yaml_nulls(value: &mut serde_yaml::Value, warn_pruned: bool) {
                     retain
                 });
                 mapping.is_empty()
-            },
+            }
             serde_yaml::Value::Null => true,
             _ => false,
         }
@@ -412,7 +415,9 @@ pub fn installed_config(suffix: &str) -> Option<PathBuf> {
 
     // Fallback to common home locations for the new name.
     if let Ok(home) = env::var("HOME") {
-        let cfg_dir = PathBuf::from(&home).join(".config/openagent-terminal").join(&new_file_name);
+        let cfg_dir = PathBuf::from(&home)
+            .join(".config/openagent-terminal")
+            .join(&new_file_name);
         if cfg_dir.exists() {
             return Some(cfg_dir);
         }

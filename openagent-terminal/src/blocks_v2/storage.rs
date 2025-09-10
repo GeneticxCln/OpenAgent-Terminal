@@ -228,7 +228,9 @@ impl BlockStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
+        rows.into_iter()
+            .map(|row| row.into_block().map(Arc::new))
+            .collect()
     }
 
     /// Get blocks by tag
@@ -245,7 +247,9 @@ impl BlockStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
+        rows.into_iter()
+            .map(|row| row.into_block().map(Arc::new))
+            .collect()
     }
 
     /// Advanced search with FTS and comprehensive filters
@@ -327,19 +331,19 @@ impl BlockStorage {
             match exit_filter {
                 ExitCodeFilter::Success => {
                     where_clauses.push("b.exit_code = 0".into());
-                },
+                }
                 ExitCodeFilter::Failure => {
                     where_clauses.push("(b.exit_code IS NOT NULL AND b.exit_code != 0)".into());
-                },
+                }
                 ExitCodeFilter::Specific(code) => {
                     where_clauses.push("b.exit_code = ?".into());
                     binds.push(code.to_string());
-                },
+                }
                 ExitCodeFilter::Range(min, max) => {
                     where_clauses.push("(b.exit_code >= ? AND b.exit_code <= ?)".into());
                     binds.push(min.to_string());
                     binds.push(max.to_string());
-                },
+                }
             }
         }
 
@@ -349,11 +353,11 @@ impl BlockStorage {
                 DurationFilter::LessThan(ms) => {
                     where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms < ?)".into());
                     binds.push((ms as i64).to_string());
-                },
+                }
                 DurationFilter::GreaterThan(ms) => {
                     where_clauses.push("(b.duration_ms IS NOT NULL AND b.duration_ms > ?)".into());
                     binds.push((ms as i64).to_string());
-                },
+                }
                 DurationFilter::Range(min_ms, max_ms) => {
                     where_clauses.push(
                         "(b.duration_ms IS NOT NULL AND b.duration_ms >= ? AND b.duration_ms <= ?)"
@@ -361,7 +365,7 @@ impl BlockStorage {
                     );
                     binds.push((min_ms as i64).to_string());
                     binds.push((max_ms as i64).to_string());
-                },
+                }
             }
         }
 
@@ -535,7 +539,10 @@ mod tests {
         assert!(!r2.is_empty());
 
         // Search starred only
-        let q3 = crate::blocks_v2::SearchQuery { starred_only: true, ..Default::default() };
+        let q3 = crate::blocks_v2::SearchQuery {
+            starred_only: true,
+            ..Default::default()
+        };
         let r3 = storage.search(&q3).await.unwrap();
         assert!(!r3.is_empty());
     }

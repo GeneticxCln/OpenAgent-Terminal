@@ -4,7 +4,9 @@ use serde::Serialize;
 use openagent_terminal_config_derive::ConfigDeserialize;
 
 /// Eviction policy for WGPU multipage glyph atlas.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 pub enum AtlasEvictionPolicy {
     /// Rotate through pages regardless of usage.
     RoundRobin,
@@ -13,9 +15,10 @@ pub enum AtlasEvictionPolicy {
     LruMinOccupancy,
 }
 
-
 /// Preference for enabling subpixel text rendering.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 pub enum SubpixelPreference {
     #[default]
     Auto,
@@ -24,7 +27,9 @@ pub enum SubpixelPreference {
 }
 
 /// Orientation for LCD subpixel rendering.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum SubpixelOrientation {
     #[default]
@@ -32,10 +37,10 @@ pub enum SubpixelOrientation {
     BGR,
 }
 
-
-
 /// Preference for using an sRGB swapchain/surface when available.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 pub enum SrgbPreference {
     #[default]
     Auto,
@@ -43,9 +48,10 @@ pub enum SrgbPreference {
     Disabled,
 }
 
-
 /// Render timer color style.
-#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 pub enum RenderTimerStyle {
     /// Subtle, unobtrusive background using surface_muted with text color.
     #[default]
@@ -53,7 +59,6 @@ pub enum RenderTimerStyle {
     /// Attention-grabbing highlight using warning background.
     Warning,
 }
-
 
 /// Debugging options.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq)]

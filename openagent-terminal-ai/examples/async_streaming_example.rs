@@ -303,11 +303,11 @@ impl OpenAIClient {
                                 }
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", e))).await;
                         return;
-                    },
+                    }
                 }
             }
         });
@@ -372,7 +372,7 @@ impl StreamingClient for OpenAIClient {
                         metrics,
                         cancellation,
                     });
-                },
+                }
                 Ok(resp) => {
                     let status = resp.status();
                     let error_body = resp.text().await.unwrap_or_default();
@@ -388,7 +388,7 @@ impl StreamingClient for OpenAIClient {
                     }
 
                     return Err(anyhow::anyhow!("API error {}: {}", status, error_body));
-                },
+                }
                 Err(_e) if retry_count < self.config.max_retries => {
                     retry_count += 1;
                     let mut m = metrics.lock().await;
@@ -397,7 +397,7 @@ impl StreamingClient for OpenAIClient {
 
                     tokio::time::sleep(self.config.retry_delay * retry_count).await;
                     continue;
-                },
+                }
                 Err(e) => return Err(anyhow::anyhow!("Request failed: {}", e)),
             }
         }
@@ -494,7 +494,7 @@ impl AnthropicClient {
                                                 token_count: None,
                                                 metadata: Some(json.clone()),
                                             }
-                                        },
+                                        }
                                         "content_block_delta" => {
                                             let text = json["delta"]["text"]
                                                 .as_str()
@@ -508,7 +508,7 @@ impl AnthropicClient {
                                                 token_count: None,
                                                 metadata: Some(json.clone()),
                                             }
-                                        },
+                                        }
                                         "content_block_stop" => StreamChunk {
                                             content: String::new(),
                                             role: None,
@@ -542,7 +542,7 @@ impl AnthropicClient {
                                                 .send(Err(anyhow::anyhow!("API error: {}", error)))
                                                 .await;
                                             return;
-                                        },
+                                        }
                                         _ => continue,
                                     };
 
@@ -563,11 +563,11 @@ impl AnthropicClient {
                                 }
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         let _ = tx.send(Err(anyhow::anyhow!("Stream error: {}", e))).await;
                         return;
-                    },
+                    }
                 }
             }
         });
@@ -644,7 +644,7 @@ impl StreamingClient for AnthropicClient {
                         metrics,
                         cancellation,
                     });
-                },
+                }
                 Ok(resp) => {
                     let status = resp.status();
                     let error_body = resp.text().await.unwrap_or_default();
@@ -660,7 +660,7 @@ impl StreamingClient for AnthropicClient {
                     }
 
                     return Err(anyhow::anyhow!("API error {}: {}", status, error_body));
-                },
+                }
                 Err(_e) if retry_count < self.config.max_retries => {
                     retry_count += 1;
                     let mut m = metrics.lock().await;
@@ -669,7 +669,7 @@ impl StreamingClient for AnthropicClient {
 
                     tokio::time::sleep(self.config.retry_delay * retry_count).await;
                     continue;
-                },
+                }
                 Err(e) => return Err(anyhow::anyhow!("Request failed: {}", e)),
             }
         }
@@ -815,9 +815,15 @@ mod tests {
         let config = StreamConfig::default();
 
         // Add clients
-        manager.add_client(Box::new(OpenAIClient::new("test_key".to_string(), config.clone())));
+        manager.add_client(Box::new(OpenAIClient::new(
+            "test_key".to_string(),
+            config.clone(),
+        )));
 
-        manager.add_client(Box::new(AnthropicClient::new("test_key".to_string(), config.clone())));
+        manager.add_client(Box::new(AnthropicClient::new(
+            "test_key".to_string(),
+            config.clone(),
+        )));
 
         // Create request
         let request = StreamRequest {

@@ -49,8 +49,13 @@ pub enum RenderEvent {
     BlockRendered(BlockId),
     TabRendered(TabId),
     SplitRendered(String),
-    AnimationStarted { element_id: String, animation_type: String },
-    AnimationCompleted { element_id: String },
+    AnimationStarted {
+        element_id: String,
+        animation_type: String,
+    },
+    AnimationCompleted {
+        element_id: String,
+    },
     ThemeChanged,
     LayoutInvalidated,
 }
@@ -97,10 +102,28 @@ pub struct SplitRenderElement {
 /// Native rendering primitives for immediate GPU rendering
 #[derive(Debug, Clone)]
 pub enum RenderPrimitive {
-    RoundedRect { rect: UiRoundedRect, layer: u8 },
-    Sprite { sprite: UiSprite, layer: u8 },
-    Text { text: String, position: Point<f32, f32>, color: Rgb, size: f32, layer: u8 },
-    Line { start: Point<f32, f32>, end: Point<f32, f32>, color: Rgb, width: f32, layer: u8 },
+    RoundedRect {
+        rect: UiRoundedRect,
+        layer: u8,
+    },
+    Sprite {
+        sprite: UiSprite,
+        layer: u8,
+    },
+    Text {
+        text: String,
+        position: Point<f32, f32>,
+        color: Rgb,
+        size: f32,
+        layer: u8,
+    },
+    Line {
+        start: Point<f32, f32>,
+        end: Point<f32, f32>,
+        color: Rgb,
+        width: f32,
+        layer: u8,
+    },
 }
 
 /// Animation timeline for smooth transitions
@@ -226,17 +249,22 @@ impl NativeRenderer {
         for &block_id in &block_render_state.visible_blocks {
             // Get or create render element
             let render_element =
-                self.block_render_state.entry(block_id).or_insert_with(|| BlockRenderElement {
-                    block_id,
-                    position: Point::new(0.0_f32, 0.0_f32),
-                    size: (0.0, 0.0),
-                    visible: true,
-                    collapsed: block_render_state.collapsed_blocks.contains(&block_id),
-                    animation_state: block_render_state.animation_states.get(&block_id).cloned(),
-                    content_hash: 0,
-                    render_primitives: Vec::new(),
-                    last_render: Instant::now(),
-                });
+                self.block_render_state
+                    .entry(block_id)
+                    .or_insert_with(|| BlockRenderElement {
+                        block_id,
+                        position: Point::new(0.0_f32, 0.0_f32),
+                        size: (0.0, 0.0),
+                        visible: true,
+                        collapsed: block_render_state.collapsed_blocks.contains(&block_id),
+                        animation_state: block_render_state
+                            .animation_states
+                            .get(&block_id)
+                            .cloned(),
+                        content_hash: 0,
+                        render_primitives: Vec::new(),
+                        last_render: Instant::now(),
+                    });
 
             // Update animation state immediately
             if let Some(animation) = block_render_state.animation_states.get(&block_id) {
@@ -273,27 +301,27 @@ impl NativeRenderer {
                 BlockAnimationType::FadeIn => {
                     element.visible = true;
                     // Alpha will be applied during primitive generation
-                },
+                }
                 BlockAnimationType::FadeOut => {
                     if progress >= 1.0 {
                         element.visible = false;
                     }
-                },
+                }
                 BlockAnimationType::Expand => {
                     element.collapsed = false;
                     // Size interpolation will be applied during primitive generation
-                },
+                }
                 BlockAnimationType::Collapse => {
                     if progress >= 1.0 {
                         element.collapsed = true;
                     }
-                },
+                }
                 BlockAnimationType::Highlight => {
                     // Highlight effects will be applied during primitive generation
-                },
+                }
                 BlockAnimationType::Update => {
                     // Content update effects will be applied during primitive generation
-                },
+                }
             }
 
             // Remove completed animations immediately
@@ -331,11 +359,11 @@ impl NativeRenderer {
                 BlockAnimationType::Expand => {
                     let base_height = 100.0; // Base block height
                     (element.size.0, base_height * animation.progress)
-                },
+                }
                 BlockAnimationType::Collapse => {
                     let base_height = 100.0;
                     (element.size.0, base_height * (1.0 - animation.progress))
-                },
+                }
                 _ => element.size,
             }
         } else if element.collapsed {
@@ -355,7 +383,12 @@ impl NativeRenderer {
             alpha,
         );
 
-        element.render_primitives.push(RenderPrimitive::RoundedRect { rect: background, layer: 0 });
+        element
+            .render_primitives
+            .push(RenderPrimitive::RoundedRect {
+                rect: background,
+                layer: 0,
+            });
 
         // Generate border primitive if needed
         if element.collapsed || element.animation_state.is_some() {
@@ -369,7 +402,12 @@ impl NativeRenderer {
                 alpha * 0.5,
             );
 
-            element.render_primitives.push(RenderPrimitive::RoundedRect { rect: border, layer: 0 });
+            element
+                .render_primitives
+                .push(RenderPrimitive::RoundedRect {
+                    rect: border,
+                    layer: 0,
+                });
         }
 
         // Generate highlight effect if animating
@@ -388,7 +426,10 @@ impl NativeRenderer {
 
                 element
                     .render_primitives
-                    .push(RenderPrimitive::RoundedRect { rect: highlight, layer: 1 });
+                    .push(RenderPrimitive::RoundedRect {
+                        rect: highlight,
+                        layer: 1,
+                    });
             }
         }
 
@@ -416,22 +457,34 @@ impl NativeRenderer {
             match primitive {
                 RenderPrimitive::RoundedRect { rect, .. } => {
                     let _ = rect; // staging handled internally by display module
-                },
+                }
                 RenderPrimitive::Sprite { sprite, .. } => {
                     let _ = sprite; // staging handled internally by display module
-                },
-                RenderPrimitive::Text { text, position, color, size, .. } => {
+                }
+                RenderPrimitive::Text {
+                    text,
+                    position,
+                    color,
+                    size,
+                    ..
+                } => {
                     let _ = (text, position, color, size);
                     // Integrate with display text rendering system if needed
-                },
-                RenderPrimitive::Line { start, end, color, width, .. } => {
+                }
+                RenderPrimitive::Line {
+                    start,
+                    end,
+                    color,
+                    width,
+                    ..
+                } => {
                     // Render line as a thin rectangle (placeholder)
                     let dx = end.column - start.column;
                     let dy = end.line - start.line;
                     let _length = (dx * dx + dy * dy).sqrt();
 
                     let _ = (color, width);
-                },
+                }
             }
         }
 
@@ -488,15 +541,15 @@ impl NativeRenderer {
                     // Scale from 0 to 1
                     element.size.0 *= eased_progress;
                     element.size.1 *= eased_progress;
-                },
+                }
                 TabAnimationType::Close => {
                     // Scale from 1 to 0
                     element.size.0 *= 1.0 - eased_progress;
                     element.size.1 *= 1.0 - eased_progress;
-                },
+                }
                 TabAnimationType::Switch => {
                     // Highlight effect
-                },
+                }
                 TabAnimationType::Move => {
                     // Position interpolation would be handled by the tab manager
                     if let (Some(from_pos), Some(to_pos)) =
@@ -506,13 +559,13 @@ impl NativeRenderer {
                             from_pos as f32 + (to_pos as f32 - from_pos as f32) * eased_progress;
                         element.position.column = current_pos * 150.0; // Tab width
                     }
-                },
+                }
                 TabAnimationType::Highlight => {
                     // Pulsing highlight effect
-                },
+                }
                 TabAnimationType::Resize => {
                     // Size animation
-                },
+                }
             }
 
             if progress >= 1.0 {
@@ -536,7 +589,7 @@ impl NativeRenderer {
                 } else {
                     1.0 - 2.0 * (1.0 - t) * (1.0 - t)
                 }
-            },
+            }
             EasingFunction::Bounce => {
                 if t < 1.0 / 2.75 {
                     7.5625 * t * t
@@ -550,7 +603,7 @@ impl NativeRenderer {
                     let t = t - 2.625 / 2.75;
                     7.5625 * t * t + 0.984375
                 }
-            },
+            }
             EasingFunction::Elastic => {
                 if t == 0.0 || t == 1.0 {
                     t
@@ -560,11 +613,11 @@ impl NativeRenderer {
                     let t = t - 1.0;
                     -(2.0_f32.powf(10.0 * t) * ((t - s) * (2.0 * std::f32::consts::PI) / p).sin())
                 }
-            },
+            }
             EasingFunction::Back => {
                 let s = 1.70158;
                 t * t * ((s + 1.0) * t - s)
-            },
+            }
         }
     }
 
@@ -599,7 +652,12 @@ impl NativeRenderer {
             alpha,
         );
 
-        element.render_primitives.push(RenderPrimitive::RoundedRect { rect: background, layer: 0 });
+        element
+            .render_primitives
+            .push(RenderPrimitive::RoundedRect {
+                rect: background,
+                layer: 0,
+            });
 
         // Modified indicator
         if element.modified {
@@ -616,7 +674,10 @@ impl NativeRenderer {
 
             element
                 .render_primitives
-                .push(RenderPrimitive::RoundedRect { rect: indicator, layer: 1 });
+                .push(RenderPrimitive::RoundedRect {
+                    rect: indicator,
+                    layer: 1,
+                });
         }
 
         Ok(())
@@ -632,11 +693,11 @@ impl NativeRenderer {
             match primitive {
                 RenderPrimitive::RoundedRect { rect, .. } => {
                     let _ = rect; // staging handled internally by display module
-                },
+                }
                 RenderPrimitive::Sprite { sprite, .. } => {
                     let _ = sprite; // staging handled internally by display module
-                },
-                _ => {}, // Handle other primitives as needed
+                }
+                _ => {} // Handle other primitives as needed
             }
         }
 
@@ -648,7 +709,8 @@ impl NativeRenderer {
         let visible_set: std::collections::HashSet<_> =
             block_render_state.visible_blocks.iter().collect();
 
-        self.block_render_state.retain(|&block_id, _| visible_set.contains(&block_id));
+        self.block_render_state
+            .retain(|&block_id, _| visible_set.contains(&block_id));
     }
 
     /// Update theme state immediately
@@ -745,8 +807,10 @@ mod tests {
     #[test]
     fn test_theme_update() {
         let mut renderer = NativeRenderer::new();
-        let new_theme =
-            NativeThemeState { accent_color: Rgb::new(255, 0, 0), ..Default::default() };
+        let new_theme = NativeThemeState {
+            accent_color: Rgb::new(255, 0, 0),
+            ..Default::default()
+        };
 
         renderer.update_theme(new_theme.clone());
         assert_eq!(renderer.theme_state.accent_color, Rgb::new(255, 0, 0));

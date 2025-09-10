@@ -31,7 +31,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // If a pane drag is active, allow Escape to cancel it immediately.
         if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) = key.logical_key {
-            if self.ctx.display().pane_drag_manager.current_drag().is_some() {
+            if self
+                .ctx
+                .display()
+                .pane_drag_manager
+                .current_drag()
+                .is_some()
+            {
                 self.ctx.display().pane_drag_manager.cancel_drag();
                 self.ctx.display().pending_update.dirty = true;
                 self.ctx.mark_dirty();
@@ -62,18 +68,20 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if mods.control_key() && mods.alt_key() {
             match key.logical_key.as_ref() {
                 Key::Character(c) if (c.eq_ignore_ascii_case("b")) => {
-                    self.ctx.send_user_event(crate::event::EventType::BlocksToggleFoldUnderCursor);
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksToggleFoldUnderCursor);
                     return;
-                },
+                }
                 Key::Character(c) if (c.eq_ignore_ascii_case("c")) => {
-                    self.ctx.send_user_event(crate::event::EventType::BlocksCopyHeaderUnderCursor);
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksCopyHeaderUnderCursor);
                     return;
-                },
+                }
                 Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
                     self.ctx
                         .send_user_event(crate::event::EventType::BlocksExportHeaderUnderCursor);
                     return;
-                },
+                }
                 // Ctrl+Alt+M: Cycle debug split overlay (None -> H -> V -> None)
                 Key::Character(c) if (c.eq_ignore_ascii_case("m")) => {
                     let next = match self.ctx.display().debug_split_overlay {
@@ -84,8 +92,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.display().debug_split_overlay = next;
                     self.ctx.display().pending_update.dirty = true;
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
 
@@ -95,20 +103,20 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.confirm_overlay_confirm();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.confirm_overlay_cancel();
                     return;
-                },
+                }
                 Key::Character(c) if (c.eq_ignore_ascii_case("y")) => {
                     self.ctx.confirm_overlay_confirm();
                     return;
-                },
+                }
                 Key::Character(c) if (c.eq_ignore_ascii_case("n")) => {
                     self.ctx.confirm_overlay_cancel();
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             // Swallow other keys while confirm overlay is active
             return;
@@ -137,7 +145,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().composer_sel_anchor = None;
                         self.ctx.mark_dirty();
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::Enter) => {
                         #[cfg(feature = "ai")]
                         {
@@ -154,7 +162,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                         }
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::Backspace) => {
                         #[cfg(feature = "ai")]
                         {
@@ -171,7 +179,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                         }
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::Delete) => {
                         #[cfg(feature = "ai")]
                         {
@@ -188,7 +196,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                         }
                         return;
-                    },
+                    }
                     Key::Character(c) if ctrl_or_cmd && c.eq_ignore_ascii_case("v") => {
                         #[cfg(feature = "ai")]
                         {
@@ -209,8 +217,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             }
                         }
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
                 if !text.is_empty() {
                     #[cfg(feature = "ai")]
@@ -235,7 +243,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
 
             // Commit mode: full text editing and commit on Enter
-            let word_mod = if is_mac { mods.alt_key() } else { mods.control_key() };
+            let word_mod = if is_mac {
+                mods.alt_key()
+            } else {
+                mods.control_key()
+            };
             let shift = mods.shift_key();
             let ctrl_or_cmd = mods.control_key() || mods.super_key();
 
@@ -287,19 +299,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if c.eq_ignore_ascii_case("c") => {
                         if let Some((s, e)) = selection_range(&mut self.ctx) {
                             let text = self.ctx.display().composer_text[s..e].to_string();
-                            self.ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
+                            self.ctx
+                                .clipboard_mut()
+                                .store(ClipboardType::Clipboard, text);
                         }
                         return;
-                    },
+                    }
                     Key::Character(c) if c.eq_ignore_ascii_case("x") => {
                         if let Some((s, e)) = selection_range(&mut self.ctx) {
                             let text = self.ctx.display().composer_text[s..e].to_string();
-                            self.ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
+                            self.ctx
+                                .clipboard_mut()
+                                .store(ClipboardType::Clipboard, text);
                             delete_selection(&mut self.ctx);
                             self.ctx.mark_dirty();
                         }
                         return;
-                    },
+                    }
                     Key::Character(c) if c.eq_ignore_ascii_case("v") => {
                         let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
                         if !clip.is_empty() {
@@ -313,7 +329,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                         }
                         return;
-                    },
+                    }
                     Key::Character(c) if c.eq_ignore_ascii_case("a") => {
                         // Select all
                         if !self.ctx.display().composer_text.is_empty() {
@@ -324,7 +340,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                         }
                         return;
-                    },
+                    }
                     Key::Character(c) if c.eq_ignore_ascii_case("e") => {
                         // End of line
                         if shift && self.ctx.display().composer_sel_anchor.is_none() {
@@ -338,7 +354,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         ensure_caret_visible(&mut self.ctx);
                         self.ctx.mark_dirty();
                         return;
-                    },
+                    }
                     Key::Character(c) if c.eq_ignore_ascii_case("h") => {
                         // Home (common in shells)
                         if shift && self.ctx.display().composer_sel_anchor.is_none() {
@@ -352,8 +368,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         ensure_caret_visible(&mut self.ctx);
                         self.ctx.mark_dirty();
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
 
@@ -365,7 +381,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     clear_selection(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Enter) => {
                     #[cfg(feature = "ai")]
                     {
@@ -386,7 +402,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.mark_dirty();
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::Backspace) => {
                     if has_selection(&mut self.ctx) {
                         delete_selection(&mut self.ctx);
@@ -398,13 +414,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         } else {
                             prev_char(&self.ctx.display().composer_text, cur)
                         };
-                        self.ctx.display().composer_text.replace_range(prev..cur, "");
+                        self.ctx
+                            .display()
+                            .composer_text
+                            .replace_range(prev..cur, "");
                         self.ctx.display().composer_cursor = prev;
                         ensure_caret_visible(&mut self.ctx);
                         self.ctx.mark_dirty();
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::Delete) => {
                     if has_selection(&mut self.ctx) {
                         delete_selection(&mut self.ctx);
@@ -417,13 +436,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             } else {
                                 next_char(&self.ctx.display().composer_text, cur)
                             };
-                            self.ctx.display().composer_text.replace_range(cur..next, "");
+                            self.ctx
+                                .display()
+                                .composer_text
+                                .replace_range(cur..next, "");
                             ensure_caret_visible(&mut self.ctx);
                             self.ctx.mark_dirty();
                         }
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowLeft) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
                         self.ctx.display().composer_sel_anchor =
@@ -444,7 +466,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
                         self.ctx.display().composer_sel_anchor =
@@ -466,7 +488,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Home) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
                         self.ctx.display().composer_sel_anchor =
@@ -479,7 +501,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
-                },
+                }
                 Key::Named(NamedKey::End) => {
                     if shift && self.ctx.display().composer_sel_anchor.is_none() {
                         self.ctx.display().composer_sel_anchor =
@@ -492,8 +514,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     ensure_caret_visible(&mut self.ctx);
                     self.ctx.mark_dirty();
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
 
             // Insert printable text (replace selection when active)
@@ -521,24 +543,24 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.palette_confirm();
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.palette_cancel();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowUp) => {
                     self.ctx.palette_move_selection(-1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowDown) => {
                     self.ctx.palette_move_selection(1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::Backspace) => {
                     self.ctx.palette_backspace();
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             for ch in text.chars() {
                 self.ctx.palette_input(ch);
@@ -557,29 +579,29 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Execute selected action
                         self.ctx.blocks_search_execute_action();
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::Escape) => {
                         // Close actions menu
                         self.ctx.blocks_search_close_actions_menu();
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::ArrowUp) => {
                         self.ctx.blocks_search_move_actions_selection(-1);
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::ArrowDown) => {
                         self.ctx.blocks_search_move_actions_selection(1);
                         return;
-                    },
+                    }
                     Key::Character("k") => {
                         self.ctx.blocks_search_move_actions_selection(-1);
                         return;
-                    },
+                    }
                     Key::Character("j") => {
                         self.ctx.blocks_search_move_actions_selection(1);
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
                 // Don't process other keys when actions menu is active
                 return;
@@ -592,21 +614,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Close help
                         self.ctx.blocks_search_close_help();
                         return;
-                    },
+                    }
                     Key::Character("?") => {
                         // Close help
                         self.ctx.blocks_search_close_help();
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::Tab) | Key::Named(NamedKey::ArrowRight) => {
                         self.ctx.blocks_search_navigate_help(true);
                         return;
-                    },
+                    }
                     Key::Named(NamedKey::ArrowLeft) => {
                         self.ctx.blocks_search_navigate_help(false);
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
                 // Don't process other keys when help is active
                 return;
@@ -616,165 +638,165 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.blocks_search_confirm();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.blocks_search_cancel();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Backspace) => {
                     self.ctx.blocks_search_backspace();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowUp) => {
                     self.ctx.blocks_search_move_selection(-1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowDown) => {
                     self.ctx.blocks_search_move_selection(1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageUp) if mods.is_empty() => {
                     // Page navigation when no modifiers
                     self.ctx.blocks_search_prev_page();
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageDown) if mods.is_empty() => {
                     // Page navigation when no modifiers
                     self.ctx.blocks_search_next_page();
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageUp) => {
                     // Selection movement when modifiers present
                     self.ctx.blocks_search_move_selection(-5);
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageDown) => {
                     // Selection movement when modifiers present
                     self.ctx.blocks_search_move_selection(5);
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("n")) => {
                     self.ctx.blocks_search_move_selection(1);
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("p")) => {
                     self.ctx.blocks_search_move_selection(-1);
                     return;
-                },
+                }
                 // Advanced search mode controls
                 Key::Named(NamedKey::Tab) => {
                     // Cycle search mode: Basic -> Command -> Output -> Advanced -> Basic
                     self.ctx.blocks_search_cycle_mode();
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("s")) => {
                     // Ctrl+S: Cycle sort field
                     self.ctx.blocks_search_cycle_sort_field();
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("r")) => {
                     // Ctrl+R: Toggle sort order (reverse)
                     self.ctx.blocks_search_toggle_sort_order();
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("f")) => {
                     // Ctrl+F: Toggle starred filter
                     self.ctx.blocks_search_toggle_starred();
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("c")) => {
                     // Ctrl+C: Clear all filters
                     self.ctx.blocks_search_clear_filters();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "*") => {
                     // * : Toggle star on selected item
                     self.ctx.blocks_search_toggle_star_selected();
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && (c == "j" || c == "k") =>
                 {
                     let delta = if c == "j" { 1 } else { -1 };
                     self.ctx.blocks_search_move_selection(delta);
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "a") => {
                     // 'a': Show actions menu for selected item
                     self.ctx.blocks_search_show_actions();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "d") => {
                     // 'd': Delete selected item
                     self.ctx.blocks_search_delete_selected();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "c") => {
                     // 'c': Copy command of selected item
                     self.ctx.blocks_search_copy_command();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "o") => {
                     // 'o': Copy output of selected item
                     self.ctx.blocks_search_copy_output();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "r") => {
                     // 'r': Rerun selected command
                     self.ctx.blocks_search_rerun_selected();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "h") => {
                     // 'h': Insert block output as here-doc
                     self.ctx.blocks_search_insert_heredoc();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "?") => {
                     // '?': Show keyboard help
                     self.ctx.blocks_search_show_help();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "e") => {
                     // 'e': Export selected block
                     self.ctx.blocks_search_export_selected();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "t") => {
                     // 't': Toggle tag on selected item
                     self.ctx.blocks_search_toggle_tag();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "b") => {
                     // 'b': Copy both command and output
                     self.ctx.blocks_search_copy_both();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "i") => {
                     // 'i': Insert command into prompt
                     self.ctx.blocks_search_insert_command();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "v") => {
                     // 'v': View full output
                     self.ctx.blocks_search_view_output();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "s") => {
                     // 's': Share block
                     self.ctx.blocks_search_share_block();
                     return;
-                },
+                }
                 Key::Character(c) if !mods.control_key() && !mods.alt_key() && (c == "n") => {
                     // 'n': Create snippet from command
                     self.ctx.blocks_search_create_snippet();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Delete) => {
                     // Delete: Delete selected block with confirmation
                     self.ctx.blocks_search_delete_selected();
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             for ch in text.chars() {
                 // Ignore non-printable controls
@@ -804,7 +826,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().editor_overlay_close();
                         self.ctx.mark_dirty();
                         return;
-                    },
+                    }
                     Key::Character(c) if mods.control_key() && c.eq_ignore_ascii_case("s") => {
                         // Save and apply edits if there is an active session
                         #[cfg(feature = "editor")]
@@ -830,8 +852,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().editor_overlay_close();
                         self.ctx.mark_dirty();
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
             let mods = self.ctx.modifiers().state();
@@ -839,49 +861,49 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) if mods.shift_key() => {
                     self.ctx.notebooks_panel_run_all();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.notebooks_panel_confirm();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.notebooks_panel_close();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowUp) => {
                     self.ctx.notebooks_panel_move_selection(-1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowDown) => {
                     self.ctx.notebooks_panel_move_selection(1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageUp) => {
                     self.ctx.notebooks_panel_move_selection(-5);
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageDown) => {
                     self.ctx.notebooks_panel_move_selection(5);
                     return;
-                },
+                }
                 Key::Named(NamedKey::Tab) => {
                     self.ctx.notebooks_panel_focus_next();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowLeft) => {
                     self.ctx.notebooks_panel_focus_prev();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) => {
                     self.ctx.notebooks_panel_focus_next();
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("r") =>
                 {
                     self.ctx.notebooks_panel_rerun_selected();
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key()
                         && !mods.alt_key()
@@ -890,13 +912,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 {
                     self.ctx.notebooks_panel_add_markdown_cell();
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("a") =>
                 {
                     self.ctx.notebooks_panel_add_command_cell();
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("e") =>
                 {
@@ -928,10 +950,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             "Notebooks feature not enabled in this build".into(),
                             crate::message_bar::MessageType::Warning,
                         );
-                        self.ctx.send_user_event(crate::event::EventType::Message(msg));
+                        self.ctx
+                            .send_user_event(crate::event::EventType::Message(msg));
                     }
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("d") =>
                 {
@@ -944,13 +967,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             d.notebooks_panel.cells.get(idx).map(|c| c.id.clone())
                         };
                         if let Some(cell_id) = cell_id_opt {
-                            self.ctx.send_user_event(crate::event::EventType::NotebooksDeleteCell(
-                                cell_id,
-                            ));
+                            self.ctx
+                                .send_user_event(crate::event::EventType::NotebooksDeleteCell(
+                                    cell_id,
+                                ));
                         }
                     }
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("m") =>
                 {
@@ -969,7 +993,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                     }
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") =>
                 {
@@ -988,7 +1012,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                     }
                     return;
-                },
+                }
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("x") =>
                 {
@@ -1004,8 +1028,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                     }
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             // Swallow text input while panel active
             return;
@@ -1019,40 +1043,40 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.workflows_panel_confirm();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.workflows_panel_cancel();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Backspace) => {
                     self.ctx.workflows_panel_backspace();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowUp) => {
                     self.ctx.workflows_panel_move_selection(-1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowDown) => {
                     self.ctx.workflows_panel_move_selection(1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageUp) => {
                     self.ctx.workflows_panel_move_selection(-5);
                     return;
-                },
+                }
                 Key::Named(NamedKey::PageDown) => {
                     self.ctx.workflows_panel_move_selection(5);
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("n")) => {
                     self.ctx.workflows_panel_move_selection(1);
                     return;
-                },
+                }
                 Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("p")) => {
                     self.ctx.workflows_panel_move_selection(-1);
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             for ch in text.chars() {
                 if !ch.is_control() {
@@ -1071,7 +1095,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Named(NamedKey::Escape) => {
                         self.ctx.settings_panel_cancel_capture();
                         return;
-                    },
+                    }
                     _ => {
                         // Build capture key as owned Key<String>
                         let cap_key = match key.logical_key.as_ref() {
@@ -1080,77 +1104,77 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             _ => {
                                 self.ctx.settings_panel_cancel_capture();
                                 return;
-                            },
+                            }
                         };
                         self.ctx.settings_panel_capture(cap_key, mods);
                         return;
-                    },
+                    }
                 }
             }
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.settings_panel_save();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.close_settings_panel();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Tab) if mods.shift_key() => {
                     self.ctx.settings_panel_prev_field();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Tab) => {
                     self.ctx.settings_panel_next_field();
                     return;
-                },
+                }
                 // List navigation in Keybindings
                 Key::Named(NamedKey::ArrowUp) => {
                     self.ctx.settings_panel_move_selection(-1);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowDown) => {
                     self.ctx.settings_panel_move_selection(1);
                     return;
-                },
+                }
                 // Begin capture mode via 'c'
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") =>
                 {
                     self.ctx.settings_panel_begin_capture();
                     return;
-                },
+                }
                 // Category switching
                 Key::Named(NamedKey::ArrowLeft) if mods.control_key() => {
                     self.ctx.settings_panel_switch_category(false);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) if mods.control_key() => {
                     self.ctx.settings_panel_switch_category(true);
                     return;
-                },
+                }
                 // Provider cycling (AI category)
                 Key::Named(NamedKey::ArrowLeft) => {
                     self.ctx.settings_panel_cycle_provider(false);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) => {
                     self.ctx.settings_panel_cycle_provider(true);
                     return;
-                },
+                }
                 // Backspace
                 Key::Named(NamedKey::Backspace) => {
                     self.ctx.settings_panel_backspace();
                     return;
-                },
+                }
                 // Test connection (AI)
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("t") =>
                 {
                     self.ctx.settings_panel_test_connection();
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             for ch in text.chars() {
                 if !ch.is_control() {
@@ -1167,20 +1191,20 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Tab) => {
                     self.ctx.accept_inline_suggestion();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) if mods.alt_key() || mods.control_key() => {
                     self.ctx.accept_inline_suggestion_word();
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) => {
                     self.ctx.accept_inline_suggestion_char();
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.dismiss_inline_suggestion();
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
 
@@ -1191,13 +1215,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Character(c) if c.eq_ignore_ascii_case("n") => {
                     self.ctx.open_notebooks_panel();
                     return;
-                },
+                }
                 #[cfg(feature = "ai")]
                 Key::Character(c) if c.eq_ignore_ascii_case("a") => {
                     self.ctx.send_user_event(crate::event::EventType::AiToggle);
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
 
@@ -1211,15 +1235,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 match key.logical_key.as_ref() {
                     // Copy as code (Ctrl+Shift+C)
                     Key::Character(c) if c.eq_ignore_ascii_case("c") => {
-                        self.ctx.send_user_event(crate::event::EventType::AiCopyCode);
+                        self.ctx
+                            .send_user_event(crate::event::EventType::AiCopyCode);
                         return;
-                    },
+                    }
                     // Copy all (Ctrl+Shift+T)
                     Key::Character(c) if c.eq_ignore_ascii_case("t") => {
                         self.ctx.send_user_event(crate::event::EventType::AiCopyAll);
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
 
@@ -1231,12 +1256,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Ctrl+C maps here reliably across platforms
                         self.ctx.send_user_event(crate::event::EventType::AiStop);
                         return;
-                    },
+                    }
                     // Regenerate
                     Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                        self.ctx.send_user_event(crate::event::EventType::AiRegenerate);
+                        self.ctx
+                            .send_user_event(crate::event::EventType::AiRegenerate);
                         return;
-                    },
+                    }
                     // Insert to prompt
                     Key::Character(c) if c.eq_ignore_ascii_case("i") => {
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
@@ -1247,27 +1273,30 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             }
                         }
                         return;
-                    },
+                    }
                     // Apply as command (Safe-run: dry-run by default)
                     Key::Character(c) if c.eq_ignore_ascii_case("e") => {
-                        self.ctx.send_user_event(crate::event::EventType::AiApplyDryRun);
+                        self.ctx
+                            .send_user_event(crate::event::EventType::AiApplyDryRun);
                         return;
-                    },
+                    }
                     // Explain (Ctrl+X)
                     Key::Character(c) if c.eq_ignore_ascii_case("x") => {
                         let selected_text = self.ctx.terminal().selection_to_string();
                         let target = selected_text.filter(|s| !s.is_empty());
-                        self.ctx.send_user_event(crate::event::EventType::AiExplain(target));
+                        self.ctx
+                            .send_user_event(crate::event::EventType::AiExplain(target));
                         return;
-                    },
+                    }
                     // Fix (Ctrl+F)
                     Key::Character(c) if c.eq_ignore_ascii_case("f") => {
                         let selected_text = self.ctx.terminal().selection_to_string();
                         let target = selected_text.filter(|s| !s.is_empty());
-                        self.ctx.send_user_event(crate::event::EventType::AiFix(target));
+                        self.ctx
+                            .send_user_event(crate::event::EventType::AiFix(target));
                         return;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
 
@@ -1275,11 +1304,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.send_user_event(crate::event::EventType::AiSubmit);
                     return;
-                },
+                }
                 Key::Named(NamedKey::Escape) => {
                     self.ctx.send_user_event(crate::event::EventType::AiClose);
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowUp) => {
                     // If we have proposals, navigate them; otherwise navigate history
                     if let Some(runtime) = self.ctx.ai_runtime_ref() {
@@ -1289,11 +1318,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 self.ctx.mark_dirty();
                             }
                         } else {
-                            self.ctx.send_user_event(crate::event::EventType::AiSelectPrev);
+                            self.ctx
+                                .send_user_event(crate::event::EventType::AiSelectPrev);
                         }
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowDown) => {
                     // If we have proposals, navigate them; otherwise navigate history
                     if let Some(runtime) = self.ctx.ai_runtime_ref() {
@@ -1303,40 +1333,41 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 self.ctx.mark_dirty();
                             }
                         } else {
-                            self.ctx.send_user_event(crate::event::EventType::AiSelectNext);
+                            self.ctx
+                                .send_user_event(crate::event::EventType::AiSelectNext);
                         }
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowLeft) => {
                     if let Some(runtime) = self.ctx.ai_runtime_mut() {
                         runtime.cursor_left();
                         self.ctx.mark_dirty();
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::ArrowRight) => {
                     if let Some(runtime) = self.ctx.ai_runtime_mut() {
                         runtime.cursor_right();
                         self.ctx.mark_dirty();
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::Backspace) => {
                     if let Some(runtime) = self.ctx.ai_runtime_mut() {
                         runtime.backspace();
                         self.ctx.mark_dirty();
                     }
                     return;
-                },
+                }
                 Key::Named(NamedKey::Delete) => {
                     if let Some(runtime) = self.ctx.ai_runtime_mut() {
                         runtime.delete_forward();
                         self.ctx.mark_dirty();
                     }
                     return;
-                },
-                _ => {},
+                }
+                _ => {}
             }
 
             // Only allow printable characters to be input to AI panel
@@ -1386,7 +1417,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Mask `Alt` modifier from input when we won't send esc.
-        let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
+        let mods = if self.alt_send_esc(&key, text) {
+            mods
+        } else {
+            mods & !ModifiersState::ALT
+        };
 
         let build_key_sequence = Self::should_build_sequence(&key, text, mode, mods);
         let is_modifier_key = Self::is_modifier_key(&key);
@@ -1446,7 +1481,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     // Treat `Alt` as modifier for named keys without text, like ArrowUp.
                     self.ctx.modifiers().state().alt_key()
                 }
-            },
+            }
             _ => alt_send_esc && text.chars().count() == 1,
         }
     }
@@ -1529,8 +1564,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let mut binding_action = |binding: &KeyBinding| {
             let key = match (&binding.trigger, &logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
-                (_, code) => {
-                    BindingKey::Keycode { key: code.clone(), location: key.location.into() }
+                (_, code) => BindingKey::Keycode {
+                    key: code.clone(),
+                    location: key.location.into(),
                 },
             };
 
@@ -1581,7 +1617,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // Mask `Alt` modifier from input when we won't send esc.
         let text = key.text_with_all_modifiers().unwrap_or_default();
-        let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
+        let mods = if self.alt_send_esc(&key, text) {
+            mods
+        } else {
+            mods & !ModifiersState::ALT
+        };
 
         let bytes = match key.logical_key.as_ref() {
             Key::Named(NamedKey::Enter)
@@ -1590,7 +1630,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 if !mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC) =>
             {
                 return;
-            },
+            }
             _ => build_sequence(key, mods, mode),
         };
 
@@ -1627,8 +1667,13 @@ fn build_sequence(key: KeyEvent, mods: ModifiersState, mode: TermMode) -> Vec<u8
     let kitty_event_type = mode.contains(TermMode::REPORT_EVENT_TYPES)
         && (key.repeat || key.state == ElementState::Released);
 
-    let context =
-        SequenceBuilder { mode, modifiers, kitty_seq, kitty_encode_all, kitty_event_type };
+    let context = SequenceBuilder {
+        mode,
+        modifiers,
+        kitty_seq,
+        kitty_encode_all,
+        kitty_event_type,
+    };
 
     let associated_text = key.text_with_all_modifiers().filter(|text| {
         mode.contains(TermMode::REPORT_ASSOCIATED_TEXT)
@@ -1645,7 +1690,10 @@ fn build_sequence(key: KeyEvent, mods: ModifiersState, mode: TermMode) -> Vec<u8
         .or_else(|| context.try_build_textual(&key, associated_text));
 
     let (payload, terminator) = match sequence_base {
-        Some(SequenceBase { payload, terminator }) => (payload, terminator),
+        Some(SequenceBase {
+            payload,
+            terminator,
+        }) => (payload, terminator),
         _ => return Vec::new(),
     };
 
@@ -1710,7 +1758,11 @@ impl SequenceBuilder {
             let shift = self.modifiers.contains(SequenceModifiers::SHIFT);
 
             let ch = character.chars().next().unwrap();
-            let unshifted_ch = if shift { ch.to_lowercase().next().unwrap() } else { ch };
+            let unshifted_ch = if shift {
+                ch.to_lowercase().next().unwrap()
+            } else {
+                ch
+            };
 
             let alternate_key_code = u32::from(ch);
             let mut unicode_key_code = u32::from(unshifted_ch);
@@ -1978,7 +2030,10 @@ pub struct SequenceBase {
 
 impl SequenceBase {
     fn new(payload: Cow<'static, str>, terminator: SequenceTerminator) -> Self {
-        Self { payload, terminator }
+        Self {
+            payload,
+            terminator,
+        }
     }
 }
 

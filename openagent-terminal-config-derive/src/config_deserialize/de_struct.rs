@@ -16,9 +16,15 @@ pub fn derive_deserialize<T>(
     fields: Punctuated<Field, T>,
 ) -> TokenStream {
     // Create all necessary tokens for the implementation.
-    let GenericsStreams { unconstrained, constrained, phantoms } =
-        crate::generics_streams(&generics.params);
-    let FieldStreams { flatten, match_assignments } = fields_deserializer(&fields);
+    let GenericsStreams {
+        unconstrained,
+        constrained,
+        phantoms,
+    } = crate::generics_streams(&generics.params);
+    let FieldStreams {
+        flatten,
+        match_assignments,
+    } = fields_deserializer(&fields);
     let visitor = format_ident!("{}Visitor", ident);
 
     // Generate deserialization impl.
@@ -125,7 +131,11 @@ fn field_deserializer(field_streams: &mut FieldStreams, field: &Field) -> Result
     };
 
     // Iterate over all #[config(...)] attributes.
-    for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("config")) {
+    for attr in field
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("config"))
+    {
         let parsed = match attr.parse_args::<Attr>() {
             Ok(parsed) => parsed,
             Err(_) => continue,
@@ -148,7 +158,7 @@ fn field_deserializer(field_streams: &mut FieldStreams, field: &Field) -> Result
 
                     config.#ident = serde::Deserialize::deserialize(flattened).unwrap_or_default();
                 });
-            },
+            }
             "deprecated" | "removed" => {
                 // Construct deprecation/removal message with optional attribute override.
                 let mut message = format!("Config warning: {} has been {}", literal, parsed.ident);
@@ -161,20 +171,26 @@ fn field_deserializer(field_streams: &mut FieldStreams, field: &Field) -> Result
                 match_assignment_stream.extend(quote! {
                     log::warn!(target: #LOG_TARGET, #message);
                 });
-            },
+            }
             // Add aliases to match pattern.
             "alias" => {
                 if let Some(alias) = parsed.param {
                     literals.push(alias.value());
                 }
-            },
+            }
             _ => (),
         }
     }
 
     // Create token stream for deserializing "none" string into `Option<T>`.
     if let Type::Path(type_path) = &field.ty {
-        if type_path.path.segments.iter().next_back().is_some_and(|s| s.ident == "Option") {
+        if type_path
+            .path
+            .segments
+            .iter()
+            .next_back()
+            .is_some_and(|s| s.ident == "Option")
+        {
             match_assignment_stream = quote! {
                 if value.as_str().is_some_and(|s| s.eq_ignore_ascii_case("none")) {
                     config.#ident = None;

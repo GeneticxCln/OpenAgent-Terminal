@@ -48,11 +48,29 @@ pub struct CommandPipeline {
 /// Command pipeline events for real-time processing
 #[derive(Debug, Clone)]
 pub enum CommandPipelineEvent {
-    CommandStarted { block_id: BlockId, command: String, working_dir: PathBuf },
-    OutputReceived { block_id: BlockId, output: String, is_stderr: bool },
-    CommandCompleted { block_id: BlockId, exit_code: i32, duration: std::time::Duration },
-    CommandFailed { block_id: BlockId, error: String },
-    BlockCreated { block_id: BlockId, tab_id: Option<TabId> },
+    CommandStarted {
+        block_id: BlockId,
+        command: String,
+        working_dir: PathBuf,
+    },
+    OutputReceived {
+        block_id: BlockId,
+        output: String,
+        is_stderr: bool,
+    },
+    CommandCompleted {
+        block_id: BlockId,
+        exit_code: i32,
+        duration: std::time::Duration,
+    },
+    CommandFailed {
+        block_id: BlockId,
+        error: String,
+    },
+    BlockCreated {
+        block_id: BlockId,
+        tab_id: Option<TabId>,
+    },
 }
 
 /// Active command execution state
@@ -157,11 +175,14 @@ impl CommandPipeline {
 
         // Send terminal event immediately
         if let Some(ref sender) = self.event_sender {
-            let _ = sender.send(CommandBlockEvent::CommandStart { cmd: Some(command.clone()) });
+            let _ = sender.send(CommandBlockEvent::CommandStart {
+                cmd: Some(command.clone()),
+            });
         }
 
         // Start command execution immediately
-        self.start_native_execution(block_id, command, working_dir, tab_id, shell).await?;
+        self.start_native_execution(block_id, command, working_dir, tab_id, shell)
+            .await?;
 
         Ok(block_id)
     }
@@ -299,7 +320,10 @@ impl CommandPipeline {
         tokio::spawn(async move {
             while let Some(chunk) = output_rx.recv().await {
                 // Process output chunk immediately - no lazy processing
-                debug!("Received output chunk for block {}: {:?}", chunk.block_id, chunk);
+                debug!(
+                    "Received output chunk for block {}: {:?}",
+                    chunk.block_id, chunk
+                );
 
                 // Update block with output immediately if we have a block manager
                 if let Some(ref manager) = block_manager {
@@ -390,7 +414,10 @@ impl CommandPipeline {
                 duration,
             });
 
-            info!("Command completed for block {} with exit code {}", block_id, exit_code);
+            info!(
+                "Command completed for block {} with exit code {}",
+                block_id, exit_code
+            );
         }
 
         Ok(())

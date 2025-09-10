@@ -40,7 +40,10 @@ impl ThemeMarketplace {
     }
 
     pub fn with_registry_url(registry_url: String) -> Result<Self> {
-        Ok(Self { registry_url, client: reqwest::Client::new() })
+        Ok(Self {
+            registry_url,
+            client: reqwest::Client::new(),
+        })
     }
 
     pub async fn search_themes(&self, query: &str) -> Result<Vec<ThemeSearchResult>> {
@@ -58,8 +61,11 @@ impl ThemeMarketplace {
     }
 
     pub async fn get_theme_details(&self, theme_id: &str) -> Result<ThemeSearchResult> {
-        let _response =
-            self.client.get(format!("{}/themes/{}", self.registry_url, theme_id)).send().await?;
+        let _response = self
+            .client
+            .get(format!("{}/themes/{}", self.registry_url, theme_id))
+            .send()
+            .await?;
 
         // Placeholder implementation
         todo!("Implement theme details fetching")
@@ -68,7 +74,10 @@ impl ThemeMarketplace {
     pub async fn download_theme(&self, theme_id: &str) -> Result<ThemePackage> {
         let _response = self
             .client
-            .get(format!("{}/themes/{}/download", self.registry_url, theme_id))
+            .get(format!(
+                "{}/themes/{}/download",
+                self.registry_url, theme_id
+            ))
             .send()
             .await?;
 
@@ -77,22 +86,31 @@ impl ThemeMarketplace {
     }
 
     pub async fn publish_theme(&self, theme: &Theme) -> Result<String> {
-        let _response =
-            self.client.post(format!("{}/themes", self.registry_url)).json(theme).send().await?;
+        let _response = self
+            .client
+            .post(format!("{}/themes", self.registry_url))
+            .json(theme)
+            .send()
+            .await?;
 
         // Placeholder implementation
         todo!("Implement theme publishing")
     }
 
     pub async fn get_featured_themes(&self) -> Result<Vec<ThemeSearchResult>> {
-        let _response =
-            self.client.get(format!("{}/themes/featured", self.registry_url)).send().await?;
+        let _response = self
+            .client
+            .get(format!("{}/themes/featured", self.registry_url))
+            .send()
+            .await?;
 
         Ok(vec![])
     }
 
     pub async fn get_popular_themes(&self, limit: Option<usize>) -> Result<Vec<ThemeSearchResult>> {
-        let mut req = self.client.get(format!("{}/themes/popular", self.registry_url));
+        let mut req = self
+            .client
+            .get(format!("{}/themes/popular", self.registry_url));
 
         if let Some(limit) = limit {
             req = req.query(&[("limit", limit.to_string())]);

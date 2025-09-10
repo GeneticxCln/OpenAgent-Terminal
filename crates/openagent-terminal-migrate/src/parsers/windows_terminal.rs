@@ -24,8 +24,10 @@ impl ConfigParser for WindowsTerminalParser {
                         config.font.size = Some(size as f32);
                     }
                     if let Some(face) = font.get("face").and_then(|v| v.as_str()) {
-                        config.font.normal =
-                            Some(FontFaceConfig { family: Some(face.to_string()), style: None });
+                        config.font.normal = Some(FontFaceConfig {
+                            family: Some(face.to_string()),
+                            style: None,
+                        });
                     }
                 }
 

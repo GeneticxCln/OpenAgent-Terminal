@@ -18,7 +18,7 @@ fn test_split_panes_hash_linux_only() {
                  CARGO_BIN_EXE_snapshot_capture)"
             );
             return;
-        },
+        }
     };
 
     // Run in RAW_HASH mode for the split_panes scenario
@@ -29,12 +29,19 @@ fn test_split_panes_hash_linux_only() {
         .output()
         .expect("failed to run snapshot_capture example");
 
-    assert!(output.status.success(), "snapshot_capture exited with failure: {:?}", output);
+    assert!(
+        output.status.success(),
+        "snapshot_capture exited with failure: {:?}",
+        output
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Parse last JSON line
     let line = stdout.lines().last().unwrap_or("");
-    assert!(line.starts_with('{') && line.ends_with('}'), "Expected JSON line, got: {line}");
+    assert!(
+        line.starts_with('{') && line.ends_with('}'),
+        "Expected JSON line, got: {line}"
+    );
 
     let v: serde_json::Value = serde_json::from_str(line).expect("invalid JSON");
     let width = v["width"].as_u64().unwrap_or(0);

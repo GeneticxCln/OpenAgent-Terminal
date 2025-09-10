@@ -234,7 +234,7 @@ Planned plugin interface for:
 
 ### Core Dependencies
 - `winit`: Window management
-- `glutin`: OpenGL context
+- `wgpu`: GPU rendering (WGPU backend)
 - `crossfont`: Font rendering
 
 ### AI Dependencies

@@ -49,7 +49,10 @@ pub struct Sampler<'a> {
 
 impl<'a> Sampler<'a> {
     fn new(meter: &'a mut Meter) -> Sampler<'a> {
-        Sampler { meter, created_at: Instant::now() }
+        Sampler {
+            meter,
+            created_at: Instant::now(),
+        }
     }
 
     #[inline]

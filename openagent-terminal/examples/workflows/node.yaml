@@ -1,0 +1,15 @@
+name: CI (Node)
+vars:
+  - name: NODE_VERSION
+    default: 20
+steps:
+  - name: install
+    run: npm ci
+    dry_run: true
+  - name: lint
+    run: npm run lint
+    dry_run: true
+  - name: test
+    run: npm test -- --reporter dot
+    dry_run: true
+

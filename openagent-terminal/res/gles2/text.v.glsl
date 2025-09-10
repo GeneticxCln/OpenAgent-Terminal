@@ -1,4 +1,3 @@
-// Cell coords.
 attribute vec2 cellCoords;
 
 // Glyph coords.

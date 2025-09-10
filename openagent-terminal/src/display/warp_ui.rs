@@ -59,9 +59,15 @@ pub struct WarpTabStyle {
 /// Linear interpolation between two RGB colors
 fn lerp_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
     let t = t.clamp(0.0, 1.0);
-    let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t).round().clamp(0.0, 255.0) as u8;
-    let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t).round().clamp(0.0, 255.0) as u8;
-    let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t)
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t)
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t)
+        .round()
+        .clamp(0.0, 255.0) as u8;
     Rgb::new(r, g, bb)
 }
 
@@ -87,13 +93,20 @@ impl Default for WarpTabStyle {
 impl WarpTabStyle {
     /// Build from current theme tokens and ThemeUi parameters
     pub fn from_theme(config: &UiConfig) -> Self {
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui;
         Self {
             tab_height: ui.tab_bar_height_px.max(16.0),
-            corner_radius: if ui.rounded_corners { ui.tab_bar_corner_radius_px } else { 0.0 },
+            corner_radius: if ui.rounded_corners {
+                ui.tab_bar_corner_radius_px
+            } else {
+                0.0
+            },
             tab_padding: ui.tab_bar_padding_px.max(0.0),
             active_bg: tokens.surface,
             inactive_bg: tokens.surface_muted,
@@ -224,8 +237,11 @@ pub enum WarpEasing {
 impl Display {
     /// Build Warp split indicators from config and theme
     pub fn warp_split_indicators_from_config(&self, config: &UiConfig) -> WarpSplitIndicators {
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let s = &config.workspace.splits;
         let line_color = s.indicator_line_color.unwrap_or(tokens.border);
@@ -321,8 +337,11 @@ impl Display {
         self.draw_new_tab_button(current_x, start_y, style, create_hover);
 
         // Draw settings gear on far right using sprite atlas, aligned with previous text region
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui;
         let cols = self.size_info.columns;
@@ -331,8 +350,9 @@ impl Display {
             let cw = self.size_info.cell_width();
             let _ch = self.size_info.cell_height();
             let start_col = cols.saturating_sub(gear_cols + 2);
-            let icon_px =
-                ui.tab_bar_settings_icon_px.unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
+            let icon_px = ui
+                .tab_bar_settings_icon_px
+                .unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
             let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
             let iy = start_y + (style.tab_height - icon_px) * 0.5;
             // Atlas slot 8 = gear (atlas has 9 slots)
@@ -425,10 +445,21 @@ impl Display {
         } else {
             0.0
         };
-        let base_bg = if is_active { style.active_bg } else { style.inactive_bg };
-        let bg_color =
-            if is_active { base_bg } else { lerp_rgb(base_bg, style.hover_bg, hover_progress) };
-        let corner_radius = if is_active { style.corner_radius } else { style.corner_radius * 0.5 };
+        let base_bg = if is_active {
+            style.active_bg
+        } else {
+            style.inactive_bg
+        };
+        let bg_color = if is_active {
+            base_bg
+        } else {
+            lerp_rgb(base_bg, style.hover_bg, hover_progress)
+        };
+        let corner_radius = if is_active {
+            style.corner_radius
+        } else {
+            style.corner_radius * 0.5
+        };
 
         let tab_bg = UiRoundedRect::new(x, y, width, height, corner_radius, bg_color, 1.0);
         self.stage_ui_rounded_rect(tab_bg);
@@ -457,7 +488,11 @@ impl Display {
         }
 
         // Tab title (simplified - would need proper text rendering)
-        let text_color = if is_active { style.active_fg } else { style.inactive_fg };
+        let text_color = if is_active {
+            style.active_fg
+        } else {
+            style.inactive_fg
+        };
         let text_y = ((y + height / 2.0) / self.size_info.cell_height()) as usize;
         let text_x = ((x + style.tab_padding) / self.size_info.cell_width()) as usize;
 
@@ -509,8 +544,15 @@ impl Display {
         // Close button (when hovering)
         let close_x = x + width - 25.0;
         let close_y = y + height / 2.0 - 8.0;
-        let close_button =
-            UiRoundedRect::new(close_x, close_y, 16.0, 16.0, 8.0, Rgb::new(220, 220, 220), 0.8);
+        let close_button = UiRoundedRect::new(
+            close_x,
+            close_y,
+            16.0,
+            16.0,
+            8.0,
+            Rgb::new(220, 220, 220),
+            0.8,
+        );
         self.stage_ui_rounded_rect(close_button);
     }
 
@@ -519,7 +561,11 @@ impl Display {
         let button_size = style.tab_height * 0.8;
         let button_y = y + (style.tab_height - button_size) / 2.0;
 
-        let bg_color = if hovered { style.hover_bg } else { style.inactive_bg };
+        let bg_color = if hovered {
+            style.hover_bg
+        } else {
+            style.inactive_bg
+        };
         let bg_alpha = if hovered { 1.0 } else { 0.9 };
         let button_bg = UiRoundedRect::new(
             x,
@@ -538,7 +584,11 @@ impl Display {
         let icon_y = button_y + (button_size - 2.0) / 2.0;
 
         // Horizontal line
-        let plus_color = if hovered { style.active_fg } else { style.inactive_fg };
+        let plus_color = if hovered {
+            style.active_fg
+        } else {
+            style.inactive_fg
+        };
         let h_line = RenderRect::new(icon_x, icon_y, icon_size, 2.0, plus_color, 1.0);
         // Vertical line
         let v_line = RenderRect::new(
@@ -582,11 +632,11 @@ impl Display {
                 crate::workspace::TabBarPosition::Top => {
                     y0 += ch;
                     h = (h - ch).max(0.0);
-                },
+                }
                 crate::workspace::TabBarPosition::Bottom => {
                     h = (h - ch).max(0.0);
-                },
-                crate::workspace::TabBarPosition::Hidden => {},
+                }
+                crate::workspace::TabBarPosition::Hidden => {}
             }
         }
 
@@ -678,7 +728,7 @@ impl Display {
                 let (left_rect, right_rect) = rect.split_horizontal(*ratio);
                 self.draw_split_lines_recursive(left, left_rect, indicators);
                 self.draw_split_lines_recursive(right, right_rect, indicators);
-            },
+            }
             crate::workspace::split_manager::SplitLayout::Vertical { top, bottom, ratio } => {
                 let split_y = rect.y + rect.height * ratio;
 
@@ -751,10 +801,10 @@ impl Display {
                 let (top_rect, bottom_rect) = rect.split_vertical(*ratio);
                 self.draw_split_lines_recursive(top, top_rect, indicators);
                 self.draw_split_lines_recursive(bottom, bottom_rect, indicators);
-            },
+            }
             crate::workspace::split_manager::SplitLayout::Single(_) => {
                 // No splits to draw
-            },
+            }
         }
     }
 
@@ -806,25 +856,16 @@ impl Display {
     ) {
         // This is similar to existing draw_tab_text but with Warp-style adjustments
         let truncated_text: String = if text.len() > max_width {
-            text.chars().take(max_width.saturating_sub(3)).collect::<String>() + "..."
+            text.chars()
+                .take(max_width.saturating_sub(3))
+                .collect::<String>()
+                + "..."
         } else {
             text.to_string()
         };
 
         let size_info_copy = self.size_info;
         match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            crate::display::Backend::Gl { renderer, .. } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    truncated_text.chars(),
-                    &size_info_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-            #[cfg(feature = "wgpu")]
             crate::display::Backend::Wgpu { renderer } => {
                 renderer.draw_string(
                     point,
@@ -834,7 +875,7 @@ impl Display {
                     &size_info_copy,
                     &mut self.glyph_cache,
                 );
-            },
+            }
         }
     }
 
@@ -859,7 +900,7 @@ impl Display {
                     preview_color,
                     preview_alpha,
                 )
-            },
+            }
             crate::workspace::warp_split_manager::WarpNavDirection::Down => {
                 // Show bottom half highlighted
                 RenderRect::new(
@@ -870,7 +911,7 @@ impl Display {
                     preview_color,
                     preview_alpha,
                 )
-            },
+            }
             _ => return, // Only show preview for split directions
         };
 
@@ -944,8 +985,11 @@ impl Display {
             return None;
         }
         // Find tab under cursor
-        if let Some((tab_id, x, w)) =
-            self.tab_bounds_px.iter().copied().find(|(_, x, w)| x_px >= *x && x_px < *x + *w)
+        if let Some((tab_id, x, w)) = self
+            .tab_bounds_px
+            .iter()
+            .copied()
+            .find(|(_, x, w)| x_px >= *x && x_px < *x + *w)
         {
             // Close button region
             if x_px >= x + w - 20.0 {
@@ -1035,7 +1079,11 @@ impl Display {
     }
 
     fn get_tab_position(&self, tab_manager: &TabManager, tab_id: TabId) -> usize {
-        tab_manager.tab_order().iter().position(|&id| id == tab_id).unwrap_or(0)
+        tab_manager
+            .tab_order()
+            .iter()
+            .position(|&id| id == tab_id)
+            .unwrap_or(0)
     }
 }
 
@@ -1065,12 +1113,12 @@ impl WarpAnimation {
                 } else {
                     1.0 - (-2.0 * progress + 2.0).powi(2) / 2.0
                 }
-            },
+            }
             WarpEasing::Spring => {
                 let c1 = 1.70158;
                 let c3 = c1 + 1.0;
                 1.0 + c3 * (progress - 1.0).powi(3) + c1 * (progress - 1.0).powi(2)
-            },
+            }
         }
     }
 

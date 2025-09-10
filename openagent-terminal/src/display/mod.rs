@@ -1,27 +1,11 @@
+#![allow(unexpected_cfgs)]
 //! The display subsystem including window management, font rasterization, and
 //! GPU drawing.
 
 use std::fmt::{self, Formatter};
-#[cfg(feature = "gl-backend")]
-use std::mem::ManuallyDrop;
 use std::num::NonZeroU32;
-#[cfg(feature = "gl-backend")]
-use std::ops::Deref;
 use std::time::{Duration, Instant};
 use std::{cmp, mem};
-
-#[cfg(feature = "gl-backend")]
-use glutin::config::GetGlConfig;
-#[cfg(feature = "gl-backend")]
-use glutin::context::{NotCurrentContext, PossiblyCurrentContext};
-#[cfg(feature = "gl-backend")]
-use glutin::display::GetGlDisplay;
-#[cfg(feature = "gl-backend")]
-use glutin::error::ErrorKind;
-#[cfg(feature = "gl-backend")]
-use glutin::prelude::*;
-#[cfg(feature = "gl-backend")]
-use glutin::surface::{Surface, SwapInterval, WindowSurface};
 
 use log::{debug, info};
 use parking_lot::MutexGuard;
@@ -45,8 +29,6 @@ use openagent_terminal_core::term::{
 use openagent_terminal_core::vte::ansi::{CursorShape, NamedColor};
 use openagent_terminal_core::{self, Term};
 
-#[cfg(feature = "gl-backend")]
-use crate::config::debug::RendererPreference;
 use crate::config::debug::SubpixelOrientation;
 use crate::config::font::Font;
 use crate::config::window::Dimensions;
@@ -62,15 +44,9 @@ use crate::display::hint::{HintMatch, HintState};
 use crate::display::meter::Meter;
 use crate::display::window::Window;
 use crate::event::{Event, EventType, Mouse, SearchState};
-#[cfg(feature = "gl-backend")]
-use crate::gl;
 use crate::message_bar::{MessageBuffer, MessageType};
-#[cfg(feature = "gl-backend")]
-use crate::renderer::platform;
 use crate::renderer::rects::{RenderLine, RenderLines, RenderRect};
 use crate::renderer::ui::{UiRoundedRect, UiSprite};
-#[cfg(feature = "gl-backend")]
-use crate::renderer::Renderer;
 use crate::renderer::{self, GlyphCache, LoaderApi};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
@@ -169,10 +145,6 @@ pub enum Error {
 
     /// Error in renderer.
     Render(renderer::Error),
-
-    /// Error during context operations (GL-only).
-    #[cfg(feature = "gl-backend")]
-    Context(glutin::error::Error),
 }
 
 impl std::error::Error for Error {}
@@ -183,8 +155,6 @@ impl fmt::Display for Error {
             Error::Window(err) => err.fmt(f),
             Error::Font(err) => err.fmt(f),
             Error::Render(err) => err.fmt(f),
-            #[cfg(feature = "gl-backend")]
-            Error::Context(err) => err.fmt(f),
         }
     }
 }
@@ -204,13 +174,6 @@ impl From<crossfont::Error> for Error {
 impl From<renderer::Error> for Error {
     fn from(val: renderer::Error) -> Self {
         Error::Render(val)
-    }
-}
-
-#[cfg(feature = "gl-backend")]
-impl From<glutin::error::Error> for Error {
-    fn from(val: glutin::error::Error) -> Self {
-        Error::Context(val)
     }
 }
 
@@ -485,6 +448,11 @@ pub struct Display {
     pub composer_caret_visible: bool,
     pub composer_caret_last_toggle: Option<Instant>,
 
+    /// Inline provider/model state for bottom composer UI
+    pub ai_current_provider: String,
+    pub ai_current_model: String,
+    pub ai_provider_dropdown_open: bool,
+
     /// The ime on the given display.
     pub ime: Ime,
 
@@ -505,8 +473,6 @@ pub struct Display {
     pub last_mouse_y: usize,
 
     backend: Backend,
-    #[cfg(feature = "gl-backend")]
-    renderer_preference: Option<RendererPreference>,
 
     glyph_cache: GlyphCache,
     meter: Meter,
@@ -603,27 +569,16 @@ pub struct Display {
 }
 
 enum Backend {
-    #[cfg(feature = "gl-backend")]
-    Gl {
-        surface: ManuallyDrop<Surface<WindowSurface>>,
-        context: ManuallyDrop<PossiblyCurrentContext>,
-        renderer: ManuallyDrop<Renderer>,
+    Wgpu {
+        renderer: crate::renderer::wgpu::WgpuRenderer,
     },
-    #[cfg(feature = "wgpu")]
-    Wgpu { renderer: crate::renderer::wgpu::WgpuRenderer },
 }
 
 impl Display {
     /// Returns true if the active backend is WGPU.
     #[allow(dead_code)]
     pub fn is_wgpu_backend(&self) -> bool {
-        #[allow(irrefutable_let_patterns)]
-        match &self.backend {
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => true,
-            #[cfg(feature = "gl-backend")]
-            _ => false,
-        }
+        true
     }
 
     /// Return true when clean-startup suppression of overlays should be active.
@@ -639,226 +594,6 @@ impl Display {
             }
         }
         self.startup_clean_mode && !self.startup_nonempty_seen
-    }
-
-    #[cfg(feature = "gl-backend")]
-    pub fn new(
-        window: Window,
-        gl_context: NotCurrentContext,
-        config: &UiConfig,
-        _tabbed: bool,
-    ) -> Result<Display, Error> {
-        let raw_window_handle = window.raw_window_handle();
-
-        let scale_factor = window.scale_factor as f32;
-        let rasterizer = Rasterizer::new()?;
-
-        let font_size = config.font.size().scale(scale_factor);
-        debug!("Loading \"{}\" font", &config.font.normal().family);
-        let font = config.font.clone().with_size(font_size);
-        let mut glyph_cache = GlyphCache::new(rasterizer, &font)?;
-
-        let metrics = glyph_cache.font_metrics();
-        let (cell_width, cell_height) = compute_cell_size(config, &metrics);
-
-        // Resize the window to account for the user configured size.
-        if let Some(dimensions) = config.window.dimensions() {
-            let size = window_size(config, dimensions, cell_width, cell_height, scale_factor);
-            window.request_inner_size(size);
-        }
-
-        // Create the GL surface to draw into.
-        let surface = platform::create_gl_surface(
-            &gl_context,
-            window.inner_size(),
-            window.raw_window_handle(),
-        )?;
-
-        // Make the context current.
-        let context = gl_context.make_current(&surface)?;
-
-        // Create renderer.
-        let mut gl_renderer = Renderer::new(&context, config.debug.renderer)?;
-
-        // Load font common glyphs to accelerate rendering.
-        debug!("Filling glyph cache with common glyphs");
-        gl_renderer.with_loader(|mut api| {
-            glyph_cache.reset_glyph_cache(&mut api);
-        });
-
-        let padding = config.window.padding(window.scale_factor as f32);
-        let viewport_size = window.inner_size();
-
-        // Create new size with at least one column and row.
-        let size_info = SizeInfo::new(
-            viewport_size.width as f32,
-            viewport_size.height as f32,
-            cell_width,
-            cell_height,
-            padding.0,
-            padding.1,
-            config.window.dynamic_padding && config.window.dimensions().is_none(),
-        );
-
-        info!("Cell size: {cell_width} x {cell_height}");
-        info!("Padding: {} x {}", size_info.padding_x(), size_info.padding_y());
-        info!("Width: {}, Height: {}", size_info.width(), size_info.height());
-
-        // Update OpenGL projection.
-        gl_renderer.resize(&size_info);
-
-        // Clear screen.
-        let background_color = config.colors.primary.background;
-        gl_renderer.clear(background_color, config.window_opacity());
-
-        // Disable shadows for transparent windows on macOS.
-        #[cfg(target_os = "macos")]
-        window.set_has_shadow(config.window_opacity() >= 1.0);
-
-        let is_wayland = matches!(raw_window_handle, RawWindowHandle::Wayland(_));
-
-        // On Wayland we can safely ignore this call, since the window isn't visible until you
-        // actually draw something into it and commit those changes.
-        if !is_wayland {
-            surface.swap_buffers(&context).expect("failed to swap buffers.");
-            gl_renderer.finish();
-        }
-
-        // Set resize increments for the newly created window.
-        if config.window.resize_increments {
-            window.set_resize_increments(PhysicalSize::new(cell_width, cell_height));
-        }
-
-        window.set_visible(true);
-
-        // Always focus new windows, even if no OpenAgent Terminal window is currently focused.
-        #[cfg(target_os = "macos")]
-        window.focus_window();
-
-        #[allow(clippy::single_match)]
-        #[cfg(not(windows))]
-        if !_tabbed {
-            match config.window.startup_mode {
-                #[cfg(target_os = "macos")]
-                StartupMode::SimpleFullscreen => window.set_simple_fullscreen(true),
-                StartupMode::Maximized if !is_wayland => window.set_maximized(true),
-                _ => (),
-            }
-        }
-
-        let hint_state = HintState::new(config.hints.alphabet());
-
-        let mut damage_tracker = DamageTracker::new(size_info.screen_lines(), size_info.columns());
-        damage_tracker.debug = config.debug.highlight_damage;
-
-        // Disable vsync.
-        if let Err(err) = surface.set_swap_interval(&context, SwapInterval::DontWait) {
-            info!("Failed to disable vsync: {err}");
-        }
-
-        // Initialize command blocks manager.
-        let mut blocks = blocks::Blocks::new();
-        blocks.enabled = config.debug.blocks;
-
-        Ok(Self {
-            backend: Backend::Gl {
-                renderer: ManuallyDrop::new(gl_renderer),
-                context: ManuallyDrop::new(context),
-                surface: ManuallyDrop::new(surface),
-            },
-            visual_bell: VisualBell::from(&config.bell),
-            renderer_preference: config.debug.renderer,
-            colors: List::from(&config.colors),
-            frame_timer: FrameTimer::new(),
-            raw_window_handle,
-            damage_tracker,
-            glyph_cache,
-            hint_state,
-            size_info,
-            font_size,
-            window,
-            // Clean startup tracking
-            startup_clean_mode: config.workspace.clean_startup,
-            startup_nonempty_seen: false,
-            pending_renderer_update: Default::default(),
-            composer_focused: false,
-            composer_press_flash_until: None,
-            composer_text: String::new(),
-            composer_cursor: 0,
-            composer_sel_anchor: None,
-            composer_view_col_offset: 0,
-            composer_caret_visible: true,
-            composer_caret_last_toggle: None,
-            vi_highlighted_hint_age: Default::default(),
-            highlighted_hint_age: Default::default(),
-            vi_highlighted_hint: Default::default(),
-            highlighted_hint: Default::default(),
-            hint_mouse_point: Default::default(),
-            last_mouse_x: 0,
-            last_mouse_y: 0,
-            pending_update: Default::default(),
-            cursor_hidden: Default::default(),
-            meter: Default::default(),
-            ime: Default::default(),
-            blocks,
-            #[cfg(feature = "blocks")]
-            blocks_search: blocks_search_panel::BlocksSearchState::new(),
-            debug_split_overlay: None,
-            #[cfg(feature = "ai")]
-            ai_panel_last_active: false,
-            #[cfg(feature = "ai")]
-            ai_panel_anim_start: None,
-            #[cfg(feature = "ai")]
-            ai_panel_anim_opening: false,
-            #[cfg(feature = "ai")]
-            ai_panel_anim_duration_ms: 0,
-            #[cfg(feature = "ai")]
-            ai_hover_control: None,
-            confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
-            #[cfg(feature = "blocks")]
-            notebooks_panel: notebook_panel::NotebookPanelState::new(),
-            palette: {
-                let mut p = palette::PaletteState::default();
-                p.load_mru_from_config(config);
-                p
-            },
-            #[cfg(feature = "blocks")]
-            notebooks_edit_session: None,
-            #[cfg(feature = "editor")]
-            editor_overlay: editor_overlay::EditorOverlayState::new(),
-            #[cfg(feature = "dap")]
-            dap_overlay: dap_overlay::DapOverlayState::new(),
-            #[cfg(feature = "completions")]
-            completions: completions::CompletionsState::new(),
-            #[cfg(feature = "workflow")]
-            workflows_panel: workflow_panel::WorkflowsPanelState::new(),
-            #[cfg(feature = "workflow")]
-            workflows_progress: Default::default(),
-            settings_panel: settings_panel::SettingsPanelState::new(),
-            quick_actions_press_flash_until: None,
-            tab_hover: None,
-            tab_hover_anim_start: None,
-            tab_last_active_id: None,
-            tab_anim_switch_start: None,
-            // Tab drag-and-drop initialization
-            tab_drag_active: None,
-            tab_drag_anim_start: None,
-            tab_animations: Vec::new(),
-            // Workspace animation systems
-            workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
-            pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
-            tab_bounds_px: Vec::new(),
-            split_hover: None,
-            split_drag: None,
-            split_hover_anim_start: None,
-            // Palette animation init
-            palette_last_active: false,
-            palette_anim_start: None,
-            palette_anim_opening: false,
-            palette_anim_duration_ms: 0,
-            palette_sel_last_index: None,
-            palette_sel_anim_start: None,
-        })
     }
 
     /// Update all workspace animations and return whether any updates occurred
@@ -919,8 +654,11 @@ impl Display {
         if lines == 0 {
             return;
         }
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         let line = 0usize;
@@ -932,7 +670,14 @@ impl Display {
         let rects = vec![
             RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98),
             // Shadow below
-            RenderRect::new(0.0, y + h, size_info.width(), 2.0, tokens.surface_muted, 0.15),
+            RenderRect::new(
+                0.0,
+                y + h,
+                size_info.width(),
+                2.0,
+                tokens.surface_muted,
+                0.15,
+            ),
         ];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
@@ -969,8 +714,11 @@ impl Display {
         }
 
         // Theme tokens
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Determine reserved rows for tab bar using effective visibility
@@ -980,17 +728,17 @@ impl Display {
         let _effective_visibility = match tab_cfg.visibility {
             crate::config::workspace::TabBarVisibility::Always => {
                 crate::config::workspace::TabBarVisibility::Always
-            },
+            }
             crate::config::workspace::TabBarVisibility::Hover => {
                 crate::config::workspace::TabBarVisibility::Hover
-            },
+            }
             crate::config::workspace::TabBarVisibility::Auto => {
                 if is_fs {
                     crate::config::workspace::TabBarVisibility::Hover
                 } else {
                     crate::config::workspace::TabBarVisibility::Always
                 }
-            },
+            }
         };
         // Warp-only layout: never reserve a grid row; overlay-only UI
         let reserve_top = false;
@@ -1004,7 +752,7 @@ impl Display {
                 } else {
                     0
                 }
-            },
+            }
             crate::config::workspace::QuickActionsPosition::Bottom => {
                 let base = lines.saturating_sub(1);
                 if reserve_bottom {
@@ -1012,7 +760,7 @@ impl Display {
                 } else {
                     base
                 }
-            },
+            }
             crate::config::workspace::QuickActionsPosition::Auto => {
                 let base = lines.saturating_sub(1);
                 if reserve_bottom {
@@ -1020,7 +768,7 @@ impl Display {
                 } else {
                     base
                 }
-            },
+            }
         };
         if line >= lines {
             line = lines.saturating_sub(1);
@@ -1044,7 +792,7 @@ impl Display {
 
         // Labels
         let fg = tokens.text;
-        let _muted = tokens.text_muted;
+        let muted = tokens.text_muted;
 
         // Build labels dynamically to respect configuration and features
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
@@ -1069,12 +817,14 @@ impl Display {
             }
         }
         let now = Instant::now();
-        let press_flash = self.quick_actions_press_flash_until.is_some_and(|t| now < t);
+        let press_flash = self
+            .quick_actions_press_flash_until
+            .is_some_and(|t| now < t);
 
         let mut col = 1usize;
         for label in labels.iter() {
             // For AI, dim if the build doesn't enable AI feature
-            let _is_ai = *label == "[AI]";
+            let is_ai = *label == "[AI]";
             #[allow(unused_mut)]
             let mut color = fg;
             #[cfg(not(feature = "ai"))]
@@ -1148,8 +898,10 @@ impl Display {
             let start_col = cols.saturating_sub(gear_cols + 2);
             let cw = size_info.cell_width();
             let ch = size_info.cell_height();
-            let icon_px =
-                theme.ui.quick_actions_settings_icon_px.unwrap_or((ch * 0.9).clamp(12.0, 18.0));
+            let icon_px = theme
+                .ui
+                .quick_actions_settings_icon_px
+                .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
             let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
             let iy = y + (h - icon_px) * 0.5;
             // Atlas slot 8 = gear
@@ -1201,17 +953,6 @@ impl Display {
 
         let size_info_copy = self.size_info;
         match &mut self.backend {
-            Backend::Gl { renderer, .. } => {
-                renderer.draw_string(
-                    point,
-                    fg,
-                    bg,
-                    truncated_text.chars(),
-                    &size_info_copy,
-                    &mut self.glyph_cache,
-                );
-            },
-            #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => {
                 renderer.draw_string(
                     point,
@@ -1221,7 +962,7 @@ impl Display {
                     &size_info_copy,
                     &mut self.glyph_cache,
                 );
-            },
+            }
         }
     }
 
@@ -1283,8 +1024,16 @@ impl Display {
         );
 
         info!("Cell size: {cell_width} x {cell_height}");
-        info!("Padding: {} x {}", size_info.padding_x(), size_info.padding_y());
-        info!("Width: {}, Height: {}", size_info.width(), size_info.height());
+        info!(
+            "Padding: {} x {}",
+            size_info.padding_x(),
+            size_info.padding_y()
+        );
+        info!(
+            "Width: {}, Height: {}",
+            size_info.width(),
+            size_info.height()
+        );
 
         // Clear screen.
         let background_color = config.colors.primary.background;
@@ -1329,7 +1078,9 @@ impl Display {
         blocks.enabled = config.debug.blocks;
 
         Ok(Self {
-            backend: Backend::Wgpu { renderer: wgpu_renderer },
+            backend: Backend::Wgpu {
+                renderer: wgpu_renderer,
+            },
             visual_bell: VisualBell::from(&config.bell),
             colors: List::from(&config.colors),
             frame_timer: FrameTimer::new(),
@@ -1354,6 +1105,44 @@ impl Display {
             composer_view_col_offset: 0,
             composer_caret_visible: true,
             composer_caret_last_toggle: None,
+            ai_current_provider: {
+                #[cfg(feature = "ai")]
+                {
+                    config
+                        .ai
+                        .provider
+                        .as_deref()
+                        .unwrap_or("openrouter")
+                        .to_string()
+                }
+                #[cfg(not(feature = "ai"))]
+                {
+                    "null".to_string()
+                }
+            },
+            ai_current_model: {
+                #[cfg(feature = "ai")]
+                {
+                    let pname = config.ai.provider.as_deref().unwrap_or("openrouter");
+                    let prov_cfg = config
+                        .ai
+                        .providers
+                        .get(pname)
+                        .cloned()
+                        .or_else(|| {
+                            crate::config::ai_providers::get_default_provider_configs()
+                                .get(pname)
+                                .cloned()
+                        })
+                        .unwrap_or_default();
+                    prov_cfg.default_model.unwrap_or_else(|| String::new())
+                }
+                #[cfg(not(feature = "ai"))]
+                {
+                    String::new()
+                }
+            },
+            ai_provider_dropdown_open: false,
             vi_highlighted_hint_age: Default::default(),
             highlighted_hint_age: Default::default(),
             vi_highlighted_hint: Default::default(),
@@ -1423,114 +1212,6 @@ impl Display {
         })
     }
 
-    #[inline]
-    #[cfg(feature = "gl-backend")]
-    pub fn gl_context(&self) -> &PossiblyCurrentContext {
-        match &self.backend {
-            Backend::Gl { context, .. } => context,
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => panic!("GL context not available on WGPU backend"),
-        }
-    }
-
-    pub fn make_not_current(&mut self) {
-        #[allow(irrefutable_let_patterns)]
-        #[cfg(feature = "gl-backend")]
-        if let Backend::Gl { context, .. } = &mut self.backend {
-            if context.is_current() {
-                context.make_not_current_in_place().expect("failed to disable context");
-            }
-        }
-    }
-
-    pub fn make_current(&mut self) {
-        #[cfg(feature = "gl-backend")]
-        {
-            let (_is_current, context_loss) = match &mut self.backend {
-                Backend::Gl { context, renderer, surface } => {
-                    let is_current = context.is_current();
-                    let context_loss = if is_current {
-                        renderer.was_context_reset()
-                    } else {
-                        match context.make_current(surface) {
-                            Err(err) if err.error_kind() == ErrorKind::ContextLost => {
-                                info!("Context lost for window {:?}", self.window.id());
-                                true
-                            },
-                            _ => false,
-                        }
-                    };
-                    (is_current, context_loss)
-                },
-                #[cfg(feature = "wgpu")]
-                Backend::Wgpu { .. } => (true, false),
-            };
-
-            if !context_loss {
-                return;
-            }
-
-            // GL context recreation path only.
-            #[allow(irrefutable_let_patterns)]
-            if let Backend::Gl { context, surface, renderer } = &mut self.backend {
-                let gl_display = context.display();
-                let gl_config = context.config();
-                let raw_window_handle = Some(self.window.raw_window_handle());
-                let new_context =
-                    platform::create_gl_context(&gl_display, &gl_config, raw_window_handle)
-                        .expect("failed to recreate context.");
-
-                // Drop the old context and renderer.
-                unsafe {
-                    ManuallyDrop::drop(renderer);
-                    ManuallyDrop::drop(context);
-                }
-
-                // Activate new context.
-                let new_context = new_context.treat_as_possibly_current();
-                *context = ManuallyDrop::new(new_context);
-                context.make_current(surface).expect("failed to reativate context after reset.");
-
-                // Recreate renderer.
-                let new_renderer = Renderer::new(context, self.renderer_preference)
-                    .expect("failed to recreate renderer after reset");
-                *renderer = ManuallyDrop::new(new_renderer);
-
-                // Resize the renderer.
-                renderer.resize(&self.size_info);
-
-                self.reset_glyph_cache();
-                self.damage_tracker.frame().mark_fully_damaged();
-
-                debug!("Recovered window {:?} from gpu reset", self.window.id());
-            }
-        }
-    }
-
-    #[cfg(feature = "gl-backend")]
-    fn swap_buffers(&self) {
-        #[cfg(feature = "gl-backend")]
-        {
-            #[allow(clippy::single_match, irrefutable_let_patterns)]
-            if let Backend::Gl { surface, context, .. } = &self.backend {
-                let res = match (surface.deref(), &context.deref()) {
-                    #[cfg(not(any(target_os = "macos", windows)))]
-                    (Surface::Egl(surface), PossiblyCurrentContext::Egl(context))
-                        if matches!(self.raw_window_handle, RawWindowHandle::Wayland(_))
-                            && !self.damage_tracker.debug =>
-                    {
-                        let damage = self.damage_tracker.shape_frame_damage(self.size_info.into());
-                        surface.swap_buffers_with_damage(context, &damage)
-                    },
-                    (surface, context) => surface.swap_buffers(context),
-                };
-                if let Err(err) = res {
-                    debug!("error calling swap_buffers: {err}");
-                }
-            }
-        }
-    }
-
     /// Update font size and cell dimensions.
     ///
     /// This will return a tuple of the cell width and height.
@@ -1548,19 +1229,11 @@ impl Display {
     /// Reset glyph cache.
     fn reset_glyph_cache(&mut self) {
         match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => {
-                let cache = &mut self.glyph_cache;
-                renderer.with_loader(|mut api| {
-                    cache.reset_glyph_cache(&mut api);
-                });
-            },
-            #[cfg(feature = "wgpu")]
             Backend::Wgpu { renderer } => {
                 // Reset the WGPU atlas pages and reload common glyphs using the real loader.
                 renderer.reset_atlas();
                 renderer.preload_glyphs(&mut self.glyph_cache);
-            },
+            }
         }
     }
 
@@ -1572,8 +1245,11 @@ impl Display {
     ) {
         use crate::renderer::ui::UiRoundedRect;
         if let Some(effects) = self.pane_drag_manager.get_visual_effects() {
-            let theme =
-                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
             let tokens = theme.tokens;
 
             // Compute content container rect (padding + reserved tab row)
@@ -1587,17 +1263,17 @@ impl Display {
             let effective_visibility = match tab_cfg.visibility {
                 crate::config::workspace::TabBarVisibility::Always => {
                     crate::config::workspace::TabBarVisibility::Always
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Hover => {
                     crate::config::workspace::TabBarVisibility::Hover
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Auto => {
                     if is_fs {
                         crate::config::workspace::TabBarVisibility::Hover
                     } else {
                         crate::config::workspace::TabBarVisibility::Always
                     }
-                },
+                }
             };
             // Suppress row reservation entirely when using warp overlay-only mode
             let overlay_only = config.workspace.warp_style && config.workspace.warp_overlay_only;
@@ -1614,11 +1290,11 @@ impl Display {
                     crate::workspace::TabBarPosition::Top => {
                         y0 += cell_h;
                         h = (h - cell_h).max(0.0);
-                    },
+                    }
                     crate::workspace::TabBarPosition::Bottom => {
                         h = (h - cell_h).max(0.0);
-                    },
-                    crate::workspace::TabBarPosition::Hidden => {},
+                    }
+                    crate::workspace::TabBarPosition::Hidden => {}
                 }
             }
             let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
@@ -1657,7 +1333,7 @@ impl Display {
                                             target_rect.height,
                                         )
                                     }
-                                },
+                                }
                                 crate::display::pane_drag_drop::SplitDirection::Horizontal => {
                                     // top/bottom region
                                     let half = target_rect.height * 0.5;
@@ -1671,7 +1347,7 @@ impl Display {
                                             half,
                                         )
                                     }
-                                },
+                                }
                             };
                             let alpha = (0.15 + 0.35 * effects.drop_zone_highlight_alpha).min(0.5);
                             let rect = RenderRect::new(hx, hy, hw, hh, tokens.accent, alpha);
@@ -1679,13 +1355,13 @@ impl Display {
                             let size_copy = self.size_info;
                             self.renderer_draw_rects(&size_copy, &metrics, vec![rect]);
                         }
-                    },
+                    }
                     crate::display::pane_drag_drop::PaneDropZone::Tab { .. } => {
                         // Highlight tab strip subtly near pointer (optional enhancement)
-                    },
+                    }
                     crate::display::pane_drag_drop::PaneDropZone::NewTab { .. } => {
                         // Optional: highlight new-tab area
-                    },
+                    }
                 }
             }
 
@@ -1750,7 +1426,9 @@ impl Display {
             (self.size_info.cell_width(), self.size_info.cell_height());
 
         if pending_update.font().is_some() || pending_update.cursor_dirty() {
-            let renderer_update = self.pending_renderer_update.get_or_insert(Default::default());
+            let renderer_update = self
+                .pending_renderer_update
+                .get_or_insert(Default::default());
             renderer_update.clear_font_cache = true
         }
 
@@ -1787,13 +1465,16 @@ impl Display {
 
         // Update number of column/lines in the viewport.
         let search_active = search_state.history_index.is_some();
-        let message_bar_lines = message_buffer.message().map_or(0, |m| m.text(&new_size).len());
+        let message_bar_lines = message_buffer
+            .message()
+            .map_or(0, |m| m.text(&new_size).len());
         let search_lines = usize::from(search_active);
         new_size.reserve_lines(message_bar_lines + search_lines);
 
         // Update resize increments.
         if config.window.resize_increments {
-            self.window.set_resize_increments(PhysicalSize::new(cell_width, cell_height));
+            self.window
+                .set_resize_increments(PhysicalSize::new(cell_width, cell_height));
         }
 
         // Resize when terminal when its dimensions have changed.
@@ -1807,13 +1488,16 @@ impl Display {
             terminal.resize(new_size);
 
             // Resize damage tracking.
-            self.damage_tracker.resize(new_size.screen_lines(), new_size.columns());
+            self.damage_tracker
+                .resize(new_size.screen_lines(), new_size.columns());
         }
 
         // Check if dimensions have changed.
         if new_size != self.size_info {
             // Queue renderer update.
-            let renderer_update = self.pending_renderer_update.get_or_insert(Default::default());
+            let renderer_update = self
+                .pending_renderer_update
+                .get_or_insert(Default::default());
             renderer_update.resize = true;
 
             // Clear focused search match.
@@ -1833,7 +1517,6 @@ impl Display {
         let mut renderer_update = self.pending_renderer_update.take().unwrap_or_default();
         #[cfg(feature = "wgpu")]
         let Backend::Wgpu { renderer } = &mut self.backend;
-        #[cfg(feature = "wgpu")]
         if renderer.take_atlas_evicted() {
             // Clear CPU glyph cache; then evict a single page in the WGPU renderer.
             renderer_update.clear_font_cache = true;
@@ -1845,22 +1528,11 @@ impl Display {
 
         // Resize renderer.
         if renderer_update.resize {
-            match &mut self.backend {
-                #[cfg(feature = "gl-backend")]
-                Backend::Gl { surface, context, .. } => {
-                    let width = NonZeroU32::new(self.size_info.width() as u32).unwrap();
-                    let height = NonZeroU32::new(self.size_info.height() as u32).unwrap();
-                    surface.resize(context, width, height);
-                },
-                #[cfg(feature = "wgpu")]
-                Backend::Wgpu { renderer } => {
-                    renderer.resize(&self.size_info);
-                },
-            }
+            let Backend::Wgpu { renderer } = &mut self.backend;
+            renderer.resize(&self.size_info);
         }
 
         // Ensure we're modifying the correct backend.
-        self.make_current();
 
         if renderer_update.clear_font_cache {
             self.reset_glyph_cache();
@@ -1868,94 +1540,59 @@ impl Display {
 
         self.renderer_resize();
 
-        info!("Padding: {} x {}", self.size_info.padding_x(), self.size_info.padding_y());
-        info!("Width: {}, Height: {}", self.size_info.width(), self.size_info.height());
+        info!(
+            "Padding: {} x {}",
+            self.size_info.padding_x(),
+            self.size_info.padding_y()
+        );
+        info!(
+            "Width: {}, Height: {}",
+            self.size_info.width(),
+            self.size_info.height()
+        );
     }
 
     /// Dump atlas stats to the debug log. No-op on GL backend.
     pub fn dump_atlas_stats(&mut self) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { .. } => {
-                debug!("DumpAtlasStats: not supported on GL backend");
-            },
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.dump_atlas_stats();
-            },
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.dump_atlas_stats();
     }
 
     /// Toggle subpixel text rendering (WGPU backend only).
     pub fn toggle_subpixel_text(&mut self) -> bool {
-        #[allow(irrefutable_let_patterns)]
-        match &mut self.backend {
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                let _now = renderer.toggle_subpixel_enabled();
-                self.damage_tracker.frame().mark_fully_damaged();
-                true
-            },
-            #[cfg(feature = "gl-backend")]
-            _ => false,
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        let _now = renderer.toggle_subpixel_enabled();
+        self.damage_tracker.frame().mark_fully_damaged();
+        true
     }
 
     /// Cycle LCD subpixel orientation between RGB and BGR (WGPU backend only).
     pub fn cycle_subpixel_orientation(&mut self) -> Option<SubpixelOrientation> {
-        #[allow(irrefutable_let_patterns)]
-        match &mut self.backend {
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                let next = renderer.cycle_subpixel_orientation();
-                self.damage_tracker.frame().mark_fully_damaged();
-                Some(next)
-            },
-            #[cfg(feature = "gl-backend")]
-            _ => None,
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        let next = renderer.cycle_subpixel_orientation();
+        self.damage_tracker.frame().mark_fully_damaged();
+        Some(next)
     }
 
     /// Toggle performance HUD (WGPU backend only).
     pub fn toggle_perf_hud(&mut self) -> bool {
-        #[allow(irrefutable_let_patterns)]
-        match &mut self.backend {
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.toggle_perf_hud();
-                true
-            },
-            #[cfg(feature = "gl-backend")]
-            _ => false,
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.toggle_perf_hud();
+        true
     }
 
     /// Adjust subpixel gamma (WGPU backend only).
     pub fn adjust_subpixel_gamma(&mut self, delta: f32) -> bool {
-        #[allow(irrefutable_let_patterns)]
-        match &mut self.backend {
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.adjust_subpixel_gamma(delta);
-                true
-            },
-            #[cfg(feature = "gl-backend")]
-            _ => false,
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.adjust_subpixel_gamma(delta);
+        true
     }
 
     /// Reset subpixel gamma to default (WGPU backend only).
     pub fn reset_subpixel_gamma(&mut self) -> bool {
-        #[allow(irrefutable_let_patterns)]
-        match &mut self.backend {
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.set_subpixel_gamma(2.2);
-                true
-            },
-            #[cfg(feature = "gl-backend")]
-            _ => false,
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.set_subpixel_gamma(2.2);
+        true
     }
 
     /// Draw the screen.
@@ -1991,8 +1628,18 @@ impl Display {
         let display_offset = content.display_offset();
         let cursor = content.cursor();
         // At this point `content` has been moved; it's safe to mutate startup flags.
+        // If we see any non-empty content, end the clean-startup phase immediately.
         if had_nonempty {
             self.startup_nonempty_seen = true;
+        } else {
+            // Failsafe: if clean-startup suppression is active but no content is available yet,
+            // request a frame and allow UI chrome to draw at least once so the window doesn't
+            // appear as a black template. This mirrors Warp's behavior where the chrome renders
+            // regardless of terminal content.
+            if self.clean_startup_active() {
+                // After the very first draw call, drop suppression to avoid getting stuck.
+                self.startup_nonempty_seen = true;
+            }
         }
 
         let cursor_point = terminal.grid().cursor.point;
@@ -2023,7 +1670,11 @@ impl Display {
         let size_info = self.size_info;
 
         let vi_mode = terminal.mode().contains(TermMode::VI);
-        let vi_cursor_point = if vi_mode { Some(terminal.vi_mode_cursor.point) } else { None };
+        let vi_cursor_point = if vi_mode {
+            Some(terminal.vi_mode_cursor.point)
+        } else {
+            None
+        };
 
         // Add damage from the terminal.
         match terminal.damage() {
@@ -2032,7 +1683,7 @@ impl Display {
                 for damage in damaged_lines {
                     self.damage_tracker.frame().damage_line(damage);
                 }
-            },
+            }
         }
         terminal.reset_damage();
 
@@ -2054,11 +1705,12 @@ impl Display {
 
         let vi_cursor_viewport_point =
             vi_cursor_point.and_then(|cursor| term::point_to_viewport(display_offset, cursor));
-        self.damage_tracker.damage_vi_cursor(vi_cursor_viewport_point);
-        self.damage_tracker.damage_selection(selection_range, display_offset);
+        self.damage_tracker
+            .damage_vi_cursor(vi_cursor_viewport_point);
+        self.damage_tracker
+            .damage_selection(selection_range, display_offset);
 
-        // Make sure this window's OpenGL context is active.
-        self.make_current();
+        // Ensure renderer is ready for drawing (WGPU).
 
         self.renderer_clear(background_color, config.window_opacity());
         let mut lines = RenderLines::new();
@@ -2093,17 +1745,17 @@ impl Display {
             let effective_visibility = match tab_cfg.visibility {
                 crate::config::workspace::TabBarVisibility::Always => {
                     crate::config::workspace::TabBarVisibility::Always
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Hover => {
                     crate::config::workspace::TabBarVisibility::Hover
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Auto => {
                     if is_fs {
                         crate::config::workspace::TabBarVisibility::Hover
                     } else {
                         crate::config::workspace::TabBarVisibility::Always
                     }
-                },
+                }
             };
             // Suppress reserving rows during clean startup to avoid a template-like top/bottom
             // band.
@@ -2141,7 +1793,10 @@ impl Display {
                     {
                         return false;
                     }
-                    if elide && self.blocks.is_viewport_line_elided(display_offset, cell.point.line)
+                    if elide
+                        && self
+                            .blocks
+                            .is_viewport_line_elided(display_offset, cell.point.line)
                     {
                         // Entire folded region is hidden from rendering (including header content).
                         return false;
@@ -2152,8 +1807,10 @@ impl Display {
                     // Underline hints hovered by mouse or vi mode cursor.
                     if has_highlighted_hint {
                         let point = term::viewport_to_point(display_offset, cell.point);
-                        let hyperlink =
-                            cell.extra.as_ref().and_then(|extra| extra.hyperlink.as_ref());
+                        let hyperlink = cell
+                            .extra
+                            .as_ref()
+                            .and_then(|extra| extra.hyperlink.as_ref());
 
                         let should_highlight = |hint: &Option<HintMatch>| {
                             hint.as_ref()
@@ -2174,16 +1831,8 @@ impl Display {
                 });
             // Drop sampler guard before borrowing `self` mutably again for drawing.
             drop(_sampler);
-            match &mut self.backend {
-                #[cfg(feature = "gl-backend")]
-                Backend::Gl { renderer, .. } => {
-                    renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
-                },
-                #[cfg(feature = "wgpu")]
-                Backend::Wgpu { renderer } => {
-                    renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
-                },
-            }
+            let Backend::Wgpu { renderer } = &mut self.backend;
+            renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
         }
 
         let mut rects = lines.rects(&metrics, &size_info);
@@ -2192,8 +1841,11 @@ impl Display {
         if self.blocks.enabled {
             let now = Instant::now();
             let bg_cover = background_color; // cover uses terminal background to mask text
-            let theme =
-                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
             for b in &mut self.blocks.blocks {
                 if let Some(start) = b.anim_start {
                     // Respect reduce_motion: end animation immediately
@@ -2288,7 +1940,9 @@ impl Display {
 
         // Draw cursor (skip if inside a folded region or reserved tab bar rows).
         let mut cursor_elided = self.blocks.enabled
-            && self.blocks.is_viewport_line_elided(display_offset, cursor.point().line);
+            && self
+                .blocks
+                .is_viewport_line_elided(display_offset, cursor.point().line);
         // Also skip cursor in reserved rows
         if config.workspace.tab_bar.show
             && !config.workspace.warp_overlay_only
@@ -2299,17 +1953,17 @@ impl Display {
             let eff_vis = match tab_cfg.visibility {
                 crate::config::workspace::TabBarVisibility::Always => {
                     crate::config::workspace::TabBarVisibility::Always
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Hover => {
                     crate::config::workspace::TabBarVisibility::Hover
-                },
+                }
                 crate::config::workspace::TabBarVisibility::Auto => {
                     if self.window.is_fullscreen() {
                         crate::config::workspace::TabBarVisibility::Hover
                     } else {
                         crate::config::workspace::TabBarVisibility::Always
                     }
-                },
+                }
             };
             if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
                 let vp_point = term::point_to_viewport(display_offset, cursor_point);
@@ -2371,7 +2025,7 @@ impl Display {
                 }
 
                 Some(Point::new(line, column))
-            },
+            }
             None => {
                 let num_lines = self.size_info.screen_lines();
                 match vi_cursor_viewport_point {
@@ -2379,7 +2033,7 @@ impl Display {
                         .filter(|point| point.line < num_lines),
                     point => point,
                 }
-            },
+            }
         };
 
         // Handle IME.
@@ -2402,10 +2056,15 @@ impl Display {
 
             // Create a new rectangle for the background.
             let start_line = size_info.screen_lines() + search_offset;
-            let y = size_info.cell_height().mul_add(start_line as f32, size_info.padding_y());
+            let y = size_info
+                .cell_height()
+                .mul_add(start_line as f32, size_info.padding_y());
 
-            let theme =
-                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
             let bg = match message.ty() {
                 MessageType::Error => theme.tokens.error,
                 MessageType::Warning => theme.tokens.warning,
@@ -2421,42 +2080,32 @@ impl Display {
             rects.push(message_bar_rect);
 
             // Always damage message bar, since it could have messages of the same size in it.
-            self.damage_tracker.frame().add_viewport_rect(&size_info, x, y as i32, width, height);
+            self.damage_tracker
+                .frame()
+                .add_viewport_rect(&size_info, x, y as i32, width, height);
 
             // Draw rectangles.
             self.renderer_draw_rects(&size_info, &metrics, rects);
 
             // Relay messages to the user.
-            let theme =
-                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
             let fg = theme.tokens.surface;
             for (i, message_text) in text.iter().enumerate() {
                 let point = Point::new(start_line + i, Column(0));
                 let size_info_copy = size_info;
-                match &mut self.backend {
-                    #[cfg(feature = "gl-backend")]
-                    Backend::Gl { renderer, .. } => {
-                        renderer.draw_string(
-                            point,
-                            fg,
-                            bg,
-                            message_text.chars(),
-                            &size_info_copy,
-                            &mut self.glyph_cache,
-                        );
-                    },
-                    #[cfg(feature = "wgpu")]
-                    Backend::Wgpu { renderer } => {
-                        renderer.draw_string(
-                            point,
-                            fg,
-                            bg,
-                            message_text.chars(),
-                            &size_info_copy,
-                            &mut self.glyph_cache,
-                        );
-                    },
-                }
+                let Backend::Wgpu { renderer } = &mut self.backend;
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    message_text.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
             }
         } else {
             // Draw rectangles.
@@ -2547,17 +2196,17 @@ impl Display {
                 let visibility = match tab_cfg.visibility {
                     crate::config::workspace::TabBarVisibility::Always => {
                         crate::config::workspace::TabBarVisibility::Always
-                    },
+                    }
                     crate::config::workspace::TabBarVisibility::Hover => {
                         crate::config::workspace::TabBarVisibility::Hover
-                    },
+                    }
                     crate::config::workspace::TabBarVisibility::Auto => {
                         if is_fs {
                             crate::config::workspace::TabBarVisibility::Hover
                         } else {
                             crate::config::workspace::TabBarVisibility::Always
                         }
-                    },
+                    }
                 };
 
                 let hover_recent = self
@@ -2573,11 +2222,12 @@ impl Display {
                     crate::config::workspace::TabBarVisibility::Always => true,
                     crate::config::workspace::TabBarVisibility::Hover => {
                         self.tab_hover.is_some() || hover_recent || near_top || near_bottom
-                    },
+                    }
                     crate::config::workspace::TabBarVisibility::Auto => true, // handled above
                 };
 
-                if should_draw && !self.clean_startup_active() {
+                // Always draw tab bar for Warp-style UI to prevent black screen template
+                if should_draw {
                     let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
                     let _ = self.draw_warp_tab_bar(config, tm, tab_cfg.position, &style);
                 }
@@ -2596,8 +2246,8 @@ impl Display {
             self.draw_quick_actions_bar(config);
         }
 
-        // Warp-like bottom composer bar (visual only) — after Quick Actions
-        if !self.clean_startup_active() {
+        // Warp-like bottom composer bar (visual only) — always draw for Warp-style UI
+        if config.workspace.warp_style {
             self.draw_warp_bottom_composer(config);
         }
 
@@ -2670,7 +2320,14 @@ impl Display {
                     // Top / bottom split
                     let top_h = (h - gap) * 0.5;
                     let bottom_h = h - gap - top_h;
-                    rects.push(RenderRect::new(0.0, 0.0, w, top_h, tokens.surface_muted, 0.96));
+                    rects.push(RenderRect::new(
+                        0.0,
+                        0.0,
+                        w,
+                        top_h,
+                        tokens.surface_muted,
+                        0.96,
+                    ));
                     rects.push(RenderRect::new(
                         0.0,
                         top_h + gap,
@@ -2683,7 +2340,14 @@ impl Display {
                     // Left / right split
                     let left_w = (w - gap) * 0.5;
                     let right_w = w - gap - left_w;
-                    rects.push(RenderRect::new(0.0, 0.0, left_w, h, tokens.surface_muted, 0.96));
+                    rects.push(RenderRect::new(
+                        0.0,
+                        0.0,
+                        left_w,
+                        h,
+                        tokens.surface_muted,
+                        0.96,
+                    ));
                     rects.push(RenderRect::new(
                         left_w + gap,
                         0.0,
@@ -2716,8 +2380,9 @@ impl Display {
                 let bg = theme.tokens.surface_muted;
                 for line in 0..num_lines {
                     // Folded overlay.
-                    if let Some(label) =
-                        self.blocks.folded_label_at_viewport_line(display_offset, line)
+                    if let Some(label) = self
+                        .blocks
+                        .folded_label_at_viewport_line(display_offset, line)
                     {
                         let damage = LineDamageBounds::new(line, 0, self.size_info.columns());
                         self.damage_tracker.frame().damage_line(damage);
@@ -2726,30 +2391,15 @@ impl Display {
                         let point = Point::new(line, Column(0));
                         {
                             let size_info_copy = self.size_info;
-                            match &mut self.backend {
-                                #[cfg(feature = "gl-backend")]
-                                Backend::Gl { renderer, .. } => {
-                                    renderer.draw_string(
-                                        point,
-                                        fg,
-                                        bg,
-                                        label.chars(),
-                                        &size_info_copy,
-                                        &mut self.glyph_cache,
-                                    );
-                                },
-                                #[cfg(feature = "wgpu")]
-                                Backend::Wgpu { renderer } => {
-                                    renderer.draw_string(
-                                        point,
-                                        fg,
-                                        bg,
-                                        label.chars(),
-                                        &size_info_copy,
-                                        &mut self.glyph_cache,
-                                    );
-                                },
-                            }
+                            let Backend::Wgpu { renderer } = &mut self.backend;
+                            renderer.draw_string(
+                                point,
+                                fg,
+                                bg,
+                                label.chars(),
+                                &size_info_copy,
+                                &mut self.glyph_cache,
+                            );
                         }
                         continue;
                     }
@@ -2764,30 +2414,15 @@ impl Display {
                         let point = Point::new(line, Column(0));
                         {
                             let size_info_copy = self.size_info;
-                            match &mut self.backend {
-                                #[cfg(feature = "gl-backend")]
-                                Backend::Gl { renderer, .. } => {
-                                    renderer.draw_string(
-                                        point,
-                                        fg,
-                                        bg,
-                                        header.chars(),
-                                        &size_info_copy,
-                                        &mut self.glyph_cache,
-                                    );
-                                },
-                                #[cfg(feature = "wgpu")]
-                                Backend::Wgpu { renderer } => {
-                                    renderer.draw_string(
-                                        point,
-                                        fg,
-                                        bg,
-                                        header.chars(),
-                                        &size_info_copy,
-                                        &mut self.glyph_cache,
-                                    );
-                                },
-                            }
+                            let Backend::Wgpu { renderer } = &mut self.backend;
+                            renderer.draw_string(
+                                point,
+                                fg,
+                                bg,
+                                header.chars(),
+                                &size_info_copy,
+                                &mut self.glyph_cache,
+                            );
                         }
                     }
                 }
@@ -2802,7 +2437,9 @@ impl Display {
 
         // Highlight damage for debugging.
         if self.damage_tracker.debug {
-            let damage = self.damage_tracker.shape_frame_damage(self.size_info.into());
+            let damage = self
+                .damage_tracker
+                .shape_frame_damage(self.size_info.into());
             let mut rects = Vec::with_capacity(damage.len());
             self.highlight_damage(&mut rects);
             let size_info_copy = self.size_info;
@@ -2810,26 +2447,6 @@ impl Display {
         }
 
         // Clearing debug highlights from the previous frame requires full redraw.
-        // Present for GL only; WGPU presents within clear/draw paths for now.
-        #[cfg(feature = "gl-backend")]
-        {
-            if matches!(self.backend, Backend::Gl { .. }) {
-                self.swap_buffers();
-                if matches!(
-                    self.raw_window_handle,
-                    RawWindowHandle::Xcb(_) | RawWindowHandle::Xlib(_)
-                ) {
-                    // On X11 `swap_buffers` does not block for vsync. However the next OpenGl
-                    // command will block to synchronize (this is `glClear` in
-                    // OpenAgent Terminal), which causes a permanent one frame
-                    // delay.
-                    self.renderer_finish();
-                }
-            }
-        }
-
-        // XXX: Request the new frame after swapping buffers, so the
-        // time to finish OpenGL operations is accounted for in the timeout.
         if !matches!(self.raw_window_handle, RawWindowHandle::Wayland(_)) {
             self.request_frame(scheduler);
         }
@@ -2921,31 +2538,19 @@ impl Display {
     #[inline(never)]
     // Backend helpers for renderer dispatch.
     fn renderer_clear(&self, color: Rgb, alpha: f32) {
-        match &self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.clear(color, alpha),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.clear(color, alpha),
-        }
+        let Backend::Wgpu { renderer } = &self.backend;
+        renderer.clear(color, alpha)
     }
 
     fn renderer_resize(&mut self) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.resize(&self.size_info),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.resize(&self.size_info),
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.resize(&self.size_info)
     }
 
     #[allow(dead_code)]
     fn stage_ui_rounded_rect(&mut self, rect: UiRoundedRect) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.stage_ui_rounded_rect(rect),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.stage_ui_rounded_rect(&self.size_info, rect),
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.stage_ui_rounded_rect(&self.size_info, rect)
     }
 
     fn renderer_draw_rects(
@@ -2954,39 +2559,28 @@ impl Display {
         metrics: &Metrics,
         rects: Vec<RenderRect>,
     ) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.draw_rects(size_info, metrics, rects),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.draw_rects(self.window.winit_window(), size_info, metrics, rects)
-            },
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.draw_rects(self.window.winit_window(), size_info, metrics, rects)
     }
 
     #[allow(dead_code)]
     fn stage_ui_sprite(&mut self, sprite: UiSprite) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.stage_ui_sprite(sprite),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.stage_ui_sprite(sprite),
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.stage_ui_sprite(sprite)
     }
 
     #[allow(dead_code)]
     fn set_ui_sprite_filter(&mut self, nearest: bool) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.set_sprite_filter_nearest(nearest),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.set_sprite_filter_nearest(nearest),
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.set_sprite_filter_nearest(nearest)
     }
 
     fn draw_warp_bottom_composer(&mut self, config: &UiConfig) {
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui.clone();
         let cw = self.size_info.cell_width();
@@ -3035,7 +2629,9 @@ impl Display {
                 y - 1.0,
                 w + 2.0,
                 h + 2.0,
-                ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px) + 1.0,
+                ui.composer_pill_radius_px
+                    .unwrap_or(ui.palette_pill_radius_px)
+                    + 1.0,
                 tokens.accent,
                 ui.composer_focus_ring_alpha,
             );
@@ -3051,7 +2647,8 @@ impl Display {
             y,
             w,
             h,
-            ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px),
+            ui.composer_pill_radius_px
+                .unwrap_or(ui.palette_pill_radius_px),
             tokens.surface,
             bg_alpha,
         );
@@ -3073,6 +2670,127 @@ impl Display {
             cols.saturating_sub(start_col),
         );
         start_col += star.len();
+
+        // Inline provider chip and compact model badge on the left inside the composer pill
+        // Compute labels
+        let provider_label = {
+            let pid = self.ai_current_provider.as_str();
+            match pid {
+                "openai" => "OpenAI",
+                "openrouter" => "OpenRouter",
+                "anthropic" => "Anthropic",
+                "ollama" => "Ollama",
+                _ => {
+                    // Title-case fallback
+                    if pid.is_empty() {
+                        "Provider"
+                    } else {
+                        pid
+                    }
+                }
+            }
+        };
+        let provider_chip = format!("[{} ▾]", provider_label);
+        // Draw provider chip capsule
+        {
+            use unicode_width::UnicodeWidthStr as _;
+            let wcols = provider_chip.width();
+            // Capsule background
+            let pad = ui
+                .composer_chip_pad_px
+                .unwrap_or(ui.palette_chip_pad_px)
+                .max(1.0);
+            let x_px = (start_col as f32) * cw - pad;
+            let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
+            let h_px = ch * 0.8;
+            let w_px = (wcols as f32) * cw + pad * 2.0;
+            let radius = ui.palette_pill_radius_px.min(h_px * 0.5);
+            let mut alpha = if self.composer_focused {
+                ui.composer_chip_alpha_focused
+            } else {
+                ui.composer_chip_alpha_unfocused
+            };
+            // Hover detection for provider chip
+            let is_hovered =
+                hover_col_for_composer.is_some_and(|c| c >= start_col && c < start_col + wcols);
+            if is_hovered {
+                alpha = (alpha + ui.composer_chip_alpha_hover_delta).min(1.0);
+            }
+            if composer_press_flash && is_hovered {
+                alpha = (alpha + ui.composer_chip_alpha_press_delta).min(1.0);
+            }
+            let pill =
+                UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, tokens.surface_muted, alpha);
+            self.stage_ui_rounded_rect(pill);
+            // Chip text
+            let text_color = if is_hovered {
+                tokens.accent
+            } else {
+                tokens.text
+            };
+            self.draw_ai_text(
+                Point::new(lines.saturating_sub(1), Column(start_col)),
+                text_color,
+                tokens.surface_muted,
+                &provider_chip,
+                wcols,
+            );
+            start_col += wcols + 1; // space after chip
+        }
+        // Compact model badge, if available
+        if !self.ai_current_model.is_empty() {
+            use unicode_width::UnicodeWidthStr as _;
+            let model_text = {
+                // Truncate very long model names to a reasonable length for the chip
+                let max_len = 24usize;
+                if self.ai_current_model.len() > max_len {
+                    format!("{}…", &self.ai_current_model[..max_len])
+                } else {
+                    self.ai_current_model.clone()
+                }
+            };
+            let model_chip = format!("[{}]", model_text);
+            let wcols = model_chip.width();
+            let pad = ui
+                .composer_chip_pad_px
+                .unwrap_or(ui.palette_chip_pad_px)
+                .max(1.0);
+            let x_px = (start_col as f32) * cw - pad;
+            let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
+            let h_px = ch * 0.8;
+            let w_px = (wcols as f32) * cw + pad * 2.0;
+            let radius = ui.palette_pill_radius_px.min(h_px * 0.5);
+            let mut alpha = if self.composer_focused {
+                ui.composer_chip_alpha_focused
+            } else {
+                ui.composer_chip_alpha_unfocused
+            };
+            let is_hovered =
+                hover_col_for_composer.is_some_and(|c| c >= start_col && c < start_col + wcols);
+            if is_hovered {
+                alpha = (alpha + ui.composer_chip_alpha_hover_delta).min(1.0);
+            }
+            if composer_press_flash && is_hovered {
+                alpha = (alpha + ui.composer_chip_alpha_press_delta).min(1.0);
+            }
+            let pill =
+                UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, tokens.surface_muted, alpha);
+            self.stage_ui_rounded_rect(pill);
+            let text_color = if is_hovered {
+                tokens.accent
+            } else {
+                tokens.text
+            };
+            self.draw_ai_text(
+                Point::new(lines.saturating_sub(1), Column(start_col)),
+                text_color,
+                tokens.surface_muted,
+                &model_chip,
+                wcols,
+            );
+            start_col += wcols + 2; // extra space after model chip
+        }
+
         let available = cols.saturating_sub(start_col + 2);
 
         use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -3111,7 +2829,7 @@ impl Display {
                 // Also draw action chips even when placeholder is shown
                 {
                     use unicode_width::UnicodeWidthStr as _;
-                    let chips = ["[Palette]", "[AI]", "[Run]"];
+                    let chips = ["[Palette]", "[Run]"];
                     let mut col_end = cols.saturating_sub(2);
                     let gap = ui.composer_chip_gap_cols as usize;
                     for label in chips.iter() {
@@ -3121,8 +2839,10 @@ impl Display {
                         }
                         let start = col_end.saturating_sub(wcols);
                         // Capsule background
-                        let pad =
-                            ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
+                        let pad = ui
+                            .composer_chip_pad_px
+                            .unwrap_or(ui.palette_chip_pad_px)
+                            .max(1.0);
                         let x_px = (start as f32) * cw - pad;
                         let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
                         let h_px = ch * 0.8; // slightly inset vertically
@@ -3152,7 +2872,11 @@ impl Display {
                         );
                         self.stage_ui_rounded_rect(pill);
                         // Label text
-                        let text_color = if is_hovered { tokens.accent } else { tokens.text };
+                        let text_color = if is_hovered {
+                            tokens.accent
+                        } else {
+                            tokens.text
+                        };
                         self.draw_ai_text(
                             Point::new(lines.saturating_sub(1), Column(start)),
                             text_color,
@@ -3364,7 +3088,7 @@ impl Display {
             // Draw action chips aligned to the right inside the pill: [Palette] [AI] [Run]
             {
                 use unicode_width::UnicodeWidthStr as _;
-                let chips = ["[Palette]", "[AI]", "[Run]"];
+                let chips = ["[Palette]", "[Run]"];
                 let mut col_end = cols.saturating_sub(2);
                 let gap = ui.composer_chip_gap_cols as usize;
                 for label in chips.iter() {
@@ -3374,7 +3098,10 @@ impl Display {
                     }
                     let start = col_end.saturating_sub(wcols);
                     // Capsule background
-                    let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
+                    let pad = ui
+                        .composer_chip_pad_px
+                        .unwrap_or(ui.palette_chip_pad_px)
+                        .max(1.0);
                     let x_px = (start as f32) * cw - pad;
                     let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
                     let h_px = ch * 0.8; // slightly inset vertically
@@ -3404,7 +3131,11 @@ impl Display {
                     );
                     self.stage_ui_rounded_rect(pill);
                     // Label text
-                    let text_color = if is_hovered { tokens.accent } else { tokens.text };
+                    let text_color = if is_hovered {
+                        tokens.accent
+                    } else {
+                        tokens.text
+                    };
                     self.draw_ai_text(
                         Point::new(lines.saturating_sub(1), Column(start)),
                         text_color,
@@ -3419,6 +3150,68 @@ impl Display {
                 }
             }
         }
+
+        // Provider dropdown overlay (inline), anchored above the composer pill
+        if self.ai_provider_dropdown_open {
+            use unicode_width::UnicodeWidthStr as _;
+            let providers: &[(&str, &str)] = &[
+                ("openrouter", "OpenRouter"),
+                ("openai", "OpenAI"),
+                ("anthropic", "Anthropic"),
+                ("ollama", "Ollama"),
+            ];
+            // Place the overlay slightly above the pill with same width as its contents
+            let mut col = 2 + star.len();
+            let y_px = (lines.saturating_sub(2) as f32) * ch + (ch - (ch * 0.8)) * 0.5; // line above
+            for (id, label) in providers.iter() {
+                let chip = format!("[{}]", label);
+                let wcols = chip.width();
+                if col + wcols + 2 >= cols {
+                    break;
+                }
+                let pad = ui
+                    .composer_chip_pad_px
+                    .unwrap_or(ui.palette_chip_pad_px)
+                    .max(1.0);
+                let x_px = (col as f32) * cw - pad;
+                let h_px = ch * 0.8;
+                let w_px = (wcols as f32) * cw + pad * 2.0;
+                let radius = ui.palette_pill_radius_px.min(h_px * 0.5);
+                let mut alpha = ui.composer_chip_alpha_unfocused;
+                let is_selected = self.ai_current_provider.eq_ignore_ascii_case(id);
+                if is_selected {
+                    alpha = (alpha + 0.08).min(1.0);
+                }
+                // Hover state by mouse col on that line
+                let hover_on_row = ((self.last_mouse_y as f32)
+                    >= ((lines.saturating_sub(2) as f32) * ch))
+                    && ((self.last_mouse_y as f32) < ((lines.saturating_sub(2) as f32) * ch + ch));
+                let hover = hover_on_row
+                    && hover_col_for_composer.is_some_and(|c| c >= col && c < col + wcols);
+                if hover {
+                    alpha = (alpha + ui.composer_chip_alpha_hover_delta).min(1.0);
+                }
+                if composer_press_flash && hover {
+                    alpha = (alpha + ui.composer_chip_alpha_press_delta).min(1.0);
+                }
+                let pill =
+                    UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, tokens.surface, alpha);
+                self.stage_ui_rounded_rect(pill);
+                let text_color = if is_selected {
+                    tokens.accent
+                } else {
+                    tokens.text
+                };
+                self.draw_ai_text(
+                    Point::new(lines.saturating_sub(2), Column(col)),
+                    text_color,
+                    tokens.surface_muted,
+                    &chip,
+                    wcols,
+                );
+                col += wcols + ui.composer_chip_gap_cols as usize;
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -3428,12 +3221,8 @@ impl Display {
         glyph_cache: &mut GlyphCache,
         cells: I,
     ) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.draw_cells(size_info, glyph_cache, cells),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.draw_cells(size_info, glyph_cache, cells),
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.draw_cells(size_info, glyph_cache, cells)
     }
 
     #[allow(dead_code)]
@@ -3446,94 +3235,39 @@ impl Display {
         size_info: &SizeInfo,
         glyph_cache: &mut GlyphCache,
     ) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => {
-                renderer.draw_string(point, fg, bg, string_chars, size_info, glyph_cache)
-            },
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => {
-                renderer.draw_string(point, fg, bg, string_chars, size_info, glyph_cache)
-            },
-        }
-    }
-
-    #[cfg(feature = "gl-backend")]
-    fn renderer_finish(&self) {
-        match &self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.finish(),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer: _ } => (),
-        }
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.draw_string(point, fg, bg, string_chars, size_info, glyph_cache)
     }
 
     /// Prepare the renderer to capture a screenshot of the next frame.
-    /// For GL this is a no-op. For WGPU this will mirror the next render to an offscreen target.
+    /// WGPU: currently a no-op.
     #[allow(dead_code)]
     pub fn begin_screenshot(&mut self) {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { .. } => {},
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => {
-                // WGPU offscreen capture removed; no-op.
-            },
-        }
+        // no-op
     }
 
     /// Read the current frame's RGBA pixels. Returns (bytes, width, height) on success.
-    /// For GL this reads the backbuffer. For WGPU this returns the last captured screenshot
-    /// if begin_screenshot() was called before the last draw.
+    /// WGPU: currently unsupported (returns None).
     #[allow(dead_code)]
     pub fn read_frame_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { .. } => {
-                let w = self.size_info.width() as u32;
-                let h = self.size_info.height() as u32;
-                let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
-                #[allow(unused_unsafe)]
-                unsafe {
-                    gl::Finish();
-                    gl::ReadBuffer(gl::BACK);
-                    gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-                    gl::ReadPixels(
-                        0,
-                        0,
-                        w as i32,
-                        h as i32,
-                        gl::RGBA,
-                        gl::UNSIGNED_BYTE,
-                        buf.as_mut_ptr().cast(),
-                    );
-                }
-                Some((buf, w, h))
-            },
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => None,
-        }
+        None
     }
 
     #[allow(dead_code)]
     fn renderer_set_viewport(&self, _size: &SizeInfo) {
-        match &self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.set_viewport(size),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { .. } => (),
-        }
+        // WGPU manages viewport via surface configuration
     }
 
     #[allow(dead_code)]
     fn renderer_with_loader<F: FnOnce(LoaderApi<'_>) -> T, T>(&mut self, func: F) -> T {
-        match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, .. } => renderer.with_loader(func),
-            #[cfg(feature = "wgpu")]
-            Backend::Wgpu { renderer } => renderer.with_loader(func),
-        }
+        // Provide a dummy loader API; WGPU path uploads glyphs differently.
+        func(LoaderApi::new())
     }
+
+    /// Make the graphics context not current.
+    /// WGPU-only: no-op.
+    #[allow(dead_code)]
+    pub fn make_not_current(&mut self) {}
 
     fn draw_ime_preview(
         &mut self,
@@ -3549,7 +3283,7 @@ impl Display {
                 // In case we don't have preedit, just set the popup point.
                 self.window.update_ime_position(point, &self.size_info);
                 return;
-            },
+            }
         };
 
         let num_cols = self.size_info.columns();
@@ -3562,9 +3296,12 @@ impl Display {
                 ShortenDirection::Right,
                 Some(SHORTENER),
             ),
-            _ => {
-                StrShortener::new(&preedit.text, num_cols, ShortenDirection::Left, Some(SHORTENER))
-            },
+            _ => StrShortener::new(
+                &preedit.text,
+                num_cols,
+                ShortenDirection::Left,
+                Some(SHORTENER),
+            ),
         }
         .collect();
 
@@ -3581,30 +3318,15 @@ impl Display {
         // Draw preedit text using the active backend without borrowing Display twice.
         {
             let size_info_copy = self.size_info;
-            match &mut self.backend {
-                #[cfg(feature = "gl-backend")]
-                Backend::Gl { renderer, .. } => {
-                    renderer.draw_string(
-                        start,
-                        fg,
-                        bg,
-                        visible_text.chars(),
-                        &size_info_copy,
-                        &mut self.glyph_cache,
-                    );
-                },
-                #[cfg(feature = "wgpu")]
-                Backend::Wgpu { renderer } => {
-                    renderer.draw_string(
-                        start,
-                        fg,
-                        bg,
-                        visible_text.chars(),
-                        &size_info_copy,
-                        &mut self.glyph_cache,
-                    );
-                },
-            }
+            let Backend::Wgpu { renderer } = &mut self.backend;
+            renderer.draw_string(
+                start,
+                fg,
+                bg,
+                visible_text.chars(),
+                &size_info_copy,
+                &mut self.glyph_cache,
+            );
         }
 
         // Damage preedit inside the terminal viewport.
@@ -3615,7 +3337,11 @@ impl Display {
         }
 
         // Add underline for preedit text.
-        let underline = RenderLine { start, end, color: fg };
+        let underline = RenderLine {
+            start,
+            end,
+            color: fg,
+        };
         rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
 
         let ime_popup_point = match preedit.cursor_end_offset {
@@ -3636,11 +3362,12 @@ impl Display {
                 let cursor = RenderableCursor::new(cursor_point, shape, fg, width);
                 rects.extend(cursor.rects(&self.size_info, config.cursor.thickness()));
                 cursor_point
-            },
+            }
             _ => end,
         };
 
-        self.window.update_ime_position(ime_popup_point, &self.size_info);
+        self.window
+            .update_ime_position(ime_popup_point, &self.size_info);
     }
 
     /// Format search regex to account for the cursor and fullwidth characters.
@@ -3717,8 +3444,11 @@ impl Display {
             .take(uris.len())
             .flat_map(|line| term::point_to_viewport(display_offset, Point::new(line, Column(0))));
 
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
         let bg = theme.tokens.surface_muted;
         for (uri, point) in uris.into_iter().zip(uri_lines) {
@@ -3732,30 +3462,15 @@ impl Display {
             {
                 let size_info_copy = self.size_info;
                 let uri_string: String = uri.collect();
-                match &mut self.backend {
-                    #[cfg(feature = "gl-backend")]
-                    Backend::Gl { renderer, .. } => {
-                        renderer.draw_string(
-                            point,
-                            fg,
-                            bg,
-                            uri_string.chars(),
-                            &size_info_copy,
-                            &mut self.glyph_cache,
-                        );
-                    },
-                    #[cfg(feature = "wgpu")]
-                    Backend::Wgpu { renderer } => {
-                        renderer.draw_string(
-                            point,
-                            fg,
-                            bg,
-                            uri_string.chars(),
-                            &size_info_copy,
-                            &mut self.glyph_cache,
-                        );
-                    },
-                }
+                let Backend::Wgpu { renderer } = &mut self.backend;
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    uri_string.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
             }
         }
     }
@@ -3769,43 +3484,31 @@ impl Display {
 
         let point = Point::new(self.size_info.screen_lines(), Column(0));
 
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let (fg, bg) = match config.debug.render_timer_style {
             crate::config::debug::RenderTimerStyle::LowContrast => {
                 (theme.tokens.text, theme.tokens.surface_muted)
-            },
+            }
             crate::config::debug::RenderTimerStyle::Warning => {
                 (theme.tokens.surface, theme.tokens.warning)
-            },
+            }
         };
 
         {
             let size_info_copy = self.size_info;
-            match &mut self.backend {
-                #[cfg(feature = "gl-backend")]
-                Backend::Gl { renderer, .. } => {
-                    renderer.draw_string(
-                        point,
-                        fg,
-                        bg,
-                        text.chars(),
-                        &size_info_copy,
-                        &mut self.glyph_cache,
-                    );
-                },
-                #[cfg(feature = "wgpu")]
-                Backend::Wgpu { renderer } => {
-                    renderer.draw_string(
-                        point,
-                        fg,
-                        bg,
-                        text.chars(),
-                        &size_info_copy,
-                        &mut self.glyph_cache,
-                    );
-                },
-            }
+            let Backend::Wgpu { renderer } = &mut self.backend;
+            renderer.draw_string(
+                point,
+                fg,
+                bg,
+                text.chars(),
+                &size_info_copy,
+                &mut self.glyph_cache,
+            );
         }
     }
 
@@ -3819,8 +3522,11 @@ impl Display {
         let timing = format!("{:.3} usec", self.meter.average());
         let point = Point::new(self.size_info.screen_lines().saturating_sub(2), Column(0));
 
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
         let bg = theme.tokens.surface_muted;
 
@@ -3831,30 +3537,15 @@ impl Display {
 
         {
             let size_info_copy = self.size_info;
-            match &mut self.backend {
-                #[cfg(feature = "gl-backend")]
-                Backend::Gl { renderer, .. } => {
-                    renderer.draw_string(
-                        point,
-                        fg,
-                        bg,
-                        timing.chars(),
-                        &size_info_copy,
-                        &mut self.glyph_cache,
-                    );
-                },
-                #[cfg(feature = "wgpu")]
-                Backend::Wgpu { renderer } => {
-                    renderer.draw_string(
-                        point,
-                        fg,
-                        bg,
-                        timing.chars(),
-                        &size_info_copy,
-                        &mut self.glyph_cache,
-                    );
-                },
-            }
+            let Backend::Wgpu { renderer } = &mut self.backend;
+            renderer.draw_string(
+                point,
+                fg,
+                bg,
+                timing.chars(),
+                &size_info_copy,
+                &mut self.glyph_cache,
+            );
         }
     }
 
@@ -3877,8 +3568,11 @@ impl Display {
         self.damage_tracker.frame().damage_line(damage);
         self.damage_tracker.next_frame().damage_line(damage);
 
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
         let bg = theme.tokens.surface_muted;
 
@@ -3886,30 +3580,15 @@ impl Display {
         if obstructed_column.map_or(true, |obstructed_column| obstructed_column < column) {
             {
                 let size_info_copy = self.size_info;
-                match &mut self.backend {
-                    #[cfg(feature = "gl-backend")]
-                    Backend::Gl { renderer, .. } => {
-                        renderer.draw_string(
-                            point,
-                            fg,
-                            bg,
-                            text.chars(),
-                            &size_info_copy,
-                            &mut self.glyph_cache,
-                        );
-                    },
-                    #[cfg(feature = "wgpu")]
-                    Backend::Wgpu { renderer } => {
-                        renderer.draw_string(
-                            point,
-                            fg,
-                            bg,
-                            text.chars(),
-                            &size_info_copy,
-                            &mut self.glyph_cache,
-                        );
-                    },
-                }
+                let Backend::Wgpu { renderer } = &mut self.backend;
+                renderer.draw_string(
+                    point,
+                    fg,
+                    bg,
+                    text.chars(),
+                    &size_info_copy,
+                    &mut self.glyph_cache,
+                );
             }
         }
     }
@@ -3918,7 +3597,10 @@ impl Display {
     ///
     /// This function is for debug purposes only.
     fn highlight_damage(&self, render_rects: &mut Vec<RenderRect>) {
-        for damage_rect in &self.damage_tracker.shape_frame_damage(self.size_info.into()) {
+        for damage_rect in &self
+            .damage_tracker
+            .shape_frame_damage(self.size_info.into())
+        {
             let x = damage_rect.x as f32;
             let height = damage_rect.height as f32;
             let width = damage_rect.width as f32;
@@ -3933,8 +3615,16 @@ impl Display {
     fn validate_hint_highlights(&mut self, display_offset: usize) {
         let frame = self.damage_tracker.frame();
         let hints = [
-            (&mut self.highlighted_hint, &mut self.highlighted_hint_age, true),
-            (&mut self.vi_highlighted_hint, &mut self.vi_highlighted_hint_age, false),
+            (
+                &mut self.highlighted_hint,
+                &mut self.highlighted_hint_age,
+                true,
+            ),
+            (
+                &mut self.vi_highlighted_hint,
+                &mut self.vi_highlighted_hint_age,
+                false,
+            ),
         ];
 
         let num_lines = self.size_info.screen_lines();
@@ -3998,22 +3688,10 @@ impl Display {
 
 impl Drop for Display {
     fn drop(&mut self) {
-        // Switch OpenGL context before dropping, otherwise objects (like programs) from other
-        // contexts might be deleted when dropping renderer.
-        // Ensure the correct context is current before dropping GL resources.
-        #[cfg(feature = "gl-backend")]
-        self.make_current();
         match &mut self.backend {
-            #[cfg(feature = "gl-backend")]
-            Backend::Gl { renderer, context, surface } => unsafe {
-                ManuallyDrop::drop(renderer);
-                ManuallyDrop::drop(context);
-                ManuallyDrop::drop(surface);
-            },
-            #[cfg(feature = "wgpu")]
             Backend::Wgpu { .. } => {
                 // WGPU resources drop automatically.
-            },
+            }
         }
     }
 }
@@ -4073,17 +3751,23 @@ impl Preedit {
     pub fn new(text: String, cursor_byte_offset: Option<(usize, usize)>) -> Self {
         let cursor_end_offset = if let Some(byte_offset) = cursor_byte_offset {
             // Convert byte offset into char offset.
-            let start_to_end_offset =
-                text[byte_offset.0..].chars().fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
-            let end_to_end_offset =
-                text[byte_offset.1..].chars().fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
+            let start_to_end_offset = text[byte_offset.0..]
+                .chars()
+                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
+            let end_to_end_offset = text[byte_offset.1..]
+                .chars()
+                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
 
             Some((start_to_end_offset, end_to_end_offset))
         } else {
             None
         };
 
-        Self { text, cursor_byte_offset, cursor_end_offset }
+        Self {
+            text,
+            cursor_byte_offset,
+            cursor_end_offset,
+        }
     }
 }
 
@@ -4121,7 +3805,11 @@ impl Default for FrameTimer {
 impl FrameTimer {
     pub fn new() -> Self {
         let now = Instant::now();
-        Self { base: now, last_synced_timestamp: now, refresh_interval: Duration::ZERO }
+        Self {
+            base: now,
+            last_synced_timestamp: now,
+            refresh_interval: Duration::ZERO,
+        }
     }
 
     /// Compute the delay that we should use to achieve the target frame

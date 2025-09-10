@@ -83,7 +83,10 @@ impl Display {
             Some(p) => p,
             None => return,
         };
-        let cfg = AdapterConfig { command: "codelldb".into(), args: vec![] };
+        let cfg = AdapterConfig {
+            command: "codelldb".into(),
+            args: vec![],
+        };
         match DapClient::start(&cfg) {
             Ok(client) => {
                 let _ = client.initialize();
@@ -92,10 +95,10 @@ impl Display {
                 let _ = client.configuration_done();
                 self.dap_overlay.status = format!("Launched {:?}", program);
                 self.dap_overlay.client = Some(client);
-            },
+            }
             Err(e) => {
                 self.dap_overlay.status = format!("DAP start error: {}", e);
-            },
+            }
         }
         self.pending_update.dirty = true;
     }
@@ -112,7 +115,11 @@ impl Display {
                 .as_ref()
                 .map(|b| b.cursor.read().line as i64 + 1)
                 .unwrap_or(1);
-            let lines = self.dap_overlay.breakpoints.entry(file.clone()).or_default();
+            let lines = self
+                .dap_overlay
+                .breakpoints
+                .entry(file.clone())
+                .or_default();
             if let Some(idx) = lines.iter().position(|&l| l == line) {
                 lines.remove(idx);
             } else {
@@ -121,7 +128,10 @@ impl Display {
             // Send setBreakpoints
             if let Some(client) = &self.dap_overlay.client {
                 let src = serde_json::json!({"path": file});
-                let bps: Vec<_> = lines.iter().map(|l| serde_json::json!({"line": l})).collect();
+                let bps: Vec<_> = lines
+                    .iter()
+                    .map(|l| serde_json::json!({"line": l}))
+                    .collect();
                 let args = serde_json::json!({"source": src, "breakpoints": bps});
                 let _ = client.set_breakpoints(args);
             }
@@ -179,8 +189,10 @@ impl Display {
                                 .and_then(|v| v.as_array())
                                 .cloned()
                                 .unwrap_or_default();
-                            let tid =
-                                tids.first().and_then(|t| t.get("id")).and_then(|v| v.as_i64());
+                            let tid = tids
+                                .first()
+                                .and_then(|t| t.get("id"))
+                                .and_then(|v| v.as_i64());
                             self.dap_overlay.current_thread_id = tid;
                             if let Some(tid) = tid {
                                 if let Ok(st) = client.stack_trace(tid) {
@@ -249,22 +261,22 @@ impl Display {
                             }
                         }
                         self.dap_overlay.status = "Stopped".into();
-                    },
+                    }
                     DapEvent::Continued(_) => {
                         self.dap_overlay.status = "Running".into();
-                    },
+                    }
                     DapEvent::Output(s) => {
                         if !s.trim().is_empty() {
                             self.dap_overlay.status = format!("Output: {}", s.trim());
                         }
-                    },
+                    }
                     DapEvent::Initialized => {
                         self.dap_overlay.status = "Initialized".into();
-                    },
+                    }
                     DapEvent::Terminated => {
                         self.dap_overlay.status = "Terminated".into();
-                    },
-                    DapEvent::Thread(_) | DapEvent::Unknown(_) => {},
+                    }
+                    DapEvent::Thread(_) | DapEvent::Unknown(_) => {}
                 }
                 self.pending_update.dirty = true;
             }
@@ -285,8 +297,11 @@ impl Display {
             return;
         }
         let size = self.size_info;
-        let theme =
-            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         // Panel center small
         let cols = size.columns();

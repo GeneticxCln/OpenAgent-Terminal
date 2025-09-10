@@ -90,7 +90,11 @@ impl DockerIntegration {
             }
         };
 
-        Ok(Self { context, docker_available, compose_available })
+        Ok(Self {
+            context,
+            docker_available,
+            compose_available,
+        })
     }
 
     async fn check_docker_availability() -> Result<bool> {
@@ -113,7 +117,11 @@ impl DockerIntegration {
 
     async fn detect_context() -> Result<DockerContext> {
         let in_container = Self::is_running_in_container().await?;
-        let container_id = if in_container { Self::get_container_id().await? } else { None };
+        let container_id = if in_container {
+            Self::get_container_id().await?
+        } else {
+            None
+        };
 
         let available_containers = Self::get_running_containers().await?;
         let compose_services = Self::get_compose_services().await.unwrap_or_default();
@@ -429,8 +437,12 @@ impl DockerIntegration {
 
     async fn get_compose_services() -> Result<Vec<ComposeService>> {
         // Check if docker-compose.yml exists
-        let compose_files =
-            ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
+        let compose_files = [
+            "docker-compose.yml",
+            "docker-compose.yaml",
+            "compose.yml",
+            "compose.yaml",
+        ];
 
         for file in &compose_files {
             if fs::metadata(file).await.is_ok() {
@@ -586,7 +598,10 @@ impl DockerIntegration {
             .map_err(|e| anyhow!("Failed to copy file to container: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!("Copy failed: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!(
+                "Copy failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         Ok(())
@@ -608,7 +623,10 @@ impl DockerIntegration {
             .map_err(|e| anyhow!("Failed to copy file from container: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!("Copy failed: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!(
+                "Copy failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         Ok(())
@@ -668,7 +686,10 @@ impl DockerIntegration {
             .map_err(|e| anyhow!("Failed to get container logs: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!("Failed to get logs: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!(
+                "Failed to get logs: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -694,8 +715,10 @@ impl DockerIntegration {
         }
 
         if !self.context.compose_services.is_empty() {
-            prompt
-                .push_str(&format!(" • {} compose services", self.context.compose_services.len()));
+            prompt.push_str(&format!(
+                " • {} compose services",
+                self.context.compose_services.len()
+            ));
         }
 
         prompt

@@ -83,7 +83,11 @@ struct ShapingCache {
 
 impl ShapingCache {
     fn new(max_entries: usize) -> Self {
-        Self { entries: HashMap::new(), lru_order: VecDeque::new(), max_entries }
+        Self {
+            entries: HashMap::new(),
+            lru_order: VecDeque::new(),
+            max_entries,
+        }
     }
 
     fn get(&mut self, key: &str) -> Option<Arc<ShapedText>> {
@@ -212,9 +216,15 @@ impl HarfBuzzShaper {
         for run in runs {
             // Choose font name without borrowing self during the call to shape_text.
             let font_name_owned: String = if run.needs_emoji && self.config.emoji_font.is_some() {
-                self.config.emoji_font.as_ref().cloned().unwrap_or_else(|| primary_font.to_string())
+                self.config
+                    .emoji_font
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| primary_font.to_string())
             } else if run.needs_fallback {
-                self.find_fallback_font(&run.text, primary_font).unwrap_or(primary_font).to_string()
+                self.find_fallback_font(&run.text, primary_font)
+                    .unwrap_or(primary_font)
+                    .to_string()
             } else {
                 primary_font.to_string()
             };
@@ -248,7 +258,7 @@ impl HarfBuzzShaper {
             match unicode_bidi::bidi_class(ch) {
                 BidiClass::L => has_ltr = true,
                 BidiClass::R | BidiClass::AL => has_rtl = true,
-                _ => {},
+                _ => {}
             }
         }
 
@@ -310,7 +320,11 @@ impl HarfBuzzShaper {
             if set_num <= 20 {
                 let tens = ((set_num / 10) % 10) as u8 + b'0';
                 let ones = (set_num % 10) as u8 + b'0';
-                features.push(Feature::new(Tag::new('s', 's', tens as char, ones as char), 1, 0..));
+                features.push(Feature::new(
+                    Tag::new('s', 's', tens as char, ones as char),
+                    1,
+                    0..,
+                ));
             }
         }
 
@@ -330,7 +344,10 @@ impl HarfBuzzShaper {
         }
 
         // Query font from database
-        let query = Query { families: &[Family::Name(font_name)], ..Default::default() };
+        let query = Query {
+            families: &[Family::Name(font_name)],
+            ..Default::default()
+        };
 
         // Try primary font first; fall back to configured fallback fonts if not found.
         let font_id = if let Some(id) = self.font_database.query(&query) {
@@ -338,7 +355,10 @@ impl HarfBuzzShaper {
         } else {
             let mut found: Option<fontdb::ID> = None;
             for fb in &self.config.fallback_fonts {
-                let q = Query { families: &[Family::Name(fb)], ..Default::default() };
+                let q = Query {
+                    families: &[Family::Name(fb)],
+                    ..Default::default()
+                };
                 if let Some(id) = self.font_database.query(&q) {
                     found = Some(id);
                     break;
@@ -357,7 +377,7 @@ impl HarfBuzzShaper {
             fontdb::Source::Binary(data) => data.as_ref().as_ref().to_vec(),
             fontdb::Source::File(path) => {
                 std::fs::read(path).map_err(|e| anyhow::anyhow!("Failed to read font file: {e}"))?
-            },
+            }
             fontdb::Source::SharedFile(path, _) => std::fs::read(&*path)
                 .map_err(|e| anyhow::anyhow!("Failed to read shared font file: {e}"))?,
         };
@@ -431,7 +451,11 @@ impl HarfBuzzShaper {
                 if !current_run.text.is_empty() {
                     runs.push(current_run);
                 }
-                current_run = FontRun { text: ch.to_string(), needs_emoji, needs_fallback };
+                current_run = FontRun {
+                    text: ch.to_string(),
+                    needs_emoji,
+                    needs_fallback,
+                };
             }
         }
 
@@ -460,7 +484,11 @@ impl HarfBuzzShaper {
 
     /// Find a fallback font for text
     fn find_fallback_font(&self, _text: &str, primary: &str) -> Option<&str> {
-        self.config.fallback_fonts.iter().find(|f| f.as_str() != primary).map(|s| s.as_str())
+        self.config
+            .fallback_fonts
+            .iter()
+            .find(|f| f.as_str() != primary)
+            .map(|s| s.as_str())
     }
 
     /// Clear all caches
@@ -481,7 +509,11 @@ struct FontRun {
 
 impl FontRun {
     fn new() -> Self {
-        Self { text: String::new(), needs_emoji: false, needs_fallback: false }
+        Self {
+            text: String::new(),
+            needs_emoji: false,
+            needs_fallback: false,
+        }
     }
 
     fn is_compatible(&self, needs_emoji: bool, needs_fallback: bool) -> bool {
@@ -509,7 +541,10 @@ mod tests {
 
     #[test]
     fn test_ligature_shaping() {
-        let config = ShapingConfig { enable_ligatures: true, ..Default::default() };
+        let config = ShapingConfig {
+            enable_ligatures: true,
+            ..Default::default()
+        };
         let mut shaper = HarfBuzzShaper::new(config).unwrap();
 
         // Test programming ligatures

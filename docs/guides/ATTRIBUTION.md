@@ -6,7 +6,7 @@ OpenAgent Terminal is an AI-enhanced terminal emulator that builds upon the exce
 
 ## Based on Alacritty
 
-This project is a fork of [Alacritty](https://github.com/alacritty/alacritty), a fast, cross-platform, OpenGL terminal emulator.
+This project is a fork of [Alacritty](https://github.com/alacritty/alacritty), a fast, cross-platform, GPU-accelerated terminal emulator. This fork uses a WGPU-based renderer.
 
 ### Original Alacritty Authors
 - Christian Duerr ([@chrisduerr](https://github.com/chrisduerr))
@@ -42,7 +42,7 @@ OpenAgent Terminal adds the following features on top of Alacritty:
 
 ### Original Alacritty Dependencies
 - `winit` - Window handling
-- `glutin` - OpenGL context creation
+- `wgpu` - GPU rendering (WGPU backend)
 - `crossfont` - Font rasterization
 - And many others listed in Cargo.toml
 

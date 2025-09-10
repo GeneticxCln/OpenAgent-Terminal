@@ -24,7 +24,12 @@ impl AnthropicProvider {
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        Ok(Self { api_key, endpoint, model, client })
+        Ok(Self {
+            api_key,
+            endpoint,
+            model,
+            client,
+        })
     }
 
     pub fn from_env() -> Result<Self, String> {
@@ -86,7 +91,10 @@ struct AnthropicDelta {
 fn ai_log_verbose() -> bool {
     static FLAG: OnceLock<bool> = OnceLock::new();
     *FLAG.get_or_init(|| {
-        matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose"))
+        matches!(
+            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
+            Some("verbose")
+        )
     })
 }
 fn ai_log_summary() -> bool {
@@ -106,7 +114,10 @@ impl AiProvider for AnthropicProvider {
 
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
         if ai_log_summary() {
-            info!("anthropic_propose_start model={} endpoint={}", self.model, self.endpoint);
+            info!(
+                "anthropic_propose_start model={} endpoint={}",
+                self.model, self.endpoint
+            );
         }
         // Build the system prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
@@ -128,8 +139,10 @@ impl AiProvider for AnthropicProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages =
-            vec![Message { role: "user".to_string(), content: req.scratch_text.clone() }];
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: req.scratch_text.clone(),
+        }];
 
         let request_body = MessageRequest {
             model: self.model.clone(),
@@ -153,13 +166,18 @@ impl AiProvider for AnthropicProvider {
             .send()
             .map_err(|e| format!("Failed to send request: {}", e))?;
         if ai_log_summary() {
-            debug!("anthropic_propose_response_status status={}", response.status());
+            debug!(
+                "anthropic_propose_response_status status={}",
+                response.status()
+            );
         }
 
         if !response.status().is_success() {
             let status = response.status();
             let retry_after_hdr = response.headers().get("retry-after").cloned();
-            let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .unwrap_or_else(|_| "Unknown error".to_string());
             let mut msg = format!("API error {}: {}", status, error_text);
             if let Some(hv) = retry_after_hdr {
                 if let Ok(s) = hv.to_str() {
@@ -170,8 +188,9 @@ impl AiProvider for AnthropicProvider {
             return Err(msg);
         }
 
-        let message_response: MessageResponse =
-            response.json().map_err(|e| format!("Failed to parse response: {}", e))?;
+        let message_response: MessageResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
 
         if let Some(content) = message_response.content.first() {
             let text = &content.text;
@@ -212,7 +231,10 @@ impl AiProvider for AnthropicProvider {
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
         if ai_log_summary() {
-            info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint);
+            info!(
+                "anthropic_stream_start model={} endpoint={}",
+                self.model, self.endpoint
+            );
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
         use eventsource_stream::Eventsource;
@@ -235,8 +257,10 @@ impl AiProvider for AnthropicProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages =
-            vec![Message { role: "user".to_string(), content: req.scratch_text.clone() }];
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: req.scratch_text.clone(),
+        }];
 
         let request_body = MessageRequest {
             model: self.model.clone(),
@@ -303,7 +327,7 @@ impl AiProvider for AnthropicProvider {
                         } else {
                             return Err(msg);
                         }
-                    },
+                    }
                 };
 
                 if !response.status().is_success() {
@@ -365,15 +389,15 @@ impl AiProvider for AnthropicProvider {
                                             on_chunk(&txt);
                                         }
                                     }
-                                },
+                                }
                                 Err(e) => {
                                     debug!("Skipping unexpected Anthropic SSE data: {}", e);
-                                },
+                                }
                             }
-                        },
+                        }
                         Ok(Some(Err(e))) => {
                             return Err(format!("Stream error: {}", e));
-                        },
+                        }
                         Ok(None) => break,
                         Err(_) => continue, // timeout
                     }

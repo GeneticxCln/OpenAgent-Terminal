@@ -107,7 +107,10 @@ impl Options {
             config.ipc_socket = Some(true);
         }
 
-        config.window.embed = self.embed.as_ref().and_then(|embed| parse_hex_or_decimal(embed));
+        config.window.embed = self
+            .embed
+            .as_ref()
+            .and_then(|embed| parse_hex_or_decimal(embed));
         config.debug.print_events |= self.print_events;
         config.debug.log_level = max(config.debug.log_level, self.log_level());
         config.debug.ref_test |= self.ref_test;
@@ -157,7 +160,7 @@ fn parse_class(input: &str) -> Result<Class, String> {
         // Warn the user if they've passed too many values.
         Some((_, instance)) if instance.contains(',') => {
             return Err(String::from("Too many parameters"));
-        },
+        }
         Some((general, instance)) => (general, instance),
         None => (input, input),
     };
@@ -193,7 +196,10 @@ impl TerminalOptions {
     /// Shell override passed through the CLI.
     pub fn command(&self) -> Option<Program> {
         let (program, args) = self.command.split_first()?;
-        Some(Program::WithArgs { program: program.clone(), args: args.to_vec() })
+        Some(Program::WithArgs {
+            program: program.clone(),
+            args: args.to_vec(),
+        })
     }
 
     /// Override the [`PtyOptions`]'s fields with the [`TerminalOptions`].
@@ -257,6 +263,15 @@ pub enum Subcommands {
     #[cfg(unix)]
     Msg(MessageOptions),
     Migrate(MigrateOptions),
+    /// AI utilities: validate configuration, migrate env vars
+    #[cfg(feature = "ai")]
+    Ai(AiOptions),
+    /// Sync utilities: import/export settings and history
+    #[cfg(feature = "sync")]
+    Sync(SyncCliOptions),
+    /// Security Lens utilities: validate policies, run tests
+    #[cfg(feature = "security-lens")]
+    Security(SecurityCliOptions),
     /// Open a native editor window (Monaco) for a file path
     WebEdit(WebEditOptions),
     /// Command notebooks (create/list/add/run)
@@ -360,6 +375,99 @@ impl WindowOptions {
     }
 }
 
+// === AI CLI ===
+#[cfg(feature = "ai")]
+#[derive(Args, Debug, Clone)]
+pub struct AiOptions {
+    #[clap(subcommand)]
+    pub command: AiCommand,
+}
+
+#[cfg(feature = "ai")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum AiCommand {
+    /// Validate AI provider configuration (all or a specific provider)
+    Validate {
+        /// Provider to validate (e.g., openai, anthropic, ollama). If omitted, validate all.
+        #[clap(long)]
+        provider: Option<String>,
+        /// Use example/default provider configurations even if not present in config
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        include_defaults: bool,
+        /// Output JSON report (machine-readable)
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+    },
+    /// Migrate legacy environment variables to secure, provider-specific ones
+    Migrate {
+        /// Path to write updated config with provider sections; if omitted, prints to stdout
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        config_out: Option<PathBuf>,
+        /// Apply non-interactively: write config_out if specified and exit 0 on success
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        apply: bool,
+        /// Also generate a shell snippet file with secure env var exports (values redacted)
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        write_env_snippet: Option<PathBuf>,
+    },
+}
+
+// === Sync CLI ===
+#[cfg(feature = "sync")]
+#[derive(Args, Debug, Clone)]
+pub struct SyncCliOptions {
+    #[clap(subcommand)]
+    pub command: SyncCommand,
+}
+
+#[cfg(feature = "sync")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum SyncCommand {
+    /// Export settings or history to a file (optionally encrypted by local provider)
+    Export {
+        /// Scope to export: settings or history
+        #[clap(long, value_enum)]
+        scope: super::cli::SyncScopeArg,
+        /// Output file path
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        to: PathBuf,
+    },
+    /// Import settings or history from a file (optionally encrypted by local provider)
+    Import {
+        /// Scope to import: settings or history
+        #[clap(long, value_enum)]
+        scope: super::cli::SyncScopeArg,
+        /// Input file path
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        from: PathBuf,
+    },
+}
+
+// === Security Lens CLI ===
+#[cfg(feature = "security-lens")]
+#[derive(Args, Debug, Clone)]
+pub struct SecurityCliOptions {
+    #[clap(subcommand)]
+    pub command: SecurityCommand,
+}
+
+#[cfg(feature = "security-lens")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum SecurityCommand {
+    /// Validate a Security Lens policy file and run sample tests
+    Validate {
+        /// Policy file path (TOML)
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        policy: PathBuf,
+        /// Dry run: print findings only
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        dry_run: bool,
+        /// Output JSON report
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+    },
+}
+
 /// Options for the native WebView editor
 #[derive(Serialize, Deserialize, Args, Default, Debug, Clone, PartialEq, Eq)]
 pub struct WebEditOptions {
@@ -379,7 +487,12 @@ pub struct IpcConfig {
     /// Window ID for the new config.
     ///
     /// Use `-1` to apply this change to all windows.
-    #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
+    #[clap(
+        short,
+        long,
+        allow_hyphen_values = true,
+        env = "OPENAGENT_TERMINAL_WINDOW_ID"
+    )]
     pub window_id: Option<i128>,
 
     /// Clear all runtime configuration changes.
@@ -394,7 +507,12 @@ pub struct IpcGetConfig {
     /// Window ID for the config request.
     ///
     /// Use `-1` to get the global config.
-    #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
+    #[clap(
+        short,
+        long,
+        allow_hyphen_values = true,
+        env = "OPENAGENT_TERMINAL_WINDOW_ID"
+    )]
     pub window_id: Option<i128>,
 }
 
@@ -432,7 +550,7 @@ impl ParsedOptions {
                 Err(err) => {
                     eprintln!("Ignoring invalid CLI option '{option}': {err}");
                     continue;
-                },
+                }
             };
             config_options.push((option.clone(), parsed));
         }
@@ -452,7 +570,7 @@ impl ParsedOptions {
                         "Unable to override option '{option}': {err}"
                     );
                     self.config_options.swap_remove(i);
-                },
+                }
                 Ok(_) => i += 1,
             }
         }
@@ -609,7 +727,11 @@ mod tests {
             // Temporarily skip strict equality with checked-in completion snapshots until new ones
             // are provided. This test now only asserts that completions are generated
             // without panicking and are non-empty.
-            assert!(!_generated.is_empty(), "Generated completion for {} is empty", file);
+            assert!(
+                !_generated.is_empty(),
+                "Generated completion for {} is empty",
+                file
+            );
         }
 
         // Optionally write new completion files when requested.

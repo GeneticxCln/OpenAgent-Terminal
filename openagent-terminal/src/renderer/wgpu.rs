@@ -389,7 +389,12 @@ struct ProjParams {
 fn projection_from_size(size: PhysicalSize<u32>) -> ProjParams {
     let w = size.width.max(1) as f32;
     let h = size.height.max(1) as f32;
-    ProjParams { offset_x: -1.0, offset_y: 1.0, scale_x: 2.0 / w, scale_y: -2.0 / h }
+    ProjParams {
+        offset_x: -1.0,
+        offset_y: 1.0,
+        scale_x: 2.0 / w,
+        scale_y: -2.0 / h,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -521,17 +526,29 @@ impl WgpuRenderer {
         let is_srgb_surface = false;
 
         // Prefer vsync-capable present modes when available to avoid tearing.
-        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
+        let present_mode = if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::AutoVsync)
+        {
             wgpu::PresentMode::AutoVsync
-        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
+        } else if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::Fifo)
+        {
             wgpu::PresentMode::Fifo
         } else {
             surface_caps.present_modes[0]
         };
         // Prefer opaque alpha mode to avoid compositor blending artifacts.
-        let alpha_mode = if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+        let alpha_mode = if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::Opaque)
+        {
             wgpu::CompositeAlphaMode::Opaque
-        } else if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Auto) {
+        } else if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::Auto)
+        {
             wgpu::CompositeAlphaMode::Auto
         } else {
             surface_caps.alpha_modes[0]
@@ -754,7 +771,10 @@ fragment: Some(wgpu::FragmentState {
             label: Some("text-bind-group"),
             layout: &text_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: proj_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: proj_buffer.as_entire_binding(),
+                },
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&atlas_view),
@@ -836,8 +856,12 @@ targets: &[Some(wgpu::ColorTargetState {
             atlas_texture,
             atlas_view,
             atlas_sampler,
-            atlas_pages: (0..NUM_ATLAS_PAGES).map(|_| WgpuAtlas::new(ATLAS_SIZE)).collect(),
-            page_meta: (0..NUM_ATLAS_PAGES).map(|_| AtlasPageMeta { last_use: 0 }).collect(),
+            atlas_pages: (0..NUM_ATLAS_PAGES)
+                .map(|_| WgpuAtlas::new(ATLAS_SIZE))
+                .collect(),
+            page_meta: (0..NUM_ATLAS_PAGES)
+                .map(|_| AtlasPageMeta { last_use: 0 })
+                .collect(),
             current_page: 0,
             use_clock: 1,
             pending_eviction: None,
@@ -897,7 +921,8 @@ targets: &[Some(wgpu::ColorTargetState {
         let r = (color.r as f32 / 255.0).min(1.0);
         let g = (color.g as f32 / 255.0).min(1.0);
         let b = (color.b as f32 / 255.0).min(1.0);
-        self.pending_clear.set(Some([r as f64, g as f64, b as f64, 1.0]));
+        self.pending_clear
+            .set(Some([r as f64, g as f64, b as f64, 1.0]));
     }
 
     pub fn finish(&self) {
@@ -924,7 +949,7 @@ targets: &[Some(wgpu::ColorTargetState {
                 match err {
                     wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost => {
                         surface.configure(&self.device, &self.config);
-                    },
+                    }
                     wgpu::SurfaceError::OutOfMemory => return,
                     wgpu::SurfaceError::Timeout => return,
                     _ => return,
@@ -933,7 +958,7 @@ targets: &[Some(wgpu::ColorTargetState {
                     Ok(frame) => frame,
                     Err(_) => return,
                 }
-            },
+            }
         };
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("frame-view"),
@@ -957,23 +982,46 @@ targets: &[Some(wgpu::ColorTargetState {
             let color = [rect.color.r, rect.color.g, rect.color.b, a];
             let kind = rect.kind as u32;
 
-            let v0 = RectVertex { pos: [x, y], color, kind };
-            let v1 = RectVertex { pos: [x, y - h], color, kind };
-            let v2 = RectVertex { pos: [x + w, y], color, kind };
-            let v3 = RectVertex { pos: [x + w, y - h], color, kind };
+            let v0 = RectVertex {
+                pos: [x, y],
+                color,
+                kind,
+            };
+            let v1 = RectVertex {
+                pos: [x, y - h],
+                color,
+                kind,
+            };
+            let v2 = RectVertex {
+                pos: [x + w, y],
+                color,
+                kind,
+            };
+            let v3 = RectVertex {
+                pos: [x + w, y - h],
+                color,
+                kind,
+            };
 
             // Two triangles: (0,1,2) and (2,3,1)
             vertices.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
         }
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("rects-encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("rects-encoder"),
+            });
 
         // Clear color from pending state if present.
         let clear = if let Some(c) = self.pending_clear.get() {
             self.pending_clear.set(None);
-            wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] }
+            wgpu::Color {
+                r: c[0],
+                g: c[1],
+                b: c[2],
+                a: c[3],
+            }
         } else {
             wgpu::Color::TRANSPARENT
         };
@@ -996,7 +1044,11 @@ targets: &[Some(wgpu::ColorTargetState {
             undercurl_position,
             0.0,
         ];
-        self.queue.write_buffer(&self.rect_uniform_buffer, 0, bytemuck::cast_slice(&rect_uniforms));
+        self.queue.write_buffer(
+            &self.rect_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&rect_uniforms),
+        );
 
         // Upload vertices into a reusable GPU vertex buffer
         if !vertices.is_empty() {
@@ -1014,16 +1066,18 @@ targets: &[Some(wgpu::ColorTargetState {
                 });
                 self.rect_vb_capacity_vertices = new_cap;
             }
-            self.queue.write_buffer(&self.rect_vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+            self.queue
+                .write_buffer(&self.rect_vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         }
 
         // Prepare UI vertex buffer outside the pass to satisfy borrow checker.
         let ui_buf_opt = (!self.pending_ui.is_empty()).then(|| {
-            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("ui-vertex-buffer"),
-                contents: bytemuck::cast_slice(&self.pending_ui),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("ui-vertex-buffer"),
+                    contents: bytemuck::cast_slice(&self.pending_ui),
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
         });
 
         {
@@ -1082,11 +1136,13 @@ targets: &[Some(wgpu::ColorTargetState {
 
         // Draw staged text after rects, if any.
         if !self.pending_text.is_empty() {
-            let text_vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("text-vertex-buffer"),
-                contents: bytemuck::cast_slice(&self.pending_text),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let text_vbuf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("text-vertex-buffer"),
+                    contents: bytemuck::cast_slice(&self.pending_text),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
 
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1254,7 +1310,9 @@ targets: &[Some(wgpu::ColorTargetState {
                 ));
             }
             // Skip hidden or tab cells by rendering as space.
-            let hidden = cell.flags.contains(openagent_terminal_core::term::cell::Flags::HIDDEN);
+            let hidden = cell
+                .flags
+                .contains(openagent_terminal_core::term::cell::Flags::HIDDEN);
             if cell.character == '\t' || hidden {
                 cell.character = ' ';
             }
@@ -1264,21 +1322,26 @@ targets: &[Some(wgpu::ColorTargetState {
                 match cell.flags & openagent_terminal_core::term::cell::Flags::BOLD_ITALIC {
                     openagent_terminal_core::term::cell::Flags::BOLD_ITALIC => {
                         glyph_cache.bold_italic_key
-                    },
+                    }
                     openagent_terminal_core::term::cell::Flags::ITALIC => glyph_cache.italic_key,
                     openagent_terminal_core::term::cell::Flags::BOLD => glyph_cache.bold_key,
                     _ => glyph_cache.font_key,
                 };
 
             // Primary glyph.
-            let glyph_key =
-                GlyphKey { font_key, size: glyph_cache.font_size, character: cell.character };
+            let glyph_key = GlyphKey {
+                font_key,
+                size: glyph_cache.font_size,
+                character: cell.character,
+            };
             let g = glyph_cache.get(glyph_key, &mut loader, true);
             staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel, bgr));
 
             // Zero-width characters.
-            if let Some(zw) =
-                cell.extra.as_mut().and_then(|extra| extra.zerowidth.take().filter(|_| !hidden))
+            if let Some(zw) = cell
+                .extra
+                .as_mut()
+                .and_then(|extra| extra.zerowidth.take().filter(|_| !hidden))
             {
                 let mut key = glyph_key;
                 for ch in zw {
@@ -1381,7 +1444,11 @@ targets: &[Some(wgpu::ColorTargetState {
             let page = &self.atlas_pages[layer as usize];
             let capacity = (page.width as u64) * (page.height as u64);
             let used = page.used_area.min(capacity);
-            let pct = if capacity > 0 { (used as f64 / capacity as f64) * 100.0 } else { 0.0 };
+            let pct = if capacity > 0 {
+                (used as f64 / capacity as f64) * 100.0
+            } else {
+                0.0
+            };
             debug!(
                 "WGPU atlas eviction: layer={} used={} / {} ({:.1}%), policy={:?}, counters: \
                  inserts={}, misses={}, evictions={}",
@@ -1407,12 +1474,20 @@ targets: &[Some(wgpu::ColorTargetState {
             if self.zero_evicted_layer {
                 let width = self.atlas_pages[0].width;
                 let height = self.atlas_pages[0].height;
-                let extent = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+                let extent = wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                };
                 self.queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &self.atlas_texture,
                         mip_level: 0,
-                        origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer,
+                        },
                         aspect: wgpu::TextureAspect::All,
                     },
                     &self.zero_scratch,
@@ -1447,7 +1522,11 @@ targets: &[Some(wgpu::ColorTargetState {
             let used = page.used_area.min(cap);
             total_used += used;
             total_capacity += cap;
-            let pct = if cap > 0 { (used as f64 / cap as f64) * 100.0 } else { 0.0 };
+            let pct = if cap > 0 {
+                (used as f64 / cap as f64) * 100.0
+            } else {
+                0.0
+            };
             let ts = self.page_meta[i].last_use;
             lines.push(format!(
                 "layer={} used={} / {} ({:.1}%), last_use={}",
@@ -1506,15 +1585,55 @@ fn build_text_vertices(
         flags |= 4u32;
     }
 
-    let layer = if glyph.tex_id > 0 { glyph.tex_id - 1 } else { 0 };
+    let layer = if glyph.tex_id > 0 {
+        glyph.tex_id - 1
+    } else {
+        0
+    };
 
     [
-        TextVertex { pos: [x0, y0], uv: [u0, v0], color, flags, layer },
-        TextVertex { pos: [x0, y1], uv: [u0, v1], color, flags, layer },
-        TextVertex { pos: [x1, y0], uv: [u1, v0], color, flags, layer },
-        TextVertex { pos: [x1, y0], uv: [u1, v0], color, flags, layer },
-        TextVertex { pos: [x1, y1], uv: [u1, v1], color, flags, layer },
-        TextVertex { pos: [x0, y1], uv: [u0, v1], color, flags, layer },
+        TextVertex {
+            pos: [x0, y0],
+            uv: [u0, v0],
+            color,
+            flags,
+            layer,
+        },
+        TextVertex {
+            pos: [x0, y1],
+            uv: [u0, v1],
+            color,
+            flags,
+            layer,
+        },
+        TextVertex {
+            pos: [x1, y0],
+            uv: [u1, v0],
+            color,
+            flags,
+            layer,
+        },
+        TextVertex {
+            pos: [x1, y0],
+            uv: [u1, v0],
+            color,
+            flags,
+            layer,
+        },
+        TextVertex {
+            pos: [x1, y1],
+            uv: [u1, v1],
+            color,
+            flags,
+            layer,
+        },
+        TextVertex {
+            pos: [x0, y1],
+            uv: [u0, v1],
+            color,
+            flags,
+            layer,
+        },
     ]
 }
 
@@ -1554,7 +1673,7 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
                 let victim_idx: u32 = match self.renderer.policy {
                     AtlasEvictionPolicy::RoundRobin => {
                         (self.renderer.current_page + 1) % NUM_ATLAS_PAGES
-                    },
+                    }
                     AtlasEvictionPolicy::LruMinOccupancy => {
                         let mut best_i: u32 = 0;
                         let mut best_key = (u64::MAX, u64::MAX);
@@ -1568,7 +1687,7 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
                             }
                         }
                         best_i
-                    },
+                    }
                 };
                 // Request eviction of the victim page on the next frame.
                 self.renderer.pending_eviction.get_or_insert(victim_idx);
@@ -1587,7 +1706,7 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
                     uv_width: 0.0,
                     uv_height: 0.0,
                 };
-            },
+            }
         };
 
         // Prepare pixel data (RGBA8). For RGB, store alpha in A and zero RGB.
@@ -1602,7 +1721,7 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
                     out.extend_from_slice(&[0, 0, 0, a]);
                 }
                 (out, false)
-            },
+            }
         };
 
         // Upload the glyph into the atlas texture.
@@ -1615,7 +1734,11 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
             wgpu::TexelCopyTextureInfo {
                 texture: &self.renderer.atlas_texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d { x: ox as u32, y: oy as u32, z: page_idx },
+                origin: wgpu::Origin3d {
+                    x: ox as u32,
+                    y: oy as u32,
+                    z: page_idx,
+                },
                 aspect: wgpu::TextureAspect::All,
             },
             &rgba,

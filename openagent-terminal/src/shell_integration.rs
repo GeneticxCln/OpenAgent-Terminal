@@ -188,7 +188,10 @@ pub struct CommandId(u64);
 
 impl CommandId {
     pub fn new() -> Self {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
         Self(timestamp)
     }
 }
@@ -458,7 +461,10 @@ impl ShellIntegration {
             enhanced_history: EnhancedHistory::new(),
             shell_hooks: ShellHooks::new(),
             event_callbacks: Vec::new(),
-            stats: ShellStats { last_reset: Instant::now(), ..Default::default() },
+            stats: ShellStats {
+                last_reset: Instant::now(),
+                ..Default::default()
+            },
         };
 
         // Initialize shell hooks immediately
@@ -501,7 +507,9 @@ impl ShellIntegration {
             category,
         };
 
-        self.command_tracker.active_commands.insert(id, active_command);
+        self.command_tracker
+            .active_commands
+            .insert(id, active_command);
         self.command_tracker.total_commands += 1;
         self.stats.commands_tracked += 1;
 
@@ -550,7 +558,9 @@ impl ShellIntegration {
         };
 
         // Update timing history immediately
-        self.command_tracker.timing_history.push_back(timing.clone());
+        self.command_tracker
+            .timing_history
+            .push_back(timing.clone());
         if self.command_tracker.timing_history.len() > 1000 {
             self.command_tracker.timing_history.pop_front();
         }
@@ -618,7 +628,12 @@ impl ShellIntegration {
         self.stats.success_rate = self.exit_monitor.success_count as f64 / total_completed as f64;
 
         // Emit command completed event immediately
-        self.emit_event(ShellEvent::CommandCompleted { id, exit_code, duration, output_size });
+        self.emit_event(ShellEvent::CommandCompleted {
+            id,
+            exit_code,
+            duration,
+            output_size,
+        });
 
         Ok(())
     }
@@ -643,20 +658,23 @@ impl ShellIntegration {
             self.directory_tracker.current_dir = new_dir.clone();
 
             // Detect project type immediately
-            if let Ok(project_info) =
-                self.directory_tracker.project_detector.detect_project(&new_dir)
+            if let Ok(project_info) = self
+                .directory_tracker
+                .project_detector
+                .detect_project(&new_dir)
             {
                 if let Some(info) = project_info {
                     // Update directory pattern
-                    let pattern =
-                        self.directory_tracker.dir_patterns.entry(new_dir.clone()).or_insert_with(
-                            || DirectoryPattern {
-                                common_commands: Vec::new(),
-                                project_type: Some(info.project_type),
-                                frequency_map: HashMap::new(),
-                                last_updated: Utc::now(),
-                            },
-                        );
+                    let pattern = self
+                        .directory_tracker
+                        .dir_patterns
+                        .entry(new_dir.clone())
+                        .or_insert_with(|| DirectoryPattern {
+                            common_commands: Vec::new(),
+                            project_type: Some(info.project_type),
+                            frequency_map: HashMap::new(),
+                            last_updated: Utc::now(),
+                        });
                     pattern.project_type = Some(info.project_type);
                     pattern.last_updated = Utc::now();
                 }
@@ -704,7 +722,11 @@ impl ShellIntegration {
 
     /// Get command timing statistics
     pub fn get_timing_stats(&self) -> Vec<CommandTiming> {
-        self.command_tracker.timing_history.iter().cloned().collect()
+        self.command_tracker
+            .timing_history
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Get current shell statistics
@@ -720,7 +742,7 @@ impl ShellIntegration {
             ShellType::Zsh => self.setup_zsh_hooks(),
             ShellType::Bash => self.setup_bash_hooks(),
             ShellType::Fish => self.setup_fish_hooks(),
-            _ => {}, // Other shells not implemented yet
+            _ => {} // Other shells not implemented yet
         }
     }
 
@@ -806,50 +828,74 @@ impl ExitCodeMonitor {
 
     fn setup_exit_code_meanings(&mut self) {
         // Common exit codes and their meanings
-        self.exit_code_meanings.insert(0, ExitCodeInfo {
-            meaning: "Success".to_string(),
-            severity: ExitCodeSeverity::Success,
-            suggestion: None,
-            common_causes: vec!["Command completed successfully".to_string()],
-        });
+        self.exit_code_meanings.insert(
+            0,
+            ExitCodeInfo {
+                meaning: "Success".to_string(),
+                severity: ExitCodeSeverity::Success,
+                suggestion: None,
+                common_causes: vec!["Command completed successfully".to_string()],
+            },
+        );
 
-        self.exit_code_meanings.insert(1, ExitCodeInfo {
-            meaning: "General error".to_string(),
-            severity: ExitCodeSeverity::Error,
-            suggestion: Some("Check command syntax and arguments".to_string()),
-            common_causes: vec!["Invalid arguments".to_string(), "Permission denied".to_string()],
-        });
+        self.exit_code_meanings.insert(
+            1,
+            ExitCodeInfo {
+                meaning: "General error".to_string(),
+                severity: ExitCodeSeverity::Error,
+                suggestion: Some("Check command syntax and arguments".to_string()),
+                common_causes: vec![
+                    "Invalid arguments".to_string(),
+                    "Permission denied".to_string(),
+                ],
+            },
+        );
 
-        self.exit_code_meanings.insert(2, ExitCodeInfo {
-            meaning: "Misuse of shell builtins".to_string(),
-            severity: ExitCodeSeverity::Error,
-            suggestion: Some("Check command usage with --help".to_string()),
-            common_causes: vec!["Invalid command usage".to_string()],
-        });
+        self.exit_code_meanings.insert(
+            2,
+            ExitCodeInfo {
+                meaning: "Misuse of shell builtins".to_string(),
+                severity: ExitCodeSeverity::Error,
+                suggestion: Some("Check command usage with --help".to_string()),
+                common_causes: vec!["Invalid command usage".to_string()],
+            },
+        );
 
-        self.exit_code_meanings.insert(126, ExitCodeInfo {
-            meaning: "Command not executable".to_string(),
-            severity: ExitCodeSeverity::Error,
-            suggestion: Some("Check file permissions with ls -l".to_string()),
-            common_causes: vec!["File not executable".to_string(), "Permission denied".to_string()],
-        });
+        self.exit_code_meanings.insert(
+            126,
+            ExitCodeInfo {
+                meaning: "Command not executable".to_string(),
+                severity: ExitCodeSeverity::Error,
+                suggestion: Some("Check file permissions with ls -l".to_string()),
+                common_causes: vec![
+                    "File not executable".to_string(),
+                    "Permission denied".to_string(),
+                ],
+            },
+        );
 
-        self.exit_code_meanings.insert(127, ExitCodeInfo {
-            meaning: "Command not found".to_string(),
-            severity: ExitCodeSeverity::Error,
-            suggestion: Some("Check if command is installed and in PATH".to_string()),
-            common_causes: vec![
-                "Command not installed".to_string(),
-                "Typo in command name".to_string(),
-            ],
-        });
+        self.exit_code_meanings.insert(
+            127,
+            ExitCodeInfo {
+                meaning: "Command not found".to_string(),
+                severity: ExitCodeSeverity::Error,
+                suggestion: Some("Check if command is installed and in PATH".to_string()),
+                common_causes: vec![
+                    "Command not installed".to_string(),
+                    "Typo in command name".to_string(),
+                ],
+            },
+        );
 
-        self.exit_code_meanings.insert(130, ExitCodeInfo {
-            meaning: "Script terminated by Control-C".to_string(),
-            severity: ExitCodeSeverity::Warning,
-            suggestion: Some("Command was interrupted by user".to_string()),
-            common_causes: vec!["User interruption".to_string()],
-        });
+        self.exit_code_meanings.insert(
+            130,
+            ExitCodeInfo {
+                meaning: "Script terminated by Control-C".to_string(),
+                severity: ExitCodeSeverity::Warning,
+                suggestion: Some("Command was interrupted by user".to_string()),
+                common_causes: vec!["User interruption".to_string()],
+            },
+        );
     }
 
     fn process_exit_code(&mut self, id: CommandId, exit_code: i32) {
@@ -883,7 +929,10 @@ impl DirectoryTracker {
 
 impl ProjectDetector {
     fn new() -> Self {
-        let mut detector = Self { detection_rules: Vec::new(), cache: HashMap::new() };
+        let mut detector = Self {
+            detection_rules: Vec::new(),
+            cache: HashMap::new(),
+        };
 
         detector.setup_detection_rules();
         detector
@@ -943,18 +992,21 @@ impl ProjectDetector {
                     if !dir.join(file).exists() {
                         return false;
                     }
-                },
+                }
                 ProjectIndicator::DirectoryExists(subdir) => {
                     if !dir.join(subdir).is_dir() {
                         return false;
                     }
-                },
+                }
                 ProjectIndicator::CommandAvailable(cmd) => {
-                    if Command::new("which").arg(cmd).output().map_or(true, |o| !o.status.success())
+                    if Command::new("which")
+                        .arg(cmd)
+                        .output()
+                        .map_or(true, |o| !o.status.success())
                     {
                         return false;
                     }
-                },
+                }
                 ProjectIndicator::FileContent { file, pattern } => {
                     let file_path = dir.join(file);
                     if let Ok(content) = std::fs::read_to_string(file_path) {
@@ -964,7 +1016,7 @@ impl ProjectDetector {
                     } else {
                         return false;
                     }
-                },
+                }
             }
         }
         true
@@ -1022,7 +1074,8 @@ impl CommandCategorizer {
         // Apply rules
         for rule in &self.category_rules {
             if rule.pattern.is_match(command) {
-                self.pattern_cache.insert(command.to_string(), rule.category);
+                self.pattern_cache
+                    .insert(command.to_string(), rule.category);
                 return Some(rule.category);
             }
         }
@@ -1047,8 +1100,11 @@ impl EnhancedHistory {
         let entry_index = self.entries.len();
 
         // Update search indices immediately
-        let command_tokens: Vec<String> =
-            entry.command.split_whitespace().map(|s| s.to_lowercase()).collect();
+        let command_tokens: Vec<String> = entry
+            .command
+            .split_whitespace()
+            .map(|s| s.to_lowercase())
+            .collect();
 
         for token in &command_tokens {
             self.search_index
@@ -1091,8 +1147,11 @@ impl EnhancedHistory {
 
     fn cleanup_indices(&mut self, removed_entry: &HistoryEntry, removed_index: usize) {
         // Remove from indices - simplified implementation
-        let command_tokens: Vec<String> =
-            removed_entry.command.split_whitespace().map(|s| s.to_lowercase()).collect();
+        let command_tokens: Vec<String> = removed_entry
+            .command
+            .split_whitespace()
+            .map(|s| s.to_lowercase())
+            .collect();
 
         for token in &command_tokens {
             if let Some(indices) = self.search_index.command_index.get_mut(token) {
@@ -1201,7 +1260,9 @@ mod tests {
         let id = shell.start_command("echo test".to_string(), None);
 
         std::thread::sleep(Duration::from_millis(10));
-        shell.complete_command(id, 0, Some("test".to_string())).unwrap();
+        shell
+            .complete_command(id, 0, Some("test".to_string()))
+            .unwrap();
 
         assert!(!shell.command_tracker.timing_history.is_empty());
     }
@@ -1210,9 +1271,18 @@ mod tests {
     fn test_command_categorization() {
         let mut categorizer = CommandCategorizer::new();
 
-        assert_eq!(categorizer.categorize_command("git status"), Some(CommandCategory::Git));
-        assert_eq!(categorizer.categorize_command("docker ps"), Some(CommandCategory::Docker));
-        assert_eq!(categorizer.categorize_command("ls -la"), Some(CommandCategory::FileSystem));
+        assert_eq!(
+            categorizer.categorize_command("git status"),
+            Some(CommandCategory::Git)
+        );
+        assert_eq!(
+            categorizer.categorize_command("docker ps"),
+            Some(CommandCategory::Docker)
+        );
+        assert_eq!(
+            categorizer.categorize_command("ls -la"),
+            Some(CommandCategory::FileSystem)
+        );
     }
 
     #[test]

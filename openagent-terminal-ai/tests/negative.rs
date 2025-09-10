@@ -12,12 +12,18 @@ fn privacy_sanitizes_paths_and_secrets() {
             ("MY_SECRET_TOKEN".to_string(), "abc123".to_string()),
         ],
     };
-    let opts = AiPrivacyOptions { strip_sensitive: true, strip_cwd: true };
+    let opts = AiPrivacyOptions {
+        strip_sensitive: true,
+        strip_cwd: true,
+    };
     let out = sanitize_request(&req, opts);
 
     assert!(out.scratch_text.contains("[REDACTED]"));
     assert!(out.working_directory.unwrap().contains("[REDACTED]"));
-    assert!(out.context.iter().any(|(k, v)| k == "MY_SECRET_TOKEN" && v == "[REDACTED]"));
+    assert!(out
+        .context
+        .iter()
+        .any(|(k, v)| k == "MY_SECRET_TOKEN" && v == "[REDACTED]"));
 }
 
 #[cfg(feature = "ai-openai")]
@@ -58,9 +64,12 @@ mod http_tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-3.5-turbo".to_string())
-                .unwrap();
+        let provider = OpenAiProvider::new(
+            "test_key".to_string(),
+            server.uri(),
+            "gpt-3.5-turbo".to_string(),
+        )
+        .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }
@@ -78,9 +87,12 @@ mod http_tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-3.5-turbo".to_string())
-                .unwrap();
+        let provider = OpenAiProvider::new(
+            "test_key".to_string(),
+            server.uri(),
+            "gpt-3.5-turbo".to_string(),
+        )
+        .unwrap();
         let res = provider.propose(base_req());
         assert!(res.is_err());
     }

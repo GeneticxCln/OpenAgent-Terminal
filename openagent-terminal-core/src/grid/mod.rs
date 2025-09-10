@@ -162,9 +162,10 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
     pub fn scroll_display(&mut self, scroll: Scroll) {
         self.display_offset = match scroll {
-            Scroll::Delta(count) => {
-                min(max((self.display_offset as i32) + count, 0) as usize, self.history_size())
-            },
+            Scroll::Delta(count) => min(
+                max((self.display_offset as i32) + count, 0) as usize,
+                self.history_size(),
+            ),
             Scroll::PageUp => min(self.display_offset + self.lines, self.history_size()),
             Scroll::PageDown => self.display_offset.saturating_sub(self.lines),
             Scroll::Top => self.history_size(),
@@ -254,18 +255,6 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         T: ResetDiscriminant<D>,
         D: PartialEq,
     {
-        eprintln!(
-            "DBG grid::scroll_up: region=({}, {}), positions={}, display_offset={}, history_size={}, lines={}, total_lines={}, max_scroll_limit={}",
-            region.start.0,
-            region.end.0,
-            positions,
-            self.display_offset,
-            self.history_size(),
-            self.lines,
-            self.total_lines(),
-            self.max_scroll_limit
-        );
-
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
@@ -275,50 +264,29 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             return;
         }
 
-        // Update display offset only when the scroll affects the viewport starting at the top (full-screen or top-anchored scroll).
-        // Scrolling a subregion (region.start > 0) must not affect the visible history/viewport.
-        if self.display_offset != 0 && region.start == Line(0) {
-            let old = self.display_offset;
-            self.display_offset = min(self.display_offset + positions, self.max_scroll_limit);
-            eprintln!(
-                "DBG grid::scroll_up: display_offset updated {} -> {} (top-anchored)",
-                old, self.display_offset
-            );
-        }
-
         if region.start == 0 {
+            // Top-anchored scroll.
             if self.max_scroll_limit == 0 {
-                // No history: perform an in-place subregion scroll to preserve buffer layout.
-                for i in (0..region.end.0 - positions as i32).rev().map(Line::from) {
+                // No history: rotate only within the region using swaps so bottom-fixed lines stay intact.
+                for i in (region.start.0..region.end.0 - positions as i32).map(Line::from) {
                     self.raw.swap(i, i + positions);
                 }
             } else {
-                // History enabled: scroll into history by growing it first and rotating the buffer.
-                // Create scrollback for the new lines first.
-                let before_hist = self.history_size();
+                // History enabled: grow scrollback if possible, then rotate the entire buffer upward.
                 self.increase_scroll_limit(positions);
-                let after_hist = self.history_size();
-                let added = after_hist.saturating_sub(before_hist);
-                eprintln!(
-                    "DBG grid::scroll_up: increased history {} -> {} (requested {}, added {})",
-                    before_hist,
-                    after_hist,
-                    positions,
-                    added
-                );
 
                 // Rotate the entire line buffer upward so that scrolled-out lines become history first.
                 self.raw.rotate(-(positions as isize));
 
-                // Swap the fixed lines at the bottom back into position.
+                // Restore lines below the scrolling region to their original positions.
                 let screen_lines = self.screen_lines() as i32;
                 for i in (region.end.0..screen_lines).rev().map(Line::from) {
                     self.raw.swap(i, i - positions);
                 }
             }
         } else {
-            // Rotate lines without moving anything into history.
-            for i in (region.start.0..region.end.0 - positions as i32).rev().map(Line::from) {
+            // Subregion rotation without affecting history or display offset.
+            for i in (region.start.0..region.end.0 - positions as i32).map(Line::from) {
                 self.raw.swap(i, i + positions);
             }
         }
@@ -328,11 +296,11 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             self.raw[i].reset(&self.cursor.template);
         }
 
-        eprintln!(
-            "DBG grid::scroll_up: cleared new lines in [{}, {})",
-            (region.end.0 - positions as i32),
-            region.end.0
-        );
+        // Update display offset only when the scroll affects the viewport starting at the top.
+        // Scrolling a subregion (region.start > 0) must not affect the visible history/viewport.
+        if self.display_offset != 0 && region.start == Line(0) {
+            self.display_offset = min(self.display_offset + positions, self.history_size());
+        }
     }
 
     pub fn clear_viewport<D>(&mut self)
@@ -423,14 +391,6 @@ impl<T> Grid<T> {
     where
         T: GridCell + Default,
     {
-        let before_hist = self.history_size();
-        let to_add = self.max_scroll_limit.saturating_sub(before_hist);
-        eprintln!(
-            "DBG grid::initialize_all: before total_lines={}, history_size={}, to_add={}",
-            self.total_lines(),
-            before_hist,
-            to_add
-        );
 
         // Append empty rows to reach max_scroll_limit history before final alignment.
         // Storage::initialize will rezero when reallocating, which places existing content at
@@ -440,46 +400,28 @@ impl<T> Grid<T> {
         if to_add > 0 {
             self.raw.initialize(to_add, self.columns);
         }
-
-        eprintln!(
-            "DBG grid::initialize_all: after total_lines={}, history_size={}",
-            self.total_lines(),
-            self.history_size()
-        );
     }
 
     /// This is used only for truncating before saving ref-tests.
     #[inline]
     pub fn truncate(&mut self) {
-        eprintln!(
-            "DBG grid::truncate: before total_lines={}, history_size={}, display_offset={}, lines={}",
-            self.total_lines(),
-            self.history_size(),
-            self.display_offset,
-            self.lines
-        );
-
         // Compact storage to the active length and normalize ring offset.
         self.raw.truncate();
 
         // Switch storage into absolute indexing mode for ref-tests.
         self.raw.align_visible_with_len();
         // NOTE: Do NOT modify `self.lines` here; keep the viewport height intact.
-
-        eprintln!(
-            "DBG grid::truncate: after total_lines={}, history_size={}, display_offset={}, lines={}",
-            self.total_lines(),
-            self.history_size(),
-            self.display_offset,
-            self.lines
-        );
     }
 
     /// Iterate over all cells in the grid starting at a specific point.
     #[inline]
     pub fn iter_from(&self, point: Point) -> GridIterator<'_, T> {
         let end = Point::new(self.bottommost_line(), self.last_column());
-        GridIterator { grid: self, point, end }
+        GridIterator {
+            grid: self,
+            point,
+            end,
+        }
     }
 
     /// Iterate over all visible cells.
@@ -493,7 +435,11 @@ impl<T> Grid<T> {
         let end_line = min(start.line + self.screen_lines(), self.bottommost_line());
         let end = Point::new(end_line, last_column);
 
-        GridIterator { grid: self, point: start, end }
+        GridIterator {
+            grid: self,
+            point: start,
+            end,
+        }
     }
 
     #[inline]
@@ -670,11 +616,14 @@ impl<'a, T> Iterator for GridIterator<'a, T> {
             Point { column, .. } if column >= self.grid.last_column() => {
                 self.point.column = Column(0);
                 self.point.line += 1;
-            },
+            }
             _ => self.point.column += Column(1),
         }
 
-        Some(Indexed { cell: &self.grid[self.point], point: self.point })
+        Some(Indexed {
+            cell: &self.grid[self.point],
+            point: self.point,
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -712,13 +661,18 @@ impl<T> BidirectionalIterator for GridIterator<'_, T> {
         }
 
         match self.point {
-            Point { column: Column(0), .. } => {
+            Point {
+                column: Column(0), ..
+            } => {
                 self.point.column = last_column;
                 self.point.line -= 1;
-            },
+            }
             _ => self.point.column -= Column(1),
         }
 
-        Some(Indexed { cell: &self.grid[self.point], point: self.point })
+        Some(Indexed {
+            cell: &self.grid[self.point],
+            point: self.point,
+        })
     }
 }

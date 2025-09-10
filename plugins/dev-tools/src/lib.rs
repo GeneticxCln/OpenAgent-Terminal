@@ -80,8 +80,10 @@ impl DevToolsPlugin {
         // Update pip packages
         if let Ok(output) = self.run_command("pip", &["list", "--format=json"]) {
             if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&output) {
-                self.cache.pip_packages =
-                    packages.iter().filter_map(|p| p["name"].as_str().map(String::from)).collect();
+                self.cache.pip_packages = packages
+                    .iter()
+                    .filter_map(|p| p["name"].as_str().map(String::from))
+                    .collect();
             }
         }
 
@@ -91,12 +93,15 @@ impl DevToolsPlugin {
         }
 
         // Update Kubernetes namespaces
-        if let Ok(output) = self.run_command("kubectl", &[
-            "get",
-            "namespaces",
-            "-o",
-            "jsonpath={.items[*].metadata.name}",
-        ]) {
+        if let Ok(output) = self.run_command(
+            "kubectl",
+            &[
+                "get",
+                "namespaces",
+                "-o",
+                "jsonpath={.items[*].metadata.name}",
+            ],
+        ) {
             self.cache.k8s_namespaces = output.split_whitespace().map(String::from).collect();
         }
 
@@ -189,8 +194,9 @@ impl Plugin for DevToolsPlugin {
             .run_command("python", &["--version"])
             .ok()
             .or_else(|| self.run_command("python3", &["--version"]).ok());
-        self.kubectl_version =
-            self.run_command("kubectl", &["version", "--client", "--short"]).ok();
+        self.kubectl_version = self
+            .run_command("kubectl", &["version", "--client", "--short"])
+            .ok();
 
         // Initial cache update
         self.update_cache();
@@ -249,7 +255,7 @@ impl Plugin for DevToolsPlugin {
                         }
                     }
                 }
-            },
+            }
 
             "pip" | "pip3" => {
                 if parts.len() == 1 {
@@ -274,7 +280,7 @@ impl Plugin for DevToolsPlugin {
                         });
                     }
                 }
-            },
+            }
 
             "kubectl" => {
                 if parts.len() == 1 {
@@ -324,7 +330,7 @@ impl Plugin for DevToolsPlugin {
                         });
                     }
                 }
-            },
+            }
 
             "python" | "python3" => {
                 if parts.len() == 1 {
@@ -337,9 +343,9 @@ impl Plugin for DevToolsPlugin {
                         icon: Some("🐍".to_string()),
                     });
                 }
-            },
+            }
 
-            _ => {},
+            _ => {}
         }
 
         completions
@@ -360,7 +366,10 @@ impl Plugin for DevToolsPlugin {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&package_json) {
                     let mut node_info = HashMap::new();
                     node_info.insert("name", json["name"].as_str().unwrap_or("").to_string());
-                    node_info.insert("version", json["version"].as_str().unwrap_or("").to_string());
+                    node_info.insert(
+                        "version",
+                        json["version"].as_str().unwrap_or("").to_string(),
+                    );
 
                     if let Some(scripts) = json["scripts"].as_object() {
                         let script_names: Vec<String> = scripts.keys().cloned().collect();
@@ -486,7 +495,7 @@ impl Plugin for DevToolsPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
             "python-info" => {
                 let mut output = String::new();
@@ -512,8 +521,10 @@ impl Plugin for DevToolsPlugin {
                     output.push_str("\n📋 Requirements.txt found\n");
 
                     if let Ok(reqs) = fs::read_to_string("requirements.txt") {
-                        let count =
-                            reqs.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).count();
+                        let count = reqs
+                            .lines()
+                            .filter(|l| !l.starts_with('#') && !l.is_empty())
+                            .count();
                         output.push_str(&format!("  {} packages specified\n", count));
                     }
                 }
@@ -524,7 +535,7 @@ impl Plugin for DevToolsPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
             "k8s-status" => {
                 let mut output = String::new();
@@ -563,16 +574,16 @@ impl Plugin for DevToolsPlugin {
                 }
 
                 // Pod status
-                if let Ok(pods) = self.run_command("kubectl", &[
-                    "get",
-                    "pods",
-                    "--all-namespaces",
-                    "--no-headers",
-                ]) {
+                if let Ok(pods) = self.run_command(
+                    "kubectl",
+                    &["get", "pods", "--all-namespaces", "--no-headers"],
+                ) {
                     let pod_count = pods.lines().count();
                     let running = pods.lines().filter(|l| l.contains("Running")).count();
-                    output
-                        .push_str(&format!("📦 Pods: {} total ({} running)\n", pod_count, running));
+                    output.push_str(&format!(
+                        "📦 Pods: {} total ({} running)\n",
+                        pod_count, running
+                    ));
                 }
 
                 Ok(CommandOutput {
@@ -581,7 +592,7 @@ impl Plugin for DevToolsPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
             "system-stats" => {
                 let mut output = String::new();
@@ -653,7 +664,7 @@ impl Plugin for DevToolsPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
             "dev-check" => {
                 let mut output = String::new();
@@ -690,9 +701,12 @@ impl Plugin for DevToolsPlugin {
                     exit_code: 0,
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
-            },
+            }
 
-            _ => Err(PluginError::CommandError(format!("Unknown command: {}", cmd))),
+            _ => Err(PluginError::CommandError(format!(
+                "Unknown command: {}",
+                cmd
+            ))),
         }
     }
 
@@ -711,7 +725,7 @@ impl Plugin for DevToolsPlugin {
                     prevent_execution: false,
                     messages: vec![],
                 })
-            },
+            }
             _ => Ok(HookResponse {
                 modified_command: None,
                 prevent_execution: false,

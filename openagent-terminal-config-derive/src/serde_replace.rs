@@ -15,13 +15,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     match input.data {
-        Data::Struct(DataStruct { fields: Fields::Unnamed(_), .. }) | Data::Enum(_) => {
-            derive_direct(input.ident, input.generics).into()
-        },
-        Data::Struct(DataStruct { fields: Fields::Named(fields), .. }) => {
-            derive_recursive(input.ident, input.generics, fields.named).into()
-        },
-        _ => Error::new(input.ident.span(), UNSUPPORTED_ERROR).to_compile_error().into(),
+        Data::Struct(DataStruct {
+            fields: Fields::Unnamed(_),
+            ..
+        })
+        | Data::Enum(_) => derive_direct(input.ident, input.generics).into(),
+        Data::Struct(DataStruct {
+            fields: Fields::Named(fields),
+            ..
+        }) => derive_recursive(input.ident, input.generics, fields.named).into(),
+        _ => Error::new(input.ident.span(), UNSUPPORTED_ERROR)
+            .to_compile_error()
+            .into(),
     }
 }
 
@@ -43,8 +48,11 @@ pub fn derive_recursive<T>(
     generics: Generics,
     fields: Punctuated<Field, T>,
 ) -> TokenStream2 {
-    let GenericsStreams { unconstrained, constrained, .. } =
-        crate::generics_streams(&generics.params);
+    let GenericsStreams {
+        unconstrained,
+        constrained,
+        ..
+    } = crate::generics_streams(&generics.params);
     let cfg_crate = config_crate_path();
     let replace_arms = match match_arms(&fields, &cfg_crate) {
         Err(e) => return e.to_compile_error(),

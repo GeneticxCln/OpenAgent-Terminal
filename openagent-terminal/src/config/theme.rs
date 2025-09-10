@@ -17,7 +17,6 @@ pub enum WordBoundaryStyle {
     Unicode,
 }
 
-
 impl SerdeReplace for WordBoundaryStyle {
     fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
         *self = Self::deserialize(value)?;
@@ -34,7 +33,6 @@ pub enum ComposerOpenMode {
     /// Buffered in composer and committed on Enter
     Commit,
 }
-
 
 impl SerdeReplace for ComposerOpenMode {
     fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
@@ -422,11 +420,19 @@ impl ThemeConfig {
 }
 
 fn infer_name_from_path(path: &str) -> String {
-    std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("custom").to_string()
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("custom")
+        .to_string()
 }
 
 fn resolve_with_name(file: ThemeFile, name: String) -> ResolvedTheme {
-    ResolvedTheme { name, tokens: file.tokens, ui: file.ui }
+    ResolvedTheme {
+        name,
+        tokens: file.tokens,
+        ui: file.ui,
+    }
 }
 
 // Provide a no-op SerdeReplace so the config derive can skip/ignore this at runtime.
@@ -438,7 +444,10 @@ impl openagent_terminal_config::SerdeReplace for ResolvedTheme {
 
 fn builtin_theme(name: &str) -> Option<ThemeFile> {
     match name.to_ascii_lowercase().as_str() {
-        "dark" => Some(ThemeFile { tokens: ThemeTokens::default(), ui: ThemeUi::default() }),
+        "dark" => Some(ThemeFile {
+            tokens: ThemeTokens::default(),
+            ui: ThemeUi::default(),
+        }),
         "light" => Some(ThemeFile {
             tokens: ThemeTokens {
                 surface: Rgb::new(0xf7, 0xf7, 0xf7),
@@ -469,7 +478,11 @@ fn builtin_theme(name: &str) -> Option<ThemeFile> {
                 border: Rgb::new(0x66, 0x66, 0x66),
                 overlay: Rgb::new(0x00, 0x00, 0x00),
             },
-            ui: ThemeUi { shadow: false, shadow_alpha: 0.0, ..ThemeUi::default() },
+            ui: ThemeUi {
+                shadow: false,
+                shadow_alpha: 0.0,
+                ..ThemeUi::default()
+            },
         }),
         _ => None,
     }

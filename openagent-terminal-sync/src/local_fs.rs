@@ -29,8 +29,9 @@ impl LocalFsProvider {
             dir.clone()
         } else {
             // Use XDG_STATE_HOME or fallback to ~/.local/state
-            let state_dir =
-                std::env::var("XDG_STATE_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+            let state_dir = std::env::var("XDG_STATE_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
                     let home = std::env::var("HOME")
                         .map(PathBuf::from)
                         .unwrap_or_else(|_| PathBuf::from("."));
@@ -100,8 +101,12 @@ impl LocalFsProvider {
 
         let json = format!(
             "{{\n  \"last_push\": {},\n  \"last_pull\": {},\n  \"pending\": {}\n}}\n",
-            status.last_push.map_or("null".to_string(), |t| t.to_string()),
-            status.last_pull.map_or("null".to_string(), |t| t.to_string()),
+            status
+                .last_push
+                .map_or("null".to_string(), |t| t.to_string()),
+            status
+                .last_pull
+                .map_or("null".to_string(), |t| t.to_string()),
             status.pending
         );
 
@@ -114,7 +119,10 @@ impl LocalFsProvider {
 
     /// Get the current Unix timestamp in seconds.
     fn current_timestamp() -> u64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
     }
 
     /// Get the source directory for a given scope (in user config).
@@ -122,26 +130,28 @@ impl LocalFsProvider {
         match scope {
             SyncScope::Settings => {
                 // Use XDG_CONFIG_HOME or fallback
-                let config_dir =
-                    std::env::var("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+                let config_dir = std::env::var("XDG_CONFIG_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
                         let home = std::env::var("HOME")
                             .map(PathBuf::from)
                             .unwrap_or_else(|_| PathBuf::from("."));
                         home.join(".config")
                     });
                 config_dir.join("openagent-terminal")
-            },
+            }
             SyncScope::History => {
                 // Use XDG_DATA_HOME or fallback
-                let data_dir =
-                    std::env::var("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|_| {
+                let data_dir = std::env::var("XDG_DATA_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
                         let home = std::env::var("HOME")
                             .map(PathBuf::from)
                             .unwrap_or_else(|_| PathBuf::from("."));
                         home.join(".local").join("share")
                     });
                 data_dir.join("openagent-terminal")
-            },
+            }
         }
     }
 
@@ -201,7 +211,7 @@ impl SyncProvider for LocalFsProvider {
             Err(e) => {
                 warn!("Failed to read sync status (push); defaulting: {:?}", e);
                 SyncStatus::default()
-            },
+            }
         };
         status.last_push = Some(Self::current_timestamp());
         status.pending = false;
@@ -215,7 +225,10 @@ impl SyncProvider for LocalFsProvider {
         let destination = self.source_dir(scope);
 
         if !source.exists() {
-            return Err(SyncError::Other(format!("No sync data found for scope {:?}", scope)));
+            return Err(SyncError::Other(format!(
+                "No sync data found for scope {:?}",
+                scope
+            )));
         }
 
         // Create backup of current config
@@ -239,7 +252,7 @@ impl SyncProvider for LocalFsProvider {
             Err(e) => {
                 warn!("Failed to read sync status (pull); defaulting: {:?}", e);
                 SyncStatus::default()
-            },
+            }
         };
         status.last_pull = Some(Self::current_timestamp());
         self.write_status(&status)?;
@@ -286,8 +299,11 @@ mod tests {
         assert!(!status.pending);
 
         // Write a custom status
-        let custom_status =
-            SyncStatus { last_push: Some(1234567890), last_pull: Some(1234567891), pending: true };
+        let custom_status = SyncStatus {
+            last_push: Some(1234567890),
+            last_pull: Some(1234567891),
+            pending: true,
+        };
         provider.write_status(&custom_status).unwrap();
 
         // Read it back
