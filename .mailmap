@@ -1,0 +1,8 @@
+# .mailmap - Maps old commit authors to correct GitHub identity
+# Format: Proper Name <proper@email> Old Name <old@email>
+
+# Map commits made with local "sasha" username to correct GitHub identity
+QuintonTitus <93550885+GeneticxCln@users.noreply.github.com> sasha <sasha@users.noreply.github.com>
+
+# Map commits made with placeholder name to correct GitHub identity  
+QuintonTitus <93550885+GeneticxCln@users.noreply.github.com> Your Name <you@example.com>
