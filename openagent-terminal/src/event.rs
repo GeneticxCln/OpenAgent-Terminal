@@ -232,6 +232,20 @@ impl Processor {
             self.scheduler.schedule(evt, interval, true, tid);
         }
 
+        // Show a feature banner at startup
+        {
+            let mut features = Vec::new();
+            features.push(format!("wgpu:{}", if cfg!(feature = "wgpu") { "on" } else { "off" }));
+            features.push(format!("ai:{}", if cfg!(feature = "ai") { "on" } else { "off" }));
+            features.push(format!("blocks:{}", if cfg!(feature = "blocks") { "on" } else { "off" }));
+            features.push(format!("workflow:{}", if cfg!(feature = "workflow") { "on" } else { "off" }));
+            features.push(format!("completions:{}", if cfg!(feature = "completions") { "on" } else { "off" }));
+            features.push(format!("security-lens:{}", if cfg!(feature = "security-lens") { "on" } else { "off" }));
+            let banner = format!("Features: {}", features.join("  "));
+            let message = crate::message_bar::Message::new(banner, crate::message_bar::MessageType::Warning);
+            let _ = self.proxy.send_event(Event::new(EventType::Message(message), Some(window_id)));
+        }
+
         // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
         if self.config.config_paths.is_empty() {
             let hint = "Welcome — click the bottom bar or use Ctrl+Shift+P/S/W. Place a config at \
