@@ -202,10 +202,9 @@ export class SecurityLens {
       for (const {pattern, factor} of WARNING_PATTERNS) {
         const match = command.match(pattern);
         if (match) {
-          factors.push({...factor, pattern, matchedContent: match[0]});
-          if (highestRisk !== RiskLevel.CRITICAL) {
-            highestRisk = RiskLevel.WARNING;
-          }
+          factors.push({ ...factor, pattern, matchedContent: match[0] });
+          // Once a warning pattern is matched and we're not critical, elevate to WARNING.
+          highestRisk = RiskLevel.WARNING;
         }
       }
     }
@@ -328,7 +327,7 @@ export class SecurityLens {
     return `${prefix}: ${factorDescriptions}`;
   }
 
-  private generateMitigations(factors: RiskFactor[], command: string): string[] {
+  private generateMitigations(factors: RiskFactor[], _command: string): string[] {
     const mitigations: string[] = [];
 
     for (const factor of factors) {

@@ -529,14 +529,45 @@ impl WarpIntegration {
 
     /// Handle tab creation
     fn handle_create_tab(&mut self) -> WarpResult<bool> {
+        let start = Instant::now();
         let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
 
         let tab_id = self.tab_manager.create_warp_tab(Some(current_dir.clone()));
 
+        // If runtime is initialized, create the initial terminal for the new tab's active pane
+        if let Some(tab) = self.tab_manager.active_tab() {
+            let active_pane = tab.active_pane;
+            let working_dir = tab.working_directory.clone();
+
+            if self.window_id.is_some() && self.size_info.is_some() && self.event_proxy.is_some() {
+                // Create terminal + PTY for the initial pane
+                self.create_terminal_for_pane(active_pane, &working_dir)?;
+
+                // Register a minimal PaneContext for the tab (window context will be wired elsewhere)
+                let pane_context = super::tab_manager::PaneContext {
+                    terminal: self.terminals.get(&active_pane).unwrap().clone(),
+                    window_context: None,
+                    title_override: None,
+                    focused: true,
+                };
+                let _ = self
+                    .tab_manager
+                    .add_pane_to_tab(tab_id, active_pane, pane_context);
+            } else {
+                info!(
+                    "Warp not initialized; created tab {:?} without spawning terminal (will be restored later)",
+                    tab_id
+                );
+            }
+        }
+
         // Send UI update event
         self.send_ui_update_event(WarpUiUpdateType::TabCreated(tab_id));
 
-        // TODO: Create terminal when tab structure is available
+        // Update perf stats and activity
+        self.perf_stats.tab_creation_time_ms = start.elapsed().as_millis() as u64;
+        self.update_activity();
+
         info!("Created Warp tab {:?}", tab_id);
         Ok(true)
     }
@@ -546,6 +577,11 @@ impl WarpIntegration {
         if let Some(active_tab) = self.tab_manager.active_tab() {
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
+
+            // Snapshot pane IDs before closing the tab
+            let pane_ids = active_tab.split_layout.collect_pane_ids();
+
+            // Close the tab in the manager
             let ok = self.tab_manager.close_warp_tab(tab_id);
 
             let msg = if ok {
@@ -557,8 +593,10 @@ impl WarpIntegration {
             info!("{}", msg);
 
             if ok {
-                // Cleanup terminal for the closed tab's panes
-                // TODO: Get panes from tab before closing and cleanup
+                // Cleanup terminals/PTYS for the closed tab's panes
+                for pane_id in pane_ids {
+                    self.cleanup_pane(pane_id);
+                }
 
                 // Send UI update event
                 self.send_ui_update_event(WarpUiUpdateType::TabClosed(tab_id));

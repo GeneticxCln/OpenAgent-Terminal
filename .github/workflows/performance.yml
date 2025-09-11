@@ -109,6 +109,17 @@ jobs:
           echo "::notice title=Performance Status::Benchmarks completed successfully"
           echo "Current performance results available in artifacts"
 
+      # AI feature tests (sanity, runs fast)
+      - name: AI feature tests (sanity)
+        run: |
+          set -euo pipefail
+          cargo test -p openagent-terminal -F ai -- --nocapture
+
+      - name: Plugins smoke tests (loader/runtime)
+        run: |
+          set -euo pipefail
+          cargo test -p plugin-loader -p plugin-system -- --nocapture
+
       # Store benchmark results as artifacts
       - name: Upload performance results
         uses: actions/upload-artifact@v4

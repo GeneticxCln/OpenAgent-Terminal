@@ -1613,6 +1613,21 @@ impl Display {
         #[cfg(feature = "ai")] ai_state: Option<&crate::ai_runtime::AiUiState>,
         tab_manager: Option<&crate::workspace::TabManager>,
     ) {
+        // Compute ai_panel_active flag in a cfg-safe way
+        #[cfg(feature = "ai")]
+        let ai_active_flag = ai_state.map(|s| s.active).unwrap_or(false);
+        #[cfg(not(feature = "ai"))]
+        let ai_active_flag = false;
+
+        let _span = tracing::info_span!(
+            "render.frame",
+            msg_active = message_buffer.message().is_some(),
+            search_active = search_state.regex().is_some(),
+            ai_panel_active = ai_active_flag,
+            overlay_confirm = self.confirm_overlay.active,
+        )
+        .entered();
+        let frame_t0 = Instant::now();
         // Collect renderable content before the terminal is dropped.
         let mut content = RenderableContent::new(config, self, &terminal, search_state);
         let mut grid_cells = Vec::new();
@@ -2434,6 +2449,10 @@ impl Display {
 
         // Notify winit that we're about to present.
         self.window.pre_present_notify();
+
+        // Frame end timing
+        let elapsed = frame_t0.elapsed();
+        tracing::info!(elapsed_ms = elapsed.as_millis() as u64, "render.frame_complete");
 
         // Highlight damage for debugging.
         if self.damage_tracker.debug {

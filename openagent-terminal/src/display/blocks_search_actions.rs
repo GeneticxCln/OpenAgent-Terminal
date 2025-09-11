@@ -10,6 +10,10 @@ use openagent_terminal_core::index::{Column, Point};
 /// Available actions for blocks in search results
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockAction {
+    /// Explain this error/output with AI
+    ExplainError,
+    /// Suggest a fix for this error with AI
+    FixError,
     /// Copy command to clipboard
     CopyCommand,
     /// Copy output to clipboard
@@ -48,6 +52,8 @@ impl BlockAction {
     /// Get display name for the action
     pub fn display_name(&self) -> &'static str {
         match self {
+            Self::ExplainError => "Explain Error",
+            Self::FixError => "Suggest Fix",
             Self::CopyCommand => "Copy Command",
             Self::CopyOutput => "Copy Output",
             Self::CopyBoth => "Copy Both",
@@ -70,6 +76,8 @@ impl BlockAction {
     /// Get keyboard shortcut for the action
     pub fn shortcut(&self) -> &'static str {
         match self {
+            Self::ExplainError => "X",
+            Self::FixError => "F",
             Self::CopyCommand => "C",
             Self::CopyOutput => "O",
             Self::CopyBoth => "B",
@@ -92,6 +100,8 @@ impl BlockAction {
     /// Get icon for the action
     pub fn icon(&self) -> &'static str {
         match self {
+            Self::ExplainError => "❓",
+            Self::FixError => "🛠️",
             Self::CopyCommand => "📋",
             Self::CopyOutput => "📄",
             Self::CopyBoth => "📑",
@@ -119,6 +129,8 @@ impl BlockAction {
     /// Check if action is available for the given block
     pub fn is_available_for(&self, block: &BlocksSearchItem) -> bool {
         match self {
+            Self::ExplainError => !block.output.is_empty() || !block.command.is_empty(),
+            Self::FixError => !block.output.is_empty() || !block.command.is_empty(),
             Self::CopyCommand => !block.command.is_empty(),
             Self::CopyOutput => !block.output.is_empty(),
             Self::CopyBoth => !block.command.is_empty() || !block.output.is_empty(),
@@ -180,6 +192,8 @@ impl ActionsMenuState {
 
         // Build list of available actions
         self.actions = vec![
+            BlockAction::ExplainError,
+            BlockAction::FixError,
             BlockAction::CopyCommand,
             BlockAction::CopyOutput,
             BlockAction::CopyBoth,

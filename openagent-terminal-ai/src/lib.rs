@@ -6,6 +6,7 @@
 pub mod error;
 pub mod privacy;
 pub mod streaming;
+pub mod context;
 
 /// A request to the AI provider, typically from a scratch buffer.
 #[derive(Debug, Clone)]
@@ -123,6 +124,19 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
             ),
         }),
     }
+}
+
+/// Helper to append collected context to an AI request, with privacy sanitization.
+pub fn build_request_with_context(
+    mut req: AiRequest,
+    manager: &context::ContextManager,
+    max_size_kb: usize,
+) -> AiRequest {
+    let ctx = manager.collect_all(max_size_kb);
+    req.context.extend(ctx);
+    // Apply default privacy options based on environment
+    let opts = privacy::AiPrivacyOptions::from_env();
+    privacy::sanitize_request(&req, opts)
 }
 
 #[cfg(test)]

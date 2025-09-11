@@ -1301,6 +1301,18 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
 
             match key.logical_key.as_ref() {
+                // Ctrl+Enter: Execute selected command (security-gated)
+                Key::Named(NamedKey::Enter) if mods.control_key() => {
+                    if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                        if let Some((cmd, _)) = runtime.apply_command(false) {
+                            self.ctx.send_user_event(crate::event::EventType::AiApplyAsCommand {
+                                command: cmd,
+                                dry_run: false,
+                            });
+                        }
+                    }
+                    return;
+                }
                 Key::Named(NamedKey::Enter) => {
                     self.ctx.send_user_event(crate::event::EventType::AiSubmit);
                     return;

@@ -29,6 +29,10 @@ tracing = "0.1"
 regex = "1"
 rand = "0.8"
 httpdate = "1.0"
+anyhow = "1.0"
+ignore = "0.4"
+git2 = "0.18"
+pathdiff = "0.2"
 
 [dev-dependencies]
 wiremock = "0.6"

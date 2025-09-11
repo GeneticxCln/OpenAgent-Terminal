@@ -9,7 +9,7 @@ This document is the canonical source for the current state of OpenAgent Termina
 Summary
 - Core terminal: Stable (Alacritty-based), cross-platform.
 - AI assistant: Functional and safe-by-design. Providers: Ollama (local, default), OpenAI, Anthropic. Streaming supported where available. No auto-execution.
-- Rendering: OpenGL default; WGPU backend is experimental/in progress (not default). HarfBuzz/Swash text shaping available via feature flag.
+- Rendering: WGPU-only renderer (default). OpenGL fallback removed. HarfBuzz/Swash text shaping available via feature flag.
 - Security Lens (command risk analysis): MVP complete; wired into AI apply path with confirmation overlays and policy-driven blocking.
 - Blocks v2: In progress (command/result grouping and basic actions).
 - Plugin system and workflows: Prototypes exist in the workspace; API not yet stable or broadly integrated.

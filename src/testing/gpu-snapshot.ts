@@ -5,9 +5,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { createHash } from 'crypto';
 import { performance } from 'perf_hooks';
 import { EventEmitter } from 'events';
+
+// Define a minimal ImageData interface for Node environments (no DOM lib)
+interface ImageData {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
 
 export interface RenderMetrics {
   frameTime: number;
@@ -309,8 +315,8 @@ export class GPUSnapshotTester extends EventEmitter {
         p90: createMetric(90),
         p95: createMetric(95),
         p99: createMetric(99),
-        min: sorted.frameTime[0],
-        max: sorted.frameTime[sorted.frameTime.length - 1],
+        min: sorted.frameTime[0]!,
+        max: sorted.frameTime[sorted.frameTime.length - 1]!,
         mean: meanMetrics,
         stdDev: {
           frameTime: stdDev(samples.map(s => s.frameTime), meanMetrics.frameTime),
@@ -363,10 +369,10 @@ export class GPUSnapshotTester extends EventEmitter {
     const totalPixels = actual.width * actual.height;
 
     for (let i = 0; i < actual.data.length; i += 4) {
-      const rDiff = Math.abs(actual.data[i] - golden.data[i]);
-      const gDiff = Math.abs(actual.data[i + 1] - golden.data[i + 1]);
-      const bDiff = Math.abs(actual.data[i + 2] - golden.data[i + 2]);
-      const aDiff = Math.abs(actual.data[i + 3] - golden.data[i + 3]);
+      const rDiff = Math.abs((actual.data[i] ?? 0) - (golden.data[i] ?? 0));
+      const gDiff = Math.abs((actual.data[i + 1] ?? 0) - (golden.data[i + 1] ?? 0));
+      const bDiff = Math.abs((actual.data[i + 2] ?? 0) - (golden.data[i + 2] ?? 0));
+      const aDiff = Math.abs((actual.data[i + 3] ?? 0) - (golden.data[i + 3] ?? 0));
 
       const maxDiff = Math.max(rDiff, gDiff, bDiff, aDiff);
 
@@ -379,10 +385,10 @@ export class GPUSnapshotTester extends EventEmitter {
         diffImage.data[i + 3] = 255;
       } else {
         // Copy original pixel
-        diffImage.data[i] = actual.data[i];
-        diffImage.data[i + 1] = actual.data[i + 1];
-        diffImage.data[i + 2] = actual.data[i + 2];
-        diffImage.data[i + 3] = actual.data[i + 3];
+        diffImage.data[i] = actual.data[i] ?? 0;
+        diffImage.data[i + 1] = actual.data[i + 1] ?? 0;
+        diffImage.data[i + 2] = actual.data[i + 2] ?? 0;
+        diffImage.data[i + 3] = actual.data[i + 3] ?? 0;
       }
     }
 
@@ -431,7 +437,7 @@ export class GPUSnapshotTester extends EventEmitter {
   private async createGPUContext(): Promise<GPUContext> {
     return {
       capture: async () => this.createMockImageData(),
-      render: async (scene: any) => {},
+      render: async (_scene: any) => {},
       getMetrics: () => ({
         frameTime: 16.67,
         fps: 60,
@@ -440,11 +446,11 @@ export class GPUSnapshotTester extends EventEmitter {
         gpuMemory: 50,
         cpuUsage: 10,
       }),
-      measureInputLatency: async (input: any) => 5 + Math.random() * 2,
+      measureInputLatency: async (_input: any) => 5 + Math.random() * 2,
     };
   }
 
-  private async renderScene(scene: any): Promise<void> {
+  private async renderScene(_scene: any): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 16)); // Simulate 60fps
   }
 

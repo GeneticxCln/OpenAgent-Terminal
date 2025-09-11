@@ -542,4 +542,21 @@ mod tests {
         let d_norm = strat.delay_for_attempt(0, "timeout contacting local model");
         assert!(d_norm <= cfg.max_delay);
     }
+
+    #[test]
+    fn test_openai_retry_after_http_date_affects_delay() {
+        use httpdate::fmt_http_date;
+        use std::time::{Duration, SystemTime};
+        let cfg = RetryConfig::default();
+        let strat = RetryStrategy::OpenAI {
+            config: cfg.clone(),
+            respect_retry_after: true,
+        };
+        // Build a future HTTP-date 5 seconds from now
+        let future = SystemTime::now() + Duration::from_secs(5);
+        let hdr = fmt_http_date(future);
+        let msg = format!("API error 429; retry-after: {}", hdr);
+        let d = strat.delay_for_attempt(0, &msg);
+        assert!(d.as_secs() <= 6 && d.as_secs() >= 4, "unexpected delay: {:?}", d);
+    }
 }

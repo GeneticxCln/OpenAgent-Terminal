@@ -8,7 +8,7 @@
 - [ ] Create abstraction layer for renderer switching (OpenGL/WGPU)
 - [ ] Implement Wayland-specific surface creation and handling
 - [ ] Implement macOS Metal backend support
-- [ ] Add fallback to OpenGL when WGPU unavailable
+- [ ] Ensure WGPU adapter selection and clear error reporting when adapter unavailable (no OpenGL fallback)
 
 ### 1.2 Performance Monitoring
 - [ ] Integrate GPU timing markers using `wgpu::RenderPass::push_debug_group`
@@ -58,6 +58,12 @@
 - unicode-bidi = "0.3"
 
 ---
+
+## Phase 3: AI Hardening + WGPU-Only (Completed)
+
+Status: Complete. WGPU-only rendering enforced in code and CI; AI runtime hardened (sanitization, retry-after, context propagation) with tests; Windows PTY lifecycle drop-order fix added and tested; TypeScript dev tools stabilized. See guides/PHASE3_COMPLETE.md.
+
+Legacy text below reflects original planning for Blocks 2.0; current project has reprioritized AI integration and WGPU stability as Phase 3.
 
 ## Phase 3: Blocks 2.0
 **Timeline: 5-6 weeks**
@@ -113,10 +119,17 @@ CREATE TABLE blocks (
 
 ---
 
-## Phase 4: Workflow System
+## Phase 4: Plugin System MVP + Workflow Foundations
 **Timeline: 4-5 weeks**
 
-### 4.1 Workflow Definition
+### 4.1 Plugin System MVP
+- [ ] Minimal runtime using Wasmtime with strict sandboxing (WASM only)
+- [ ] Host interface for logging, file read/write (scoped), notifications
+- [ ] Command execution via host with Security Lens policy
+- [ ] Manifest format (TOML) with permissions and capabilities
+- [ ] Example plugin (hello-wasi) and tests
+
+### 4.2 Workflow Definition
 - [ ] TOML/YAML workflow parser
 - [ ] Template syntax with parameters:
   ```yaml
@@ -138,14 +151,14 @@ CREATE TABLE blocks (
       command: "deploy.sh {{environment}} {{version}}"
   ```
 
-### 4.2 Workflow UI
+### 4.3 Workflow UI
 - [ ] Workflow launcher panel (Ctrl+Shift+W)
 - [ ] Parameter input forms with validation
 - [ ] Progress tracking and step visualization
 - [ ] Workflow history and re-run capability
 - [ ] Keyboard shortcuts for frequent workflows
 
-### 4.3 AI Integration
+### 4.4 AI Integration
 - [ ] "Convert to Workflow" AI command
 - [ ] Parameter extraction from natural language
 - [ ] Workflow suggestion based on command history

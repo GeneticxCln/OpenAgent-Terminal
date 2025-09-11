@@ -330,19 +330,18 @@ perf report
   - If you experience a blank window, input focus issues, or decoration glitches (especially on NVIDIA + Wayland), try forcing the other backend.
 
 - GPU drivers
-  - Minimum requirement for the default renderer is OpenGL ES 2.0 (GL/GLES via your driver).
+  - Default renderer is WGPU (Vulkan/Metal/DX12/GL via wgpu).
   - Ensure drivers are installed and up to date:
-    - AMD/Intel: mesa (OpenGL), mesa-vulkan-drivers (for Vulkan)
+    - AMD/Intel: mesa-vulkan-drivers (Vulkan)
     - NVIDIA: proprietary driver + nvidia-utils + Vulkan loader (libvulkan)
-  - Diagnostics: `glxinfo -B` (OpenGL) and `vulkaninfo` (Vulkan) should succeed.
+  - Diagnostics: `vulkaninfo` should succeed; GL fallback is no longer supported.
 
-- wgpu vs OpenGL backends
-  - Default build uses OpenGL. An optional wgpu renderer is available via the feature flag.
-    - Build with wgpu: `cargo build -p openagent-terminal --features wgpu`
-  - If using wgpu, you can force a specific backend:
+- WGPU backend
+  - Build: `cargo build -p openagent-terminal --features wgpu`
+  - You can force a specific backend:
     - Vulkan: `WGPU_BACKEND=vk`
-    - OpenGL: `WGPU_BACKEND=gl` (useful when Vulkan is unavailable or unstable)
-  - If you see errors like "No adapters found" or "device lost", try switching backend or updating drivers.
+    - Metal/DX12 backend selection is automatic per OS
+  - If you see errors like "No adapters found" or "device lost", please update drivers.
 
 - Hybrid/discrete GPUs (Linux)
   - To run on the discrete GPU: `DRI_PRIME=1 openagent-terminal`

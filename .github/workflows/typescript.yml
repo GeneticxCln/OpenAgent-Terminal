@@ -1,0 +1,53 @@
+name: TypeScript Tools
+
+on:
+  push:
+    paths:
+      - '.dev/**'
+      - 'src/**/*.ts'
+  pull_request:
+    paths:
+      - '.dev/**'
+      - 'src/**/*.ts'
+  workflow_dispatch: {}
+
+jobs:
+  typescript:
+    name: TypeScript development tools
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: .dev/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test
+
+      - name: Input fuzzing (CI smoke)
+        run: npm run fuzz-ci
+

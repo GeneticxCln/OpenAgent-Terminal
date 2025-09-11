@@ -78,7 +78,7 @@ export class LocalSync extends EventEmitter {
   private derivedKey: Buffer | null = null;
   private kdfParams: KdfParams | null = null;
   private deviceId: string;
-  private syncData: Map<string, SyncData> = new Map();
+  private syncData: Map<string, EncryptedPayload> = new Map();
   private peers: Map<string, SyncPeer> = new Map();
   private discoverySocket: dgram.Socket | null = null;
   private syncServer: net.Server | null = null;
@@ -161,7 +161,7 @@ export class LocalSync extends EventEmitter {
 
     // Re-encrypt all data with new passphrase
     const newKey = await this.deriveKey(newPassphrase);
-    const reencryptedData = new Map<string, SyncData>();
+    const reencryptedData = new Map<string, EncryptedPayload>();
 
     for (const [id, data] of this.syncData) {
       // Decrypt with old key
@@ -230,6 +230,7 @@ export class LocalSync extends EventEmitter {
     switch (this.config.encryption.keyDerivation) {
       case 'argon2id':
         // Placeholder: fallback to scrypt until argon2 library is wired
+        /* falls through */
       case 'scrypt':
         key = (await scrypt(passphrase, salt, 32)) as Buffer;
         break;
@@ -247,11 +248,14 @@ export class LocalSync extends EventEmitter {
     }
 
     // Capture KDF params for payload embedding
+    const needsIterations = this.config.encryption.keyDerivation === 'pbkdf2'
+      || this.config.encryption.keyDerivation === 'scrypt';
     this.kdfParams = {
       algo: this.config.encryption.keyDerivation,
       salt: salt.toString('base64'),
-      iterations: this.config.encryption.keyDerivation === 'pbkdf2' || this.config.encryption.keyDerivation === 'scrypt'
-        ? (this.config.encryption.iterations || 100000) : undefined,
+      ...(needsIterations
+        ? { iterations: this.config.encryption.iterations ?? 100000 }
+        : {}),
     };
 
     return key;
@@ -288,6 +292,14 @@ export class LocalSync extends EventEmitter {
 
     const authTag = cipher.getAuthTag();
 
+    const kdfParams: KdfParams = this.kdfParams ?? {
+      algo: this.config.encryption.keyDerivation,
+      salt: (await this.getOrCreateSalt()).toString('base64'),
+      ...(this.config.encryption.iterations !== undefined
+        ? { iterations: this.config.encryption.iterations }
+        : {}),
+    };
+
     return {
       algorithm,
       iv: iv.toString('base64'),
@@ -295,7 +307,7 @@ export class LocalSync extends EventEmitter {
       ciphertext: ciphertext.toString('base64'),
       timestamp: Date.now(),
       version: 1,
-      kdf: this.kdfParams || { algo: this.config.encryption.keyDerivation, salt: (await this.getOrCreateSalt()).toString('base64'), iterations: this.config.encryption.iterations },
+      kdf: kdfParams,
     };
   }
 
@@ -316,6 +328,7 @@ export class LocalSync extends EventEmitter {
       switch (payload.kdf.algo) {
         case 'argon2id':
           // Fallback to scrypt until argon2 is wired
+          /* falls through */
         case 'scrypt':
           effectiveKey = (await scrypt(this.passphrase, salt, 32)) as Buffer;
           break;
@@ -377,7 +390,7 @@ export class LocalSync extends EventEmitter {
     const encrypted = await this.encryptData(syncData);
     const id = `${type}-${syncData.timestamp}-${this.deviceId}`;
 
-    this.syncData.set(id, encrypted as any);
+    this.syncData.set(id, encrypted);
     await this.saveLocalData();
 
     this.emit('data:added', { type, id });
@@ -545,7 +558,7 @@ export class LocalSync extends EventEmitter {
     });
   }
 
-  private async handleSyncRequest(socket: net.Socket, request: any): Promise<void> {
+  private async handleSyncRequest(socket: net.Socket, _request: any): Promise<void> {
     // Send all our encrypted data to the requesting peer
     const base = {
       type: 'sync-response',
@@ -561,7 +574,7 @@ export class LocalSync extends EventEmitter {
   private async handleDataPush(socket: net.Socket, request: any): Promise<void> {
     // Receive and merge data from peer
     try {
-      const { data, deviceId, sig, publicKey } = request;
+      const { data, deviceId, sig: _sig, publicKey } = request;
 
       // Verify signature
       if (!this.verifyMessage(request, publicKey)) {
@@ -586,7 +599,7 @@ export class LocalSync extends EventEmitter {
 
       this.emit('sync:received', { from: deviceId, items: data.length });
 
-    } catch (error) {
+    } catch (error: any) {
       socket.write(JSON.stringify({
         type: 'ack',
         success: false,
@@ -684,17 +697,17 @@ export class LocalSync extends EventEmitter {
         try {
           const filePath = path.join(syncPath, file);
           const content = fs.readFileSync(filePath, 'utf-8');
-          const encrypted = JSON.parse(content) as EncryptedPayload;
+          const encrypted = JSON.parse(content) as unknown;
 
           // Verify we can decrypt it
           if (this.derivedKey) {
-            await this.decryptData(encrypted);
+            await this.decryptData(encrypted as EncryptedPayload);
             const id = file.replace('.sync', '');
-            this.syncData.set(id, encrypted as any);
+            this.syncData.set(id, encrypted as EncryptedPayload);
           }
-        } catch (error) {
-          this.emit('error', { type: 'file-load', file, error });
-        }
+      } catch (error: any) {
+        this.emit('error', { type: 'file-load', file, error });
+      }
       }
     }
   }
@@ -720,7 +733,7 @@ export class LocalSync extends EventEmitter {
         const data = JSON.parse(content);
 
         for (const [id, encrypted] of Object.entries(data)) {
-          this.syncData.set(id, encrypted as any);
+          this.syncData.set(id, encrypted as EncryptedPayload);
         }
       } catch (error) {
         this.emit('error', { type: 'local-load', error });
@@ -775,7 +788,7 @@ export class LocalSync extends EventEmitter {
 
     // Group data by type and key
     for (const [id, data] of this.syncData) {
-      const [type] = id.split('-');
+      const type = id.split('-')[0]!;
       if (!conflicts.has(type)) {
         conflicts.set(type, []);
       }
@@ -787,9 +800,11 @@ export class LocalSync extends EventEmitter {
       switch (strategy) {
         case 'newest':
           // Keep only the newest item
-          const newest = items.sort((a, b) => b.timestamp - a.timestamp)[0];
-          this.syncData.clear();
-          this.syncData.set(`${type}-${newest.timestamp}-${newest.deviceId}`, newest as any);
+          if (items.length > 0) {
+            const newest = items.sort((a, b) => b.timestamp - a.timestamp)[0]!;
+            this.syncData.clear();
+            this.syncData.set(`${type}-${(newest as any).timestamp}-${(newest as any).deviceId}`, newest as any);
+          }
           break;
 
         case 'merge':
@@ -843,7 +858,7 @@ export class LocalSync extends EventEmitter {
 
     // Merge imported data
     for (const [id, data] of Object.entries(bundle.data)) {
-      this.syncData.set(id, data as any);
+      this.syncData.set(id, data as EncryptedPayload);
     }
 
     await this.saveLocalData();

@@ -164,7 +164,7 @@ export class WorkspaceManager extends EventEmitter {
         try {
           const data = fs.readFileSync(path.join(this.configPath, file), 'utf-8');
           workspaces.push(JSON.parse(data));
-        } catch {}
+        } catch { /* ignore malformed workspace file */ }
       }
     });
 
@@ -175,18 +175,18 @@ export class WorkspaceManager extends EventEmitter {
   public createPane(config: Partial<PaneConfig>): PaneConfig {
     const pane: PaneConfig = {
       id: this.generateId(),
-      type: config.type || 'terminal',
-      position: config.position || { x: 0, y: 0, width: 50, height: 100 },
-      aiContext: config.aiContext || {
+      type: config.type ?? 'terminal',
+      position: config.position ?? { x: 0, y: 0, width: 50, height: 100 },
+      aiContext: config.aiContext ?? {
         enabled: true,
         isolated: true,
         history: [],
         contextFiles: [],
       },
-      configOverrides: config.configOverrides,
-      projectPath: config.projectPath,
-      shell: config.shell,
-      environment: config.environment,
+      ...(config.configOverrides !== undefined ? { configOverrides: config.configOverrides } : {}),
+      ...(config.projectPath !== undefined ? { projectPath: config.projectPath } : {}),
+      ...(config.shell !== undefined ? { shell: config.shell } : {}),
+      ...(config.environment !== undefined ? { environment: config.environment } : {}),
     };
 
     this.panes.set(pane.id, pane);
@@ -222,8 +222,8 @@ export class WorkspaceManager extends EventEmitter {
     const newPane = this.createPane({
       type: sourcePane.type,
       position: newPosition,
-      projectPath: sourcePane.projectPath,
-      shell: sourcePane.shell,
+      ...(sourcePane.projectPath !== undefined ? { projectPath: sourcePane.projectPath } : {}),
+      ...(sourcePane.shell !== undefined ? { shell: sourcePane.shell } : {}),
       aiContext: {
         enabled: true,
         isolated: true, // New pane gets isolated context
@@ -453,8 +453,8 @@ export class WorkspaceManager extends EventEmitter {
   private loadWorkspaces(): void {
     // Load the most recent workspace on initialization
     const workspaces = this.listWorkspaces();
-    if (workspaces.length > 0) {
-      this.loadWorkspace(workspaces[0].id);
+    if (workspaces.length > 0 && workspaces[0]) {
+      this.loadWorkspace(workspaces[0]!.id);
     }
   }
 

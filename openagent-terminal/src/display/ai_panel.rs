@@ -339,7 +339,7 @@ impl Display {
                     num_cols.saturating_sub(2),
                 );
             } else {
-                let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Shift+C] \
+                let actions = "Actions: [Ctrl+I] Insert  [Ctrl+E] Apply (dry-run)  [Ctrl+Enter] Execute  [Ctrl+Shift+C] \
                                Copy code  [Ctrl+Shift+T] Copy all  [Ctrl+X] Explain  [Ctrl+F] Fix  \
                                [Ctrl+R] Regenerate  [Ctrl+C] Stop  [Esc] Close";
                 // Dim slightly for hint badge

@@ -92,6 +92,13 @@ Note: Command notebooks integrate with Blocks (history) and will link each execu
 
 ## Configuration
 
+### AI streaming and logs
+
+- OPENAGENT_AI_STREAM_REDRAW_MS: Throttle AI streaming redraws and batch chunk flushes; default 16 ms.
+  - Lower values (e.g., 8) update more frequently during AI streaming; higher (e.g., 32) reduce redraw load.
+- Paste preview privacy: Previews strip ANSI escape codes, truncate to 10 lines (~1200 chars), and redact obvious secrets (e.g., Authorization: Bearer ..., api_key=..., password: ...).
+- Verbose AI logs: Set OPENAGENT_AI_LOG_VERBOSITY=summary or verbose to log AI streaming events and proposal outcomes. Frame timings are logged with render.frame and render.frame_complete spans via tracing.
+
 ### Workspace pane drag and precise tab drop targets
 
 - Pane drag gesture is configurable under the workspace section in your config:
@@ -189,5 +196,5 @@ Apache 2.0 - Based on [Alacritty](https://github.com/alacritty/alacritty). See [
 
 ---
 
-**Status:** Phase 4 development (Plugin system, Security Lens, WGPU) - See [STATUS.md](STATUS.md)
+**Status:** Phase 4 development (Plugin system MVP kickoff, Security Lens polish, WGPU parity).
 [Apache License, Version 2.0]: https://github.com/GeneticxCln/OpenAgent-Terminal/blob/main/LICENSE-APACHE

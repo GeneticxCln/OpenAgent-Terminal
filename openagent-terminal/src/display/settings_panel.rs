@@ -54,6 +54,11 @@ pub struct SettingsPanelState {
     pub ai_enabled: bool,
     pub privacy_strip_sensitive: bool,
     pub privacy_strip_cwd: bool,
+    // Context toggles
+    pub ctx_enabled: bool,
+    pub ctx_env: bool,
+    pub ctx_git: bool,
+    pub ctx_file_tree: bool,
     pub api_key: String,
     pub model: String,
     pub endpoint: String,
@@ -98,6 +103,10 @@ pub enum Field {
     AiEnabled,
     PrivacyStripSensitive,
     PrivacyStripCwd,
+    CtxEnabled,
+    CtxEnv,
+    CtxGit,
+    CtxFileTree,
     ApiKey,
     Model,
     Endpoint,
@@ -113,6 +122,10 @@ impl Default for SettingsPanelState {
             ai_enabled: false,
             privacy_strip_sensitive: true,
             privacy_strip_cwd: true,
+            ctx_enabled: true,
+            ctx_env: true,
+            ctx_git: true,
+            ctx_file_tree: true,
             api_key: String::new(),
             model: String::new(),
             endpoint: String::new(),
@@ -151,6 +164,12 @@ impl SettingsPanelState {
         #[cfg(feature = "ai")]
         {
             self.ai_enabled = config.ai.enabled;
+            // Context toggles from config
+            self.ctx_enabled = config.ai.context.enabled;
+            let providers = &config.ai.context.providers;
+            self.ctx_env = providers.iter().any(|p| p == "env");
+            self.ctx_git = providers.iter().any(|p| p == "git");
+            self.ctx_file_tree = providers.iter().any(|p| p == "file_tree");
         }
         #[cfg(not(feature = "ai"))]
         {
@@ -257,7 +276,11 @@ impl SettingsPanelState {
                     Field::Provider => Field::AiEnabled,
                     Field::AiEnabled => Field::PrivacyStripSensitive,
                     Field::PrivacyStripSensitive => Field::PrivacyStripCwd,
-                    Field::PrivacyStripCwd => Field::ApiKey,
+                    Field::PrivacyStripCwd => Field::CtxEnabled,
+                    Field::CtxEnabled => Field::CtxEnv,
+                    Field::CtxEnv => Field::CtxGit,
+                    Field::CtxGit => Field::CtxFileTree,
+                    Field::CtxFileTree => Field::ApiKey,
                     Field::ApiKey => Field::Model,
                     Field::Model => Field::Endpoint,
                     Field::Endpoint => Field::Provider,
@@ -282,7 +305,11 @@ impl SettingsPanelState {
                     Field::AiEnabled => Field::Provider,
                     Field::PrivacyStripSensitive => Field::AiEnabled,
                     Field::PrivacyStripCwd => Field::PrivacyStripSensitive,
-                    Field::ApiKey => Field::PrivacyStripCwd,
+                    Field::CtxEnabled => Field::PrivacyStripCwd,
+                    Field::CtxEnv => Field::CtxEnabled,
+                    Field::CtxGit => Field::CtxEnv,
+                    Field::CtxFileTree => Field::CtxGit,
+                    Field::ApiKey => Field::CtxFileTree,
                     Field::Model => Field::ApiKey,
                     Field::Endpoint => Field::Model,
                 };
@@ -318,6 +345,22 @@ impl SettingsPanelState {
                     if ch == ' ' {
                         self.privacy_strip_cwd = !self.privacy_strip_cwd;
                     }
+                    return;
+                }
+                Field::CtxEnabled => {
+                    if ch == ' ' { self.ctx_enabled = !self.ctx_enabled; }
+                    return;
+                }
+                Field::CtxEnv => {
+                    if ch == ' ' { self.ctx_env = !self.ctx_env; }
+                    return;
+                }
+                Field::CtxGit => {
+                    if ch == ' ' { self.ctx_git = !self.ctx_git; }
+                    return;
+                }
+                Field::CtxFileTree => {
+                    if ch == ' ' { self.ctx_file_tree = !self.ctx_file_tree; }
                     return;
                 }
                 _ => {}
@@ -386,7 +429,13 @@ impl SettingsPanelState {
                     self.endpoint.pop();
                 }
                 // Toggles do not backspace-edit
-                Field::AiEnabled | Field::PrivacyStripSensitive | Field::PrivacyStripCwd => {}
+                Field::AiEnabled
+                | Field::PrivacyStripSensitive
+                | Field::PrivacyStripCwd
+                | Field::CtxEnabled
+                | Field::CtxEnv
+                | Field::CtxGit
+                | Field::CtxFileTree => {}
             }
         } else if self.category == SettingsCategory::Theme {
             self.theme_name.pop();
@@ -441,11 +490,13 @@ impl SettingsPanelState {
                     },
                 );
                 write_secrets_file(&map).map_err(|e| format!("Failed to save secrets: {}", e))?;
-                // Write chosen provider and ai.enabled into main config
+                // Write chosen provider, ai.enabled and ai.context providers into main config
                 save_ai_provider_to_config(&self.provider)
                     .map_err(|e| format!("Failed to save provider to config: {}", e))?;
                 save_ai_enabled_to_config(self.ai_enabled)
                     .map_err(|e| format!("Failed to save AI enabled: {}", e))?;
+                save_ai_context_to_config(self.ctx_enabled, self.ctx_env, self.ctx_git, self.ctx_file_tree)
+                    .map_err(|e| format!("Failed to save AI context: {}", e))?;
                 self.message = Some("Saved successfully".to_string());
                 Ok(())
             }
@@ -736,6 +787,36 @@ fn save_ai_enabled_to_config(enabled: bool) -> std::io::Result<()> {
     fs::write(&path, s)
 }
 
+fn save_ai_context_to_config(ctx_enabled: bool, env_on: bool, git_on: bool, file_tree_on: bool) -> std::io::Result<()> {
+    let path = config_path();
+    let mut root = if let Ok(text) = fs::read_to_string(&path) {
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
+    } else {
+        toml::Value::Table(toml::value::Table::new())
+    };
+    if !root.is_table() { root = toml::Value::Table(toml::value::Table::new()); }
+    let tbl = root.as_table_mut().unwrap();
+
+    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai = ai_tbl.as_table_mut().unwrap();
+
+    let ctx_tbl = ai.entry("context").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ctx = ctx_tbl.as_table_mut().unwrap();
+    ctx.insert("enabled".into(), toml::Value::Boolean(ctx_enabled));
+
+    // Build providers array from toggles
+    let mut provs = Vec::new();
+    if env_on { provs.push(toml::Value::String("env".into())); }
+    if git_on { provs.push(toml::Value::String("git".into())); }
+    if file_tree_on { provs.push(toml::Value::String("file_tree".into())); }
+    ctx.insert("providers".into(), toml::Value::Array(provs));
+
+    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    let s = toml::to_string_pretty(&root).unwrap_or_default();
+    fs::write(&path, s)
+}
+
 fn save_general_to_config(
     live_reload: bool,
     working_directory: Option<String>,
@@ -1017,6 +1098,30 @@ impl Display {
                 if st.selected_field == Field::PrivacyStripCwd {
                     let cur_col = 2 + pc_lbl.width();
                     self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
+                }
+                line += 1;
+
+                // Context toggles
+                let ctx_en_lbl = "Context: enabled: ";
+                let ctx_en_val = if st.ctx_enabled { "on" } else { "off" };
+                let ctx_en_row = format!("{}{} (Space)", ctx_en_lbl, ctx_en_val);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &ctx_en_row, num_cols - 2);
+                if st.selected_field == Field::CtxEnabled {
+                    let cur_col = 2 + ctx_en_lbl.width();
+                    self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
+                }
+                line += 1;
+
+                let provs_row = format!(
+                    "Providers: env [{}]  git [{}]  file_tree [{}]  (Space to toggle)",
+                    if st.ctx_env { "x" } else { " " },
+                    if st.ctx_git { "x" } else { " " },
+                    if st.ctx_file_tree { "x" } else { " " }
+                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &provs_row, num_cols - 2);
+                // Cursor for the first of provider toggles when selected
+                if matches!(st.selected_field, Field::CtxEnv | Field::CtxGit | Field::CtxFileTree) {
+                    self.draw_ai_text(Point::new(line, Column(2 + "Providers: env [".width())), bg, fg, " ", 1);
                 }
                 line += 2;
 
