@@ -102,10 +102,13 @@ fn strip_ansi(input: &str) -> String {
 
 fn redact_line(mut line: String) -> String {
     // Optional extended redaction via env flag: OPENAGENT_PRIVACY_EXTENDED=1
-    let extended = std::env::var("OPENAGENT_PRIVACY_EXTENDED")
+    let extended_env = std::env::var("OPENAGENT_PRIVACY_EXTENDED")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    // Prefer config flag when available
+    let extended_cfg = crate::event::Processor::privacy_extended_flag();
+    let extended = extended_cfg.unwrap_or(extended_env);
     let lower = line.to_lowercase();
     let keywords = ["api_key", "apikey", "token", "secret", "password", "passwd", "authorization", "auth"];    
     let mut redacted = false;

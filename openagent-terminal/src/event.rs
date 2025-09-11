@@ -67,6 +67,7 @@ use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
+use once_cell::sync::OnceCell as _;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 
 /// Duration after the last user input until an unlimited search is performed.
@@ -126,13 +127,20 @@ pub struct Processor {
     pending_security_paste: HashMap<String, (String, WindowId)>,
 }
 
+static PRIVACY_EXTENDED_FLAG: once_cell::sync::OnceCell<bool> = once_cell::sync::OnceCell::new();
+
 impl Processor {
+    /// Global accessor for privacy extended flag from current config (None if not yet initialized)
+    pub fn privacy_extended_flag() -> Option<bool> {
+        PRIVACY_EXTENDED_FLAG.get().copied()
+    }
     /// Create a new event processor.
     pub fn new(
         config: UiConfig,
         cli_options: CliOptions,
         event_loop: &EventLoop<Event>,
     ) -> Processor {
+        PRIVACY_EXTENDED_FLAG.set(config.privacy.extended_redaction).ok();
         let proxy = event_loop.create_proxy();
         // Initialize confirmation broker hooks (proxy + initial policy)
         crate::ui_confirm::set_event_proxy(proxy.clone());
@@ -234,16 +242,30 @@ impl Processor {
 
         // Show a feature banner at startup
         {
-            let mut features = Vec::new();
-            features.push(format!("wgpu:{}", if cfg!(feature = "wgpu") { "on" } else { "off" }));
-            features.push(format!("ai:{}", if cfg!(feature = "ai") { "on" } else { "off" }));
-            features.push(format!("blocks:{}", if cfg!(feature = "blocks") { "on" } else { "off" }));
-            features.push(format!("workflow:{}", if cfg!(feature = "workflow") { "on" } else { "off" }));
-            features.push(format!("completions:{}", if cfg!(feature = "completions") { "on" } else { "off" }));
-            features.push(format!("security-lens:{}", if cfg!(feature = "security-lens") { "on" } else { "off" }));
-            let banner = format!("Features: {}", features.join("  "));
-            let message = crate::message_bar::Message::new(banner, crate::message_bar::MessageType::Warning);
-            let _ = self.proxy.send_event(Event::new(EventType::Message(message), Some(window_id)));
+            if self.config.feature_banner.show {
+                let mut features = Vec::new();
+                features.push(format!("wgpu:{}", if cfg!(feature = "wgpu") { "on" } else { "off" }));
+                features.push(format!("ai:{}", if cfg!(feature = "ai") { "on" } else { "off" }));
+                features.push(format!("blocks:{}", if cfg!(feature = "blocks") { "on" } else { "off" }));
+                features.push(format!("workflow:{}", if cfg!(feature = "workflow") { "on" } else { "off" }));
+                features.push(format!("completions:{}", if cfg!(feature = "completions") { "on" } else { "off" }));
+                features.push(format!("security-lens:{}", if cfg!(feature = "security-lens") { "on" } else { "off" }));
+                let banner = format!("Features: {}", features.join("  "));
+                let level = self
+                    .config
+                    .feature_banner
+                    .level
+                    .as_deref()
+                    .unwrap_or("info")
+                    .to_ascii_lowercase();
+                let ty = if level == "warning" {
+                    crate::message_bar::MessageType::Warning
+                } else {
+                    crate::message_bar::MessageType::Error /* Info type not present; fallback to visible tier */
+                };
+                let message = crate::message_bar::Message::new(banner, ty);
+                let _ = self.proxy.send_event(Event::new(EventType::Message(message), Some(window_id)));
+            }
         }
 
         // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
