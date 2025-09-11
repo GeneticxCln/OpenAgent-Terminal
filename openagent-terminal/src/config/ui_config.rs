@@ -114,6 +114,14 @@ pub struct UiConfig {
     #[serde(default)]
     pub security: SecurityPolicy,
 
+    /// Privacy configuration (sanitization behavior).
+    #[serde(default)]
+    pub privacy: PrivacyConfig,
+
+    /// Feature banner configuration shown at startup.
+    #[serde(default)]
+    pub feature_banner: FeatureBannerConfig,
+
     /// Theme configuration (design tokens, UI visuals).
     #[serde(default)]
     pub theme: ThemeConfig,
@@ -214,6 +222,45 @@ impl Default for PluginsPaths {
 pub struct PluginsPathPolicy {
     #[serde(default)]
     pub require_signatures: bool,
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct PrivacyConfig {
+    /// When true, apply extended redaction patterns in paste previews
+    /// (e.g., AWS keys, JWT-like tokens, common API key prefixes)
+    #[serde(default)]
+    pub extended_redaction: bool,
+}
+
+impl Default for PrivacyConfig {
+    fn default() -> Self {
+        Self {
+            extended_redaction: false,
+        }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct FeatureBannerConfig {
+    /// Show the startup feature banner in the message bar
+    #[serde(default = "FeatureBannerConfig::default_show")]
+    pub show: bool,
+    /// Optional level: "info" or "warning"; defaults to "info"
+    #[serde(default)]
+    pub level: Option<String>,
+}
+
+impl FeatureBannerConfig {
+    fn default_show() -> bool { true }
+}
+
+impl Default for FeatureBannerConfig {
+    fn default() -> Self {
+        Self {
+            show: true,
+            level: None,
+        }
+    }
 }
 
 impl Default for PluginsConfig {
