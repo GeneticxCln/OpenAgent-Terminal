@@ -101,6 +101,11 @@ fn strip_ansi(input: &str) -> String {
 }
 
 fn redact_line(mut line: String) -> String {
+    // Optional extended redaction via env flag: OPENAGENT_PRIVACY_EXTENDED=1
+    let extended = std::env::var("OPENAGENT_PRIVACY_EXTENDED")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     let lower = line.to_lowercase();
     let keywords = ["api_key", "apikey", "token", "secret", "password", "passwd", "authorization", "auth"];    
     let mut redacted = false;
@@ -119,6 +124,34 @@ fn redact_line(mut line: String) -> String {
     // If already redacted by Bearer rule, skip generic key-value pass to avoid double redaction
     if redacted {
         return line;
+    }
+
+    // Extended patterns (AWS/JWT) when enabled
+    if extended {
+        // Very rough AWS Access Key ID pattern: AKIA or ASIA followed by 16 alnum
+        if let Some(idx) = lower.find("akia") { // case-insensitive via lower
+            let start = idx;
+            let end = (start + 20).min(line.len());
+            line.replace_range(start..end, "{{REDACTED_AWS_KEY}}");
+            return line;
+        }
+        if let Some(idx) = lower.find("asia") {
+            let start = idx;
+            let end = (start + 20).min(line.len());
+            line.replace_range(start..end, "{{REDACTED_AWS_KEY}}");
+            return line;
+        }
+        // JWT-like: three base64url-ish segments separated by dots; replace the middle+signature
+        // We only look for two dots to keep it simple
+        if let Some(first_dot) = line.find('.') {
+            if let Some(second_dot) = line[first_dot + 1..].find('.') {
+                let mid_start = first_dot + 1;
+                let mid_end = mid_start + second_dot + 1; // include the second dot
+                // Replace middle and signature segment with marker
+                line.replace_range(mid_start..line.len(), "{{REDACTED_JWT}}");
+                return line;
+            }
+        }
     }
 
     // Key-value secrets (keyword followed by ':' or '=')
