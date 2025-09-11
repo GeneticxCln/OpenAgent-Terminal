@@ -20,6 +20,7 @@ API versioning and stability
 
 Current status
 
+- MVP in progress: Wasmtime runtime path is prioritized (WASM only); native plugins are not supported yet
 - JSON-over-memory ABI implemented (metadata + event handling)
 - Host-side loader at crates/plugin-loader with permission enforcement and event dispatch
 - Multi-location discovery: system (/usr/share/openagent-terminal/plugins), user (~/.config/openagent-terminal/plugins), project (./plugins), and data-dir

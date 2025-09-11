@@ -27,7 +27,7 @@ mod ai_tests {
             &self,
             _request: AiRequest,
             _on_chunk: &mut dyn FnMut(&str),
-            _cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+            _cancel_flag: &std::sync::atomic::AtomicBool,
         ) -> Result<bool, String> {
             Ok(false) // Don't support streaming in mock
         }
@@ -72,9 +72,10 @@ mod ai_tests {
         // Use mock context (would normally come from PTY)
         runtime.propose_with_context(None);
 
-        // In a real test, we'd need to wait for the async proposal to complete
-        // For now, just verify the state was set correctly
-        assert!(runtime.ui.is_loading);
+        // Since propose_with_context is synchronous in this path, loading should be false
+        assert!(!runtime.ui.is_loading);
+        assert_eq!(runtime.ui.proposals.len(), 1);
+        assert_eq!(runtime.ui.proposals[0].title, "Test Command");
     }
 }
 

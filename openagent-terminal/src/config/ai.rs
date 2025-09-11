@@ -9,6 +9,10 @@ pub struct AiConfig {
     /// Enable AI interface at runtime. Defaults to false.
     pub enabled: bool,
 
+    /// Context collection settings for enriching AI requests.
+    #[serde(default)]
+    pub context: AiContextConfig,
+
     /// Visual height of the AI panel as a fraction of the viewport (0.2..0.6 typical).
     #[serde(default)]
     pub panel_height_fraction: f32,
@@ -110,6 +114,7 @@ impl Default for AiConfig {
             animated_typing: true,
             animation_speed: 1.0,
             providers: HashMap::new(),
+            context: AiContextConfig::default(),
         }
     }
 }
@@ -184,3 +189,89 @@ impl Default for OllamaConfig {
         }
     }
 }
+
+/// Context collection configuration for enriching AI requests.
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct AiContextConfig {
+    /// Enable context collection
+    pub enabled: bool,
+    /// Maximum number of bytes to include from providers (approximate)
+    pub max_bytes: usize,
+    /// Providers to include, in priority order. Supported: "env", "git", "file_tree"
+    #[serde(default)]
+    pub providers: Vec<String>,
+    /// Timeouts for provider collection
+    #[serde(default)]
+    pub timeouts: AiContextTimeouts,
+    /// File tree provider options
+    #[serde(default)]
+    pub file_tree: AiFileTreeConfig,
+    /// Git provider options
+    #[serde(default)]
+    pub git: AiGitConfig,
+}
+
+impl Default for AiContextConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_bytes: 32 * 1024, // 32KB
+            providers: vec!["env".into(), "git".into(), "file_tree".into()],
+            timeouts: AiContextTimeouts::default(),
+            file_tree: AiFileTreeConfig::default(),
+            git: AiGitConfig::default(),
+        }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct AiContextTimeouts {
+    /// Soft per-provider timeout in milliseconds (providers run in parallel)
+    pub per_provider_ms: u64,
+    /// Overall deadline for context collection in milliseconds
+    pub overall_ms: u64,
+    /// Optional per-provider overrides (takes precedence over per_provider_ms)
+    #[serde(default)]
+    pub env_ms: Option<u64>,
+    #[serde(default)]
+    pub git_ms: Option<u64>,
+    #[serde(default)]
+    pub file_tree_ms: Option<u64>,
+}
+
+impl Default for AiContextTimeouts {
+    fn default() -> Self {
+        Self { per_provider_ms: 150, overall_ms: 300, env_ms: None, git_ms: None, file_tree_ms: None }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AiRootStrategy { Git, Cwd }
+
+impl Default for AiRootStrategy { fn default() -> Self { AiRootStrategy::Git } }
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct AiFileTreeConfig {
+    /// Maximum number of file entries to include
+    pub max_entries: usize,
+    /// Root selection strategy: repo root or current working directory
+    #[serde(default)]
+    pub root_strategy: AiRootStrategy,
+}
+
+impl Default for AiFileTreeConfig {
+    fn default() -> Self {
+        Self { max_entries: 500, root_strategy: AiRootStrategy::Git }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct AiGitConfig {
+    #[serde(default = "default_true")] pub include_branch: bool,
+    #[serde(default = "default_true")] pub include_status: bool,
+}
+
+impl Default for AiGitConfig { fn default() -> Self { Self { include_branch: true, include_status: true } } }
+
+fn default_true() -> bool { true }

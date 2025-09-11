@@ -9,6 +9,9 @@ use openagent_terminal_ai::providers::{
     AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
 };
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
+use openagent_terminal_ai::privacy::{sanitize_request, AiPrivacyOptions};
+use openagent_terminal_ai::context::{ContextManager, BasicEnvProvider, GitProvider, FileTreeProvider, FileTreeRootStrategy};
+use openagent_terminal_ai::build_request_with_context;
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -29,6 +32,8 @@ pub struct AiUiState {
     // Streaming state
     pub streaming_active: bool,
     pub streaming_text: String,
+    /// Last time we requested a redraw due to a streaming chunk (for throttling)
+    pub streaming_last_redraw: Option<std::time::Instant>,
     /// Inline suggestion text to render as ghost text at the terminal prompt (suffix suggestion)
     pub inline_suggestion: Option<String>,
     /// Current provider id (e.g., "openrouter", "openai", "anthropic", "ollama") for UI display
@@ -38,6 +43,40 @@ pub struct AiUiState {
 }
 
 impl AiRuntime {
+    /// Load previously persisted AI history (best-effort).
+    fn load_history(&mut self) {
+        let path = Self::history_path();
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(entries) = serde_json::from_str::<Vec<String>>(&data) {
+                for s in entries.into_iter().rev() { // maintain most-recent-first order
+                    self.ui.history.push_front(s);
+                    if self.ui.history.len() > MAX_HISTORY {
+                        self.ui.history.pop_back();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Persist AI history to disk (best-effort, synchronous, small file).
+    fn save_history(&self) {
+        let path = Self::history_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let list: Vec<String> = self.ui.history.iter().cloned().collect();
+        if let Ok(json) = serde_json::to_string_pretty(&list) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+
+    fn history_path() -> std::path::PathBuf {
+        let base = dirs::data_dir()
+            .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        base.join("openagent-terminal").join("ai").join("history.json")
+    }
     /// Reconfigure this runtime to a new provider using secure config, preserving UI scratch/cursor/history.
     pub fn reconfigure_to(
         &mut self,
@@ -261,6 +300,7 @@ impl Default for AiUiState {
             history_index: None,
             streaming_active: false,
             streaming_text: String::new(),
+            streaming_last_redraw: None,
             inline_suggestion: None,
             current_provider: "null".to_string(),
             current_model: String::new(),
@@ -280,21 +320,27 @@ pub struct AiRuntime {
     pub provider: Arc<dyn AiProvider>,
     cancel_flag: Arc<AtomicBool>,
     security_lens: SecurityLens,
+    // Config-driven context collection policy
+    context_cfg: crate::config::ai::AiContextConfig,
 }
 
 impl AiRuntime {
-    pub fn new(provider: Box<dyn AiProvider>) -> Self {
+pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
         let mut ui = AiUiState::default();
         ui.current_provider = provider.name().to_string();
         // Model is provider-specific; when constructed via from_secure_config we will set it.
         ui.current_model.clear();
-        Self {
+        let mut rt = Self {
             ui,
             provider: Arc::from(provider),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             security_lens: SecurityLens::new(SecurityPolicy::default()),
-        }
+            context_cfg: crate::config::ai::AiContextConfig::default(),
+        };
+        // Load persisted history best-effort
+        rt.load_history();
+        rt
     }
 
     pub fn from_config(
@@ -338,7 +384,7 @@ impl AiRuntime {
     }
 
     /// Create AI runtime from secure provider configuration (recommended approach)
-    pub fn from_secure_config(
+pub fn from_secure_config(
         provider_name: &str,
         config: &crate::config::ai::ProviderConfig,
     ) -> Self {
@@ -465,7 +511,7 @@ impl AiRuntime {
             _ => Err(format!("Unknown provider: {}", provider_name)),
         };
 
-        match provider_result {
+match provider_result {
             Ok(provider) => {
                 info!("Successfully created secure AI provider: {}", provider_name);
                 let mut rt = Self::new(provider);
@@ -506,6 +552,12 @@ impl AiRuntime {
         event_proxy: EventLoopProxy<Event>,
         window_id: WindowId,
     ) {
+        let _span = tracing::info_span!(
+            "ai.start_propose_stream",
+            provider = %self.provider.name(),
+            scratch_len = self.ui.scratch.len()
+        )
+        .entered();
         info!(
             "ai_runtime_stream_start provider={} scratch_len={}",
             self.provider.name(),
@@ -523,31 +575,54 @@ impl AiRuntime {
         self.ui.is_loading = true;
         self.ui.streaming_active = true;
         self.ui.streaming_text.clear();
+        self.ui.streaming_last_redraw = None;
         self.cancel_flag.store(false, Ordering::Relaxed);
 
         let cancel = self.cancel_flag.clone();
         let provider = self.provider.clone();
-        let req = AiRequest {
+        let req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
             context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
         };
+        // Build rich context with config-driven providers and sanitize
+        let (cm, budget_kb) = self.build_context_manager();
+        let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         // Spawn background worker
         let _ = thread::Builder::new()
             .name("ai-stream".into())
             .spawn(move || {
                 // First try streaming
+                let mut batch_buf = String::new();
+                let mut last_flush = std::time::Instant::now();
+                let batch_ms = std::env::var("OPENAGENT_AI_STREAM_REDRAW_MS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(16);
+
+                let mut flush = || {
+                    if !batch_buf.is_empty() {
+                        let payload = std::mem::take(&mut batch_buf);
+                        let _ = event_proxy
+                            .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                        last_flush = std::time::Instant::now();
+                    }
+                };
+
                 let mut on_chunk = |chunk: &str| {
-                    // Send chunk event
-                    let _ = event_proxy.send_event(Event::new(
-                        EventType::AiStreamChunk(chunk.to_string()),
-                        window_id,
-                    ));
+                    // Micro-batch: accumulate small chunks and flush at most every batch_ms
+                    batch_buf.push_str(chunk);
+                    let now = std::time::Instant::now();
+                    if now.saturating_duration_since(last_flush).as_millis() as u64 >= batch_ms {
+                        flush();
+                    }
                 };
                 match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
                     Ok(true) => {
+                        // Flush any pending chunk before finishing
+                        flush();
                         info!("ai_runtime_stream_finished provider={}", provider.name());
                         let _ = event_proxy
                             .send_event(Event::new(EventType::AiStreamFinished, window_id));
@@ -599,6 +674,12 @@ impl AiRuntime {
     }
 
     pub fn propose(&mut self, working_directory: Option<String>, shell_kind: Option<String>) {
+        let _span = tracing::info_span!(
+            "ai.propose_blocking",
+            provider = %self.provider.name(),
+            scratch_len = self.ui.scratch.len()
+        )
+        .entered();
         if self.ui.scratch.trim().is_empty() {
             self.ui.error_message = Some("Query cannot be empty".to_string());
             return;
@@ -606,6 +687,8 @@ impl AiRuntime {
 
         // Add to history
         self.ui.history.push_front(self.ui.scratch.clone());
+        // Persist updated history
+        self.save_history();
         if self.ui.history.len() > MAX_HISTORY {
             self.ui.history.pop_back();
         }
@@ -619,21 +702,28 @@ impl AiRuntime {
 
         debug!("Submitting AI query: {}", self.ui.scratch);
 
-        let req = AiRequest {
+        let req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
             context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
         };
+        let (cm, budget_kb) = self.build_context_manager();
+        let req = build_request_with_context(req_raw, &cm, budget_kb);
 
+        let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
             Ok(proposals) => {
+                let dt = t0.elapsed();
                 info!("Received {} proposals", proposals.len());
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_complete");
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
             Err(e) => {
+                let dt = t0.elapsed();
                 error!("AI query failed: {}", e);
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_error");
                 self.ui.error_message = Some(format!("Query failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -884,6 +974,12 @@ impl AiRuntime {
         &mut self,
         context: Option<openagent_terminal_core::tty::pty_manager::PtyAiContext>,
     ) {
+        let _span = tracing::info_span!(
+            "ai.propose_with_context",
+            provider = %self.provider.name(),
+            scratch_len = self.ui.scratch.len()
+        )
+        .entered();
         if self.ui.scratch.trim().is_empty() {
             self.ui.error_message = Some("Query cannot be empty".to_string());
             return;
@@ -911,21 +1007,27 @@ impl AiRuntime {
             (None, None)
         };
 
-        let req = AiRequest {
+        let req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
             context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
         };
+        let req = sanitize_request(&req_raw, AiPrivacyOptions::from_env());
 
+        let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
             Ok(proposals) => {
+                let dt = t0.elapsed();
                 info!("Received {} proposals with context", proposals.len());
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_with_context_complete");
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
             Err(e) => {
+                let dt = t0.elapsed();
                 error!("AI query with context failed: {}", e);
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_with_context_error");
                 self.ui.error_message = Some(format!("Query failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -963,6 +1065,12 @@ impl AiRuntime {
         working_directory: Option<String>,
         shell_kind: Option<String>,
     ) {
+        let _span = tracing::info_span!(
+            "ai.propose_explain",
+            provider = %self.provider.name(),
+            target_len = target_text.len()
+        )
+        .entered();
         if target_text.trim().is_empty() {
             self.ui.error_message = Some("Nothing to explain".to_string());
             return;
@@ -985,7 +1093,7 @@ impl AiRuntime {
             context.push(("cwd".into(), dir.clone()));
         }
 
-        let req = AiRequest {
+        let req_raw = AiRequest {
             // Keep the scratch as the current query if present, else use the target_text
             scratch_text: if self.ui.scratch.trim().is_empty() {
                 format!("Explain: {}", target_text)
@@ -996,13 +1104,20 @@ impl AiRuntime {
             shell_kind,
             context,
         };
+        let (cm, budget_kb) = self.build_context_manager();
+        let req = build_request_with_context(req_raw, &cm, budget_kb);
 
+        let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
             Ok(proposals) => {
+                let dt = t0.elapsed();
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete");
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
             Err(e) => {
+                let dt = t0.elapsed();
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_error");
                 self.ui.error_message = Some(format!("Explain failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -1017,6 +1132,12 @@ impl AiRuntime {
         working_directory: Option<String>,
         shell_kind: Option<String>,
     ) {
+        let _span = tracing::info_span!(
+            "ai.propose_fix",
+            provider = %self.provider.name(),
+            error_len = error_text.len()
+        )
+        .entered();
         if error_text.trim().is_empty() {
             self.ui.error_message = Some("No error text provided".to_string());
             return;
@@ -1051,22 +1172,81 @@ impl AiRuntime {
             format!("Error: {}\nSuggest a fix.", error_text)
         };
 
-        let req = AiRequest {
+        let req_raw = AiRequest {
             scratch_text: prompt,
             working_directory,
             shell_kind,
             context,
         };
+        let req = sanitize_request(&req_raw, AiPrivacyOptions::from_env());
 
+        let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
             Ok(proposals) => {
+                let dt = t0.elapsed();
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_fix_complete");
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
             Err(e) => {
+                let dt = t0.elapsed();
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_fix_error");
                 self.ui.error_message = Some(format!("Fix suggestion failed: {}", e));
                 self.ui.is_loading = false;
             }
         }
+    }
+
+    /// Apply runtime AI context configuration
+    pub fn set_context_config(&mut self, cfg: crate::config::ai::AiContextConfig) {
+        self.context_cfg = cfg;
+    }
+
+    fn build_context_manager(&self) -> (ContextManager, usize) {
+        let mut cm = ContextManager::new();
+        if self.context_cfg.enabled {
+            // Timeouts (soft)
+            cm.set_timeouts(
+                Some(self.context_cfg.timeouts.per_provider_ms),
+                Some(self.context_cfg.timeouts.overall_ms),
+            );
+            // Providers in order
+            for name in &self.context_cfg.providers {
+                match name.as_str() {
+                    "env" => cm.add_provider_with_timeout(
+                        Box::new(BasicEnvProvider),
+                        self.context_cfg.timeouts.env_ms.or(Some(self.context_cfg.timeouts.per_provider_ms)),
+                    ),
+                    "git" => cm.add_provider_with_timeout(
+                        Box::new(GitProvider::new(
+                            self.context_cfg.git.include_branch,
+                            self.context_cfg.git.include_status,
+                        )),
+                        self.context_cfg.timeouts.git_ms.or(Some(self.context_cfg.timeouts.per_provider_ms)),
+                    ),
+                    "file_tree" => {
+                        let strat = match self.context_cfg.file_tree.root_strategy {
+                            crate::config::ai::AiRootStrategy::Git => FileTreeRootStrategy::RepoRoot,
+                            crate::config::ai::AiRootStrategy::Cwd => FileTreeRootStrategy::Cwd,
+                        };
+                        cm.add_provider_with_timeout(
+                            Box::new(FileTreeProvider::new(
+                                self.context_cfg.file_tree.max_entries,
+                                strat,
+                            )),
+                            self.context_cfg
+                                .timeouts
+                                .file_tree_ms
+                                .or(Some(self.context_cfg.timeouts.per_provider_ms)),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Convert bytes -> KB rounding up
+        let mut kb = (self.context_cfg.max_bytes + 1023) / 1024;
+        if !self.context_cfg.enabled { kb = 0; }
+        (cm, kb)
     }
 }

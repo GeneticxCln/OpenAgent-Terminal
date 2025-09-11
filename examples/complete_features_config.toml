@@ -25,6 +25,28 @@ provider = "ollama"  # Use local Ollama by default for privacy
 panel_height_fraction = 0.4
 backdrop_alpha = 0.3
 
+# Context collection for enriching requests (sanitized by default)
+[ai.context]
+enabled = true
+max_bytes = 32768
+providers = ["env", "git", "file_tree"]
+
+[ai.context.timeouts]
+per_provider_ms = 150
+overall_ms = 300
+# Optional per-provider overrides
+# env_ms = 100
+# git_ms = 200
+# file_tree_ms = 150
+
+[ai.context.file_tree]
+max_entries = 500
+root_strategy = "git"  # or "cwd"
+
+[ai.context.git]
+include_branch = true
+include_status = true
+
 # Ollama provider settings (local AI)
 [ai.ollama]
 endpoint = "http://localhost:11434"

@@ -94,28 +94,11 @@ Runtime shortcuts (default):
 - Perf HUD toggle: Ctrl+Shift+F (Cmd+Shift+F)
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
 
-## Rendering backend selection and fallback
+## Rendering backend
 
-By default, when built with the `wgpu` feature, OpenAgent Terminal will initialize the WGPU backend first and automatically fall back to the OpenGL backend if WGPU initialization fails.
-
-You can control this behavior via config or environment variables:
-
-- Config (recommended):
-
-```toml
-# ~/.config/openagent-terminal/openagent-terminal.toml
-[debug]
-# Prefer WGPU first, then fallback to OpenGL if WGPU init fails
-prefer_wgpu = true
-```
-
-- Environment variables (override config):
-  - Force OpenGL backend only:
-    - OPENAGENT_FORCE_GL=1
-  - Disable fallback (fail instead of falling back to OpenGL if WGPU init fails):
-    - OPENAGENT_DISABLE_GL_FALLBACK=1
+OpenAgent Terminal uses the WGPU renderer exclusively. OpenGL fallback has been removed.
 
 Notes:
-- Building without the `wgpu` feature produces an OpenGL-only binary.
-- RendererPreference in config controls only the OpenGL shader variant (Glsl3/Gles2/Gles2Pure) when the OpenGL backend is active.
+- Ensure your system has a supported graphics API (Vulkan/Metal/DirectX) and up-to-date drivers.
+- The `debug.prefer_wgpu` option remains for compatibility but no longer affects backend selection.
 

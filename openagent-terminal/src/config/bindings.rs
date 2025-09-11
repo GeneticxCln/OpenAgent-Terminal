@@ -126,6 +126,9 @@ pub enum Action {
     /// Paste contents of system clipboard.
     Paste,
 
+    /// Paste contents of clipboard and execute immediately (sends Enter).
+    PasteAndRun,
+
     /// Store current selection into clipboard.
     Copy,
 
@@ -731,8 +734,8 @@ fn common_keybindings() -> Vec<KeyBinding> {
         // Command Palette
         "p",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::OpenCommandPalette;
         // Clipboard
-        "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI;                       Action::Paste;
-        "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI, +BindingMode::SEARCH; Action::Paste;
+        "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI;                       Action::PasteAndRun;
+        "v",    ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI, +BindingMode::SEARCH; Action::PasteAndRun;
         "f",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::SearchForward;
         "b",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::SearchBackward;
         // Debug: dump WGPU atlas stats

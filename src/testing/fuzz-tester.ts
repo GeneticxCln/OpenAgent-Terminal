@@ -5,7 +5,6 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -158,7 +157,7 @@ export class FuzzTester extends EventEmitter {
       () => this.generateStructured(),
     ];
 
-    const strategy = strategies[Math.floor(Math.random() * strategies.length)];
+    const strategy = strategies[Math.floor(Math.random() * strategies.length)]!;
     const input = strategy();
 
     return input.substring(0, this.config.maxInputLength);
@@ -170,7 +169,7 @@ export class FuzzTester extends EventEmitter {
   }
 
   private mutateCorpusItem(): string {
-    let item = this.randomFromCorpus();
+    const item = this.randomFromCorpus();
     const mutations = [
       (s: string) => s + s, // Duplicate
       (s: string) => s.split('').reverse().join(''), // Reverse
@@ -179,7 +178,9 @@ export class FuzzTester extends EventEmitter {
         const arr = Buffer.from(s);
         if (arr.length > 0) {
           const idx = Math.floor(Math.random() * arr.length);
-          arr[idx] ^= 1 << Math.floor(Math.random() * 8);
+          const cur = arr[idx] ?? 0;
+          const bit = 1 << Math.floor(Math.random() * 8);
+          arr[idx] = (cur ^ bit) & 0xff;
         }
         return arr.toString();
       },
@@ -190,7 +191,7 @@ export class FuzzTester extends EventEmitter {
       },
     ];
 
-    const mutate = mutations[Math.floor(Math.random() * mutations.length)];
+    const mutate = mutations[Math.floor(Math.random() * mutations.length)]!;
     return mutate(item);
   }
 
@@ -221,7 +222,7 @@ export class FuzzTester extends EventEmitter {
       () => `\x1b]0;${'A'.repeat(Math.floor(Math.random() * 1000))}\x07`,
     ];
 
-    const generator = structures[Math.floor(Math.random() * structures.length)];
+    const generator = structures[Math.floor(Math.random() * structures.length)]!;
     return generator();
   }
 
@@ -245,7 +246,7 @@ export class FuzzTester extends EventEmitter {
         try {
           const usage = process.memoryUsage();
           memoryUsage = Math.max(memoryUsage, usage.rss / 1024 / 1024);
-        } catch {}
+        } catch { /* ignore memoryUsage errors */ }
       }, 100);
 
       // Send the fuzz input

@@ -1,17 +1,20 @@
 # AI integration (optional, privacy-first, opt-in)
 
-Status: scaffolding only. This interface is completely optional at build-time and runtime.
+This interface is optional at build-time and runtime.
 
 Build-time
 - Disabled by default. Build with --features ai to include the interface plumbing.
 
 Runtime
+- Enabled by default when built with the ai feature. You can disable it via [ai].enabled = false.
+
+Runtime configuration
 - Configure in the ai section of your config (openagent-terminal.toml):
 
 ```toml path=null start=null
 [ai]
-# Off by default
-enabled = false
+# On by default when built with the ai feature
+enabled = true
 # Provider id (implementation-specific). Default: "null"
 provider = "null"
 # Environment variable names for secrets and endpoints. Values are never printed.
@@ -23,13 +26,48 @@ scratch_autosave = true
 propose_max_commands = 10
 # Hard safety: UI must never auto-run proposals
 never_auto_run = true
+
+# Context collection for enriching AI requests
+[ai.context]
+# Enable/disable contextual enrichment (safe by default; sanitized before sending)
+enabled = true
+# Approximate size budget for all providers combined
+max_bytes = 32768
+# Providers to include in order: "env", "git", "file_tree"
+providers = ["env", "git", "file_tree"]
+
+[ai.context.timeouts]
+# Soft per-provider timeout (providers run in parallel)
+per_provider_ms = 150
+# Overall deadline for context collection
+overall_ms = 300
+# Optional per-provider overrides (take precedence over per_provider_ms)
+# env_ms = 100
+# git_ms = 200
+# file_tree_ms = 150
+
+[ai.context.file_tree]
+# Limit number of file entries listed (respects .gitignore)
+max_entries = 500
+# "git" = repo root when available; "cwd" = current working directory
+root_strategy = "git"
+
+[ai.context.git]
+include_branch = true
+include_status = true
 ```
+
+Privacy & sanitization
+- All AI requests are sanitized before leaving the process. Paths like HOME and the exact working directory are redacted by default.
+- To tweak redaction behavior via environment variables:
+  - OPENAGENT_AI_STRIP_SENSITIVE: default "1" (set to "0" to disable)
+  - OPENAGENT_AI_STRIP_CWD: default "1" (set to "0" to disable)
 
 Secrets handling
 - Secrets must only be supplied via environment variables. Do not put secrets in config files.
-- The application must read these env vars into memory without logging them, and never print them.
+- The application reads these env vars without logging them and never prints their values.
 
 UX principles
 - Commands are authored in a scratch buffer, not in the shell line.
-- The AI produces proposals shown in a side panel. The UI must never auto-run them.
+- The AI produces proposals shown in a side panel. The UI never auto-runs them.
 - The feature can be entirely disabled at build time and at runtime.

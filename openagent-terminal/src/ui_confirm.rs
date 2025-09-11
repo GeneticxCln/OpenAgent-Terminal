@@ -234,6 +234,7 @@ pub fn resolve(id: &str, accepted: bool) -> bool {
 mod tests {
     use super::*;
     use crate::ui_confirm::test_helpers as th;
+    use std::thread;
 
     // Global test lock to avoid interference through shared global state.
     static TEST_LOCK: once_cell::sync::Lazy<std::sync::Mutex<()>> =
@@ -295,5 +296,77 @@ mod tests {
         )));
         // Ensure the specific pending request created by this call was cleaned up
         assert!(!th::has_pending(&open_id));
+    }
+
+    #[test]
+    fn request_confirm_accepts_when_resolved_true() {
+        let _g = TEST_LOCK.lock().unwrap();
+        th::clear_all();
+
+        // Spawn resolver that waits for ConfirmOpen id and resolves true
+        let resolver = thread::spawn(|| {
+            // Poll for the ConfirmOpen event to capture id
+            for _ in 0..50 {
+                let evs = th::take_events();
+                if let Some(id) = evs.iter().find_map(|e| {
+                    if let crate::event::EventType::ConfirmOpen { id, .. } = e {
+                        Some(id.clone())
+                    } else {
+                        None
+                    }
+                }) {
+                    // Resolve acceptance
+                    let _ = super::resolve(&id, true);
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+
+        let res = super::request_confirm(
+            "Title".into(),
+            "Body".into(),
+            Some("OK".into()),
+            Some("Cancel".into()),
+            Some(200),
+        )
+        .expect("should resolve before timeout");
+        assert!(res);
+        let _ = resolver.join();
+    }
+
+    #[test]
+    fn request_confirm_cancels_when_resolved_false() {
+        let _g = TEST_LOCK.lock().unwrap();
+        th::clear_all();
+
+        // Spawn resolver that waits for ConfirmOpen id and resolves false
+        let resolver = thread::spawn(|| {
+            for _ in 0..50 {
+                let evs = th::take_events();
+                if let Some(id) = evs.iter().find_map(|e| {
+                    if let crate::event::EventType::ConfirmOpen { id, .. } = e {
+                        Some(id.clone())
+                    } else {
+                        None
+                    }
+                }) {
+                    let _ = super::resolve(&id, false);
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+
+        let res = super::request_confirm(
+            "Title".into(),
+            "Body".into(),
+            Some("OK".into()),
+            Some("Cancel".into()),
+            Some(200),
+        )
+        .expect("should resolve before timeout");
+        assert!(!res);
+        let _ = resolver.join();
     }
 }

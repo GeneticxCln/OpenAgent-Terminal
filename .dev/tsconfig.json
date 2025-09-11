@@ -9,7 +9,7 @@
     "allowJs": true,
     "checkJs": false,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../src",
     "removeComments": true,
     "strict": true,
     "noImplicitAny": true,
@@ -33,7 +33,7 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "include": [
-    "src/**/*"
+    "../src/**/*"
   ],
   "exclude": [
     "node_modules",

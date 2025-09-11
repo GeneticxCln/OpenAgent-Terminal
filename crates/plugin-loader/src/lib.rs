@@ -1621,6 +1621,19 @@ timeout_ms=5000
         assert_eq!(discovered.len(), 2);
     }
 
+    #[tokio::test]
+    async fn loads_minimal_module_without_panicking() {
+        let temp = TempDir::new().unwrap();
+        let wasm_path = temp.path().join("mod.wasm");
+        let wat = r#"(module (memory (export "memory") 1))"#;
+        let bytes = wat::parse_str(wat).unwrap();
+        std::fs::write(&wasm_path, bytes).unwrap();
+
+        let mgr = PluginManager::with_host_and_dirs(vec![temp.path().to_path_buf()], None).unwrap();
+        let res = mgr.load_plugin(&wasm_path).await;
+        assert!(res.is_ok(), "failed to load minimal module: {:?}", res);
+    }
+
     // Build a minimal WASM module exporting `plugin_cleanup` that returns 0.
     fn build_cleanup_only_wasm() -> Vec<u8> {
         let wat = r#"(module

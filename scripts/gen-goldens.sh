@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate/update visual snapshot goldens for GL and WGPU backends on Linux.
+# Generate/update visual snapshot goldens for the WGPU backend on Linux.
 # Usage:
-#   scripts/gen-goldens.sh [gl|wgpu|both] [scenario1 scenario2 ...]
+#   scripts/gen-goldens.sh [scenario1 scenario2 ...]
 # If no scenarios are provided, a default set will be used.
 # Requires: cargo, and on Linux an X server or xvfb-run.
 
-BACKEND_ARG="both"
-if [[ ${1-} == "gl" || ${1-} == "wgpu" || ${1-} == "both" ]]; then
-  BACKEND_ARG=${1-}
-  shift || true
-fi
+BACKEND_ARG="wgpu"
 
 # Default scenarios
 SCENARIOS=(
@@ -46,18 +42,8 @@ run_with_display() {
 # Ensure golden/output dirs exist at repo root
 mkdir -p tests/golden_images tests/snapshot_output
 
-# GL goldens
-if [[ "$BACKEND_ARG" == "gl" || "$BACKEND_ARG" == "both" ]]; then
-  echo "==> Generating GL goldens"
-  for scenario in "${SCENARIOS[@]}"; do
-    SNAPSHOT_BACKEND=gl run_with_display \
-      cargo run -p openagent-terminal --release --no-default-features -F x11,wayland,preview_ui --example snapshot_capture -- \
-      --update-golden --scenario="$scenario" --backend=gl
-  done
-fi
-
 # WGPU goldens (feature flag)
-if [[ "$BACKEND_ARG" == "wgpu" || "$BACKEND_ARG" == "both" ]]; then
+if [[ "$BACKEND_ARG" == "wgpu" ]]; then
   echo "==> Generating WGPU goldens"
   for scenario in "${SCENARIOS[@]}"; do
     SNAPSHOT_BACKEND=wgpu run_with_display \

@@ -1007,8 +1007,26 @@ impl ApplicationHandler<Event> for Processor {
                         *window_id,
                     ));
                 } else {
+                    // Even if not required by policy, show a preview confirmation before executing
+                    let id = crate::ui_confirm::generate_id();
+                    let mut body = String::new();
+                    body.push_str("Command preview:\n");
+                    body.push_str("  $");
+                    body.push(' ');
+                    body.push_str(&command);
+
+                    // Track pending AI action by id
+                    self.pending_security_ai
+                        .insert(id.clone(), (command.clone(), dry_run, *window_id));
+
                     let _ = self.proxy.send_event(Event::new(
-                        EventType::AiApplyAsCommandChecked { command, dry_run },
+                        EventType::ConfirmOpen {
+                            id: id.clone(),
+                            title: "Confirm running command".into(),
+                            body,
+                            confirm_label: Some("Execute".into()),
+                            cancel_label: Some("Cancel".into()),
+                        },
                         *window_id,
                     ));
                 }
@@ -3259,7 +3277,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if let Some(action) = self.display.blocks_search.get_selected_action() {
             use crate::display::blocks_search_actions::BlockAction;
 
-            match action {
+                match action {
+                #[cfg(feature = "ai")]
+                BlockAction::ExplainError => {
+                    if let Some(item) = self.display.blocks_search.get_selected_item() {
+                        let text = if !item.output.is_empty() { item.output.clone() } else { item.command.clone() };
+                        self.send_user_event(EventType::AiExplain(Some(text)));
+                    }
+                }
+                #[cfg(feature = "ai")]
+                BlockAction::FixError => {
+                    if let Some(item) = self.display.blocks_search.get_selected_item() {
+                        let error_text = if !item.output.is_empty() { item.output.clone() } else { item.command.clone() };
+                        self.send_user_event(EventType::AiFix(Some(error_text)));
+                    }
+                }
                 BlockAction::CopyCommand => self.blocks_search_copy_command(),
                 BlockAction::CopyOutput => self.blocks_search_copy_output(),
                 BlockAction::CopyBoth => self.blocks_search_copy_both(),
@@ -3276,6 +3308,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 BlockAction::DeleteBlock => self.blocks_search_delete_selected(),
                 BlockAction::ViewFullOutput => self.blocks_search_view_output(),
                 BlockAction::CreateSnippet => self.blocks_search_create_snippet(),
+                // When AI feature is disabled at compile time, cover variants to satisfy match
+                #[cfg(not(feature = "ai"))]
+                _ => {}
             }
             // Close menu after action
             self.display.blocks_search.close_actions_menu();
@@ -6131,7 +6166,22 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             );
                         }
                         runtime.ui.streaming_text.push_str(&chunk);
-                        *self.ctx.dirty = true;
+
+                        // Redraw throttling: only mark dirty if enough time elapsed since last redraw
+                        let throttle_ms = std::env::var("OPENAGENT_AI_STREAM_REDRAW_MS")
+                            .ok()
+                            .and_then(|v| v.parse::<u64>().ok())
+                            .unwrap_or(16);
+                        let now = std::time::Instant::now();
+                        let should_redraw = match runtime.ui.streaming_last_redraw {
+                            None => true,
+                            Some(last) => now.saturating_duration_since(last).as_millis() as u64
+                                >= throttle_ms,
+                        };
+                        if should_redraw {
+                            runtime.ui.streaming_last_redraw = Some(now);
+                            *self.ctx.dirty = true;
+                        }
                     }
                 }
                 #[cfg(feature = "ai")]
@@ -6293,9 +6343,16 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     *self.ctx.dirty = true;
                 }
                 #[cfg(feature = "ai")]
-                EventType::AiApplyAsCommandChecked { command, .. } => {
-                    // Confirmed or safe; paste to prompt
-                    self.ctx.paste(&command, true);
+                EventType::AiApplyAsCommandChecked { command, dry_run } => {
+                    if dry_run {
+                        // Dry-run should not execute; just paste annotated content
+                        self.ctx.paste(&command, true);
+                    } else {
+                        // Confirmed or safe; paste to prompt and execute with Enter (Warp-like Ctrl+Enter)
+                        self.ctx.paste(&command, true);
+                        // Send newline to execute the pasted command
+                        self.ctx.write_to_pty("\n".as_bytes());
+                    }
                     *self.ctx.dirty = true;
                 }
                 #[cfg(feature = "ai")]

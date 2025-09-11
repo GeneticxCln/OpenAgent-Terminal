@@ -80,8 +80,8 @@ pub trait AiProvider: Send + Sync {
 
 The display module handles rendering with multiple backends:
 
-- **OpenGL Backend**: Primary renderer using GPU acceleration
-- **Software Backend**: Fallback for compatibility
+- **WGPU Backend**: Primary renderer using GPU acceleration
+- OpenGL fallback has been removed.
 
 #### AI Panel Rendering
 

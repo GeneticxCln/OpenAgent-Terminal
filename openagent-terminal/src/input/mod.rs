@@ -49,6 +49,135 @@ use crate::message_bar::{self, Message};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::security::{RiskLevel, SecurityLens};
 
+// Preview sanitization helpers for paste/confirm dialogs
+fn strip_ansi(input: &str) -> String {
+    // Remove a subset of ANSI escape sequences (CSI and OSC common forms)
+    let mut out = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1B {
+            // ESC sequence: try to skip CSI "\x1b[...<ender>"
+            if i + 1 < bytes.len() {
+                let next = bytes[i + 1];
+                if next == b'[' {
+                    // Skip until a byte in 0x40..=0x7E
+                    i += 2;
+                    while i < bytes.len() {
+                        let b = bytes[i];
+                        if (0x40..=0x7E).contains(&b) {
+                            i += 1;
+                            break;
+                        }
+                        i += 1;
+                    }
+                    continue;
+                } else if next == b']' {
+                    // OSC: ESC ] ... BEL or ESC \
+                    i += 2;
+                    while i < bytes.len() {
+                        if bytes[i] == 0x07 {
+                            i += 1;
+                            break;
+                        }
+                        // ESC \
+                        if bytes[i] == 0x1B && i + 1 < bytes.len() && bytes[i + 1] == b'\\' {
+                            i += 2;
+                            break;
+                        }
+                        i += 1;
+                    }
+                    continue;
+                }
+            }
+            // Fallback: skip the ESC only
+            i += 1;
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn redact_line(mut line: String) -> String {
+    let lower = line.to_lowercase();
+    let keywords = ["api_key", "apikey", "token", "secret", "password", "passwd", "authorization", "auth"];    
+    let mut redacted = false;
+
+    // Authorization: Bearer ...
+    if let Some(pos) = lower.find("bearer ") {
+        // Replace everything after 'Bearer '
+        let cut = pos + "bearer ".len();
+        if cut <= line.len() {
+            // Find end of token (to end of line)
+            line.replace_range(cut.., "{{REDACTED}}");
+            redacted = true;
+        }
+    }
+
+    // If already redacted by Bearer rule, skip generic key-value pass to avoid double redaction
+    if redacted {
+        return line;
+    }
+
+    // Key-value secrets (keyword followed by ':' or '=')
+    for kw in keywords.iter() {
+        if let Some(kw_pos) = lower.find(kw) {
+            // Find separator after keyword
+            let after_kw = kw_pos + kw.len();
+            // Search for ':' or '=' after keyword
+            let mut sep_idx: Option<usize> = None;
+            for (i, ch) in line.char_indices().skip(after_kw) {
+                if ch == ':' || ch == '=' {
+                    sep_idx = Some(i);
+                    break;
+                }
+            }
+            if let Some(sep) = sep_idx {
+                // Skip whitespace after separator
+                let mut val_start = sep + 1;
+                while val_start < line.len() {
+                    if let Some(c) = line[val_start..].chars().next() {
+                        if c.is_whitespace() { val_start += c.len_utf8(); } else { break; }
+                    } else {
+                        break;
+                    }
+                }
+                if val_start < line.len() {
+                    line.replace_range(val_start.., "{{REDACTED}}");
+                    redacted = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if redacted { line } else { line }
+}
+
+fn sanitize_preview(text: &str, max_lines: usize, max_chars: usize) -> String {
+    let mut clean = strip_ansi(text);
+    // Normalize CRLF -> LF to avoid double counting
+    clean = clean.replace("\r\n", "\n");
+    let mut out = String::new();
+    let mut chars_budget = max_chars;
+    for (i, raw) in clean.lines().enumerate() {
+        if i >= max_lines || chars_budget == 0 { break; }
+        let red = redact_line(raw.to_string());
+        let take = red.chars().take(chars_budget).collect::<String>();
+        out.push_str(&take);
+        out.push('\n');
+        let used = take.chars().count() + 1; // +1 for newline
+        if chars_budget >= used { chars_budget -= used; } else { chars_budget = 0; }
+    }
+    if out.ends_with('\n') { let _ = out.pop(); }
+    if chars_budget == 0 || clean.lines().count() > max_lines {
+        if !out.ends_with('…') { out.push_str("…"); }
+    }
+    out
+}
+
 pub mod keyboard;
 
 /// Font size change interval in px.
@@ -842,9 +971,8 @@ impl<T: EventListener> Execute<T> for Action {
                                 }
                                 body.push('\n');
                             }
-                            // Show only first few lines of pasted content for safety
-                            let preview: String =
-                                text.lines().take(10).collect::<Vec<_>>().join("\n");
+                            // Show sanitized preview of pasted content for safety
+                               let preview = sanitize_preview(&text, 10, 1200);
                             body.push_str(&format!("Pasted content (preview):\n{}", preview));
 
                             let title = match risk.level {
@@ -880,8 +1008,138 @@ impl<T: EventListener> Execute<T> for Action {
                         }
                     }
                 }
-                // Default path: paste directly
-                ctx.paste(&text, true);
+                // Default path: if multi-line, show quick Run/Cancel; else paste directly
+                let is_multiline = text.contains('\n');
+                if is_multiline {
+                    // Build sanitized preview of the multi-line content (first 10 lines)
+                    let preview = sanitize_preview(&text, 10, 1200);
+                    let title = "Multi-line paste".to_string();
+                    let body = format!("About to paste multiple lines. Run after paste?\n\nPreview:\n{}", preview);
+                    match crate::ui_confirm::request_confirm(
+                        title,
+                        body,
+                        Some("Run".into()),
+                        Some("Just Paste".into()),
+                        Some(20_000),
+                    ) {
+                        Ok(true) => {
+                            // Paste and run
+                            ctx.paste(&text, true);
+                            ctx.write_to_pty("\n".as_bytes());
+                        }
+                        Ok(false) => {
+                            // Paste only
+                            ctx.paste(&text, true);
+                        }
+                        Err(_e) => {
+                            // On error or dismiss, default to insert-only
+                            ctx.paste(&text, true);
+                        }
+                    }
+                } else {
+                    ctx.paste(&text, true);
+                }
+            }
+            Action::PasteAndRun => {
+                let text = ctx.clipboard_mut().load(ClipboardType::Clipboard);
+                if text.is_empty() {
+                    return;
+                }
+                // Always present a preview before executing even if safe
+                let mut require_preview = true;
+                if ctx.config().security.gate_paste_events {
+                    let policy = ctx.config().security.clone();
+                    let mut lens = SecurityLens::new(policy.clone());
+                    if let Some(risk) = lens.analyze_paste_content(&text) {
+                        if lens.should_block(&risk) {
+                            let message = message_bar::Message::new(
+                                format!(
+                                    "Blocked risky paste ({}). {}",
+                                    match risk.level {
+                                        RiskLevel::Critical => "CRITICAL",
+                                        RiskLevel::Warning => "WARNING",
+                                        RiskLevel::Caution => "CAUTION",
+                                        RiskLevel::Safe => "SAFE",
+                                    },
+                                    risk.explanation
+                                ),
+                                message_bar::MessageType::Error,
+                            );
+                            ctx.send_user_event(crate::event::EventType::Message(message));
+                            return;
+                        }
+                        let requires_confirmation = policy
+                            .require_confirmation
+                            .get(&risk.level)
+                            .copied()
+                            .unwrap_or(false);
+                        if requires_confirmation {
+                            let mut body = String::new();
+                            body.push_str(&format!("{}\n\n", risk.explanation));
+                            if !risk.mitigations.is_empty() {
+                                body.push_str("Suggested mitigations:\n");
+                                for m in &risk.mitigations {
+                                    body.push_str(&format!("  • {}\n", m));
+                                }
+                                body.push('\n');
+                            }
+                            let preview = sanitize_preview(&text, 10, 1200);
+                            body.push_str(&format!("Pasted content (preview):\n{}", preview));
+                            let title = match risk.level {
+                                RiskLevel::Critical => "CRITICAL: Confirm paste & run".into(),
+                                RiskLevel::Warning => "Warning: Confirm paste & run".into(),
+                                RiskLevel::Caution => "Caution: Confirm paste & run".into(),
+                                RiskLevel::Safe => "Confirm paste & run".into(),
+                            };
+                            match crate::ui_confirm::request_confirm(
+                                title,
+                                body,
+                                Some("Paste & Run".into()),
+                                Some("Cancel".into()),
+                                Some(30_000),
+                            ) {
+                                Ok(true) => {
+                                    ctx.paste(&text, true);
+                                    ctx.write_to_pty("\n".as_bytes());
+                                }
+                                Ok(false) => {}
+                                Err(e) => {
+                                    let message = message_bar::Message::new(
+                                        format!("Paste & run confirmation failed: {}", e),
+                                        message_bar::MessageType::Warning,
+                                    );
+                                    ctx.send_user_event(crate::event::EventType::Message(message));
+                                }
+                            }
+                            return;
+                        }
+                        // If a risk-level confirmation was already shown, we won't show the preview again
+                        require_preview = !requires_confirmation;
+                    }
+                }
+                // Show preview confirmation when required (safe or not prompted yet)
+                if require_preview {
+                    let preview = sanitize_preview(&text, 10, 1200);
+                    let title = "Paste & Run".to_string();
+                    let body = format!("About to paste and run:\n\n{}", preview);
+                    match crate::ui_confirm::request_confirm(
+                        title,
+                        body,
+                        Some("Paste & Run".into()),
+                        Some("Cancel".into()),
+                        Some(20_000),
+                    ) {
+                        Ok(true) => {
+                            ctx.paste(&text, true);
+                            ctx.write_to_pty("\n".as_bytes());
+                        }
+                        _ => { /* Cancelled: do nothing */ }
+                    }
+                } else {
+                    // Already confirmed by security gating; proceed
+                    ctx.paste(&text, true);
+                    ctx.write_to_pty("\n".as_bytes());
+                }
             }
             Action::PasteSelection => {
                 let text = ctx.clipboard_mut().load(ClipboardType::Selection);
@@ -2783,6 +3041,24 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_preview_strips_ansi_and_truncates() {
+        let input = "\x1b[31mRED\x1b[0m\nline2\nline3\nline4";
+        let out = sanitize_preview(input, 2, 6);
+        // Two lines, limited chars; ellipsis present
+        assert!(out.starts_with("RED\nli"));
+        assert!(out.ends_with("…"));
+    }
+
+    #[test]
+    fn sanitize_preview_redacts_bearer_and_keys() {
+        let input = "Authorization: Bearer abcdefghijklmnop\napi_key = 12345\npassword: p@ss";
+        let out = sanitize_preview(input, 5, 2000);
+        assert!(out.contains("Authorization: Bearer {{REDACTED}}"));
+        assert!(out.contains("api_key = {{REDACTED}}"));
+        assert!(out.contains("password: {{REDACTED}}"));
+    }
 
     use winit::event::{DeviceId, Event as WinitEvent, WindowEvent};
     use winit::keyboard::Key;

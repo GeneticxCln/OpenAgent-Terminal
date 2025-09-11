@@ -327,10 +327,14 @@ impl WindowContext {
                                     .cloned()
                             })
                             .unwrap_or_default();
-                        Some(crate::ai_runtime::AiRuntime::from_secure_config(
-                            provider_name,
-                            &prov_cfg,
-                        ))
+{
+                            let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
+                                provider_name,
+                                &prov_cfg,
+                            );
+                            rt.set_context_config(config.ai.context.clone());
+                            Some(rt)
+                        }
                     } else {
                         None
                     }
@@ -480,10 +484,12 @@ impl WindowContext {
                     })
                     .unwrap_or_default();
 
-                self.ai_runtime = Some(crate::ai_runtime::AiRuntime::from_secure_config(
+let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
                     provider_name,
                     &prov_cfg,
-                ));
+                );
+                rt.set_context_config(self.config.ai.context.clone());
+                self.ai_runtime = Some(rt);
             } else {
                 self.ai_runtime = None;
             }

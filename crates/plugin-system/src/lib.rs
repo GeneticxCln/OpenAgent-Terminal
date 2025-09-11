@@ -694,4 +694,27 @@ mod tests {
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 0);
     }
+
+    #[tokio::test]
+    async fn test_load_minimal_wasm_plugin() {
+        // Build a minimal WASM module with just an exported memory. This exercises
+        // the WASM runtime path without requiring full plugin ABI.
+        // The manager should load it and fall back to default metadata when
+        // plugin_get_metadata is not present.
+        let wat_src = r#"(module (memory (export "memory") 1))"#;
+        let wasm_bytes = wat::parse_str(wat_src).expect("wat to wasm parse failed");
+
+        let temp_dir = TempDir::new().unwrap();
+        let wasm_path = temp_dir.path().join("minimal.wasm");
+        std::fs::write(&wasm_path, wasm_bytes).expect("write wasm");
+
+        let manager = UnifiedPluginManager::new(temp_dir.path()).expect("manager");
+        let load_res = manager.load_plugin(&wasm_path).await;
+        assert!(load_res.is_ok(), "failed to load minimal wasm plugin: {:?}", load_res);
+
+        let plugins = manager.list_plugins().await;
+        assert_eq!(plugins.len(), 1, "expected one loaded plugin");
+        // When metadata export is missing, name defaults to "Unknown Plugin".
+        assert_eq!(plugins[0].name, "Unknown Plugin");
+    }
 }

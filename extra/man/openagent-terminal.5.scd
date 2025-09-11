@@ -1179,19 +1179,17 @@ Keep the log file after quitting OpenAgent Terminal.
 	Example:
 		_OPENAGENT_TERMINAL_EXTRA_LOG_TARGETS="winit;vte" openagent-terminal -vvv_
 
-*renderer* = _"glsl3"_ | _"gles2"_ | _"gles2pure"_ | _"None"_
+*renderer*
 
-	Force use of a specific OpenGL renderer, _"None"_ will use the highest available
-	one.
+	Removed. OpenAgent Terminal is WGPU-only; OpenGL renderer selection is no longer supported.
 
-	Default: _"None"_
+*render_backend*
 
-*prefer_wgpu* = _true_ | _false_
+	WGPU-only. If WGPU initialization fails on your system, the application exits with
+	a clear error. There is no OpenGL fallback.
 
-	Prefer using the experimental WGPU backend when built. If initialization fails,
-	OpenAgent Terminal automatically falls back to the OpenGL path.
-
-	Default: _false_
+	You can influence the WGPU adapter/backend via the _WGPU_BACKEND_ environment
+	variable when supported by your platform (examples: _vk_, _dx12_, _metal_).
 
 *subpixel_text* = _"Auto"_ | _"Enabled"_ | _"Disabled"_
 
@@ -1238,12 +1236,9 @@ Keep the log file after quitting OpenAgent Terminal.
 
 	Default: _false_
 
-*prefer_egl* = _true_ | _false_
+*prefer_egl*
 
-	Use EGL as display API if the current platform allows it. Note that
-	transparency may not work with EGL on Linux/BSD.
-
-	Default: _false_
+	Removed. EGL selection applies to the legacy OpenGL path, which is no longer used.
 
 # TROUBLESHOOTING
 
@@ -1256,19 +1251,21 @@ On Linux/BSD, the window backend is auto-detected. To force one for debugging:
 
 GPU drivers
 
-Minimum requirement is OpenGL ES 2.0. Verify driver setup:
+WGPU requires a functioning modern graphics stack. Verify driver setup:
 
-	_glxinfo -B_
 	_vulkaninfo_
+	_metal tools_ (macOS)
+	_dxdiag_ (Windows)
 
-wgpu vs OpenGL
+WGPU backends
 
-OpenAgent Terminal uses OpenGL by default. When built with the optional wgpu backend, select a backend with:
+OpenAgent Terminal is WGPU-only. You may select a WGPU backend with:
 
-	_WGPU_BACKEND=vk openagent-terminal_   # Vulkan
-	_WGPU_BACKEND=gl openagent-terminal_   # OpenGL
+	_WGPU_BACKEND=vk openagent-terminal_     # Vulkan (Linux/Windows)
+	_WGPU_BACKEND=dx12 openagent-terminal_   # DirectX 12 (Windows)
+	_WGPU_BACKEND=metal openagent-terminal_  # Metal (macOS)
 
-If you see 'No adapters found' or 'device lost', try switching backend or updating drivers.
+If you see 'No adapters found' or 'device lost', try switching the backend or updating drivers.
 
 Hybrid/discrete GPUs
 
