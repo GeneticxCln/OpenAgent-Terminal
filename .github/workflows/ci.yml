@@ -321,7 +321,17 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
         run: |
           set -euo pipefail
           cargo llvm-cov --workspace --exclude openagent-terminal --lcov --output-path lcov.info
+          # Enforce a minimal workspace coverage threshold (lines). Adjust as needed.
+          THRESH=$(cargo llvm-cov --workspace --json | jq -r '."coverage"."line" // .coverage.line // empty')
+          echo "Coverage(line): ${THRESH}%"
+          # Fallback: compute from summary if tool version differs
+          if [ -z "$THRESH" ]; then
+            THRESH=$(cargo llvm-cov --workspace --summary-only | sed -n 's/.*lines: \([0-9.]*\)%.*/\1/p')
+          fi
+          REQ=55
+          awk -v a="$THRESH" -v b="$REQ" 'BEGIN { exit (a+0 >= b ? 0 : 1) }'
       - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-lcov

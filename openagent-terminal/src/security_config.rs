@@ -336,6 +336,7 @@ mod tests {
         assert!(config.add_custom_pattern(invalid_level).is_err());
     }
 
+    #[cfg(feature = "security-lens")]
     #[test]
     fn test_security_lens_factory() {
         let config = SecurityConfig::default();

@@ -87,13 +87,13 @@ impl PtyActive {
     /// 3. Finally, return remaining safe resources
     pub fn shutdown(self) -> ChildExitWatcher {
         // CRITICAL: Drop conout pipe first, then backend (ConPTY)
-        // This prevents the ConPTY deadlock described in the FIXME
+        // This prevents the ConPTY deadlock described by Microsoft docs and prior issues
         drop(self.conout);
         drop(self.backend);
-        // conin can be dropped safely after ConPTY
+        // Drop conin after backend is gone
         drop(self.conin);
 
-        // Return the child watcher as it's still needed
+        // Return the child watcher as it's still needed for event delivery
         self.child_watcher
     }
 }

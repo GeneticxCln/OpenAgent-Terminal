@@ -105,6 +105,20 @@ impl WorkspaceManager {
         Ok(())
     }
 
+    /// Test-only initializer that does not require an EventLoopProxy. Intended for CI where building
+    /// a winit EventLoop is problematic. Requires test env vars to control PTY behavior.
+    pub fn initialize_warp_for_tests_no_eventloop(
+        &mut self,
+        window_id: winit::window::WindowId,
+        restore_on_startup: bool,
+    ) -> Result<(), WarpIntegrationError> {
+        if let Some(warp) = &mut self.warp {
+            let size_info = self.size_info;
+            warp.initialize_for_tests(window_id, size_info, restore_on_startup)?;
+        }
+        Ok(())
+    }
+
     /// Execute a Warp action if Warp functionality is enabled
     pub fn execute_warp_action(
         &mut self,
