@@ -1435,7 +1435,14 @@ let mut renderer = Self {
             // Since we don't have Display here, we stage with a helper in draw_cells path next frame.
             // As a compromise, draw using UI sprite path is not suitable; so we skip adding text here.
             // Instead, draw a tiny white rect as a visual indicator next to the bg.
-            let ind = RenderRect { x: 12.0, y: 12.0, width: 40.0, height: 2.0, color: crate::display::color::Rgb::new(255,255,255), alpha: 0.8, kind: 0u32.into() };
+            let ind = RenderRect::new(
+                12.0,
+                12.0,
+                40.0,
+                2.0,
+                crate::display::color::Rgb::new(255, 255, 255),
+                0.8,
+            );
             self.pending_bg.push(ind);
         }
 

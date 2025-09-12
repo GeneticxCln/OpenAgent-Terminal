@@ -190,36 +190,62 @@ impl WorkspaceManager {
 
     /// Split the current pane horizontally
     pub fn split_horizontal(&mut self, ratio: f32) -> Option<PaneId> {
-        if let Some(tab) = self.active_tab_mut() {
-            let new_id = self.tabs.allocate_pane_id();
-            if self
-                .splits
-                .split_horizontal_with_id(&mut tab.split_layout, tab.active_pane, ratio, new_id)
-            {
-                Some(new_id)
-            } else {
-                None
-            }
+        // Allocate new pane id before borrowing the active tab
+        let new_id = self.tabs.allocate_pane_id();
+
+        // Extract the current layout and active pane, then release the borrow on `self`
+        let (mut layout, active_pane) = if let Some(tab) = self.active_tab_mut() {
+            let ap = tab.active_pane;
+            let old_layout = std::mem::replace(
+                &mut tab.split_layout,
+                split_manager::SplitLayout::Single(ap),
+            );
+            (old_layout, ap)
         } else {
-            None
+            return None;
+        };
+
+        // Perform the split using the SplitManager while no borrow to `tab` is held
+        let ok = self
+            .splits
+            .split_horizontal_with_id(&mut layout, active_pane, ratio, new_id);
+
+        // Write the possibly-updated layout back to the active tab
+        if let Some(tab) = self.active_tab_mut() {
+            tab.split_layout = layout;
         }
+
+        if ok { Some(new_id) } else { None }
     }
 
     /// Split the current pane vertically
     pub fn split_vertical(&mut self, ratio: f32) -> Option<PaneId> {
-        if let Some(tab) = self.active_tab_mut() {
-            let new_id = self.tabs.allocate_pane_id();
-            if self
-                .splits
-                .split_vertical_with_id(&mut tab.split_layout, tab.active_pane, ratio, new_id)
-            {
-                Some(new_id)
-            } else {
-                None
-            }
+        // Allocate new pane id before borrowing the active tab
+        let new_id = self.tabs.allocate_pane_id();
+
+        // Extract the current layout and active pane, then release the borrow on `self`
+        let (mut layout, active_pane) = if let Some(tab) = self.active_tab_mut() {
+            let ap = tab.active_pane;
+            let old_layout = std::mem::replace(
+                &mut tab.split_layout,
+                split_manager::SplitLayout::Single(ap),
+            );
+            (old_layout, ap)
         } else {
-            None
+            return None;
+        };
+
+        // Perform the split using the SplitManager while no borrow to `tab` is held
+        let ok = self
+            .splits
+            .split_vertical_with_id(&mut layout, active_pane, ratio, new_id);
+
+        // Write the possibly-updated layout back to the active tab
+        if let Some(tab) = self.active_tab_mut() {
+            tab.split_layout = layout;
         }
+
+        if ok { Some(new_id) } else { None }
     }
 
     /// Focus the next pane in the current tab
