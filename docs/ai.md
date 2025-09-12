@@ -71,3 +71,27 @@ UX principles
 - Commands are authored in a scratch buffer, not in the shell line.
 - The AI produces proposals shown in a side panel. The UI never auto-runs them.
 - The feature can be entirely disabled at build time and at runtime.
+
+Conversation history (Preview)
+- Optional, local-only persistence of AI chats to improve continuity across sessions.
+- What is stored: role (user/assistant/system), content, timestamp, and optional metadata.
+- Privacy: history never leaves your machine unless you explicitly use a cloud provider for requests. Outbound requests are sanitized.
+
+Configuration
+
+```toml
+[storage]
+# Enable or disable history persistence
+enable_ai_history = true
+# Retention window in days
+ai_history_days = 90
+# Encrypt sensitive data at rest (uses platform keyring when available)
+encrypt_sensitive_data = true
+```
+
+Context windowing
+- When composing a new request, the runtime may include a window of prior messages, bounded by your [ai.context] max_bytes and provider token limits.
+- Disable enrichment entirely by setting [ai.context].enabled = false.
+
+Export/delete
+- UI/CLI affordances for exporting or deleting history are planned. You can disable persistence at any time with storage.enable_ai_history = false.

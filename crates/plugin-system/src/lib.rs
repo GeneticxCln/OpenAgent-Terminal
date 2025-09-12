@@ -271,6 +271,7 @@ pub struct WasmPluginContext {
     pub security: SecurityPolicy,
     pub resource_tracker: ResourceTracker,
     pub host_interface: Option<Arc<dyn host::HostInterface>>,
+    pub wasi_ctx: wasmtime_wasi::preview1::WasiP1Ctx,
 }
 
 /// Resource usage tracking
@@ -393,11 +394,19 @@ impl UnifiedPluginManager {
         let security = SecurityPolicy::from_permissions(&permissions);
 
         // Create plugin context
+        // Build a minimal WASI context (no preopened dirs by default). We inherit stdio
+        // to allow plugins to print logs; file and env access should be done via host functions
+        // which enforce SecurityPolicy.
+        let wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new()
+            .inherit_stdio()
+            .build_p1();
+
         let context = WasmPluginContext {
             permissions: permissions.clone(),
             security: security.clone(),
             resource_tracker: ResourceTracker::default(),
             host_interface: self.host_interface.clone(),
+            wasi_ctx,
         };
 
         let mut store = wasmtime::Store::new(&self.wasm_engine, context);
@@ -405,8 +414,12 @@ impl UnifiedPluginManager {
         // Set up resource limits
         store.limiter(|ctx| &mut ctx.resource_tracker as &mut dyn wasmtime::ResourceLimiter);
 
-        // Create linker and add host functions
+        // Create linker and add host + WASI functions
         let mut linker = wasmtime::Linker::new(&self.wasm_engine);
+        // Add WASI to linker
+        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |cx: &mut WasmPluginContext| &mut cx.wasi_ctx)
+            .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
+        // Add host functions after WASI
         self.add_host_functions(&mut linker)?;
 
         // Instantiate the module
@@ -573,7 +586,7 @@ impl UnifiedPluginManager {
         #[cfg(feature = "wasm-runtime")]
         if let Some(wasm_data) = &plugin.wasm_data {
             return self
-                .execute_wasm_command(plugin_id, command, args, wasm_data)
+                .execute_wasm_command(plugin_id, command, args, wasm_data, &plugin.abi)
                 .await;
         }
 
@@ -593,22 +606,72 @@ impl UnifiedPluginManager {
     #[cfg(feature = "wasm-runtime")]
     async fn execute_wasm_command(
         &self,
-        plugin_id: &str,
+        _plugin_id: &str,
         command: &str,
-        _args: &[String],
+        args: &[String],
         wasm_data: &WasmPluginData,
+        abi: &PluginAbi,
     ) -> Result<CommandOutput, PluginSystemError> {
-        let _store = wasm_data.store.lock().await;
+        // Delegate to the concrete runtime implementation
+        crate::runtime::execute_wasm_command_internal(abi, wasm_data, command, args).await
+    }
 
-        // This would implement the actual command execution
-        // using the standardized ABI
+    /// Provide completions via plugin
+    #[cfg(feature = "wasm-runtime")]
+    pub async fn provide_completions_json(
+        &self,
+        plugin_id: &str,
+        context_json: &[u8],
+    ) -> Result<Vec<Completion>, PluginSystemError> {
+        let plugins = self.plugins.read().await;
+        let plugin = plugins
+            .get(plugin_id)
+            .ok_or_else(|| PluginSystemError::NotFound(plugin_id.to_string()))?
+            .clone();
+        drop(plugins);
+        if let Some(wasm) = &plugin.wasm_data {
+            return crate::runtime::provide_completions_internal(&plugin.abi, wasm, context_json)
+                .await;
+        }
+        Err(PluginSystemError::Runtime("No WASM data available".into()))
+    }
 
-        Ok(CommandOutput {
-            stdout: format!("Executed {} on plugin {}", command, plugin_id),
-            stderr: String::new(),
-            exit_code: 0,
-            execution_time_ms: 10,
-        })
+    /// Collect context via plugin
+    #[cfg(feature = "wasm-runtime")]
+    pub async fn collect_context_via_plugin(
+        &self,
+        plugin_id: &str,
+        request: &ContextRequest,
+    ) -> Result<Option<Context>, PluginSystemError> {
+        let plugins = self.plugins.read().await;
+        let plugin = plugins
+            .get(plugin_id)
+            .ok_or_else(|| PluginSystemError::NotFound(plugin_id.to_string()))?
+            .clone();
+        drop(plugins);
+        if let Some(wasm) = &plugin.wasm_data {
+            return crate::runtime::collect_context_internal(&plugin.abi, wasm, request).await;
+        }
+        Err(PluginSystemError::Runtime("No WASM data available".into()))
+    }
+
+    /// Handle event via plugin
+    #[cfg(feature = "wasm-runtime")]
+    pub async fn handle_event_via_plugin(
+        &self,
+        plugin_id: &str,
+        event: &HookEvent,
+    ) -> Result<HookResponse, PluginSystemError> {
+        let plugins = self.plugins.read().await;
+        let plugin = plugins
+            .get(plugin_id)
+            .ok_or_else(|| PluginSystemError::NotFound(plugin_id.to_string()))?
+            .clone();
+        drop(plugins);
+        if let Some(wasm) = &plugin.wasm_data {
+            return crate::runtime::handle_event_internal(&plugin.abi, wasm, event).await;
+        }
+        Err(PluginSystemError::Runtime("No WASM data available".into()))
     }
 
     /// Execute command on native plugin

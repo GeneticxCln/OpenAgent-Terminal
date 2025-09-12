@@ -64,13 +64,18 @@ mod http_tests {
             .mount(&server)
             .await;
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "gpt-3.5-turbo".to_string(),
-        )
-        .unwrap();
-        let res = provider.propose(base_req());
+        let base_url = server.uri();
+        // Run provider creation and blocking call on a dedicated OS thread to avoid nested runtime shutdown within tokio
+        let handle = std::thread::spawn(move || {
+            let provider = OpenAiProvider::new(
+                "test_key".to_string(),
+                base_url,
+                "gpt-3.5-turbo".to_string(),
+            )
+            .unwrap();
+            provider.propose(base_req())
+        });
+        let res = handle.join().expect("thread panicked");
         assert!(res.is_err());
     }
 
@@ -87,13 +92,17 @@ mod http_tests {
             .mount(&server)
             .await;
 
-        let provider = OpenAiProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "gpt-3.5-turbo".to_string(),
-        )
-        .unwrap();
-        let res = provider.propose(base_req());
+        let base_url = server.uri();
+        let handle = std::thread::spawn(move || {
+            let provider = OpenAiProvider::new(
+                "test_key".to_string(),
+                base_url,
+                "gpt-3.5-turbo".to_string(),
+            )
+            .unwrap();
+            provider.propose(base_req())
+        });
+        let res = handle.join().expect("thread panicked");
         assert!(res.is_err());
     }
 }

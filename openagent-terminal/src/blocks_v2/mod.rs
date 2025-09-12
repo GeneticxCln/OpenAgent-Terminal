@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Block metadata and content
@@ -149,7 +149,7 @@ pub struct BlockMetadata {
     pub custom: HashMap<String, serde_json::Value>,
 }
 
-type BlockEventCallback = Box<dyn Fn(&BlockEvent) + Send + Sync>;
+type BlockEventCallback = Arc<dyn Fn(&BlockEvent) + Send + Sync>;
 
 /// Native block manager for creating and managing blocks without lazy fallbacks
 pub struct BlockManager {
@@ -166,6 +166,8 @@ pub struct BlockManager {
     executing_blocks: HashMap<BlockId, ExecutionHandle>,
     /// Native rendering state
     render_state: BlockRenderState,
+    /// Optional handle into the workspace PTY manager to reuse pane PTYs
+    pty_collection: Option<Arc<parking_lot::Mutex<openagent_terminal_core::tty::pty_manager::PtyManagerCollection>>>,
 }
 
 /// Session identifier for grouping blocks
@@ -262,7 +264,16 @@ impl BlockManager {
             event_callbacks: Vec::new(),
             executing_blocks: HashMap::new(),
             render_state: BlockRenderState::default(),
+            pty_collection: None,
         })
+    }
+
+    /// Provide access to the workspace PTY collection so Blocks can reuse pane PTYs
+    pub fn set_workspace_pty_collection(
+        &mut self,
+        collection: Arc<parking_lot::Mutex<openagent_terminal_core::tty::pty_manager::PtyManagerCollection>>,
+    ) {
+        self.pty_collection = Some(collection);
     }
 
     /// Register a native event callback for real-time updates
@@ -270,7 +281,8 @@ impl BlockManager {
     where
         F: Fn(&BlockEvent) + Send + Sync + 'static,
     {
-        self.event_callbacks.push(Box::new(callback));
+        let arc_cb: Arc<dyn Fn(&BlockEvent) + Send + Sync> = Arc::new(callback);
+        self.event_callbacks.push(arc_cb);
     }
 
     /// Emit block event immediately to all registered callbacks
@@ -295,36 +307,286 @@ impl BlockManager {
     }
 
     /// Start native command execution without lazy fallbacks
-    async fn start_native_execution(&mut self, block_id: BlockId, _command: String) -> Result<()> {
+    async fn start_native_execution(&mut self, block_id: BlockId, command: String) -> Result<()> {
+        use openagent_terminal_core::event::WindowSize;
+        use openagent_terminal_core::tty::{ChildEvent, EventedPty, EventedReadWrite, Options, Shell};
+        use std::io::Read;
+        use std::thread;
+        use std::time::Duration;
+
+        // Prepare streaming channel and in-memory buffer
         let (tx, _rx) = tokio::sync::broadcast::channel::<String>(128);
-        let execution_handle = ExecutionHandle {
+        let output_stream = Arc::new(std::sync::Mutex::new(String::new()));
+
+        let start_time = Utc::now();
+        let mut execution_handle = ExecutionHandle {
             block_id,
-            pid: None, // Will be set when process starts
-            start_time: Utc::now(),
+            pid: None, // Will be set when PTY starts
+            start_time,
             status: ExecutionStatus::Running,
-            output_stream: Arc::new(std::sync::Mutex::new(String::new())),
-            tx,
+            output_stream: output_stream.clone(),
+            tx: tx.clone(),
         };
 
+        // Store handle before starting process
         self.executing_blocks.insert(block_id, execution_handle);
 
-        // Emit immediate event - no lazy processing
+        // Emit immediate event - indicates running state
         self.emit_event(BlockEvent::Executed(
             block_id,
             ExecutionResult {
-                exit_code: -1, // Indicates still running
+                exit_code: -1, // running
                 output: String::new(),
                 error_output: String::new(),
                 duration: std::time::Duration::from_secs(0),
             },
         ));
 
-        // TODO: Start actual process execution in a separate task
-        // For now, we'll simulate with a placeholder
-        tokio::spawn(async move {
-            // Native process execution would go here
-            // This should interface directly with the PTY/terminal
+        // Resolve execution context from block
+        let block = self.get_block(block_id).await?;
+        let working_dir = block.directory.clone();
+        let env_vars = block.environment.clone();
+        let shell = block.shell;
+
+        // If workspace PTY collection is available and there is an active PTY we can tap,
+        // prefer reusing that PTY to stream output through the existing terminal process.
+        if let Some(ref collection) = self.pty_collection {
+            let callbacks = self.event_callbacks.clone();
+            // For now, pick the first active PTY
+            let ptys = {
+                let c = collection.lock();
+                c.active_pty_ids()
+            };
+            if let Some(pty_id) = ptys.first().copied() {
+                let collection = collection.clone();
+                let tx_clone = tx.clone();
+                let output_stream_clone = output_stream.clone();
+                let block_id_clone = block_id;
+                let start_instant = std::time::Instant::now();
+                let (done_tx, done_rx) = tokio::sync::oneshot::channel::<(String, i32, u64)>();
+
+                // Reader task: attach to the manager and pull bytes
+                tokio::spawn(async move {
+                    use std::io::Read;
+                    use std::thread;
+                    use std::time::Duration;
+
+                    let mut local_exit: Option<i32> = None;
+                    let start = start_instant;
+                    let mut buf = [0u8; 8192];
+
+                    loop {
+                        let mut read_any = false;
+                        // Scoped lock for read
+                        if let Some(manager) = collection.lock().get_manager(pty_id) {
+                            let mut mgr = manager.lock();
+                            match mgr.read_nonblocking(&mut buf) {
+                                Ok(0) => {}
+                                Ok(n) => {
+                                    read_any = true;
+                                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                                    let _ = tx_clone.send(chunk.clone());
+                                    if let Ok(mut s) = output_stream_clone.lock() {
+                                        s.push_str(&chunk);
+                                    }
+                                    // Emit per-chunk update event
+                                    for cb in &callbacks {
+                                        cb(&BlockEvent::Updated(block_id_clone));
+                                    }
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                                Err(e) => {
+                                    error!("Blocks v2: workspace PTY read error: {}", e);
+                                    break;
+                                }
+                            }
+
+                            // Check child events
+                            for ev in mgr.poll_child_events() {
+                                if let openagent_terminal_core::tty::ChildEvent::Exited(code) = ev {
+                                    local_exit = code.or(Some(0));
+                                    break;
+                                }
+                            }
+                        }
+
+                        if local_exit.is_some() { break; }
+                        if !read_any { thread::sleep(Duration::from_millis(15)); }
+                    }
+
+                    let dur = start.elapsed().as_millis() as u64;
+                    let output = output_stream_clone.lock().ok().map(|m| m.clone()).unwrap_or_default();
+                    let code = local_exit.unwrap_or(0);
+                    let _ = done_tx.send((output, code, dur));
+                });
+
+                // Await completion and persist
+                if let Ok((final_output, exit_code, duration_ms)) = done_rx.await {
+                    self
+                        .update_block_output(block_id, final_output, exit_code, duration_ms)
+                        .await?;
+                    self.executing_blocks.remove(&block_id);
+                    return Ok(());
+                }
+            }
+        }
+
+        // Build shell + args to run this command in a login shell when applicable
+        let (program, args): (String, Vec<String>) = match shell {
+            ShellType::Bash => (
+                "bash".to_string(),
+                vec!["-lc".to_string(), command.clone()],
+            ),
+            ShellType::Zsh => (
+                "zsh".to_string(),
+                vec!["-lc".to_string(), command.clone()],
+            ),
+            ShellType::Fish => (
+                "fish".to_string(),
+                vec!["-l".to_string(), "-c".to_string(), command.clone()],
+            ),
+            ShellType::PowerShell => (
+                "pwsh".to_string(),
+                vec!["-NoProfile".to_string(), "-Command".to_string(), command.clone()],
+            ),
+            ShellType::Nushell => ("nu".to_string(), vec!["-c".to_string(), command.clone()]),
+            ShellType::Custom(_) => (
+                // Fallback to POSIX sh
+                "sh".to_string(),
+                vec!["-lc".to_string(), command.clone()],
+            ),
+        };
+
+        // Completion reporting back to async context
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<(String, i32, u64)>();
+        // PID reporting
+        let (pid_tx, pid_rx) = tokio::sync::oneshot::channel::<u32>();
+        let callbacks = self.event_callbacks.clone();
+
+        // Clone for move into blocking task
+        let tx_clone = tx.clone();
+        let output_stream_clone = output_stream.clone();
+        let block_id_clone = block_id;
+        let start_instant = std::time::Instant::now();
+
+        // Spawn a blocking task that creates a PTY and streams output
+        tokio::task::spawn_blocking(move || {
+            // Construct PTY options
+            let mut options = Options {
+                shell: Some(Shell::new(program, args)),
+                working_directory: Some(working_dir.clone()),
+                drain_on_exit: true,
+                #[cfg(target_os = "windows")]
+                escape_args: true,
+                env: env_vars.clone(),
+            };
+
+            // Provide sane defaults for PTY size (detached from UI)
+            let window_size = WindowSize {
+                num_lines: 24,
+                num_cols: 80,
+                cell_width: 8,
+                cell_height: 16,
+            };
+
+            // Create PTY
+            let mut pty = match openagent_terminal_core::tty::new(&options, window_size, 0) {
+                Ok(pty) => pty,
+                Err(e) => {
+                    error!(
+                        "Blocks v2: failed to spawn PTY for block {}: {}",
+                        block_id_clone, e
+                    );
+                    return;
+                }
+            };
+
+            // Report PID if available
+            #[cfg(not(windows))]
+            {
+                let pid = pty.child().id();
+                let _ = pid_tx.send(pid);
+            }
+
+            // Read loop (non-blocking read with small sleeps)
+            let mut buf = [0u8; 8192];
+            let mut exit_code: Option<i32> = None;
+
+            'event_loop: loop {
+                let mut made_progress = false;
+                loop {
+                    match pty.reader().read(&mut buf) {
+                        Ok(0) => break, // EOF or no data
+                        Ok(n) => {
+                            made_progress = true;
+                            let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                            // Broadcast first
+                            let _ = tx_clone.send(chunk.clone());
+                            // Append to in-memory stream too
+                            if let Ok(mut s) = output_stream_clone.lock() {
+                                s.push_str(&chunk);
+                            }
+                            // Emit per-chunk update event
+                            for cb in &callbacks {
+                                cb(&BlockEvent::Updated(block_id_clone));
+                            }
+                        }
+                        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(err) => {
+                            error!(
+                                "Blocks v2: read error on PTY for block {}: {}",
+                                block_id_clone, err
+                            );
+                            break;
+                        }
+                    }
+                }
+
+                // Check for child exit
+                while let Some(evt) = pty.next_child_event() {
+                    match evt {
+                        ChildEvent::Exited(code) => {
+                            exit_code = code.or(Some(0));
+                            break 'event_loop;
+                        }
+                    }
+                }
+
+                if !made_progress {
+                    // Avoid busy-looping when no data is available
+                    thread::sleep(Duration::from_millis(15));
+                }
+            }
+
+            // Compute duration
+            let duration = start_instant.elapsed();
+
+            // Final state: send a trailing newline to mark completion (optional)
+            let _ = tx_clone.send(String::new());
+
+            // Report completion back to async context
+            let (final_output, code) = {
+                let s = output_stream_clone.lock().ok().map(|m| m.clone()).unwrap_or_default();
+                (s, exit_code.unwrap_or(0))
+            };
+            let _ = done_tx.send((final_output, code, duration.as_millis() as u64));
         });
+
+        // Update PID when available
+        if let Ok(pid) = pid_rx.await {
+            if let Some(handle) = self.executing_blocks.get_mut(&block_id) {
+                handle.pid = Some(pid);
+            }
+        }
+
+        // Await completion and persist results (emits BlockEvent::Updated via update_block_output)
+        if let Ok((final_output, exit_code, duration_ms)) = done_rx.await {
+            self
+                .update_block_output(block_id, final_output, exit_code, duration_ms)
+                .await?;
+            // Remove from executing map
+            self.executing_blocks.remove(&block_id);
+        }
 
         Ok(())
     }

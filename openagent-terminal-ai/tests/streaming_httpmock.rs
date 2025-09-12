@@ -34,16 +34,19 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string()).unwrap();
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |c: &str| {
-            collected.push_str(c);
-        };
-        let ok = provider
-            .propose_stream(base_req(), &mut on_chunk, &cancel)
-            .unwrap();
+        let base_url = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(bool, String)>(1);
+        std::thread::spawn(move || {
+            let provider = OpenAiProvider::new("test_key".to_string(), base_url, "gpt-4".to_string()).unwrap();
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |c: &str| {
+                collected.push_str(c);
+            };
+            let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
+            tx.send((ok, collected)).ok();
+        });
+        let (ok, collected) = rx.recv().unwrap();
         assert!(ok);
         assert!(collected.contains("echo "));
         assert!(collected.contains("ls"));
@@ -69,17 +72,19 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
-                .unwrap();
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |c: &str| {
-            collected.push_str(c);
-        };
-        let ok = provider
-            .propose_stream(base_req(), &mut on_chunk, &cancel)
-            .unwrap();
+        let base_url = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(bool, String)>(1);
+        std::thread::spawn(move || {
+            let provider = AnthropicProvider::new("test_key".to_string(), base_url, "claude-3".to_string()).unwrap();
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |c: &str| {
+                collected.push_str(c);
+            };
+            let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
+            tx.send((ok, collected)).ok();
+        });
+        let (ok, collected) = rx.recv().unwrap();
         assert!(ok);
         assert!(collected.contains("echo "));
         assert!(collected.contains("ls"));
@@ -88,7 +93,7 @@ mod tests {
     #[tokio::test]
     async fn openai_streaming_abort_no_done() {
         let server = MockServer::start().await;
-        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\" }]}]}\n\n"; // No [DONE]
+        let body = "data: {\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"partial\\\"}}]}\\n\\n"; // No [DONE]
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
             .respond_with(
@@ -99,17 +104,19 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenAiProvider::new("test_key".to_string(), server.uri(), "gpt-4".to_string()).unwrap();
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |c: &str| {
-            collected.push_str(c);
-        };
-        // Should still return Ok(true) after stream ends
-        let ok = provider
-            .propose_stream(base_req(), &mut on_chunk, &cancel)
-            .unwrap();
+        let base_url = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(bool, String)>(1);
+        std::thread::spawn(move || {
+            let provider = OpenAiProvider::new("test_key".to_string(), base_url, "gpt-4".to_string()).unwrap();
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |c: &str| {
+                collected.push_str(c);
+            };
+            let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
+            tx.send((ok, collected)).ok();
+        });
+        let (ok, collected) = rx.recv().unwrap();
         assert!(ok);
         assert!(collected.contains("partial"));
     }

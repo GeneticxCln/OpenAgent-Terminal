@@ -498,6 +498,31 @@ mod performance_tests {
 mod feature_compatibility_tests {
 
     #[test]
+    fn test_workspace_enabled_flag_basic() {
+        let mut cfg = openagent_terminal::config::UiConfig::default();
+        let size_info = openagent_terminal::display::SizeInfo::new(
+            640.0, 480.0, 10.0, 20.0, 0.0, 0.0, false,
+        );
+
+        // Enabled by default in defaults
+        let wm_default = openagent_terminal::workspace::WorkspaceManager::new(
+            openagent_terminal::workspace::WorkspaceId(0),
+            std::rc::Rc::new(cfg.clone()),
+            size_info,
+        );
+        assert!(wm_default.is_enabled());
+
+        // Explicitly disable
+        cfg.workspace.enabled = false;
+        let wm_disabled = openagent_terminal::workspace::WorkspaceManager::new(
+            openagent_terminal::workspace::WorkspaceId(1),
+            std::rc::Rc::new(cfg),
+            size_info,
+        );
+        assert!(!wm_disabled.is_enabled());
+    }
+
+    #[test]
     fn test_compile_with_different_feature_combinations() {
         // This test exists to ensure different feature combinations compile
         // The actual feature combinations are tested by the CI system

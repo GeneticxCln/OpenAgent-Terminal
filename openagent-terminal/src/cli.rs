@@ -441,6 +441,48 @@ pub enum SyncCommand {
         #[clap(long, value_hint = ValueHint::FilePath)]
         from: PathBuf,
     },
+    /// Manage trusted peers (add/list/revoke/remove/rotate)
+    Trust(SyncTrustOptions),
+}
+
+#[cfg(feature = "sync")]
+#[derive(Args, Debug, Clone)]
+pub struct SyncTrustOptions {
+    #[clap(subcommand)]
+    pub command: TrustSubcommand,
+}
+
+#[cfg(feature = "sync")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum TrustSubcommand {
+    /// Add a trusted peer
+    Add {
+        /// Peer installation ID
+        installation_id: String,
+        /// Display name for this peer
+        #[clap(long, short = 'n')]
+        display_name: Option<String>,
+        /// Public key hex (raw Ed25519 bytes in hex)
+        #[clap(long, short = 'k')]
+        public_key_hex: String,
+    },
+    /// List peers (non-revoked by default)
+    List {
+        /// Include revoked peers in output
+        #[clap(long, action = ArgAction::SetTrue)]
+        all: bool,
+    },
+    /// Remove a peer entirely from trust store
+    Remove { installation_id: String },
+    /// Revoke a peer (kept in trust store, marked untrusted)
+    Revoke { installation_id: String },
+    /// Rotate a peer's public key
+    Rotate {
+        installation_id: String,
+        /// New public key hex (raw Ed25519 bytes)
+        #[clap(long, short = 'k')]
+        new_public_key_hex: String,
+    },
 }
 
 // === Security Lens CLI ===

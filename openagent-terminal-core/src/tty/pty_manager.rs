@@ -111,6 +111,8 @@ pub struct PtyManager {
     pty: Option<Box<dyn EventedPty<Reader = File, Writer = File> + Send>>,
     /// Performance metrics
     metrics: PtyMetrics,
+    /// Child PID if available (Unix)
+    child_pid: Option<u32>,
 }
 
 /// Status of a PTY process
@@ -173,6 +175,7 @@ impl PtyManager {
             status: PtyStatus::Starting,
             pty: None, // Will be set when PTY is created
             metrics: PtyMetrics::default(),
+            child_pid: None,
         })
     }
 
@@ -207,6 +210,12 @@ impl PtyManager {
         // Create the PTY
         match crate::tty::new(&pty_options, window_size, window_id) {
             Ok(pty) => {
+                // Capture PID on Unix before boxing
+                #[cfg(not(windows))]
+                {
+                    self.child_pid = Some(pty.child().id());
+                }
+
                 self.pty = Some(Box::new(pty));
                 self.status = PtyStatus::Active;
                 self.metrics.startup_time_ms = Some(start_time.elapsed().as_millis() as u64);
@@ -289,6 +298,24 @@ impl PtyManager {
     /// Get performance metrics
     pub fn metrics(&self) -> &PtyMetrics {
         &self.metrics
+    }
+
+    /// Get child PID if available
+    pub fn child_pid(&self) -> Option<u32> {
+        self.child_pid
+    }
+
+    /// Try a non-blocking read of available PTY bytes
+    pub fn read_nonblocking(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::io::{Error, ErrorKind, Read};
+        if let Some(ref mut pty) = self.pty {
+            match pty.reader().read(buf) {
+                Ok(n) => Ok(n),
+                Err(e) => Err(e),
+            }
+        } else {
+            Err(Error::new(ErrorKind::NotConnected, "PTY not initialized"))
+        }
     }
 
     /// Check if PTY is idle (no activity for specified duration)

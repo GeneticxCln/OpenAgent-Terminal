@@ -126,6 +126,60 @@ never_auto_run = true
 3. Invalid response → Log and show generic error
 4. Rate limiting → Implement exponential backoff
 
+### Conversation History (Preview)
+
+Purpose
+- Maintain optional, privacy-respecting conversation history across sessions to improve continuity and user experience.
+
+Data model (persisted locally; maps to default SQLite schema)
+```sql
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    message_type TEXT NOT NULL, -- user | assistant | system
+    content TEXT NOT NULL,
+    metadata JSON,
+    timestamp INTEGER NOT NULL
+);
+```
+
+Runtime behavior
+- Messages are appended as interactions occur (user prompts, assistant responses, system events).
+- When building provider requests, the runtime can include a bounded window of prior messages, constrained by:
+  - [ai.context].max_bytes budget (see docs/ai.md)
+  - Provider-specific token limits
+  - Optional per-request limit (e.g., last N messages)
+
+Privacy & security
+- All outbound requests are sanitized before leaving the process (see docs/ai.md Privacy & sanitization).
+- History is stored locally; no data leaves the machine unless a cloud provider is explicitly configured.
+- Sensitive history may be encrypted at rest when storage.encrypt_sensitive_data = true.
+
+Configuration (see also the storage configuration)
+- Enable/disable: storage.enable_ai_history (default: true)
+- Retention: storage.ai_history_days (default: 90)
+- Export/delete: planned UI/CLI affordances; manual deletion supported via storage backend.
+
+API sketch
+```rust
+pub struct ConversationManager {
+    storage: Arc<StorageBackend>,
+    current_session: String,
+}
+
+impl ConversationManager {
+    pub fn store_message(&self, message_type: MessageType, content: &str, metadata: Option<serde_json::Value>) -> Result<()> {
+        // Insert into ai_conversations with current_session and timestamp
+        # /* see docs/github-issues/004-persistent-data-storage.md for full example */
+        Ok(())
+    }
+
+    pub fn load_conversation_history(&self, limit: Option<u32>) -> Result<Vec<ConversationMessage>> {
+        // Query by session_id ordered by timestamp, with optional limit
+        Ok(vec![])
+    }
+}
+```
 ## Alternatives Considered
 
 ### 1. Single Provider Only
