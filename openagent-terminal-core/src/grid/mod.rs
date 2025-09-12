@@ -267,8 +267,10 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         if region.start == 0 {
             // Top-anchored scroll.
             if self.max_scroll_limit == 0 {
-                // No history: rotate only within the region using swaps so bottom-fixed lines stay intact.
-                for i in (region.start.0..region.end.0 - positions as i32).map(Line::from) {
+                // No history: perform an in-place subregion scroll to preserve buffer layout.
+                // Move lines upward by swapping from top to bottom so the content from
+                // below moves into the upper lines.
+                for i in (0..region.end.0 - positions as i32).map(Line::from) {
                     self.raw.swap(i, i + positions);
                 }
             } else {
@@ -285,7 +287,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                 }
             }
         } else {
-            // Subregion rotation without affecting history or display offset.
+            // Rotate lines without moving anything into history.
             for i in (region.start.0..region.end.0 - positions as i32).map(Line::from) {
                 self.raw.swap(i, i + positions);
             }

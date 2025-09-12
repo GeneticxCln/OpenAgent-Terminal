@@ -829,7 +829,7 @@ impl Display {
             let mut color = fg;
             #[cfg(not(feature = "ai"))]
             if is_ai {
-                color = muted;
+                color = tokens.text_muted;
             }
 
             let label_cols = label.chars().count();

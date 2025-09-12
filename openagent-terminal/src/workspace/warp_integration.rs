@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use openagent_terminal_core::grid::Dimensions;
-use openagent_terminal_core::tty::pty_manager::{PtyAiContext, PtyManagerCollection, ShellConfig};
+use openagent_terminal_core::tty::pty_manager::{PtyAiContext, PtyId, PtyManagerCollection, ShellConfig};
 
 use log::{debug, error, info, warn};
 use openagent_terminal_core::event::WindowSize;
@@ -91,6 +91,8 @@ pub struct WarpIntegration {
 
     /// PTY managers for each terminal
     pty_managers: PtyManagerCollection,
+    /// Pane -> PTY mapping
+    pty_by_pane: HashMap<PaneId, PtyId>,
 
     /// Configuration
     config: Rc<UiConfig>,
@@ -136,6 +138,7 @@ impl WarpIntegration {
             split_manager: WarpSplitManager::new(),
             terminals: HashMap::new(),
             pty_managers: PtyManagerCollection::new(),
+            pty_by_pane: HashMap::new(),
             config,
             window_id: None,
             size_info: None,
@@ -351,40 +354,38 @@ impl WarpIntegration {
 
     /// Create actual terminal instance for a pane
     fn create_terminal_for_pane(&mut self, pane_id: PaneId, working_dir: &Path) -> WarpResult<()> {
-        let Some(window_id) = &self.window_id else {
-            return Err(WarpIntegrationError::TerminalCreation(
-                "Window id not initialized".to_string(),
-            ));
-        };
-
+        // Size info is always required
         let Some(size_info) = &self.size_info else {
             return Err(WarpIntegrationError::TerminalCreation(
                 "SizeInfo not initialized".to_string(),
             ));
         };
 
-        let Some(event_proxy) = &self.event_proxy else {
+        // Window id is required for real runs; in test mode we can fall back to a dummy
+        let window_id = self.window_id.unwrap_or_else(|| WindowId::dummy());
+
+        // Create terminal only when we have an event proxy (normal runs). In special test modes
+        // we may spawn a real PTY without creating a Term or event proxy.
+        if let Some(event_proxy) = &self.event_proxy {
+            // Create EventProxy for this terminal
+            let terminal_event_proxy = EventProxy::new(event_proxy.clone(), window_id);
+
+            // Create terminal configuration
+            let term_config = openagent_terminal_core::term::Config::default();
+            let size_info = *size_info;
+
+            // Create terminal instance
+            let terminal =
+                Arc::new(FairMutex::new(Term::new(term_config, &size_info, terminal_event_proxy)));
+
+            // Store terminal reference
+            self.terminals.insert(pane_id, terminal);
+        } else if !Self::is_test_real_pty() {
+            // Without an event proxy we only proceed when explicitly running the test real PTY mode
             return Err(WarpIntegrationError::TerminalCreation(
                 "Event proxy not initialized".to_string(),
             ));
-        };
-
-        // Create EventProxy for this terminal
-        let terminal_event_proxy = EventProxy::new(event_proxy.clone(), *window_id);
-
-        // Create terminal configuration
-        let term_config = openagent_terminal_core::term::Config::default();
-        let size_info = *size_info;
-
-        // Create terminal instance
-        let terminal = Arc::new(FairMutex::new(Term::new(
-            term_config,
-            &size_info,
-            terminal_event_proxy,
-        )));
-
-        // Store terminal reference
-        self.terminals.insert(pane_id, terminal);
+        }
 
         // Create and store PTY manager with better error handling
         let shell_config = ShellConfig {
@@ -442,10 +443,25 @@ impl WarpIntegration {
         let pty_id = self
             .pty_managers
             .create_pty_manager(working_dir.to_path_buf(), shell_config, environment)
-            .map_err(|e| WarpIntegrationError::PtyCreation {
+            .map_err(|e| WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() })?;
+        self.pty_by_pane.insert(pane_id, pty_id);
+
+        // In headless test mode, skip spawning a real PTY. This allows CI-friendly tests that
+        // still exercise pane↔PTY mapping and AI context propagation without launching a shell.
+        if Self::is_headless_mode() {
+            debug!(
+                "Headless test mode: skipping PTY spawn for pane {:?} (working_dir={})",
                 pane_id,
-                reason: e.to_string(),
-            })?;
+                working_dir.display()
+            );
+            self.perf_stats.active_terminals = self.terminals.len();
+            debug!(
+                "Created terminal and (mocked) PTY manager for pane {:?} in {}",
+                pane_id,
+                working_dir.display()
+            );
+            return Ok(());
+        }
 
         // Create actual PTY process with window size conversion
         if let Some(manager) = self.pty_managers.get_manager(pty_id) {
@@ -459,12 +475,9 @@ impl WarpIntegration {
                 cell_height: size_info.cell_height() as u16,
             };
 
-            manager_guard
-                .create_pty(window_size, (*window_id).into())
-                .map_err(|e| WarpIntegrationError::PtyCreation {
-                    pane_id,
-                    reason: e.to_string(),
-                })?;
+            manager_guard.create_pty(window_size, window_id.into()).map_err(|e| {
+                WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() }
+            })?;
 
             debug!(
                 "Created PTY for pane {:?} with shell: {} in {}",
@@ -1034,10 +1047,13 @@ impl WarpIntegration {
             debug!("Cleaned up terminal for pane {:?}", pane_id);
         }
 
-        // Clean up PTY manager - we need to find the PTY ID that corresponds to this pane
-        // For now, we'll do periodic cleanup of inactive PTY managers
+        // Clean up PTY manager for this pane if mapped
+        if let Some(pty_id) = self.pty_by_pane.remove(&pane_id) {
+            self.pty_managers.remove_manager(pty_id);
+        }
+        // Also clear any other inactive PTY managers
         self.pty_managers.cleanup_inactive();
-        debug!("Cleaned up inactive PTY managers");
+        debug!("Cleaned up PTY managers");
 
         self.perf_stats.active_terminals = self.terminals.len();
     }
@@ -1053,6 +1069,54 @@ impl WarpIntegration {
     /// Update activity timestamp
     fn update_activity(&mut self) {
         self.last_activity = Instant::now();
+    }
+
+    /// Check if running in headless test mode (skip spawning real PTYs)
+    fn is_headless_mode() -> bool {
+        std::env::var("OPENAGENT_TERMINAL_TEST_HEADLESS").is_ok()
+    }
+
+    /// Test-only mode: spawn a real PTY without requiring an EventLoopProxy/Term
+    fn is_test_real_pty() -> bool {
+        std::env::var("OPENAGENT_TERMINAL_TEST_REAL_PTY").is_ok()
+    }
+
+    /// Initialize for tests without an EventLoopProxy. Requires either headless mode (no PTY)
+    /// or test real PTY mode (spawns PTY without Term).
+    pub fn initialize_for_tests(
+        &mut self,
+        window_id: WindowId,
+        size_info: SizeInfo,
+        restore_on_startup: bool,
+    ) -> WarpResult<()> {
+        self.window_id = Some(window_id);
+        self.size_info = Some(size_info);
+        self.event_proxy = None;
+
+        if restore_on_startup {
+            match self.tab_manager.load_session() {
+                Ok(true) => {
+                    info!("Loaded Warp session successfully (test mode)");
+                    self.restore_session_terminals()?;
+                },
+                Ok(false) => {
+                    info!("No previous Warp session found, creating default tab (test mode)");
+                    self.create_default_tab()?;
+                },
+                Err(e) => {
+                    warn!(
+                        "Failed to load Warp session: {} (test mode), creating default tab",
+                        e
+                    );
+                    self.create_default_tab()?;
+                },
+            }
+        } else {
+            info!("Session restore disabled; creating default tab (test mode)");
+            self.create_default_tab()?;
+        }
+
+        Ok(())
     }
 
     /// Get shell integration path if available
@@ -1103,13 +1167,10 @@ impl WarpIntegration {
     pub fn get_current_ai_context(&self) -> Option<PtyAiContext> {
         let active_tab = self.tab_manager.active_tab()?;
 
-        // For now, we'll map pane_id to pty_id by searching through our PTY managers
-        // In a real implementation, we'd maintain a pane_id -> pty_id mapping
-        for pty_id in self.pty_managers.active_pty_ids() {
-            if let Some(context) = self.pty_managers.get_ai_context(pty_id) {
-                // For now, return the first active context
-                // TODO: Implement proper pane_id -> pty_id mapping
-                return Some(context);
+        // Use pane -> PTY mapping when available
+        if let Some(pty_id) = self.pty_by_pane.get(&active_tab.active_pane) {
+            if let Some(ctx) = self.pty_managers.get_ai_context(*pty_id) {
+                return Some(ctx);
             }
         }
 
@@ -1130,11 +1191,12 @@ impl WarpIntegration {
                 .update_tab_for_command(active_tab.id, command);
         }
 
-        // Update PTY manager context
-        for pty_id in self.pty_managers.active_pty_ids() {
-            if let Some(manager) = self.pty_managers.get_manager(pty_id) {
-                manager.lock().update_last_command(command.to_string());
-                break; // For now, update first active PTY
+        // Update PTY manager context using the active pane mapping
+        if let Some(active_tab) = self.tab_manager.active_tab() {
+            if let Some(pty_id) = self.pty_by_pane.get(&active_tab.active_pane) {
+                if let Some(manager) = self.pty_managers.get_manager(*pty_id) {
+                    manager.lock().update_last_command(command.to_string());
+                }
             }
         }
 

@@ -298,6 +298,14 @@ pub struct WgpuRenderer {
     rect_pipeline: wgpu::RenderPipeline,
     ui_pipeline: wgpu::RenderPipeline,
     text_pipeline: wgpu::RenderPipeline,
+    // Sprite pipeline/resources
+    sprite_pipeline: wgpu::RenderPipeline,
+    sprite_texture: wgpu::Texture,
+    sprite_view: wgpu::TextureView,
+    sprite_sampler_linear: wgpu::Sampler,
+    sprite_sampler_nearest: wgpu::Sampler,
+    sprite_bind_group_linear: wgpu::BindGroup,
+    sprite_bind_group_nearest: wgpu::BindGroup,
     // Rect uniforms/bindings
     rect_uniform_buffer: wgpu::Buffer,
     rect_bind_group: wgpu::BindGroup,
@@ -342,6 +350,12 @@ pub struct WgpuRenderer {
     pending_text: Vec<TextVertex>,
     pending_bg: Vec<RenderRect>,
     pending_ui: Vec<UiVertex>,
+    // Sprite staging (two queues for filter override)
+    pending_sprites_linear: Vec<SpriteVertex>,
+    pending_sprites_nearest: Vec<SpriteVertex>,
+    sprite_default_filter_nearest: bool,
+    // Perf history (last N frame times)
+    perf_history: Vec<f32>,
     atlas_evicted: Cell<bool>,
 }
 impl From<String> for Error {
@@ -376,6 +390,14 @@ struct TextVertex {
     color: [u8; 4],
     flags: u32,
     layer: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct SpriteVertex {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    tint: [f32; 4],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -840,7 +862,161 @@ targets: &[Some(wgpu::ColorTargetState {
             mapped_at_creation: false,
         });
 
-        let mut renderer = Self {
+// --- Sprite pipeline & resources ---
+// Minimal sprite shader (textured quad with tint)
+let sprite_shader_src: &str = r#"
+struct VsIn {
+  @location(0) pos: vec2<f32>,
+  @location(1) uv: vec2<f32>,
+  @location(2) tint: vec4<f32>,
+};
+struct VsOut {
+  @builtin(position) pos: vec4<f32>,
+  @location(0) uv: vec2<f32>,
+  @location(1) tint: vec4<f32>,
+};
+@vertex
+fn vs_main(in: VsIn) -> VsOut {
+  var out: VsOut;
+  out.pos = vec4<f32>(in.pos, 0.0, 1.0);
+  out.uv = in.uv;
+  out.tint = in.tint;
+  return out;
+}
+@group(0) @binding(0) var sprite_tex: texture_2d<f32>;
+@group(0) @binding(1) var sprite_sampler: sampler;
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+  let tex = textureSample(sprite_tex, sprite_sampler, in.uv);
+  return vec4<f32>(tex.rgb * in.tint.rgb, tex.a * in.tint.a);
+}
+"#;
+let sprite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    label: Some("sprite-shader"),
+    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(sprite_shader_src)),
+});
+let sprite_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    label: Some("sprite-bgl"),
+    entries: &[
+        wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        },
+    ],
+});
+let sprite_pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    label: Some("sprite-pl"),
+    bind_group_layouts: &[&sprite_bgl],
+    push_constant_ranges: &[],
+});
+let sprite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    cache: None,
+    label: Some("sprite-pipeline"),
+    layout: Some(&sprite_pl_layout),
+    vertex: wgpu::VertexState {
+        module: &sprite_shader,
+        compilation_options: Default::default(),
+        entry_point: Some("vs_main"),
+        buffers: &[wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<SpriteVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4],
+        }],
+    },
+    primitive: wgpu::PrimitiveState::default(),
+    depth_stencil: None,
+    multisample: wgpu::MultisampleState::default(),
+    fragment: Some(wgpu::FragmentState {
+        module: &sprite_shader,
+        compilation_options: Default::default(),
+        entry_point: Some("fs_main"),
+        targets: &[Some(wgpu::ColorTargetState {
+            format: config.format,
+            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            write_mask: wgpu::ColorWrites::ALL,
+        })],
+    }),
+    multiview: None,
+});
+// Build a tiny 2x2 checkerboard as the initial sprite atlas (no external files)
+let sprite_tex_size = wgpu::Extent3d { width: 2, height: 2, depth_or_array_layers: 1 };
+let sprite_texture = device.create_texture(&wgpu::TextureDescriptor {
+    label: Some("sprite-texture"),
+    size: sprite_tex_size,
+    mip_level_count: 1,
+    sample_count: 1,
+    dimension: wgpu::TextureDimension::D2,
+    format: wgpu::TextureFormat::Rgba8Unorm,
+    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+    view_formats: &[],
+});
+let sprite_view = sprite_texture.create_view(&wgpu::TextureViewDescriptor::default());
+let sprite_sampler_linear = device.create_sampler(&wgpu::SamplerDescriptor {
+    label: Some("sprite-sampler-linear"),
+    address_mode_u: wgpu::AddressMode::ClampToEdge,
+    address_mode_v: wgpu::AddressMode::ClampToEdge,
+    address_mode_w: wgpu::AddressMode::ClampToEdge,
+    mag_filter: wgpu::FilterMode::Linear,
+    min_filter: wgpu::FilterMode::Linear,
+    mipmap_filter: wgpu::FilterMode::Nearest,
+    ..Default::default()
+});
+let sprite_sampler_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+    label: Some("sprite-sampler-nearest"),
+    address_mode_u: wgpu::AddressMode::ClampToEdge,
+    address_mode_v: wgpu::AddressMode::ClampToEdge,
+    address_mode_w: wgpu::AddressMode::ClampToEdge,
+    mag_filter: wgpu::FilterMode::Nearest,
+    min_filter: wgpu::FilterMode::Nearest,
+    mipmap_filter: wgpu::FilterMode::Nearest,
+    ..Default::default()
+});
+let sprite_bind_group_linear = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    label: Some("sprite-bg-linear"),
+    layout: &sprite_bgl,
+    entries: &[
+        wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&sprite_view) },
+        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sprite_sampler_linear) },
+    ],
+});
+let sprite_bind_group_nearest = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    label: Some("sprite-bg-nearest"),
+    layout: &sprite_bgl,
+    entries: &[
+        wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&sprite_view) },
+        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sprite_sampler_nearest) },
+    ],
+});
+// Upload checkerboard pixels
+let checker: [u8; 16] = [
+    255, 255, 255, 255,  32, 32, 32, 255,
+    32, 32, 32, 255,    255, 255, 255, 255,
+];
+queue.write_texture(
+    wgpu::TexelCopyTextureInfo {
+        texture: &sprite_texture,
+        mip_level: 0,
+        origin: wgpu::Origin3d::ZERO,
+        aspect: wgpu::TextureAspect::All,
+    },
+    &checker,
+    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * 2), rows_per_image: Some(2) },
+    sprite_tex_size,
+);
+
+let mut renderer = Self {
             instance,
             device,
             queue,
@@ -849,6 +1025,13 @@ targets: &[Some(wgpu::ColorTargetState {
             rect_pipeline,
             ui_pipeline,
             text_pipeline,
+            sprite_pipeline,
+            sprite_texture,
+            sprite_view,
+            sprite_sampler_linear,
+            sprite_sampler_nearest,
+            sprite_bind_group_linear,
+            sprite_bind_group_nearest,
             rect_uniform_buffer,
             rect_bind_group,
             rect_vertex_buffer,
@@ -888,6 +1071,10 @@ targets: &[Some(wgpu::ColorTargetState {
             pending_text: Vec::new(),
             pending_bg: Vec::new(),
             pending_ui: Vec::new(),
+            pending_sprites_linear: Vec::new(),
+            pending_sprites_nearest: Vec::new(),
+            sprite_default_filter_nearest: false,
+            perf_history: Vec::new(),
             atlas_evicted: Cell::new(false),
         };
         renderer.zero_evicted_layer = zero_evicted_layer;
@@ -936,6 +1123,9 @@ targets: &[Some(wgpu::ColorTargetState {
         metrics: &Metrics,
         rects_in: Vec<RenderRect>,
     ) {
+        // Frame start timestamp (for perf HUD)
+        let frame_start = std::time::Instant::now();
+
         // Create and configure surface for this frame.
         let surface = match self.instance.create_surface(window) {
             Ok(s) => s,
@@ -1070,6 +1260,21 @@ targets: &[Some(wgpu::ColorTargetState {
                 .write_buffer(&self.rect_vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         }
 
+        // Optionally stage perf HUD background as rounded rects before creating buffers
+        if self.perf_hud_enabled {
+            // Draw small background in top-left (8px padding)
+        let bg = UiRoundedRect {
+            x: 8.0,
+            y: 8.0,
+            width: 140.0,
+            height: 40.0,
+            radius: 6.0,
+            color: crate::display::color::Rgb::new(0, 0, 0),
+            alpha: 0.5,
+        };
+            self.stage_ui_rounded_rect(size_info, bg);
+        }
+
         // Prepare UI vertex buffer outside the pass to satisfy borrow checker.
         let ui_buf_opt = (!self.pending_ui.is_empty()).then(|| {
             self.device
@@ -1078,6 +1283,22 @@ targets: &[Some(wgpu::ColorTargetState {
                     contents: bytemuck::cast_slice(&self.pending_ui),
                     usage: wgpu::BufferUsages::VERTEX,
                 })
+        });
+
+        // Prepare sprite vertex buffers
+        let spr_buf_linear_opt = (!self.pending_sprites_linear.is_empty()).then(|| {
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sprite-vertex-buffer-linear"),
+                contents: bytemuck::cast_slice(&self.pending_sprites_linear),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+        let spr_buf_nearest_opt = (!self.pending_sprites_nearest.is_empty()).then(|| {
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sprite-vertex-buffer-nearest"),
+                contents: bytemuck::cast_slice(&self.pending_sprites_nearest),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
         });
 
         {
@@ -1127,11 +1348,31 @@ targets: &[Some(wgpu::ColorTargetState {
                 pass.set_vertex_buffer(0, ui_buf.slice(..));
                 pass.draw(0..self.pending_ui.len() as u32, 0..1);
             }
+
+            // Draw sprites (linear then nearest) for proper filter usage
+            if let Some(ref spr_buf) = spr_buf_linear_opt {
+                pass.set_pipeline(&self.sprite_pipeline);
+                pass.set_bind_group(0, &self.sprite_bind_group_linear, &[]);
+                pass.set_vertex_buffer(0, spr_buf.slice(..));
+                pass.draw(0..self.pending_sprites_linear.len() as u32, 0..1);
+            }
+            if let Some(ref spr_buf) = spr_buf_nearest_opt {
+                pass.set_pipeline(&self.sprite_pipeline);
+                pass.set_bind_group(0, &self.sprite_bind_group_nearest, &[]);
+                pass.set_vertex_buffer(0, spr_buf.slice(..));
+                pass.draw(0..self.pending_sprites_nearest.len() as u32, 0..1);
+            }
         }
 
-        // After the pass, it's safe to clear pending UI vertices.
+        // After the pass, it's safe to clear pending UI and sprite vertices.
         if !self.pending_ui.is_empty() {
             self.pending_ui.clear();
+        }
+        if !self.pending_sprites_linear.is_empty() {
+            self.pending_sprites_linear.clear();
+        }
+        if !self.pending_sprites_nearest.is_empty() {
+            self.pending_sprites_nearest.clear();
         }
 
         // Draw staged text after rects, if any.
@@ -1172,6 +1413,11 @@ targets: &[Some(wgpu::ColorTargetState {
         self.queue.submit([encoder.finish()]);
         frame.present();
 
+        // Update perf metrics
+        self.last_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        self.perf_history.push(self.last_frame_ms);
+        if self.perf_history.len() > 120 { self.perf_history.remove(0); }
+
         // Periodic atlas reporting.
         if self.report_interval_frames > 0 {
             self.frame_counter = self.frame_counter.wrapping_add(1);
@@ -1181,10 +1427,50 @@ targets: &[Some(wgpu::ColorTargetState {
         }
     }
 
-    // Stub sprite APIs for parity with GL backend; no-op until implemented in WGPU UI pipeline
-    pub fn stage_ui_sprite(&mut self, _sprite: UiSprite) {}
+    // UI sprite staging API (textured quads with tint)
+    pub fn stage_ui_sprite(&mut self, sprite: UiSprite) {
+        // Convert pixel-space to NDC using current surface size
+        let half_w = self.size.width.max(1) as f32 / 2.0;
+        let half_h = self.size.height.max(1) as f32 / 2.0;
+        let x_ndc = sprite.x / half_w - 1.0;
+        let y_ndc = -sprite.y / half_h + 1.0;
+        let w_ndc = sprite.width / half_w;
+        let h_ndc = sprite.height / half_h;
 
-    pub fn set_sprite_filter_nearest(&mut self, _nearest: bool) {}
+        // UVs
+        let u0 = sprite.uv_x;
+        let v0 = sprite.uv_y;
+        let u1 = sprite.uv_x + sprite.uv_w;
+        let v1 = sprite.uv_y + sprite.uv_h;
+
+        let tint = [
+            sprite.tint.r as f32 / 255.0,
+            sprite.tint.g as f32 / 255.0,
+            sprite.tint.b as f32 / 255.0,
+            sprite.alpha,
+        ];
+
+        // Two triangles
+        let verts = [
+            SpriteVertex { pos: [x_ndc, y_ndc],         uv: [u0, v0], tint },
+            SpriteVertex { pos: [x_ndc, y_ndc - h_ndc], uv: [u0, v1], tint },
+            SpriteVertex { pos: [x_ndc + w_ndc, y_ndc], uv: [u1, v0], tint },
+            SpriteVertex { pos: [x_ndc + w_ndc, y_ndc], uv: [u1, v0], tint },
+            SpriteVertex { pos: [x_ndc, y_ndc - h_ndc], uv: [u0, v1], tint },
+            SpriteVertex { pos: [x_ndc + w_ndc, y_ndc - h_ndc], uv: [u1, v1], tint },
+        ];
+
+        let use_nearest = sprite.filter_nearest.unwrap_or(self.sprite_default_filter_nearest);
+        if use_nearest {
+            self.pending_sprites_nearest.extend_from_slice(&verts);
+        } else {
+            self.pending_sprites_linear.extend_from_slice(&verts);
+        }
+    }
+
+    pub fn set_sprite_filter_nearest(&mut self, nearest: bool) {
+        self.sprite_default_filter_nearest = nearest;
+    }
 
     pub fn set_subpixel_gamma(&mut self, gamma: f32) {
         self.subpixel_gamma = gamma.clamp(1.4, 3.0);

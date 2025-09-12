@@ -292,6 +292,45 @@ fn test_workspace_manager_api() {
     // Note: May return true depending on implementation state
 }
 
+/// New: Verify pane↔PTY mapping behavior without initialization
+#[test]
+fn test_warp_pane_pty_mapping_without_init() {
+    let config = test_config();
+    let size_info = test_size_info();
+    let mut workspace = WorkspaceManager::with_warp(WorkspaceId(1), config, size_info, None);
+
+    // Create a tab without initialization; should not error and should not spawn terminals
+    assert!(workspace.execute_warp_action(&WarpAction::CreateTab).is_ok());
+    let stats = workspace.warp.as_ref().unwrap().performance_stats();
+    assert_eq!(stats.active_terminals, 0, "No terminals should be active before init");
+}
+
+/// New: Verify pane↔PTY mapping after proper initialization
+#[test]
+fn test_warp_pane_pty_mapping_after_init() {
+    // Spawn a real PTY but avoid full winit EventLoop in tests
+    std::env::set_var("OPENAGENT_TERMINAL_TEST_REAL_PTY", "1");
+
+    // Prepare config/size
+    let config = test_config();
+    let size_info = test_size_info();
+
+    // Create manager with Warp
+    let mut workspace = WorkspaceManager::with_warp(WorkspaceId(2), config, size_info, None);
+
+    // Use a dummy window id and test initializer without an event loop
+    let window_id = winit::window::WindowId::dummy();
+    workspace
+        .initialize_warp_for_tests_no_eventloop(window_id, /*restore_on_startup=*/ false)
+        .expect("warp init (test)");
+
+    // Update command context and verify AI context exposes last_command via PTY mapping
+    let warp = workspace.warp.as_mut().unwrap();
+    warp.update_command_context("ls -la");
+    let ai_ctx = warp.get_current_ai_context().expect("ai ctx");
+    assert!(ai_ctx.last_command.as_deref() == Some("ls -la"));
+}
+
 /// Documentation test - ensure examples compile
 #[test]
 fn test_example_usage() {
