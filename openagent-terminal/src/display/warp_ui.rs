@@ -294,6 +294,7 @@ impl Display {
 
         // Draw tabs with Warp styling
         let tab_order = tab_manager.tab_order();
+        let tab_cfg = &config.workspace.tab_bar;
         // Reset cached tab bounds for precision hit testing
         self.tab_bounds_px.clear();
         let active_tab_id = tab_manager.active_tab_id();
@@ -313,7 +314,7 @@ impl Display {
 
         let mut current_x = style.tab_padding;
 
-        for &tab_id in tab_order.iter() {
+        for (index, &tab_id) in tab_order.iter().enumerate() {
             if current_x + tab_width > size_info.width() {
                 break;
             }
@@ -327,14 +328,25 @@ impl Display {
             // Cache tab bounds in pixels
             self.tab_bounds_px.push((tab_id, current_x, tab_width));
 
-            self.draw_warp_tab(current_x, start_y, tab_width, tab, is_active, style);
+            self.draw_warp_tab(
+                current_x,
+                start_y,
+                tab_width,
+                tab,
+                is_active,
+                style,
+                index,
+                tab_cfg,
+            );
 
             current_x += tab_width + 8.0; // 8px gap between tabs
         }
 
         // Draw "+" button for new tab (hover-aware)
-        let create_hover = matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
-        self.draw_new_tab_button(current_x, start_y, style, create_hover);
+        if tab_cfg.show_new_tab_button {
+            let create_hover = matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
+            self.draw_new_tab_button(current_x, start_y, style, create_hover);
+        }
 
         // Draw settings gear on far right using sprite atlas, aligned with previous text region
         let theme = config
@@ -428,6 +440,8 @@ impl Display {
         tab: &crate::workspace::tab_manager::TabContext,
         is_active: bool,
         style: &WarpTabStyle,
+        index: usize,
+        tab_cfg: &crate::config::workspace::TabBarConfig,
     ) {
         let height = style.tab_height;
 
@@ -496,17 +510,23 @@ impl Display {
         let text_y = ((y + height / 2.0) / self.size_info.cell_height()) as usize;
         let text_x = ((x + style.tab_padding) / self.size_info.cell_width()) as usize;
 
-        // Truncate title to fit
-        let max_chars = ((width - style.tab_padding * 2.0) / self.size_info.cell_width()) as usize;
-        let title = if tab.title.len() > max_chars.saturating_sub(3) {
-            format!("{}...", &tab.title[..max_chars.saturating_sub(3)])
+        // Build visible title with optional numbering
+        let mut rendered_title = if tab_cfg.show_tab_numbers {
+            format!("{}: {}", index + 1, tab.title)
         } else {
             tab.title.clone()
         };
 
-        // Draw tab text (placeholder - real implementation would use proper glyph rendering)
+        // Truncate title to fit width and configured max title length
+        let width_chars = ((width - style.tab_padding * 2.0) / self.size_info.cell_width()) as usize;
+        let effective_max = width_chars.min(tab_cfg.max_title_length.max(1));
+        if rendered_title.len() > effective_max.saturating_sub(3) {
+            rendered_title = format!("{}...", &rendered_title[..effective_max.saturating_sub(3)]);
+        }
+
+        // Draw tab text (placeholder - real implementation would use proper text rendering)
         let text_point = Point::new(text_y, Column(text_x));
-        self.draw_warp_tab_text(text_point, text_color, bg_color, &title, max_chars);
+        self.draw_warp_tab_text(text_point, text_color, bg_color, &rendered_title, effective_max);
 
         // Zoom indicator badge (Warp-style) on active tab when zoomed
         if is_active && tab.zoom_saved_layout.is_some() {
@@ -524,8 +544,8 @@ impl Display {
                 UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, Rgb::new(220, 70, 70), 1.0);
             self.stage_ui_rounded_rect(err_dot);
         }
-        // Modified indicator (orange)
-        if tab.modified {
+        // Modified indicator (orange) if enabled
+        if tab.modified && tab_cfg.show_modified_indicator {
             let dot_x = x + width - 20.0;
             let dot_y = y + height / 2.0 - 3.0;
             let modified_dot =
@@ -541,19 +561,29 @@ impl Display {
             self.stage_ui_rounded_rect(sync_dot);
         }
 
-        // Close button (when hovering)
-        let close_x = x + width - 25.0;
-        let close_y = y + height / 2.0 - 8.0;
-        let close_button = UiRoundedRect::new(
-            close_x,
-            close_y,
-            16.0,
-            16.0,
-            8.0,
-            Rgb::new(220, 220, 220),
-            0.8,
-        );
-        self.stage_ui_rounded_rect(close_button);
+        // Close button: respect configuration for rendering on hover
+        if tab_cfg.show_close_button {
+            let should_show = if tab_cfg.close_button_on_hover {
+                // Only render the button when hovering the tab (region remains clickable)
+                is_hover_tab
+            } else {
+                true
+            };
+            if should_show {
+                let close_x = x + width - 25.0;
+                let close_y = y + height / 2.0 - 8.0;
+                let close_button = UiRoundedRect::new(
+                    close_x,
+                    close_y,
+                    16.0,
+                    16.0,
+                    8.0,
+                    Rgb::new(220, 220, 220),
+                    0.8,
+                );
+                self.stage_ui_rounded_rect(close_button);
+            }
+        }
     }
 
     /// Draw "+" button for creating new tabs
@@ -923,7 +953,7 @@ impl Display {
     // --- Warp tab bar interactions (click/drag) matching legacy signatures ---
     pub fn handle_tab_bar_click(
         &self,
-        _config: &UiConfig,
+        config: &UiConfig,
         _tab_manager: &TabManager,
         position: TabBarPosition,
         mouse_x_cols: usize,
@@ -935,7 +965,7 @@ impl Display {
         let x_px = (mouse_x_cols as f32) * cw;
         let y_px = (mouse_y_line as f32) * ch;
         // Determine bar y range
-        let style = WarpTabStyle::from_theme(_config);
+        let style = WarpTabStyle::from_theme(config);
         let bar_y = match position {
             TabBarPosition::Top => 0.0,
             TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
@@ -948,7 +978,7 @@ impl Display {
         for (tab_id, x, w) in &self.tab_bounds_px {
             if x_px >= *x && x_px < *x + *w {
                 // Close button approx: last 20px of tab
-                if x_px >= *x + *w - 20.0 {
+                if config.workspace.tab_bar.show_close_button && x_px >= *x + *w - 20.0 {
                     return Some(TabBarAction::CloseTab(*tab_id));
                 }
                 return Some(TabBarAction::SelectTab(*tab_id));
@@ -992,7 +1022,7 @@ impl Display {
             .find(|(_, x, w)| x_px >= *x && x_px < *x + *w)
         {
             // Close button region
-            if x_px >= x + w - 20.0 {
+            if config.workspace.tab_bar.show_close_button && x_px >= x + w - 20.0 {
                 return Some(TabBarAction::CloseTab(tab_id));
             }
             self.tab_drag_active = Some(super::TabDragState {

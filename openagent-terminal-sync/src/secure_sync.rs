@@ -14,6 +14,7 @@ use tracing::warn;
 
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, hkdf, pbkdf2};
+use ring::{digest, signature, signature::KeyPair};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -89,14 +90,66 @@ pub struct PeerInfo {
     pub display_name: String,
     /// Last seen timestamp
     pub last_seen: u64,
-    /// Public key for authentication
+    /// Public key for authentication (raw Ed25519 bytes)
     pub public_key: Vec<u8>,
     /// Sync capabilities
     pub capabilities: Vec<String>,
 }
 
+/// A single key record for rotation history
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyHistoryEntry {
+    pub public_key: Vec<u8>,
+    pub key_fingerprint: String,
+    pub valid_from: u64,
+    pub valid_to: u64,
+}
+
+/// Persistent peer record with trust metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerRecord {
+    pub info: PeerInfo,
+    pub key_fingerprint: String,
+    pub revoked: bool,
+    pub key_history: Vec<KeyHistoryEntry>,
+}
+
+/// Versioned trust store signed by the local installation key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrustStore {
+    pub version: u32,
+    pub peers: HashMap<String, PeerRecord>,
+    pub signed_by: String,
+    pub signed_at: u64,
+    pub signature: Vec<u8>,
+}
+
+/// Signable view of the trust store for canonical signing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TrustStoreSignable {
+    version: u32,
+    signed_by: String,
+    signed_at: u64,
+    peers: Vec<(String, PeerRecord)>,
+}
+
+/// A handshake challenge sent to a peer for authentication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeChallenge {
+    pub from_installation_id: String,
+    pub challenge: Vec<u8>, // 32 random bytes
+    pub timestamp: u64,
+}
+
+/// A handshake response proving control of the private key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeResponse {
+    pub responder_installation_id: String,
+    pub challenge: Vec<u8>,
+    pub signature: Vec<u8>, // Ed25519 signature over domain|from|to|challenge
+}
+
 /// Secure sync provider with per-install encryption
-#[derive(Debug)]
 pub struct SecureSyncProvider {
     /// Base directory for sync data
     base_dir: PathBuf,
@@ -104,8 +157,12 @@ pub struct SecureSyncProvider {
     metadata: InstallationMetadata,
     /// Secure random number generator
     rng: SystemRandom,
-    /// Known peers
-    peers: HashMap<String, PeerInfo>,
+    /// Versioned trust store of peers
+    trust_store: TrustStore,
+    /// Ed25519 keypair for signing (held in memory)
+    key_pair: signature::Ed25519KeyPair,
+    /// Optional env var name for encryption key at rest
+    encryption_key_env: Option<String>,
 }
 
 impl SecureSyncProvider {
@@ -117,14 +174,16 @@ impl SecureSyncProvider {
         fs::create_dir_all(&base_dir)?;
 
         let rng = SystemRandom::new();
-        let metadata = Self::load_or_create_metadata(&base_dir, &rng)?;
-        let peers = Self::load_peers(&base_dir)?;
+        let (metadata, key_pair) = Self::load_or_create_metadata_and_keys(&base_dir, &rng)?;
+        let trust_store = Self::load_trust_store(&base_dir, &metadata, &key_pair)?;
 
         Ok(Self {
             base_dir,
             metadata,
             rng,
-            peers,
+            trust_store,
+            key_pair,
+            encryption_key_env: config.encryption_key_env.clone(),
         })
     }
 
@@ -147,24 +206,31 @@ impl SecureSyncProvider {
         Ok(base_dir)
     }
 
-    /// Load existing metadata or create new installation
-    fn load_or_create_metadata(
+    /// Load existing metadata and keys or create new installation
+    fn load_or_create_metadata_and_keys(
         base_dir: &Path,
         rng: &SystemRandom,
-    ) -> Result<InstallationMetadata, SyncError> {
+    ) -> Result<(InstallationMetadata, signature::Ed25519KeyPair), SyncError> {
         let metadata_file = base_dir.join("installation.json");
+
+        // Ensure keys directory exists
+        let keys_dir = base_dir.join("keys");
+        fs::create_dir_all(&keys_dir)?;
+
+        let private_key_path = keys_dir.join("ed25519_private.pk8");
+        let public_key_path = keys_dir.join("ed25519_public.bin");
+
+        let mut metadata: InstallationMetadata;
 
         if metadata_file.exists() {
             let content = fs::read_to_string(&metadata_file)?;
-            let metadata: InstallationMetadata = serde_json::from_str(&content)
+            metadata = serde_json::from_str(&content)
                 .map_err(|e| SyncError::Other(format!("Failed to parse metadata: {}", e)))?;
 
             // Validate metadata
             if metadata.kdf_params.salt.is_empty() {
                 return Err(SyncError::Misconfigured("Invalid KDF salt in metadata"));
             }
-
-            Ok(metadata)
         } else {
             // Create new installation metadata with random salt
             let installation_id = Uuid::new_v4().to_string();
@@ -182,44 +248,185 @@ impl SecureSyncProvider {
                 parallelism: None,
             };
 
-            let metadata = InstallationMetadata {
+            metadata = InstallationMetadata {
                 installation_id,
                 created_at: Self::current_timestamp(),
                 kdf_params,
                 sync_version: "1.0.0".to_string(),
-                public_key: None, // TODO: Generate key pair
+                public_key: None,
             };
-
-            // Save metadata
-            let json = serde_json::to_string_pretty(&metadata)
-                .map_err(|e| SyncError::Other(format!("Failed to serialize metadata: {}", e)))?;
-            fs::write(&metadata_file, json)?;
-
-            Ok(metadata)
         }
+
+        // Load or generate keypair
+        let key_pair = if private_key_path.exists() {
+            let pkcs8_bytes = fs::read(&private_key_path)?;
+            let kp = signature::Ed25519KeyPair::from_pkcs8(&pkcs8_bytes)
+                .map_err(|_| SyncError::Other("Failed to parse private key".to_string()))?;
+
+            // Ensure public key file exists and metadata has public key
+            let public_key = kp.public_key().as_ref().to_vec();
+            if !public_key_path.exists() {
+                fs::write(&public_key_path, &public_key)?;
+            }
+            if metadata.public_key.as_deref() != Some(public_key.as_slice()) {
+                metadata.public_key = Some(public_key);
+            }
+
+            kp
+        } else {
+            // Generate new keypair
+            let pkcs8 = signature::Ed25519KeyPair::generate_pkcs8(rng)
+                .map_err(|_| SyncError::Other("Failed to generate keypair".to_string()))?;
+            // Persist private key with restrictive permissions
+            Self::write_private_key_secure(&private_key_path, pkcs8.as_ref())?;
+
+            let kp = signature::Ed25519KeyPair::from_pkcs8(pkcs8.as_ref())
+                .map_err(|_| SyncError::Other("Failed to parse generated keypair".to_string()))?;
+
+            // Persist public key
+            let public_key = kp.public_key().as_ref().to_vec();
+            fs::write(&public_key_path, &public_key)?;
+            metadata.public_key = Some(public_key);
+
+            kp
+        };
+
+        // Save metadata (in case we updated public_key or created new)
+        let json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| SyncError::Other(format!("Failed to serialize metadata: {}", e)))?;
+        fs::write(&metadata_file, json)?;
+
+        Ok((metadata, key_pair))
     }
 
-    /// Load known peers
-    fn load_peers(base_dir: &Path) -> Result<HashMap<String, PeerInfo>, SyncError> {
+    /// Load the versioned trust store, migrating from legacy peers.json if needed
+    fn load_trust_store(
+        base_dir: &Path,
+        metadata: &InstallationMetadata,
+        key_pair: &signature::Ed25519KeyPair,
+    ) -> Result<TrustStore, SyncError> {
         let peers_file = base_dir.join("peers.json");
 
         if peers_file.exists() {
             let content = fs::read_to_string(&peers_file)?;
-            let peers: HashMap<String, PeerInfo> = serde_json::from_str(&content)
-                .map_err(|e| SyncError::Other(format!("Failed to parse peers: {}", e)))?;
-            Ok(peers)
-        } else {
-            Ok(HashMap::new())
+
+            // Try current TrustStore format
+            if let Ok(mut store) = serde_json::from_str::<TrustStore>(&content) {
+                // Verify signature if signed_by matches this installation
+                if store.signed_by == metadata.installation_id {
+                    let bytes = Self::canonical_trust_store_bytes(store.version, &store.signed_by, store.signed_at, &store.peers)?;
+                    let verifier = signature::UnparsedPublicKey::new(&signature::ED25519, metadata.public_key.as_ref().ok_or_else(|| SyncError::Other("Missing public key in metadata".to_string()))?);
+                    if verifier.verify(&bytes, &store.signature).is_err() {
+                        return Err(SyncError::Other("Trust store signature invalid".to_string()));
+                    }
+                } else {
+                    warn!("Trust store signed_by does not match this installation; skipping signature verification");
+                }
+                return Ok(store);
+            }
+
+            // Try legacy format and migrate
+            if let Ok(legacy_peers) = serde_json::from_str::<HashMap<String, PeerInfo>>(&content) {
+                let mut peers: HashMap<String, PeerRecord> = HashMap::new();
+                for (id, info) in legacy_peers {
+                    let fingerprint = Self::fingerprint_key(&info.public_key);
+                    let record = PeerRecord {
+                        info,
+                        key_fingerprint: fingerprint.clone(),
+                        revoked: false,
+                        key_history: Vec::new(),
+                    };
+                    peers.insert(id, record);
+                }
+                let mut store = TrustStore {
+                    version: 1,
+                    peers,
+                    signed_by: metadata.installation_id.clone(),
+                    signed_at: Self::current_timestamp(),
+                    signature: Vec::new(),
+                };
+                // Sign and save migrated store
+                store.signature = Self::sign_trust_store(&store, key_pair)?;
+                let json = serde_json::to_string_pretty(&store)
+                    .map_err(|e| SyncError::Other(format!("Failed to serialize trust store: {}", e)))?;
+                fs::write(&peers_file, json)?;
+                return Ok(store);
+            }
+
+            // Unknown format
+            return Err(SyncError::Other("Failed to parse trust store".to_string()));
         }
+
+        // New store
+        let mut store = TrustStore {
+            version: 1,
+            peers: HashMap::new(),
+            signed_by: metadata.installation_id.clone(),
+            signed_at: Self::current_timestamp(),
+            signature: Vec::new(),
+        };
+        store.signature = Self::sign_trust_store(&store, key_pair)?;
+        let json = serde_json::to_string_pretty(&store)
+            .map_err(|e| SyncError::Other(format!("Failed to serialize trust store: {}", e)))?;
+        fs::write(peers_file, json)?;
+        Ok(store)
     }
 
-    /// Save peers to disk
-    fn save_peers(&self) -> Result<(), SyncError> {
+    /// Save trust store to disk with fresh signature
+    fn save_trust_store(&mut self) -> Result<(), SyncError> {
+        self.trust_store.signed_by = self.metadata.installation_id.clone();
+        self.trust_store.signed_at = Self::current_timestamp();
+        self.trust_store.signature = Self::sign_trust_store(&self.trust_store, &self.key_pair)?;
+
         let peers_file = self.base_dir.join("peers.json");
-        let json = serde_json::to_string_pretty(&self.peers)
-            .map_err(|e| SyncError::Other(format!("Failed to serialize peers: {}", e)))?;
+        let json = serde_json::to_string_pretty(&self.trust_store)
+            .map_err(|e| SyncError::Other(format!("Failed to serialize trust store: {}", e)))?;
         fs::write(peers_file, json)?;
         Ok(())
+    }
+
+    /// Compute canonical bytes for signing the trust store
+    fn canonical_trust_store_bytes(
+        version: u32,
+        signed_by: &str,
+        signed_at: u64,
+        peers: &HashMap<String, PeerRecord>,
+    ) -> Result<Vec<u8>, SyncError> {
+        let mut items: Vec<(String, PeerRecord)> = peers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        items.sort_by(|a, b| a.0.cmp(&b.0));
+        let signable = TrustStoreSignable {
+            version,
+            signed_by: signed_by.to_string(),
+            signed_at,
+            peers: items,
+        };
+        let mut data = serde_json::to_vec(&signable)
+            .map_err(|e| SyncError::Other(format!("Failed to serialize trust store (signable): {}", e)))?;
+        // Domain separation prefix
+        let mut prefixed = b"openagent-terminal.secure-sync.truststore.v1|".to_vec();
+        prefixed.append(&mut data);
+        Ok(prefixed)
+    }
+
+    /// Sign the trust store
+    fn sign_trust_store(store: &TrustStore, key_pair: &signature::Ed25519KeyPair) -> Result<Vec<u8>, SyncError> {
+        let bytes = Self::canonical_trust_store_bytes(store.version, &store.signed_by, store.signed_at, &store.peers)?;
+        Ok(key_pair.sign(&bytes).as_ref().to_vec())
+    }
+
+    /// Compute a hex fingerprint of a public key (SHA-256)
+    fn fingerprint_key(public_key: &[u8]) -> String {
+        let digest = digest::digest(&digest::SHA256, public_key);
+        let bytes = digest.as_ref();
+        let mut s = String::with_capacity(bytes.len() * 2);
+        for b in bytes {
+            use std::fmt::Write as _;
+            let _ = write!(&mut s, "{:02x}", b);
+        }
+        s
     }
 
     /// Derive encryption key from password using installation-specific KDF params
@@ -243,6 +450,128 @@ impl SecureSyncProvider {
                 self.metadata.kdf_params.algorithm
             ))),
         }
+    }
+
+    /// Write private key to disk with restrictive permissions
+    fn write_private_key_secure(path: &Path, bytes: &[u8]) -> Result<(), SyncError> {
+        #[cfg(unix)]
+        {
+            use std::fs::OpenOptions;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)?;
+            use std::io::Write as _;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            return Ok(());
+        }
+        #[cfg(not(unix))]
+        {
+            fs::write(path, bytes)?;
+            return Ok(());
+        }
+    }
+
+    /// Return the keys directory path
+    fn keys_dir(base_dir: &Path) -> PathBuf {
+        base_dir.join("keys")
+    }
+
+    /// Build the domain-separated bytes for signing/verification
+    fn signing_bytes(
+        domain: &str,
+        from_id: &str,
+        to_id: &str,
+        challenge: &[u8],
+    ) -> Vec<u8> {
+        let mut data = Vec::with_capacity(domain.len() + from_id.len() + to_id.len() + challenge.len() + 3);
+        data.extend_from_slice(domain.as_bytes());
+        data.push(b'|');
+        data.extend_from_slice(from_id.as_bytes());
+        data.push(b'|');
+        data.extend_from_slice(to_id.as_bytes());
+        data.push(b'|');
+        data.extend_from_slice(challenge);
+        data
+    }
+
+    /// Create an authentication challenge for a peer
+    pub fn create_handshake_challenge(&self, to_installation_id: &str) -> Result<HandshakeChallenge, SyncError> {
+        let mut challenge = vec![0u8; 32];
+        self.rng
+            .fill(&mut challenge)
+            .map_err(|_| SyncError::Other("Failed to generate challenge".to_string()))?;
+        Ok(HandshakeChallenge {
+            from_installation_id: self.metadata.installation_id.clone(),
+            challenge,
+            timestamp: Self::current_timestamp(),
+        })
+    }
+
+    /// Create a signature over the given challenge for handshake response
+    pub fn respond_to_handshake(&self, from_installation_id: &str, challenge: &[u8]) -> Result<HandshakeResponse, SyncError> {
+        const DOMAIN: &str = "openagent-terminal.secure-sync.handshake.v1";
+        let bytes = Self::signing_bytes(
+            DOMAIN,
+            &self.metadata.installation_id,
+            from_installation_id,
+            challenge,
+        );
+        let sig = self.key_pair.sign(&bytes);
+        Ok(HandshakeResponse {
+            responder_installation_id: self.metadata.installation_id.clone(),
+            challenge: challenge.to_vec(),
+            signature: sig.as_ref().to_vec(),
+        })
+    }
+
+    /// Verify a handshake response from a peer
+    pub fn verify_handshake_response(
+        &self,
+        peer: &PeerInfo,
+        from_installation_id: &str,
+        response: &HandshakeResponse,
+    ) -> Result<bool, SyncError> {
+        const DOMAIN: &str = "openagent-terminal.secure-sync.handshake.v1";
+        if response.challenge.is_empty() {
+            return Ok(false);
+        }
+        // response.responder_installation_id must match the peer record
+        if response.responder_installation_id != peer.installation_id {
+            return Ok(false);
+        }
+        let bytes = Self::signing_bytes(
+            DOMAIN,
+            &peer.installation_id,
+            from_installation_id,
+            &response.challenge,
+        );
+        let verifier = signature::UnparsedPublicKey::new(&signature::ED25519, &peer.public_key);
+        let ok = verifier.verify(&bytes, &response.signature).is_ok();
+        Ok(ok)
+    }
+
+    /// Sign an arbitrary message with domain separation
+    pub fn sign_message(&self, domain: &str, message: &[u8]) -> Vec<u8> {
+        let mut data = Vec::with_capacity(domain.len() + 1 + message.len());
+        data.extend_from_slice(domain.as_bytes());
+        data.push(b'|');
+        data.extend_from_slice(message);
+        self.key_pair.sign(&data).as_ref().to_vec()
+    }
+
+    /// Verify a signature over an arbitrary message with domain separation
+    pub fn verify_signature(public_key: &[u8], domain: &str, message: &[u8], signature_bytes: &[u8]) -> bool {
+        let mut data = Vec::with_capacity(domain.len() + 1 + message.len());
+        data.extend_from_slice(domain.as_bytes());
+        data.push(b'|');
+        data.extend_from_slice(message);
+        let verifier = signature::UnparsedPublicKey::new(&signature::ED25519, public_key);
+        verifier.verify(&data, signature_bytes).is_ok()
     }
 
     /// Encrypt data for sync
@@ -433,24 +762,91 @@ impl SecureSyncProvider {
         }
     }
 
-    /// Add a known peer for authenticated sync
-    pub fn add_peer(&mut self, peer: PeerInfo) -> Result<(), SyncError> {
-        self.peers.insert(peer.installation_id.clone(), peer);
-        self.save_peers()
+    /// Add a known peer for authenticated sync (trusted by default)
+    pub fn add_peer(&mut self, mut peer: PeerInfo) -> Result<(), SyncError> {
+        // Update last_seen on add
+        peer.last_seen = Self::current_timestamp();
+        let fingerprint = Self::fingerprint_key(&peer.public_key);
+        let record = PeerRecord {
+            info: peer,
+            key_fingerprint: fingerprint,
+            revoked: false,
+            key_history: Vec::new(),
+        };
+        self.trust_store
+            .peers
+            .insert(record.info.installation_id.clone(), record);
+        self.save_trust_store()
     }
 
-    /// Remove a peer
+    /// Remove a peer entirely from the trust store
     pub fn remove_peer(&mut self, installation_id: &str) -> Result<bool, SyncError> {
-        let removed = self.peers.remove(installation_id).is_some();
+        let removed = self.trust_store.peers.remove(installation_id).is_some();
         if removed {
-            self.save_peers()?;
+            self.save_trust_store()?;
         }
         Ok(removed)
     }
 
-    /// List all known peers
+    /// Revoke a peer (kept in trust store but marked untrusted)
+    pub fn revoke_peer(&mut self, installation_id: &str) -> Result<bool, SyncError> {
+        if let Some(record) = self.trust_store.peers.get_mut(installation_id) {
+            record.revoked = true;
+            self.save_trust_store()?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Rotate a peer's public key (append old to history)
+    pub fn rotate_peer_key(&mut self, installation_id: &str, new_public_key: Vec<u8>) -> Result<bool, SyncError> {
+        if let Some(record) = self.trust_store.peers.get_mut(installation_id) {
+            let now = Self::current_timestamp();
+            // Push current key to history
+            let old_entry = KeyHistoryEntry {
+                public_key: record.info.public_key.clone(),
+                key_fingerprint: record.key_fingerprint.clone(),
+                valid_from: 0, // unknown, legacy
+                valid_to: now,
+            };
+            record.key_history.push(old_entry);
+            // Update to new key
+            record.info.public_key = new_public_key;
+            record.key_fingerprint = Self::fingerprint_key(&record.info.public_key);
+            record.info.last_seen = now;
+            self.save_trust_store()?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Get a peer by installation id (only non-revoked)
+    pub fn get_peer(&self, installation_id: &str) -> Option<&PeerInfo> {
+        self.trust_store
+            .peers
+            .get(installation_id)
+            .filter(|r| !r.revoked)
+            .map(|r| &r.info)
+    }
+
+    /// List all known, non-revoked peers
     pub fn list_peers(&self) -> Vec<&PeerInfo> {
-        self.peers.values().collect()
+        self.trust_store
+            .peers
+            .values()
+            .filter(|r| !r.revoked)
+            .map(|r| &r.info)
+            .collect()
+    }
+
+    /// Get full peer record (including revoked and history)
+    pub fn get_peer_record(&self, installation_id: &str) -> Option<&PeerRecord> {
+        self.trust_store.peers.get(installation_id)
+    }
+
+    /// List all peer records (including revoked)
+    pub fn list_peer_records(&self) -> Vec<&PeerRecord> {
+        self.trust_store.peers.values().collect()
     }
 
     /// Get installation metadata
@@ -469,9 +865,13 @@ impl SyncProvider for SecureSyncProvider {
     }
 
     fn push(&self, scope: SyncScope) -> Result<(), SyncError> {
-        // Get password from environment (in real implementation)
-        let password = std::env::var("OPENAGENT_SYNC_PASSWORD")
-            .map_err(|_| SyncError::Misconfigured("OPENAGENT_SYNC_PASSWORD not set"))?;
+        // Get password from environment via configured var or default
+        let env_var = self
+            .encryption_key_env
+            .clone()
+            .unwrap_or_else(|| "OPENAGENT_SYNC_PASSWORD".to_string());
+        let password = std::env::var(&env_var)
+            .map_err(|_| SyncError::Misconfigured("Sync encryption password not set in env"))?;
 
         let source_dir = self.source_dir(scope);
         if !source_dir.exists() {
@@ -508,8 +908,12 @@ impl SyncProvider for SecureSyncProvider {
     }
 
     fn pull(&self, scope: SyncScope) -> Result<(), SyncError> {
-        let password = std::env::var("OPENAGENT_SYNC_PASSWORD")
-            .map_err(|_| SyncError::Misconfigured("OPENAGENT_SYNC_PASSWORD not set"))?;
+        let env_var = self
+            .encryption_key_env
+            .clone()
+            .unwrap_or_else(|| "OPENAGENT_SYNC_PASSWORD".to_string());
+        let password = std::env::var(&env_var)
+            .map_err(|_| SyncError::Misconfigured("Sync encryption password not set in env"))?;
 
         let encrypted_dir = self.encrypted_data_dir(scope);
         if !encrypted_dir.exists() {
@@ -606,7 +1010,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_installation_metadata_creation() {
+    fn test_installation_metadata_and_keys_creation() {
         let temp_dir = TempDir::new().unwrap();
         let config = SyncConfig {
             provider: "secure".to_string(),
@@ -622,6 +1026,15 @@ mod tests {
         assert!(!metadata.kdf_params.salt.is_empty());
         assert_eq!(metadata.kdf_params.algorithm, "PBKDF2-SHA256");
         assert_eq!(metadata.kdf_params.iterations, 100_000);
+        // public key should be present
+        assert!(metadata.public_key.as_ref().map(|v| !v.is_empty()).unwrap_or(false));
+
+        // Keys should exist on disk
+        let base_dir = provider.base_dir.clone();
+        let priv_path = base_dir.join("keys").join("ed25519_private.pk8");
+        let pub_path = base_dir.join("keys").join("ed25519_public.bin");
+        assert!(priv_path.exists(), "private key should exist");
+        assert!(pub_path.exists(), "public key should exist");
     }
 
     #[test]
@@ -644,5 +1057,105 @@ mod tests {
         let decrypted = provider.decrypt_data(&encrypted, password).unwrap();
 
         assert_eq!(test_data, &decrypted[..]);
+    }
+
+    #[test]
+    fn test_sign_and_verify_message() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SyncConfig {
+            provider: "secure".to_string(),
+            data_dir: Some(temp_dir.path().to_path_buf()),
+            endpoint_env: None,
+            encryption_key_env: None,
+        };
+        let provider = SecureSyncProvider::new(&config).unwrap();
+        let domain = "openagent-terminal.secure-sync.test";
+        let message = b"test-message";
+        let sig = provider.sign_message(domain, message);
+        let public_key = provider.installation_metadata().public_key.clone().unwrap();
+        let ok = SecureSyncProvider::verify_signature(&public_key, domain, message, &sig);
+        assert!(ok, "signature should verify");
+    }
+
+    #[test]
+    fn test_peer_handshake_flow() {
+        let temp_dir_a = TempDir::new().unwrap();
+        let temp_dir_b = TempDir::new().unwrap();
+
+        let config_a = SyncConfig {
+            provider: "secure".to_string(),
+            data_dir: Some(temp_dir_a.path().to_path_buf()),
+            endpoint_env: None,
+            encryption_key_env: None,
+        };
+        let config_b = SyncConfig {
+            provider: "secure".to_string(),
+            data_dir: Some(temp_dir_b.path().to_path_buf()),
+            endpoint_env: None,
+            encryption_key_env: None,
+        };
+
+        let provider_a = SecureSyncProvider::new(&config_a).unwrap();
+        let provider_b = SecureSyncProvider::new(&config_b).unwrap();
+
+        let peer_b = PeerInfo {
+            installation_id: provider_b.metadata.installation_id.clone(),
+            display_name: "peer-b".to_string(),
+            last_seen: 0,
+            public_key: provider_b.metadata.public_key.clone().unwrap(),
+            capabilities: vec![],
+        };
+
+        // A -> B: challenge
+        let challenge = provider_a
+            .create_handshake_challenge(&peer_b.installation_id)
+            .unwrap();
+
+        // B -> A: response
+        let response = provider_b
+            .respond_to_handshake(&provider_a.metadata.installation_id, &challenge.challenge)
+            .unwrap();
+
+        // A verifies B's response
+        let ok = provider_a
+            .verify_handshake_response(&peer_b, &provider_a.metadata.installation_id, &response)
+            .unwrap();
+        assert!(ok, "handshake verification should succeed");
+    }
+
+    #[test]
+    fn test_trust_store_add_rotate_revoke() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SyncConfig {
+            provider: "secure".to_string(),
+            data_dir: Some(temp_dir.path().to_path_buf()),
+            endpoint_env: None,
+            encryption_key_env: None,
+        };
+        let mut provider = SecureSyncProvider::new(&config).unwrap();
+
+        // Create a dummy peer
+        let peer = PeerInfo {
+            installation_id: "peer-1".to_string(),
+            display_name: "Peer One".to_string(),
+            last_seen: 0,
+            public_key: vec![1, 2, 3, 4],
+            capabilities: vec![],
+        };
+
+        provider.add_peer(peer).unwrap();
+        assert_eq!(provider.list_peers().len(), 1);
+
+        // Rotate key
+        let rotated = provider.rotate_peer_key("peer-1", vec![9, 9, 9, 9]).unwrap();
+        assert!(rotated);
+        let listed = provider.list_peers();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].public_key, vec![9, 9, 9, 9]);
+
+        // Revoke
+        let revoked = provider.revoke_peer("peer-1").unwrap();
+        assert!(revoked);
+        assert_eq!(provider.list_peers().len(), 0);
     }
 }

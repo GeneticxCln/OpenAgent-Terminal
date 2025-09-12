@@ -206,6 +206,97 @@ pub extern "C" fn plugin_on_event(event: *const u8, len: usize) -> i32;
 pub extern "C" fn plugin_get_metadata() -> *const u8;
 ```
 
+### 8. Persistent Plugin Storage (Preview)
+
+Provide per-plugin, namespaced key-value storage "slots" for persisting configuration and small state across sessions.
+
+Rationale
+- Plugins often need to remember configuration, small caches, and user preferences without writing arbitrary files.
+- Storage must be safe, sandboxed, quota-limited, and isolated per plugin.
+
+Capability (extends the capability model)
+```rust
+pub enum PluginCapability {
+    Network(Vec<String>),      // Allowed domains
+    FileRead(Vec<PathBuf>),     // Allowed paths
+    FileWrite(Vec<PathBuf>),    // Allowed paths
+    Environment(Vec<String>),   // Allowed env vars
+    Terminal,                   // Terminal I/O access
+    Clipboard,                  // Clipboard access
+    Storage(StorageQuota),      // New: per-plugin storage with quotas
+}
+
+pub struct StorageQuota {
+    pub max_total_bytes: u64,  // default ~50 MiB per plugin (configurable)
+    pub max_value_bytes: u32,  // default ~256 KiB per value
+    pub max_keys: u32,         // default 10_000 keys
+}
+```
+
+Manifest (permissions)
+```toml
+[plugin.capabilities]
+types = ["ai_provider"]
+permissions = ["storage"]
+```
+
+Host functions (WASM C-ABI)
+```rust
+extern "C" {
+    /// Store a value under a key in the calling plugin's namespace.
+    /// Returns 0 on success; non-zero error codes on failure (quota exceeded, invalid args, etc.).
+    fn host_store_data(key_ptr: *const u8, key_len: usize, val_ptr: *const u8, val_len: usize) -> i32;
+
+    /// Retrieve a value by key. Returns number of bytes written to out_ptr (>=0),
+    /// or a negative error code. Call with out_ptr = null, out_capacity = 0 to query length.
+    fn host_retrieve_data(key_ptr: *const u8, key_len: usize, out_ptr: *mut u8, out_capacity: usize) -> isize;
+
+    /// Delete a key. Returns 1 if deleted, 0 if not found, negative on error.
+    fn host_delete_data(key_ptr: *const u8, key_len: usize) -> i32;
+
+    /// List keys as a JSON-encoded UTF-8 array string in WASM memory.
+    /// Ownership/lifetime is documented in the SDK; return is null on error.
+    fn host_list_keys(prefix_ptr: *const u8, prefix_len: usize) -> *const u8;
+}
+```
+
+Semantics
+- Keys are UTF-8 strings up to 256 bytes; values are arbitrary bytes up to max_value_bytes.
+- Namespacing by plugin_id is enforced by the host; plugins can only access their own keys.
+- Operations are synchronous and subject to quotas and rate limits.
+- Large payloads should be chunked by the plugin if needed.
+
+Storage backend mapping (default SQLite)
+```sql
+-- Per-plugin KV store
+CREATE TABLE IF NOT EXISTS plugin_data (
+    plugin_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (plugin_id, key)
+);
+```
+
+Security & privacy
+- Quotas prevent resource exhaustion; configurable via host settings.
+- Sensitive data may be encrypted at rest when enabled (see storage.encrypt_sensitive_data).
+- No network egress occurs from storage operations; data remains local unless a plugin explicitly sends it.
+
+Example (plugin-side, minimal)
+```rust
+let key = "settings/theme";
+let value = b"dark";
+unsafe {
+    let rc = host_store_data(key.as_ptr(), key.len(), value.as_ptr(), value.len());
+    assert_eq!(rc, 0);
+}
+```
+
+Preview status
+- Marked Preview for GA; names and quotas may evolve. SDK helpers will wrap the raw host calls where available.
+
 ## Consequences
 
 ### Positive

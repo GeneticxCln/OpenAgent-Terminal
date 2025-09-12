@@ -169,6 +169,33 @@ pub enum MergeStrategy {
 
 ## Security Considerations
 
+### MVP Auth and Key Management (current implementation)
+
+While the long-term plan specifies age-based encryption and Argon2 KDF, the current secure sync provider (MVP) implements:
+
+- Authentication: Ed25519 keypairs (per installation)
+  - Keys are auto-generated on first use and persisted to STATE/openagent-terminal/secure-sync/keys/
+    - ed25519_private.pk8 (0600 on Unix)
+    - ed25519_public.bin
+  - The public key is also stored in installation.json.
+  - Peer public keys are stored in peers.json (trust store) with installation_id, display_name, last_seen, and capabilities.
+
+- Handshake: challenge/response with domain separation
+  - Domain string: "openagent-terminal.secure-sync.handshake.v1"
+  - Signature covers: domain | from_installation_id | to_installation_id | challenge_bytes
+  - Use random 32-byte challenges and enforce freshness at the transport layer to mitigate replay.
+
+- Encryption of payloads: AES-256-GCM
+  - Key derived from a runtime password using PBKDF2-HMAC-SHA256 and per-install random salt, then expanded with HKDF-SHA256 for AEAD.
+  - KDF parameters (algorithm, salt, iterations) are stored in installation metadata and embedded with payloads as needed for decryption.
+  - The runtime password is supplied via an environment variable. The variable name is [sync].encryption_key_env; if unset, OPENAGENT_SYNC_PASSWORD is used.
+
+- Storage locations (STATE base)
+  - $XDG_STATE_HOME/openagent-terminal/secure-sync, or ~/.local/state/openagent-terminal/secure-sync
+  - installation.json, peers.json, keys/, and encrypted/ directories as described in docs/sync.md.
+
+These choices keep the MVP functional and secure while allowing us to switch to age/Argon2 in a future phase without breaking the public API.
+
 ### Encryption
 - All data encrypted with age before sync
 - Keys derived from user passphrase using Argon2

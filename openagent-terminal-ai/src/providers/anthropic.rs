@@ -174,15 +174,27 @@ impl AiProvider for AnthropicProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let retry_after_hdr = response.headers().get("retry-after").cloned();
+            let headers = response.headers().clone();
             let error_text = response
                 .text()
                 .unwrap_or_else(|_| "Unknown error".to_string());
             let mut msg = format!("API error {}: {}", status, error_text);
-            if let Some(hv) = retry_after_hdr {
-                if let Ok(s) = hv.to_str() {
-                    msg.push_str(&format!("; retry-after: {}", s));
-                }
+            if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                msg.push_str(&format!("; retry-after: {}", s));
+            }
+            if let Some(s) = headers
+                .get("x-ratelimit-reset-after")
+                .or_else(|| headers.get("x-rate-limit-reset-after"))
+                .and_then(|v| v.to_str().ok())
+            {
+                msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
+            }
+            if let Some(s) = headers
+                .get("x-ratelimit-reset")
+                .or_else(|| headers.get("x-rate-limit-reset"))
+                .and_then(|v| v.to_str().ok())
+            {
+                msg.push_str(&format!("; x-ratelimit-reset: {}", s));
             }
             error!("Anthropic API error {}: {}", status, error_text);
             return Err(msg);
@@ -332,17 +344,28 @@ impl AiProvider for AnthropicProvider {
 
                 if !response.status().is_success() {
                     let status = response.status();
-                    // Include Retry-After header if present to allow retry strategy to respect it
-                    let retry_after_hdr = response.headers().get("retry-after").cloned();
+                    let headers = response.headers().clone();
                     let error_text = match response.text().await {
                         Ok(t) => t,
                         Err(_) => "Unknown error".to_string(),
                     };
                     let mut msg = format!("API error {}: {}", status, error_text);
-                    if let Some(hv) = retry_after_hdr {
-                        if let Ok(s) = hv.to_str() {
-                            msg.push_str(&format!("; retry-after: {}", s));
-                        }
+                    if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                        msg.push_str(&format!("; retry-after: {}", s));
+                    }
+                    if let Some(s) = headers
+                        .get("x-ratelimit-reset-after")
+                        .or_else(|| headers.get("x-rate-limit-reset-after"))
+                        .and_then(|v| v.to_str().ok())
+                    {
+                        msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
+                    }
+                    if let Some(s) = headers
+                        .get("x-ratelimit-reset")
+                        .or_else(|| headers.get("x-rate-limit-reset"))
+                        .and_then(|v| v.to_str().ok())
+                    {
+                        msg.push_str(&format!("; x-ratelimit-reset: {}", s));
                     }
                     error!("Anthropic API error {}: {}", status, error_text);
                     if retry.should_retry(attempt, &msg, cancel) {

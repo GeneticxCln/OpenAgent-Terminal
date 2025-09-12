@@ -90,7 +90,7 @@ pub struct WarpIntegration {
     terminals: HashMap<PaneId, Arc<FairMutex<Term<EventProxy>>>>,
 
     /// PTY managers for each terminal
-    pty_managers: PtyManagerCollection,
+    pty_managers: Arc<parking_lot::Mutex<PtyManagerCollection>>,
     /// Pane -> PTY mapping
     pty_by_pane: HashMap<PaneId, PtyId>,
 
@@ -137,7 +137,7 @@ impl WarpIntegration {
             tab_manager,
             split_manager: WarpSplitManager::new(),
             terminals: HashMap::new(),
-            pty_managers: PtyManagerCollection::new(),
+            pty_managers: Arc::new(parking_lot::Mutex::new(PtyManagerCollection::new())),
             pty_by_pane: HashMap::new(),
             config,
             window_id: None,
@@ -442,6 +442,7 @@ impl WarpIntegration {
 
         let pty_id = self
             .pty_managers
+            .lock()
             .create_pty_manager(working_dir.to_path_buf(), shell_config, environment)
             .map_err(|e| WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() })?;
         self.pty_by_pane.insert(pane_id, pty_id);
@@ -464,7 +465,7 @@ impl WarpIntegration {
         }
 
         // Create actual PTY process with window size conversion
-        if let Some(manager) = self.pty_managers.get_manager(pty_id) {
+        if let Some(manager) = self.pty_managers.lock().get_manager(pty_id) {
             let mut manager_guard = manager.lock();
 
             // Convert SizeInfo to WindowSize
@@ -538,6 +539,11 @@ impl WarpIntegration {
 
         self.update_activity();
         result
+    }
+
+    /// Expose a handle to the PTY collection for external integrations (e.g., Blocks)
+    pub fn pty_collection_handle(&self) -> Arc<parking_lot::Mutex<PtyManagerCollection>> {
+        self.pty_managers.clone()
     }
 
     /// Handle tab creation
@@ -1049,10 +1055,10 @@ impl WarpIntegration {
 
         // Clean up PTY manager for this pane if mapped
         if let Some(pty_id) = self.pty_by_pane.remove(&pane_id) {
-            self.pty_managers.remove_manager(pty_id);
+            self.pty_managers.lock().remove_manager(pty_id);
         }
         // Also clear any other inactive PTY managers
-        self.pty_managers.cleanup_inactive();
+        self.pty_managers.lock().cleanup_inactive();
         debug!("Cleaned up PTY managers");
 
         self.perf_stats.active_terminals = self.terminals.len();
@@ -1169,7 +1175,7 @@ impl WarpIntegration {
 
         // Use pane -> PTY mapping when available
         if let Some(pty_id) = self.pty_by_pane.get(&active_tab.active_pane) {
-            if let Some(ctx) = self.pty_managers.get_ai_context(*pty_id) {
+            if let Some(ctx) = self.pty_managers.lock().get_ai_context(*pty_id) {
                 return Some(ctx);
             }
         }
@@ -1194,7 +1200,7 @@ impl WarpIntegration {
         // Update PTY manager context using the active pane mapping
         if let Some(active_tab) = self.tab_manager.active_tab() {
             if let Some(pty_id) = self.pty_by_pane.get(&active_tab.active_pane) {
-                if let Some(manager) = self.pty_managers.get_manager(*pty_id) {
+                if let Some(manager) = self.pty_managers.lock().get_manager(*pty_id) {
                     manager.lock().update_last_command(command.to_string());
                 }
             }

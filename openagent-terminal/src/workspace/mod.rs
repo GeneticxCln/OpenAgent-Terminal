@@ -389,8 +389,8 @@ impl WorkspaceManager {
 
     /// Check if workspace features are enabled
     pub fn is_enabled(&self) -> bool {
-        // Check configuration for workspace.enabled
-        true // TODO: Read from config
+        // Read from configuration flag `workspace.enabled`.
+        self.config.workspace.enabled
     }
 }
 
@@ -479,5 +479,29 @@ mod tests {
             "divider should be hittable at correct x considering padding"
         );
         assert_eq!(hit.unwrap().axis, split_manager::SplitAxis::Horizontal);
+    }
+
+    #[test]
+    fn is_enabled_respects_config_flag() {
+        // When workspace.enabled = true, is_enabled() returns true
+        let mut cfg_true = UiConfig::default();
+        cfg_true.workspace.enabled = true;
+        let wm_true = make_workspace(
+            cfg_true,
+            make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0),
+        );
+        assert!(wm_true.is_enabled(), "expected workspace to be enabled");
+
+        // When workspace.enabled = false, is_enabled() returns false
+        let mut cfg_false = UiConfig::default();
+        cfg_false.workspace.enabled = false;
+        let wm_false = make_workspace(
+            cfg_false,
+            make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0),
+        );
+        assert!(
+            !wm_false.is_enabled(),
+            "expected workspace to be disabled when config flag is false"
+        );
     }
 }

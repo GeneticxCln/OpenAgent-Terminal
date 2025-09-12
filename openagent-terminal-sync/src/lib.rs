@@ -9,7 +9,10 @@ use std::path::PathBuf;
 mod local_fs;
 mod secure_sync;
 pub use local_fs::LocalFsProvider;
-pub use secure_sync::{InstallationMetadata, KdfParams, PeerInfo, SecureSyncProvider};
+pub use secure_sync::{
+    HandshakeChallenge, HandshakeResponse, InstallationMetadata, KdfParams, KeyHistoryEntry, PeerInfo, PeerRecord,
+    SecureSyncProvider, TrustStore,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncScope {

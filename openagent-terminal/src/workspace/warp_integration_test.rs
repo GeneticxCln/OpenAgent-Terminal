@@ -258,6 +258,33 @@ fn test_config_validation() {
     assert_eq!(workspace_config.warp_session_file, None);
 }
 
+/// Test that tab bar config defaults are respected when building UI style
+#[test]
+fn test_tab_bar_config_defaults() {
+    let mut cfg = UiConfig::default();
+    // Use default tab bar values
+    let style = crate::display::warp_ui::WarpTabStyle::from_theme(&cfg);
+    // Sanity-check style derives from theme; this primarily guards against panics
+    assert!(style.tab_height >= 16.0);
+
+    // Flip config knobs to ensure fields exist and are deserializable
+    cfg.workspace.tab_bar.show_close_button = false;
+    cfg.workspace.tab_bar.close_button_on_hover = true;
+    cfg.workspace.tab_bar.show_modified_indicator = false;
+    cfg.workspace.tab_bar.show_new_tab_button = false;
+    cfg.workspace.tab_bar.show_tab_numbers = true;
+    cfg.workspace.tab_bar.max_title_length = 10;
+
+    // Ensure values round-trip in memory
+    let tb = &cfg.workspace.tab_bar;
+    assert!(!tb.show_close_button);
+    assert!(tb.close_button_on_hover);
+    assert!(!tb.show_modified_indicator);
+    assert!(!tb.show_new_tab_button);
+    assert!(tb.show_tab_numbers);
+    assert_eq!(tb.max_title_length, 10);
+}
+
 /// Test module exports and public API
 #[test]
 fn test_public_api() {

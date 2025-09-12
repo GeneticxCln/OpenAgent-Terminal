@@ -208,17 +208,28 @@ impl AiProvider for OpenAiProvider {
 
             if !response.status().is_success() {
                 let status = response.status();
-                // Capture Retry-After header if present and include it in the error message so
-                // the retry strategy can respect it without changing its API.
-                let retry_after_hdr = response.headers().get("retry-after").cloned();
+                // Capture rate-limit headers to feed into backoff parsing
+                let headers = response.headers().clone();
                 let error_text = response
                     .text()
                     .unwrap_or_else(|_| "Unknown error".to_string());
                 let mut msg = format!("API error {}: {}", status, error_text);
-                if let Some(hv) = retry_after_hdr {
-                    if let Ok(s) = hv.to_str() {
-                        msg.push_str(&format!("; retry-after: {}", s));
-                    }
+                if let Some(hv) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                    msg.push_str(&format!("; retry-after: {}", hv));
+                }
+                if let Some(hv) = headers
+                    .get("x-ratelimit-reset-after")
+                    .or_else(|| headers.get("x-rate-limit-reset-after"))
+                    .and_then(|v| v.to_str().ok())
+                {
+                    msg.push_str(&format!("; x-ratelimit-reset-after: {}", hv));
+                }
+                if let Some(hv) = headers
+                    .get("x-ratelimit-reset")
+                    .or_else(|| headers.get("x-rate-limit-reset"))
+                    .and_then(|v| v.to_str().ok())
+                {
+                    msg.push_str(&format!("; x-ratelimit-reset: {}", hv));
                 }
                 error!("OpenAI API error {}: {}", status, error_text);
                 if retry.should_retry(attempt, &msg, &std::sync::atomic::AtomicBool::new(false)) {
@@ -409,18 +420,29 @@ impl AiProvider for OpenAiProvider {
 
                 if !response.status().is_success() {
                     let status = response.status();
-                    // Capture Retry-After header if present and include it in the error message so
-                    // the retry strategy can respect it without changing its API.
-                    let retry_after_hdr = response.headers().get("retry-after").cloned();
+                    // Capture rate-limit headers to feed into backoff parsing
+                    let headers = response.headers().clone();
                     let error_text = match response.text().await {
                         Ok(t) => t,
                         Err(_) => "Unknown error".to_string(),
                     };
                     let mut msg = format!("API error {}: {}", status, error_text);
-                    if let Some(hv) = retry_after_hdr {
-                        if let Ok(s) = hv.to_str() {
-                            msg.push_str(&format!("; retry-after: {}", s));
-                        }
+                    if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                        msg.push_str(&format!("; retry-after: {}", s));
+                    }
+                    if let Some(s) = headers
+                        .get("x-ratelimit-reset-after")
+                        .or_else(|| headers.get("x-rate-limit-reset-after"))
+                        .and_then(|v| v.to_str().ok())
+                    {
+                        msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
+                    }
+                    if let Some(s) = headers
+                        .get("x-ratelimit-reset")
+                        .or_else(|| headers.get("x-rate-limit-reset"))
+                        .and_then(|v| v.to_str().ok())
+                    {
+                        msg.push_str(&format!("; x-ratelimit-reset: {}", s));
                     }
                     error!("OpenAI API error {}: {}", status, error_text);
                     if retry.should_retry(attempt, &msg, cancel) {
@@ -469,10 +491,24 @@ impl AiProvider for OpenAiProvider {
                                     }
                                 }
                                 Err(e) => {
+                                    // Fallback: try to extract minimal content field from raw string
                                     debug!(
                                         "Skipping non-JSON or unexpected SSE data from OpenAI: {}",
                                         e
                                     );
+                                    if let Some(cap) = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#)
+                                        .ok()
+                                        .and_then(|re| re.captures(&data))
+                                        .and_then(|caps| caps.get(1))
+                                    {
+                                        let c = cap.as_str().to_string();
+                                        if !c.is_empty() {
+                                            if ai_log_verbose() {
+                                                debug!("openai_stream_chunk_fallback len={}", c.len());
+                                            }
+                                            on_chunk(&c);
+                                        }
+                                    }
                                 }
                             }
                         }

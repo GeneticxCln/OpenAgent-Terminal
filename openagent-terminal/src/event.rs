@@ -216,6 +216,20 @@ impl Processor {
             }
             if let Some(components) = &self.components {
                 window_context.set_components(components.clone());
+                // Wire Blocks -> Workspace PTY collection when Warp is enabled and initialized
+                #[cfg(feature = "blocks")]
+                {
+                    if window_context.config().workspace.warp_style {
+                        if let Some(warp) = &window_context.workspace.warp {
+                            if let Some(blocks) = &components.block_manager {
+                                let handle = warp.pty_collection_handle();
+                                if let Ok(mut mgr) = blocks.try_write() {
+                                    mgr.set_workspace_pty_collection(handle);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

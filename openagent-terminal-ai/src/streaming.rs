@@ -343,6 +343,9 @@ impl RetryStrategy {
         if error_lower.contains("timeout")
             || error_lower.contains("connection")
             || error_lower.contains("rate limit")
+            || error_lower.contains("ratelimit")
+            || error_lower.contains("x-ratelimit")
+            || error_lower.contains("x-rate-limit")
             || error_lower.contains("overload")
             || error_lower.contains("temporary")
             || error_lower.contains("503")
@@ -369,32 +372,119 @@ impl RetryStrategy {
         true
     }
 
-    /// Parse Retry-After value from an error string that may contain a fragment like
-    /// "; retry-after: 60" or "; retry-after: Fri, 05 Sep 2025 23:20:00 GMT".
-    /// Returns a Duration if parsing succeeds.
+    /// Parse Retry-After or common rate limit reset headers encoded inside an error message.
+    ///
+    /// Supports:
+    /// - retry-after: <seconds|http-date>
+    /// - x-ratelimit-reset-after: <seconds>
+    /// - x-ratelimit-reset: <epoch seconds|epoch milliseconds|http-date>
+    /// (Header names are matched case-insensitively and tolerate x-rate-limit- variants.)
     fn parse_retry_after(error: &str) -> Option<Duration> {
-        // Case-insensitive search for "retry-after:"
-        let lower = error.to_lowercase();
-        let key = "retry-after:";
-        let idx = lower.find(key)?;
-        let start = idx + key.len();
-        let tail = &error[start..].trim();
-        // Try numeric seconds first (common case)
-        if let Some(first_token) = tail.split_whitespace().next() {
-            if let Ok(secs) = first_token.parse::<u64>() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        fn parse_relative(val: &str) -> Option<Duration> {
+            let v = val.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
+            // integer seconds
+            if let Ok(secs) = v.parse::<u64>() {
                 return Some(Duration::from_secs(secs));
             }
-        }
-        // Try HTTP-date
-        if let Ok(when) = httpdate::parse_http_date(tail) {
-            if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-                if let Ok(target) = when.duration_since(std::time::UNIX_EPOCH) {
-                    if target > now {
-                        return Some(target - now);
+            // float seconds
+            if let Ok(secs_f) = v.parse::<f64>() {
+                if secs_f.is_finite() && secs_f >= 0.0 {
+                    let ms = (secs_f * 1000.0).round() as u64;
+                    return Some(Duration::from_millis(ms));
+                }
+            }
+            // HTTP-date relative to now
+            if let Ok(when) = httpdate::parse_http_date(v) {
+                if let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                    if let Ok(target) = when.duration_since(UNIX_EPOCH) {
+                        if target > now {
+                            return Some(target - now);
+                        } else {
+                            return Some(Duration::from_secs(0));
+                        }
                     }
                 }
             }
+            None
         }
+
+        fn parse_absolute(val: &str) -> Option<Duration> {
+            let v = val.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+            // Try epoch (seconds or milliseconds) or float epoch
+            if let Ok(n) = v.parse::<u128>() {
+                let target = if n >= 1_000_000_000_000u128 {
+                    Duration::from_millis(n as u64)
+                } else {
+                    Duration::from_secs(n as u64)
+                };
+                return Some(if target > now { target - now } else { Duration::from_secs(0) });
+            }
+            if let Ok(f) = v.parse::<f64>() {
+                if f.is_finite() && f >= 0.0 {
+                    // Heuristic: treat values >= 1e12 as ms epoch, else seconds epoch
+                    let target = if f >= 1.0e12 {
+                        Duration::from_millis(f.round() as u64)
+                    } else {
+                        Duration::from_secs(f.round() as u64)
+                    };
+                    return Some(if target > now { target - now } else { Duration::from_secs(0) });
+                }
+            }
+            // HTTP-date absolute
+            if let Ok(when) = httpdate::parse_http_date(v) {
+                if let Ok(target) = when.duration_since(UNIX_EPOCH) {
+                    return Some(if target > now { target - now } else { Duration::from_secs(0) });
+                }
+            }
+            None
+        }
+
+        // Build a lowercased copy for case-insensitive search
+        let lower = error.to_lowercase();
+
+        // Priority: Retry-After, then Reset-After, then Reset
+        let relative_keys = [
+            "retry-after:",
+            "x-ratelimit-reset-after:",
+            "x-rate-limit-reset-after:",
+        ];
+        for key in &relative_keys {
+            if let Some(idx) = lower.find(key) {
+                let start = idx + key.len();
+                let tail = &error[start..];
+                let val = tail
+                    .split(|c| c == ';' || c == '\r' || c == '\n')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if let Some(d) = parse_relative(val) {
+                    return Some(d);
+                }
+            }
+        }
+
+        let absolute_keys = [
+            "x-ratelimit-reset:",
+            "x-rate-limit-reset:",
+        ];
+        for key in &absolute_keys {
+            if let Some(idx) = lower.find(key) {
+                let start = idx + key.len();
+                let tail = &error[start..];
+                let val = tail
+                    .split(|c| c == ';' || c == '\r' || c == '\n')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if let Some(d) = parse_absolute(val) {
+                    return Some(d);
+                }
+            }
+        }
+
         None
     }
 }
@@ -494,6 +584,14 @@ mod tests {
         let d_with = strat.delay_for_attempt(0, "API error 429; retry-after: 60");
         assert_eq!(d_with, Duration::from_secs(60));
 
+        // Numeric with trailing semicolon and extra text
+        let d_with_extra = strat.delay_for_attempt(0, "429 error; retry-after: 15; please wait");
+        assert_eq!(d_with_extra, Duration::from_secs(15));
+
+        // Float seconds
+        let d_float = strat.delay_for_attempt(0, "429; retry-after: 0.5");
+        assert!(d_float >= Duration::from_millis(400) && d_float <= Duration::from_millis(600));
+
         // Without retry-after header, should use backoff algorithm (less than max)
         let d_without = strat.delay_for_attempt(0, "API error 429");
         assert!(d_without < cfg.max_delay);
@@ -558,5 +656,16 @@ mod tests {
         let msg = format!("API error 429; retry-after: {}", hdr);
         let d = strat.delay_for_attempt(0, &msg);
         assert!(d.as_secs() <= 6 && d.as_secs() >= 4, "unexpected delay: {:?}", d);
+
+        // x-ratelimit-reset-after seconds
+        let msg_reset_after = "API error 429; X-RateLimit-Reset-After: 7";
+        let d2 = strat.delay_for_attempt(0, msg_reset_after);
+        assert_eq!(d2, Duration::from_secs(7));
+
+        // x-ratelimit-reset epoch seconds (5 seconds ahead)
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let msg_reset = format!("429; x-ratelimit-reset: {}", now + 5);
+        let d3 = strat.delay_for_attempt(0, &msg_reset);
+        assert!(d3.as_secs() <= 6 && d3.as_secs() >= 4);
     }
 }
