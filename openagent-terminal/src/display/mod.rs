@@ -3266,7 +3266,7 @@ impl Display {
     }
 
     /// Read the current frame's RGBA pixels. Returns (bytes, width, height) on success.
-    /// WGPU: currently unsupported (returns None).
+    /// WGPU: currently unsupported (returns None). Use external screen capture tools if needed.
     #[allow(dead_code)]
     pub fn read_frame_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
         None

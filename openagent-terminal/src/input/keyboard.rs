@@ -1184,6 +1184,171 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Composer input handling when focused and AI panel/palette/etc. are not active
+        if self.ctx.display().composer_focused
+            && !self.ctx.palette_active()
+            && !self.ctx.search_active()
+        {
+            let mods = self.ctx.modifiers().state();
+            match key.logical_key.as_ref() {
+                // Submit via Enter: behaves like clicking [Run]
+                Key::Named(NamedKey::Enter) => {
+                    // Open AI panel and seed text, then propose
+                    #[cfg(feature = "ai")]
+                    {
+                        self.ctx.open_ai_panel();
+                        let text = self.ctx.display().composer_text.clone();
+                        if let Some(rt) = self.ctx.ai_runtime_mut() {
+                            if !text.is_empty() {
+                                rt.ui.scratch = text;
+                                rt.ui.cursor_position = rt.ui.scratch.len();
+                            }
+                        }
+                        self.ctx.ai_propose();
+                    }
+                    // Reset composer state regardless of AI feature
+                    self.ctx.display().composer_text.clear();
+                    self.ctx.display().composer_cursor = 0;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.display().composer_view_col_offset = 0;
+                    self.ctx.display().composer_focused = false;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                // Cancel focus
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.display().composer_focused = false;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                // Navigation
+                Key::Named(NamedKey::ArrowLeft) => {
+                    let cur = self.ctx.display().composer_cursor;
+                    if mods.shift_key() {
+                        if self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        }
+                    } else {
+                        self.ctx.display().composer_sel_anchor = None;
+                    }
+                    if cur > 0 {
+                        self.ctx.display().composer_cursor = cur - 1;
+                    }
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    let len = self.ctx.display().composer_text.chars().count();
+                    let cur = self.ctx.display().composer_cursor;
+                    if mods.shift_key() {
+                        if self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        }
+                    } else {
+                        self.ctx.display().composer_sel_anchor = None;
+                    }
+                    if cur < len {
+                        self.ctx.display().composer_cursor = cur + 1;
+                    }
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Named(NamedKey::Home) => {
+                    if mods.shift_key() {
+                        let cur = self.ctx.display().composer_cursor;
+                        if self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        }
+                    } else {
+                        self.ctx.display().composer_sel_anchor = None;
+                    }
+                    self.ctx.display().composer_cursor = 0;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Named(NamedKey::End) => {
+                    if mods.shift_key() {
+                        let cur = self.ctx.display().composer_cursor;
+                        if self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        }
+                    } else {
+                        self.ctx.display().composer_sel_anchor = None;
+                    }
+                    self.ctx.display().composer_cursor = self.ctx.display().composer_text.chars().count();
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                // Editing
+                Key::Named(NamedKey::Backspace) => {
+                    let cur = self.ctx.display().composer_cursor;
+                    if cur > 0 {
+                        // Remove prev char by grapheme; approximate via chars
+                        let mut s = self.ctx.display().composer_text.clone();
+                        let idx = s
+                            .char_indices()
+                            .nth(cur - 1)
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        let next_idx = s
+                            .char_indices()
+                            .nth(cur)
+                            .map(|(i, _)| i)
+                            .unwrap_or_else(|| s.len());
+                        s.replace_range(idx..next_idx, "");
+                        self.ctx.display().composer_text = s;
+                        self.ctx.display().composer_cursor = cur - 1;
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                }
+                Key::Named(NamedKey::Delete) => {
+                    let cur = self.ctx.display().composer_cursor;
+                    let len = self.ctx.display().composer_text.chars().count();
+                    if cur < len {
+                        let mut s = self.ctx.display().composer_text.clone();
+                        let start = s
+                            .char_indices()
+                            .nth(cur)
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        let end = s
+                            .char_indices()
+                            .nth(cur + 1)
+                            .map(|(i, _)| i)
+                            .unwrap_or_else(|| s.len());
+                        s.replace_range(start..end, "");
+                        self.ctx.display().composer_text = s;
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                }
+                // Character input (ignore control/meta)
+                Key::Character(s) if !mods.control_key() && !mods.alt_key() && !mods.super_key() => {
+                    if !s.is_empty() {
+                        let cur = self.ctx.display().composer_cursor;
+                        let mut s_full = String::new();
+                        // Insert at char index cur
+                        let mut it = self.ctx.display().composer_text.chars();
+                        for _ in 0..cur {
+                            if let Some(ch) = it.next() {
+                                s_full.push(ch);
+                            }
+                        }
+                        s_full.push_str(s);
+                        for ch in it {
+                            s_full.push(ch);
+                        }
+                        self.ctx.display().composer_text = s_full;
+                        self.ctx.display().composer_cursor = cur + s.chars().count();
+                        self.ctx.mark_dirty();
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // Inline AI suggestions: accept/dismiss when visible and panel not active
         #[cfg(feature = "ai")]
         if !self.ctx.ai_active() && self.ctx.inline_suggestion_visible() {

@@ -124,6 +124,13 @@ impl WarpTabManager {
         manager
     }
 
+    /// Allocate a new unique PaneId for this manager
+    pub fn allocate_pane_id(&mut self) -> PaneId {
+        let id = PaneId(self.next_pane_id);
+        self.next_pane_id += 1;
+        id
+    }
+
     /// Create a new tab with Warp-style automatic naming
     pub fn create_warp_tab(&mut self, working_dir: Option<PathBuf>) -> TabId {
         let tab_id = TabId(self.next_tab_id);

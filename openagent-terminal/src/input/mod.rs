@@ -1577,10 +1577,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Handle clicks on the Warp-like bottom composer pill (visual-only -> opens AI panel)
     #[cfg_attr(test, allow(dead_code))]
     fn process_bottom_composer_click(&mut self) -> bool {
-        use unicode_width::UnicodeWidthStr as _;
+        use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
         let size_info = self.ctx.size_info();
         let ch = size_info.cell_height();
-        let _cw = size_info.cell_width();
+        let cw = size_info.cell_width();
         let lines = size_info.screen_lines();
         if lines == 0 {
             return false;
@@ -1641,6 +1641,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 ));
                         }
                         self.ctx.display().ai_provider_dropdown_open = false;
+                        // brief press flash for feedback
+                        self.ctx.display().composer_press_flash_until = Some(
+                            std::time::Instant::now()
+                                + std::time::Duration::from_millis(140),
+                        );
                         self.ctx.mark_dirty();
                         return true;
                     }
@@ -1675,6 +1680,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     match *label {
                         "[Palette]" => {
                             self.ctx.open_command_palette();
+                            self.ctx.display().composer_press_flash_until = Some(
+                                std::time::Instant::now()
+                                    + std::time::Duration::from_millis(140),
+                            );
                             return true;
                         }
                         "[Run]" => {
@@ -1696,6 +1705,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 self.ctx.display().composer_sel_anchor = None;
                                 self.ctx.display().composer_view_col_offset = 0;
                                 self.ctx.display().composer_focused = false;
+                                self.ctx.display().composer_press_flash_until = Some(
+                                    std::time::Instant::now()
+                                        + std::time::Duration::from_millis(140),
+                                );
                                 self.ctx.mark_dirty();
                                 return true;
                             }
@@ -1743,32 +1756,114 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 // Toggle overlay dropdown
                 let open = self.ctx.display().ai_provider_dropdown_open;
                 self.ctx.display().ai_provider_dropdown_open = !open;
+                self.ctx.display().composer_press_flash_until = Some(
+                    std::time::Instant::now() + std::time::Duration::from_millis(140),
+                );
                 self.ctx.mark_dirty();
                 return true;
             }
         }
 
-        // If clicked inside pill but not on a chip: focus or open AI (instant behavior)
-        self.ctx.display().composer_focused = inside;
+        // If clicked inside pill but not on a chip: focus composer and place caret at clicked col
         if inside {
+            // Compute start_col for composer text region similarly to draw_warp_bottom_composer
+            let cols = size_info.columns();
+            let theme = self
+                .ctx
+                .config()
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.ctx.config().theme.resolve());
+            let ui = theme.ui;
+
+            // Star glyph width and initial start column
+            let star = ui.composer_star_glyph.as_deref().unwrap_or("✦ ");
+            let mut start_col = 2usize + star.len();
+
+            // Provider chip width
+            let provider_label = {
+                let pid = self.ctx.display().ai_current_provider.as_str();
+                match pid {
+                    "openai" => "OpenAI",
+                    "openrouter" => "OpenRouter",
+                    "anthropic" => "Anthropic",
+                    "ollama" => "Ollama",
+                    _ => if pid.is_empty() { "Provider" } else { pid },
+                }
+            };
+            let provider_chip = format!("[{} ▾]", provider_label);
+            let provider_wcols = provider_chip.width();
+            start_col += provider_wcols + 1; // space after chip
+
+            // Optional model chip
+            if !self.ctx.display().ai_current_model.is_empty() {
+                let model_text = {
+                    let max_len = 24usize;
+                    let m = &self.ctx.display().ai_current_model;
+                    if m.len() > max_len { format!("{}…", &m[..max_len]) } else { m.clone() }
+                };
+                let model_chip = format!("[{}]", model_text);
+                start_col += model_chip.width() + 2; // extra space after model chip
+            }
+
+            let available = cols.saturating_sub(start_col + 2);
+            // Compute visible window and target text column
+            let text = self.ctx.display().composer_text.clone();
+            let total_cols = text.width();
+            let mut offset = self.ctx.display().composer_view_col_offset.min(total_cols);
+            // Clamp click within text area
+            let mut rel = 0usize;
+            if mouse_col >= start_col {
+                rel = mouse_col - start_col;
+            }
+            let vis_max = available.min(total_cols.saturating_sub(offset));
+            let rel = rel.min(vis_max.saturating_sub(0));
+            let target_col = offset + rel;
+
+            // Map target_col to byte index in text
+            let mut acc = 0usize;
+            let mut byte_idx = 0usize;
+            for (i, ch) in text.char_indices() {
+                let wch = ch.width().unwrap_or(1);
+                if acc + wch > target_col {
+                    byte_idx = i;
+                    break;
+                }
+                acc += wch;
+                byte_idx = i + ch.len_utf8();
+            }
+
+            // Update composer caret/selection
+            let shift = self.ctx.modifiers().state().shift_key();
+            let prev_cursor = self.ctx.display().composer_cursor;
+            if shift {
+                if self.ctx.display().composer_sel_anchor.is_none() {
+                    self.ctx.display().composer_sel_anchor = Some(prev_cursor);
+                }
+            } else {
+                self.ctx.display().composer_sel_anchor = None;
+            }
+            self.ctx.display().composer_cursor = byte_idx.min(text.len());
+            self.ctx.display().composer_focused = true;
+            // Make caret visible immediately
+            self.ctx.display().composer_caret_visible = true;
+            self.ctx.display().composer_caret_last_toggle = Some(std::time::Instant::now());
+            self.ctx.mark_dirty();
+
+            // In instant mode we open AI panel on click; commit mode will just focus
             #[cfg(feature = "ai")]
             {
-                // In instant mode we open AI panel on click; commit mode will just focus
-                let theme = self
-                    .ctx
-                    .config()
-                    .resolved_theme
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| self.ctx.config().theme.resolve());
                 if matches!(
-                    theme.ui.composer_open_mode,
+                    ui.composer_open_mode,
                     crate::config::theme::ComposerOpenMode::Instant
                 ) {
                     self.ctx.open_ai_panel();
                     return true;
                 }
             }
+
+            return true;
         }
         false
     }
@@ -1908,18 +2003,38 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             start = end + 2;
         }
 
-        // Check right-aligned settings button: [⚙]
-        let settings = "[⚙]";
-        let cols = size_info.columns();
-        if settings.chars().count() + 2 < cols {
-            let start = cols.saturating_sub(settings.chars().count() + 2);
-            let end = start + settings.chars().count();
-            let col = point.column.0;
-            if col >= start && col < end {
-                self.ctx.open_settings_panel();
-                self.ctx.display().quick_actions_press_flash_until =
-                    Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
-                return true;
+        // Check right-aligned settings gear sprite hitbox (pixel-precise)
+        {
+            let cols = size_info.columns();
+            let gear_cols = 3usize;
+            if gear_cols + 2 < cols {
+                // Mirror draw_quick_actions_bar geometry
+                let cw = size_info.cell_width();
+                let ch = size_info.cell_height();
+                let theme = cfg
+                    .resolved_theme
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| cfg.theme.resolve());
+                let icon_px = theme
+                    .ui
+                    .quick_actions_settings_icon_px
+                    .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
+                let start_col = cols.saturating_sub(gear_cols + 2);
+                let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
+                let y_px = (line as f32) * ch;
+                let iy = y_px + (ch - icon_px) * 0.5;
+                let (mx, my) = (
+                    self.ctx.display().last_mouse_x as f32,
+                    self.ctx.display().last_mouse_y as f32,
+                );
+                if mx >= ix && mx <= ix + icon_px && my >= iy && my <= iy + icon_px {
+                    self.ctx.open_settings_panel();
+                    self.ctx.display().quick_actions_press_flash_until = Some(
+                        std::time::Instant::now() + std::time::Duration::from_millis(140),
+                    );
+                    return true;
+                }
             }
         }
 
@@ -2127,13 +2242,30 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                         col = end + 2;
                     }
-                    // Gear area: approx 3 cols from right with 2 padding
+                    // Gear area: use precise sprite pixel hitbox
                     if !qa_hover {
                         let gear_cols = 3usize;
                         if gear_cols + 2 < cols {
-                            let start = cols.saturating_sub(gear_cols + 2);
-                            let end = start + gear_cols;
-                            if pcol >= start && pcol < end {
+                            // Mirror geometry from draw_quick_actions_bar
+                            let cw = size_info.cell_width();
+                            let ch = size_info.cell_height();
+                            let theme = cfg
+                                .resolved_theme
+                                .as_ref()
+                                .cloned()
+                                .unwrap_or_else(|| cfg.theme.resolve());
+                            let icon_px = theme
+                                .ui
+                                .quick_actions_settings_icon_px
+                                .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
+                            let start_col = cols.saturating_sub(gear_cols + 2);
+                            let ix = (start_col as f32) * cw
+                                + (cw * gear_cols as f32 - icon_px) * 0.5;
+                            let y_px = (line as f32) * ch;
+                            let iy = y_px + (ch - icon_px) * 0.5;
+                            let (mx, my) = (self.ctx.display().last_mouse_x as f32,
+                                            self.ctx.display().last_mouse_y as f32);
+                            if mx >= ix && mx <= ix + icon_px && my >= iy && my <= iy + icon_px {
                                 qa_hover = true;
                             }
                         }

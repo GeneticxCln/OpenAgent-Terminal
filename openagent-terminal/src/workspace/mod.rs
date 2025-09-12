@@ -191,7 +191,15 @@ impl WorkspaceManager {
     /// Split the current pane horizontally
     pub fn split_horizontal(&mut self, ratio: f32) -> Option<PaneId> {
         if let Some(tab) = self.active_tab_mut() {
-            SplitManager::split_horizontal_static(&mut tab.split_layout, tab.active_pane, ratio)
+            let new_id = self.tabs.allocate_pane_id();
+            if self
+                .splits
+                .split_horizontal_with_id(&mut tab.split_layout, tab.active_pane, ratio, new_id)
+            {
+                Some(new_id)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -200,7 +208,15 @@ impl WorkspaceManager {
     /// Split the current pane vertically
     pub fn split_vertical(&mut self, ratio: f32) -> Option<PaneId> {
         if let Some(tab) = self.active_tab_mut() {
-            SplitManager::split_vertical_static(&mut tab.split_layout, tab.active_pane, ratio)
+            let new_id = self.tabs.allocate_pane_id();
+            if self
+                .splits
+                .split_vertical_with_id(&mut tab.split_layout, tab.active_pane, ratio, new_id)
+            {
+                Some(new_id)
+            } else {
+                None
+            }
         } else {
             None
         }

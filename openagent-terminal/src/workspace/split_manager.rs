@@ -772,15 +772,14 @@ impl SplitManager {
         }
     }
 
-    /// Split a pane horizontally with immediate native operations
-    pub fn split_horizontal(
+    /// Split a pane horizontally using an explicit PaneId for the new pane
+    pub fn split_horizontal_with_id(
         &mut self,
         layout: &mut SplitLayout,
         pane_id: PaneId,
         ratio: f32,
-    ) -> Option<PaneId> {
-        let new_pane_id = PaneId(pane_id.0 + 1000); // Simple ID generation, should be improved
-
+        new_pane_id: PaneId,
+    ) -> bool {
         // Save snapshot for undo
         self.split_history.save_snapshot(layout);
 
@@ -797,22 +796,20 @@ impl SplitManager {
                 SplitAxis::Horizontal,
             ));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
-
-            Some(new_pane_id)
+            true
         } else {
-            None
+            false
         }
     }
 
-    /// Split a pane vertically with immediate native operations
-    pub fn split_vertical(
+    /// Split a pane vertically using an explicit PaneId for the new pane
+    pub fn split_vertical_with_id(
         &mut self,
         layout: &mut SplitLayout,
         pane_id: PaneId,
         ratio: f32,
-    ) -> Option<PaneId> {
-        let new_pane_id = PaneId(pane_id.0 + 1000); // Simple ID generation, should be improved
-
+        new_pane_id: PaneId,
+    ) -> bool {
         // Save snapshot for undo
         self.split_history.save_snapshot(layout);
 
@@ -829,7 +826,36 @@ impl SplitManager {
                 SplitAxis::Vertical,
             ));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
+            true
+        } else {
+            false
+        }
+    }
 
+    /// Split a pane horizontally with immediate native operations
+    pub fn split_horizontal(
+        &mut self,
+        layout: &mut SplitLayout,
+        pane_id: PaneId,
+        ratio: f32,
+    ) -> Option<PaneId> {
+        let new_pane_id = PaneId(pane_id.0 + 1000); // Legacy simple ID generation
+        if self.split_horizontal_with_id(layout, pane_id, ratio, new_pane_id) {
+            Some(new_pane_id)
+        } else {
+            None
+        }
+    }
+
+    /// Split a pane vertically with immediate native operations
+    pub fn split_vertical(
+        &mut self,
+        layout: &mut SplitLayout,
+        pane_id: PaneId,
+        ratio: f32,
+    ) -> Option<PaneId> {
+        let new_pane_id = PaneId(pane_id.0 + 1000); // Legacy simple ID generation
+        if self.split_vertical_with_id(layout, pane_id, ratio, new_pane_id) {
             Some(new_pane_id)
         } else {
             None

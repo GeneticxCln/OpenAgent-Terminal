@@ -465,14 +465,14 @@ impl SplitManagerExt for SplitManager {
         &mut self,
         layout: &mut SplitLayout,
         target_id: PaneId,
-        _new_pane_id: PaneId,
+        new_pane_id: PaneId,
         ratio: f32,
         horizontal: bool,
     ) -> bool {
         if horizontal {
-            self.split_horizontal(layout, target_id, ratio).is_some()
+            self.split_horizontal_with_id(layout, target_id, ratio, new_pane_id)
         } else {
-            self.split_vertical(layout, target_id, ratio).is_some()
+            self.split_vertical_with_id(layout, target_id, ratio, new_pane_id)
         }
     }
 }

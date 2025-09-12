@@ -645,7 +645,7 @@ impl WarpIntegration {
         };
 
         // Generate new pane ID
-        let new_pane_id = self.generate_pane_id();
+        let new_pane_id = self.tab_manager.allocate_pane_id();
 
         // Create split in the layout
         let split_success =
@@ -697,7 +697,7 @@ impl WarpIntegration {
         };
 
         // Generate new pane ID
-        let new_pane_id = self.generate_pane_id();
+        let new_pane_id = self.tab_manager.allocate_pane_id();
 
         // Create split in the layout
         let split_success = self
