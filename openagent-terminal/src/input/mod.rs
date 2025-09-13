@@ -110,8 +110,16 @@ fn redact_line(mut line: String) -> String {
     let extended_cfg = crate::event::Processor::privacy_extended_flag();
     let extended = extended_cfg.unwrap_or(extended_env);
     let lower = line.to_lowercase();
-    let keywords = ["api_key", "apikey", "token", "secret", "password", "passwd", "authorization", "auth"];    
-    let mut redacted = false;
+    let keywords = [
+        "api_key",
+        "apikey",
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "authorization",
+        "auth",
+    ];
 
     // Authorization: Bearer ...
     if let Some(pos) = lower.find("bearer ") {
@@ -120,19 +128,16 @@ fn redact_line(mut line: String) -> String {
         if cut <= line.len() {
             // Find end of token (to end of line)
             line.replace_range(cut.., "{{REDACTED}}");
-            redacted = true;
+            return line;
         }
     }
 
-    // If already redacted by Bearer rule, skip generic key-value pass to avoid double redaction
-    if redacted {
-        return line;
-    }
 
     // Extended patterns (AWS/JWT) when enabled
     if extended {
         // Very rough AWS Access Key ID pattern: AKIA or ASIA followed by 16 alnum
-        if let Some(idx) = lower.find("akia") { // case-insensitive via lower
+        if let Some(idx) = lower.find("akia") {
+            // case-insensitive via lower
             let start = idx;
             let end = (start + 20).min(line.len());
             line.replace_range(start..end, "{{REDACTED_AWS_KEY}}");
@@ -147,9 +152,8 @@ fn redact_line(mut line: String) -> String {
         // JWT-like: three base64url-ish segments separated by dots; replace the middle+signature
         // We only look for two dots to keep it simple
         if let Some(first_dot) = line.find('.') {
-            if let Some(second_dot) = line[first_dot + 1..].find('.') {
+            if line[first_dot + 1..].find('.').is_some() {
                 let mid_start = first_dot + 1;
-                let mid_end = mid_start + second_dot + 1; // include the second dot
                 // Replace middle and signature segment with marker
                 line.replace_range(mid_start..line.len(), "{{REDACTED_JWT}}");
                 return line;
@@ -175,21 +179,25 @@ fn redact_line(mut line: String) -> String {
                 let mut val_start = sep + 1;
                 while val_start < line.len() {
                     if let Some(c) = line[val_start..].chars().next() {
-                        if c.is_whitespace() { val_start += c.len_utf8(); } else { break; }
+                        if c.is_whitespace() {
+                            val_start += c.len_utf8();
+                        } else {
+                            break;
+                        }
                     } else {
                         break;
                     }
                 }
                 if val_start < line.len() {
                     line.replace_range(val_start.., "{{REDACTED}}");
-                    redacted = true;
-                    break;
+                    return line;
                 }
             }
         }
     }
 
-    if redacted { line } else { line }
+    // Return possibly redacted line
+    line
 }
 
 fn sanitize_preview(text: &str, max_lines: usize, max_chars: usize) -> String {
@@ -199,17 +207,25 @@ fn sanitize_preview(text: &str, max_lines: usize, max_chars: usize) -> String {
     let mut out = String::new();
     let mut chars_budget = max_chars;
     for (i, raw) in clean.lines().enumerate() {
-        if i >= max_lines || chars_budget == 0 { break; }
+        if i >= max_lines || chars_budget == 0 {
+            break;
+        }
         let red = redact_line(raw.to_string());
         let take = red.chars().take(chars_budget).collect::<String>();
         out.push_str(&take);
         out.push('\n');
         let used = take.chars().count() + 1; // +1 for newline
-        if chars_budget >= used { chars_budget -= used; } else { chars_budget = 0; }
+        if chars_budget >= used {
+            chars_budget -= used;
+        } else {
+            chars_budget = 0;
+        }
     }
-    if out.ends_with('\n') { let _ = out.pop(); }
-    if chars_budget == 0 || clean.lines().count() > max_lines {
-        if !out.ends_with('…') { out.push_str("…"); }
+    if out.ends_with('\n') {
+        let _ = out.pop();
+    }
+if (chars_budget == 0 || clean.lines().count() > max_lines) && !out.ends_with('…') {
+        out.push('…');
     }
     out
 }
@@ -312,6 +328,9 @@ pub trait ActionContext<T: EventListener> {
     fn copy_to_clipboard(&mut self, _text: String) {}
     fn spawn_shell_command_in_cwd(&mut self, _cmd: String, _cwd: String) {}
     fn prompt_and_export_block_output(&mut self, _text: String) {}
+
+    // Execute composer text via native command pipeline (event-layer responsibility)
+    fn execute_composer_command(&mut self, _text: String) {}
 
     // Inline AI suggestions (feature = "ai")
     #[cfg(feature = "ai")]
@@ -1008,7 +1027,7 @@ impl<T: EventListener> Execute<T> for Action {
                                 body.push('\n');
                             }
                             // Show sanitized preview of pasted content for safety
-                               let preview = sanitize_preview(&text, 10, 1200);
+                            let preview = sanitize_preview(&text, 10, 1200);
                             body.push_str(&format!("Pasted content (preview):\n{}", preview));
 
                             let title = match risk.level {
@@ -1050,7 +1069,10 @@ impl<T: EventListener> Execute<T> for Action {
                     // Build sanitized preview of the multi-line content (first 10 lines)
                     let preview = sanitize_preview(&text, 10, 1200);
                     let title = "Multi-line paste".to_string();
-                    let body = format!("About to paste multiple lines. Run after paste?\n\nPreview:\n{}", preview);
+                    let body = format!(
+                        "About to paste multiple lines. Run after paste?\n\nPreview:\n{}",
+                        preview
+                    );
                     match crate::ui_confirm::request_confirm(
                         title,
                         body,
@@ -1530,47 +1552,61 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Handle clicks on the tab bar (top or bottom)
     #[allow(dead_code)]
     fn process_tab_bar_click(&mut self) -> bool {
-        if !self.ctx.config().workspace.tab_bar.show {
+        // Snapshot immutable borrows to avoid overlapping borrows
+        let (tab_show, tab_pos) = {
+            let cfg = self.ctx.config();
+            let t = &cfg.workspace.tab_bar;
+            (t.show, t.position)
+        };
+        if !tab_show || tab_pos == crate::workspace::TabBarPosition::Hidden {
             return false;
         }
-        // Compute mouse point in grid coordinates
-        let size_info = self.ctx.size_info();
-        let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self.ctx.mouse().point(&size_info, display_offset);
-        if point.line < 0 {
-            return false;
-        }
-        let mouse_x = point.column.0;
-        let mouse_y = point.line.0 as usize;
 
-        // Ask the context to compute hit-testing, then perform the action
-        if let Some(action) = self.ctx.workspace_tab_bar_hit(mouse_x, mouse_y) {
-            use crate::display::warp_ui::TabBarAction;
-            match action {
-                TabBarAction::SelectTab(tab_id) => {
-                    self.ctx.workspace_switch_to_tab(tab_id);
-                }
-                TabBarAction::CloseTab(tab_id) => {
-                    // Ensure we close the correct tab: switch to it, then close
-                    self.ctx.workspace_switch_to_tab(tab_id);
-                    self.ctx.workspace_close_tab();
-                }
-                TabBarAction::CreateTab => {
-                    self.ctx.workspace_create_tab();
-                }
-                // Drag-related actions are handled by dedicated handlers; treat as handled here
-                TabBarAction::BeginDrag(_)
-                | TabBarAction::DragMove(..)
-                | TabBarAction::EndDrag(_)
-                | TabBarAction::CancelDrag(_) => {
-                    // no-op: considered handled
-                }
-                TabBarAction::OpenSettings => {
-                    self.ctx.open_settings_panel();
+        // Snapshot display values immutably
+        let (px, py, si) = {
+            let display_ref = self.ctx.display();
+            (
+                display_ref.last_mouse_x as f32,
+                display_ref.last_mouse_y as f32,
+                display_ref.size_info,
+            )
+        };
+        // Build style after releasing display_ref borrow
+        let style = {
+            let cfg = self.ctx.config();
+            crate::display::warp_ui::WarpTabStyle::from_theme(cfg)
+        };
+
+        let start_y = match tab_pos {
+            crate::workspace::TabBarPosition::Top => 0.0,
+            crate::workspace::TabBarPosition::Bottom => si.height() - style.tab_height,
+            crate::workspace::TabBarPosition::Hidden => return false,
+        };
+        let end_y = start_y + style.tab_height;
+        if py < start_y || py > end_y {
+            return false;
+        }
+
+        // Examine cached bounds with a fresh immutable display borrow
+        let clicked = {
+            let display_ref = self.ctx.display();
+            let mut hit: Option<crate::workspace::TabId> = None;
+            for (tab_id, x, w) in display_ref.tab_bounds_px.iter().copied() {
+                if px >= x && px <= x + w {
+                    hit = Some(tab_id);
+                    break;
                 }
             }
+            hit
+        };
+
+        if let Some(tab_id) = clicked {
+            self.ctx.workspace_switch_to_tab(tab_id);
+            self.ctx.mark_dirty();
             return true;
         }
+
+        // TODO(step 4/5): Handle close button, new-tab button, and drag using cached geometry.
         false
     }
 
@@ -1580,7 +1616,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
         let size_info = self.ctx.size_info();
         let ch = size_info.cell_height();
-        let cw = size_info.cell_width();
         let lines = size_info.screen_lines();
         if lines == 0 {
             return false;
@@ -1642,10 +1677,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         }
                         self.ctx.display().ai_provider_dropdown_open = false;
                         // brief press flash for feedback
-                        self.ctx.display().composer_press_flash_until = Some(
-                            std::time::Instant::now()
-                                + std::time::Duration::from_millis(140),
-                        );
+                        self.ctx.display().composer_press_flash_until =
+                            Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         self.ctx.mark_dirty();
                         return true;
                     }
@@ -1681,25 +1714,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         "[Palette]" => {
                             self.ctx.open_command_palette();
                             self.ctx.display().composer_press_flash_until = Some(
-                                std::time::Instant::now()
-                                    + std::time::Duration::from_millis(140),
+                                std::time::Instant::now() + std::time::Duration::from_millis(140),
                             );
                             return true;
                         }
                         "[Run]" => {
-                            #[cfg(feature = "ai")]
-                            {
-                                // Seed AI panel with composer text if any, then propose
-                                self.ctx.open_ai_panel();
-                                let text = self.ctx.display().composer_text.clone();
-                                if let Some(rt) = self.ctx.ai_runtime_mut() {
-                                    if !text.is_empty() {
-                                        rt.ui.scratch = text;
-                                        rt.ui.cursor_position = rt.ui.scratch.len();
-                                    }
-                                }
-                                self.ctx.ai_propose();
-                                // reset composer focus
+                            // Execute composer text via native command pipeline and clear composer
+                            let text = self.ctx.display().composer_text.clone();
+                            if !text.is_empty() {
+                                self.ctx.execute_composer_command(text);
                                 self.ctx.display().composer_text.clear();
                                 self.ctx.display().composer_cursor = 0;
                                 self.ctx.display().composer_sel_anchor = None;
@@ -1756,9 +1779,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 // Toggle overlay dropdown
                 let open = self.ctx.display().ai_provider_dropdown_open;
                 self.ctx.display().ai_provider_dropdown_open = !open;
-                self.ctx.display().composer_press_flash_until = Some(
-                    std::time::Instant::now() + std::time::Duration::from_millis(140),
-                );
+                self.ctx.display().composer_press_flash_until =
+                    Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                 self.ctx.mark_dirty();
                 return true;
             }
@@ -1789,7 +1811,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     "openrouter" => "OpenRouter",
                     "anthropic" => "Anthropic",
                     "ollama" => "Ollama",
-                    _ => if pid.is_empty() { "Provider" } else { pid },
+                    _ => {
+                        if pid.is_empty() {
+                            "Provider"
+                        } else {
+                            pid
+                        }
+                    }
                 }
             };
             let provider_chip = format!("[{} ▾]", provider_label);
@@ -1801,7 +1829,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 let model_text = {
                     let max_len = 24usize;
                     let m = &self.ctx.display().ai_current_model;
-                    if m.len() > max_len { format!("{}…", &m[..max_len]) } else { m.clone() }
+                    if m.len() > max_len {
+                        format!("{}…", &m[..max_len])
+                    } else {
+                        m.clone()
+                    }
                 };
                 let model_chip = format!("[{}]", model_text);
                 start_col += model_chip.width() + 2; // extra space after model chip
@@ -1811,7 +1843,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // Compute visible window and target text column
             let text = self.ctx.display().composer_text.clone();
             let total_cols = text.width();
-            let mut offset = self.ctx.display().composer_view_col_offset.min(total_cols);
+            let offset = self.ctx.display().composer_view_col_offset.min(total_cols);
             // Clamp click within text area
             let mut rel = 0usize;
             if mouse_col >= start_col {
@@ -2030,9 +2062,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 );
                 if mx >= ix && mx <= ix + icon_px && my >= iy && my <= iy + icon_px {
                     self.ctx.open_settings_panel();
-                    self.ctx.display().quick_actions_press_flash_until = Some(
-                        std::time::Instant::now() + std::time::Duration::from_millis(140),
-                    );
+                    self.ctx.display().quick_actions_press_flash_until =
+                        Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                     return true;
                 }
             }
@@ -2106,7 +2137,33 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         (my - rect.y) / rect.height
                     }
                 };
-                ratio = ratio.clamp(0.1, 0.9);
+                // Enforce minimum pane size based on configured lines/columns.
+                // Compute the smallest allowed ratio so that both children are >= minimum size.
+                let splits_cfg = &self.ctx.config().workspace.splits;
+                let min_units = splits_cfg.minimum_pane_size.max(1) as f32;
+                let cw = self.ctx.size_info().cell_width();
+                let ch = self.ctx.size_info().cell_height();
+                let (dim_px, unit_px) = match hit.axis {
+                    // Horizontal axis => vertical divider moves left/right; min constraint in columns
+                    crate::workspace::split_manager::SplitAxis::Horizontal => (rect.width, cw),
+                    // Vertical axis => horizontal divider moves up/down; min constraint in lines
+                    crate::workspace::split_manager::SplitAxis::Vertical => (rect.height, ch),
+                };
+                let min_px = min_units * unit_px;
+                // Convert to ratio, clamp to sane range leaving room for both sides
+                let mut rmin = if dim_px > 0.0 {
+                    (min_px / dim_px).clamp(0.05, 0.45)
+                } else {
+                    0.1
+                };
+                let mut rmax = 1.0 - rmin;
+                if rmax <= rmin {
+                    // Fallback if container is too small to satisfy constraints
+                    rmin = 0.1;
+                    rmax = 0.9;
+                }
+                ratio = ratio.clamp(rmin, rmax);
+
                 self.ctx
                     .workspace_set_split_ratio_at_path(hit.path.clone(), hit.axis, ratio);
                 // Set appropriate cursor while dragging
@@ -2133,6 +2190,34 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let handled = self.ctx.workspace_pane_drag_move(x as f32, y as f32);
             if handled {
                 return;
+            }
+        }
+
+        // Update blocks header hover line for showing chips (viewport line index)
+        if self.ctx.display().blocks.enabled {
+            let size_info = self.ctx.size_info();
+            let display_offset = self.ctx.terminal().grid().display_offset();
+            let point = self.ctx.mouse().point(&size_info, display_offset);
+            if let Some(view) =
+                openagent_terminal_core::term::point_to_viewport(display_offset, point)
+            {
+                let header = {
+                    let display = self.ctx.display();
+                    display
+                        .blocks
+                        .header_at_viewport_line(display_offset, view.line)
+                };
+                let prev = self.ctx.display().blocks_header_hover_line;
+                let new_hover = header.map(|_| view.line);
+                if prev != new_hover {
+                    self.ctx.display().blocks_header_hover_line = new_hover;
+                    self.ctx
+                        .display()
+                        .damage_tracker
+                        .frame()
+                        .mark_fully_damaged();
+                    self.ctx.mark_dirty();
+                }
             }
         }
 
@@ -2259,12 +2344,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 .quick_actions_settings_icon_px
                                 .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
                             let start_col = cols.saturating_sub(gear_cols + 2);
-                            let ix = (start_col as f32) * cw
-                                + (cw * gear_cols as f32 - icon_px) * 0.5;
+                            let ix =
+                                (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
                             let y_px = (line as f32) * ch;
                             let iy = y_px + (ch - icon_px) * 0.5;
-                            let (mx, my) = (self.ctx.display().last_mouse_x as f32,
-                                            self.ctx.display().last_mouse_y as f32);
+                            let (mx, my) = (
+                                self.ctx.display().last_mouse_x as f32,
+                                self.ctx.display().last_mouse_y as f32,
+                            );
                             if mx >= ix && mx <= ix + icon_px && my >= iy && my <= iy + icon_px {
                                 qa_hover = true;
                             }
@@ -2292,7 +2379,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else {
             // Update mouse state and check for URL change.
             let mouse_state = self.cursor_state();
-            if ai_hover || tab_hover || quick_actions_hover {
+            if ai_hover
+                || tab_hover
+                || quick_actions_hover
+                || self.ctx.display().blocks_header_hover_line.is_some()
+            {
                 self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
             } else {
                 self.ctx.window().set_mouse_cursor(mouse_state);
@@ -2338,6 +2429,39 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let _ = self
                 .ctx
                 .workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
+        }
+
+        // Compute hover over block header action chips for pointer cursor
+        if self.ctx.display().blocks.enabled {
+            let size_info = self.ctx.size_info();
+            let display_offset = self.ctx.terminal().grid().display_offset();
+            let point = self.ctx.mouse().point(&size_info, display_offset);
+            if let Some(view) =
+                openagent_terminal_core::term::point_to_viewport(display_offset, point)
+            {
+                let header = {
+                    let display = self.ctx.display();
+                    display
+                        .blocks
+                        .header_at_viewport_line(display_offset, view.line)
+                };
+                let mut new_chip_hover: Option<usize> = None;
+                if let Some(header) = header {
+                    use crate::display::blocks::Blocks;
+                    let mouse_col = point.column.0;
+                    let cols = self.ctx.size_info().columns();
+                    new_chip_hover = Blocks::chip_hit_at(&header, mouse_col, cols);
+                }
+                if self.ctx.display().blocks_header_hover_chip != new_chip_hover {
+                    self.ctx.display().blocks_header_hover_chip = new_chip_hover;
+                    self.ctx
+                        .display()
+                        .damage_tracker
+                        .frame()
+                        .mark_fully_damaged();
+                    self.ctx.mark_dirty();
+                }
+            }
         }
 
         // Update tab hover state for visuals and damage tab bar line when it changes
@@ -2576,6 +2700,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if let Some(view) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, point)
                     {
+                        // 1) Try toggling fold at header
                         let toggled = {
                             let display = self.ctx.display();
                             display
@@ -2591,6 +2716,52 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 .mark_fully_damaged();
                             self.ctx.mark_dirty();
                             return;
+                        }
+
+                        // 2) If not toggled, check if clicking on block header action chips
+                        let header = {
+                            let display = self.ctx.display();
+                            display
+                                .blocks
+                                .header_at_viewport_line(display_offset, view.line)
+                        };
+                        if let Some(header) = header {
+                            use crate::display::blocks::Blocks;
+                            let mouse_col = point.column.0;
+                            let cols = self.ctx.size_info().columns();
+                            let hit = Blocks::chip_hit_at(&header, mouse_col, cols);
+                            if let Some(i) = hit {
+                                match i {
+                                    0 => {
+                                        // Copy header under cursor for now (acts as Copy for block header)
+                                        self.ctx.send_user_event(
+                                            crate::event::EventType::BlocksCopyHeaderUnderCursor,
+                                        );
+                                    }
+                                    1 => {
+                                        // Rerun the command for the block under cursor in its recorded cwd
+                                        self.ctx.send_user_event(
+                                            crate::event::EventType::BlocksRerunUnderCursor,
+                                        );
+                                    }
+                                    2 => {
+                                        // Export header text under cursor (acts as Export for now)
+                                        self.ctx.send_user_event(
+                                            crate::event::EventType::BlocksExportHeaderUnderCursor,
+                                        );
+                                    }
+                                    _ => {}
+                                }
+                                // Press flash
+                                self.ctx.display().blocks_press_flash_chip = Some(i);
+                                self.ctx.display().blocks_press_flash_until = Some(
+                                    std::time::Instant::now()
+                                        + std::time::Duration::from_millis(140),
+                                );
+                                self.ctx.display().pending_update.dirty = true;
+                                self.ctx.mark_dirty();
+                                return;
+                            }
                         }
                     }
                 }

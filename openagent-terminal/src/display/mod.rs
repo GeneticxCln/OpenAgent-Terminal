@@ -557,6 +557,15 @@ pub struct Display {
     /// Animation start for split hover transitions
     pub split_hover_anim_start: Option<Instant>,
 
+    /// Blocks header hover line (viewport line index) for showing action chips
+    pub blocks_header_hover_line: Option<usize>,
+    /// Short press flash effect for block header chips
+    pub blocks_press_flash_until: Option<Instant>,
+    /// Hovered chip index in the blocks header, if any
+    pub blocks_header_hover_chip: Option<usize>,
+    /// Last pressed chip index (for flash)
+    pub blocks_press_flash_chip: Option<usize>,
+
     /// Palette animation state
     #[allow(dead_code)]
     pub(crate) palette_last_active: bool,
@@ -792,7 +801,6 @@ impl Display {
 
         // Labels
         let fg = tokens.text;
-        let muted = tokens.text_muted;
 
         // Build labels dynamically to respect configuration and features
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
@@ -1209,6 +1217,10 @@ impl Display {
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
+            blocks_header_hover_line: None,
+            blocks_press_flash_until: None,
+            blocks_header_hover_chip: None,
+            blocks_press_flash_chip: None,
         })
     }
 
@@ -1349,18 +1361,129 @@ impl Display {
                                     }
                                 }
                             };
-                            let alpha = (0.15 + 0.35 * effects.drop_zone_highlight_alpha).min(0.5);
-                            let rect = RenderRect::new(hx, hy, hw, hh, tokens.accent, alpha);
+                            // Use configurable highlight color / alpha with theme fallback
+                            let dcfg = &config.workspace.drag;
+                            let mut hl_color = dcfg.highlight_color.get().unwrap_or(tokens.accent);
+                            let mut alpha_base = dcfg.highlight_alpha_base;
+                            let mut alpha_hover = dcfg.highlight_alpha_hover.max(alpha_base);
+                            // Light theme tweak: ensure minimum alpha and blend towards surface_muted
+                            let is_light = {
+                                let (r, g, b) = tokens.surface.as_tuple();
+                                let luminance =
+                                    0.2126 * (r as f32) + 0.7152 * (g as f32) + 0.0722 * (b as f32);
+                                luminance > 140.0
+                            };
+let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
+                            if is_light {
+                                alpha_base = alpha_base.max(min_alpha);
+                                alpha_hover = alpha_hover.max((min_alpha + 0.05).min(1.0));
+                                // Nudge fill color towards surface_muted for softer highlight on light bg
+                                hl_color = (hl_color * 0.6) + (tokens.surface_muted * 0.4);
+                            }
+                            let alpha = (alpha_base
+                                + (alpha_hover - alpha_base) * effects.drop_zone_highlight_alpha)
+                                .clamp(0.0, 1.0);
+                            let rect = RenderRect::new(hx, hy, hw, hh, hl_color, alpha);
                             let metrics = self.glyph_cache.font_metrics();
                             let size_copy = self.size_info;
                             self.renderer_draw_rects(&size_copy, &metrics, vec![rect]);
                         }
                     }
-                    crate::display::pane_drag_drop::PaneDropZone::Tab { .. } => {
-                        // Highlight tab strip subtly near pointer (optional enhancement)
+                    crate::display::pane_drag_drop::PaneDropZone::Tab { tab_id, .. } => {
+                        // Highlight hovered tab region in the overlay for feedback
+                        let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+                        // Find tab bounds
+                        if let Some((_, x, w)) = self
+                            .tab_bounds_px
+                            .iter()
+                            .copied()
+                            .find(|(tid, _, _)| *tid == tab_id)
+                        {
+                            let bar_y = match config.workspace.tab_bar.position {
+                                crate::workspace::TabBarPosition::Top => 0.0,
+                                crate::workspace::TabBarPosition::Bottom => {
+                                    self.size_info.height() - style.tab_height
+                                }
+                                crate::workspace::TabBarPosition::Hidden => 0.0,
+                            };
+                            let dcfg = &config.workspace.drag;
+                            let mut hl_color = dcfg.highlight_color.get().unwrap_or(tokens.accent);
+                            let mut alpha_base = dcfg.tab_highlight_alpha_base;
+                            let mut alpha_hover = dcfg.tab_highlight_alpha_hover.max(alpha_base);
+                            // Light theme tweak
+                            let is_light = {
+                                let (r, g, b) = tokens.surface.as_tuple();
+                                let luminance =
+                                    0.2126 * (r as f32) + 0.7152 * (g as f32) + 0.0722 * (b as f32);
+                                luminance > 140.0
+                            };
+let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
+                            if is_light {
+                                alpha_base = alpha_base.max(min_alpha);
+                                alpha_hover = alpha_hover.max((min_alpha + 0.05).min(1.0));
+                                hl_color = (hl_color * 0.6) + (tokens.surface_muted * 0.4);
+                            }
+                            let alpha = (alpha_base
+                                + (alpha_hover - alpha_base) * effects.drop_zone_highlight_alpha)
+                                .clamp(0.0, 1.0);
+                            let rect =
+                                RenderRect::new(x, bar_y, w, style.tab_height, hl_color, alpha);
+                            let metrics = self.glyph_cache.font_metrics();
+                            let size_copy = self.size_info;
+                            self.renderer_draw_rects(&size_copy, &metrics, vec![rect]);
+                        }
                     }
                     crate::display::pane_drag_drop::PaneDropZone::NewTab { .. } => {
-                        // Optional: highlight new-tab area
+                        // Highlight the new-tab area to the right of the last tab within the tab bar band
+                        let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+                        let bar_y = match config.workspace.tab_bar.position {
+                            crate::workspace::TabBarPosition::Top => 0.0,
+                            crate::workspace::TabBarPosition::Bottom => {
+                                self.size_info.height() - style.tab_height
+                            }
+                            crate::workspace::TabBarPosition::Hidden => 0.0,
+                        };
+                        let max_tab_x = self
+                            .tab_bounds_px
+                            .iter()
+                            .map(|(_, x, w)| x + w)
+                            .fold(0.0, f32::max);
+                        let start_x = max_tab_x.min(self.size_info.width());
+                        let w = (self.size_info.width() - start_x).max(0.0);
+                        if w > 3.0 {
+                            let dcfg = &config.workspace.drag;
+                            let mut hl_color = dcfg.highlight_color.get().unwrap_or(tokens.accent);
+                            let mut alpha_base = dcfg.new_tab_highlight_alpha_base;
+                            let mut alpha_hover =
+                                dcfg.new_tab_highlight_alpha_hover.max(alpha_base);
+                            // Light theme tweak
+                            let is_light = {
+                                let (r, g, b) = tokens.surface.as_tuple();
+                                let luminance =
+                                    0.2126 * (r as f32) + 0.7152 * (g as f32) + 0.0722 * (b as f32);
+                                luminance > 140.0
+                            };
+let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
+                            if is_light {
+                                alpha_base = alpha_base.max(min_alpha);
+                                alpha_hover = alpha_hover.max((min_alpha + 0.05).min(1.0));
+                                hl_color = (hl_color * 0.6) + (tokens.surface_muted * 0.4);
+                            }
+                            let alpha = (alpha_base
+                                + (alpha_hover - alpha_base) * effects.drop_zone_highlight_alpha)
+                                .clamp(0.0, 1.0);
+                            let rect = RenderRect::new(
+                                start_x,
+                                bar_y,
+                                w,
+                                style.tab_height,
+                                hl_color,
+                                alpha,
+                            );
+                            let metrics = self.glyph_cache.font_metrics();
+                            let size_copy = self.size_info;
+                            self.renderer_draw_rects(&size_copy, &metrics, vec![rect]);
+                        }
                     }
                 }
             }
@@ -1954,46 +2077,11 @@ impl Display {
         }
 
         // Draw cursor (skip if inside a folded region or reserved tab bar rows).
-        let mut cursor_elided = self.blocks.enabled
+        let cursor_elided = self.blocks.enabled
             && self
                 .blocks
                 .is_viewport_line_elided(display_offset, cursor.point().line);
-        // Also skip cursor in reserved rows
-        if config.workspace.tab_bar.show
-            && !config.workspace.warp_overlay_only
-            && config.workspace.tab_bar.position != crate::config::workspace::TabBarPosition::Hidden
-        {
-            // Only elide when effectively reserving a row
-            let tab_cfg = &config.workspace.tab_bar;
-            let eff_vis = match tab_cfg.visibility {
-                crate::config::workspace::TabBarVisibility::Always => {
-                    crate::config::workspace::TabBarVisibility::Always
-                }
-                crate::config::workspace::TabBarVisibility::Hover => {
-                    crate::config::workspace::TabBarVisibility::Hover
-                }
-                crate::config::workspace::TabBarVisibility::Auto => {
-                    if self.window.is_fullscreen() {
-                        crate::config::workspace::TabBarVisibility::Hover
-                    } else {
-                        crate::config::workspace::TabBarVisibility::Always
-                    }
-                }
-            };
-            if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
-                let vp_point = term::point_to_viewport(display_offset, cursor_point);
-                if let Some(vp) = vp_point {
-                    let last = self.size_info.screen_lines().saturating_sub(1);
-                    if (tab_cfg.position == crate::config::workspace::TabBarPosition::Top
-                        && vp.line == 0)
-                        || (tab_cfg.position == crate::config::workspace::TabBarPosition::Bottom
-                            && vp.line == last)
-                    {
-                        cursor_elided = true;
-                    }
-                }
-            }
-        }
+        // Legacy reserved-row cursor elision removed: overlay tab bar never reserves grid rows.
         if !cursor_elided {
             rects.extend(cursor.rects(&size_info, config.cursor.thickness()));
         }
@@ -2203,49 +2291,14 @@ impl Display {
             }
         }
 
-        // Draw tab strip if enabled
+        // Draw overlay tab bar (legacy tab-row removed)
         if let Some(tm) = tab_manager {
-            if config.workspace.tab_bar.show {
-                let tab_cfg = &config.workspace.tab_bar;
-                let is_fs = self.window.is_fullscreen();
-                let visibility = match tab_cfg.visibility {
-                    crate::config::workspace::TabBarVisibility::Always => {
-                        crate::config::workspace::TabBarVisibility::Always
-                    }
-                    crate::config::workspace::TabBarVisibility::Hover => {
-                        crate::config::workspace::TabBarVisibility::Hover
-                    }
-                    crate::config::workspace::TabBarVisibility::Auto => {
-                        if is_fs {
-                            crate::config::workspace::TabBarVisibility::Hover
-                        } else {
-                            crate::config::workspace::TabBarVisibility::Always
-                        }
-                    }
-                };
-
-                let hover_recent = self
-                    .tab_hover_anim_start
-                    .map(|t0| t0.elapsed().as_millis() < 900)
-                    .unwrap_or(false);
-                let near_top = tab_cfg.position == crate::workspace::TabBarPosition::Top
-                    && (self.last_mouse_y as f32) < 8.0;
-                let near_bottom = tab_cfg.position == crate::workspace::TabBarPosition::Bottom
-                    && (self.last_mouse_y as f32) > (self.size_info.height() - 8.0);
-
-                let should_draw = match visibility {
-                    crate::config::workspace::TabBarVisibility::Always => true,
-                    crate::config::workspace::TabBarVisibility::Hover => {
-                        self.tab_hover.is_some() || hover_recent || near_top || near_bottom
-                    }
-                    crate::config::workspace::TabBarVisibility::Auto => true, // handled above
-                };
-
-                // Always draw tab bar for Warp-style UI to prevent black screen template
-                if should_draw {
-                    let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
-                    let _ = self.draw_warp_tab_bar(config, tm, tab_cfg.position, &style);
-                }
+            if config.workspace.tab_bar.show
+                && config.workspace.tab_bar.position != crate::workspace::TabBarPosition::Hidden
+            {
+                let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+                let _ =
+                    self.draw_warp_tab_bar(config, tm, config.workspace.tab_bar.position, &style);
             }
         }
         // Draw persistent Quick Actions bar (mouse-first entrypoint)
@@ -2426,7 +2479,9 @@ impl Display {
                         self.damage_tracker.frame().damage_line(damage);
                         self.damage_tracker.next_frame().damage_line(damage);
 
-                        let point = Point::new(line, Column(0));
+                        // Draw header text
+                        let mut col = 0usize;
+                        let point = Point::new(line, Column(col));
                         {
                             let size_info_copy = self.size_info;
                             let Backend::Wgpu { renderer } = &mut self.backend;
@@ -2439,20 +2494,88 @@ impl Display {
                                 &mut self.glyph_cache,
                             );
                         }
+                        use unicode_width::UnicodeWidthStr as _;
+                        col += header.width() + 2;
+
+                        // Draw action chips: [Copy] [Rerun] [Export]
+                        let chips = ["[Copy]", "[Rerun]", "[Export]"];
+                        let hover_line = self.blocks_header_hover_line;
+                        let hover_chip = self.blocks_header_hover_chip;
+                        let press_chip = if self
+                            .blocks_press_flash_until
+                            .is_some_and(|t| t > Instant::now())
+                        {
+                            self.blocks_press_flash_chip
+                        } else {
+                            None
+                        };
+                        for (i, chip) in chips.iter().enumerate() {
+                            if col < self.size_info.columns() {
+                                // Optional hover highlight/press flash with pill background
+                                if hover_line == Some(line) {
+                                    let cw = self.size_info.cell_width();
+                                    let ch = self.size_info.cell_height();
+                                    let x_px = (col as f32) * cw;
+                                    let w_px = (chip.len() as f32) * cw;
+                                    let y_px = (line as f32) * ch + (ch * 0.15);
+                                    let h_px = (ch * 0.70).max(10.0);
+                                    let theme = config
+                                        .resolved_theme
+                                        .as_ref()
+                                        .cloned()
+                                        .unwrap_or_else(|| config.theme.resolve());
+                                    let hl = theme.tokens.accent;
+                                    let is_hover = hover_chip == Some(i);
+                                    let is_press = press_chip == Some(i);
+                                    let alpha = if is_press {
+                                        0.42
+                                    } else if is_hover {
+                                        0.28
+                                    } else {
+                                        0.18
+                                    };
+                                    let mut radius = h_px / 2.0;
+                                    if radius > 22.0 {
+                                        radius = 22.0;
+                                    }
+                                    let pill = UiRoundedRect::new(
+                                        x_px, y_px, w_px, h_px, radius, hl, alpha,
+                                    );
+                                    self.stage_ui_rounded_rect(pill);
+                                }
+
+                                let point = Point::new(line, Column(col));
+                                let size_info_copy = self.size_info;
+                                let Backend::Wgpu { renderer } = &mut self.backend;
+                                renderer.draw_string(
+                                    point,
+                                    fg, // keep fg for text readability; could use tokens.accent for emphasis
+                                    bg,
+                                    chip.chars(),
+                                    &size_info_copy,
+                                    &mut self.glyph_cache,
+                                );
+                                col += chip.width() + 1;
+                            }
+                        }
+                        continue;
                     }
                 }
             }
 
             // Draw render timer at the very end (debug only)
             self.draw_render_timer(config);
-        }
+        } // end of if !self.clean_startup_active()
 
         // Notify winit that we're about to present.
         self.window.pre_present_notify();
 
         // Frame end timing
         let elapsed = frame_t0.elapsed();
-        tracing::info!(elapsed_ms = elapsed.as_millis() as u64, "render.frame_complete");
+        tracing::info!(
+            elapsed_ms = elapsed.as_millis() as u64,
+            "render.frame_complete"
+        );
 
         // Highlight damage for debugging.
         if self.damage_tracker.debug {

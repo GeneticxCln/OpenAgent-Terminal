@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Notable changes to the `openagent-terminal-core` crate are documented in its
 [CHANGELOG](./openagent-terminal-core/CHANGELOG.md).
 
+## 0.16.2
+
+### Added
+
+- Workspace: Drag-and-drop highlight/snap configuration now validated and clamped on load:
+  - highlight_alpha_* values are clamped to [0.0, 1.0] and coerced so hover >= base
+  - tab_drop_snap_px and new_tab_snap_extra_px are clamped to be non-negative
+  - Invalid or non-finite inputs are reset to sensible defaults with warnings
+- Workspace: New `workspace.drag.highlight_min_alpha` (default 0.08) to ensure drag highlights remain visible on light themes; applied as a floor in light themes.
+- Blocks: Header action chips ([Copy], [Rerun], [Export]) now have hover/press visuals and full-output copy/export behavior excluding the header line
+- Clipboard: Optional runtime diagnostics for backend selection (Wayland/X11/macOS/Windows) and WSL detection; enable with `OPENAGENT_CLIPBOARD_LOG=1`.
+
+### Changed
+
+- Improved diagnostics around out-of-range workspace.drag values; configuration loader logs adjustments
+
 ## 0.16.1
 
 ### Fixed

@@ -13,7 +13,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use openagent_terminal_core::grid::Dimensions;
-use openagent_terminal_core::tty::pty_manager::{PtyAiContext, PtyId, PtyManagerCollection, ShellConfig};
+use openagent_terminal_core::tty::pty_manager::{
+    PtyAiContext, PtyId, PtyManagerCollection, ShellConfig,
+};
 
 use log::{debug, error, info, warn};
 use openagent_terminal_core::event::WindowSize;
@@ -362,7 +364,7 @@ impl WarpIntegration {
         };
 
         // Window id is required for real runs; in test mode we can fall back to a dummy
-        let window_id = self.window_id.unwrap_or_else(|| WindowId::dummy());
+        let window_id = self.window_id.unwrap_or(WindowId::dummy());
 
         // Create terminal only when we have an event proxy (normal runs). In special test modes
         // we may spawn a real PTY without creating a Term or event proxy.
@@ -375,8 +377,11 @@ impl WarpIntegration {
             let size_info = *size_info;
 
             // Create terminal instance
-            let terminal =
-                Arc::new(FairMutex::new(Term::new(term_config, &size_info, terminal_event_proxy)));
+            let terminal = Arc::new(FairMutex::new(Term::new(
+                term_config,
+                &size_info,
+                terminal_event_proxy,
+            )));
 
             // Store terminal reference
             self.terminals.insert(pane_id, terminal);
@@ -444,7 +449,10 @@ impl WarpIntegration {
             .pty_managers
             .lock()
             .create_pty_manager(working_dir.to_path_buf(), shell_config, environment)
-            .map_err(|e| WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() })?;
+            .map_err(|e| WarpIntegrationError::PtyCreation {
+                pane_id,
+                reason: e.to_string(),
+            })?;
         self.pty_by_pane.insert(pane_id, pty_id);
 
         // In headless test mode, skip spawning a real PTY. This allows CI-friendly tests that
@@ -476,9 +484,12 @@ impl WarpIntegration {
                 cell_height: size_info.cell_height() as u16,
             };
 
-            manager_guard.create_pty(window_size, window_id.into()).map_err(|e| {
-                WarpIntegrationError::PtyCreation { pane_id, reason: e.to_string() }
-            })?;
+            manager_guard
+                .create_pty(window_size, window_id.into())
+                .map_err(|e| WarpIntegrationError::PtyCreation {
+                    pane_id,
+                    reason: e.to_string(),
+                })?;
 
             debug!(
                 "Created PTY for pane {:?} with shell: {} in {}",
@@ -1104,18 +1115,18 @@ impl WarpIntegration {
                 Ok(true) => {
                     info!("Loaded Warp session successfully (test mode)");
                     self.restore_session_terminals()?;
-                },
+                }
                 Ok(false) => {
                     info!("No previous Warp session found, creating default tab (test mode)");
                     self.create_default_tab()?;
-                },
+                }
                 Err(e) => {
                     warn!(
                         "Failed to load Warp session: {} (test mode), creating default tab",
                         e
                     );
                     self.create_default_tab()?;
-                },
+                }
             }
         } else {
             info!("Session restore disabled; creating default tab (test mode)");

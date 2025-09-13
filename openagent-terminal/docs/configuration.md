@@ -31,6 +31,40 @@ Notes:
 
 ## Workspace: Pane Drag Gesture
 
+OpenAgent Terminal also exposes visual tuning for drag drop highlights and snap behavior near the tab bar.
+
+Advanced options:
+
+```toml path=null start=null
+[workspace.drag]
+# Optional explicit highlight color for drag drop zones (overrides theme tokens when set)
+# highlight_color = "#7aa2f7"
+
+# Minimum alpha for highlights in light themes (ensures visibility)
+# highlight_min_alpha = 0.08
+
+# Base/hover alpha for split targets
+# Values are clamped to [0.0, 1.0] at load time; hover is coerced to be >= base
+highlight_alpha_base = 0.15
+highlight_alpha_hover = 0.50
+
+# Base/hover alpha for tab highlight when hovering a tab as a drop target
+# Values are clamped to [0.0, 1.0] at load time; hover is coerced to be >= base
+tab_highlight_alpha_base = 0.12
+tab_highlight_alpha_hover = 0.40
+
+# Base/hover alpha for the New Tab area highlight
+# Values are clamped to [0.0, 1.0] at load time; hover is coerced to be >= base
+new_tab_highlight_alpha_base = 0.10
+new_tab_highlight_alpha_hover = 0.45
+
+# Snap behavior near the tab bar band (in pixels)
+# Treats cursor as "inside" when within this vertical margin (clamped to be non-negative)
+tab_drop_snap_px = 6.0
+# Extra horizontal margin near the right edge to ease targeting the New Tab area
+new_tab_snap_extra_px = 24.0
+```
+
 OpenAgent Terminal supports Warp‑style pane drag‑and‑drop between splits and tabs. This gesture is configurable under the `workspace.drag` section.
 
 Defaults:

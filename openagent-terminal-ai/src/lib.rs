@@ -3,10 +3,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod context;
 pub mod error;
 pub mod privacy;
 pub mod streaming;
-pub mod context;
 
 /// A request to the AI provider, typically from a scratch buffer.
 #[derive(Debug, Clone)]

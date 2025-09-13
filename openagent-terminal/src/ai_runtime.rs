@@ -5,13 +5,15 @@ use log::{debug, error, info};
 use std::collections::VecDeque;
 
 use crate::security::{SecurityLens, SecurityPolicy};
+use openagent_terminal_ai::build_request_with_context;
+use openagent_terminal_ai::context::{
+    BasicEnvProvider, ContextManager, FileTreeProvider, FileTreeRootStrategy, GitProvider,
+};
+use openagent_terminal_ai::privacy::{sanitize_request, AiPrivacyOptions};
 use openagent_terminal_ai::providers::{
     AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
 };
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
-use openagent_terminal_ai::privacy::{sanitize_request, AiPrivacyOptions};
-use openagent_terminal_ai::context::{ContextManager, BasicEnvProvider, GitProvider, FileTreeProvider, FileTreeRootStrategy};
-use openagent_terminal_ai::build_request_with_context;
 
 /// Maximum history entries to keep
 const MAX_HISTORY: usize = 100;
@@ -48,7 +50,8 @@ impl AiRuntime {
         let path = Self::history_path();
         if let Ok(data) = std::fs::read_to_string(&path) {
             if let Ok(entries) = serde_json::from_str::<Vec<String>>(&data) {
-                for s in entries.into_iter().rev() { // maintain most-recent-first order
+                for s in entries.into_iter().rev() {
+                    // maintain most-recent-first order
                     self.ui.history.push_front(s);
                     if self.ui.history.len() > MAX_HISTORY {
                         self.ui.history.pop_back();
@@ -75,7 +78,9 @@ impl AiRuntime {
         let base = dirs::data_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        base.join("openagent-terminal").join("ai").join("history.json")
+        base.join("openagent-terminal")
+            .join("ai")
+            .join("history.json")
     }
     /// Reconfigure this runtime to a new provider using secure config, preserving UI scratch/cursor/history.
     pub fn reconfigure_to(
@@ -325,7 +330,7 @@ pub struct AiRuntime {
 }
 
 impl AiRuntime {
-pub fn new(provider: Box<dyn AiProvider>) -> Self {
+    pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
         let mut ui = AiUiState::default();
         ui.current_provider = provider.name().to_string();
@@ -384,7 +389,7 @@ pub fn new(provider: Box<dyn AiProvider>) -> Self {
     }
 
     /// Create AI runtime from secure provider configuration (recommended approach)
-pub fn from_secure_config(
+    pub fn from_secure_config(
         provider_name: &str,
         config: &crate::config::ai::ProviderConfig,
     ) -> Self {
@@ -511,7 +516,7 @@ pub fn from_secure_config(
             _ => Err(format!("Unknown provider: {}", provider_name)),
         };
 
-match provider_result {
+        match provider_result {
             Ok(provider) => {
                 info!("Successfully created secure AI provider: {}", provider_name);
                 let mut rt = Self::new(provider);
@@ -1020,14 +1025,20 @@ match provider_result {
             Ok(proposals) => {
                 let dt = t0.elapsed();
                 info!("Received {} proposals with context", proposals.len());
-                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_with_context_complete");
+                tracing::info!(
+                    elapsed_ms = dt.as_millis() as u64,
+                    "ai.propose_with_context_complete"
+                );
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
             Err(e) => {
                 let dt = t0.elapsed();
                 error!("AI query with context failed: {}", e);
-                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_with_context_error");
+                tracing::info!(
+                    elapsed_ms = dt.as_millis() as u64,
+                    "ai.propose_with_context_error"
+                );
                 self.ui.error_message = Some(format!("Query failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -1111,13 +1122,19 @@ match provider_result {
         match self.provider.propose(req) {
             Ok(proposals) => {
                 let dt = t0.elapsed();
-                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete");
+                tracing::info!(
+                    elapsed_ms = dt.as_millis() as u64,
+                    "ai.propose_explain_complete"
+                );
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
             Err(e) => {
                 let dt = t0.elapsed();
-                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_error");
+                tracing::info!(
+                    elapsed_ms = dt.as_millis() as u64,
+                    "ai.propose_explain_error"
+                );
                 self.ui.error_message = Some(format!("Explain failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -1184,7 +1201,10 @@ match provider_result {
         match self.provider.propose(req) {
             Ok(proposals) => {
                 let dt = t0.elapsed();
-                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_fix_complete");
+                tracing::info!(
+                    elapsed_ms = dt.as_millis() as u64,
+                    "ai.propose_fix_complete"
+                );
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
@@ -1215,18 +1235,26 @@ match provider_result {
                 match name.as_str() {
                     "env" => cm.add_provider_with_timeout(
                         Box::new(BasicEnvProvider),
-                        self.context_cfg.timeouts.env_ms.or(Some(self.context_cfg.timeouts.per_provider_ms)),
+                        self.context_cfg
+                            .timeouts
+                            .env_ms
+                            .or(Some(self.context_cfg.timeouts.per_provider_ms)),
                     ),
                     "git" => cm.add_provider_with_timeout(
                         Box::new(GitProvider::new(
                             self.context_cfg.git.include_branch,
                             self.context_cfg.git.include_status,
                         )),
-                        self.context_cfg.timeouts.git_ms.or(Some(self.context_cfg.timeouts.per_provider_ms)),
+                        self.context_cfg
+                            .timeouts
+                            .git_ms
+                            .or(Some(self.context_cfg.timeouts.per_provider_ms)),
                     ),
                     "file_tree" => {
                         let strat = match self.context_cfg.file_tree.root_strategy {
-                            crate::config::ai::AiRootStrategy::Git => FileTreeRootStrategy::RepoRoot,
+                            crate::config::ai::AiRootStrategy::Git => {
+                                FileTreeRootStrategy::RepoRoot
+                            }
                             crate::config::ai::AiRootStrategy::Cwd => FileTreeRootStrategy::Cwd,
                         };
                         cm.add_provider_with_timeout(
@@ -1246,7 +1274,9 @@ match provider_result {
         }
         // Convert bytes -> KB rounding up
         let mut kb = (self.context_cfg.max_bytes + 1023) / 1024;
-        if !self.context_cfg.enabled { kb = 0; }
+        if !self.context_cfg.enabled {
+            kb = 0;
+        }
         (cm, kb)
     }
 }

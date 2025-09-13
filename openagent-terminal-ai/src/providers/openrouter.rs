@@ -470,11 +470,10 @@ impl AiProvider for OpenRouterProvider {
                                 },
                                 Err(e) => {
                                     debug!("Skipping non-JSON or unexpected SSE data from OpenRouter: {}", e);
-                                    if let Some(cap) = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#)
-                                        .ok()
-                                        .and_then(|re| re.captures(&data))
-                                        .and_then(|caps| caps.get(1))
-                                    {
+                                    lazy_static::lazy_static! {
+                                        static ref CONTENT_RE: regex::Regex = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#).unwrap();
+                                    }
+                                    if let Some(cap) = CONTENT_RE.captures(&data).and_then(|caps| caps.get(1)) {
                                         let c = cap.as_str().to_string();
                                         if !c.is_empty() {
                                             if ai_log_verbose() { debug!("openrouter_stream_chunk_fallback len={}", c.len()); }

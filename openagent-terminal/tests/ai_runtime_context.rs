@@ -1,8 +1,8 @@
 #![cfg(feature = "ai")]
 use std::sync::{Arc, Mutex};
 
-use openagent_terminal_ai::{AiProvider, AiProposal, AiRequest};
 use openagent_terminal::ai_runtime::AiRuntime;
+use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 use openagent_terminal_core::tty::pty_manager::{PtyAiContext, ShellKind};
 
 struct CaptureProvider {

@@ -215,7 +215,11 @@ impl WorkspaceManager {
             tab.split_layout = layout;
         }
 
-        if ok { Some(new_id) } else { None }
+        if ok {
+            Some(new_id)
+        } else {
+            None
+        }
     }
 
     /// Split the current pane vertically
@@ -245,7 +249,11 @@ impl WorkspaceManager {
             tab.split_layout = layout;
         }
 
-        if ok { Some(new_id) } else { None }
+        if ok {
+            Some(new_id)
+        } else {
+            None
+        }
     }
 
     /// Focus the next pane in the current tab

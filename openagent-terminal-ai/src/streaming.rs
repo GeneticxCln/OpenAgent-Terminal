@@ -378,12 +378,14 @@ impl RetryStrategy {
     /// - retry-after: <seconds|http-date>
     /// - x-ratelimit-reset-after: <seconds>
     /// - x-ratelimit-reset: <epoch seconds|epoch milliseconds|http-date>
-    /// (Header names are matched case-insensitively and tolerate x-rate-limit- variants.)
+    ///   (Header names are matched case-insensitively and tolerate x-rate-limit- variants.)
     fn parse_retry_after(error: &str) -> Option<Duration> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         fn parse_relative(val: &str) -> Option<Duration> {
-            let v = val.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
+            let v = val
+                .trim()
+                .trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
             // integer seconds
             if let Ok(secs) = v.parse::<u64>() {
                 return Some(Duration::from_secs(secs));
@@ -411,7 +413,9 @@ impl RetryStrategy {
         }
 
         fn parse_absolute(val: &str) -> Option<Duration> {
-            let v = val.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
+            let v = val
+                .trim()
+                .trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
             let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
             // Try epoch (seconds or milliseconds) or float epoch
             if let Ok(n) = v.parse::<u128>() {
@@ -420,7 +424,11 @@ impl RetryStrategy {
                 } else {
                     Duration::from_secs(n as u64)
                 };
-                return Some(if target > now { target - now } else { Duration::from_secs(0) });
+                return Some(if target > now {
+                    target - now
+                } else {
+                    Duration::from_secs(0)
+                });
             }
             if let Ok(f) = v.parse::<f64>() {
                 if f.is_finite() && f >= 0.0 {
@@ -430,13 +438,21 @@ impl RetryStrategy {
                     } else {
                         Duration::from_secs(f.round() as u64)
                     };
-                    return Some(if target > now { target - now } else { Duration::from_secs(0) });
+                    return Some(if target > now {
+                        target - now
+                    } else {
+                        Duration::from_secs(0)
+                    });
                 }
             }
             // HTTP-date absolute
             if let Ok(when) = httpdate::parse_http_date(v) {
                 if let Ok(target) = when.duration_since(UNIX_EPOCH) {
-                    return Some(if target > now { target - now } else { Duration::from_secs(0) });
+                    return Some(if target > now {
+                        target - now
+                    } else {
+                        Duration::from_secs(0)
+                    });
                 }
             }
             None
@@ -466,10 +482,7 @@ impl RetryStrategy {
             }
         }
 
-        let absolute_keys = [
-            "x-ratelimit-reset:",
-            "x-rate-limit-reset:",
-        ];
+        let absolute_keys = ["x-ratelimit-reset:", "x-rate-limit-reset:"];
         for key in &absolute_keys {
             if let Some(idx) = lower.find(key) {
                 let start = idx + key.len();
@@ -655,7 +668,11 @@ mod tests {
         let hdr = fmt_http_date(future);
         let msg = format!("API error 429; retry-after: {}", hdr);
         let d = strat.delay_for_attempt(0, &msg);
-        assert!(d.as_secs() <= 6 && d.as_secs() >= 4, "unexpected delay: {:?}", d);
+        assert!(
+            d.as_secs() <= 6 && d.as_secs() >= 4,
+            "unexpected delay: {:?}",
+            d
+        );
 
         // x-ratelimit-reset-after seconds
         let msg_reset_after = "API error 429; X-RateLimit-Reset-After: 7";
@@ -663,7 +680,10 @@ mod tests {
         assert_eq!(d2, Duration::from_secs(7));
 
         // x-ratelimit-reset epoch seconds (5 seconds ahead)
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let msg_reset = format!("429; x-ratelimit-reset: {}", now + 5);
         let d3 = strat.delay_for_attempt(0, &msg_reset);
         assert!(d3.as_secs() <= 6 && d3.as_secs() >= 4);

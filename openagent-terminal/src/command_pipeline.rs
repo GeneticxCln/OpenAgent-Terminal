@@ -327,24 +327,31 @@ impl CommandPipeline {
 
                 // Update block with output immediately if we have a block manager
                 if let Some(ref manager) = block_manager {
-                    let _ = manager.lock().await;
-                    // TODO: Stream output to block - for now we'll aggregate
-                    // This would be where real-time output streaming occurs
+                    let mut mgr = manager.lock().await;
+                    let _ = mgr.append_output(block_id, &chunk.content);
                 }
             }
         });
 
-        // Spawn process waiter
-        let process_block_id = block_id;
-        let _process_block_manager = self.block_manager.clone();
-        let _process_event_sender = self.event_sender.clone();
-
-        tokio::spawn(async move {
-            // This would need to be handled differently since we can't move self
-            // For now, we'll just wait on the process
-            // In a real implementation, this would need better structure
-            info!("Started command execution for block {}", process_block_id);
-        });
+        // Wait for process completion here by taking ownership of the child from active_commands
+        // and then finalizing the block and emitting terminal events.
+        if let Some(mut child_proc) = self
+            .active_commands
+            .get_mut(&block_id)
+            .and_then(|exec| exec.process.take())
+        {
+            let status = child_proc.wait().await?;
+            let exit_code = status.code().unwrap_or(0);
+            let duration = start_time.elapsed();
+            // Finalize the block via helper (updates storage, emits terminal event & pipeline event)
+            self.process_completion(block_id, exit_code, duration)
+                .await?;
+        } else {
+            info!(
+                "CommandPipeline: no child process found for block {} when awaiting completion",
+                block_id
+            );
+        }
 
         Ok(())
     }

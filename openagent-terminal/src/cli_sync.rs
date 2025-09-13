@@ -44,16 +44,23 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
         .map_err(|e| anyhow::anyhow!("failed to init secure sync provider: {:?}", e))?;
 
     match &t.command {
-        TrustSubcommand::Add { installation_id, display_name, public_key_hex } => {
+        TrustSubcommand::Add {
+            installation_id,
+            display_name,
+            public_key_hex,
+        } => {
             let public_key = hex_to_bytes(public_key_hex)?;
             let info = PeerInfo {
                 installation_id: installation_id.clone(),
-                display_name: display_name.clone().unwrap_or_else(|| installation_id.clone()),
+                display_name: display_name
+                    .clone()
+                    .unwrap_or_else(|| installation_id.clone()),
                 last_seen: 0,
                 public_key,
                 capabilities: vec![],
             };
-            provider.add_peer(info)
+            provider
+                .add_peer(info)
                 .map_err(|e| anyhow::anyhow!("failed to add peer: {:?}", e))?;
             println!("Added peer: {}", installation_id);
             Ok(0)
@@ -64,7 +71,10 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
                 for rec in provider.list_peer_records() {
                     let fp = sha256_hex(&rec.info.public_key);
                     let status = if rec.revoked { "revoked" } else { "active" };
-                    println!("{}\t{}\t{}\t{}", rec.info.installation_id, rec.info.display_name, fp, status);
+                    println!(
+                        "{}\t{}\t{}\t{}",
+                        rec.info.installation_id, rec.info.display_name, fp, status
+                    );
                 }
             } else {
                 for p in provider.list_peers() {
@@ -75,7 +85,8 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
             Ok(0)
         }
         TrustSubcommand::Remove { installation_id } => {
-            let removed = provider.remove_peer(installation_id)
+            let removed = provider
+                .remove_peer(installation_id)
                 .map_err(|e| anyhow::anyhow!("failed to remove peer: {:?}", e))?;
             if removed {
                 println!("Removed peer: {}", installation_id);
@@ -85,7 +96,8 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
             Ok(0)
         }
         TrustSubcommand::Revoke { installation_id } => {
-            let ok = provider.revoke_peer(installation_id)
+            let ok = provider
+                .revoke_peer(installation_id)
                 .map_err(|e| anyhow::anyhow!("failed to revoke peer: {:?}", e))?;
             if ok {
                 println!("Revoked peer: {}", installation_id);
@@ -94,9 +106,13 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
             }
             Ok(0)
         }
-        TrustSubcommand::Rotate { installation_id, new_public_key_hex } => {
+        TrustSubcommand::Rotate {
+            installation_id,
+            new_public_key_hex,
+        } => {
             let new_key = hex_to_bytes(new_public_key_hex)?;
-            let ok = provider.rotate_peer_key(installation_id, new_key)
+            let ok = provider
+                .rotate_peer_key(installation_id, new_key)
                 .map_err(|e| anyhow::anyhow!("failed to rotate peer key: {:?}", e))?;
             if ok {
                 println!("Rotated key for peer: {}", installation_id);
@@ -115,7 +131,9 @@ fn run_trust_cmd(_t: &SyncTrustOptions) -> Result<i32> {
 
 fn hex_to_bytes(s: &str) -> Result<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 { anyhow::bail!("hex length must be even"); }
+    if s.len() % 2 != 0 {
+        anyhow::bail!("hex length must be even");
+    }
     let mut out = Vec::with_capacity(s.len() / 2);
     let bytes = s.as_bytes();
     for i in (0..bytes.len()).step_by(2) {

@@ -1275,7 +1275,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     } else {
                         self.ctx.display().composer_sel_anchor = None;
                     }
-                    self.ctx.display().composer_cursor = self.ctx.display().composer_text.chars().count();
+                    self.ctx.display().composer_cursor =
+                        self.ctx.display().composer_text.chars().count();
                     self.ctx.mark_dirty();
                     return;
                 }
@@ -1285,11 +1286,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if cur > 0 {
                         // Remove prev char by grapheme; approximate via chars
                         let mut s = self.ctx.display().composer_text.clone();
-                        let idx = s
-                            .char_indices()
-                            .nth(cur - 1)
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
+                        let idx = s.char_indices().nth(cur - 1).map(|(i, _)| i).unwrap_or(0);
                         let next_idx = s
                             .char_indices()
                             .nth(cur)
@@ -1307,11 +1304,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     let len = self.ctx.display().composer_text.chars().count();
                     if cur < len {
                         let mut s = self.ctx.display().composer_text.clone();
-                        let start = s
-                            .char_indices()
-                            .nth(cur)
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
+                        let start = s.char_indices().nth(cur).map(|(i, _)| i).unwrap_or(0);
                         let end = s
                             .char_indices()
                             .nth(cur + 1)
@@ -1324,7 +1317,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     return;
                 }
                 // Character input (ignore control/meta)
-                Key::Character(s) if !mods.control_key() && !mods.alt_key() && !mods.super_key() => {
+                Key::Character(s)
+                    if !mods.control_key() && !mods.alt_key() && !mods.super_key() =>
+                {
                     if !s.is_empty() {
                         let cur = self.ctx.display().composer_cursor;
                         let mut s_full = String::new();
@@ -1470,10 +1465,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) if mods.control_key() => {
                     if let Some(runtime) = self.ctx.ai_runtime_mut() {
                         if let Some((cmd, _)) = runtime.apply_command(false) {
-                            self.ctx.send_user_event(crate::event::EventType::AiApplyAsCommand {
-                                command: cmd,
-                                dry_run: false,
-                            });
+                            self.ctx
+                                .send_user_event(crate::event::EventType::AiApplyAsCommand {
+                                    command: cmd,
+                                    dry_run: false,
+                                });
                         }
                     }
                     return;

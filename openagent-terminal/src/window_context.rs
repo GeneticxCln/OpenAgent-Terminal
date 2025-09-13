@@ -327,7 +327,7 @@ impl WindowContext {
                                     .cloned()
                             })
                             .unwrap_or_default();
-{
+                        {
                             let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
                                 provider_name,
                                 &prov_cfg,
@@ -484,10 +484,8 @@ impl WindowContext {
                     })
                     .unwrap_or_default();
 
-let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
-                    provider_name,
-                    &prov_cfg,
-                );
+                let mut rt =
+                    crate::ai_runtime::AiRuntime::from_secure_config(provider_name, &prov_cfg);
                 rt.set_context_config(self.config.ai.context.clone());
                 self.ai_runtime = Some(rt);
             } else {

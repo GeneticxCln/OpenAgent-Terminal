@@ -192,8 +192,6 @@ mod blocks_fallback_tests {
 // Test Security Lens
 #[cfg(feature = "security-lens")]
 mod security_tests {
-    use super::*;
-    use openagent_terminal::security::{RiskLevel, SecurityLens};
     use openagent_terminal::security_config::{
         CustomSecurityPattern, SecurityConfig, SecurityLensFactory,
     };
@@ -500,9 +498,8 @@ mod feature_compatibility_tests {
     #[test]
     fn test_workspace_enabled_flag_basic() {
         let mut cfg = openagent_terminal::config::UiConfig::default();
-        let size_info = openagent_terminal::display::SizeInfo::new(
-            640.0, 480.0, 10.0, 20.0, 0.0, 0.0, false,
-        );
+        let size_info =
+            openagent_terminal::display::SizeInfo::new(640.0, 480.0, 10.0, 20.0, 0.0, 0.0, false);
 
         // Enabled by default in defaults
         let wm_default = openagent_terminal::workspace::WorkspaceManager::new(

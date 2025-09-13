@@ -186,6 +186,9 @@ fn after_loading(config: &mut UiConfig, options: &mut Options) {
     }
 
     config.resolved_theme = Some(resolved);
+
+    // Sanitize/clamp workspace drag configuration for robust bounds.
+    config.workspace.drag.sanitize();
 }
 
 /// Load configuration file and log errors.

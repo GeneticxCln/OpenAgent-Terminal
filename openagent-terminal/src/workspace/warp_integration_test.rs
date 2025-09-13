@@ -327,9 +327,14 @@ fn test_warp_pane_pty_mapping_without_init() {
     let mut workspace = WorkspaceManager::with_warp(WorkspaceId(1), config, size_info, None);
 
     // Create a tab without initialization; should not error and should not spawn terminals
-    assert!(workspace.execute_warp_action(&WarpAction::CreateTab).is_ok());
+    assert!(workspace
+        .execute_warp_action(&WarpAction::CreateTab)
+        .is_ok());
     let stats = workspace.warp.as_ref().unwrap().performance_stats();
-    assert_eq!(stats.active_terminals, 0, "No terminals should be active before init");
+    assert_eq!(
+        stats.active_terminals, 0,
+        "No terminals should be active before init"
+    );
 }
 
 /// New: Verify pane↔PTY mapping after proper initialization

@@ -393,7 +393,6 @@ impl<T> Grid<T> {
     where
         T: GridCell + Default,
     {
-
         // Append empty rows to reach max_scroll_limit history before final alignment.
         // Storage::initialize will rezero when reallocating, which places existing content at
         // the head of the underlying vector and appends new rows at the tail. This preserves

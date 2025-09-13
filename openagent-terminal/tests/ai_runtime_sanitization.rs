@@ -1,8 +1,8 @@
 #![cfg(feature = "ai")]
 use std::sync::{Arc, Mutex};
 
-use openagent_terminal_ai::{AiProvider, AiProposal, AiRequest};
 use openagent_terminal::ai_runtime::AiRuntime;
+use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 
 // Simple capture provider that records the last request it received
 struct CaptureProvider {
@@ -43,7 +43,8 @@ fn ai_runtime_sanitizes_request_before_provider() {
     std::env::set_var("OPENAGENT_AI_STRIP_CWD", "1");
 
     let mut rt = AiRuntime::new(provider);
-    rt.ui.scratch = "List /home/tester/project; token: ghp_abcdefghijklmnopqrstuvwxyz0123456789".into();
+    rt.ui.scratch =
+        "List /home/tester/project; token: ghp_abcdefghijklmnopqrstuvwxyz0123456789".into();
 
     // Act
     rt.propose(Some("/home/tester/project".into()), Some("bash".into()));
@@ -56,9 +57,9 @@ fn ai_runtime_sanitizes_request_before_provider() {
     assert!(!seen.scratch_text.contains("/home/tester"));
     assert!(seen.scratch_text.contains("[REDACTED_PATH]"));
     // Sensitive token redacted
-    assert!(seen
-        .scratch_text
-        .contains("[REDACTED_GITHUB_TOKEN]"),
+    assert!(
+        seen.scratch_text.contains("[REDACTED_GITHUB_TOKEN]"),
         "scratch_text was not redacted: {}",
-        seen.scratch_text);
+        seen.scratch_text
+    );
 }

@@ -47,6 +47,32 @@ default_ratio = 0.5
 minimum_pane_size = 10
 resize_increment = 5
 
+# Pane drag gesture and drop highlight visuals
+[workspace.drag]
+# Enable Alt+Left-drag to move panes between splits/tabs
+enable_pane_drag = true
+# Modifier required to start a drag: "Alt" | "Ctrl" | "Shift" | "None"
+pane_drag_modifier = "Alt"
+# Mouse button: "Left" | "Middle" | "Right"
+pane_drag_button = "Left"
+# Optional explicit highlight color for drop zones (overrides theme tokens when set)
+# highlight_color = "#7aa2f7"
+# Minimum alpha in light themes for better visibility (optional)
+# highlight_min_alpha = 0.08
+# Base/hover alpha for split targets
+highlight_alpha_base = 0.15
+highlight_alpha_hover = 0.50
+# Base/hover alpha for tab highlight when hovering a tab as a drop target
+tab_highlight_alpha_base = 0.12
+tab_highlight_alpha_hover = 0.40
+# Base/hover alpha for the New Tab area highlight
+new_tab_highlight_alpha_base = 0.10
+new_tab_highlight_alpha_hover = 0.45
+# Snap margin in pixels to treat cursor as inside the tab bar band near its edge
+tab_drop_snap_px = 6.0
+# Extra horizontal margin in pixels near the right edge to make selecting "New Tab" easier
+new_tab_snap_extra_px = 24.0
+
 # Warp-style UI configuration
 [workspace.warp_ui]
 # Tab styling

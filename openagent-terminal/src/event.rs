@@ -33,11 +33,13 @@ use winit::raw_window_handle::HasDisplayHandle;
 use winit::window::WindowId;
 
 use openagent_terminal_core::event::{Event as TerminalEvent, EventListener, Notify};
+#[cfg(test)]
+use openagent_terminal_core::grid;
 use openagent_terminal_core::event_loop::Notifier;
 use openagent_terminal_core::grid::{BidirectionalIterator, Dimensions, Scroll};
 use openagent_terminal_core::index::{Boundary, Column, Direction, Line, Point, Side};
 use openagent_terminal_core::selection::{Selection, SelectionType};
-use openagent_terminal_core::term::cell::Flags;
+use openagent_terminal_core::term::cell::{Flags, LineLength as CellLineLength};
 use openagent_terminal_core::term::search::{Match, RegexSearch};
 use openagent_terminal_core::term::{self, ClipboardType, Term, TermMode};
 use openagent_terminal_core::vte::ansi::NamedColor;
@@ -67,8 +69,38 @@ use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
-use once_cell::sync::OnceCell as _;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
+
+#[cfg(test)]
+pub(crate) fn collect_block_output_from_grid(
+    grid: &grid::Grid<openagent_terminal_core::term::cell::Cell>,
+    start: usize,
+    end: usize,
+) -> String {
+    let top = grid.topmost_line();
+    let mut out = String::new();
+    for abs in start..=end {
+        let line = top + (abs as i32);
+        if line < grid.topmost_line() || line > grid.bottommost_line() {
+            continue;
+        }
+        let row = &grid[line];
+        let len = row.line_length().0.min(grid.columns());
+        if len == 0 {
+            out.push('\n');
+            continue;
+        }
+        for col in 0..len {
+            let ch = row[openagent_terminal_core::index::Column(col)].c;
+            out.push(ch);
+        }
+        out.push('\n');
+    }
+    if out.ends_with('\n') {
+        let _ = out.pop();
+    }
+    out
+}
 
 /// Duration after the last user input until an unlimited search is performed.
 pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
@@ -129,6 +161,48 @@ pub struct Processor {
 
 static PRIVACY_EXTENDED_FLAG: once_cell::sync::OnceCell<bool> = once_cell::sync::OnceCell::new();
 
+#[cfg(test)]
+mod copy_export_tests {
+    use openagent_terminal_core::grid::Grid;
+    use openagent_terminal_core::index::{Column, Line};
+    use openagent_terminal_core::term::cell::Cell;
+
+    #[test]
+    fn collect_block_output_excludes_header_and_trims_trailing_newline() {
+        // Grid with 5 lines x 4 columns, no history
+        let mut grid: Grid<Cell> = Grid::new(5, 4, 0);
+        // Fill lines with simple content: 0..4
+        let rows = [
+            "HEAD", // header line to exclude
+            "L1__", "L2__", "L3__", "L4__",
+        ];
+        for (i, row) in rows.iter().enumerate() {
+            for (j, ch) in row.chars().enumerate() {
+                grid[Line(i as i32)][Column(j)].c = ch;
+            }
+        }
+        // Header at 0; collect from 1..3
+        let out = crate::event::collect_block_output_from_grid(&grid, 1, 3);
+        assert_eq!(out, "L1__\nL2__\nL3__");
+    }
+
+    #[test]
+    fn collect_block_output_large_range_aggregates() {
+        let mut grid: Grid<Cell> = Grid::new(10, 3, 0);
+        // lines 0..9, fill with 'A'..'J'
+        for i in 0..10 {
+            let ch = (b'A' + i as u8) as char;
+            for c in 0..3 {
+                grid[Line(i)][Column(c)].c = ch;
+            }
+        }
+        // Collect 2..8 => C..I
+        let out = crate::event::collect_block_output_from_grid(&grid, 2, 8);
+        let expected = ["CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III"].join("\n");
+        assert_eq!(out, expected);
+    }
+}
+
 impl Processor {
     /// Global accessor for privacy extended flag from current config (None if not yet initialized)
     pub fn privacy_extended_flag() -> Option<bool> {
@@ -140,7 +214,9 @@ impl Processor {
         cli_options: CliOptions,
         event_loop: &EventLoop<Event>,
     ) -> Processor {
-        PRIVACY_EXTENDED_FLAG.set(config.privacy.extended_redaction).ok();
+        PRIVACY_EXTENDED_FLAG
+            .set(config.privacy.extended_redaction)
+            .ok();
         let proxy = event_loop.create_proxy();
         // Initialize confirmation broker hooks (proxy + initial policy)
         crate::ui_confirm::set_event_proxy(proxy.clone());
@@ -258,12 +334,46 @@ impl Processor {
         {
             if self.config.feature_banner.show {
                 let mut features = Vec::new();
-                features.push(format!("wgpu:{}", if cfg!(feature = "wgpu") { "on" } else { "off" }));
-                features.push(format!("ai:{}", if cfg!(feature = "ai") { "on" } else { "off" }));
-                features.push(format!("blocks:{}", if cfg!(feature = "blocks") { "on" } else { "off" }));
-                features.push(format!("workflow:{}", if cfg!(feature = "workflow") { "on" } else { "off" }));
-                features.push(format!("completions:{}", if cfg!(feature = "completions") { "on" } else { "off" }));
-                features.push(format!("security-lens:{}", if cfg!(feature = "security-lens") { "on" } else { "off" }));
+                features.push(format!(
+                    "wgpu:{}",
+                    if cfg!(feature = "wgpu") { "on" } else { "off" }
+                ));
+                features.push(format!(
+                    "ai:{}",
+                    if cfg!(feature = "ai") { "on" } else { "off" }
+                ));
+                features.push(format!(
+                    "blocks:{}",
+                    if cfg!(feature = "blocks") {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+                features.push(format!(
+                    "workflow:{}",
+                    if cfg!(feature = "workflow") {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+                features.push(format!(
+                    "completions:{}",
+                    if cfg!(feature = "completions") {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+                features.push(format!(
+                    "security-lens:{}",
+                    if cfg!(feature = "security-lens") {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
                 let banner = format!("Features: {}", features.join("  "));
                 let level = self
                     .config
@@ -278,7 +388,9 @@ impl Processor {
                     crate::message_bar::MessageType::Error /* Info type not present; fallback to visible tier */
                 };
                 let message = crate::message_bar::Message::new(banner, ty);
-                let _ = self.proxy.send_event(Event::new(EventType::Message(message), Some(window_id)));
+                let _ = self
+                    .proxy
+                    .send_event(Event::new(EventType::Message(message), Some(window_id)));
             }
         }
 
@@ -2164,6 +2276,7 @@ pub enum EventType {
     BlocksToggleFoldUnderCursor,
     BlocksCopyHeaderUnderCursor,
     BlocksExportHeaderUnderCursor,
+    BlocksRerunUnderCursor,
 
     // Blocks Search panel events
     #[cfg(feature = "blocks")]
@@ -3327,18 +3440,26 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if let Some(action) = self.display.blocks_search.get_selected_action() {
             use crate::display::blocks_search_actions::BlockAction;
 
-                match action {
+            match action {
                 #[cfg(feature = "ai")]
                 BlockAction::ExplainError => {
                     if let Some(item) = self.display.blocks_search.get_selected_item() {
-                        let text = if !item.output.is_empty() { item.output.clone() } else { item.command.clone() };
+                        let text = if !item.output.is_empty() {
+                            item.output.clone()
+                        } else {
+                            item.command.clone()
+                        };
                         self.send_user_event(EventType::AiExplain(Some(text)));
                     }
                 }
                 #[cfg(feature = "ai")]
                 BlockAction::FixError => {
                     if let Some(item) = self.display.blocks_search.get_selected_item() {
-                        let error_text = if !item.output.is_empty() { item.output.clone() } else { item.command.clone() };
+                        let error_text = if !item.output.is_empty() {
+                            item.output.clone()
+                        } else {
+                            item.command.clone()
+                        };
                         self.send_user_event(EventType::AiFix(Some(error_text)));
                     }
                 }
@@ -5067,12 +5188,50 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             split_areas.push((tab_id, pid, rect.x, rect.y, rect.width, rect.height));
         }
 
+        // Determine if the cursor is inside the tab bar band (supports Top/Bottom)
+        let style = crate::display::warp_ui::WarpTabStyle::from_theme(self.config);
+        let consider_tabs =
+            tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden;
+        let bar_y = match tab_cfg.position {
+            crate::workspace::TabBarPosition::Top => 0.0,
+            crate::workspace::TabBarPosition::Bottom => si.height() - style.tab_height,
+            crate::workspace::TabBarPosition::Hidden => -1.0,
+        };
+        // Apply vertical snap margin when deciding if we're inside the tab bar band
+        let snap_px = self.config.workspace.drag.tab_drop_snap_px.max(0.0);
+        let bar_top = (bar_y - snap_px).max(0.0);
+        let bar_bottom = (bar_y + style.tab_height + snap_px).min(si.height());
+        let in_tab_bar_band = consider_tabs && mouse_y_px >= bar_top && mouse_y_px < bar_bottom;
+
+        // Only allow tab drop targeting when actually hovering (or snapped to) the tab bar band
+        let empty_tabs: Vec<(crate::workspace::TabId, f32, f32)> = Vec::new();
+        let tabs_for_hit = if in_tab_bar_band {
+            &tab_positions
+        } else {
+            &empty_tabs
+        };
+
         // Compute current drop zone and update animations
-        let dz = self.display.pane_drag_manager.calculate_drop_zone(
+        let mut dz = self.display.pane_drag_manager.calculate_drop_zone(
             (mouse_x_px, mouse_y_px),
-            &tab_positions,
+            tabs_for_hit,
             &split_areas,
         );
+
+        // If in the tab bar band and not over any existing tab, allow creating a new tab by dropping
+        if dz.is_none() && in_tab_bar_band {
+            let max_tab_x = tab_positions
+                .iter()
+                .map(|(_, x, w)| x + w)
+                .fold(0.0, f32::max);
+            let extra = self.config.workspace.drag.new_tab_snap_extra_px.max(0.0);
+            if mouse_x_px >= (max_tab_x - extra).max(0.0) {
+                dz = Some(crate::display::pane_drag_drop::PaneDropZone::NewTab {
+                    position: tab_positions.len(),
+                });
+            }
+        }
+
         let updated = self
             .display
             .pane_drag_manager
@@ -6162,6 +6321,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                 }
                 EventType::BlocksCopyHeaderUnderCursor => {
+                    // Copy full block output under cursor (excluding header line)
                     let display_offset = self.ctx.terminal().grid().display_offset();
                     let grid_point = self
                         .ctx
@@ -6170,17 +6330,55 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     if let Some(vp) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
                     {
-                        if let Some(header) = self
-                            .ctx
-                            .display()
-                            .blocks
-                            .header_at_viewport_line(display_offset, vp.line)
-                        {
-                            self.ctx.copy_to_clipboard(header);
+                        // Limit borrow to extract range
+                        let (start_opt, end_opt) = {
+                            let display = self.ctx.display();
+                            if let Some(block) = display
+                                .blocks
+                                .block_at_header_viewport_line(display_offset, vp.line)
+                            {
+                                let start = block.start_total_line.saturating_add(1); // skip header
+                                let end = block.end_total_line.unwrap_or_else(|| {
+                                    // If still running, include until last visible line
+                                    let grid = self.ctx.terminal().grid();
+                                    grid.total_lines().saturating_sub(1)
+                                });
+                                (Some(start), Some(end))
+                            } else {
+                                (None, None)
+                            }
+                        };
+                        if let (Some(start), Some(end)) = (start_opt, end_opt) {
+                            let grid = self.ctx.terminal().grid();
+                            let top = grid.topmost_line();
+                            let mut out = String::new();
+                            for abs in start..=end {
+                                let line = top + (abs as i32);
+                                if line < grid.topmost_line() || line > grid.bottommost_line() {
+                                    continue;
+                                }
+                                let row = &grid[line];
+                                let len = row.line_length().0.min(grid.columns());
+                                if len == 0 {
+                                    out.push('\n');
+                                    continue;
+                                }
+                                for col in 0..len {
+                                    let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                    out.push(ch);
+                                }
+                                out.push('\n');
+                            }
+                            // Trim a trailing newline for cleaner copy
+                            if out.ends_with('\n') {
+                                let _ = out.pop();
+                            }
+                            self.ctx.copy_to_clipboard(out);
                         }
                     }
                 }
                 EventType::BlocksExportHeaderUnderCursor => {
+                    // Export full block output under cursor (excluding header line)
                     let display_offset = self.ctx.terminal().grid().display_offset();
                     let grid_point = self
                         .ctx
@@ -6189,13 +6387,84 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     if let Some(vp) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
                     {
-                        if let Some(header) = self
-                            .ctx
-                            .display()
-                            .blocks
-                            .header_at_viewport_line(display_offset, vp.line)
-                        {
-                            self.ctx.prompt_and_export_block_output(header);
+                        let (start_opt, end_opt) = {
+                            let display = self.ctx.display();
+                            if let Some(block) = display
+                                .blocks
+                                .block_at_header_viewport_line(display_offset, vp.line)
+                            {
+                                let start = block.start_total_line.saturating_add(1);
+                                let end = block.end_total_line.unwrap_or_else(|| {
+                                    let grid = self.ctx.terminal().grid();
+                                    grid.total_lines().saturating_sub(1)
+                                });
+                                (Some(start), Some(end))
+                            } else {
+                                (None, None)
+                            }
+                        };
+                        if let (Some(start), Some(end)) = (start_opt, end_opt) {
+                            let grid = self.ctx.terminal().grid();
+                            let top = grid.topmost_line();
+                            let mut out = String::new();
+                            for abs in start..=end {
+                                let line = top + (abs as i32);
+                                if line < grid.topmost_line() || line > grid.bottommost_line() {
+                                    continue;
+                                }
+                                let row = &grid[line];
+                                let len = row.line_length().0.min(grid.columns());
+                                if len == 0 {
+                                    out.push('\n');
+                                    continue;
+                                }
+                                for col in 0..len {
+                                    let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                    out.push(ch);
+                                }
+                                out.push('\n');
+                            }
+                            if out.ends_with('\n') {
+                                let _ = out.pop();
+                            }
+                            self.ctx.prompt_and_export_block_output(out);
+                        }
+                    }
+                }
+                EventType::BlocksRerunUnderCursor => {
+                    // Find the block at the header under cursor and rerun its command in its cwd
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let grid_point = self
+                        .ctx
+                        .mouse()
+                        .point(&self.ctx.size_info(), display_offset);
+                    if let Some(vp) =
+                        openagent_terminal_core::term::point_to_viewport(display_offset, grid_point)
+                    {
+                        // Extract cmd/cwd under a limited borrow scope
+                        let (cmd_opt, cwd_opt) = {
+                            let display = self.ctx.display();
+                            if let Some(block) = display
+                                .blocks
+                                .block_at_header_viewport_line(display_offset, vp.line)
+                            {
+                                if let Some(cmd) = block.cmd.clone() {
+                                    let cwd = block.cwd.clone().unwrap_or_else(|| {
+                                        std::env::current_dir()
+                                            .unwrap_or_default()
+                                            .to_string_lossy()
+                                            .to_string()
+                                    });
+                                    (Some(cmd), Some(cwd))
+                                } else {
+                                    (None, None)
+                                }
+                            } else {
+                                (None, None)
+                            }
+                        };
+                        if let (Some(cmd), Some(cwd)) = (cmd_opt, cwd_opt) {
+                            self.ctx.spawn_shell_command_in_cwd(cmd, cwd);
                         }
                     }
                 }
@@ -6225,8 +6494,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         let now = std::time::Instant::now();
                         let should_redraw = match runtime.ui.streaming_last_redraw {
                             None => true,
-                            Some(last) => now.saturating_duration_since(last).as_millis() as u64
-                                >= throttle_ms,
+                            Some(last) => {
+                                now.saturating_duration_since(last).as_millis() as u64
+                                    >= throttle_ms
+                            }
                         };
                         if should_redraw {
                             runtime.ui.streaming_last_redraw = Some(now);

@@ -417,8 +417,10 @@ impl UnifiedPluginManager {
         // Create linker and add host + WASI functions
         let mut linker = wasmtime::Linker::new(&self.wasm_engine);
         // Add WASI to linker
-        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |cx: &mut WasmPluginContext| &mut cx.wasi_ctx)
-            .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
+        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |cx: &mut WasmPluginContext| {
+            &mut cx.wasi_ctx
+        })
+        .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
         // Add host functions after WASI
         self.add_host_functions(&mut linker)?;
 
@@ -773,7 +775,11 @@ mod tests {
 
         let manager = UnifiedPluginManager::new(temp_dir.path()).expect("manager");
         let load_res = manager.load_plugin(&wasm_path).await;
-        assert!(load_res.is_ok(), "failed to load minimal wasm plugin: {:?}", load_res);
+        assert!(
+            load_res.is_ok(),
+            "failed to load minimal wasm plugin: {:?}",
+            load_res
+        );
 
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 1, "expected one loaded plugin");

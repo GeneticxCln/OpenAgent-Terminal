@@ -167,7 +167,9 @@ pub struct BlockManager {
     /// Native rendering state
     render_state: BlockRenderState,
     /// Optional handle into the workspace PTY manager to reuse pane PTYs
-    pty_collection: Option<Arc<parking_lot::Mutex<openagent_terminal_core::tty::pty_manager::PtyManagerCollection>>>,
+    pty_collection: Option<
+        Arc<parking_lot::Mutex<openagent_terminal_core::tty::pty_manager::PtyManagerCollection>>,
+    >,
 }
 
 /// Session identifier for grouping blocks
@@ -271,7 +273,9 @@ impl BlockManager {
     /// Provide access to the workspace PTY collection so Blocks can reuse pane PTYs
     pub fn set_workspace_pty_collection(
         &mut self,
-        collection: Arc<parking_lot::Mutex<openagent_terminal_core::tty::pty_manager::PtyManagerCollection>>,
+        collection: Arc<
+            parking_lot::Mutex<openagent_terminal_core::tty::pty_manager::PtyManagerCollection>,
+        >,
     ) {
         self.pty_collection = Some(collection);
     }
@@ -309,7 +313,9 @@ impl BlockManager {
     /// Start native command execution without lazy fallbacks
     async fn start_native_execution(&mut self, block_id: BlockId, command: String) -> Result<()> {
         use openagent_terminal_core::event::WindowSize;
-        use openagent_terminal_core::tty::{ChildEvent, EventedPty, EventedReadWrite, Options, Shell};
+        use openagent_terminal_core::tty::{
+            ChildEvent, EventedPty, EventedReadWrite, Options, Shell,
+        };
         use std::io::Read;
         use std::thread;
         use std::time::Duration;
@@ -319,7 +325,7 @@ impl BlockManager {
         let output_stream = Arc::new(std::sync::Mutex::new(String::new()));
 
         let start_time = Utc::now();
-        let mut execution_handle = ExecutionHandle {
+        let execution_handle = ExecutionHandle {
             block_id,
             pid: None, // Will be set when PTY starts
             start_time,
@@ -367,7 +373,6 @@ impl BlockManager {
 
                 // Reader task: attach to the manager and pull bytes
                 tokio::spawn(async move {
-                    use std::io::Read;
                     use std::thread;
                     use std::time::Duration;
 
@@ -402,30 +407,44 @@ impl BlockManager {
                             }
 
                             // Check child events
-                            for ev in mgr.poll_child_events() {
-                                if let openagent_terminal_core::tty::ChildEvent::Exited(code) = ev {
-                                    local_exit = code.or(Some(0));
-                                    break;
-                                }
+if let Some(ev) = mgr.poll_child_events().into_iter().next() {
+                                let openagent_terminal_core::tty::ChildEvent::Exited(code) = ev;
+                                local_exit = code.or(Some(0));
+                                break;
                             }
                         }
 
-                        if local_exit.is_some() { break; }
-                        if !read_any { thread::sleep(Duration::from_millis(15)); }
+                        if local_exit.is_some() {
+                            break;
+                        }
+                        if !read_any {
+                            thread::sleep(Duration::from_millis(15));
+                        }
                     }
 
                     let dur = start.elapsed().as_millis() as u64;
-                    let output = output_stream_clone.lock().ok().map(|m| m.clone()).unwrap_or_default();
+                    let output = output_stream_clone
+                        .lock()
+                        .ok()
+                        .map(|m| m.clone())
+                        .unwrap_or_default();
                     let code = local_exit.unwrap_or(0);
                     let _ = done_tx.send((output, code, dur));
                 });
 
                 // Await completion and persist
                 if let Ok((final_output, exit_code, duration_ms)) = done_rx.await {
-                    self
-                        .update_block_output(block_id, final_output, exit_code, duration_ms)
+                    self.update_block_output(block_id, final_output, exit_code, duration_ms)
                         .await?;
-                    self.executing_blocks.remove(&block_id);
+                    // Keep the execution handle available briefly so subscribers can still attach
+                    // and receive any final messages; just update status instead of removing.
+                    if let Some(h) = self.executing_blocks.get_mut(&block_id) {
+                        h.status = if exit_code == 0 {
+                            ExecutionStatus::Success
+                        } else {
+                            ExecutionStatus::Failed
+                        };
+                    }
                     return Ok(());
                 }
             }
@@ -433,21 +452,19 @@ impl BlockManager {
 
         // Build shell + args to run this command in a login shell when applicable
         let (program, args): (String, Vec<String>) = match shell {
-            ShellType::Bash => (
-                "bash".to_string(),
-                vec!["-lc".to_string(), command.clone()],
-            ),
-            ShellType::Zsh => (
-                "zsh".to_string(),
-                vec!["-lc".to_string(), command.clone()],
-            ),
+            ShellType::Bash => ("bash".to_string(), vec!["-lc".to_string(), command.clone()]),
+            ShellType::Zsh => ("zsh".to_string(), vec!["-lc".to_string(), command.clone()]),
             ShellType::Fish => (
                 "fish".to_string(),
                 vec!["-l".to_string(), "-c".to_string(), command.clone()],
             ),
             ShellType::PowerShell => (
                 "pwsh".to_string(),
-                vec!["-NoProfile".to_string(), "-Command".to_string(), command.clone()],
+                vec![
+                    "-NoProfile".to_string(),
+                    "-Command".to_string(),
+                    command.clone(),
+                ],
             ),
             ShellType::Nushell => ("nu".to_string(), vec!["-c".to_string(), command.clone()]),
             ShellType::Custom(_) => (
@@ -472,7 +489,7 @@ impl BlockManager {
         // Spawn a blocking task that creates a PTY and streams output
         tokio::task::spawn_blocking(move || {
             // Construct PTY options
-            let mut options = Options {
+            let options = Options {
                 shell: Some(Shell::new(program, args)),
                 working_directory: Some(working_dir.clone()),
                 drain_on_exit: true,
@@ -510,7 +527,7 @@ impl BlockManager {
 
             // Read loop (non-blocking read with small sleeps)
             let mut buf = [0u8; 8192];
-            let mut exit_code: Option<i32> = None;
+            let exit_code: i32;
 
             'event_loop: loop {
                 let mut made_progress = false;
@@ -543,10 +560,10 @@ impl BlockManager {
                 }
 
                 // Check for child exit
-                while let Some(evt) = pty.next_child_event() {
+if let Some(evt) = pty.next_child_event() {
                     match evt {
                         ChildEvent::Exited(code) => {
-                            exit_code = code.or(Some(0));
+                            exit_code = code.unwrap_or(0);
                             break 'event_loop;
                         }
                     }
@@ -566,8 +583,12 @@ impl BlockManager {
 
             // Report completion back to async context
             let (final_output, code) = {
-                let s = output_stream_clone.lock().ok().map(|m| m.clone()).unwrap_or_default();
-                (s, exit_code.unwrap_or(0))
+                let s = output_stream_clone
+                    .lock()
+                    .ok()
+                    .map(|m| m.clone())
+                    .unwrap_or_default();
+                (s, exit_code)
             };
             let _ = done_tx.send((final_output, code, duration.as_millis() as u64));
         });
@@ -581,11 +602,17 @@ impl BlockManager {
 
         // Await completion and persist results (emits BlockEvent::Updated via update_block_output)
         if let Ok((final_output, exit_code, duration_ms)) = done_rx.await {
-            self
-                .update_block_output(block_id, final_output, exit_code, duration_ms)
+            self.update_block_output(block_id, final_output, exit_code, duration_ms)
                 .await?;
-            // Remove from executing map
-            self.executing_blocks.remove(&block_id);
+            // Keep the execution handle available briefly so subscribers can still attach
+            // and receive any final messages; just update status instead of removing.
+            if let Some(h) = self.executing_blocks.get_mut(&block_id) {
+                h.status = if exit_code == 0 {
+                    ExecutionStatus::Success
+                } else {
+                    ExecutionStatus::Failed
+                };
+            }
         }
 
         Ok(())
@@ -596,7 +623,9 @@ impl BlockManager {
         &self,
         block_id: BlockId,
     ) -> Option<tokio::sync::broadcast::Receiver<String>> {
-        self.executing_blocks.get(&block_id).map(|h| h.tx.subscribe())
+        self.executing_blocks
+            .get(&block_id)
+            .map(|h| h.tx.subscribe())
     }
 
     /// Append output to a running block and notify subscribers immediately

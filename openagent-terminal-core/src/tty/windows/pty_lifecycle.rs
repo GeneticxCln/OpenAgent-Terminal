@@ -174,19 +174,37 @@ mod tests {
     #[derive(Clone)]
     struct Drops(Arc<Mutex<Vec<&'static str>>>);
     impl Drops {
-        fn new() -> Self { Self(Arc::new(Mutex::new(Vec::new()))) }
-        fn push(&self, s: &'static str) { self.0.lock().unwrap().push(s); }
-        fn take(&self) -> Vec<&'static str> { std::mem::take(&mut *self.0.lock().unwrap()) }
+        fn new() -> Self {
+            Self(Arc::new(Mutex::new(Vec::new())))
+        }
+        fn push(&self, s: &'static str) {
+            self.0.lock().unwrap().push(s);
+        }
+        fn take(&self) -> Vec<&'static str> {
+            std::mem::take(&mut *self.0.lock().unwrap())
+        }
     }
 
     struct MockBackend(Drops);
-    impl Drop for MockBackend { fn drop(&mut self) { self.0.push("backend"); } }
+    impl Drop for MockBackend {
+        fn drop(&mut self) {
+            self.0.push("backend");
+        }
+    }
 
     struct MockRead(Drops);
-    impl Drop for MockRead { fn drop(&mut self) { self.0.push("conout"); } }
+    impl Drop for MockRead {
+        fn drop(&mut self) {
+            self.0.push("conout");
+        }
+    }
 
     struct MockWrite(Drops);
-    impl Drop for MockWrite { fn drop(&mut self) { self.0.push("conin"); } }
+    impl Drop for MockWrite {
+        fn drop(&mut self) {
+            self.0.push("conin");
+        }
+    }
 
     /// Minimal test-only copy of the shutdown sequence to assert drop order semantics.
     struct TestActive {

@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use crate::{api::{CommandOutput, Completion, Context, ContextRequest, HookEvent, HookResponse}, PluginAbi, PluginSystemError};
+use crate::{
+    api::{CommandOutput, Completion, Context, ContextRequest, HookEvent, HookResponse},
+    PluginAbi, PluginSystemError,
+};
 
 // Re-export from main lib for now
 pub use crate::UnifiedPluginManager as PluginManager;
@@ -185,7 +188,8 @@ pub async fn execute_wasm_command_internal(
 
     // Prepare inputs
     let cmd_bytes = command.as_bytes();
-    let args_json = serde_json::to_vec(args).map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
+    let args_json =
+        serde_json::to_vec(args).map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
 
     let cmd_ptr = alloc_and_write(abi, instance, &mut store, cmd_bytes)?;
     let args_ptr = if abi.execute_command_ex.is_some() {
@@ -272,8 +276,8 @@ pub async fn execute_wasm_command_internal(
         dealloc_if_available(abi, &mut store, ptr, len);
 
         // Parse into standardized output
-        let output: CommandOutput = serde_json::from_slice(&bytes)
-            .map_err(|e| PluginSystemError::Serialization(e))?;
+        let output: CommandOutput =
+            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
         return Ok(output);
     }
 
@@ -323,8 +327,8 @@ pub async fn provide_completions_internal(
         }
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
-        let completions: Vec<Completion> = serde_json::from_slice(&bytes)
-            .map_err(|e| PluginSystemError::Serialization(e))?;
+        let completions: Vec<Completion> =
+            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
         return Ok(completions);
     }
 
@@ -341,8 +345,8 @@ pub async fn collect_context_internal(
     let instance = &wasm.instance;
 
     if let Some(collect) = &abi.collect_context {
-        let req_bytes = serde_json::to_vec(request)
-            .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
+        let req_bytes =
+            serde_json::to_vec(request).map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
         let req_ptr = alloc_and_write(abi, instance, &mut store, &req_bytes)?;
         let rc = collect
             .call(&mut *store, (req_ptr as i32, req_bytes.len() as i32, 0))
@@ -368,8 +372,8 @@ pub async fn collect_context_internal(
         }
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
-        let context: Context = serde_json::from_slice(&bytes)
-            .map_err(|e| PluginSystemError::Serialization(e))?;
+        let context: Context =
+            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
         return Ok(Some(context));
     }
 
@@ -386,8 +390,8 @@ pub async fn handle_event_internal(
     let instance = &wasm.instance;
 
     if let Some(handle) = &abi.handle_event {
-        let evt_bytes = serde_json::to_vec(event)
-            .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
+        let evt_bytes =
+            serde_json::to_vec(event).map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
         let evt_ptr = alloc_and_write(abi, instance, &mut store, &evt_bytes)?;
         let rc = handle
             .call(&mut *store, (evt_ptr as i32, evt_bytes.len() as i32))
@@ -421,8 +425,8 @@ pub async fn handle_event_internal(
         }
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
-        let resp: HookResponse = serde_json::from_slice(&bytes)
-            .map_err(|e| PluginSystemError::Serialization(e))?;
+        let resp: HookResponse =
+            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
         return Ok(resp);
     }
 

@@ -311,13 +311,25 @@ impl SecureSyncProvider {
             let content = fs::read_to_string(&peers_file)?;
 
             // Try current TrustStore format
-            if let Ok(mut store) = serde_json::from_str::<TrustStore>(&content) {
+            if let Ok(store) = serde_json::from_str::<TrustStore>(&content) {
                 // Verify signature if signed_by matches this installation
                 if store.signed_by == metadata.installation_id {
-                    let bytes = Self::canonical_trust_store_bytes(store.version, &store.signed_by, store.signed_at, &store.peers)?;
-                    let verifier = signature::UnparsedPublicKey::new(&signature::ED25519, metadata.public_key.as_ref().ok_or_else(|| SyncError::Other("Missing public key in metadata".to_string()))?);
+                    let bytes = Self::canonical_trust_store_bytes(
+                        store.version,
+                        &store.signed_by,
+                        store.signed_at,
+                        &store.peers,
+                    )?;
+                    let verifier = signature::UnparsedPublicKey::new(
+                        &signature::ED25519,
+                        metadata.public_key.as_ref().ok_or_else(|| {
+                            SyncError::Other("Missing public key in metadata".to_string())
+                        })?,
+                    );
                     if verifier.verify(&bytes, &store.signature).is_err() {
-                        return Err(SyncError::Other("Trust store signature invalid".to_string()));
+                        return Err(SyncError::Other(
+                            "Trust store signature invalid".to_string(),
+                        ));
                     }
                 } else {
                     warn!("Trust store signed_by does not match this installation; skipping signature verification");
@@ -347,8 +359,9 @@ impl SecureSyncProvider {
                 };
                 // Sign and save migrated store
                 store.signature = Self::sign_trust_store(&store, key_pair)?;
-                let json = serde_json::to_string_pretty(&store)
-                    .map_err(|e| SyncError::Other(format!("Failed to serialize trust store: {}", e)))?;
+                let json = serde_json::to_string_pretty(&store).map_err(|e| {
+                    SyncError::Other(format!("Failed to serialize trust store: {}", e))
+                })?;
                 fs::write(&peers_file, json)?;
                 return Ok(store);
             }
@@ -392,10 +405,8 @@ impl SecureSyncProvider {
         signed_at: u64,
         peers: &HashMap<String, PeerRecord>,
     ) -> Result<Vec<u8>, SyncError> {
-        let mut items: Vec<(String, PeerRecord)> = peers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let mut items: Vec<(String, PeerRecord)> =
+            peers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         items.sort_by(|a, b| a.0.cmp(&b.0));
         let signable = TrustStoreSignable {
             version,
@@ -403,8 +414,9 @@ impl SecureSyncProvider {
             signed_at,
             peers: items,
         };
-        let mut data = serde_json::to_vec(&signable)
-            .map_err(|e| SyncError::Other(format!("Failed to serialize trust store (signable): {}", e)))?;
+        let mut data = serde_json::to_vec(&signable).map_err(|e| {
+            SyncError::Other(format!("Failed to serialize trust store (signable): {}", e))
+        })?;
         // Domain separation prefix
         let mut prefixed = b"openagent-terminal.secure-sync.truststore.v1|".to_vec();
         prefixed.append(&mut data);
@@ -412,8 +424,16 @@ impl SecureSyncProvider {
     }
 
     /// Sign the trust store
-    fn sign_trust_store(store: &TrustStore, key_pair: &signature::Ed25519KeyPair) -> Result<Vec<u8>, SyncError> {
-        let bytes = Self::canonical_trust_store_bytes(store.version, &store.signed_by, store.signed_at, &store.peers)?;
+    fn sign_trust_store(
+        store: &TrustStore,
+        key_pair: &signature::Ed25519KeyPair,
+    ) -> Result<Vec<u8>, SyncError> {
+        let bytes = Self::canonical_trust_store_bytes(
+            store.version,
+            &store.signed_by,
+            store.signed_at,
+            &store.peers,
+        )?;
         Ok(key_pair.sign(&bytes).as_ref().to_vec())
     }
 
@@ -467,7 +487,7 @@ impl SecureSyncProvider {
             use std::io::Write as _;
             file.write_all(bytes)?;
             file.sync_all()?;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(unix))]
         {
@@ -476,19 +496,10 @@ impl SecureSyncProvider {
         }
     }
 
-    /// Return the keys directory path
-    fn keys_dir(base_dir: &Path) -> PathBuf {
-        base_dir.join("keys")
-    }
-
     /// Build the domain-separated bytes for signing/verification
-    fn signing_bytes(
-        domain: &str,
-        from_id: &str,
-        to_id: &str,
-        challenge: &[u8],
-    ) -> Vec<u8> {
-        let mut data = Vec::with_capacity(domain.len() + from_id.len() + to_id.len() + challenge.len() + 3);
+    fn signing_bytes(domain: &str, from_id: &str, to_id: &str, challenge: &[u8]) -> Vec<u8> {
+        let mut data =
+            Vec::with_capacity(domain.len() + from_id.len() + to_id.len() + challenge.len() + 3);
         data.extend_from_slice(domain.as_bytes());
         data.push(b'|');
         data.extend_from_slice(from_id.as_bytes());
@@ -500,7 +511,10 @@ impl SecureSyncProvider {
     }
 
     /// Create an authentication challenge for a peer
-    pub fn create_handshake_challenge(&self, to_installation_id: &str) -> Result<HandshakeChallenge, SyncError> {
+    pub fn create_handshake_challenge(
+        &self,
+        _to_installation_id: &str,
+    ) -> Result<HandshakeChallenge, SyncError> {
         let mut challenge = vec![0u8; 32];
         self.rng
             .fill(&mut challenge)
@@ -513,7 +527,11 @@ impl SecureSyncProvider {
     }
 
     /// Create a signature over the given challenge for handshake response
-    pub fn respond_to_handshake(&self, from_installation_id: &str, challenge: &[u8]) -> Result<HandshakeResponse, SyncError> {
+    pub fn respond_to_handshake(
+        &self,
+        from_installation_id: &str,
+        challenge: &[u8],
+    ) -> Result<HandshakeResponse, SyncError> {
         const DOMAIN: &str = "openagent-terminal.secure-sync.handshake.v1";
         let bytes = Self::signing_bytes(
             DOMAIN,
@@ -565,7 +583,12 @@ impl SecureSyncProvider {
     }
 
     /// Verify a signature over an arbitrary message with domain separation
-    pub fn verify_signature(public_key: &[u8], domain: &str, message: &[u8], signature_bytes: &[u8]) -> bool {
+    pub fn verify_signature(
+        public_key: &[u8],
+        domain: &str,
+        message: &[u8],
+        signature_bytes: &[u8],
+    ) -> bool {
         let mut data = Vec::with_capacity(domain.len() + 1 + message.len());
         data.extend_from_slice(domain.as_bytes());
         data.push(b'|');
@@ -799,7 +822,11 @@ impl SecureSyncProvider {
     }
 
     /// Rotate a peer's public key (append old to history)
-    pub fn rotate_peer_key(&mut self, installation_id: &str, new_public_key: Vec<u8>) -> Result<bool, SyncError> {
+    pub fn rotate_peer_key(
+        &mut self,
+        installation_id: &str,
+        new_public_key: Vec<u8>,
+    ) -> Result<bool, SyncError> {
         if let Some(record) = self.trust_store.peers.get_mut(installation_id) {
             let now = Self::current_timestamp();
             // Push current key to history
@@ -1027,7 +1054,11 @@ mod tests {
         assert_eq!(metadata.kdf_params.algorithm, "PBKDF2-SHA256");
         assert_eq!(metadata.kdf_params.iterations, 100_000);
         // public key should be present
-        assert!(metadata.public_key.as_ref().map(|v| !v.is_empty()).unwrap_or(false));
+        assert!(metadata
+            .public_key
+            .as_ref()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false));
 
         // Keys should exist on disk
         let base_dir = provider.base_dir.clone();
@@ -1147,7 +1178,9 @@ mod tests {
         assert_eq!(provider.list_peers().len(), 1);
 
         // Rotate key
-        let rotated = provider.rotate_peer_key("peer-1", vec![9, 9, 9, 9]).unwrap();
+        let rotated = provider
+            .rotate_peer_key("peer-1", vec![9, 9, 9, 9])
+            .unwrap();
         assert!(rotated);
         let listed = provider.list_peers();
         assert_eq!(listed.len(), 1);

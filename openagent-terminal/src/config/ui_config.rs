@@ -224,20 +224,12 @@ pub struct PluginsPathPolicy {
     pub require_signatures: bool,
 }
 
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Default)]
 pub struct PrivacyConfig {
     /// When true, apply extended redaction patterns in paste previews
     /// (e.g., AWS keys, JWT-like tokens, common API key prefixes)
     #[serde(default)]
     pub extended_redaction: bool,
-}
-
-impl Default for PrivacyConfig {
-    fn default() -> Self {
-        Self {
-            extended_redaction: false,
-        }
-    }
 }
 
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
@@ -251,7 +243,10 @@ pub struct FeatureBannerConfig {
 }
 
 impl FeatureBannerConfig {
-    fn default_show() -> bool { true }
+    #[allow(dead_code)]
+    fn default_show() -> bool {
+        true
+    }
 }
 
 impl Default for FeatureBannerConfig {

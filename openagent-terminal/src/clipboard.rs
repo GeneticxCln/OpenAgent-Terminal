@@ -95,7 +95,44 @@ impl Default for Clipboard {
 }
 
 impl Clipboard {
+    #[allow(clippy::needless_return)]
+    fn log_backend_once(&self) {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        if std::env::var("OPENAGENT_CLIPBOARD_LOG").ok().as_deref() == Some("1") {
+            ONCE.call_once(|| {
+                #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+                {
+                    if self.selection.is_some() {
+                        debug!("clipboard backend: Wayland (selection + clipboard)");
+                        return;
+                    }
+                }
+                #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+                {
+                    if self.selection.is_some() {
+                        debug!("clipboard backend: X11 (selection + clipboard)");
+                    } else {
+                        debug!("clipboard backend: X11 (clipboard only)");
+                    }
+                    return;
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    debug!("clipboard backend: macOS");
+                    return;
+                }
+                #[cfg(windows)]
+                {
+                    debug!("clipboard backend: Windows");
+                    return;
+                }
+                // Fallback
+            });
+        }
+    }
+
     pub fn store(&mut self, ty: ClipboardType, text: impl Into<String>) {
+        self.log_backend_once();
         let clipboard = match (ty, &mut self.selection) {
             (ClipboardType::Selection, Some(provider)) => provider,
             (ClipboardType::Selection, None) => return,

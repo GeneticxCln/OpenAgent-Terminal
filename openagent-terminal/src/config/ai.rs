@@ -241,15 +241,28 @@ pub struct AiContextTimeouts {
 
 impl Default for AiContextTimeouts {
     fn default() -> Self {
-        Self { per_provider_ms: 150, overall_ms: 300, env_ms: None, git_ms: None, file_tree_ms: None }
+        Self {
+            per_provider_ms: 150,
+            overall_ms: 300,
+            env_ms: None,
+            git_ms: None,
+            file_tree_ms: None,
+        }
     }
 }
 
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum AiRootStrategy { Git, Cwd }
+pub enum AiRootStrategy {
+    Git,
+    Cwd,
+}
 
-impl Default for AiRootStrategy { fn default() -> Self { AiRootStrategy::Git } }
+impl Default for AiRootStrategy {
+    fn default() -> Self {
+        AiRootStrategy::Git
+    }
+}
 
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AiFileTreeConfig {
@@ -262,16 +275,30 @@ pub struct AiFileTreeConfig {
 
 impl Default for AiFileTreeConfig {
     fn default() -> Self {
-        Self { max_entries: 500, root_strategy: AiRootStrategy::Git }
+        Self {
+            max_entries: 500,
+            root_strategy: AiRootStrategy::Git,
+        }
     }
 }
 
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AiGitConfig {
-    #[serde(default = "default_true")] pub include_branch: bool,
-    #[serde(default = "default_true")] pub include_status: bool,
+    #[serde(default = "default_true")]
+    pub include_branch: bool,
+    #[serde(default = "default_true")]
+    pub include_status: bool,
 }
 
-impl Default for AiGitConfig { fn default() -> Self { Self { include_branch: true, include_status: true } } }
+impl Default for AiGitConfig {
+    fn default() -> Self {
+        Self {
+            include_branch: true,
+            include_status: true,
+        }
+    }
+}
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}

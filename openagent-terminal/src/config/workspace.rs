@@ -1,6 +1,8 @@
 //! Workspace configuration for tabs and split panes
 
 use crate::display::color::Rgb;
+use log::warn;
+use openagent_terminal_config::SerdeReplace;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -284,6 +286,40 @@ pub struct DragConfig {
     /// Mouse button for pane drag
     #[config(default = "DragButton::Left")]
     pub pane_drag_button: DragButton,
+
+    // --- Visual highlights for drag drop zones (overrides theme tokens when set) ---
+    /// Optional explicit highlight color for drag drop zones (tabs, new-tab area, split targets)
+    #[serde(default)]
+    pub highlight_color: HighlightColorOpt,
+    /// Minimum alpha floor for highlights in light themes to ensure visibility
+    #[config(default = 0.08)]
+    pub highlight_min_alpha: f32,
+    /// Base alpha for general drop highlights (split targets)
+    #[config(default = 0.15)]
+    pub highlight_alpha_base: f32,
+    /// Hover/active alpha for general drop highlights (split targets)
+    #[config(default = 0.5)]
+    pub highlight_alpha_hover: f32,
+    /// Base alpha for tab highlight when hovering a tab as a drop target
+    #[config(default = 0.12)]
+    pub tab_highlight_alpha_base: f32,
+    /// Hover/active alpha for tab highlight when hovering a tab as a drop target
+    #[config(default = 0.4)]
+    pub tab_highlight_alpha_hover: f32,
+    /// Base alpha for the New Tab area highlight when dropping to create a new tab
+    #[config(default = 0.10)]
+    pub new_tab_highlight_alpha_base: f32,
+    /// Hover/active alpha for the New Tab area highlight
+    #[config(default = 0.45)]
+    pub new_tab_highlight_alpha_hover: f32,
+
+    // --- Snapping behavior near the tab bar ---
+    /// Vertical snap margin in pixels to treat cursor as inside the tab bar band
+    #[config(default = 6.0)]
+    pub tab_drop_snap_px: f32,
+    /// Horizontal extra margin in pixels near the right edge to make selecting "New Tab" easier
+    #[config(default = 24.0)]
+    pub new_tab_snap_extra_px: f32,
 }
 
 impl Default for DragConfig {
@@ -292,7 +328,270 @@ impl Default for DragConfig {
             enable_pane_drag: true,
             pane_drag_modifier: DragModifier::Alt,
             pane_drag_button: DragButton::Left,
+            highlight_color: HighlightColorOpt::default(),
+            highlight_min_alpha: 0.08,
+            highlight_alpha_base: 0.15,
+            highlight_alpha_hover: 0.5,
+            tab_highlight_alpha_base: 0.12,
+            tab_highlight_alpha_hover: 0.4,
+            new_tab_highlight_alpha_base: 0.10,
+            new_tab_highlight_alpha_hover: 0.45,
+            tab_drop_snap_px: 6.0,
+            new_tab_snap_extra_px: 24.0,
         }
+    }
+}
+
+/// Wrapper for optional highlight color that logs key name on parse errors.
+#[derive(Serialize, Debug, Clone, PartialEq, Default)]
+pub struct HighlightColorOpt(#[serde(skip_serializing_if = "Option::is_none")] pub Option<Rgb>);
+
+impl SerdeReplace for HighlightColorOpt {
+    fn replace(&mut self, value: toml::Value) -> Result<(), Box<dyn std::error::Error>> {
+        *self = HighlightColorOpt::deserialize(value)?;
+        Ok(())
+    }
+}
+
+impl HighlightColorOpt {
+    pub fn get(&self) -> Option<Rgb> {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for HighlightColorOpt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Accept hex string like "#aabbcc", 0x..., or rgb table { r=..., g=..., b=... }
+        let value = toml::Value::deserialize(deserializer)?;
+        // Try table form first
+        if let Ok(rgb) = Rgb::deserialize(value.clone()) {
+            return Ok(HighlightColorOpt(Some(rgb)));
+        }
+        // If value is explicitly empty string, treat as None
+        if let toml::Value::String(s) = &value {
+            if s.trim().is_empty() {
+                return Ok(HighlightColorOpt(None));
+            }
+        }
+        // If a string was provided but failed, log with key name and raw value
+        if let toml::Value::String(s) = &value {
+            log::error!(
+                target: crate::config::LOG_TARGET_CONFIG,
+                "Config error: workspace.drag.highlight_color: failed to parse color '{}'; expected hex like #ff00ff or table {{r,g,b}}; falling back to theme",
+                s
+            );
+            return Ok(HighlightColorOpt(None));
+        }
+        // For other invalid types, log a generic diagnostic and fallback
+        log::error!(
+            target: crate::config::LOG_TARGET_CONFIG,
+            "Config error: workspace.drag.highlight_color: invalid type {}; expected string or table; falling back to theme",
+            value.type_str()
+        );
+        Ok(HighlightColorOpt(None))
+    }
+}
+
+impl DragConfig {
+    /// Clamp/validate numeric values and fix up invalid combinations.
+    /// Logs warnings when values are adjusted.
+    pub fn sanitize(&mut self) {
+        let defaults = DragConfig::default();
+
+        // Helper for clamping alphas to [0, 1]. If NaN/inf, reset to default.
+        let clamp_alpha = |val: &mut f32, key: &str, default: f32| {
+            if !val.is_finite() {
+                warn!("Config workspace.drag.{key} is not a finite number; resetting to default {default}");
+                *val = default;
+                return;
+            }
+            if *val < 0.0 || *val > 1.0 {
+                let old = *val;
+                *val = val.clamp(0.0, 1.0);
+                warn!(
+                    "Config workspace.drag.{key} out of range: {old}; clamped to {new}",
+                    new = *val
+                );
+            }
+        };
+
+        clamp_alpha(
+            &mut self.highlight_min_alpha,
+            "highlight_min_alpha",
+            defaults.highlight_min_alpha,
+        );
+        clamp_alpha(
+            &mut self.highlight_alpha_base,
+            "highlight_alpha_base",
+            defaults.highlight_alpha_base,
+        );
+        clamp_alpha(
+            &mut self.highlight_alpha_hover,
+            "highlight_alpha_hover",
+            defaults.highlight_alpha_hover,
+        );
+        clamp_alpha(
+            &mut self.tab_highlight_alpha_base,
+            "tab_highlight_alpha_base",
+            defaults.tab_highlight_alpha_base,
+        );
+        clamp_alpha(
+            &mut self.tab_highlight_alpha_hover,
+            "tab_highlight_alpha_hover",
+            defaults.tab_highlight_alpha_hover,
+        );
+        clamp_alpha(
+            &mut self.new_tab_highlight_alpha_base,
+            "new_tab_highlight_alpha_base",
+            defaults.new_tab_highlight_alpha_base,
+        );
+        clamp_alpha(
+            &mut self.new_tab_highlight_alpha_hover,
+            "new_tab_highlight_alpha_hover",
+            defaults.new_tab_highlight_alpha_hover,
+        );
+
+        // Ensure hover >= base for each alpha pair.
+        if self.highlight_alpha_hover < self.highlight_alpha_base {
+            warn!(
+                "Config workspace.drag.highlight_alpha_hover ({hover}) is less than base ({base}); fixing",
+                hover = self.highlight_alpha_hover,
+                base = self.highlight_alpha_base
+            );
+            self.highlight_alpha_hover = self.highlight_alpha_base;
+        }
+        if self.tab_highlight_alpha_hover < self.tab_highlight_alpha_base {
+            warn!(
+                "Config workspace.drag.tab_highlight_alpha_hover ({hover}) is less than base ({base}); fixing",
+                hover = self.tab_highlight_alpha_hover,
+                base = self.tab_highlight_alpha_base
+            );
+            self.tab_highlight_alpha_hover = self.tab_highlight_alpha_base;
+        }
+        if self.new_tab_highlight_alpha_hover < self.new_tab_highlight_alpha_base {
+            warn!(
+                "Config workspace.drag.new_tab_highlight_alpha_hover ({hover}) is less than base ({base}); fixing",
+                hover = self.new_tab_highlight_alpha_hover,
+                base = self.new_tab_highlight_alpha_base
+            );
+            self.new_tab_highlight_alpha_hover = self.new_tab_highlight_alpha_base;
+        }
+
+        // Non-negative snap margins; reset NaN/inf to defaults.
+        let sanitize_snap = |val: &mut f32, key: &str, default: f32| {
+            if !val.is_finite() {
+                warn!("Config workspace.drag.{key} is not a finite number; resetting to default {default}");
+                *val = default;
+                return;
+            }
+            if *val < 0.0 {
+                warn!(
+                    "Config workspace.drag.{key} is negative ({old}); clamping to 0.0",
+                    old = *val
+                );
+                *val = 0.0;
+            }
+        };
+        sanitize_snap(
+            &mut self.tab_drop_snap_px,
+            "tab_drop_snap_px",
+            defaults.tab_drop_snap_px,
+        );
+        sanitize_snap(
+            &mut self.new_tab_snap_extra_px,
+            "new_tab_snap_extra_px",
+            defaults.new_tab_snap_extra_px,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drag_sanitize_clamps_and_orders_alphas_and_snaps() {
+        let mut drag = DragConfig {
+            enable_pane_drag: true,
+            pane_drag_modifier: DragModifier::Alt,
+            pane_drag_button: DragButton::Left,
+            highlight_color: HighlightColorOpt(None),
+            highlight_min_alpha: 0.08,
+            highlight_alpha_base: 2.5,   // out of range
+            highlight_alpha_hover: -0.1, // out of range and < base
+            tab_highlight_alpha_base: 0.8,
+            tab_highlight_alpha_hover: 0.2,     // < base
+            new_tab_highlight_alpha_base: -5.0, // out of range
+            new_tab_highlight_alpha_hover: 5.0, // out of range
+            tab_drop_snap_px: -10.0,            // negative
+            new_tab_snap_extra_px: -1.0,        // negative
+        };
+        drag.sanitize();
+
+        assert!(drag.highlight_alpha_base >= 0.0 && drag.highlight_alpha_base <= 1.0);
+        assert!(drag.highlight_alpha_hover >= 0.0 && drag.highlight_alpha_hover <= 1.0);
+        assert!(drag.tab_highlight_alpha_base >= 0.0 && drag.tab_highlight_alpha_base <= 1.0);
+        assert!(drag.tab_highlight_alpha_hover >= 0.0 && drag.tab_highlight_alpha_hover <= 1.0);
+        assert!(
+            drag.new_tab_highlight_alpha_base >= 0.0 && drag.new_tab_highlight_alpha_base <= 1.0
+        );
+        assert!(
+            drag.new_tab_highlight_alpha_hover >= 0.0 && drag.new_tab_highlight_alpha_hover <= 1.0
+        );
+
+        assert!(drag.highlight_alpha_hover >= drag.highlight_alpha_base);
+        assert!(drag.tab_highlight_alpha_hover >= drag.tab_highlight_alpha_base);
+        assert!(drag.new_tab_highlight_alpha_hover >= drag.new_tab_highlight_alpha_base);
+
+        assert!(drag.tab_drop_snap_px >= 0.0);
+        assert!(drag.new_tab_snap_extra_px >= 0.0);
+    }
+
+    #[test]
+    fn highlight_min_alpha_default_and_clamp() {
+        let mut cfg = DragConfig::default();
+        // default
+        assert!((cfg.highlight_min_alpha - 0.08).abs() < 1e-6);
+        // clamp on sanitize
+        cfg.highlight_min_alpha = -1.0;
+        cfg.sanitize();
+        assert!(cfg.highlight_min_alpha >= 0.0 && cfg.highlight_min_alpha <= 1.0);
+    }
+
+    #[test]
+    fn drag_defaults_unset_are_defaults() {
+        let mut cfg = DragConfig::default();
+        cfg.sanitize();
+        let def = DragConfig::default();
+        assert_eq!(cfg.enable_pane_drag, def.enable_pane_drag);
+        assert_eq!(cfg.pane_drag_modifier as u8, def.pane_drag_modifier as u8);
+        assert_eq!(cfg.pane_drag_button as u8, def.pane_drag_button as u8);
+        assert_eq!(cfg.highlight_color.get(), def.highlight_color.get());
+        assert_eq!(cfg.highlight_alpha_base, def.highlight_alpha_base);
+        assert_eq!(cfg.highlight_alpha_hover, def.highlight_alpha_hover);
+        assert_eq!(cfg.tab_highlight_alpha_base, def.tab_highlight_alpha_base);
+        assert_eq!(cfg.tab_highlight_alpha_hover, def.tab_highlight_alpha_hover);
+        assert_eq!(
+            cfg.new_tab_highlight_alpha_base,
+            def.new_tab_highlight_alpha_base
+        );
+        assert_eq!(
+            cfg.new_tab_highlight_alpha_hover,
+            def.new_tab_highlight_alpha_hover
+        );
+        assert_eq!(cfg.tab_drop_snap_px, def.tab_drop_snap_px);
+        assert_eq!(cfg.new_tab_snap_extra_px, def.new_tab_snap_extra_px);
+    }
+
+    #[test]
+    fn highlight_color_invalid_falls_back_to_none() {
+        // Emulate deserialization by directly calling the deserializer
+        let val = toml::Value::String("not_a_color".to_string());
+        let parsed: HighlightColorOpt = HighlightColorOpt::deserialize(val).unwrap();
+        assert!(parsed.get().is_none());
     }
 }
 

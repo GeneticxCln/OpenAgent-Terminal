@@ -40,6 +40,39 @@ impl Blocks {
         }
     }
 
+    /// Compute the start/end column ranges for action chips following a given header text.
+    /// Chips are rendered with a single space between them, starting at header.width() + 2.
+    pub fn compute_header_chip_ranges(header: &str) -> Vec<(usize, usize)> {
+        use unicode_width::UnicodeWidthStr as _;
+        let mut col = header.width() + 2;
+        let chips = ["[Copy]", "[Rerun]", "[Export]"];
+        let mut ranges = Vec::with_capacity(chips.len());
+        for chip in chips {
+            let start = col;
+            let end = start + chip.width();
+            ranges.push((start, end));
+            col = end + 1;
+        }
+        ranges
+    }
+
+    /// Hit-test chip index under a given mouse column, respecting the visible columns width.
+    /// Returns Some(index) if the mouse column is over the visible portion of a chip.
+    pub fn chip_hit_at(header: &str, mouse_col: usize, columns: usize) -> Option<usize> {
+        let ranges = Self::compute_header_chip_ranges(header);
+        for (i, (start, end)) in ranges.iter().enumerate() {
+            // Skip chips fully outside the grid width
+            if *start >= columns {
+                continue;
+            }
+            let visible_end = (*end).min(columns);
+            if mouse_col >= *start && mouse_col < visible_end {
+                return Some(i);
+            }
+        }
+        None
+    }
+
     pub fn on_event(&mut self, total_lines: usize, ev: &CommandBlockEvent) {
         match ev {
             CommandBlockEvent::PromptStart => {
@@ -199,6 +232,20 @@ impl Blocks {
             .map(|b| b.start_total_line)
     }
 
+    /// Return the command block for a header at a viewport line (unfolded only).
+    /// This returns a reference to the block when the given viewport line corresponds
+    /// to the first visible line of an unfolded block that has a command.
+    pub fn block_at_header_viewport_line(
+        &self,
+        display_offset: usize,
+        viewport_line: usize,
+    ) -> Option<&CommandBlock> {
+        let total_line = display_offset + viewport_line;
+        self.blocks
+            .iter()
+            .find(|b| !b.folded && b.cmd.is_some() && total_line == b.start_total_line)
+    }
+
     /// Return block header to draw at a viewport line if it is the first visible line
     /// of an unfolded block; returns None otherwise.
     pub fn header_at_viewport_line(
@@ -209,17 +256,29 @@ impl Blocks {
         let total_line = display_offset + viewport_line;
         for block in &self.blocks {
             if !block.folded && total_line == block.start_total_line {
-                // Only show header for blocks that have a command and are long enough
-                if block.cmd.is_some()
-                    && block
-                        .end_total_line
-                        .is_some_and(|end| end > block.start_total_line)
-                {
+                // Show header for blocks that have a command; include running spinner when exit is None
+                if block.cmd.is_some() {
                     let cmd = block.cmd.as_ref().unwrap();
-                    let status = block
-                        .exit
-                        .map(|c| if c == 0 { "✓" } else { "✗" })
-                        .unwrap_or("…");
+
+                    // Running spinner or final status
+                    let status = match block.exit {
+                        Some(code) => {
+                            if code == 0 {
+                                "✓".to_string()
+                            } else {
+                                "✗".to_string()
+                            }
+                        }
+                        None => {
+                            // Spinner frames
+                            const FRAMES: [&str; 10] =
+                                ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                            let ms = Instant::now().duration_since(block.started_at).as_millis()
+                                as usize;
+                            let idx = (ms / 120) % FRAMES.len();
+                            FRAMES[idx].to_string()
+                        }
+                    };
 
                     // Calculate elapsed time
                     let elapsed = if let Some(ended_at) = block.ended_at {
@@ -304,5 +363,54 @@ mod tests {
         let toggled2 = blocks.toggle_fold_header_at_viewport_line(display_offset, 5);
         assert!(toggled2);
         assert!(blocks.header_at_viewport_line(display_offset, 5).is_some());
+    }
+
+    #[test]
+    fn chip_ranges_basic() {
+        let header = "header"; // width = 6
+        let ranges = Blocks::compute_header_chip_ranges(header);
+        // [Copy] len 6, [Rerun] len 7, [Export] len 8
+        assert_eq!(ranges.len(), 3);
+        assert_eq!(ranges[0], (8, 14)); // start 6+2, end 8+6
+        assert_eq!(ranges[1], (15, 22)); // end prev + space = 15, len 7
+        assert_eq!(ranges[2], (23, 31)); // next start + len 8
+                                         // Ensure strictly increasing and non-overlapping
+        assert!(ranges[0].1 < ranges[1].0 && ranges[1].1 < ranges[2].0);
+    }
+
+    #[test]
+    fn chip_ranges_change_with_header_width() {
+        let h1 = "";
+        let h2 = "abcdefghij"; // 10 cols
+        let r1 = Blocks::compute_header_chip_ranges(h1);
+        let r2 = Blocks::compute_header_chip_ranges(h2);
+        // Starts shift by +10 when header grows by 10
+        assert_eq!(r2[0].0 - r1[0].0, 10);
+        assert_eq!(r2[1].0 - r1[1].0, 10);
+        assert_eq!(r2[2].0 - r1[2].0, 10);
+    }
+
+    #[test]
+    fn chip_hit_truncated_ignores_offscreen() {
+        // Header long enough so first chip starts at column == columns (off-screen)
+        // header width 18 => first chip start = 20
+        let header = "abcdefghijklmnopqr"; // width 18
+        let columns = 20usize;
+        // Clicking at the last visible column should not hit any chip
+        assert_eq!(Blocks::chip_hit_at(header, 19, columns), None);
+        // Clicking beyond columns must also not hit
+        assert_eq!(Blocks::chip_hit_at(header, 20, columns), None);
+    }
+
+    #[test]
+    fn chip_hit_partial_visibility_hits_visible_part() {
+        // Header width 16 => first chip starts at 18, partially visible in columns=20
+        let header = "abcdefghijklmnop"; // width 16
+        let columns = 20usize;
+        // Clicking in visible part should hit chip 0
+        assert_eq!(Blocks::chip_hit_at(header, 18, columns), Some(0));
+        assert_eq!(Blocks::chip_hit_at(header, 19, columns), Some(0));
+        // Clicking at column == columns should not hit
+        assert_eq!(Blocks::chip_hit_at(header, 20, columns), None);
     }
 }

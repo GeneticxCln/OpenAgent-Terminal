@@ -20,6 +20,7 @@ pub enum SettingsCategory {
     Ai,
     Theme,
     General,
+    Workspace,
     Keybindings,
 }
 
@@ -29,6 +30,7 @@ impl SettingsCategory {
             SettingsCategory::Ai => "AI",
             SettingsCategory::Theme => "Theme",
             SettingsCategory::General => "General",
+            SettingsCategory::Workspace => "Workspace",
             SettingsCategory::Keybindings => "Keybindings",
         }
     }
@@ -38,6 +40,7 @@ impl SettingsCategory {
             SettingsCategory::Ai,
             SettingsCategory::Theme,
             SettingsCategory::General,
+            SettingsCategory::Workspace,
             SettingsCategory::Keybindings,
         ];
         ALL
@@ -72,6 +75,17 @@ pub struct SettingsPanelState {
     pub general_working_directory: String,
     pub general_default_shell: String,
     pub general_selected: GeneralField,
+
+    // Workspace page (pane drag & highlights)
+    pub ws_highlight_color: Option<[u8; 3]>,
+    pub ws_highlight_alpha_base: f32,
+    pub ws_highlight_alpha_hover: f32,
+    pub ws_tab_highlight_alpha_base: f32,
+    pub ws_tab_highlight_alpha_hover: f32,
+    pub ws_new_tab_highlight_alpha_base: f32,
+    pub ws_new_tab_highlight_alpha_hover: f32,
+    pub ws_tab_drop_snap_px: f32,
+    pub ws_new_tab_snap_extra_px: f32,
     // Message area
     pub message: Option<String>,
 
@@ -138,6 +152,16 @@ impl Default for SettingsPanelState {
             general_default_shell: String::new(),
             general_selected: GeneralField::LiveReload,
             message: None,
+            // Workspace defaults get filled on open()
+            ws_highlight_color: None,
+            ws_highlight_alpha_base: 0.15,
+            ws_highlight_alpha_hover: 0.5,
+            ws_tab_highlight_alpha_base: 0.12,
+            ws_tab_highlight_alpha_hover: 0.4,
+            ws_new_tab_highlight_alpha_base: 0.10,
+            ws_new_tab_highlight_alpha_hover: 0.45,
+            ws_tab_drop_snap_px: 6.0,
+            ws_new_tab_snap_extra_px: 24.0,
             kb_items: Vec::new(),
             kb_filter: String::new(),
             kb_selected: 0,
@@ -214,6 +238,19 @@ impl SettingsPanelState {
             })
             .unwrap_or_default();
         self.general_selected = GeneralField::LiveReload;
+
+        // Workspace (drag & highlights)
+        let dcfg = &config.workspace.drag;
+        self.ws_highlight_color = dcfg.highlight_color.get().map(|c| [c.r, c.g, c.b]);
+        self.ws_highlight_alpha_base = dcfg.highlight_alpha_base;
+        self.ws_highlight_alpha_hover = dcfg.highlight_alpha_hover;
+        self.ws_tab_highlight_alpha_base = dcfg.tab_highlight_alpha_base;
+        self.ws_tab_highlight_alpha_hover = dcfg.tab_highlight_alpha_hover;
+        self.ws_new_tab_highlight_alpha_base = dcfg.new_tab_highlight_alpha_base;
+        self.ws_new_tab_highlight_alpha_hover = dcfg.new_tab_highlight_alpha_hover;
+        self.ws_tab_drop_snap_px = dcfg.tab_drop_snap_px;
+        self.ws_new_tab_snap_extra_px = dcfg.new_tab_snap_extra_px;
+
         // Keybindings snapshot
         self.load_keybindings_from(config);
         self.kb_filter.clear();
@@ -293,7 +330,11 @@ impl SettingsPanelState {
                     GeneralField::DefaultShell => GeneralField::LiveReload,
                 };
             }
-            _ => {}
+            SettingsCategory::Workspace => {
+                // No focused subfield tracking yet; kept simple
+            }
+            SettingsCategory::Keybindings => {}
+            SettingsCategory::Theme => {}
         }
     }
 
@@ -348,19 +389,27 @@ impl SettingsPanelState {
                     return;
                 }
                 Field::CtxEnabled => {
-                    if ch == ' ' { self.ctx_enabled = !self.ctx_enabled; }
+                    if ch == ' ' {
+                        self.ctx_enabled = !self.ctx_enabled;
+                    }
                     return;
                 }
                 Field::CtxEnv => {
-                    if ch == ' ' { self.ctx_env = !self.ctx_env; }
+                    if ch == ' ' {
+                        self.ctx_env = !self.ctx_env;
+                    }
                     return;
                 }
                 Field::CtxGit => {
-                    if ch == ' ' { self.ctx_git = !self.ctx_git; }
+                    if ch == ' ' {
+                        self.ctx_git = !self.ctx_git;
+                    }
                     return;
                 }
                 Field::CtxFileTree => {
-                    if ch == ' ' { self.ctx_file_tree = !self.ctx_file_tree; }
+                    if ch == ' ' {
+                        self.ctx_file_tree = !self.ctx_file_tree;
+                    }
                     return;
                 }
                 _ => {}
@@ -396,11 +445,6 @@ impl SettingsPanelState {
             }
         } else if self.category == SettingsCategory::General {
             match self.general_selected {
-                GeneralField::LiveReload => {
-                    if ch == ' ' {
-                        self.general_live_reload = !self.general_live_reload;
-                    }
-                }
                 GeneralField::WorkingDirectory => {
                     if !ch.is_control() {
                         self.general_working_directory.push(ch);
@@ -411,6 +455,47 @@ impl SettingsPanelState {
                         self.general_default_shell.push(ch);
                     }
                 }
+                _ => {}
+            }
+        } else if self.category == SettingsCategory::Workspace {
+            // Provide basic editing gestures via single-letter commands on this page:
+            // h/H: adjust highlight_alpha_base/hover; t/T: tab alphas; n/N: new-tab alphas,
+            // s: increase vertical snap, S: decrease, e: increase new-tab edge snap, E: decrease.
+            // c: clear highlight_color (use theme), C: set placeholder color 120,180,255.
+            match ch {
+                'h' => {
+                    self.ws_highlight_alpha_base = (self.ws_highlight_alpha_base + 0.01).min(1.0)
+                }
+                'H' => {
+                    self.ws_highlight_alpha_hover = (self.ws_highlight_alpha_hover + 0.01).min(1.0)
+                }
+                't' => {
+                    self.ws_tab_highlight_alpha_base =
+                        (self.ws_tab_highlight_alpha_base + 0.01).min(1.0)
+                }
+                'T' => {
+                    self.ws_tab_highlight_alpha_hover =
+                        (self.ws_tab_highlight_alpha_hover + 0.01).min(1.0)
+                }
+                'n' => {
+                    self.ws_new_tab_highlight_alpha_base =
+                        (self.ws_new_tab_highlight_alpha_base + 0.01).min(1.0)
+                }
+                'N' => {
+                    self.ws_new_tab_highlight_alpha_hover =
+                        (self.ws_new_tab_highlight_alpha_hover + 0.01).min(1.0)
+                }
+                's' => self.ws_tab_drop_snap_px = (self.ws_tab_drop_snap_px + 1.0).min(64.0),
+                'S' => self.ws_tab_drop_snap_px = (self.ws_tab_drop_snap_px - 1.0).max(0.0),
+                'e' => {
+                    self.ws_new_tab_snap_extra_px = (self.ws_new_tab_snap_extra_px + 2.0).min(128.0)
+                }
+                'E' => {
+                    self.ws_new_tab_snap_extra_px = (self.ws_new_tab_snap_extra_px - 2.0).max(0.0)
+                }
+                'c' => self.ws_highlight_color = None,
+                'C' => self.ws_highlight_color = Some([120, 180, 255]),
+                _ => {}
             }
         }
     }
@@ -495,8 +580,13 @@ impl SettingsPanelState {
                     .map_err(|e| format!("Failed to save provider to config: {}", e))?;
                 save_ai_enabled_to_config(self.ai_enabled)
                     .map_err(|e| format!("Failed to save AI enabled: {}", e))?;
-                save_ai_context_to_config(self.ctx_enabled, self.ctx_env, self.ctx_git, self.ctx_file_tree)
-                    .map_err(|e| format!("Failed to save AI context: {}", e))?;
+                save_ai_context_to_config(
+                    self.ctx_enabled,
+                    self.ctx_env,
+                    self.ctx_git,
+                    self.ctx_file_tree,
+                )
+                .map_err(|e| format!("Failed to save AI context: {}", e))?;
                 self.message = Some("Saved successfully".to_string());
                 Ok(())
             }
@@ -527,6 +617,19 @@ impl SettingsPanelState {
                 self.message = Some("Saved".to_string());
                 Ok(())
             }
+            SettingsCategory::Workspace => save_workspace_drag_to_config(
+                self.ws_highlight_color.map(|c| (c[0], c[1], c[2])),
+                self.ws_highlight_alpha_base,
+                self.ws_highlight_alpha_hover,
+                self.ws_tab_highlight_alpha_base,
+                self.ws_tab_highlight_alpha_hover,
+                self.ws_new_tab_highlight_alpha_base,
+                self.ws_new_tab_highlight_alpha_hover,
+                self.ws_tab_drop_snap_px,
+                self.ws_new_tab_snap_extra_px,
+            )
+            .map(|_| self.message = Some("Saved workspace drag/highlights".into()))
+            .map_err(|e| format!("Failed to save workspace: {}", e)),
         }
     }
 
@@ -787,7 +890,12 @@ fn save_ai_enabled_to_config(enabled: bool) -> std::io::Result<()> {
     fs::write(&path, s)
 }
 
-fn save_ai_context_to_config(ctx_enabled: bool, env_on: bool, git_on: bool, file_tree_on: bool) -> std::io::Result<()> {
+fn save_ai_context_to_config(
+    ctx_enabled: bool,
+    env_on: bool,
+    git_on: bool,
+    file_tree_on: bool,
+) -> std::io::Result<()> {
     let path = config_path();
     let mut root = if let Ok(text) = fs::read_to_string(&path) {
         toml::from_str::<toml::Value>(&text)
@@ -795,24 +903,38 @@ fn save_ai_context_to_config(ctx_enabled: bool, env_on: bool, git_on: bool, file
     } else {
         toml::Value::Table(toml::value::Table::new())
     };
-    if !root.is_table() { root = toml::Value::Table(toml::value::Table::new()); }
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
     let tbl = root.as_table_mut().unwrap();
 
-    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai_tbl = tbl
+        .entry("ai")
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ai = ai_tbl.as_table_mut().unwrap();
 
-    let ctx_tbl = ai.entry("context").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ctx_tbl = ai
+        .entry("context")
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ctx = ctx_tbl.as_table_mut().unwrap();
     ctx.insert("enabled".into(), toml::Value::Boolean(ctx_enabled));
 
     // Build providers array from toggles
     let mut provs = Vec::new();
-    if env_on { provs.push(toml::Value::String("env".into())); }
-    if git_on { provs.push(toml::Value::String("git".into())); }
-    if file_tree_on { provs.push(toml::Value::String("file_tree".into())); }
+    if env_on {
+        provs.push(toml::Value::String("env".into()));
+    }
+    if git_on {
+        provs.push(toml::Value::String("git".into()));
+    }
+    if file_tree_on {
+        provs.push(toml::Value::String("file_tree".into()));
+    }
     ctx.insert("providers".into(), toml::Value::Array(provs));
 
-    if let Some(dir) = path.parent() { fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
     let s = toml::to_string_pretty(&root).unwrap_or_default();
     fs::write(&path, s)
 }
@@ -1105,7 +1227,13 @@ impl Display {
                 let ctx_en_lbl = "Context: enabled: ";
                 let ctx_en_val = if st.ctx_enabled { "on" } else { "off" };
                 let ctx_en_row = format!("{}{} (Space)", ctx_en_lbl, ctx_en_val);
-                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &ctx_en_row, num_cols - 2);
+                self.draw_ai_text(
+                    Point::new(line, Column(2)),
+                    fg,
+                    bg,
+                    &ctx_en_row,
+                    num_cols - 2,
+                );
                 if st.selected_field == Field::CtxEnabled {
                     let cur_col = 2 + ctx_en_lbl.width();
                     self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
@@ -1118,10 +1246,25 @@ impl Display {
                     if st.ctx_git { "x" } else { " " },
                     if st.ctx_file_tree { "x" } else { " " }
                 );
-                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &provs_row, num_cols - 2);
+                self.draw_ai_text(
+                    Point::new(line, Column(2)),
+                    fg,
+                    bg,
+                    &provs_row,
+                    num_cols - 2,
+                );
                 // Cursor for the first of provider toggles when selected
-                if matches!(st.selected_field, Field::CtxEnv | Field::CtxGit | Field::CtxFileTree) {
-                    self.draw_ai_text(Point::new(line, Column(2 + "Providers: env [".width())), bg, fg, " ", 1);
+                if matches!(
+                    st.selected_field,
+                    Field::CtxEnv | Field::CtxGit | Field::CtxFileTree
+                ) {
+                    self.draw_ai_text(
+                        Point::new(line, Column(2 + "Providers: env [".width())),
+                        bg,
+                        fg,
+                        " ",
+                        1,
+                    );
                 }
                 line += 2;
 
@@ -1324,6 +1467,63 @@ impl Display {
                     );
                 }
             }
+            SettingsCategory::Workspace => {
+                // Workspace drag/highlight settings
+                let title = "Workspace — Pane drag & highlights";
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, title, num_cols - 2);
+                line += 1;
+
+                // Highlight color (RGB)
+                let hc_lbl = "Highlight color (RGB): ";
+                let hc_val = st
+                    .ws_highlight_color
+                    .map(|c| format!("{:>3},{:>3},{:>3}", c[0], c[1], c[2]))
+                    .unwrap_or_else(|| "—".into());
+                let hc_row = format!("{}{}", hc_lbl, hc_val);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &hc_row, num_cols - 2);
+                line += 1;
+
+                // Alpha ramps
+                let a1 = format!(
+                    "Split highlight alpha (base/hover): {:.2} / {:.2}",
+                    st.ws_highlight_alpha_base, st.ws_highlight_alpha_hover
+                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &a1, num_cols - 2);
+                line += 1;
+                let a2 = format!(
+                    "Tab highlight alpha (base/hover): {:.2} / {:.2}",
+                    st.ws_tab_highlight_alpha_base, st.ws_tab_highlight_alpha_hover
+                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &a2, num_cols - 2);
+                line += 1;
+                let a3 = format!(
+                    "New Tab highlight alpha (base/hover): {:.2} / {:.2}",
+                    st.ws_new_tab_highlight_alpha_base, st.ws_new_tab_highlight_alpha_hover
+                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &a3, num_cols - 2);
+                line += 1;
+
+                // Snapping margins
+                let s1 = format!("Tab bar vertical snap px: {:.1}", st.ws_tab_drop_snap_px);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &s1, num_cols - 2);
+                line += 1;
+                let s2 = format!(
+                    "New Tab extra right-edge snap px: {:.1}",
+                    st.ws_new_tab_snap_extra_px
+                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &s2, num_cols - 2);
+                line += 2;
+
+                // Save hint
+                let hint = "Enter: Save  •  Esc: Close  •  Ctrl+Left/Right: Switch category  •  Values edit via config today (UI preview)";
+                self.draw_ai_text(
+                    Point::new(line, Column(2)),
+                    tokens.text_muted,
+                    bg,
+                    hint,
+                    num_cols - 2,
+                );
+            }
             SettingsCategory::Keybindings => {
                 // Filter input
                 let filter_lbl = "Filter: ";
@@ -1520,6 +1720,104 @@ fn save_keybinding_override_to_config(action: &str, key: &str, mods: &str) -> st
     }
     entry.insert("action".into(), toml::Value::String(action.into()));
     arr_mut.push(toml::Value::Table(entry));
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let s = toml::to_string_pretty(&root).unwrap_or_default();
+    fs::write(&path, s)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn workspace_drag_write_to_toml(
+    root: &mut toml::Value,
+    color_rgb: Option<(u8, u8, u8)>,
+    hl_base: f32,
+    hl_hover: f32,
+    tab_base: f32,
+    tab_hover: f32,
+    new_base: f32,
+    new_hover: f32,
+    snap_v: f32,
+    snap_new: f32,
+) {
+    let tbl = root.as_table_mut().unwrap();
+    let ws_tbl = tbl
+        .entry("workspace")
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ws = ws_tbl.as_table_mut().unwrap();
+    let drag_tbl = ws
+        .entry("drag")
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let drag = drag_tbl.as_table_mut().unwrap();
+    if let Some((r, g, b)) = color_rgb {
+        drag.insert(
+            "highlight_color".into(),
+            toml::Value::Array(vec![
+                toml::Value::Integer(r as i64),
+                toml::Value::Integer(g as i64),
+                toml::Value::Integer(b as i64),
+            ]),
+        );
+    } else {
+        drag.remove("highlight_color");
+    }
+    drag.insert(
+        "highlight_alpha_base".into(),
+        toml::Value::Float(hl_base as f64),
+    );
+    drag.insert(
+        "highlight_alpha_hover".into(),
+        toml::Value::Float(hl_hover as f64),
+    );
+    drag.insert(
+        "tab_highlight_alpha_base".into(),
+        toml::Value::Float(tab_base as f64),
+    );
+    drag.insert(
+        "tab_highlight_alpha_hover".into(),
+        toml::Value::Float(tab_hover as f64),
+    );
+    drag.insert(
+        "new_tab_highlight_alpha_base".into(),
+        toml::Value::Float(new_base as f64),
+    );
+    drag.insert(
+        "new_tab_highlight_alpha_hover".into(),
+        toml::Value::Float(new_hover as f64),
+    );
+    drag.insert("tab_drop_snap_px".into(), toml::Value::Float(snap_v as f64));
+    drag.insert(
+        "new_tab_snap_extra_px".into(),
+        toml::Value::Float(snap_new as f64),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn save_workspace_drag_to_config(
+    color_rgb: Option<(u8, u8, u8)>,
+    hl_base: f32,
+    hl_hover: f32,
+    tab_base: f32,
+    tab_hover: f32,
+    new_base: f32,
+    new_hover: f32,
+    snap_v: f32,
+    snap_new: f32,
+) -> std::io::Result<()> {
+    let path = config_path();
+    let mut root = if let Ok(text) = fs::read_to_string(&path) {
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
+    } else {
+        toml::Value::Table(toml::value::Table::new())
+    };
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
+    workspace_drag_write_to_toml(
+        &mut root, color_rgb, hl_base, hl_hover, tab_base, tab_hover, new_base, new_hover, snap_v,
+        snap_new,
+    );
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }

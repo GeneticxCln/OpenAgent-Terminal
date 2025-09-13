@@ -329,14 +329,7 @@ impl Display {
             self.tab_bounds_px.push((tab_id, current_x, tab_width));
 
             self.draw_warp_tab(
-                current_x,
-                start_y,
-                tab_width,
-                tab,
-                is_active,
-                style,
-                index,
-                tab_cfg,
+                current_x, start_y, tab_width, tab, is_active, style, index, tab_cfg,
             );
 
             current_x += tab_width + 8.0; // 8px gap between tabs
@@ -344,7 +337,8 @@ impl Display {
 
         // Draw "+" button for new tab (hover-aware)
         if tab_cfg.show_new_tab_button {
-            let create_hover = matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
+            let create_hover =
+                matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
             self.draw_new_tab_button(current_x, start_y, style, create_hover);
         }
 
@@ -432,6 +426,7 @@ impl Display {
     }
 
     /// Draw individual Warp-style tab
+#[allow(clippy::too_many_arguments)]
     fn draw_warp_tab(
         &mut self,
         x: f32,
@@ -518,7 +513,8 @@ impl Display {
         };
 
         // Truncate title to fit width and configured max title length
-        let width_chars = ((width - style.tab_padding * 2.0) / self.size_info.cell_width()) as usize;
+        let width_chars =
+            ((width - style.tab_padding * 2.0) / self.size_info.cell_width()) as usize;
         let effective_max = width_chars.min(tab_cfg.max_title_length.max(1));
         if rendered_title.len() > effective_max.saturating_sub(3) {
             rendered_title = format!("{}...", &rendered_title[..effective_max.saturating_sub(3)]);
@@ -526,7 +522,13 @@ impl Display {
 
         // Draw tab text (placeholder - real implementation would use proper text rendering)
         let text_point = Point::new(text_y, Column(text_x));
-        self.draw_warp_tab_text(text_point, text_color, bg_color, &rendered_title, effective_max);
+        self.draw_warp_tab_text(
+            text_point,
+            text_color,
+            bg_color,
+            &rendered_title,
+            effective_max,
+        );
 
         // Zoom indicator badge (Warp-style) on active tab when zoomed
         if is_active && tab.zoom_saved_layout.is_some() {

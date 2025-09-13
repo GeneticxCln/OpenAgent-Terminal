@@ -89,8 +89,6 @@ mod workspace;
 use crate::cli::AiOptions;
 #[cfg(unix)]
 use crate::cli::MessageOptions;
-#[cfg(feature = "security-lens")]
-use crate::cli::SecurityCliOptions;
 #[cfg(not(any(target_os = "macos", windows)))]
 use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
