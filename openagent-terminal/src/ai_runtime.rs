@@ -320,6 +320,52 @@ use std::thread;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
+// Lightweight AI conversation persistence (JSONL). Best-effort; errors are ignored by callers.
+fn persist_ai_conversation(
+    mode: &str,
+    working_directory: Option<&str>,
+    shell_kind: Option<&str>,
+    input: &str,
+    output: &str,
+) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Entry<'a> {
+        timestamp: String,
+        mode: &'a str,
+        working_directory: Option<&'a str>,
+        shell_kind: Option<&'a str>,
+        input: &'a str,
+        output: &'a str,
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let entry = Entry {
+        timestamp: now,
+        mode,
+        working_directory,
+        shell_kind,
+        input,
+        output,
+    };
+
+    let base = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("openagent-terminal")
+        .join("ai_history");
+    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    let file = base.join("history.jsonl");
+
+    let line = serde_json::to_string(&entry).map_err(|e| e.to_string())? + "\n";
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .map_err(|e| e.to_string())?;
+    f.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub struct AiRuntime {
     pub ui: AiUiState,
     pub provider: Arc<dyn AiProvider>,
@@ -1126,6 +1172,18 @@ impl AiRuntime {
                     elapsed_ms = dt.as_millis() as u64,
                     "ai.propose_explain_complete"
                 );
+                // Persist conversation (input + proposals)
+                let cmds: Vec<String> = proposals
+                    .iter()
+                    .flat_map(|p| p.proposed_commands.clone())
+                    .collect();
+                let _ = persist_ai_conversation(
+                    "explain",
+                    working_directory.as_deref(),
+                    shell_kind.as_deref(),
+                    &target_text,
+                    &cmds.join("\n"),
+                );
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
@@ -1204,6 +1262,26 @@ impl AiRuntime {
                 tracing::info!(
                     elapsed_ms = dt.as_millis() as u64,
                     "ai.propose_fix_complete"
+                );
+                // Persist conversation (input + proposals)
+                let cmds: Vec<String> = proposals
+                    .iter()
+                    .flat_map(|p| p.proposed_commands.clone())
+                    .collect();
+                let input_joined = if let Some(fc) = &failed_command {
+                    format!(
+                        "Error encountered while running '{}':\n{}",
+                        fc, error_text
+                    )
+                } else {
+                    error_text.clone()
+                };
+                let _ = persist_ai_conversation(
+                    "fix",
+                    working_directory.as_deref(),
+                    shell_kind.as_deref(),
+                    &input_joined,
+                    &cmds.join("\n"),
                 );
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;

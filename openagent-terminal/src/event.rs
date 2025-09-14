@@ -7381,8 +7381,19 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             .unwrap_or_else(|| "Explain the last command output".to_string())
                     });
 
+                    // Gather AI context from the active workspace/pane if available
+                    let (working_directory, shell_kind) = {
+                        let ai_ctx = self
+                            .ctx
+                            .workspace
+                            .warp
+                            .as_ref()
+                            .and_then(|w| w.get_current_ai_context());
+                        crate::ai_context_provider::context_to_ai_params(&ai_ctx)
+                    };
+
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        runtime.propose_explain(text_to_explain, None, None);
+                        runtime.propose_explain(text_to_explain, working_directory, shell_kind);
                         *self.ctx.dirty = true;
                     }
                 }
@@ -7399,8 +7410,25 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             })
                     });
 
+                    // Gather AI context from the active workspace/pane if available
+                    let (working_directory, shell_kind, last_command) = {
+                        if let Some(ai_ctx) = self
+                            .ctx
+                            .workspace
+                            .warp
+                            .as_ref()
+                            .and_then(|w| w.get_current_ai_context())
+                        {
+                            let (wd, sk) = crate::ai_context_provider::context_to_ai_params(&Some(ai_ctx.clone()))
+                                ;
+                            (wd, sk, ai_ctx.last_command)
+                        } else {
+                            (None, None, None)
+                        }
+                    };
+
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        runtime.propose_fix(error_text, None, None, None);
+                        runtime.propose_fix(error_text, last_command, working_directory, shell_kind);
                         *self.ctx.dirty = true;
                     }
                 }

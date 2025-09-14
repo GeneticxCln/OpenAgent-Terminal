@@ -55,6 +55,14 @@ pub enum RectKind {
     NumKinds = 4,
 }
 
+// Keep shader expectations in sync with RectKind variants.
+// If this assertion fails, update WGSL shader paths that branch on rect kinds.
+const _: () = {
+    // The WGSL shader currently assumes 4 rect kinds (Normal + 3 special underline shapes).
+    // Changing RectKind::NumKinds requires updating respective shader code.
+    let _assert_num_kinds_is_4: [(); RectKind::NumKinds as usize] = [(); 4];
+};
+
 impl RenderLine {
     pub fn rects(&self, flag: Flags, metrics: &Metrics, size: &SizeInfo) -> Vec<RenderRect> {
         let mut rects = Vec::new();

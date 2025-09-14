@@ -810,6 +810,28 @@ if let Some(evt) = pty.next_child_event() {
         Ok(())
     }
 
+    /// Mark a running block as cancelled and persist immediately
+    pub async fn mark_block_cancelled(&mut self, block_id: BlockId) -> Result<()> {
+        let updated_block = {
+            let entry = self.get_block_mut(block_id).await?;
+            let mut owned = (**entry).clone();
+            owned.status = ExecutionStatus::Cancelled;
+            owned.exit_code = None;
+            owned.modified_at = Utc::now();
+            let arc_new = Arc::new(owned.clone());
+            *entry = arc_new.clone();
+            owned
+        };
+
+        // Persist cancellation
+        self.storage.update(&updated_block).await?;
+        self.search_engine.update_block(&updated_block).await?;
+
+        // Notify listeners that the block was updated (status change)
+        self.emit_event(BlockEvent::Updated(block_id));
+        Ok(())
+    }
+
     /// Add tags to a block
     pub async fn add_tags(&mut self, block_id: BlockId, tags: Vec<String>) -> Result<()> {
         let updated_block = {

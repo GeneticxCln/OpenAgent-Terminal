@@ -369,14 +369,23 @@ impl CommandPipeline {
     /// Cancel command execution
     pub async fn cancel_command(&mut self, block_id: BlockId) -> Result<()> {
         if let Some(mut execution) = self.active_commands.remove(&block_id) {
+            // Attempt to kill the running process if still alive
             if let Some(ref mut process) = execution.process {
-                process.kill().await?;
+                let _ = process.kill().await;
             }
 
-            // Update block status to cancelled
+            // Update block status to cancelled immediately
             if let Some(ref block_manager) = self.block_manager {
-                let _ = block_manager.lock().await;
-                // TODO: Add method to update block status to cancelled
+                let mut mgr = block_manager.lock().await;
+                let _ = mgr.mark_block_cancelled(block_id).await;
+            }
+
+            // Send terminal event indicating command ended without an exit code
+            if let Some(ref sender) = self.event_sender {
+                let _ = sender.send(CommandBlockEvent::CommandEnd {
+                    exit: None,
+                    cwd: Some(execution.working_dir.to_string_lossy().to_string()),
+                });
             }
 
             info!("Cancelled command execution for block {}", block_id);
