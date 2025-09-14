@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 
 use crate::config::UiConfig;
 use crate::renderer::rects::RenderRect;
+#[cfg(feature = "completions")]
+use crate::completions_spec;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CompletionKind {
@@ -101,20 +103,39 @@ impl super::Display {
         // 1) Flags: minimal spec for a few common commands, else generic
         if is_flag_context {
             let cmd = first;
-            let known = Self::known_flags_for_command(cmd);
-            for (flag, desc) in known {
-                let score = Self::fuzzy_score(
-                    cur_token.trim_start_matches('-'),
-                    flag.trim_start_matches('-'),
-                );
-                if score > 0.0 {
-                    out.push(CompletionItem {
-                        label: flag.to_string(),
-                        kind: CompletionKind::Flag,
-                        details: Some(desc.to_string()),
-                        icon: "🚩",
-                        score,
-                    });
+            // Prefer structured spec when available
+if let Some(spec) = completions_spec::get_spec_for(cmd) {
+                for fs in spec.flags {
+                    let score = Self::fuzzy_score(
+                        cur_token.trim_start_matches('-'),
+                        fs.flag.trim_start_matches('-'),
+                    );
+                    if score > 0.0 {
+                        out.push(CompletionItem {
+                            label: fs.flag.to_string(),
+                            kind: CompletionKind::Flag,
+                            details: Some(fs.desc.to_string()),
+                            icon: "🚩",
+                            score,
+                        });
+                    }
+                }
+            } else {
+                let known = Self::known_flags_for_command(cmd);
+                for (flag, desc) in known {
+                    let score = Self::fuzzy_score(
+                        cur_token.trim_start_matches('-'),
+                        flag.trim_start_matches('-'),
+                    );
+                    if score > 0.0 {
+                        out.push(CompletionItem {
+                            label: flag.to_string(),
+                            kind: CompletionKind::Flag,
+                            details: Some(desc.to_string()),
+                            icon: "🚩",
+                            score,
+                        });
+                    }
                 }
             }
         }
@@ -154,7 +175,26 @@ impl super::Display {
             }
         }
 
-        // 3) Git branches (very naive default suggestions if looks like git checkout)
+        // 3) Subcommands from spec
+if let Some(spec) = completions_spec::get_spec_for(first) {
+            // Offer subcommands if current token is the second token and not a flag
+            if tokens.len() <= 2 && !is_flag_context {
+                for &sc in spec.subcommands.iter() {
+                    let score = Self::fuzzy_score(cur_token, sc);
+                    if score > 0.0 {
+                        out.push(CompletionItem {
+                            label: sc.to_string(),
+                            kind: CompletionKind::Command,
+                            details: Some(format!("{} subcommand", first)),
+                            icon: "⌘",
+                            score,
+                        });
+                    }
+                }
+            }
+        }
+
+        // 4) Git branches (very naive default suggestions if looks like git checkout)
         if first == "git"
             && (prefix.contains(" checkout")
                 || prefix.ends_with(" switch")
@@ -305,6 +345,7 @@ impl super::Display {
 
         // Items
         let mut line = start_line + 1;
+        // If AI inline suggestion is available in future, we could show it as a top row here.
         let items_to_draw: Vec<_> = self
             .completions
             .items

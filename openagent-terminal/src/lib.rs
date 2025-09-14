@@ -48,3 +48,6 @@ pub use security::stub as security_lens;
 pub mod text_shaping;
 pub mod ui_confirm;
 pub mod workspace;
+
+#[cfg(feature = "completions")]
+pub mod completions_spec;

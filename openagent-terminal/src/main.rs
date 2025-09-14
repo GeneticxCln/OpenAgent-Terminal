@@ -86,6 +86,8 @@ pub use security::stub as security_lens;
 mod text_shaping;
 mod ui_confirm;
 mod workspace;
+#[cfg(feature = "completions")]
+mod completions_spec;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;
