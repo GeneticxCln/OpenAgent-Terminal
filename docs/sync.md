@@ -1,5 +1,10 @@
 # Settings/History Sync (optional, privacy-first, opt-in)
 
+Important scope note
+- Cloud account-based sync is intentionally excluded from this open-source project.
+- The sync feature is optional and off by default; it targets local filesystem or self-hosted deployments only.
+- There is no hosted service or sign-in flow in scope.
+
 Status: scaffolding only. The sync system is completely optional at build-time and runtime.
 
 Build-time

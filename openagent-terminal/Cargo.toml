@@ -183,7 +183,9 @@ embed-resource = "3.0.2"
 
 [features]
 # WGPU-only default. No OpenGL backend.
-default = ["wayland", "x11", "blocks", "workflow", "sync", "wgpu", "completions", "security-lens"]
+# Cloud sync and account features are excluded by default in this open-source project.
+# Optional local/self-hosted sync remains available behind the `sync` feature flag.
+default = ["wayland", "x11", "blocks", "workflow", "wgpu", "completions", "security-lens"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Optional background component initialization in a separate task

@@ -195,6 +195,11 @@ Download prebuilt binaries from [GitHub Releases](https://github.com/GeneticxCln
 
 ## Privacy & Security
 
+No cloud accounts or sync
+- OpenAgent Terminal intentionally excludes cloud account systems and hosted sync.
+- Any synchronization is strictly optional, disabled by default, and intended for local or self-hosted setups only (behind a feature flag).
+- The project is open-source and local-first by design.
+
 - **Local by default** - Ollama runs entirely on your machine
 - **No telemetry** - Zero data collection
 - **Command analysis** - Built-in Security Lens reviews AI suggestions
