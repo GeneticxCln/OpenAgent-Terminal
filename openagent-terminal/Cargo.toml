@@ -127,6 +127,9 @@ toml.workspace = true
 toml_edit.workspace = true
 unicode-width = "0.2.0"
 winit = { workspace = true, features = ["serde"] }
+# Optional SQLite for AI history (best-effort logging)
+rusqlite = { workspace = true }
+csv = "1.3"
 
 
 [build-dependencies]

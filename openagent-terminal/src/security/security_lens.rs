@@ -395,6 +395,37 @@ impl SecurityLens {
                 RiskLevel::Caution,
             ),
             // === CONTAINER & KUBERNETES ===
+            // Warning: docker.sock mount (host control risk)
+            (
+                Regex::new(r"-v\s*/var/run/docker.sock:/var/run/docker.sock|--volume\s*/var/run/docker.sock").unwrap(),
+                RiskFactor {
+                    category: "container_docker_sock".to_string(),
+                    description: "Mounting docker.sock grants container control over host Docker daemon".to_string(),
+                    pattern: "docker.sock mount".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Warning: Unconfined seccomp or apparmor disabled
+            (
+                Regex::new(r"--security-opt\s*seccomp=unconfined|--cap-add=ALL|--privileged").unwrap(),
+                RiskFactor {
+                    category: "container_unconfined".to_string(),
+                    description: "Container running without security confinement".to_string(),
+                    pattern: "unconfined container".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // Critical: Mounting sensitive host directories into container
+            (
+                Regex::new(r"-v\s*/etc:/etc|--volume\s*/etc:/etc|-v\s*/root:/root|--volume\s*/root:/root").unwrap(),
+                RiskFactor {
+                    category: "container_sensitive_mount".to_string(),
+                    description: "Mounting sensitive host directories into container".to_string(),
+                    pattern: "sensitive host mount".to_string(),
+                },
+                RiskLevel::Critical,
+            ),
+            // === CONTAINER & KUBERNETES ===
             // Warning: Kubernetes operations (general)
             (
                 Regex::new(r"(?i)kubectl\s+(apply|scale|rollout)\b").unwrap(),
@@ -715,6 +746,27 @@ impl SecurityLens {
                     category: "crypto_weak_keys".to_string(),
                     description: "Generating keys without proper security parameters".to_string(),
                     pattern: "weak crypto generation".to_string(),
+                },
+                RiskLevel::Warning,
+            ),
+            // === ENVIRONMENT & SHELLS ===
+            // Critical: Modify sudoers (may grant passwordless root)
+            (
+                Regex::new(r"visudo|echo\s+.*ALL=\(ALL\):ALL\s*>>\s*/etc/sudoers|echo\s+.*NOPASSWD:ALL\s*>>\s*/etc/sudoers").unwrap(),
+                RiskFactor {
+                    category: "sudoers_modification".to_string(),
+                    description: "Modifying sudoers file can grant elevated privileges".to_string(),
+                    pattern: "sudoers modification".to_string(),
+                },
+                RiskLevel::Critical,
+            ),
+            // Warning: Disable SELinux/AppArmor
+            (
+                Regex::new(r"setenforce\s+0|sed\s+-i\s+.*SELINUX=disabled|apparmor_status\s+.*\sdisabled").unwrap(),
+                RiskFactor {
+                    category: "disable_mandatory_access_control".to_string(),
+                    description: "Disabling SELinux/AppArmor weakens system security".to_string(),
+                    pattern: "disable MAC".to_string(),
                 },
                 RiskLevel::Warning,
             ),
@@ -1388,7 +1440,7 @@ impl SecurityLens {
                 }
 
                 // Container and Kubernetes
-                "kubernetes_change" | "kubernetes_prod_delete" | "kubernetes_helm_delete" => {
+                "kubernetes_change" | "kubernetes_prod_delete" | "kubernetes_helm_delete" | "container_docker_sock" | "container_unconfined" | "container_sensitive_mount" => {
                     links.push(MitigationLink {
                         title: "Kubernetes Security Guide".to_string(),
                         url: format!("{}/kubernetes-security", base_url),
@@ -1495,6 +1547,15 @@ impl SecurityLens {
                         title: "Secrets Management".to_string(),
                         url: format!("{}/secrets-management", base_url),
                         description: "How to handle secrets securely".to_string(),
+                    });
+                }
+
+                // Platform-specific (Linux)
+                "disable_mandatory_access_control" | "sudoers_modification" => {
+                    links.push(MitigationLink {
+                        title: "Linux Security Hardening".to_string(),
+                        url: format!("{}/linux-security-hardening", base_url),
+                        description: "Guidance on MAC, sudoers, and privilege management".to_string(),
                     });
                 }
 

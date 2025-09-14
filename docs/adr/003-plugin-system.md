@@ -1,7 +1,7 @@
 # ADR 003: Plugin System Architecture
 
 ## Status
-Preview (GA stance: feature marked as preview; minimal trait set will stabilize post-GA)
+Accepted (API stabilized for v1.0: minimal, WASM-only surface with stable ABI v1.0.0)
 
 ## Date
 2024-08-30

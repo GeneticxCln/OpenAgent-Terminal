@@ -32,6 +32,8 @@ pub use openagent_terminal_config::SerdeReplace;
 
 #[cfg(feature = "ai")]
 mod ai_runtime;
+#[cfg(feature = "ai")]
+mod ai_context_provider;
 mod cli;
 #[cfg(feature = "ai")]
 mod cli_ai;

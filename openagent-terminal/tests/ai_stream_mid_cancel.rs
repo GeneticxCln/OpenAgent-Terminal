@@ -76,6 +76,9 @@ fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
 fn ai_stream_chunks_then_cancel_finishes_gracefully() {
     let (el, proxy) = build_event_loop();
 
+    // Ensure micro-batching flushes immediately to produce distinct chunk events in tests
+    std::env::set_var("OPENAGENT_AI_STREAM_REDRAW_MS", "0");
+
     let provider: Box<dyn AiProvider> = Box::new(ChunkThenCancelProvider);
     let mut rt = AiRuntime::new(provider);
     rt.ui.scratch = "test".into();

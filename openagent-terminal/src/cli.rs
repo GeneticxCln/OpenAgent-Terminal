@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
+use clap::builder::TypedValueParser;
 use log::{error, LevelFilter};
 use openagent_terminal_config::SerdeReplace;
 use serde::{Deserialize, Serialize};
@@ -409,6 +410,21 @@ pub enum AiCommand {
         /// Also generate a shell snippet file with secure env var exports (values redacted)
         #[clap(long, value_hint = ValueHint::FilePath)]
         write_env_snippet: Option<PathBuf>,
+    },
+    /// Export AI conversation history from SQLite
+    HistoryExport {
+        /// Format: json or csv
+        #[clap(long, value_parser = clap::builder::PossibleValuesParser::new(["json", "csv"]).map(|s| s.to_string()))]
+        format: String,
+        /// Output file path
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        to: PathBuf,
+    },
+    /// Purge AI conversation history, keeping at most the last N entries
+    HistoryPurge {
+        /// Keep last N entries (use 0 to delete all)
+        #[clap(long, default_value_t = 1000)]
+        keep_last: usize,
     },
 }
 

@@ -8,7 +8,7 @@ mod ai_tests {
     use openagent_terminal::ai_runtime::{AiRuntime, AiUiState};
     use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 
-    struct MockProvider;
+    pub struct MockProvider;
 
     impl AiProvider for MockProvider {
         fn name(&self) -> &'static str {
@@ -413,6 +413,7 @@ mod integration_tests {
 #[cfg(all(feature = "ai", feature = "blocks", feature = "security-lens"))]
 mod performance_tests {
     use super::*;
+    use openagent_terminal::command_history::CommandHistory;
     use openagent_terminal::security_config::{SecurityConfig, SecurityLensFactory};
     use std::time::Instant;
     use tempfile::TempDir;

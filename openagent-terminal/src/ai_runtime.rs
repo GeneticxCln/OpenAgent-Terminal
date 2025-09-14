@@ -320,7 +320,8 @@ use std::thread;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
-// Lightweight AI conversation persistence (JSONL). Best-effort; errors are ignored by callers.
+// Lightweight AI conversation persistence (JSONL) with simple log rotation.
+// Best-effort; errors are ignored by callers.
 fn persist_ai_conversation(
     mode: &str,
     working_directory: Option<&str>,
@@ -328,6 +329,22 @@ fn persist_ai_conversation(
     input: &str,
     output: &str,
 ) -> Result<(), String> {
+    // Try SQLite first (best-effort). Fallback to JSONL on any error.
+    let sqlite_ok = persist_ai_conversation_sqlite(mode, working_directory, shell_kind, input, output).is_ok();
+
+    // Optionally disable JSONL fallback with OPENAGENT_AI_HISTORY_JSONL=0/false
+    let jsonl_enabled = std::env::var("OPENAGENT_AI_HISTORY_JSONL")
+        .ok()
+        .map(|v| {
+            let v = v.to_lowercase();
+            !(v == "0" || v == "false" || v == "off")
+        })
+        .unwrap_or(true);
+
+    if !sqlite_ok && !jsonl_enabled {
+        // Best-effort: skip JSONL fallback if disabled
+        return Ok(());
+    }
     #[derive(serde::Serialize)]
     struct Entry<'a> {
         timestamp: String,
@@ -355,14 +372,101 @@ fn persist_ai_conversation(
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let file = base.join("history.jsonl");
 
+    // Simple rotation: if file exceeds threshold, rename with timestamp and keep at most N rotated files.
+    const DEFAULT_MAX_BYTES: u64 = 2 * 1024 * 1024; // 2MB
+    const MAX_ROTATED: usize = 5;
+    let max_bytes = std::env::var("OPENAGENT_AI_HISTORY_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_BYTES);
+
+    if let Ok(meta) = std::fs::metadata(&file) {
+        if meta.len() >= max_bytes {
+            // Rotate: history-YYYYmmddHHMMSS.jsonl
+            let ts = chrono::Local::now().format("%Y%m%d%H%M%S");
+            let rotated = base.join(format!("history-{}.jsonl", ts));
+            let _ = std::fs::rename(&file, rotated);
+            // Prune old rotated files (keep most recent MAX_ROTATED)
+            if let Ok(entries) = std::fs::read_dir(&base) {
+                let mut rotated: Vec<std::fs::DirEntry> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        if let Some(name) = e.file_name().to_str() {
+                            name.starts_with("history-") && name.ends_with(".jsonl")
+                        } else {
+                            false
+                        }
+                    })
+                    .collect();
+                rotated.sort_by_key(|e| e.file_name());
+                // Keep last MAX_ROTATED
+                let to_prune = rotated.len().saturating_sub(MAX_ROTATED);
+                if to_prune > 0 {
+                    for e in rotated.into_iter().take(to_prune) {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+        }
+    }
+
     let line = serde_json::to_string(&entry).map_err(|e| e.to_string())? + "\n";
     use std::io::Write;
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(file)
+        .open(&file)
         .map_err(|e| e.to_string())?;
     f.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn persist_ai_conversation_sqlite(
+    mode: &str,
+    working_directory: Option<&str>,
+    shell_kind: Option<&str>,
+    input: &str,
+    output: &str,
+) -> Result<(), String> {
+    use rusqlite::{params, Connection};
+
+    let base = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("openagent-terminal")
+        .join("ai_history");
+    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    let db_path = base.join("history.db");
+
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            working_directory TEXT,
+            shell_kind TEXT,
+            input TEXT NOT NULL,
+            output TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let ts = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO conversations (ts, mode, working_directory, shell_kind, input, output)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            ts,
+            mode,
+            working_directory.unwrap_or("") ,
+            shell_kind.unwrap_or("") ,
+            input,
+            output
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -700,6 +804,12 @@ impl AiRuntime {
                         if e.eq_ignore_ascii_case("cancelled") || e.eq_ignore_ascii_case("canceled")
                         {
                             info!("ai_runtime_stream_cancelled provider={}", provider.name());
+                            // Flush any pending buffered chunk before finishing gracefully
+                            if !batch_buf.is_empty() {
+                                let payload = std::mem::take(&mut batch_buf);
+                                let _ = event_proxy
+                                    .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                            }
                             // Treat cancellation as a graceful finish, do not surface an error
                             let _ = event_proxy
                                 .send_event(Event::new(EventType::AiStreamFinished, window_id));
@@ -1157,8 +1267,9 @@ impl AiRuntime {
             } else {
                 self.ui.scratch.clone()
             },
-            working_directory,
-            shell_kind,
+            // Clone so we can still reference these later for persistence
+            working_directory: working_directory.clone(),
+            shell_kind: shell_kind.clone(),
             context,
         };
         let (cm, budget_kb) = self.build_context_manager();
@@ -1249,8 +1360,9 @@ impl AiRuntime {
 
         let req_raw = AiRequest {
             scratch_text: prompt,
-            working_directory,
-            shell_kind,
+            // Clone so we can still reference these later for persistence
+            working_directory: working_directory.clone(),
+            shell_kind: shell_kind.clone(),
             context,
         };
         let req = sanitize_request(&req_raw, AiPrivacyOptions::from_env());

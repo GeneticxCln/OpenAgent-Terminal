@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use anyhow::Result as AnyResult;
+use anyhow::{anyhow, Result as AnyResult};
 
 use crate::api::{CommandOutput, PluginError};
 
@@ -63,13 +63,68 @@ pub struct Notification {
     pub icon: Option<String>,
 }
 
-/// Add host functions to WASM linker (placeholder)
+#[cfg(feature = "wasm-runtime")]
+fn read_caller_mem(
+    caller: &mut wasmtime::Caller<crate::WasmPluginContext>,
+    ptr: i32,
+    len: i32,
+) -> AnyResult<Vec<u8>> {
+    let export = caller
+        .get_export("memory")
+        .and_then(|e| e.into_memory())
+        .ok_or_else(|| anyhow!("WASM module missing exported memory"))?;
+    let mut buf = vec![0u8; len as usize];
+    export
+        .read(caller, ptr as usize, &mut buf)
+        .map_err(|e| anyhow!("Failed to read guest memory: {e}"))?;
+    Ok(buf)
+}
+
+/// Add host functions to WASM linker (minimal stable surface)
 #[cfg(feature = "wasm-runtime")]
 pub fn add_host_functions(
-    _linker: &mut wasmtime::Linker<crate::WasmPluginContext>,
-    _host_interface: Option<Arc<dyn HostInterface>>,
+    linker: &mut wasmtime::Linker<crate::WasmPluginContext>,
+    host_interface: Option<Arc<dyn HostInterface>>,
 ) -> AnyResult<()> {
-    // This would add all the host functions that plugins can call
-    // For now, this is a placeholder
+    // host_log(level: i32, ptr: i32, len: i32) -> i32
+    // level: 0=Debug,1=Info,2=Warning,3=Error
+    let hi = host_interface.clone();
+    linker.func_wrap(
+        "host",
+        "host_log",
+        move |
+              mut caller: wasmtime::Caller<crate::WasmPluginContext>,
+              level: i32,
+              ptr: i32,
+              len: i32|
+              -> i32 {
+            let msg_bytes = match read_caller_mem(&mut caller, ptr, len) {
+                Ok(b) => b,
+                Err(_) => return -1,
+            };
+            let message = match String::from_utf8(msg_bytes) {
+                Ok(s) => s,
+                Err(e) => {
+                    let s = String::from_utf8_lossy(e.as_bytes()).to_string();
+                    s
+                }
+            };
+            let level_map = match level {
+                0 => LogLevel::Debug,
+                1 => LogLevel::Info,
+                2 => LogLevel::Warning,
+                3 => LogLevel::Error,
+                _ => LogLevel::Info,
+            };
+            if let Some(ref iface) = hi {
+                iface.log(level_map, &message);
+            }
+            0
+        },
+    )?;
+
+    // Future host functions (read_file/write_file/execute_command/etc.) can be added here with
+    // stable signatures. Keeping the surface minimal ensures API stability for v1.
+
     Ok(())
 }

@@ -786,4 +786,83 @@ mod tests {
         // When metadata export is missing, name defaults to "Unknown Plugin".
         assert_eq!(plugins[0].name, "Unknown Plugin");
     }
+
+    #[cfg(feature = "wasm-runtime")]
+    struct CaptureHost {
+        logs: std::sync::Arc<std::sync::Mutex<Vec<(crate::host::LogLevel, String)>>>,
+    }
+
+    #[cfg(feature = "wasm-runtime")]
+    impl crate::host::HostInterface for CaptureHost {
+        fn log(&self, level: crate::host::LogLevel, message: &str) {
+            self.logs.lock().unwrap().push((level, message.to_string()));
+        }
+        fn read_file(&self, _path: &str) -> Result<Vec<u8>, crate::api::PluginError> {
+            Ok(Vec::new())
+        }
+        fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), crate::api::PluginError> {
+            Ok(())
+        }
+        fn execute_command(
+            &self,
+            _command: &str,
+        ) -> Result<crate::api::CommandOutput, crate::api::PluginError> {
+            Ok(crate::api::CommandOutput { stdout: String::new(), stderr: String::new(), exit_code: 0, execution_time_ms: 0 })
+        }
+        fn get_terminal_state(&self) -> crate::host::TerminalState {
+            crate::host::TerminalState { current_dir: String::new(), environment: Default::default(), shell: String::new(), terminal_size: (80, 24), is_interactive: true, command_history: vec![] }
+        }
+        fn show_notification(
+            &self,
+            _notification: crate::host::Notification,
+        ) -> Result<(), crate::api::PluginError> {
+            Ok(())
+        }
+        fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), crate::api::PluginError> {
+            Ok(())
+        }
+        fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, crate::api::PluginError> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wasm_plugin_calls_host_log_on_init() {
+        #[cfg(not(feature = "wasm-runtime"))]
+        {
+            // Skip when runtime is not available
+            return;
+        }
+        #[cfg(feature = "wasm-runtime")]
+        {
+            // WAT module that imports host_log and calls it in plugin_init
+            let wat_src = r#"(module
+                (import "host" "host_log" (func $host_log (param i32 i32 i32) (result i32)))
+                (memory (export "memory") 1)
+                (data (i32.const 0) "hello from plugin")
+                (func (export "plugin_init") (result i32)
+                    (drop (call $host_log (i32.const 1) (i32.const 0) (i32.const 17)))
+                    (i32.const 0)
+                )
+            )"#;
+            let wasm_bytes = wat::parse_str(wat_src).expect("wat to wasm parse failed");
+            let temp_dir = TempDir::new().unwrap();
+            let wasm_path = temp_dir.path().join("hostlog.wasm");
+            std::fs::write(&wasm_path, wasm_bytes).expect("write wasm");
+
+            let mut manager = UnifiedPluginManager::new(temp_dir.path()).expect("manager");
+            let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            manager.set_host_interface(std::sync::Arc::new(CaptureHost { logs: logs.clone() }));
+            let load_res = manager.load_plugin(&wasm_path).await;
+            assert!(load_res.is_ok(), "failed to load plugin: {:?}", load_res);
+
+            // Validate that host_log was invoked
+            let captured = logs.lock().unwrap().clone();
+            assert!(
+                captured.iter().any(|(_, msg)| msg.contains("hello from plugin")),
+                "expected host_log to receive message, got {:?}",
+                captured
+            );
+        }
+    }
 }
