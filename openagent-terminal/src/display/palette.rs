@@ -6,6 +6,8 @@ pub enum PaletteEntry {
     Action(Action),
     Workflow(String),
     File(String), // absolute or relative path
+    #[cfg(feature = "plugins")]
+    PluginCommand { plugin: String, command: String },
 }
 
 #[derive(Clone, Debug)]
@@ -225,6 +227,15 @@ impl PaletteState {
                     .trim()
                     .to_string(),
             )
+        } else if q.starts_with("p:") || q.starts_with("plugins:") {
+            (
+                Some("plugin"),
+                q.split_once(':')
+                    .map(|(_, t)| t)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            )
         } else {
             (None, q)
         };
@@ -237,7 +248,11 @@ impl PaletteState {
                     (PaletteEntry::Action(_), "action") => {}
                     (PaletteEntry::Workflow(_), "workflow") => {}
                     (PaletteEntry::File(_), "file") => {}
-                    _ => continue,
+                    #[cfg(feature = "plugins")]
+                    (PaletteEntry::PluginCommand { .. }, "plugin") => {}
+                    #[cfg(not(feature = "plugins"))]
+                    _ => {}
+                    
                 }
             }
 
@@ -699,6 +714,8 @@ impl Display {
                 Some("Workflows")
             } else if lower.starts_with("a:") || lower.starts_with("actions:") {
                 Some("Actions")
+            } else if lower.starts_with("p:") || lower.starts_with("plugins:") {
+                Some("Plugins")
             } else {
                 None
             };
@@ -874,6 +891,8 @@ impl Display {
                     let (uv_x, uv_y, uv_w, uv_h) = match &orig_item.entry {
                         PaletteEntry::Workflow(_) => uv_for_slot(1),
                         PaletteEntry::File(_) => uv_for_slot(2),
+                        #[cfg(feature = "plugins")]
+                        PaletteEntry::PluginCommand { .. } => uv_for_slot(8),
                         PaletteEntry::Action(a) => {
                             use BindingAction as BA;
                             let slot = match a {
@@ -912,7 +931,7 @@ impl Display {
                     let forced = config.theme.palette_icon_filter_nearest;
                     let auto_nearest = (w - 16.0).abs() < 0.5 && (h - 16.0).abs() < 0.5;
                     let filter_nearest = forced.unwrap_or(auto_nearest);
-                    // Stage sprite (GL path); if not available, we will draw a text fallback below.
+                    // Stage sprite; fallback to text if the atlas/icon set is unavailable.
                     self.stage_ui_sprite(UiSprite::new(
                         x,
                         y,
@@ -1099,6 +1118,8 @@ impl Display {
                         PaletteEntry::Action(_) => " [⚙ Action]",
                         PaletteEntry::Workflow(_) => " [⚡ Workflow]",
                         PaletteEntry::File(_) => " [📄 File]",
+                        #[cfg(feature = "plugins")]
+                        PaletteEntry::PluginCommand { .. } => " [🔌 Plugin]",
                     };
                     if col_cursor < row_start_col + content_max_cols - chip.width() {
                         // Draw chip pill background with inner padding and selection scale

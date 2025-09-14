@@ -50,10 +50,10 @@ show_resize_handles = true
 border_thickness = 1.0
 resize_increment = 5
 
-# --- Rendering backend ---
+# --- Rendering backend (WGPU-only) ---
 [debug]
-# Prefer WGPU first, with automatic fallback to OpenGL if WGPU init fails
-# Set to false to prefer OpenGL directly (or use OPENAGENT_FORCE_GL=1)
+# WGPU-only. OpenGL fallback has been removed.
+# prefer_wgpu is kept for compatibility and should remain true.
 prefer_wgpu = true
 
 # --- AI (optional) ---

@@ -429,6 +429,15 @@ pub trait ActionContext<T: EventListener> {
     // Workflows panel (feature="workflow"). Default to no-op/false when disabled.
     fn open_workflows_panel(&mut self) {}
 
+    // Workflows parameter form overlay
+    fn workflows_params_active(&self) -> bool { false }
+    fn workflows_params_input_char(&mut self, _c: char) {}
+    fn workflows_params_backspace(&mut self) {}
+    fn workflows_params_move_selection(&mut self, _delta: isize) {}
+    fn workflows_params_toggle(&mut self) {}
+    fn workflows_params_confirm(&mut self) {}
+    fn workflows_params_cancel(&mut self) {}
+
     // Notebooks panel controls (feature = "blocks")
     #[cfg(feature = "blocks")]
     fn open_notebooks_panel(&mut self) {}

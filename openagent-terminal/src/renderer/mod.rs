@@ -6,6 +6,8 @@ pub mod text;
 pub mod ui;
 #[cfg(feature = "wgpu")]
 pub mod wgpu;
+#[cfg(feature = "wgpu")]
+pub mod wgpu_rect_transfer;
 
 pub use text::glyph_cache::{GlyphCache, LoadGlyph};
 pub use text::LoaderApi;

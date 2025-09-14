@@ -513,6 +513,9 @@ pub struct Display {
     /// Workflows progress overlay state.
     #[cfg(feature = "workflow")]
     pub workflows_progress: workflow_panel::WorkflowProgressState,
+    /// Workflows parameter form overlay state.
+    #[cfg(feature = "workflow")]
+    pub workflows_params: workflow_panel::WorkflowParamsState,
     /// Notebooks panel state (feature="blocks")
     #[cfg(feature = "blocks")]
     pub notebooks_panel: notebook_panel::NotebookPanelState,
@@ -1010,6 +1013,7 @@ impl Display {
             config.debug.zero_evicted_atlas_layer,
             config.debug.atlas_eviction_policy,
             config.debug.atlas_report_interval_frames,
+            config.debug.renderer_report_interval_frames,
         ))
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
 
@@ -1180,6 +1184,8 @@ impl Display {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
+            #[cfg(feature = "workflow")]
+            workflows_params: Default::default(),
             settings_panel: settings_panel::SettingsPanelState::new(),
             quick_actions_press_flash_until: None,
             #[cfg(feature = "editor")]
@@ -1529,7 +1535,7 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
         }
     }
 
-    // XXX: this function must not call to any `OpenGL` related tasks. Renderer updates are
+    // XXX: this function must not call any renderer tasks outside the scheduled update hooks.
     // performed in [`Self::process_renderer_update`] right before drawing.
     //
     /// Process update events.
@@ -1630,7 +1636,7 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
     }
 
     // NOTE: Renderer updates are split off, since platforms like Wayland require resize and other
-    // OpenGL operations to be performed right before rendering. Otherwise they could lock the
+    // Renderer operations to be performed right before rendering. Otherwise they could lock the
     // back buffer and render with the previous state. This also solves flickering during resizes.
     //
     /// Update the state of the renderer.
@@ -1675,7 +1681,40 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
         );
     }
 
-    /// Dump atlas stats to the debug log. No-op on GL backend.
+    /// Draw performance HUD text using the text pipeline (WGPU backend only)
+    fn draw_perf_hud_text(&mut self, config: &UiConfig) {
+        let show = config.debug.renderer_perf_hud;
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        let enabled = show || renderer.perf_hud_enabled();
+        if !enabled {
+            return;
+        }
+        let m = renderer.metrics();
+        let last_ms = renderer.last_frame_ms();
+        let fps = if last_ms > 0.0 { 1000.0 / last_ms } else { 0.0 };
+        let stats = renderer.frame_ms_stats();
+        let copy_kb = (m.rect_bytes_copied as f32) / 1024.0;
+        let s = if let Some((avg, min, max)) = stats {
+            format!(
+                "{last_ms:.1} ms ({fps:.1} fps) | avg {avg:.1} min {min:.1} max {max:.1} | draws={} verts={} copy={copy_kb:.1}KB flush={} batch={}",
+                m.draw_calls, m.vertices_submitted, m.rect_flush_count, m.primitives_batched
+            )
+        } else {
+            format!(
+                "{last_ms:.1} ms ({fps:.1} fps) | draws={} verts={} copy={copy_kb:.1}KB flush={} batch={}",
+                m.draw_calls, m.vertices_submitted, m.rect_flush_count, m.primitives_batched
+            )
+        };
+        // Use top-left cell area
+        let fg = crate::display::color::Rgb::new(240, 240, 240);
+        let bg = crate::display::color::Rgb::new(0, 0, 0);
+        let point = Point::new(0, Column(1));
+        // Use renderer.draw_string directly to avoid cfg coupling
+        let size_info_copy = self.size_info;
+        renderer.draw_string(point, fg, bg, s.chars(), &size_info_copy, &mut self.glyph_cache);
+    }
+
+    /// Dump atlas stats to the debug log.
     pub fn dump_atlas_stats(&mut self) {
         let Backend::Wgpu { renderer } = &mut self.backend;
         renderer.dump_atlas_stats();
@@ -1827,6 +1866,9 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
 
         // Drop terminal as early as possible to free lock.
         drop(terminal);
+
+        // Stage HUD text if enabled (WGPU only)
+        self.draw_perf_hud_text(config);
 
         // Invalidate highlighted hints if grid has changed.
         self.validate_hint_highlights(display_offset);
@@ -2359,6 +2401,12 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
             if self.workflows_progress.active {
                 let st = self.workflows_progress.clone();
                 self.draw_workflows_progress_overlay(config, &st);
+            }
+            // Workflows params overlay if active
+            #[cfg(feature = "workflow")]
+            if self.workflows_params.active {
+                let st = self.workflows_params.clone();
+                self.draw_workflows_params_overlay(config, &st);
             }
 
             // Settings panel overlay if active

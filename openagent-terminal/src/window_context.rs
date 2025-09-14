@@ -89,13 +89,13 @@ impl WindowContext {
             .window_identity
             .override_identity_config(&mut identity);
 
-        // Prefer X11 on Unix if not set (reduces Wayland surface quirks for WGPU/GL)
+        // Prefer X11 on Unix if not set (reduces Wayland surface quirks for WGPU)
         #[cfg(all(unix, not(target_os = "macos")))]
         if std::env::var("WINIT_UNIX_BACKEND").is_err() {
             std::env::set_var("WINIT_UNIX_BACKEND", "x11");
         }
 
-        // Try WGPU first when built with that feature; gracefully fall back to GL if available.
+        // WGPU-only: initialize WGPU; no fallback to any other graphics API.
         #[cfg(feature = "wgpu")]
         {
             // Create a winit window for WGPU path (visual selection not required)

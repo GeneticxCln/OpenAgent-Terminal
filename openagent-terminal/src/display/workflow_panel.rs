@@ -8,6 +8,7 @@ use crate::display::{Display, SizeInfo};
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
+use serde::{Deserialize, Serialize};
 
 /// Source of the workflow definition (for future expansion)
 #[derive(Clone, Debug)]
@@ -29,6 +30,71 @@ pub struct WorkflowProgressState {
     pub step_index: usize,
     pub total_steps: Option<usize>,
     pub seen_steps: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WorkflowParamsState {
+    pub active: bool,
+    pub workflow_id: Option<String>,
+    pub workflow_name: Option<String>,
+    pub fields: Vec<WorkflowParamField>,
+    pub selected: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkflowParamField {
+    pub name: String,
+    pub kind: workflow_engine::ParameterType,
+    pub description: String,
+    pub required: bool,
+    pub value: serde_json::Value,
+    pub options: Option<Vec<workflow_engine::ParameterOption>>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
+impl WorkflowParamsState {
+    pub fn open(&mut self, id: String, name: String, params: Vec<workflow_engine::Parameter>) {
+        self.active = true;
+        self.workflow_id = Some(id);
+        self.workflow_name = Some(name);
+        self.selected = 0;
+        self.fields = params
+            .into_iter()
+            .map(|p| WorkflowParamField {
+                name: p.name,
+                kind: p.param_type,
+                description: p.description,
+                required: p.required,
+                value: p.default.unwrap_or_else(|| serde_json::Value::Null),
+                options: p.options,
+                min: p.min,
+                max: p.max,
+            })
+            .collect();
+    }
+    pub fn close(&mut self) {
+        self.active = false;
+        self.workflow_id = None;
+        self.workflow_name = None;
+        self.fields.clear();
+        self.selected = 0;
+    }
+    #[allow(dead_code)]
+    pub fn move_selection(&mut self, delta: isize) {
+        if self.fields.is_empty() {
+            return;
+        }
+        let len = self.fields.len() as isize;
+        let mut idx = self.selected as isize + delta;
+        if idx < 0 {
+            idx = 0;
+        }
+        if idx >= len {
+            idx = len - 1;
+        }
+        self.selected = idx as usize;
+    }
 }
 
 impl Display {
@@ -367,7 +433,6 @@ impl Display {
             self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &row, num_cols);
             line += 1;
         }
-
         // Footer controls/hints
         let hint = "Enter: Paste  •  Esc: Close  •  ↑/↓/PgUp/PgDn: Navigate  •  Ctrl+N/Ctrl+P: \
                     Navigate  •  Backspace: Delete";
@@ -378,6 +443,102 @@ impl Display {
             bg,
             hint,
             num_cols - 2,
+        );
+    }
+}
+
+impl Display {
+    pub fn draw_workflows_params_overlay(&mut self, config: &UiConfig, st: &WorkflowParamsState) {
+        if !st.active {
+            return;
+        }
+        let size_info = self.size_info;
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+
+        let cols = size_info.columns();
+        let total_lines = size_info.screen_lines();
+        if total_lines == 0 {
+            return;
+        }
+        let panel_cols = ((cols as f32 * 0.6).round() as usize).clamp(40, cols.saturating_sub(2));
+        let panel_lines = (total_lines as f32 * 0.5).round() as usize;
+        let start_line = (total_lines.saturating_sub(panel_lines)) / 2;
+        let start_col = (cols.saturating_sub(panel_cols)) / 2;
+
+        // Rects
+        let panel_x = start_col as f32 * size_info.cell_width();
+        let panel_y = start_line as f32 * size_info.cell_height();
+        let panel_w = panel_cols as f32 * size_info.cell_width();
+        let panel_h = panel_lines as f32 * size_info.cell_height();
+        let rects = vec![
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.18),
+            RenderRect::new(panel_x, panel_y, panel_w, panel_h, tokens.surface, 0.98),
+        ];
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+
+        // Header
+        let title = if let Some(name) = &st.workflow_name {
+            format!("Run: {}", name)
+        } else {
+            "Run Workflow".to_string()
+        };
+        self.draw_ai_text(
+            Point::new(start_line, Column(start_col + 2)),
+            tokens.text,
+            tokens.surface,
+            &title,
+            panel_cols.saturating_sub(4),
+        );
+
+        // Fields area
+        let mut line = start_line + 2;
+        let max_line = start_line + panel_lines - 2;
+        for (i, field) in st.fields.iter().enumerate() {
+            if line >= max_line {
+                break;
+            }
+            let marker = if i == st.selected { "▶ " } else { "  " };
+            let label = format!("{}{}:", marker, field.name);
+            self.draw_ai_text(
+                Point::new(line, Column(start_col + 2)),
+                tokens.text,
+                tokens.surface,
+                &label,
+                panel_cols.saturating_sub(4),
+            );
+            let value_str = match &field.value {
+                serde_json::Value::Null => "".to_string(),
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                _ => "".to_string(),
+            };
+            let value_col = start_col + 2 + label.len() + 1;
+            self.draw_ai_text(
+                Point::new(line, Column(value_col)),
+                tokens.text_muted,
+                tokens.surface,
+                &value_str,
+                panel_cols.saturating_sub(6 + label.len()),
+            );
+            line += 1;
+        }
+
+        // Footer
+        let footer = "Enter: Run    Esc: Cancel    Tab/Shift+Tab: Next/Prev    Space: Toggle";
+        self.draw_ai_text(
+            Point::new(start_line + panel_lines - 1, Column(start_col + 2)),
+            tokens.text_muted,
+            tokens.surface,
+            footer,
+            panel_cols.saturating_sub(4),
         );
     }
 }

@@ -121,6 +121,12 @@ pub struct Debug {
     /// Periodic atlas stats reporting interval in frames (0 disables reporting).
     pub atlas_report_interval_frames: u32,
 
+    /// Periodic renderer performance reporting interval in frames (0 disables reporting).
+    pub renderer_report_interval_frames: u32,
+
+    /// Toggle on-screen performance HUD overlay (frame time, draw calls).
+    pub renderer_perf_hud: bool,
+
     /// Record ref test.
     #[config(skip)]
     #[serde(skip_serializing)]
@@ -165,6 +171,8 @@ impl Default for Debug {
             zero_evicted_atlas_layer: false,
             atlas_eviction_policy: Default::default(),
             atlas_report_interval_frames: 0,
+            renderer_report_interval_frames: 0,
+            renderer_perf_hud: false,
             theme_block_cursor: false,
             theme_text_cursors: false,
             theme_selection: false,
@@ -178,12 +186,6 @@ impl Default for Debug {
 /// WGPU is the only supported backend for simplified architecture.
 #[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RendererPreference {
-    /// Deprecated: OpenGL 3.3 renderer (no longer supported).
-    Glsl3,
-
-    /// Deprecated: GLES 2 renderer (no longer supported).
-    Gles2,
-
-    /// Deprecated: Pure GLES 2 renderer (no longer supported).
-    Gles2Pure,
+    /// WGPU-only; legacy options removed.
+    WgpuOnly,
 }

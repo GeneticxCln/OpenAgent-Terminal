@@ -43,7 +43,7 @@ pub struct RenderLine {
     pub color: Rgb,
 }
 
-// NOTE: These flags must be in sync with their usage in the rect.*.glsl shaders.
+// NOTE: These flags must be in sync with their usage in WGSL shader code.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(dead_code)]

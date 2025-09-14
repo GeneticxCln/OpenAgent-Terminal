@@ -49,7 +49,7 @@ impl LoadGlyph for LoaderApi<'_> {
     fn clear(&mut self) {}
 }
 
-/// Execute a closure with a temporary LoaderApi for preloading glyphs without GL state.
+/// Execute a closure with a temporary LoaderApi for preloading glyphs.
 #[allow(dead_code)]
 pub fn with_dummy_loader<T, F: FnOnce(LoaderApi<'_>) -> T>(func: F) -> T {
     let loader = LoaderApi::new();

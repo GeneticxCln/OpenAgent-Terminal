@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::cell::Cell;
 
 use wgpu::util::DeviceExt;
+use crate::renderer::wgpu_rect_transfer::WgpuRectTransfer;
 use winit::dpi::PhysicalSize;
 
 use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
@@ -25,7 +26,7 @@ use super::ui::{UiRoundedRect, UiSprite};
 use super::{GlyphCache, LoadGlyph, LoaderApi};
 
 const RECT_SHADER_WGSL: &str = r#"
-// Uniforms for rect/underline rendering (mirrors GL rect.f.glsl intent)
+// Uniforms for rect/underline rendering
 struct RectUniforms {
   cell_size: vec2<f32>,        // (cellWidth, cellHeight)
   padding: vec2<f32>,          // (paddingX, paddingY)
@@ -63,7 +64,7 @@ fn vs_main(@location(0) pos: vec2<f32>,
 }
 
 fn fmod(a: f32, b: f32) -> f32 {
-  // Emulate GLSL mod(a,b) for floats: a - b * floor(a / b)
+// Implement fmod-like behavior: a - b * floor(a / b)
   return a - b * floor(a / b);
 }
 
@@ -309,9 +310,10 @@ pub struct WgpuRenderer {
     // Rect uniforms/bindings
     rect_uniform_buffer: wgpu::Buffer,
     rect_bind_group: wgpu::BindGroup,
-    // Reusable dynamic vertex buffer for rects
-    rect_vertex_buffer: wgpu::Buffer,
-    rect_vb_capacity_vertices: usize,
+    // Batched rect transfer helper
+    rect_transfer: WgpuRectTransfer,
+    // Persistent CPU-side rect vertex buffer to avoid per-frame allocations
+    rect_vertices_cpu: Vec<RectVertex>,
     // Atlas resources
     atlas_texture: wgpu::Texture,
     atlas_view: wgpu::TextureView,
@@ -334,6 +336,8 @@ pub struct WgpuRenderer {
     last_frame_ms: f32,
     last_draw_calls: u32,
     last_vertices: u32,
+    // Per-frame metrics
+    metrics: PerformanceMetrics,
     zero_evicted_layer: bool,
     policy: AtlasEvictionPolicy,
     // Scratch
@@ -344,6 +348,7 @@ pub struct WgpuRenderer {
     atlas_evictions_count: u64,
     // Reporting
     report_interval_frames: u32,
+    renderer_report_interval_frames: u32,
     frame_counter: u64,
     // Frame state
     pending_clear: Cell<Option<[f64; 4]>>,
@@ -358,6 +363,15 @@ pub struct WgpuRenderer {
     perf_history: Vec<f32>,
     atlas_evicted: Cell<bool>,
 }
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PerformanceMetrics {
+    pub draw_calls: u32,
+    pub vertices_submitted: u32,
+    pub rect_bytes_copied: u64,
+    pub rect_flush_count: u32,
+    pub primitives_batched: u32,
+}
+
 impl From<String> for Error {
     fn from(s: String) -> Self {
         Self::Init(s)
@@ -365,7 +379,7 @@ impl From<String> for Error {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct RectVertex {
     pos: [f32; 2],
     color: [u8; 4],
@@ -508,9 +522,10 @@ impl WgpuRenderer {
         subpixel_orientation: SubpixelOrientation,
         zero_evicted_layer: bool,
         policy: AtlasEvictionPolicy,
-        report_interval_frames: u32,
+        atlas_report_interval_frames: u32,
+        renderer_report_interval_frames: u32,
     ) -> Result<Self, Error> {
-        // Prefer Vulkan backend explicitly (like Warp) and allow GL as a build fallback only if
+// Prefer Vulkan backend explicitly. This build is WGPU-only; no other graphics API fallback.
         // changed later.
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -543,7 +558,7 @@ impl WgpuRenderer {
         // Choose surface format based on preference.
         let formats = surface_caps.formats.clone();
         let pick_non_srgb = || formats.iter().copied().find(|f| !f.is_srgb());
-        // Force non-sRGB format for reliable blending/gamma on Wayland+GLES.
+// Force non-sRGB format for reliable blending/gamma on some Wayland setups.
         let format = pick_non_srgb().unwrap_or(formats[0]);
         let is_srgb_surface = false;
 
@@ -852,15 +867,9 @@ targets: &[Some(wgpu::ColorTargetState {
         // Prepare zero scratch buffer for optional layer clearing.
         let zero_scratch = vec![0u8; (ATLAS_SIZE as usize) * (ATLAS_SIZE as usize) * 4];
 
-        // Create a reusable dynamic vertex buffer for rects with an initial capacity.
-        let initial_rect_vb_capacity_vertices: usize = 64 * 1024; // 64k vertices (~6.1 MB at 24 bytes/vertex)
-        let rect_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rect-vertex-buffer"),
-            size: (initial_rect_vb_capacity_vertices * std::mem::size_of::<RectVertex>())
-                as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        // Create a rect transfer helper (staging+vertex) for batched uploads.
+        let initial_rect_vb_capacity_vertices: usize = 64 * 1024; // 64k vertices
+        let rect_transfer = WgpuRectTransfer::new(&device, initial_rect_vb_capacity_vertices, std::mem::size_of::<RectVertex>());
 
         // --- Sprite pipeline & resources ---
         // Minimal sprite shader (textured quad with tint)
@@ -1053,8 +1062,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             sprite_bind_group_nearest,
             rect_uniform_buffer,
             rect_bind_group,
-            rect_vertex_buffer,
-            rect_vb_capacity_vertices: initial_rect_vb_capacity_vertices,
+            rect_transfer,
+            rect_vertices_cpu: Vec::new(),
             atlas_texture,
             atlas_view,
             atlas_sampler,
@@ -1078,6 +1087,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             last_frame_ms: 0.0,
             last_draw_calls: 0,
             last_vertices: 0,
+            metrics: PerformanceMetrics::default(),
             zero_evicted_layer: false,                    // set below
             policy: AtlasEvictionPolicy::LruMinOccupancy, // set below
             zero_scratch,
@@ -1085,6 +1095,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             atlas_insert_misses: 0,
             atlas_evictions_count: 0,
             report_interval_frames: 0,
+            renderer_report_interval_frames: 0,
             frame_counter: 0,
             pending_clear: Cell::new(None),
             pending_text: Vec::new(),
@@ -1098,7 +1109,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         };
         renderer.zero_evicted_layer = zero_evicted_layer;
         renderer.policy = policy;
-        renderer.report_interval_frames = report_interval_frames;
+        renderer.report_interval_frames = atlas_report_interval_frames;
+        renderer.renderer_report_interval_frames = renderer_report_interval_frames;
 
         Ok(renderer)
     }
@@ -1133,6 +1145,37 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     pub fn finish(&self) {
         // No-op for wgpu; presentation happens in draw paths.
+    }
+
+    pub fn metrics(&self) -> PerformanceMetrics {
+        self.metrics
+    }
+
+    pub fn last_frame_ms(&self) -> f32 {
+        self.last_frame_ms
+    }
+
+    /// Rolling stats of the last up-to-60 frames: (avg_ms, min_ms, max_ms)
+    pub fn frame_ms_stats(&self) -> Option<(f32, f32, f32)> {
+        if self.perf_history.is_empty() {
+            return None;
+        }
+        let n = self.perf_history.len().min(60);
+        let slice = &self.perf_history[self.perf_history.len() - n..];
+        let mut sum = 0.0f32;
+        let mut min = f32::INFINITY;
+        let mut max = 0.0f32;
+        for &v in slice {
+            sum += v;
+            if v < min {
+                min = v;
+            }
+            if v > max {
+                max = v;
+            }
+        }
+        let avg = sum / n as f32;
+        Some((avg, min, max))
     }
 
     pub fn draw_rects(
@@ -1180,7 +1223,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let mut all_rects = Vec::with_capacity(self.pending_bg.len() + rects_in.len());
         all_rects.append(&mut self.pending_bg);
         all_rects.extend(rects_in);
-        let mut vertices: Vec<RectVertex> = Vec::with_capacity(all_rects.len() * 6);
+        // Reuse CPU vertex buffer
+        let vertices = &mut self.rect_vertices_cpu;
+        vertices.clear();
+        vertices.reserve(all_rects.len() * 6);
         for rect in all_rects.iter() {
             let x = rect.x / half_w - 1.0;
             let y = -rect.y / half_h + 1.0;
@@ -1235,48 +1281,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             wgpu::Color::TRANSPARENT
         };
 
-        // Update rect uniforms for this frame (cell metrics and underline params)
-        // Match GL logic for padding_y to align lines with integral cell rows.
-        let viewport_height = size_info.height() - size_info.padding_y();
-        let padding_y = viewport_height
-            - (viewport_height / size_info.cell_height()).floor() * size_info.cell_height();
-        let underline_position = metrics.descent.abs() - metrics.underline_position.abs();
-        let underline_thickness = metrics.underline_thickness;
-        let undercurl_position = (0.5 * metrics.descent).abs();
-        let rect_uniforms: [f32; 8] = [
-            size_info.cell_width(),
-            size_info.cell_height(),
-            size_info.padding_x(),
-            padding_y,
-            underline_position,
-            underline_thickness,
-            undercurl_position,
-            0.0,
-        ];
-        self.queue.write_buffer(
-            &self.rect_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&rect_uniforms),
-        );
 
-        // Upload vertices into a reusable GPU vertex buffer
-        if !vertices.is_empty() {
-            let needed = vertices.len();
-            if needed > self.rect_vb_capacity_vertices {
-                let mut new_cap = self.rect_vb_capacity_vertices.max(1);
-                while new_cap < needed {
-                    new_cap *= 2;
-                }
-                self.rect_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("rect-vertex-buffer"),
-                    size: (new_cap * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-                self.rect_vb_capacity_vertices = new_cap;
-            }
-            self.queue
-                .write_buffer(&self.rect_vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        // Upload vertices via staging+copy to minimize queue writes
+        self.rect_transfer.begin_frame();
+        if !self.rect_vertices_cpu.is_empty() {
+            // Use the typed path by default, but we could also append_raw if we had &[u8]
+            self.rect_transfer.append_vertices(&self.device, &self.rect_vertices_cpu);
         }
 
         // Optionally stage perf HUD background as rounded rects before creating buffers
@@ -1338,6 +1348,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 bytemuck::cast_slice(&rect_uniforms),
             );
 
+            // Flush staging -> GPU vertex buffer before drawing rects/UI
+            let copied = self.rect_transfer.flush(&mut encoder, &self.device);
+            if copied > 0 {
+                self.metrics.rect_bytes_copied = copied as u64;
+                self.metrics.rect_flush_count += 1;
+            }
+
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("rects-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1354,13 +1371,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 occlusion_query_set: None,
             });
 
-            if !vertices.is_empty() {
+            if !self.rect_vertices_cpu.is_empty() {
                 pass.set_pipeline(&self.rect_pipeline);
                 pass.set_bind_group(0, &self.rect_bind_group, &[]);
-                let used_bytes =
-                    (vertices.len() * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress;
-                pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(0..used_bytes));
-                pass.draw(0..vertices.len() as u32, 0..1);
+                let used_bytes = (self.rect_vertices_cpu.len() * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress;
+                pass.set_vertex_buffer(0, self.rect_transfer.vertex_buffer().slice(0..used_bytes));
+                pass.draw(0..self.rect_vertices_cpu.len() as u32, 0..1);
+                self.metrics.draw_calls += 1;
+                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.rect_vertices_cpu.len() as u32);
             }
 
             // Draw pending UI rounded rects in the same pass for correct layering.
@@ -1368,20 +1386,27 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 pass.set_pipeline(&self.ui_pipeline);
                 pass.set_vertex_buffer(0, ui_buf.slice(..));
                 pass.draw(0..self.pending_ui.len() as u32, 0..1);
+                self.metrics.draw_calls += 1;
+                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_ui.len() as u32);
             }
 
             // Draw sprites (linear then nearest) for proper filter usage
-            if let Some(ref spr_buf) = spr_buf_linear_opt {
+            if spr_buf_linear_opt.is_some() || spr_buf_nearest_opt.is_some() {
                 pass.set_pipeline(&self.sprite_pipeline);
+            }
+            if let Some(ref spr_buf) = spr_buf_linear_opt {
                 pass.set_bind_group(0, &self.sprite_bind_group_linear, &[]);
                 pass.set_vertex_buffer(0, spr_buf.slice(..));
                 pass.draw(0..self.pending_sprites_linear.len() as u32, 0..1);
+                self.metrics.draw_calls += 1;
+                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_sprites_linear.len() as u32);
             }
             if let Some(ref spr_buf) = spr_buf_nearest_opt {
-                pass.set_pipeline(&self.sprite_pipeline);
                 pass.set_bind_group(0, &self.sprite_bind_group_nearest, &[]);
                 pass.set_vertex_buffer(0, spr_buf.slice(..));
                 pass.draw(0..self.pending_sprites_nearest.len() as u32, 0..1);
+                self.metrics.draw_calls += 1;
+                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_sprites_nearest.len() as u32);
             }
         }
 
@@ -1426,6 +1451,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 pass.set_bind_group(0, &self.text_bind_group, &[]);
                 pass.set_vertex_buffer(0, text_vbuf.slice(..));
                 pass.draw(0..self.pending_text.len() as u32, 0..1);
+                self.metrics.draw_calls += 1;
+                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_text.len() as u32);
             }
 
             self.pending_text.clear();
@@ -1440,9 +1467,54 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if self.perf_history.len() > 120 {
             self.perf_history.remove(0);
         }
+        self.last_draw_calls = self.metrics.draw_calls;
+        self.last_vertices = self.metrics.vertices_submitted;
+        self.metrics.primitives_batched = all_rects.len() as u32;
 
-        // If perf HUD enabled, render a minimal overlay string using staged text API
-        if self.perf_hud_enabled {
+        self.frame_counter += 1;
+        // Renderer-level reporting cadence
+        let report_interval = self.renderer_report_interval_frames as u64;
+        if report_interval > 0 && self.frame_counter % report_interval == 0 {
+            debug!(
+                "wgpu frame={} dt_ms={:.2} draw_calls={} vertices={} rect_copy_bytes={} rect_flushes={} batched_rects={}",
+                self.frame_counter,
+                self.last_frame_ms,
+                self.metrics.draw_calls,
+                self.metrics.vertices_submitted,
+                self.metrics.rect_bytes_copied,
+                self.metrics.rect_flush_count,
+                self.metrics.primitives_batched
+            );
+        }
+
+        // Reset per-frame metrics counters
+        self.metrics.draw_calls = 0;
+        self.metrics.vertices_submitted = 0;
+        self.metrics.rect_bytes_copied = 0;
+        self.metrics.rect_flush_count = 0;
+        self.metrics.primitives_batched = 0;
+
+        // If perf HUD enabled, render a minimal overlay background (text overlay is postponed to Display-level draw)
+        let hud_cfg = crate::config::UiConfig::default().debug.renderer_perf_hud;
+        if self.perf_hud_enabled || hud_cfg {
+            let _pad = 6.0f32;
+            let bg_h = 20.0f32;
+            let bg_w = 180.0f32;
+            let bg_x = 12.0f32;
+            let bg_y = 12.0f32;
+            let tokens = crate::display::color::Rgb::new(20, 20, 20);
+            let pill = UiRoundedRect::new(bg_x, bg_y, bg_w, bg_h, 6.0, tokens, 0.65);
+            let si = SizeInfo::new(
+                self.size.width.max(1) as f32,
+                self.size.height.max(1) as f32,
+                8.0, 16.0, 0.0, 0.0,
+                false
+            );
+            self.stage_ui_rounded_rect(&si, pill);
+        }
+        // Also allow config to toggle HUD globally
+        let hud_cfg = crate::config::UiConfig::default().debug.renderer_perf_hud;
+        if self.perf_hud_enabled || hud_cfg {
             let _hud_text = format!("{:.1} ms", self.last_frame_ms);
             // Stage a rounded bg rect was already done before pass; now stage text on top via second pass
             // Convert pixels to a character string at an approximate top-left area using text vertices
@@ -1657,20 +1729,57 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let mut staged: Vec<TextVertex> = Vec::new();
         let mut staged_bg: Vec<RenderRect> = Vec::new();
 
+        // Coalesce adjacent full-cell background quads per line (same color/alpha) to reduce vertices.
+        #[derive(Clone, Copy)]
+        struct BgRun {
+            line: usize,
+            start_col: usize,
+            end_col: usize,
+            color: Rgb,
+            alpha: f32,
+        }
+        let mut run: Option<BgRun> = None;
+
+        let cw = size_info.cell_width();
+        let ch = size_info.cell_height();
+        let px = size_info.padding_x();
+        let py = size_info.padding_y();
+
+        let flush_run = |staged_bg: &mut Vec<RenderRect>, r: BgRun| {
+            let x = r.start_col as f32 * cw + px;
+            let y = r.line as f32 * ch + py;
+            let width = (r.end_col - r.start_col + 1) as f32 * cw;
+            let height = ch;
+            staged_bg.push(RenderRect::new(x, y, width, height, r.color, r.alpha));
+        };
+
         for mut cell in cells {
-            // Stage full-cell background quad first.
+            // Stage full-cell background quads by merging horizontally contiguous cells.
             if cell.bg_alpha > 0.0 {
-                let x = cell.point.column.0 as f32 * size_info.cell_width() + size_info.padding_x();
-                let y = cell.point.line as f32 * size_info.cell_height() + size_info.padding_y();
-                staged_bg.push(RenderRect::new(
-                    x,
-                    y,
-                    size_info.cell_width(),
-                    size_info.cell_height(),
-                    cell.bg,
-                    cell.bg_alpha,
-                ));
+                let line = cell.point.line;
+                let col = cell.point.column.0;
+                let color = cell.bg;
+                let alpha = cell.bg_alpha;
+                match run {
+                    Some(ref mut r)
+                        if r.line == line
+                            && r.color == color
+                            && r.alpha == alpha
+                            && col == r.end_col + 1 =>
+                    {
+                        r.end_col = col;
+                    }
+                    Some(r_prev) => {
+                        // Flush previous run and start a new one.
+                        flush_run(&mut staged_bg, r_prev);
+                        run = Some(BgRun { line, start_col: col, end_col: col, color, alpha });
+                    }
+                    None => {
+                        run = Some(BgRun { line, start_col: col, end_col: col, color, alpha });
+                    }
+                }
             }
+
             // Skip hidden or tab cells by rendering as space.
             let hidden = cell
                 .flags
@@ -1714,6 +1823,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                     ));
                 }
             }
+        }
+
+        // Flush any remaining run at the end of the row scan.
+        if let Some(r) = run.take() {
+            flush_run(&mut staged_bg, r);
         }
 
         self.pending_text.extend(staged);

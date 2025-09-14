@@ -189,8 +189,8 @@ render_timer_style = "LowContrast"
 # theme_selection = true
 persistent_logging = false
 log_level = "Info"
-# Prefer WGPU backend when available (falls back to OpenGL if initialization fails)
-prefer_wgpu = false
+# WGPU-only. OpenGL fallback has been removed.
+prefer_wgpu = true
 # Preview: enable plugin system (WASI sandbox) if built with `--features plugins`
 plugins_preview = false
 

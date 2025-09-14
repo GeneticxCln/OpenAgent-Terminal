@@ -33,7 +33,7 @@ use crate::{LoadedPlugin, WasmPluginContext, WasmPluginData};
 /// A lightweight runtime handle that operates on a single WASM plugin instance.
 #[cfg(feature = "wasm-runtime")]
 pub struct WasmInstanceRuntime {
-    plugin_id: String,
+    _plugin_id: String,
     plugin: Arc<LoadedPlugin>,
 }
 
@@ -42,7 +42,7 @@ impl WasmInstanceRuntime {
     /// Create a runtime handle for a loaded plugin
     pub fn new(plugin_id: impl Into<String>, plugin: Arc<LoadedPlugin>) -> Self {
         Self {
-            plugin_id: plugin_id.into(),
+            _plugin_id: plugin_id.into(),
             plugin,
         }
     }

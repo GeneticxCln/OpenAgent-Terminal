@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::{cmp, mem};
 
-/// Minimal rectangle type for damage tracking (independent of GL/WGPU backends).
+/// Minimal rectangle type for damage tracking.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,

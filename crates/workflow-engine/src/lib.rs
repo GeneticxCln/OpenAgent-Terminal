@@ -288,6 +288,34 @@ impl WorkflowEngine {
         })
     }
 
+    /// List loaded workflows (id, definition)
+    pub async fn list_workflows(&self) -> Vec<(String, WorkflowDefinition)> {
+        let map = self.workflows.read().await;
+        map.iter()
+            .map(|(id, def)| (id.clone(), def.clone()))
+            .collect()
+    }
+
+    /// Get a workflow by its `name` (returns the first matching version).
+    /// If multiple versions share the same name, the lexicographically highest version is preferred.
+    pub async fn get_workflow_by_name(&self, name: &str) -> Option<(String, WorkflowDefinition)> {
+        let map = self.workflows.read().await;
+        let mut candidates: Vec<(&String, &WorkflowDefinition)> = map
+            .iter()
+            .filter(|(_, def)| def.name == name)
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
+        // Prefer highest version string if available
+        candidates.sort_by(|a, b| a.1.version.cmp(&b.1.version));
+        if let Some((id, def)) = candidates.last() {
+            Some(((*id).clone(), (*def).clone()))
+        } else {
+            None
+        }
+    }
+
     /// Create a shallow clone that shares state but uses a fresh template engine
     fn shallow_clone(&self) -> Self {
         Self {
