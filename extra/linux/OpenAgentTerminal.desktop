@@ -8,7 +8,7 @@ Categories=System;TerminalEmulator;
 
 Name=OpenAgent Terminal
 GenericName=Terminal
-Comment=A fast, cross-platform, OpenGL terminal emulator
+Comment=AI-enhanced, cross-platform terminal with GPU (WGPU) rendering and privacy-first design
 StartupNotify=true
 StartupWMClass=openagent-terminal
 Actions=New;

@@ -606,11 +606,6 @@ fn handle_windows_resources() {
         embed_resource::compile("windows/openagent-terminal.rc", embed_resource::NONE)
             .manifest_required()
             .unwrap();
-    } else if Path::new("windows/alacritty.rc").exists() {
-        // Fallback to alacritty.rc if it exists
-        embed_resource::compile("windows/alacritty.rc", embed_resource::NONE)
-            .manifest_required()
-            .unwrap();
     }
 }
 

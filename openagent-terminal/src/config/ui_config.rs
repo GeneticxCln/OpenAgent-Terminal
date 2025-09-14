@@ -102,7 +102,7 @@ pub struct UiConfig {
     /// Regex hints for interacting with terminal content.
     pub hints: Hints,
 
-    /// Config for the alacritty_terminal itself.
+    /// Config for the terminal engine itself.
     pub terminal: Terminal,
 
     /// AI assistant configuration.

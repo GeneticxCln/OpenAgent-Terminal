@@ -4439,7 +4439,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn spawn_new_instance(&mut self) {
         let mut env_args = env::args();
-        let alacritty = env_args.next().unwrap();
+        let binary = env_args.next().unwrap();
 
         let mut args: Vec<String> = Vec::new();
 
@@ -4461,7 +4461,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             args.push(arg);
         }
 
-        self.spawn_daemon(&alacritty, &args);
+        self.spawn_daemon(&binary, &args);
     }
 
     #[cfg(not(windows))]

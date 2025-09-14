@@ -60,7 +60,7 @@ impl<R: Read + Send + 'static> UnblockedReader<R> {
         });
 
         // Spawn the reader thread.
-        spawn_named("alacritty-tty-reader-thread", move || {
+        spawn_named("openagent-terminal-tty-reader-thread", move || {
             let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
             let mut context = Context::from_waker(&waker);
 
@@ -170,7 +170,7 @@ impl<W: Write + Send + 'static> UnblockedWriter<W> {
         });
 
         // Spawn the writer thread.
-        spawn_named("alacritty-tty-writer-thread", move || {
+        spawn_named("openagent-terminal-tty-writer-thread", move || {
             let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
             let mut context = Context::from_waker(&waker);
 
