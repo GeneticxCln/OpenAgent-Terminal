@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
+#[cfg(feature = "ai")]
+use clap::builder::TypedValueParser as _;
 use log::{error, LevelFilter};
 use openagent_terminal_config::SerdeReplace;
 use serde::{Deserialize, Serialize};
