@@ -1351,7 +1351,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             // Flush staging -> GPU vertex buffer before drawing rects/UI
             let copied = self.rect_transfer.flush(&mut encoder, &self.device);
             if copied > 0 {
-                self.metrics.rect_bytes_copied = copied as u64;
+self.metrics.rect_bytes_copied = copied;
                 self.metrics.rect_flush_count += 1;
             }
 

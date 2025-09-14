@@ -11,12 +11,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use regex::{Regex, RegexBuilder};
-use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use regex::Regex;
+// use serde::{Deserialize, Serialize}; // retained for future serialization when needed
+// use tokio::sync::mpsc; // not used currently
+use tracing::{debug, info, warn};
 
-use crate::blocks_v2::{Block, BlockId};
+use crate::blocks_v2::{BlockId};
 use crate::shell_integration::CommandId;
 
 /// Native search and filtering manager
@@ -1810,7 +1810,7 @@ impl FuzzyMatcher {
         }
     }
 
-    fn search(&self, query: &str) -> Vec<SearchResult> {
+fn search(&self, _query: &str) -> Vec<SearchResult> {
         // Placeholder for fuzzy search implementation
         Vec::new()
     }
@@ -1866,7 +1866,7 @@ impl Default for Bm25Ranker {
 }
 
 impl BooleanSearch {
-    fn search(&self, query: &str) -> Vec<SearchResult> {
+fn search(&self, _query: &str) -> Vec<SearchResult> {
         // Placeholder for boolean search implementation
         Vec::new()
     }

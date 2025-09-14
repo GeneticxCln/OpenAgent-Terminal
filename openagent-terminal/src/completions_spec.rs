@@ -12,6 +12,7 @@ pub struct FlagSpec {
 
 #[derive(Debug, Clone)]
 pub struct CommandSpec {
+    #[allow(dead_code)]
     pub name: &'static str,
     pub flags: &'static [FlagSpec],
     pub subcommands: &'static [&'static str],

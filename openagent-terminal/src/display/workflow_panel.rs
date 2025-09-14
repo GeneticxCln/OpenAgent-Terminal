@@ -66,7 +66,7 @@ impl WorkflowParamsState {
                 kind: p.param_type,
                 description: p.description,
                 required: p.required,
-                value: p.default.unwrap_or_else(|| serde_json::Value::Null),
+value: p.default.unwrap_or(serde_json::Value::Null),
                 options: p.options,
                 min: p.min,
                 max: p.max,

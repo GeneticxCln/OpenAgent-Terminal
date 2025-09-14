@@ -7,20 +7,18 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::process::{Command};
+// use std::sync::Arc; // not used currently
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Child;
-use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+// use tokio::process::Child; // not used currently
+// use tokio::sync::mpsc; // not used currently
 
-use crate::blocks_v2::{BlockId, ShellType};
+use crate::blocks_v2::{ShellType};
 
 /// Native shell integration manager
 pub struct ShellIntegration {
@@ -1166,7 +1164,7 @@ impl EnhancedHistory {
         let query_lower = query.to_lowercase();
 
         // Search by command content
-        for (i, entry) in self.entries.iter().enumerate().rev() {
+for (_i, entry) in self.entries.iter().enumerate().rev() {
             if entry.command.to_lowercase().contains(&query_lower) {
                 results.push(entry);
                 if results.len() >= max_results {
@@ -1257,7 +1255,7 @@ mod tests {
     #[test]
     fn test_command_timing() {
         let mut shell = ShellIntegration::new();
-        let id = shell.start_command("echo test".to_string(), None);
+let id = shell.start_command("echo test".to_string(), None); // ensure used
 
         std::thread::sleep(Duration::from_millis(10));
         shell

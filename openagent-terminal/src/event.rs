@@ -3879,10 +3879,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 #[cfg(feature = "ai")]
                 BlockAction::ExplainError => {
                     if let Some(item) = self.display.blocks_search.get_selected_item() {
-                        let text = if !item.output.is_empty() {
-                            item.output.clone()
-                        } else {
+                        let text = if item.output.is_empty() {
                             item.command.clone()
+                        } else {
+                            item.output.clone()
                         };
                         self.send_user_event(EventType::AiExplain(Some(text)));
                     }
@@ -3890,10 +3890,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 #[cfg(feature = "ai")]
                 BlockAction::FixError => {
                     if let Some(item) = self.display.blocks_search.get_selected_item() {
-                        let error_text = if !item.output.is_empty() {
-                            item.output.clone()
-                        } else {
+                        let error_text = if item.output.is_empty() {
                             item.command.clone()
+                        } else {
+                            item.output.clone()
                         };
                         self.send_user_event(EventType::AiFix(Some(error_text)));
                     }
@@ -7288,10 +7288,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         rt.reconfigure_to(&name, &prov_cfg);
                         // Update composer display cache
                         self.ctx.display.ai_current_provider = name.clone();
-                        self.ctx.display.ai_current_model = if !rt.ui.current_model.is_empty() {
-                            rt.ui.current_model.clone()
-                        } else {
+                        self.ctx.display.ai_current_model = if rt.ui.current_model.is_empty() {
                             prov_cfg.default_model.unwrap_or_default()
+                        } else {
+                            rt.ui.current_model.clone()
                         };
                     } else {
                         // If runtime wasn't initialized, just update the display; runtime will be created when AI opens

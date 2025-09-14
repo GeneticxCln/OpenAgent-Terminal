@@ -158,16 +158,14 @@ impl ContextManager {
             // Compute next wait deadline: min of non-expired per-provider deadlines and overall
             let now = Instant::now();
             let mut next_deadline: Option<Instant> = None;
-            for dl in &deadlines {
-                if let Some(d) = dl {
-                    if *d <= now {
-                        continue;
-                    }
-                    next_deadline = Some(match next_deadline {
-                        Some(cur_min) => cur_min.min(*d),
-                        None => *d,
-                    });
+            for d in deadlines.iter().flatten() {
+                if *d <= now {
+                    continue;
                 }
+                next_deadline = Some(match next_deadline {
+                    Some(cur_min) => cur_min.min(*d),
+                    None => *d,
+                });
             }
             if let Some(ov) = overall_deadline {
                 next_deadline = Some(match next_deadline {

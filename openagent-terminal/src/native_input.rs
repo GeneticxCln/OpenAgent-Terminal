@@ -1862,7 +1862,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::blocks_v2::BlockId;
@@ -2433,7 +2433,7 @@ impl NativeInput {
             InputAction::CreateTab => {
                 // Implementation would trigger tab creation
             }
-            InputAction::SwitchTab(direction) => {
+InputAction::SwitchTab(_direction) => {
                 // Implementation would switch tabs immediately
             }
             InputAction::SplitHorizontal => {
@@ -2596,7 +2596,7 @@ impl NativeInput {
     }
 
     /// Determine mouse context from position
-    fn determine_mouse_context(&self, position: (f64, f64)) -> MouseContext {
+fn determine_mouse_context(&self, _position: (f64, f64)) -> MouseContext {
         // This would be implemented to check hit-testing against UI elements
         // For now, return a default context
         MouseContext::Terminal

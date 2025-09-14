@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
+// use std::sync::Arc; // not used currently
 use std::time::Instant;
 
 use anyhow::Result;
@@ -237,11 +237,11 @@ impl NativeRenderer {
     }
 
     /// Render command blocks with immediate GPU acceleration
-    pub fn render_blocks(
+pub fn render_blocks(
         &mut self,
-        display: &mut Display,
+        _display: &mut Display,
         block_render_state: &BlockRenderState,
-        size_info: &SizeInfo,
+        _size_info: &SizeInfo,
     ) -> Result<()> {
         let now = Instant::now();
         self.animation_timeline.frame_time = now;
@@ -274,7 +274,7 @@ impl NativeRenderer {
 
             // Primitive generation/rendering deferred in experimental renderer to avoid borrow
             // conflicts
-            let _ = size_info;
+            let _ = _size_info;
 
             render_element.last_render = now;
 
@@ -437,11 +437,11 @@ impl NativeRenderer {
     }
 
     /// Render block primitives immediately to GPU
-    fn render_block_primitives(
+fn render_block_primitives(
         &mut self,
-        display: &mut Display,
+        _display: &mut Display,
         element: &BlockRenderElement,
-        size_info: &SizeInfo,
+        _size_info: &SizeInfo,
     ) -> Result<()> {
         // Sort primitives by layer for correct rendering order
         let mut sorted_primitives = element.render_primitives.clone();
@@ -684,9 +684,9 @@ impl NativeRenderer {
     }
 
     /// Render tab primitives immediately to GPU
-    fn render_tab_primitives(
+fn render_tab_primitives(
         &mut self,
-        display: &mut Display,
+        _display: &mut Display,
         element: &TabRenderElement,
     ) -> Result<()> {
         for primitive in &element.render_primitives {

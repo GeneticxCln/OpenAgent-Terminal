@@ -482,10 +482,11 @@ pub struct AiRuntime {
 impl AiRuntime {
     pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
-        let mut ui = AiUiState::default();
-        ui.current_provider = provider.name().to_string();
-        // Model is provider-specific; when constructed via from_secure_config we will set it.
-        ui.current_model.clear();
+        let ui = AiUiState {
+            current_provider: provider.name().to_string(),
+            current_model: String::new(),
+            ..AiUiState::default()
+        };
         let mut rt = Self {
             ui,
             provider: Arc::from(provider),
@@ -675,10 +676,7 @@ impl AiRuntime {
                     rt.ui.current_model = m;
                 } else {
                     // Fallback to config default if available
-                    rt.ui.current_model = config
-                        .default_model
-                        .clone()
-                        .unwrap_or_else(|| String::new());
+                    rt.ui.current_model = config.default_model.clone().unwrap_or_default();
                 }
                 rt
             }
@@ -761,13 +759,13 @@ impl AiRuntime {
                     // Micro-batch: accumulate small chunks and flush at most every batch_ms
                     batch_buf.push_str(chunk);
                     let now = std::time::Instant::now();
-                    if now.saturating_duration_since(last_flush).as_millis() as u64 >= batch_ms {
-                        if !batch_buf.is_empty() {
-                            let payload = std::mem::take(&mut batch_buf);
-                            let _ = event_proxy
-                                .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
-                            last_flush = now;
-                        }
+                    if now.saturating_duration_since(last_flush).as_millis() as u64 >= batch_ms
+                        && !batch_buf.is_empty()
+                    {
+                        let payload = std::mem::take(&mut batch_buf);
+                        let _ = event_proxy
+                            .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                        last_flush = now;
                     }
                 };
                 match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
@@ -1463,7 +1461,7 @@ impl AiRuntime {
             }
         }
         // Convert bytes -> KB rounding up
-        let mut kb = (self.context_cfg.max_bytes + 1023) / 1024;
+        let mut kb = self.context_cfg.max_bytes.div_ceil(1024);
         if !self.context_cfg.enabled {
             kb = 0;
         }

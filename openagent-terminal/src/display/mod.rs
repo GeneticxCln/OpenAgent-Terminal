@@ -446,7 +446,11 @@ pub struct Display {
     pub composer_view_col_offset: usize,
     /// Caret blink state for composer
     pub composer_caret_visible: bool,
-    pub composer_caret_last_toggle: Option<Instant>,
+pub composer_caret_last_toggle: Option<Instant>,
+    /// Composer history (most-recent-first) and navigation index
+    pub composer_history: std::collections::VecDeque<String>,
+    pub composer_history_index: Option<usize>,
+    pub composer_history_stash: Option<String>,
 
     /// Inline provider/model state for bottom composer UI
     pub ai_current_provider: String,
@@ -1116,7 +1120,10 @@ impl Display {
             composer_sel_anchor: None,
             composer_view_col_offset: 0,
             composer_caret_visible: true,
-            composer_caret_last_toggle: None,
+composer_caret_last_toggle: None,
+            composer_history: std::collections::VecDeque::new(),
+            composer_history_index: None,
+            composer_history_stash: None,
             ai_current_provider: {
                 #[cfg(feature = "ai")]
                 {

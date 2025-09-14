@@ -1192,7 +1192,19 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
                 // Submit via Enter: behaves like clicking [Run]
-                Key::Named(NamedKey::Enter) => {
+Key::Named(NamedKey::Enter) => {
+                    // Push composer text into history before submission
+                    let txt = self.ctx.display().composer_text.trim().to_string();
+                    if !txt.is_empty() {
+                        if self.ctx.display().composer_history.front().map(|s| s != &txt).unwrap_or(true) {
+                            self.ctx.display().composer_history.push_front(txt);
+                            while self.ctx.display().composer_history.len() > 100 {
+                                self.ctx.display().composer_history.pop_back();
+                            }
+                        }
+                        self.ctx.display().composer_history_index = None;
+                        self.ctx.display().composer_history_stash = None;
+                    }
                     // Open AI panel and seed text, then propose
                     #[cfg(feature = "ai")]
                     {
@@ -1222,7 +1234,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     return;
                 }
                 // Navigation
-                Key::Named(NamedKey::ArrowLeft) => {
+Key::Named(NamedKey::ArrowLeft) => {
+                    // Word-jump with Ctrl/Alt
+                    if mods.control_key() || mods.alt_key() {
+                        let cur = self.ctx.display().composer_cursor;
+                        let t = self.ctx.display().composer_text.clone();
+                        let newc = crate::utils::composer_edit::move_word_left(&t, cur);
+                        if mods.shift_key() && self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        } else if !mods.shift_key() {
+                            self.ctx.display().composer_sel_anchor = None;
+                        }
+                        self.ctx.display().composer_cursor = newc;
+                        self.ctx.mark_dirty();
+                        return;
+                    }
                     let cur = self.ctx.display().composer_cursor;
                     if mods.shift_key() {
                         if self.ctx.display().composer_sel_anchor.is_none() {
@@ -1237,7 +1263,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.mark_dirty();
                     return;
                 }
-                Key::Named(NamedKey::ArrowRight) => {
+Key::Named(NamedKey::ArrowRight) => {
+                    // Word-jump with Ctrl/Alt
+                    if mods.control_key() || mods.alt_key() {
+                        let cur = self.ctx.display().composer_cursor;
+                        let t = self.ctx.display().composer_text.clone();
+                        let newc = crate::utils::composer_edit::move_word_right(&t, cur);
+                        if mods.shift_key() && self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        } else if !mods.shift_key() {
+                            self.ctx.display().composer_sel_anchor = None;
+                        }
+                        self.ctx.display().composer_cursor = newc;
+                        self.ctx.mark_dirty();
+                        return;
+                    }
                     let len = self.ctx.display().composer_text.chars().count();
                     let cur = self.ctx.display().composer_cursor;
                     if mods.shift_key() {
@@ -1456,7 +1496,104 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             .send_user_event(crate::event::EventType::AiFix(target));
                         return;
                     }
-                    _ => {}
+Key::Named(NamedKey::End) => {
+                    if mods.shift_key() {
+                        let cur = self.ctx.display().composer_cursor;
+                        if self.ctx.display().composer_sel_anchor.is_none() {
+                            self.ctx.display().composer_sel_anchor = Some(cur);
+                        }
+                    } else {
+                        self.ctx.display().composer_sel_anchor = None;
+                    }
+                    let len = self.ctx.display().composer_text.chars().count();
+                    self.ctx.display().composer_cursor = len;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                // History navigation
+                Key::Named(NamedKey::ArrowUp) => {
+                    let hist_len = self.ctx.display().composer_history.len();
+                    if hist_len > 0 {
+                        if self.ctx.display().composer_history_index.is_none() {
+                            self.ctx.display().composer_history_stash = Some(self.ctx.display().composer_text.clone());
+                            self.ctx.display().composer_history_index = Some(0);
+                        } else if let Some(i) = self.ctx.display().composer_history_index {
+                            if i + 1 < hist_len { self.ctx.display().composer_history_index = Some(i + 1); }
+                        }
+                        if let Some(i) = self.ctx.display().composer_history_index {
+                            if let Some(t) = self.ctx.display().composer_history.get(i).cloned() {
+                                self.ctx.display().composer_text = t;
+                                self.ctx.display().composer_cursor = self.ctx.display().composer_text.chars().count();
+                                self.ctx.display().composer_sel_anchor = None;
+                                self.ctx.mark_dirty();
+                            }
+                        }
+                        return;
+                    }
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    if let Some(i) = self.ctx.display().composer_history_index {
+                        if i > 0 {
+                            self.ctx.display().composer_history_index = Some(i - 1);
+                            if let Some(t) = self.ctx.display().composer_history.get(i - 1).cloned() {
+                                self.ctx.display().composer_text = t;
+                            }
+                        } else {
+                            self.ctx.display().composer_history_index = None;
+                            if let Some(stash) = self.ctx.display().composer_history_stash.take() {
+                                self.ctx.display().composer_text = stash;
+                            } else {
+                                self.ctx.display().composer_text.clear();
+                            }
+                        }
+                        self.ctx.display().composer_cursor = self.ctx.display().composer_text.chars().count();
+                        self.ctx.display().composer_sel_anchor = None;
+                        self.ctx.mark_dirty();
+                        return;
+                    }
+                }
+                // Editing shortcuts
+                Key::Named(NamedKey::Backspace) if mods.control_key() => {
+                    let cur = self.ctx.display().composer_cursor;
+                    let t = self.ctx.display().composer_text.clone();
+                    let (newt, newc) = crate::utils::composer_edit::delete_word_left(&t, cur);
+                    self.ctx.display().composer_text = newt;
+                    self.ctx.display().composer_cursor = newc;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Named(NamedKey::Delete) if mods.control_key() => {
+                    let cur = self.ctx.display().composer_cursor;
+                    let t = self.ctx.display().composer_text.clone();
+                    let (newt, newc) = crate::utils::composer_edit::delete_word_right(&t, cur);
+                    self.ctx.display().composer_text = newt;
+                    self.ctx.display().composer_cursor = newc;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Character(c) if mods.control_key() && c.eq_ignore_ascii_case("u") => {
+                    let cur = self.ctx.display().composer_cursor;
+                    let t = self.ctx.display().composer_text.clone();
+                    let (newt, newc) = crate::utils::composer_edit::delete_to_start(&t, cur);
+                    self.ctx.display().composer_text = newt;
+                    self.ctx.display().composer_cursor = newc;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Character(c) if mods.control_key() && c.eq_ignore_ascii_case("k") => {
+                    let cur = self.ctx.display().composer_cursor;
+                    let t = self.ctx.display().composer_text.clone();
+                    let (newt, newc) = crate::utils::composer_edit::delete_to_end(&t, cur);
+                    self.ctx.display().composer_text = newt;
+                    self.ctx.display().composer_cursor = newc;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                _ => {}
                 }
             }
 

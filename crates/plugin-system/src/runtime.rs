@@ -114,8 +114,8 @@ fn unpack_ptr_len(packed: i64) -> (u32, u32) {
 }
 
 #[cfg(feature = "wasm-runtime")]
-fn get_memory<'a>(
-    instance: &'a wasmtime::Instance,
+fn get_memory(
+    instance: &wasmtime::Instance,
     store: &mut wasmtime::Store<WasmPluginContext>,
 ) -> Result<wasmtime::Memory, PluginSystemError> {
     instance
@@ -277,7 +277,7 @@ pub async fn execute_wasm_command_internal(
 
         // Parse into standardized output
         let output: CommandOutput =
-            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
+serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(output);
     }
 
@@ -328,7 +328,7 @@ pub async fn provide_completions_internal(
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
         let completions: Vec<Completion> =
-            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
+serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(completions);
     }
 
@@ -373,7 +373,7 @@ pub async fn collect_context_internal(
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
         let context: Context =
-            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
+serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(Some(context));
     }
 
@@ -426,7 +426,7 @@ pub async fn handle_event_internal(
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
         let resp: HookResponse =
-            serde_json::from_slice(&bytes).map_err(|e| PluginSystemError::Serialization(e))?;
+serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(resp);
     }
 

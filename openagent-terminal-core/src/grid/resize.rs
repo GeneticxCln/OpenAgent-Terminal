@@ -310,11 +310,10 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                         row[Column(columns - 1)].flags_mut().insert(Flags::WRAPLINE);
                         new_raw.push(row);
                         break;
-                    } else {
-                        // Remove the leading spacer from the end of the wrapped row.
-                        wrapped[len - 2].flags_mut().insert(Flags::WRAPLINE);
-                        wrapped.truncate(len - 1);
                     }
+                    // Remove the leading spacer from the end of the wrapped row.
+                    wrapped[len - 2].flags_mut().insert(Flags::WRAPLINE);
+                    wrapped.truncate(len - 1);
                 }
 
                 new_raw.push(row);

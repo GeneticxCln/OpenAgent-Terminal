@@ -515,7 +515,7 @@ impl RetryStrategy {
                 let start = idx + key.len();
                 let tail = &error[start..];
                 let val = tail
-                    .split(|c| c == ';' || c == '\r' || c == '\n')
+                    .split([';', '\r', '\n'])
                     .next()
                     .unwrap_or("")
                     .trim();
@@ -531,7 +531,7 @@ impl RetryStrategy {
                 let start = idx + key.len();
                 let tail = &error[start..];
                 let val = tail
-                    .split(|c| c == ';' || c == '\r' || c == '\n')
+                    .split([';', '\r', '\n'])
                     .next()
                     .unwrap_or("")
                     .trim();

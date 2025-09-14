@@ -266,10 +266,6 @@ where
                         let skip = if combined[end] == BEL { 1 } else { 2 };
                         i = end + skip;
                         continue;
-                    } else {
-                        // Incomplete sequence; store tail and stop.
-                        state.osc133_accum.extend_from_slice(&combined[i..]);
-                        break;
                     }
                 } else {
                     // Not OSC 133; treat ESC ] as normal bytes, output and advance by 1.

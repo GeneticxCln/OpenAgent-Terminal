@@ -88,6 +88,7 @@ mod ui_confirm;
 mod workspace;
 #[cfg(feature = "completions")]
 mod completions_spec;
+mod utils;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;
