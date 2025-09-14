@@ -8,6 +8,7 @@ This project exposes a minimal, versioned plugin API for extending OpenAgent Ter
 
 Quick start (WASI “Hello” plugin)
 
+- Start here: docs/guides/first_plugin.md (step-by-step walkthrough)
 - Example: examples/plugins/hello-wasi
 - Build: cargo build -p examples/plugins/hello-wasi --release
 - Load: place the resulting .wasm in your plugin directory and register it in config
@@ -30,6 +31,24 @@ Current status
 - Host persistent storage functions available to plugins (`host_store_data`/`host_retrieve_data`) with SDK helpers `store_data`/`retrieve_data`
 - Broadcast API: host can send an event to all plugins
 - Example WASI plugin at examples/plugins/hello-wasi (demonstrates setting a response)
+
+Threat model and directory policies
+
+- Execution model: WASI sandbox via Wasmtime. No direct syscalls; only WASI preview1 functions exposed. Threads are disabled; SIMD and bulk memory enabled. Epoch-based interruption limits CPU.
+- Allowed WASI calls (effective): fd_read/fd_write/fd_close, fd_fdstat_get, clock_time_get, random_get, path_open under preopened roots only, and other safe preview1 calls required by Wasmtime’s WASI. No arbitrary syscalls or raw sockets.
+- File system caps: Plugins are confined to preopened directories. By default, only the plugin’s directory is preopened; additional preopens must be explicitly listed in the manifest and are sanitized to stay under the plugin directory. Dangerous system paths and traversal are blocked.
+- Environment: Plugins receive only explicitly allowed environment variables from the manifest. Sensitive prefixes (AWS_, TOKEN_, SECRET_, KEY_, PASSWORD_, SSH_, GPG_, etc.) and sensitive exact names (HOME, USER, PATH, LD_LIBRARY_PATH, SUDO_USER, LOGNAME) are blocked unless explicitly allowed by the host.
+- Network: Disabled by default. No direct sockets via WASI; future networking would require an audited host API.
+- Command execution: Disabled by default. If permitted in the manifest and allowed by host policy, execution is funneled through a controlled host function that returns structured output.
+- Resource limits: Linear memory growth is bounded (default ~50MB). Timeouts are enforced via epoch deadlines around host-ABI calls. Manifests are validated for reasonable memory/timeout limits.
+- Auditability: All host calls can be logged; consider enabling structured tracing in dev builds.
+
+Directory signature policy (matches example_config defaults):
+
+- System plugins directory (e.g., /usr/share/openagent-terminal/plugins): signatures required.
+- User plugins directory (~/.config/openagent-terminal/plugins): signatures optional by default (recommended to require in production).
+- Project plugins directory (./plugins): signatures optional by default (developer-friendly).
+- Strict releases: set require_signatures_for_all = true and disable hot_reload. See docs/plugins_signing.md.
 
 Best practices
 

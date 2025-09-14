@@ -302,13 +302,12 @@ impl<'a> AiDrawContext<'a> {
     /// Draw the header
     fn draw_header(
         &mut self,
-        ai_state: &crate::ai_runtime::AiUiState,
+        _ai_state: &crate::ai_runtime::AiUiState,
         line: usize,
         fg: Rgb,
         bg: Rgb,
         num_cols: usize,
     ) {
-        use unicode_width::UnicodeWidthStr as _;
         // Label
         let label = "AI";
         let label_point = Point::new(line, Column(2));

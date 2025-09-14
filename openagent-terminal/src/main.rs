@@ -85,8 +85,6 @@ mod text_shaping;
 mod ui_confirm;
 mod workspace;
 
-#[cfg(feature = "ai")]
-use crate::cli::AiOptions;
 #[cfg(unix)]
 use crate::cli::MessageOptions;
 #[cfg(not(any(target_os = "macos", windows)))]

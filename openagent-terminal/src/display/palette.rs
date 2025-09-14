@@ -252,7 +252,8 @@ impl PaletteState {
                     (PaletteEntry::PluginCommand { .. }, "plugin") => {}
                     #[cfg(not(feature = "plugins"))]
                     _ => {}
-                    
+                    #[cfg(feature = "plugins")]
+                    _ => {}
                 }
             }
 

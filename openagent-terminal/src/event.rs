@@ -2443,7 +2443,7 @@ impl ApplicationHandler<Event> for Processor {
                             use serde_json::json;
                             let evt = plugin_loader::PluginEvent {
                                 event_type: "command".into(),
-                                data: json!({ "name": cmd_name, "args": [] as [String; 0] }),
+                                data: json!({ "name": cmd_name, "args": [] }),
                                 timestamp: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
@@ -2922,6 +2922,8 @@ pub struct ActionContext<'a, N, T> {
     pub shell_pid: u32,
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
+    #[cfg(feature = "plugins")]
+    pub components: Option<&'a std::sync::Arc<InitializedComponents>>,
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
 }
 
@@ -6016,7 +6018,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn ai_try_handle_header_click(&mut self) -> bool {
         #[cfg(feature = "ai")]
         {
-            use unicode_width::UnicodeWidthStr as _;
             // Precompute values requiring only &self to avoid borrow conflicts.
             let display_offset = self.terminal.grid().display_offset();
             let grid_point = self.mouse.point(&self.size_info(), display_offset);
@@ -6592,7 +6593,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                         // Broadcast plugin hooks for pre/post command and directory changes.
                         #[cfg(feature = "plugins")]
-                        if let Some(components) = &self.components {
+                        if let Some(components) = &self.ctx.components {
                             if let Some(pm) = &components.plugin_manager {
                                 let pm = pm.clone();
                                 let rt = components.runtime.clone();
@@ -7431,6 +7432,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::WorkflowsSubmitParams { .. }
                 | EventType::WorkflowsCancelParams => {
                     // Params form open/submit/cancel handled at processor level
+                }
+                #[cfg(feature = "plugins")]
+                EventType::PaletteRequestPluginCommands | EventType::PluginsRunCommand { .. } => {
+                    // Already handled at Processor level; ignore here
                 }
             },
             WinitEvent::WindowEvent { event, .. } => {

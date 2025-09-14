@@ -317,8 +317,6 @@ impl AiProvider for OpenAiProvider {
             );
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
-        use eventsource_stream::Eventsource;
-        use futures_util::StreamExt;
 
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
@@ -462,68 +460,48 @@ impl AiProvider for OpenAiProvider {
                     }
                 }
 
-                // Stream SSE lines with periodic cancellation checks
-                let mut stream = response.bytes_stream().eventsource();
-                loop {
-                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                        if ai_log_summary() {
-                            info!("openai_stream_cancelled");
-                        }
-                        return Err("Cancelled".to_string());
-                    }
-                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
-                        .await
-                    {
-                        Ok(Some(Ok(event))) => {
-                            let data = event.data;
-                            if data.trim() == "[DONE]" {
-                                break;
-                            }
-                            match serde_json::from_str::<ChatCompletionChunk>(&data) {
-                                Ok(chunk) => {
-                                    for choice in chunk.choices.into_iter() {
-                                        if let Some(c) = choice.delta.content {
-                                            if ai_log_verbose() {
-                                                debug!("openai_stream_chunk len={}", c.len());
-                                            }
-                                            on_chunk(&c);
+                // Stream SSE using unified helper; extract OpenAI delta.content per event
+                crate::streaming::consume_eventsource_response(
+                    response,
+                    cancel,
+                    on_chunk,
+                    |data: &str| {
+                        let mut out = Vec::new();
+                        match serde_json::from_str::<ChatCompletionChunk>(data) {
+                            Ok(chunk) => {
+                                for choice in chunk.choices.into_iter() {
+                                    if let Some(c) = choice.delta.content {
+                                        if ai_log_verbose() {
+                                            debug!("openai_stream_chunk len={}", c.len());
                                         }
+                                        out.push(c);
                                     }
                                 }
-                                Err(e) => {
-                                    // Fallback: try to extract minimal content field from raw string
-                                    debug!(
-                                        "Skipping non-JSON or unexpected SSE data from OpenAI: {}",
-                                        e
-                                    );
-                                    // Precompiled regex for content extraction
-                                    lazy_static::lazy_static! {
-                                        static ref CONTENT_RE: regex::Regex = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#).unwrap();
-                                    }
-                                    if let Some(cap) = CONTENT_RE.captures(&data).and_then(|caps| caps.get(1)) {
-                                        let c = cap.as_str().to_string();
-                                        if !c.is_empty() {
-                                            if ai_log_verbose() {
-                                                debug!("openai_stream_chunk_fallback len={}", c.len());
-                                            }
-                                            on_chunk(&c);
+                            }
+                            Err(e) => {
+                                // Fallback: extract minimal content via regex
+                                debug!(
+                                    "Skipping non-JSON or unexpected SSE data from OpenAI: {}",
+                                    e
+                                );
+                                lazy_static::lazy_static! {
+                                    static ref CONTENT_RE: regex::Regex = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#).unwrap();
+                                }
+                                if let Some(cap) = CONTENT_RE.captures(data).and_then(|caps| caps.get(1)) {
+                                    let c = cap.as_str().to_string();
+                                    if !c.is_empty() {
+                                        if ai_log_verbose() {
+                                            debug!("openai_stream_chunk_fallback len={}", c.len());
                                         }
+                                        out.push(c);
                                     }
                                 }
                             }
                         }
-                        Ok(Some(Err(e))) => {
-                            return Err(format!("Stream error: {}", e));
-                        }
-                        Ok(None) => {
-                            break;
-                        }
-                        Err(_) => {
-                            // timeout: loop and re-check cancel
-                            continue;
-                        }
-                    }
-                }
+                        out
+                    },
+                )
+                .await?;
 
                 if ai_log_summary() {
                     info!("openai_stream_finished");

@@ -299,6 +299,7 @@ impl Default for AiGitConfig {
     }
 }
 
+#[allow(dead_code)]
 fn default_true() -> bool {
     true
 }

@@ -249,8 +249,6 @@ impl AiProvider for AnthropicProvider {
             );
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
-        use eventsource_stream::Eventsource;
-        use futures_util::StreamExt;
 
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
         let mut system_prompt = String::from(
@@ -385,46 +383,32 @@ impl AiProvider for AnthropicProvider {
                     }
                 }
 
-                // Stream SSE lines; Anthropic sends JSON objects in data: lines
-                let mut stream = response.bytes_stream().eventsource();
-                loop {
-                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                        if ai_log_summary() {
-                            info!("anthropic_stream_cancelled");
-                        }
-                        return Err("Cancelled".to_string());
-                    }
-                    match tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
-                        .await
-                    {
-                        Ok(Some(Ok(event))) => {
-                            let data = event.data;
-                            if data.trim() == "[DONE]" {
-                                break;
-                            }
-                            match serde_json::from_str::<AnthropicStreamData>(&data) {
-                                Ok(ev) => {
-                                    if let Some(delta) = ev.delta {
-                                        if let Some(txt) = delta.text {
-                                            if ai_log_verbose() {
-                                                debug!("anthropic_stream_chunk len={}", txt.len());
-                                            }
-                                            on_chunk(&txt);
+                // Stream SSE using unified helper; extract Anthropic delta.text per event
+                crate::streaming::consume_eventsource_response(
+                    response,
+                    cancel,
+                    on_chunk,
+                    |data: &str| {
+                        let mut out = Vec::new();
+                        match serde_json::from_str::<AnthropicStreamData>(data) {
+                            Ok(ev) => {
+                                if let Some(delta) = ev.delta {
+                                    if let Some(txt) = delta.text {
+                                        if ai_log_verbose() {
+                                            debug!("anthropic_stream_chunk len={}", txt.len());
                                         }
+                                        out.push(txt);
                                     }
                                 }
-                                Err(e) => {
-                                    debug!("Skipping unexpected Anthropic SSE data: {}", e);
-                                }
+                            }
+                            Err(e) => {
+                                debug!("Skipping unexpected Anthropic SSE data: {}", e);
                             }
                         }
-                        Ok(Some(Err(e))) => {
-                            return Err(format!("Stream error: {}", e));
-                        }
-                        Ok(None) => break,
-                        Err(_) => continue, // timeout
-                    }
-                }
+                        out
+                    },
+                )
+                .await?;
 
                 if ai_log_summary() {
                     info!("anthropic_stream_finished");

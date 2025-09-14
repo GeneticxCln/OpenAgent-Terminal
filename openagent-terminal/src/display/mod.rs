@@ -835,11 +835,11 @@ impl Display {
         let mut col = 1usize;
         for label in labels.iter() {
             // For AI, dim if the build doesn't enable AI feature
-            let is_ai = *label == "[AI]";
+            let _is_ai = *label == "[AI]";
             #[allow(unused_mut)]
             let mut color = fg;
             #[cfg(not(feature = "ai"))]
-            if is_ai {
+            if _is_ai {
                 color = tokens.text_muted;
             }
 

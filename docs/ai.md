@@ -8,6 +8,20 @@ Build-time
 Runtime
 - Enabled by default when built with the ai feature. You can disable it via [ai].enabled = false.
 
+
+## Unified streaming and redraw throttling
+
+All providers (OpenAI, Anthropic, OpenRouter, Ollama) stream tokens through a unified abstraction. The runtime applies backpressure and batches partial chunks, then emits UI updates at a configurable redraw cadence.
+
+- Backpressure: provider token streams feed an internal bounded channel. When the UI is busy, providers automatically yield until capacity is available.
+- Batching: tiny token fragments are coalesced into larger chunks before paint.
+- Redraw cadence: the UI flushes accumulated chunks at a fixed interval to reduce reflow and GPU work. Configure via environment variable:
+  - OPENAGENT_AI_STREAM_REDRAW_MS (default: 16)
+    - Lower values (e.g., 8) = more frequent updates, smoother typing effect
+    - Higher values (e.g., 32) = fewer updates, less CPU/GPU work on large outputs
+- Fallback: if a provider or request doesn’t support streaming, the runtime switches to a blocking request and renders once at completion.
+- Observability: set OPENAGENT_AI_LOG_VERBOSITY=summary or verbose to log streaming events, batch flushes, and completion.
+
 Runtime configuration
 - Configure in the ai section of your config (openagent-terminal.toml):
 

@@ -142,12 +142,46 @@ Minimal AI config (`~/.config/openagent-terminal/openagent-terminal.toml`):
 ```toml
 [ai]
 enabled = true
-provider = "ollama"  # or "openai", "anthropic"
+provider = "ollama"  # or "openai", "anthropic", "openrouter"
 trigger_key = "Ctrl+Shift+A"
 never_auto_run = true  # Safety first
 ```
 
 See `examples/openagent-terminal.example.toml` for a fuller starter configuration.
+
+## Build variants & features
+
+Common builds for the main binary (feature-gated components):
+
+- Terminal only (no AI, default features):
+  ```bash
+  cargo build -p openagent-terminal
+  ```
+- With local AI (Ollama):
+  ```bash
+  cargo build -p openagent-terminal --features "ai-ollama"
+  ```
+- With OpenAI, Anthropic, or OpenRouter:
+  ```bash
+  cargo build -p openagent-terminal --features "ai-openai"
+  # or
+  cargo build -p openagent-terminal --features "ai-anthropic"
+  # or
+  cargo build -p openagent-terminal --features "ai-openrouter"
+  ```
+- With plugin system (WASI sandbox) and workflows:
+  ```bash
+  cargo build -p openagent-terminal --features "plugins,workflow"
+  ```
+- Full set for local development (AI + plugins + security lens):
+  ```bash
+  cargo build -p openagent-terminal --features "ai-ollama,plugins,workflow,security-lens-full"
+  ```
+
+Notes:
+- AI is opt-in at build time; pick a single backend umbrella feature (ai-ollama, ai-openai, ai-anthropic, ai-openrouter).
+- Secrets must be supplied via environment variables; never hardcode API keys.
+- Renderer is WGPU-only by default; X11/Wayland features are included via defaults.
 
 ## Installation
 

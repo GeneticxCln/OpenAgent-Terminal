@@ -335,7 +335,50 @@ impl RetryStrategy {
             }
         }
     }
+}
 
+/// Unified helper to consume an EventSource (SSE) response and surface text chunks.
+///
+/// Providers pass an extractor which can return zero or more text fragments for a
+/// given SSE data payload. Cancellation is checked periodically. A small timeout
+/// keeps the loop responsive for cancellation and backpressure.
+#[cfg(any(feature = "ai-openai", feature = "ai-anthropic", feature = "ai-openrouter"))]
+pub async fn consume_eventsource_response(
+    response: reqwest::Response,
+    cancel: &AtomicBool,
+    on_chunk: &mut dyn FnMut(&str),
+    mut extract_texts: impl FnMut(&str) -> Vec<String>,
+) -> Result<(), String> {
+    use eventsource_stream::Eventsource;
+    use futures_util::StreamExt;
+
+    let mut stream = response.bytes_stream().eventsource();
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Cancelled".to_string());
+        }
+        match tokio::time::timeout(Duration::from_millis(200), stream.next()).await {
+            Ok(Some(Ok(event))) => {
+                let data = event.data;
+                if data.trim() == "[DONE]" {
+                    break;
+                }
+                let texts = extract_texts(&data);
+                for t in texts {
+                    if !t.is_empty() {
+                        on_chunk(&t);
+                    }
+                }
+            }
+            Ok(Some(Err(e))) => return Err(format!("Stream error: {}", e)),
+            Ok(None) => break,
+            Err(_) => continue, // timeout; re-check cancel
+        }
+    }
+    Ok(())
+}
+
+impl RetryStrategy {
     fn is_retryable_error(error: &str) -> bool {
         let error_lower = error.to_lowercase();
 

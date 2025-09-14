@@ -17,7 +17,6 @@ ai-anthropic = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "even
 ai-openrouter = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 # Internal feature to build examples; disabled by default
 examples = []
-
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
@@ -27,6 +26,7 @@ futures-util = { version = "0.3", optional = true }
 eventsource-stream = { version = "0.2", optional = true }
 tracing = "0.1"
 regex = "1"
+lazy_static = "1"
 rand = "0.8"
 httpdate = "1.0"
 anyhow = "1.0"

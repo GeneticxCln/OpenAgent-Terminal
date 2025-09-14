@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 
@@ -111,7 +110,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 }
             }
             // Generate secure provider config snippet
-            let mut snippet = String::from("[ai]\nprovider = \"openai\"\n\n[ai.providers.openai]\napi_key_env = \"OPENAGENT_OPENAI_API_KEY\"\nmodel_env = \"OPENAGENT_OPENAI_MODEL\"\nendpoint_env = \"OPENAGENT_OPENAI_ENDPOINT\"\n\n[ai.providers.anthropic]\napi_key_env = \"OPENAGENT_ANTHROPIC_API_KEY\"\n\n[ai.providers.ollama]\n# No API key required for local Ollama\n\n");
+            let snippet = String::from("[ai]\nprovider = \"openai\"\n\n[ai.providers.openai]\napi_key_env = \"OPENAGENT_OPENAI_API_KEY\"\nmodel_env = \"OPENAGENT_OPENAI_MODEL\"\nendpoint_env = \"OPENAGENT_OPENAI_ENDPOINT\"\n\n[ai.providers.anthropic]\napi_key_env = \"OPENAGENT_ANTHROPIC_API_KEY\"\n\n[ai.providers.ollama]\n# No API key required for local Ollama\n\n");
             // Write config_out if requested
             if let Some(path) = config_out {
                 if *apply {

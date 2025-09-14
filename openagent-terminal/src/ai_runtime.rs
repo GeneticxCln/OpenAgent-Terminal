@@ -607,27 +607,27 @@ impl AiRuntime {
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(16);
 
-                let mut flush = || {
-                    if !batch_buf.is_empty() {
-                        let payload = std::mem::take(&mut batch_buf);
-                        let _ = event_proxy
-                            .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
-                        last_flush = std::time::Instant::now();
-                    }
-                };
-
                 let mut on_chunk = |chunk: &str| {
                     // Micro-batch: accumulate small chunks and flush at most every batch_ms
                     batch_buf.push_str(chunk);
                     let now = std::time::Instant::now();
                     if now.saturating_duration_since(last_flush).as_millis() as u64 >= batch_ms {
-                        flush();
+                        if !batch_buf.is_empty() {
+                            let payload = std::mem::take(&mut batch_buf);
+                            let _ = event_proxy
+                                .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                            last_flush = now;
+                        }
                     }
                 };
                 match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
                     Ok(true) => {
                         // Flush any pending chunk before finishing
-                        flush();
+                        if !batch_buf.is_empty() {
+                            let payload = std::mem::take(&mut batch_buf);
+                            let _ = event_proxy
+                                .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                        }
                         info!("ai_runtime_stream_finished provider={}", provider.name());
                         let _ = event_proxy
                             .send_event(Event::new(EventType::AiStreamFinished, window_id));

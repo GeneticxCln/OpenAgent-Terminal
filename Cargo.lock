@@ -4340,6 +4340,7 @@ dependencies = [
  "git2",
  "httpdate",
  "ignore",
+ "lazy_static",
  "pathdiff",
  "rand 0.8.5",
  "regex",

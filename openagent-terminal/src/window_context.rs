@@ -630,6 +630,8 @@ impl WindowContext {
             scheduler,
             #[cfg(feature = "ai")]
             ai_runtime: self.ai_runtime.as_mut(),
+            #[cfg(feature = "plugins")]
+            components: self.components.as_ref(),
             workspace: &mut self.workspace,
         };
         let mut processor = input::Processor::new(context);

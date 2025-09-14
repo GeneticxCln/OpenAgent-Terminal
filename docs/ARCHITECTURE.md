@@ -13,7 +13,7 @@ OpenAgent Terminal is an AI-enhanced terminal emulator built on top of Alacritty
 │                         Frontend                             │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐       │
 │  │   Renderer   │  │   Display   │  │   Window     │       │
-│  │   (OpenGL)   │  │   Manager   │  │   Manager    │       │
+│  │   (WGPU)     │  │   Manager   │  │   Manager    │       │
 │  └──────────────┘  └─────────────┘  └──────────────┘       │
 ├─────────────────────────────────────────────────────────────┤
 │                      Core Terminal                           │
