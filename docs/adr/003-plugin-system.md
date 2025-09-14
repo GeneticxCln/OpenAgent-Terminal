@@ -3,6 +3,16 @@
 ## Status
 Accepted (API stabilized for v1.0: minimal, WASM-only surface with stable ABI v1.0.0)
 
+Host API summary (stabilized)
+- host_log(level: i32, ptr: i32, len: i32) -> i32
+- host_read_file(path_ptr: i32, path_len: i32, result_ptr: i32, result_len_ptr: i32) -> i32
+- host_write_file(path_ptr: i32, path_len: i32, data_ptr: i32, data_len: i32) -> i32
+- host_execute_command(cmd_ptr: i32, cmd_len: i32, result_ptr: i32, result_len_ptr: i32) -> i32
+- host_store_data(key_ptr: i32, key_len: i32, data_ptr: i32, data_len: i32) -> i32
+- host_retrieve_data(key_ptr: i32, key_len: i32, result_ptr: i32, result_len_ptr: i32) -> i32
+
+All functions enforce PluginPermissions via SecurityPolicy and operate within the plugin sandbox. Return codes are 0 on success, negative values for permission and runtime errors.
+
 ## Date
 2024-08-30
 

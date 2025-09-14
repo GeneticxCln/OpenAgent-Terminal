@@ -203,12 +203,13 @@ Download prebuilt binaries from [GitHub Releases](https://github.com/GeneticxCln
 
 ## Documentation
 
-- [Installation Guide](INSTALL.md)
-- [Configuration Manual](docs/configuration.md)  
-- [AI Architecture](docs/adr/001-ai-architecture.md)
-- [Security Lens](docs/security_lens.md)
-- [Contributing](CONTRIBUTING.md)
-- [Full Documentation](docs/)
+- Documentation Hub: ../docs/README.md
+- Installation Guide: ../INSTALL.md
+- Configuration Manual: docs/configuration.md  
+- AI Architecture: ../docs/adr/001-ai-architecture.md
+- Security Lens: docs/security_lens.md
+- Contributing: ../CONTRIBUTING.md
+- Full Documentation Index: ../docs/
 
 ## FAQ
 

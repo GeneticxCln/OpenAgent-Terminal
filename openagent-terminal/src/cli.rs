@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
-use clap::builder::TypedValueParser;
 use log::{error, LevelFilter};
 use openagent_terminal_config::SerdeReplace;
 use serde::{Deserialize, Serialize};
