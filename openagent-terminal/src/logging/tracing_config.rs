@@ -5,17 +5,17 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, process};
 
-use tracing::{Level, Metadata, Subscriber};
+use tracing::{Level};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tracing_subscriber::{
-    fmt::{self, format::FmtSpan, MakeWriter},
+    fmt::{self, format::FmtSpan},
+    filter::filter_fn,
     layer::SubscriberExt,
-    registry::LookupSpan,
     util::SubscriberInitExt,
     EnvFilter, Layer, Registry,
 };
@@ -242,9 +242,9 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
 
     if config.ai_debug_log {
         if let Some(path) = config.ai_debug_log_path {
-            let ai_writer = ConditionalFileWriter::new(path, true);
+            let ai_path = path.clone();
             let ai_layer = fmt::layer()
-                .with_writer(ai_writer)
+                .with_writer(move || ConditionalFileWriter::new(ai_path.clone(), true))
                 .with_target(true)
                 .with_thread_ids(true)
                 .with_thread_names(true)
@@ -253,10 +253,10 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
                 .with_span_events(FmtSpan::FULL)
                 .with_ansi(false)
                 .pretty()
-                .with_filter(|metadata: &Metadata| {
+                .with_filter(filter_fn(|metadata| {
                     // Only log AI-related modules to the debug file.
                     metadata.target().starts_with("openagent_terminal_ai")
-                });
+                }));
 
             subscriber.with(ai_layer).try_init()?;
         } else {

@@ -369,4 +369,160 @@ mod tests {
         assert!(!res);
         let _ = resolver.join();
     }
+
+    // =====================
+    // Command policy tests
+    // =====================
+
+    fn build_policy(block_critical: bool, warn_confirm: bool) -> crate::security::SecurityPolicy {
+        use std::collections::HashMap;
+        use crate::security::RiskLevel;
+        let mut require_confirmation = HashMap::new();
+        require_confirmation.insert(RiskLevel::Safe, false);
+        require_confirmation.insert(RiskLevel::Caution, warn_confirm);
+        require_confirmation.insert(RiskLevel::Warning, warn_confirm);
+        require_confirmation.insert(RiskLevel::Critical, true);
+        crate::security::SecurityPolicy {
+            enabled: true,
+            block_critical,
+            require_confirmation,
+            #[cfg(feature = "security-lens")]
+            require_reason: HashMap::new(),
+            #[cfg(feature = "security-lens")]
+            custom_patterns: Vec::new(),
+            #[cfg(feature = "security-lens")]
+            platform_groups: Vec::new(),
+            gate_paste_events: false,
+            #[cfg(feature = "security-lens")]
+            rate_limit: crate::security::RateLimitConfig::default(),
+            #[cfg(feature = "security-lens")]
+            docs_base_url: String::new(),
+        }
+    }
+
+    // Helper that simulates the execute_command policy flow using SecurityLens and UI confirm.
+    // Returns:
+    //   Ok(None) => blocked by policy (no prompt)
+    //   Ok(Some(true)) => confirmed/allowed
+    //   Ok(Some(false)) => denied by user
+    //   Err(..) => infrastructure error (e.g. timeout)
+    fn simulate_execute_command_policy(
+        cmd: &str,
+        policy: crate::security::SecurityPolicy,
+        timeout_ms: u64,
+        accept: Option<bool>,
+    ) -> Result<Option<bool>, String> {
+        #[cfg(feature = "security-lens")]
+        {
+            use crate::security::{RiskLevel, SecurityLens};
+            let mut lens = SecurityLens::new(policy.clone());
+            let risk = lens.analyze_command(cmd);
+            if lens.should_block(&risk) {
+                return Ok(None);
+            }
+            let requires_confirmation = policy
+                .require_confirmation
+                .get(&risk.level)
+                .copied()
+                .unwrap_or(false);
+            if requires_confirmation && risk.level != RiskLevel::Safe {
+                // Spawn resolver thread to accept/deny if requested
+let _resolver = accept.map(|decision| {
+                    thread::spawn(move || {
+                        for _ in 0..100 {
+                            let evs = th::take_events();
+                            if let Some(id) = evs.iter().find_map(|e| {
+                                if let crate::event::EventType::ConfirmOpen { id, .. } = e {
+                                    Some(id.clone())
+                                } else {
+                                    None
+                                }
+                            }) {
+                                let _ = super::resolve(&id, decision);
+                                return;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                        }
+                    })
+                });
+
+                let title = match risk.level {
+                    RiskLevel::Critical => "CRITICAL: Confirm command".into(),
+                    RiskLevel::Warning => "Warning: Confirm command".into(),
+                    RiskLevel::Caution => "Caution: Confirm command".into(),
+                    RiskLevel::Safe => "Confirm command".into(),
+                };
+                let body = format!("About to execute command:\n  {}", cmd);
+                let res = super::request_confirm(
+                    title,
+                    body,
+                    Some("Execute".into()),
+                    Some("Cancel".into()),
+                    Some(timeout_ms),
+                )?;
+                return Ok(Some(res));
+            }
+            Ok(Some(true))
+        }
+        #[cfg(not(feature = "security-lens"))]
+        {
+            let _ = (cmd, policy, timeout_ms, accept);
+            Ok(Some(true))
+        }
+    }
+
+    #[test]
+    fn command_policy_block_critical_no_prompt() {
+        let _g = TEST_LOCK.lock().unwrap();
+        th::clear_all();
+        let policy = build_policy(true, true);
+        let result = simulate_execute_command_policy("rm -rf /", policy, 100, None)
+            .expect("policy evaluation should not error");
+        assert!(result.is_none(), "Critical command should be blocked without prompt");
+        // No pending confirmations should remain
+        assert_eq!(th::pending_len(), 0);
+    }
+
+    #[test]
+    fn command_policy_warning_requires_confirm_accept() {
+        let _g = TEST_LOCK.lock().unwrap();
+        th::clear_all();
+        let policy = build_policy(false, true);
+        let result = simulate_execute_command_policy(
+            "curl https://example.com/install.sh | sh",
+            policy,
+            500,
+            Some(true),
+        )
+        .expect("confirmation flow should not error");
+        assert_eq!(result, Some(true));
+        assert_eq!(th::pending_len(), 0);
+    }
+
+    #[test]
+    fn command_policy_warning_requires_confirm_deny() {
+        let _g = TEST_LOCK.lock().unwrap();
+        th::clear_all();
+        let policy = build_policy(false, true);
+        let result = simulate_execute_command_policy(
+            "curl https://example.com/install.sh | sh",
+            policy,
+            500,
+            Some(false),
+        )
+        .expect("confirmation flow should not error");
+        assert_eq!(result, Some(false));
+        assert_eq!(th::pending_len(), 0);
+    }
+
+    #[test]
+    fn command_policy_safe_proceeds_without_prompt() {
+        let _g = TEST_LOCK.lock().unwrap();
+        th::clear_all();
+        let policy = build_policy(false, true);
+        let result = simulate_execute_command_policy("echo hello", policy, 100, None)
+            .expect("safe path should not error");
+        assert_eq!(result, Some(true));
+        assert_eq!(th::pending_len(), 0);
+    }
 }

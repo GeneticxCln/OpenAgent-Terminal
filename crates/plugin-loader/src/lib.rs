@@ -109,6 +109,8 @@ struct PluginContext {
     permissions: PluginPermissions,
     /// Absolute base directory for the plugin (WASI sandbox root ".")
     plugin_base_dir: std::path::PathBuf,
+    /// Stable plugin identifier (derived from filename stem)
+    plugin_id: String,
     resource_tracker: ResourceTracker,
 }
 
@@ -125,6 +127,8 @@ struct PluginExports {
 #[derive(Default)]
 struct ResourceTracker {
     memory_used: usize,
+    /// Per-plugin maximum linear memory in bytes (from manifest)
+    max_memory_bytes: usize,
     #[allow(dead_code)]
     cpu_time_ms: u64,
     #[allow(dead_code)]
@@ -145,23 +149,11 @@ pub trait PluginHost: Send + Sync {
     /// Execute a command (subject to permissions)
     fn execute_command(&self, command: &str) -> Result<CommandOutput, ApiPluginError>;
 
-    /// Get terminal state
-    fn get_terminal_state(&self) -> TerminalState;
+    /// Store data persistently (namespaced to the given plugin_id)
+    fn store_data_for(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), ApiPluginError>;
 
-    /// Show a notification
-    fn show_notification(&self, notification: Notification) -> Result<(), ApiPluginError>;
-
-    /// Store data persistently
-    fn store_data(&self, key: &str, value: &[u8]) -> Result<(), ApiPluginError>;
-
-    /// Retrieve stored data
-    fn retrieve_data(&self, key: &str) -> Result<Option<Vec<u8>>, ApiPluginError>;
-
-    /// Register a command
-    fn register_command(&self, command: CommandDefinition) -> Result<(), ApiPluginError>;
-
-    /// Subscribe to events
-    fn subscribe_events(&self, events: Vec<String>) -> Result<(), ApiPluginError>;
+    /// Retrieve stored data (namespaced to the given plugin_id)
+    fn retrieve_data_for(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, ApiPluginError>;
 }
 
 /// Log levels for plugin logging
@@ -335,7 +327,7 @@ impl PluginManager {
         // Create plugin context with permissions
         let permissions = self.read_plugin_permissions(path, plugin_base_dir)?;
         let mut store = self
-            .create_plugin_store(permissions.clone(), plugin_base_dir)
+            .create_plugin_store(permissions.clone(), plugin_base_dir, plugin_name)
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
         // Create linker and add WASI and host functions
@@ -471,6 +463,7 @@ impl PluginManager {
         &self,
         permissions: PluginPermissions,
         plugin_base_dir: &Path,
+        plugin_id: &str,
     ) -> std::result::Result<Store<PluginContext>, PluginError> {
         let mut wasi_builder = WasiCtxBuilder::new();
 
@@ -529,11 +522,16 @@ impl PluginManager {
         // Build WASIp1 context from the WasiCtxBuilder
         let wasi = wasi_builder.build_p1();
 
+        let mut tracker = ResourceTracker::default();
+        // Configure per-plugin max memory from manifest
+        tracker.max_memory_bytes = (permissions.max_memory_mb as usize).saturating_mul(1024 * 1024);
+
         let context = PluginContext {
             wasi,
             permissions,
             plugin_base_dir: plugin_base_dir.to_path_buf(),
-            resource_tracker: ResourceTracker::default(),
+            plugin_id: plugin_id.to_string(),
+            resource_tracker: tracker,
         };
 
         let mut store = Store::new(&self.engine, context);
@@ -951,28 +949,25 @@ impl PluginManager {
 
                     let path_str = String::from_utf8_lossy(&path_buffer).to_string();
 
-                    // Resolve against plugin base dir if relative
+                    // Resolve against plugin base dir if relative and canonicalize
                     let ctx = caller.data();
                     let mut resolved = std::path::PathBuf::from(&path_str);
                     if resolved.is_relative() {
                         resolved = ctx.plugin_base_dir.join(&resolved);
                     }
-                    let resolved_str = resolved.to_string_lossy().to_string();
+                    let resolved = match std::fs::canonicalize(&resolved) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(-2), // IO error
+                    };
 
-                    // Check permissions against sanitized absolute prefixes
-                    let can_read = ctx
-                        .permissions
-                        .read_files
-                        .iter()
-                        .any(|prefix| resolved_str.starts_with(prefix.trim_end_matches('*')));
-
-                    if !can_read {
+                    // Check permissions using canonical paths
+                    if !is_allowed_path(ctx, &resolved, false) {
                         return Ok(-1); // Permission denied
                     }
 
                     // Read file through host if available, otherwise std fs
                     let file_result = if let Some(ref host) = host_clone {
-                        host.read_file(&resolved_str)
+                        host.read_file(&resolved.to_string_lossy())
                     } else {
                         std::fs::read(&resolved).map_err(ApiPluginError::IoError)
                     };
@@ -1031,28 +1026,25 @@ impl PluginManager {
 
                     let path_str = String::from_utf8_lossy(&path_buffer).to_string();
 
-                    // Resolve against plugin base dir if relative
+                    // Resolve against plugin base dir if relative and canonicalize
                     let ctx = caller.data();
                     let mut resolved = std::path::PathBuf::from(&path_str);
                     if resolved.is_relative() {
                         resolved = ctx.plugin_base_dir.join(&resolved);
                     }
-                    let resolved_str = resolved.to_string_lossy().to_string();
+                    let resolved = match std::fs::canonicalize(&resolved) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(-2), // IO error
+                    };
 
                     // Check permissions
-                    let can_write = ctx
-                        .permissions
-                        .write_files
-                        .iter()
-                        .any(|prefix| resolved_str.starts_with(prefix.trim_end_matches('*')));
-
-                    if !can_write {
+                    if !is_allowed_path(ctx, &resolved, true) {
                         return Ok(-1); // Permission denied
                     }
 
                     // Write file through host if available
                     let write_result = if let Some(ref host) = host_clone {
-                        host.write_file(&resolved_str, &data_buffer)
+                        host.write_file(&resolved.to_string_lossy(), &data_buffer)
                     } else {
                         std::fs::write(&resolved, &data_buffer).map_err(ApiPluginError::IoError)
                     };
@@ -1165,7 +1157,8 @@ impl PluginManager {
                         .map_err(|_| anyhow::anyhow!("Failed to read data from plugin memory"))?;
 
                     if let Some(ref host) = host_clone {
-                        match host.store_data(&key, &data_buf) {
+                        let ctx = caller.data();
+                        match host.store_data_for(&ctx.plugin_id, &key, &data_buf) {
                             Ok(()) => Ok(0),
                             Err(_) => Ok(-2),
                         }
@@ -1202,7 +1195,8 @@ impl PluginManager {
                     let key = String::from_utf8_lossy(&key_buf);
 
                     if let Some(ref host) = host_clone {
-                        match host.retrieve_data(&key) {
+                        let ctx = caller.data();
+                        match host.retrieve_data_for(&ctx.plugin_id, &key) {
                             Ok(Some(data)) => {
                                 let len_bytes = (data.len() as u32).to_le_bytes();
                                 memory
@@ -1390,6 +1384,28 @@ impl PluginManager {
     }
 }
 
+/// Check if a canonicalized resolved path is allowed under permissions
+fn is_allowed_path(ctx: &PluginContext, resolved: &std::path::Path, for_write: bool) -> bool {
+    let list = if for_write {
+        &ctx.permissions.write_files
+    } else {
+        &ctx.permissions.read_files
+    };
+    for allowed in list {
+        // Support both absolute and relative manifest entries by trying direct canonicalize and base-joined canonicalize.
+        let allowed_path = std::path::PathBuf::from(allowed);
+        let canon = std::fs::canonicalize(&allowed_path)
+            .ok()
+            .or_else(|| std::fs::canonicalize(ctx.plugin_base_dir.join(&allowed_path)).ok());
+        if let Some(allowed_canon) = canon {
+            if resolved.starts_with(&allowed_canon) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Resource limiter implementation
 impl ResourceLimiter for ResourceTracker {
     fn memory_growing(
@@ -1398,9 +1414,14 @@ impl ResourceLimiter for ResourceTracker {
         desired: usize,
         _maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
-        const MAX_MEMORY: usize = 50 * 1024 * 1024; // 50MB default limit
+        // Enforce per-plugin configured limit; fall back to 50MB if unset
+        let max = if self.max_memory_bytes == 0 {
+            50 * 1024 * 1024
+        } else {
+            self.max_memory_bytes
+        };
 
-        if desired > MAX_MEMORY {
+        if desired > max {
             return Ok(false);
         }
 
@@ -1990,5 +2011,51 @@ timeout_ms=5000
             .await
             .expect("event ok");
         assert!(resp.success);
+    }
+
+    #[test]
+    fn test_is_allowed_path_traversal_and_symlink_denied() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::TempDir::new().unwrap();
+        let base = temp.path();
+
+        // Layout: base/allowed, base/allowed/file.txt
+        let allowed = base.join("allowed");
+        fs::create_dir_all(&allowed).unwrap();
+        fs::write(allowed.join("file.txt"), b"ok").unwrap();
+
+        // Build a minimal PluginContext-like struct
+        let permissions = plugin_api::PluginPermissions {
+            read_files: vec![allowed.to_string_lossy().to_string()],
+            write_files: vec![],
+            ..Default::default()
+        };
+        // Build a minimal Wasi context via builder
+        let wasi = wasmtime_wasi::WasiCtxBuilder::new().inherit_stdio().build_p1();
+        let ctx = PluginContext {
+            // Unused fields
+            wasi,
+            permissions,
+            plugin_base_dir: base.to_path_buf(),
+            plugin_id: "test".into(),
+            resource_tracker: Default::default(),
+        };
+
+        // Inside allowed
+        let inside = fs::canonicalize(allowed.join("file.txt")).unwrap();
+        assert!(super::is_allowed_path(&ctx, &inside, false));
+
+        // Traversal attempt: base/allowed/../outside
+        let outside_dir = base.join("outside");
+        fs::create_dir_all(&outside_dir).unwrap();
+        let traversal = fs::canonicalize(allowed.join("..").join("outside")).unwrap();
+        assert!(!super::is_allowed_path(&ctx, &traversal, false));
+
+        // Symlink escape: allowed/link -> outside
+        let link_path = allowed.join("link");
+        symlink(&outside_dir, &link_path).unwrap();
+        let escaped = fs::canonicalize(link_path).unwrap();
+        assert!(!super::is_allowed_path(&ctx, &escaped, false));
     }
 }

@@ -19,7 +19,7 @@ use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 use plugin_api::{CommandOutput, PluginError};
 #[cfg(feature = "plugins")]
 use plugin_loader::{
-    CommandDefinition, LogLevel, Notification, PluginHost, PluginManager, TerminalState,
+    LogLevel, PluginHost, PluginManager,
 };
 #[cfg(feature = "workflow")]
 use workflow_engine::WorkflowEngine;
@@ -605,55 +605,27 @@ impl PluginHost for TerminalPluginHost {
         })
     }
 
-    fn get_terminal_state(&self) -> TerminalState {
-        TerminalState {
-            current_dir: std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-            environment: std::env::vars().collect(),
-            shell: std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()),
-            terminal_size: (80, 24),
-            is_interactive: true,
-            command_history: vec![],
+    fn store_data_for(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), PluginError> {
+        let dir = self.storage_dir.join(sanitize_key_to_filename(plugin_id));
+        std::fs::create_dir_all(&dir).map_err(PluginError::IoError)?;
+        // Basic quota: cap per-plugin storage to ~50 MiB; reject if exceeding
+        const MAX_BYTES: u64 = 50 * 1024 * 1024;
+        let used = dir_size_bytes(&dir).unwrap_or(0);
+        if used > MAX_BYTES {
+            return Err(PluginError::IoError(std::io::Error::other("Plugin storage quota exceeded")));
         }
-    }
-
-    fn show_notification(&self, notification: Notification) -> Result<(), PluginError> {
-        info!(
-            "[Notification] {}: {}",
-            notification.title, notification.body
-        );
-        Ok(())
-    }
-
-    fn store_data(&self, key: &str, value: &[u8]) -> Result<(), PluginError> {
-        // sanitize key to filesystem-friendly name
-        let file = self.storage_dir.join(sanitize_key_to_filename(key));
-        std::fs::create_dir_all(&self.storage_dir).map_err(PluginError::IoError)?;
+        let file = dir.join(sanitize_key_to_filename(key));
         std::fs::write(file, value).map_err(PluginError::IoError)
     }
 
-    fn retrieve_data(&self, key: &str) -> Result<Option<Vec<u8>>, PluginError> {
-        let file = self.storage_dir.join(sanitize_key_to_filename(key));
+    fn retrieve_data_for(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, PluginError> {
+        let dir = self.storage_dir.join(sanitize_key_to_filename(plugin_id));
+        let file = dir.join(sanitize_key_to_filename(key));
         match std::fs::read(file) {
             Ok(data) => Ok(Some(data)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(PluginError::IoError(e)),
         }
-    }
-
-    fn register_command(&self, command: CommandDefinition) -> Result<(), PluginError> {
-        debug!(
-            "Registered command: {} - {}",
-            command.name, command.description
-        );
-        Ok(())
-    }
-
-    fn subscribe_events(&self, events: Vec<String>) -> Result<(), PluginError> {
-        debug!("Subscribed to events: {:?}", events);
-        Ok(())
     }
 }
 
@@ -751,6 +723,23 @@ fn sanitize_key_to_filename(key: &str) -> String {
         s.push('_');
     }
     s
+}
+
+#[cfg(feature = "plugins")]
+fn dir_size_bytes(dir: &std::path::Path) -> Option<u64> {
+    let mut total: u64 = 0;
+    let rd = std::fs::read_dir(dir).ok()?;
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.is_file() {
+                total = total.saturating_add(meta.len());
+            } else if meta.is_dir() {
+                total = total.saturating_add(dir_size_bytes(&path).unwrap_or(0));
+            }
+        }
+    }
+    Some(total)
 }
 
 #[cfg(feature = "plugins")]

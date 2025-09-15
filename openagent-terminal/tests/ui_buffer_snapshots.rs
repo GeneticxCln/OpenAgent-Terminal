@@ -51,7 +51,7 @@ fn ui_buffer_wrapping_snapshot() {
         if col >= grid.columns() {
             col = 0;
             row += 1;
-            if row >= grid.screen_lines() { break; }
+            if (row as usize) >= grid.screen_lines() { break; }
         }
     }
 
