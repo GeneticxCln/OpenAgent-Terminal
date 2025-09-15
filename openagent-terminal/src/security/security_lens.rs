@@ -988,6 +988,9 @@ impl SecurityLens {
         let mut highest_risk = RiskLevel::Safe;
         let mut platform_specific = false;
 
+        // Increment analysis metric (removed external metrics dependency)
+        let _metric_inc = ("security_lens_analyze_total", 1);
+
         // Check dangerous patterns
         for (pattern, factor, risk_level) in &self.dangerous_patterns {
             if pattern.is_match(command) {

@@ -325,6 +325,9 @@ impl UnifiedPluginManager {
             config.wasm_simd(true);
             config.wasm_bulk_memory(true);
             config.epoch_interruption(true);
+            // Hardened runtime: enable fuel budgeting and cap static memory
+            config.consume_fuel(true);
+            config.static_memory_maximum_size(64 * 1024 * 1024);
             wasmtime::Engine::new(&config)?
         };
 
@@ -410,6 +413,9 @@ impl UnifiedPluginManager {
         };
 
         let mut store = wasmtime::Store::new(&self.wasm_engine, context);
+
+        // Provide default execution fuel per instance to enforce budgets
+        let _ = store.add_fuel(10_000_000);
 
         // Set up resource limits
         store.limiter(|ctx| &mut ctx.resource_tracker as &mut dyn wasmtime::ResourceLimiter);

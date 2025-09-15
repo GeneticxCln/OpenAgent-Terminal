@@ -1185,6 +1185,14 @@ impl WorkflowEngine {
         // Apply secret redaction to log messages
         let redacted_message = self.redact_common_secrets(&message);
 
+        // Metrics: count logs by level (no-op placeholder to avoid metrics dependency)
+        let _ = match level {
+            LogLevel::Error => ("error", 1),
+            LogLevel::Warning => ("warning", 1),
+            LogLevel::Info => ("info", 1),
+            LogLevel::Debug => ("debug", 1),
+        };
+
         let mut states = self.states.write().await;
         if let Some(state) = states.get_mut(execution_id) {
             state.logs.push(LogEntry {

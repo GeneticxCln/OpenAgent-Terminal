@@ -215,7 +215,7 @@ impl From<SizeInfo<f32>> for SizeInfo<u32> {
             padding_x: size_info.padding_x as u32,
             padding_y: size_info.padding_y as u32,
             screen_lines: size_info.screen_lines,
-            columns: size_info.screen_lines,
+            columns: size_info.columns,
         }
     }
 }
@@ -2632,6 +2632,10 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
             "render.frame_complete"
         );
 
+        // Feed perf history for HUD smoothing (keep last 120)
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.record_frame_time(elapsed.as_secs_f32() * 1000.0);
+
         // Highlight damage for debugging.
         if self.damage_tracker.debug {
             let damage = self
@@ -2644,7 +2648,7 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
         }
 
         // Clearing debug highlights from the previous frame requires full redraw.
-        if !matches!(self.raw_window_handle, RawWindowHandle::Wayland(_)) {
+        if matches!(self.raw_window_handle, RawWindowHandle::Wayland(_)) {
             self.request_frame(scheduler);
         }
 
@@ -3879,6 +3883,13 @@ let min_alpha = dcfg.highlight_min_alpha.clamp(0.0, 1.0);
         let timer_id = TimerId::new(Topic::Frame, window_id);
         let event = Event::new(EventType::Frame, window_id);
 
+        // Coalesce any previously scheduled frame for this window before scheduling a new one.
+        let coalesced = scheduler.unschedule(timer_id).is_some();
+        log::debug!(
+            "request_frame: coalesced={} delay_ms={}",
+            coalesced,
+            swap_timeout.as_millis()
+        );
         scheduler.schedule(event, swap_timeout, false, timer_id);
     }
 }

@@ -5,14 +5,19 @@
 //! log-level is sufficient for the level configured in `cli::Options`.
 
 pub mod tracing_bridge;
+pub mod tracing_config;
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, LineWriter, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 use std::{env, process};
+
+// Optional at-rest encryption
+use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use rand::RngCore;
 
 use log::{Level, LevelFilter};
 use regex::Regex;
@@ -257,6 +262,12 @@ struct OnDemandLogFile {
     file: Option<LineWriter<File>>,
     created: Arc<AtomicBool>,
     path: PathBuf,
+    // Encryption state
+    encrypt: bool,
+    key_b64: Option<String>,
+    cipher: Option<Aes256Gcm>,
+    // Retention policy (days)
+    retention_days: Option<u64>,
 }
 
 impl OnDemandLogFile {
@@ -267,18 +278,31 @@ impl OnDemandLogFile {
         // Set log path as an environment variable.
         unsafe { env::set_var(OPENAGENT_TERMINAL_LOG_ENV, path.as_os_str()) };
 
+        let (encrypt, key_b64, cipher) = Self::load_cipher();
+        let retention_days = env::var("OPENAGENT_LOG_RETENTION_DAYS").ok().and_then(|v| v.parse::<u64>().ok());
+
         OnDemandLogFile {
             path,
             file: None,
             created: Arc::new(AtomicBool::new(false)),
+            encrypt,
+            key_b64,
+            cipher,
+            retention_days,
         }
     }
 
     fn with_path(path: PathBuf) -> Self {
+        let (encrypt, key_b64, cipher) = Self::load_cipher();
+        let retention_days = env::var("OPENAGENT_LOG_RETENTION_DAYS").ok().and_then(|v| v.parse::<u64>().ok());
         OnDemandLogFile {
             path,
             file: None,
             created: Arc::new(AtomicBool::new(false)),
+            encrypt,
+            key_b64,
+            cipher,
+            retention_days,
         }
     }
 
@@ -297,6 +321,10 @@ impl OnDemandLogFile {
 
             match file {
                 Ok(file) => {
+                    // Optionally purge old logs according to retention policy
+                    if let Some(days) = self.retention_days {
+                        let _ = Self::purge_old_logs(days);
+                    }
                     self.file = Some(io::LineWriter::new(file));
                     self.created.store(true, Ordering::Relaxed);
                     let _ = writeln!(
@@ -304,6 +332,9 @@ impl OnDemandLogFile {
                         "Created log file at \"{}\"",
                         self.path.display()
                     );
+                    if self.encrypt {
+                        let _ = writeln!(self.file.as_mut().unwrap(), "ENCv1:BEGIN");
+                    }
                 }
                 Err(e) => {
                     let _ = writeln!(io::stdout(), "Unable to create log file: {e}");
@@ -320,9 +351,95 @@ impl OnDemandLogFile {
     }
 }
 
+impl OnDemandLogFile {
+    fn load_cipher() -> (bool, Option<String>, Option<Aes256Gcm>) {
+        if let Ok(b64) = env::var("OPENAGENT_LOG_ENCRYPT_KEY") {
+            if let Ok(raw) = base64::decode(b64.as_bytes()) {
+                if raw.len() == 32 {
+                    let cipher = Aes256Gcm::new_from_slice(&raw).ok();
+                    return (cipher.is_some(), Some(b64), cipher);
+                }
+            }
+        }
+        (false, None, None)
+    }
+
+    fn maybe_rotate_key(&mut self) {
+        let (encrypt, key_b64, cipher) = Self::load_cipher();
+        if encrypt != self.encrypt || key_b64 != self.key_b64 {
+            // Key rotation detected
+            self.encrypt = encrypt;
+            self.key_b64 = key_b64;
+            self.cipher = cipher;
+            if let Some(ref mut f) = self.file {
+                let _ = writeln!(f, "ENCv1:KEYROTATE");
+            }
+        }
+    }
+
+    fn encrypt_if_enabled(&mut self, buf: &[u8]) -> Vec<u8> {
+        if !self.encrypt {
+            return buf.to_vec();
+        }
+        // Refresh cipher on each write to support rotation
+        self.maybe_rotate_key();
+        if let Some(ref cipher) = self.cipher {
+            // Random 12-byte nonce
+            let mut nonce_bytes = [0u8; 12];
+            rand::thread_rng().fill_bytes(&mut nonce_bytes);
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            match cipher.encrypt(nonce, buf) {
+                Ok(mut ciphertext) => {
+                    // Prepend nonce, base64-encode and write with ENC prefix
+                    let mut combined = Vec::with_capacity(12 + ciphertext.len());
+                    combined.extend_from_slice(&nonce_bytes);
+                    combined.append(&mut ciphertext);
+                    let mut line = b"ENCv1:".to_vec();
+                    line.extend_from_slice(base64::encode(combined).as_bytes());
+                    line.push(b'\n');
+                    return line;
+                }
+                Err(_) => {}
+            }
+        }
+        // Fallback: write plaintext if encryption fails
+        let mut v = buf.to_vec();
+        if !v.ends_with(b"\n") { v.push(b'\n'); }
+        v
+    }
+
+    fn purge_old_logs(days: u64) -> io::Result<()> {
+        let dir = env::temp_dir();
+        let cutoff = SystemTime::now()
+            .checked_sub(Duration::from_secs(days * 24 * 3600))
+            .unwrap_or(SystemTime::now());
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let p = e.path();
+                let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if !fname.starts_with("OpenAgentTerminal-") || !fname.ends_with(".log") { continue; }
+                if let Ok(meta) = e.metadata() {
+                    if let Ok(modified) = meta.modified() {
+                        if modified < cutoff {
+                            let _ = std::fs::remove_file(p);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Write for OnDemandLogFile {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.file()?.write(buf)
+        if self.encrypt {
+            let enc = self.encrypt_if_enabled(buf);
+            self.file()?.write_all(&enc)?;
+            Ok(buf.len())
+        } else {
+            self.file()?.write(buf)
+        }
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {

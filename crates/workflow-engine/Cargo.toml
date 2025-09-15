@@ -20,6 +20,8 @@ shlex = "1.3"
 reqwest = { workspace = true }
 # SQL database support for database integration
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "mysql", "sqlite", "derive"] }
+# Metrics
+metrics = { workspace = true }
 # Test utilities
 tempfile = { version = "3", optional = false }
 

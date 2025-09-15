@@ -6353,6 +6353,8 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         let timer_id = TimerId::new(Topic::BlinkCursor, window_id);
         let event = Event::new(EventType::BlinkCursor, window_id);
         let blinking_interval = Duration::from_millis(self.config.cursor.blink_interval());
+        // Coalesce any pending blink timer to avoid duplicates
+        let _ = self.scheduler.unschedule(timer_id);
         self.scheduler
             .schedule(event, blinking_interval, true, timer_id);
     }

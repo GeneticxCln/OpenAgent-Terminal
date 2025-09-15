@@ -116,6 +116,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Load command line options.
     let options = Options::new();
 
+    // Initialize tracing (structured logs + optional metrics exporter if enabled by env/CLI)
+    let _ = crate::logging::tracing_config::initialize_tracing(
+        crate::logging::tracing_config::TracingConfig::from_env(),
+    );
+
     match options.subcommands {
         #[cfg(unix)]
         Some(Subcommands::Msg(options)) => msg(options)?,

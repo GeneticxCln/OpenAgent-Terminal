@@ -97,6 +97,7 @@ harfbuzz_rs = { workspace = true, optional = true }
 fontdb = { workspace = true, optional = true }
 # Component management
 tokio = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
 anyhow = { workspace = true }
 dirs = "6.0.0"
 once_cell = "1.19"
@@ -130,6 +131,15 @@ winit = { workspace = true, features = ["serde"] }
 # Optional SQLite for AI history (best-effort logging)
 rusqlite = { workspace = true }
 csv = "1.3"
+# Observability
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+# Optional at-rest log encryption
+aes-gcm = { version = "0.10", features = ["aes"] }
+aes = "0.8"
+rand_core = "0.6"
+base64 = "0.22"
+rand = "0.8"
 
 
 [build-dependencies]
@@ -147,6 +157,7 @@ wgpu = "26.0"
 pollster = "0.3"
 proptest = "1.4"
 serial_test = "2"
+insta = "1.34"
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"
@@ -188,6 +199,8 @@ embed-resource = "3.0.2"
 default = ["wayland", "x11", "blocks", "workflow", "wgpu", "completions", "security-lens"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
+# Experimental placeholders/scaffolding that is planned but not yet actively used
+experimental = []
 # Optional background component initialization in a separate task
 background-components = []
 # WGPU rendering backend
@@ -301,6 +314,36 @@ name = "wgpu_snapshot"
 path = "examples/wgpu_snapshot.rs"
 required-features = ["wgpu"]
 
+[[example]]
+name = "natural_language_agent_demo"
+path = "examples/natural_language_agent_demo.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "blitzy_project_context_demo"
+path = "examples/blitzy_project_context_demo.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "workflow_orchestrator_demo"
+path = "examples/workflow_orchestrator_demo.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "advanced_conversation_demo"
+path = "examples/advanced_conversation_demo.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "privacy_content_filter_demo"
+path = "examples/privacy_content_filter_demo.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "terminal_ui_integration_demo"
+path = "examples/terminal_ui_integration_demo.rs"
+required-features = ["ai"]
+
 [[bench]]
 name = "terminal_startup"
 harness = false
@@ -311,4 +354,8 @@ harness = false
 
 [[bench]]
 name = "security_analysis"
+harness = false
+
+[[bench]]
+name = "compliance_report"
 harness = false

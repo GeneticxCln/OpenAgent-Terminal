@@ -208,6 +208,14 @@ No cloud accounts or sync
 
 ## Documentation
 
+Privacy & UI testing
+- docs/PRIVACY_AND_UI.md
+- docs/TESTING_PRIVACY_UI_COMPLIANCE.md
+
+Metrics exporter (Prometheus)
+- Enable via `--metrics-port <port>` or `OPENAGENT_PROM_PORT`.
+- Scrape `http://127.0.0.1:<port>/metrics`.
+
 - Documentation Hub: ../docs/README.md
 - Installation Guide: ../INSTALL.md
 - Configuration Manual: docs/configuration.md  

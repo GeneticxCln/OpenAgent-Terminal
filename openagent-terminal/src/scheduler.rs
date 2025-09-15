@@ -294,3 +294,43 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+    use std::thread::sleep;
+    use std::time::Duration as StdDuration;
+
+    #[test]
+    fn frame_coalescing_unschedule_then_schedule() {
+        // Build EventLoop on any thread (Wayland/X11)
+        let mut builder = winit::event_loop::EventLoop::<crate::event::Event>::with_user_event();
+        #[cfg(target_os = "linux")]
+        {
+            use winit::platform::wayland::EventLoopBuilderExtWayland;
+            use winit::platform::x11::EventLoopBuilderExtX11;
+            EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
+            EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+        }
+        let event_loop = builder.build().expect("failed to build event loop");
+        let proxy = event_loop.create_proxy();
+        let mut scheduler = Scheduler::test_new_with_proxy(proxy);
+
+        // Schedule a frame far in the future, then coalesce and schedule a sooner one
+        let evt_far = crate::event::Event::new(crate::event::EventType::Frame, None);
+        let tid = TimerId::new_anonymous(Topic::Frame);
+        scheduler.schedule(evt_far, StdDuration::from_millis(500), false, tid);
+
+        // Unschedule then schedule a new frame sooner
+        let _ = scheduler.unschedule(tid);
+        let evt_soon = crate::event::Event::new(crate::event::EventType::Frame, None);
+        scheduler.schedule(evt_soon, StdDuration::from_millis(50), false, tid);
+
+        // Wait enough for the second to fire
+        sleep(StdDuration::from_millis(120));
+        scheduler.update();
+        let events = super::test_take_events();
+        assert_eq!(events.len(), 1, "only the latest coalesced frame should fire");
+        assert!(matches!(events[0].payload(), crate::event::EventType::Frame));
+    }
+}

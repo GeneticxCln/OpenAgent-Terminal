@@ -60,6 +60,21 @@ Before opening a pull request, please run these checks locally to catch issues e
 
 ### Testing
 
+Privacy redaction tests
+- Run: `cargo test -p openagent-terminal-ai -- --nocapture`
+
+UI buffer snapshot tests
+- Run: `cargo test -p openagent-terminal ui_buffer`
+- Update snapshots: `INSTA_UPDATE=auto cargo test -p openagent-terminal ui_buffer`
+
+Compliance and security benches
+- Run: `cargo bench -p openagent-terminal security_analysis`
+- Run: `cargo bench -p openagent-terminal compliance_report`
+
+Metrics exporter
+- To enable Prometheus exporter locally, use `--metrics-port 9898` or set `OPENAGENT_PROM_PORT=9898` when running `openagent-terminal`.
+- Scrape at `http://127.0.0.1:9898/metrics`.
+
 To make sure no regressions were introduced, all tests should be run before sending a pull request.
 The following command can be run to test OpenAgent Terminal:
 

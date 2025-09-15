@@ -15,6 +15,8 @@ ai-ollama = ["serde", "serde_json", "reqwest", "tokio", "futures-util"]
 ai-openai = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 ai-anthropic = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
 ai-openrouter = ["serde", "serde_json", "reqwest", "tokio", "futures-util", "eventsource-stream"]
+# Enhanced multi-agent system for Blitzy Platform integration
+agents = ["serde", "serde_json", "tokio", "futures-util", "async-trait"]
 # Internal feature to build examples; disabled by default
 examples = []
 [dependencies]
@@ -33,6 +35,8 @@ anyhow = "1.0"
 ignore = "0.4"
 git2 = "0.18"
 pathdiff = "0.2"
+async-trait = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true }
 
 [dev-dependencies]
 wiremock = "0.6"
@@ -40,6 +44,8 @@ futures = "0.3"
 anyhow = "1.0"
 async-trait = "0.1"
 async-stream = "0.3"
+proptest = "1.0"
+insta = "1.34"
 
 # Ensure examples only build when explicitly requested via --features examples
 [[example]]

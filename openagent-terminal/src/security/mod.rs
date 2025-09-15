@@ -3,6 +3,8 @@
 
 #[cfg(feature = "security-lens")]
 pub mod security_lens;
+#[cfg(feature = "security-lens")]
+pub mod compliance;
 
 #[cfg(feature = "security-lens")]
 pub use security_lens::*;

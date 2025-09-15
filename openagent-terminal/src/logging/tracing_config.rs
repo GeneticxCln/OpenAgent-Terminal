@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, process};
 
 use tracing::{Level, Metadata, Subscriber};
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan, MakeWriter},
     layer::SubscriberExt,
@@ -220,7 +221,25 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
         .with(env_filter)
         .with(stdout_layer);
 
-    // Add AI debug log layer if enabled.
+    // Initialize Prometheus metrics exporter only when explicitly enabled via env
+    if let Ok(addr) = std::env::var("OPENAGENT_PROM_PORT") {
+        let bind = format!("127.0.0.1:{}", addr);
+        if let Ok(listener) = std::net::TcpListener::bind(&bind) {
+            if let Ok(handle) = PrometheusBuilder::new().install_recorder() {
+                // Spawn a tiny HTTP server to expose /metrics
+                std::thread::spawn(move || {
+                    for stream in listener.incoming() {
+                        if let Ok(mut s) = stream {
+                            let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\n");
+                            let body = handle.render();
+                            let _ = s.write_all(body.as_bytes());
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     if config.ai_debug_log {
         if let Some(path) = config.ai_debug_log_path {
             let ai_writer = ConditionalFileWriter::new(path, true);

@@ -7,6 +7,8 @@ pub use crate::config::monitor::ConfigMonitor;
 pub use openagent_terminal_config::SerdeReplace;
 
 #[cfg(feature = "ai")]
+pub mod ai;
+#[cfg(feature = "ai")]
 pub mod ai_context_provider;
 #[cfg(feature = "ai")]
 pub mod ai_runtime;

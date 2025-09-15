@@ -1155,6 +1155,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         self.last_frame_ms
     }
 
+    pub fn record_frame_time(&mut self, ms: f32) {
+        self.last_frame_ms = ms;
+        self.perf_history.push(ms);
+        if self.perf_history.len() > 120 {
+            let drop = self.perf_history.len() - 120;
+            self.perf_history.drain(0..drop);
+        }
+    }
+
     /// Rolling stats of the last up-to-60 frames: (avg_ms, min_ms, max_ms)
     pub fn frame_ms_stats(&self) -> Option<(f32, f32, f32)> {
         if self.perf_history.is_empty() {

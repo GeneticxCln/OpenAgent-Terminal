@@ -79,6 +79,11 @@ pub struct Options {
     #[clap(long)]
     pub daemon: bool,
 
+    /// Enable Prometheus metrics exporter on the given TCP port (binds to 127.0.0.1)
+    /// Alternatively, set OPENAGENT_PROM_PORT env var. Disabled by default.
+    #[clap(long = "metrics-port")] 
+    pub metrics_port: Option<u16>,
+
     /// CLI options for config overrides.
     #[clap(skip)]
     pub config_options: ParsedOptions,
@@ -98,6 +103,11 @@ impl Options {
 
         // Parse CLI config overrides.
         options.config_options = options.window_options.config_overrides();
+
+        // Allow enabling metrics exporter via CLI flag by setting env variable consumed at init
+        if let Some(port) = options.metrics_port {
+            std::env::set_var("OPENAGENT_PROM_PORT", port.to_string());
+        }
 
         options
     }

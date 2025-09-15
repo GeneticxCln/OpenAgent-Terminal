@@ -8,6 +8,10 @@ pub mod error;
 pub mod privacy;
 pub mod streaming;
 
+// Enhanced multi-agent system for Blitzy Platform integration
+#[cfg(feature = "agents")]
+pub mod agents;
+
 /// A request to the AI provider, typically from a scratch buffer.
 #[derive(Debug, Clone)]
 pub struct AiRequest {
