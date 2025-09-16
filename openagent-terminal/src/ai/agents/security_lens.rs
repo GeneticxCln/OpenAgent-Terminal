@@ -1,15 +1,15 @@
 // Security Lens Agent
 // Specialized AI agent for analyzing security risks in commands and code
 
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use anyhow::{Result, anyhow};
 use uuid::Uuid;
-use regex::Regex;
 
-use openagent_terminal_ai::AiProvider;
 use super::*;
+use openagent_terminal_ai::AiProvider;
 
 /// Specialized agent for security analysis
 pub struct SecurityLensAgent {
@@ -130,7 +130,7 @@ impl SecurityLensAgent {
             risk_patterns: Self::default_security_patterns(),
         }
     }
-    
+
     pub fn with_ai_provider(mut self, ai_provider: Box<dyn AiProvider>) -> Self {
         self.ai_provider = Some(ai_provider);
         self
@@ -170,11 +170,15 @@ impl SecurityLensAgent {
                 pattern: r"(?i)(curl|wget).*\|\s*(bash|sh|zsh|fish)".to_string(),
                 risk_level: SecurityRiskLevel::Critical,
                 description: "Downloading and executing remote scripts".to_string(),
-                mitigation: Some("Download first, review content, then execute manually".to_string()),
+                mitigation: Some(
+                    "Download first, review content, then execute manually".to_string(),
+                ),
             },
             SecurityPattern {
                 name: "exposed_api_key".to_string(),
-                pattern: r"(?i)(api[_-]?key|secret|token|password)\s*[=:]\s*['\x22][^'\x22]+['\x22]".to_string(),
+                pattern:
+                    r"(?i)(api[_-]?key|secret|token|password)\s*[=:]\s*['\x22][^'\x22]+['\x22]"
+                        .to_string(),
                 risk_level: SecurityRiskLevel::Critical,
                 description: "Exposed API key or secret in plain text".to_string(),
                 mitigation: Some("Use environment variables or secure storage".to_string()),
@@ -206,12 +210,12 @@ impl SecurityLensAgent {
     /// Analyze content using pattern matching
     fn analyze_with_patterns(&self, content: &str, skip_patterns: &[String]) -> Vec<SecurityRisk> {
         let mut risks = Vec::new();
-        
+
         for pattern in &self.risk_patterns {
             if skip_patterns.contains(&pattern.name) {
                 continue;
             }
-            
+
             if let Ok(regex) = Regex::new(&pattern.pattern) {
                 if let Some(match_result) = regex.find(content) {
                     risks.push(SecurityRisk {
@@ -219,20 +223,24 @@ impl SecurityLensAgent {
                         risk_level: pattern.risk_level.clone(),
                         category: pattern.name.clone(),
                         description: pattern.description.clone(),
-                        location: Some(format!("Position {}-{}", match_result.start(), match_result.end())),
+                        location: Some(format!(
+                            "Position {}-{}",
+                            match_result.start(),
+                            match_result.end()
+                        )),
                         mitigation: pattern.mitigation.clone(),
                         pattern_match: true,
                     });
                 }
             }
         }
-        
+
         // Add custom patterns from config
         for custom_pattern in &self.config.custom_patterns {
             if skip_patterns.contains(&custom_pattern.name) {
                 continue;
             }
-            
+
             if let Ok(regex) = Regex::new(&custom_pattern.pattern) {
                 if let Some(match_result) = regex.find(content) {
                     risks.push(SecurityRisk {
@@ -240,32 +248,36 @@ impl SecurityLensAgent {
                         risk_level: custom_pattern.risk_level.clone(),
                         category: custom_pattern.name.clone(),
                         description: custom_pattern.description.clone(),
-                        location: Some(format!("Position {}-{}", match_result.start(), match_result.end())),
+                        location: Some(format!(
+                            "Position {}-{}",
+                            match_result.start(),
+                            match_result.end()
+                        )),
                         mitigation: custom_pattern.mitigation.clone(),
                         pattern_match: true,
                     });
                 }
             }
         }
-        
+
         risks
     }
 
     /// Create system prompt for AI-based security analysis
     fn create_security_analysis_prompt(&self, request: &SecurityAnalysisRequest) -> String {
         let mut prompt = String::new();
-        
+
         prompt.push_str("You are a cybersecurity expert analyzing ");
         prompt.push_str(&format!("{:?}", request.content_type).to_lowercase());
         prompt.push_str(" for security risks and vulnerabilities.\n\n");
-        
+
         prompt.push_str("Analyze the following content and identify:\n");
         prompt.push_str("1. Security risks and vulnerabilities\n");
         prompt.push_str("2. Potential attack vectors\n");
         prompt.push_str("3. Best practices violations\n");
         prompt.push_str("4. Privacy concerns\n");
         prompt.push_str("5. Safe alternatives where applicable\n\n");
-        
+
         prompt.push_str("Consider these risk categories:\n");
         prompt.push_str("- Privilege escalation\n");
         prompt.push_str("- Data exposure\n");
@@ -273,11 +285,11 @@ impl SecurityLensAgent {
         prompt.push_str("- Network security\n");
         prompt.push_str("- Code injection\n");
         prompt.push_str("- Authentication bypasses\n\n");
-        
+
         if let Some(context) = &request.context {
             prompt.push_str(&format!("Additional context: {}\n\n", context));
         }
-        
+
         prompt.push_str("Return your analysis in this JSON format:\n");
         prompt.push_str("{\n");
         prompt.push_str("  \"overall_risk\": \"Critical|High|Medium|Low|Info\",\n");
@@ -296,15 +308,18 @@ impl SecurityLensAgent {
         prompt.push_str("  \"recommendations\": [\"recommendation_1\", \"recommendation_2\"],\n");
         prompt.push_str("  \"confidence_score\": 0.85\n");
         prompt.push_str("}\n");
-        
+
         prompt
     }
 
     /// Perform AI-based security analysis
-    async fn analyze_with_ai(&self, request: &SecurityAnalysisRequest) -> Result<SecurityAnalysisResponse> {
+    async fn analyze_with_ai(
+        &self,
+        request: &SecurityAnalysisRequest,
+    ) -> Result<SecurityAnalysisResponse> {
         let system_prompt = self.create_security_analysis_prompt(request);
         let user_prompt = format!("Content to analyze:\n```\n{}\n```", request.content);
-        
+
         let response = if let Some(provider) = &self.ai_provider {
             let ai_request = openagent_terminal_ai::AiRequest {
                 scratch_text: format!("{}\n\n{}", system_prompt, user_prompt),
@@ -312,12 +327,18 @@ impl SecurityLensAgent {
                 shell_kind: None,
                 context: vec![
                     ("mode".to_string(), "security_analysis".to_string()),
-                    ("content_type".to_string(), format!("{:?}", request.content_type)),
+                    (
+                        "content_type".to_string(),
+                        format!("{:?}", request.content_type),
+                    ),
                 ],
             };
-            
-            let proposals = provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?;
-            proposals.first()
+
+            let proposals = provider
+                .propose(ai_request)
+                .map_err(|e| anyhow!("AI provider error: {}", e))?;
+            proposals
+                .first()
                 .ok_or_else(|| anyhow!("No response from AI provider"))?
                 .proposed_commands
                 .join("\n")
@@ -329,16 +350,17 @@ impl SecurityLensAgent {
                 "safe_alternatives": [],
                 "recommendations": ["Consider reviewing the content manually for security issues"],
                 "confidence_score": 0.5
-            }).to_string()
+            })
+            .to_string()
         };
-        
+
         // Parse the JSON response
         let parsed: SecurityAnalysisResponse = serde_json::from_str(&response)
             .map_err(|e| anyhow!("Failed to parse security analysis response: {}", e))?;
-        
+
         // Convert string risk levels to enum
         // (This would be handled by custom deserialization in a full implementation)
-        
+
         Ok(parsed)
     }
 
@@ -352,7 +374,7 @@ impl SecurityLensAgent {
         let mut safe_alternatives = Vec::new();
         let mut recommendations = Vec::new();
         let mut confidence_score = 0.9; // High confidence for pattern matching
-        
+
         // Merge AI analysis if available
         if let Some(ai_result) = ai_response {
             all_risks.extend(ai_result.risks);
@@ -360,20 +382,32 @@ impl SecurityLensAgent {
             recommendations.extend(ai_result.recommendations);
             confidence_score = (confidence_score + ai_result.confidence_score) / 2.0;
         }
-        
+
         // Determine overall risk level
-        let overall_risk = if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Critical) {
+        let overall_risk = if all_risks
+            .iter()
+            .any(|r| r.risk_level == SecurityRiskLevel::Critical)
+        {
             SecurityRiskLevel::Critical
-        } else if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::High) {
+        } else if all_risks
+            .iter()
+            .any(|r| r.risk_level == SecurityRiskLevel::High)
+        {
             SecurityRiskLevel::High
-        } else if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Medium) {
+        } else if all_risks
+            .iter()
+            .any(|r| r.risk_level == SecurityRiskLevel::Medium)
+        {
             SecurityRiskLevel::Medium
-        } else if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Low) {
+        } else if all_risks
+            .iter()
+            .any(|r| r.risk_level == SecurityRiskLevel::Low)
+        {
             SecurityRiskLevel::Low
         } else {
             SecurityRiskLevel::Info
         };
-        
+
         SecurityAnalysisResponse {
             overall_risk,
             risks: all_risks,
@@ -402,18 +436,21 @@ impl SecurityLensAgent {
     /// Create suggested actions based on security analysis
     fn create_security_actions(&self, analysis: &SecurityAnalysisResponse) -> Vec<SuggestedAction> {
         let mut actions = Vec::new();
-        
+
         // Suggest blocking execution if needed
         if self.should_block_execution(&analysis.overall_risk) {
             actions.push(SuggestedAction {
                 action_type: ActionType::Custom("block_execution".to_string()),
-                description: format!("Block execution due to {} risk", format!("{:?}", analysis.overall_risk).to_lowercase()),
+                description: format!(
+                    "Block execution due to {} risk",
+                    format!("{:?}", analysis.overall_risk).to_lowercase()
+                ),
                 command: None,
                 priority: ActionPriority::Critical,
                 safe_to_auto_execute: true, // Auto-block for safety
             });
         }
-        
+
         // Suggest safe alternatives
         for alternative in &analysis.safe_alternatives {
             actions.push(SuggestedAction {
@@ -424,7 +461,7 @@ impl SecurityLensAgent {
                 safe_to_auto_execute: false,
             });
         }
-        
+
         actions
     }
 }
@@ -457,12 +494,16 @@ impl Agent for SecurityLensAgent {
 
         match request.request_type {
             AgentRequestType::CheckSecurity => {
-                let security_request: SecurityAnalysisRequest = serde_json::from_value(request.payload)
-                    .map_err(|e| anyhow!("Invalid security analysis request: {}", e))?;
+                let security_request: SecurityAnalysisRequest =
+                    serde_json::from_value(request.payload)
+                        .map_err(|e| anyhow!("Invalid security analysis request: {}", e))?;
 
                 // Pattern-based analysis (always performed)
                 let pattern_risks = if self.config.enable_pattern_matching {
-                    self.analyze_with_patterns(&security_request.content, &security_request.skip_patterns)
+                    self.analyze_with_patterns(
+                        &security_request.content,
+                        &security_request.skip_patterns,
+                    )
                 } else {
                     vec![]
                 };
@@ -485,20 +526,21 @@ impl Agent for SecurityLensAgent {
                 let actions = self.create_security_actions(&analysis);
 
                 // Create artifacts for detailed reporting
-                let artifacts = vec![
-                    AgentArtifact {
-                        id: Uuid::new_v4(),
-                        artifact_type: ArtifactType::Report,
-                        content: serde_json::to_string_pretty(&analysis)?,
-                        metadata: {
-                            let mut meta = HashMap::new();
-                            meta.insert("type".to_string(), "security_analysis".to_string());
-                            meta.insert("risk_level".to_string(), format!("{:?}", analysis.overall_risk));
-                            meta.insert("risk_count".to_string(), analysis.risks.len().to_string());
-                            meta
-                        },
-                    }
-                ];
+                let artifacts = vec![AgentArtifact {
+                    id: Uuid::new_v4(),
+                    artifact_type: ArtifactType::Report,
+                    content: serde_json::to_string_pretty(&analysis)?,
+                    metadata: {
+                        let mut meta = HashMap::new();
+                        meta.insert("type".to_string(), "security_analysis".to_string());
+                        meta.insert(
+                            "risk_level".to_string(),
+                            format!("{:?}", analysis.overall_risk),
+                        );
+                        meta.insert("risk_count".to_string(), analysis.risks.len().to_string());
+                        meta
+                    },
+                }];
 
                 Ok(AgentResponse {
                     request_id: request.id,
@@ -510,7 +552,10 @@ impl Agent for SecurityLensAgent {
                     metadata: HashMap::new(),
                 })
             }
-            _ => Err(anyhow!("Unsupported request type: {:?}", request.request_type))
+            _ => Err(anyhow!(
+                "Unsupported request type: {:?}",
+                request.request_type
+            )),
         }
     }
 
@@ -531,18 +576,24 @@ impl Agent for SecurityLensAgent {
     async fn initialize(&mut self, config: AgentConfig) -> Result<()> {
         // Load custom security configuration
         if let Some(security_config) = config.custom_settings.get("security_lens") {
-            if let Ok(parsed_config) = serde_json::from_value::<SecurityLensConfig>(security_config.clone()) {
+            if let Ok(parsed_config) =
+                serde_json::from_value::<SecurityLensConfig>(security_config.clone())
+            {
                 self.config = parsed_config;
             }
         }
 
         // Load custom patterns
-        self.risk_patterns.extend(self.config.custom_patterns.clone());
+        self.risk_patterns
+            .extend(self.config.custom_patterns.clone());
 
         self.is_initialized = true;
         self.last_activity = chrono::Utc::now();
-        
-        tracing::info!("Security Lens Agent initialized with {} patterns", self.risk_patterns.len());
+
+        tracing::info!(
+            "Security Lens Agent initialized with {} patterns",
+            self.risk_patterns.len()
+        );
         Ok(())
     }
 
@@ -562,10 +613,12 @@ mod tests {
     async fn test_security_lens_agent_creation() {
         let provider = Box::new(OllamaProvider::new());
         let agent = SecurityLensAgent::new(provider);
-        
+
         assert_eq!(agent.id(), "security-lens");
         assert_eq!(agent.name(), "Security Lens Agent");
-        assert!(agent.capabilities().contains(&AgentCapability::SecurityAnalysis));
+        assert!(agent
+            .capabilities()
+            .contains(&AgentCapability::SecurityAnalysis));
         assert!(agent.can_handle(&AgentRequestType::CheckSecurity));
         assert!(!agent.can_handle(&AgentRequestType::GenerateCode));
     }
@@ -574,47 +627,49 @@ mod tests {
     fn test_pattern_analysis() {
         let provider = Box::new(OllamaProvider::new());
         let agent = SecurityLensAgent::new(provider);
-        
+
         // Test dangerous command detection
         let dangerous_command = "sudo rm -rf /";
         let risks = agent.analyze_with_patterns(dangerous_command, &[]);
-        
+
         assert!(!risks.is_empty());
         assert!(risks.iter().any(|r| r.category == "sudo_command"));
         assert!(risks.iter().any(|r| r.category == "rm_recursive"));
-        assert!(risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Critical));
+        assert!(risks
+            .iter()
+            .any(|r| r.risk_level == SecurityRiskLevel::Critical));
     }
 
     #[test]
     fn test_api_key_detection() {
         let provider = Box::new(OllamaProvider::new());
         let agent = SecurityLensAgent::new(provider);
-        
+
         let code_with_secret = r#"API_KEY="sk-1234567890abcdef""#;
         let risks = agent.analyze_with_patterns(code_with_secret, &[]);
-        
+
         assert!(!risks.is_empty());
         assert!(risks.iter().any(|r| r.category == "exposed_api_key"));
-        assert!(risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Critical));
+        assert!(risks
+            .iter()
+            .any(|r| r.risk_level == SecurityRiskLevel::Critical));
     }
 
     #[test]
     fn test_risk_level_determination() {
         let provider = Box::new(OllamaProvider::new());
         let agent = SecurityLensAgent::new(provider);
-        
-        let pattern_risks = vec![
-            SecurityRisk {
-                id: "test1".to_string(),
-                risk_level: SecurityRiskLevel::Medium,
-                category: "test".to_string(),
-                description: "Test risk".to_string(),
-                location: None,
-                mitigation: None,
-                pattern_match: true,
-            }
-        ];
-        
+
+        let pattern_risks = vec![SecurityRisk {
+            id: "test1".to_string(),
+            risk_level: SecurityRiskLevel::Medium,
+            category: "test".to_string(),
+            description: "Test risk".to_string(),
+            location: None,
+            mitigation: None,
+            pattern_match: true,
+        }];
+
         let result = agent.combine_analysis_results(pattern_risks, None);
         assert_eq!(result.overall_risk, SecurityRiskLevel::Medium);
     }

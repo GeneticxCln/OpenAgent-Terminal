@@ -331,7 +331,14 @@ mod frame_tests {
         sleep(StdDuration::from_millis(120));
         scheduler.update();
         let events = super::test_take_events();
-        assert_eq!(events.len(), 1, "only the latest coalesced frame should fire");
-        assert!(matches!(events[0].payload(), crate::event::EventType::Frame));
+        assert_eq!(
+            events.len(),
+            1,
+            "only the latest coalesced frame should fire"
+        );
+        assert!(matches!(
+            events[0].payload(),
+            crate::event::EventType::Frame
+        ));
     }
 }

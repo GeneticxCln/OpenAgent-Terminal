@@ -84,7 +84,11 @@ impl WgpuRectTransfer {
     }
 
     /// Append vertices; defers staging buffer map to flush() for a single map/unmap per frame.
-    pub fn append_vertices<T: bytemuck::Pod>(&mut self, device: &Device, verts: &[T]) -> (usize, usize) {
+    pub fn append_vertices<T: bytemuck::Pod>(
+        &mut self,
+        device: &Device,
+        verts: &[T],
+    ) -> (usize, usize) {
         let count = verts.len();
         if count == 0 {
             return (self.used_vertices, 0);

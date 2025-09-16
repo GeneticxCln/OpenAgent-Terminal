@@ -1,16 +1,16 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
 use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
-use tokio::time::{Duration, timeout};
+use tokio::sync::{Mutex, RwLock};
+use tokio::time::{timeout, Duration};
+use uuid::Uuid;
 
-use super::*;
-use super::conversation_manager::ConversationManager;
 use super::blitzy_project_context::BlitzyProjectContextAgent;
+use super::conversation_manager::ConversationManager;
+use super::*;
 
 /// Advanced workflow orchestration system for multi-agent coordination
 pub struct WorkflowOrchestrator {
@@ -80,7 +80,7 @@ pub struct WorkflowStep {
     pub error_handling: StepErrorHandling,
     pub input_mapping: HashMap<String, String>, // Map variables to step inputs
     pub output_mapping: HashMap<String, String>, // Map step outputs to variables
-    pub parallel_group: Option<String>, // Group ID for parallel execution
+    pub parallel_group: Option<String>,         // Group ID for parallel execution
 }
 
 /// Workflow step execution state
@@ -321,7 +321,7 @@ impl Default for WorkflowConfig {
         Self {
             max_concurrent_workflows: 10,
             max_concurrent_steps: 20,
-            default_step_timeout_seconds: 300, // 5 minutes
+            default_step_timeout_seconds: 300,      // 5 minutes
             default_workflow_timeout_seconds: 3600, // 1 hour
             enable_parallel_execution: true,
             enable_step_retry: true,
@@ -365,12 +365,18 @@ impl WorkflowOrchestrator {
         self
     }
 
-    pub fn with_conversation_manager(mut self, conversation_manager: Arc<ConversationManager>) -> Self {
+    pub fn with_conversation_manager(
+        mut self,
+        conversation_manager: Arc<ConversationManager>,
+    ) -> Self {
         self.conversation_manager = Some(conversation_manager);
         self
     }
 
-    pub fn with_project_context_agent(mut self, project_context_agent: Arc<BlitzyProjectContextAgent>) -> Self {
+    pub fn with_project_context_agent(
+        mut self,
+        project_context_agent: Arc<BlitzyProjectContextAgent>,
+    ) -> Self {
         self.project_context_agent = Some(project_context_agent);
         self
     }
@@ -388,10 +394,10 @@ impl WorkflowOrchestrator {
     pub async fn register_template(&self, template: WorkflowTemplate) -> Result<()> {
         let mut templates = self.workflow_templates.write().await;
         let template_id = template.id.clone();
-        
+
         // Validate template
         self.validate_template(&template)?;
-        
+
         templates.insert(template_id.clone(), template);
         tracing::info!("Registered workflow template: {}", template_id);
         Ok(())
@@ -405,12 +411,13 @@ impl WorkflowOrchestrator {
         variables: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<Uuid> {
         let templates = self.workflow_templates.read().await;
-        let template = templates.get(template_id)
+        let template = templates
+            .get(template_id)
             .ok_or_else(|| anyhow!("Workflow template not found: {}", template_id))?;
 
         let workflow_id = Uuid::new_v4();
         let mut workflow_context = context;
-        
+
         // Merge provided variables with defaults
         if let Some(vars) = variables {
             for (key, value) in vars {
@@ -422,7 +429,9 @@ impl WorkflowOrchestrator {
         for (name, var_def) in &template.variables {
             if !workflow_context.variables.contains_key(name) {
                 if let Some(default_value) = &var_def.default_value {
-                    workflow_context.variables.insert(name.clone(), default_value.clone());
+                    workflow_context
+                        .variables
+                        .insert(name.clone(), default_value.clone());
                 } else if var_def.required {
                     return Err(anyhow!("Required variable '{}' not provided", name));
                 }
@@ -433,8 +442,10 @@ impl WorkflowOrchestrator {
         self.validate_variables(&template.variables, &workflow_context.variables)?;
 
         // Initialize step executions
-        let step_executions = template.steps.iter().map(|step| {
-            WorkflowStepExecution {
+        let step_executions = template
+            .steps
+            .iter()
+            .map(|step| WorkflowStepExecution {
                 step_id: step.id.clone(),
                 status: StepExecutionStatus::Pending,
                 started_at: None,
@@ -444,8 +455,8 @@ impl WorkflowOrchestrator {
                 error_info: None,
                 inputs: HashMap::new(),
                 outputs: HashMap::new(),
-            }
-        }).collect();
+            })
+            .collect();
 
         let workflow = WorkflowExecution {
             id: workflow_id,
@@ -472,7 +483,11 @@ impl WorkflowOrchestrator {
         // Start execution
         self.start_workflow_execution(workflow_id).await?;
 
-        tracing::info!("Created and started workflow: {} (template: {})", workflow_id, template_id);
+        tracing::info!(
+            "Created and started workflow: {} (template: {})",
+            workflow_id,
+            template_id
+        );
         Ok(workflow_id)
     }
 
@@ -493,14 +508,19 @@ impl WorkflowOrchestrator {
             async move {
                 if let Err(e) = orchestrator.execute_workflow_loop(workflow_id).await {
                     tracing::error!("Workflow execution failed: {} - {}", workflow_id, e);
-                    orchestrator.mark_workflow_failed(workflow_id, WorkflowError {
-                        step_id: None,
-                        error_type: WorkflowErrorType::SystemError,
-                        message: e.to_string(),
-                        details: None,
-                        occurred_at: Utc::now(),
-                        recoverable: false,
-                    }).await;
+                    orchestrator
+                        .mark_workflow_failed(
+                            workflow_id,
+                            WorkflowError {
+                                step_id: None,
+                                error_type: WorkflowErrorType::SystemError,
+                                message: e.to_string(),
+                                details: None,
+                                occurred_at: Utc::now(),
+                                recoverable: false,
+                            },
+                        )
+                        .await;
                 }
             }
         });
@@ -513,7 +533,8 @@ impl WorkflowOrchestrator {
         loop {
             let (next_steps, workflow_completed) = {
                 let workflows = self.workflows.read().await;
-                let workflow = workflows.get(&workflow_id)
+                let workflow = workflows
+                    .get(&workflow_id)
                     .ok_or_else(|| anyhow!("Workflow not found: {}", workflow_id))?;
 
                 if !matches!(workflow.status, WorkflowStatus::Running) {
@@ -521,7 +542,8 @@ impl WorkflowOrchestrator {
                 }
 
                 let templates = self.workflow_templates.read().await;
-                let template = templates.get(&workflow.template_id)
+                let template = templates
+                    .get(&workflow.template_id)
                     .ok_or_else(|| anyhow!("Template not found: {}", workflow.template_id))?;
 
                 let next_steps = self.get_next_executable_steps(workflow, template)?;
@@ -560,15 +582,16 @@ impl WorkflowOrchestrator {
 
         for step_id in step_ids {
             let orchestrator = Arc::new(self.clone());
-            let handle = tokio::spawn(async move {
-                orchestrator.execute_step(workflow_id, &step_id).await
-            });
+            let handle =
+                tokio::spawn(async move { orchestrator.execute_step(workflow_id, &step_id).await });
             handles.push(handle);
         }
 
         // Wait for all steps to complete
         for handle in handles {
-            handle.await.map_err(|e| anyhow!("Task join error: {}", e))??;
+            handle
+                .await
+                .map_err(|e| anyhow!("Task join error: {}", e))??;
         }
 
         Ok(())
@@ -578,25 +601,35 @@ impl WorkflowOrchestrator {
     async fn execute_step(&self, workflow_id: Uuid, step_id: &str) -> Result<()> {
         let (step, workflow_context, template) = {
             let workflows = self.workflows.read().await;
-            let workflow = workflows.get(&workflow_id)
+            let workflow = workflows
+                .get(&workflow_id)
                 .ok_or_else(|| anyhow!("Workflow not found: {}", workflow_id))?;
 
             let templates = self.workflow_templates.read().await;
-            let template = templates.get(&workflow.template_id)
+            let template = templates
+                .get(&workflow.template_id)
                 .ok_or_else(|| anyhow!("Template not found: {}", workflow.template_id))?;
 
-            let step = template.steps.iter().find(|s| s.id == step_id)
+            let step = template
+                .steps
+                .iter()
+                .find(|s| s.id == step_id)
                 .ok_or_else(|| anyhow!("Step not found: {}", step_id))?;
 
             (step.clone(), workflow.context.clone(), template.clone())
         };
 
         // Update step status to running
-        self.update_step_status(workflow_id, step_id, StepExecutionStatus::Running).await?;
+        self.update_step_status(workflow_id, step_id, StepExecutionStatus::Running)
+            .await?;
 
         // Evaluate step conditions
-        if !self.evaluate_step_conditions(&step, &workflow_context).await? {
-            self.update_step_status(workflow_id, step_id, StepExecutionStatus::Skipped).await?;
+        if !self
+            .evaluate_step_conditions(&step, &workflow_context)
+            .await?
+        {
+            self.update_step_status(workflow_id, step_id, StepExecutionStatus::Skipped)
+                .await?;
             return Ok(());
         }
 
@@ -604,34 +637,43 @@ impl WorkflowOrchestrator {
         let inputs = self.prepare_step_inputs(&step, &workflow_context).await?;
 
         // Execute step with retry logic
-        let result = self.execute_step_with_retry(&step, inputs, &template.retry_config).await;
+        let result = self
+            .execute_step_with_retry(&step, inputs, &template.retry_config)
+            .await;
 
         match result {
             Ok(response) => {
                 // Process step outputs
                 let outputs = self.process_step_outputs(&step, &response).await?;
-                
+
                 // Update workflow context with outputs
-                self.update_workflow_context(workflow_id, &step.output_mapping, &outputs).await?;
-                
+                self.update_workflow_context(workflow_id, &step.output_mapping, &outputs)
+                    .await?;
+
                 // Mark step as completed
-                self.complete_step(workflow_id, step_id, response, outputs).await?;
+                self.complete_step(workflow_id, step_id, response, outputs)
+                    .await?;
             }
             Err(e) => {
                 match step.error_handling {
                     StepErrorHandling::Fail => {
                         self.fail_step(workflow_id, step_id, e.to_string()).await?;
-                        self.mark_workflow_failed(workflow_id, WorkflowError {
-                            step_id: Some(step_id.to_string()),
-                            error_type: WorkflowErrorType::AgentError,
-                            message: e.to_string(),
-                            details: None,
-                            occurred_at: Utc::now(),
-                            recoverable: false,
-                        }).await;
+                        self.mark_workflow_failed(
+                            workflow_id,
+                            WorkflowError {
+                                step_id: Some(step_id.to_string()),
+                                error_type: WorkflowErrorType::AgentError,
+                                message: e.to_string(),
+                                details: None,
+                                occurred_at: Utc::now(),
+                                recoverable: false,
+                            },
+                        )
+                        .await;
                     }
                     StepErrorHandling::Skip => {
-                        self.update_step_status(workflow_id, step_id, StepExecutionStatus::Skipped).await?;
+                        self.update_step_status(workflow_id, step_id, StepExecutionStatus::Skipped)
+                            .await?;
                     }
                     StepErrorHandling::Retry => {
                         // Retry logic is handled in execute_step_with_retry
@@ -664,17 +706,17 @@ impl WorkflowOrchestrator {
             let result = match &step.step_type {
                 WorkflowStepType::AgentRequest => {
                     if let Some(agent_id) = &step.agent_id {
-                        self.execute_agent_request(agent_id, &step.request_template, &inputs).await
+                        self.execute_agent_request(agent_id, &step.request_template, &inputs)
+                            .await
                     } else {
                         Err(anyhow!("Agent ID required for AgentRequest step"))
                     }
                 }
                 WorkflowStepType::Command => {
-                    self.execute_command_step(&step.request_template, &inputs).await
+                    self.execute_command_step(&step.request_template, &inputs)
+                        .await
                 }
-                _ => {
-                    Err(anyhow!("Step type not implemented: {:?}", step.step_type))
-                }
+                _ => Err(anyhow!("Step type not implemented: {:?}", step.step_type)),
             };
 
             match result {
@@ -684,11 +726,16 @@ impl WorkflowOrchestrator {
                         return Err(e);
                     }
 
-                    tracing::warn!("Step execution failed (attempt {}): {} - {}", attempts, step.id, e);
-                    
+                    tracing::warn!(
+                        "Step execution failed (attempt {}): {} - {}",
+                        attempts,
+                        step.id,
+                        e
+                    );
+
                     // Wait before retry
                     tokio::time::sleep(Duration::from_millis(delay)).await;
-                    
+
                     // Increase delay for next attempt
                     delay = (delay as f32 * retry_config.backoff_multiplier) as u64;
                     delay = delay.min(retry_config.max_delay_ms);
@@ -705,15 +752,16 @@ impl WorkflowOrchestrator {
         inputs: &HashMap<String, serde_json::Value>,
     ) -> Result<AgentResponse> {
         let registry = self.agent_registry.read().await;
-        let agent = registry.get(agent_id)
+        let agent = registry
+            .get(agent_id)
             .ok_or_else(|| anyhow!("Agent not found: {}", agent_id))?;
 
         // Build agent request from template and inputs
         let request = self.build_agent_request(request_template, inputs)?;
-        
+
         // Execute with timeout
         let timeout_duration = Duration::from_secs(self.config.default_step_timeout_seconds);
-        
+
         match timeout(timeout_duration, agent.handle_request(request)).await {
             Ok(result) => result,
             Err(_) => Err(anyhow!("Agent request timed out")),
@@ -729,7 +777,7 @@ impl WorkflowOrchestrator {
         // This would execute system commands
         // For safety, this is a simplified implementation
         let command = self.interpolate_template(command_template, inputs)?;
-        
+
         // Create a mock response for command execution
         Ok(AgentResponse {
             request_id: Uuid::new_v4(),
@@ -752,10 +800,10 @@ impl WorkflowOrchestrator {
         inputs: &HashMap<String, serde_json::Value>,
     ) -> Result<AgentRequest> {
         let interpolated = self.interpolate_template(template, inputs)?;
-        
+
         let request: AgentRequest = serde_json::from_value(interpolated)
             .map_err(|e| anyhow!("Failed to parse agent request template: {}", e))?;
-        
+
         Ok(request)
     }
 
@@ -768,7 +816,7 @@ impl WorkflowOrchestrator {
         // Simple template interpolation
         let template_str = serde_json::to_string(template)?;
         let mut result = template_str;
-        
+
         for (key, value) in inputs {
             let placeholder = format!("{{{{{}}}}}", key);
             let value_str = match value {
@@ -777,7 +825,7 @@ impl WorkflowOrchestrator {
             };
             result = result.replace(&placeholder, &value_str);
         }
-        
+
         Ok(serde_json::from_str(&result)?)
     }
 
@@ -792,7 +840,9 @@ impl WorkflowOrchestrator {
         let mut executable_steps = Vec::new();
 
         for step in &template.steps {
-            let step_execution = workflow.steps.iter()
+            let step_execution = workflow
+                .steps
+                .iter()
                 .find(|s| s.step_id == step.id)
                 .ok_or_else(|| anyhow!("Step execution not found: {}", step.id))?;
 
@@ -803,7 +853,9 @@ impl WorkflowOrchestrator {
 
             // Check dependencies
             let dependencies_satisfied = step.dependencies.iter().all(|dep_id| {
-                workflow.steps.iter()
+                workflow
+                    .steps
+                    .iter()
                     .find(|s| s.step_id == *dep_id)
                     .map(|s| matches!(s.status, StepExecutionStatus::Completed))
                     .unwrap_or(false)
@@ -820,10 +872,11 @@ impl WorkflowOrchestrator {
     /// Check if workflow is completed
     fn is_workflow_completed(&self, workflow: &WorkflowExecution) -> bool {
         workflow.steps.iter().all(|step| {
-            matches!(step.status, 
-                StepExecutionStatus::Completed | 
-                StepExecutionStatus::Skipped | 
-                StepExecutionStatus::Failed
+            matches!(
+                step.status,
+                StepExecutionStatus::Completed
+                    | StepExecutionStatus::Skipped
+                    | StepExecutionStatus::Failed
             )
         })
     }
@@ -870,7 +923,9 @@ impl WorkflowOrchestrator {
                     StepExecutionStatus::Running => {
                         step.started_at = Some(Utc::now());
                     }
-                    StepExecutionStatus::Completed | StepExecutionStatus::Failed | StepExecutionStatus::Skipped => {
+                    StepExecutionStatus::Completed
+                    | StepExecutionStatus::Failed
+                    | StepExecutionStatus::Skipped => {
                         step.completed_at = Some(Utc::now());
                     }
                     _ => {}
@@ -880,27 +935,42 @@ impl WorkflowOrchestrator {
         Ok(())
     }
 
-    async fn evaluate_step_conditions(&self, _step: &WorkflowStep, _context: &WorkflowContext) -> Result<bool> {
+    async fn evaluate_step_conditions(
+        &self,
+        _step: &WorkflowStep,
+        _context: &WorkflowContext,
+    ) -> Result<bool> {
         // Placeholder for condition evaluation
         Ok(true)
     }
 
-    async fn prepare_step_inputs(&self, step: &WorkflowStep, context: &WorkflowContext) -> Result<HashMap<String, serde_json::Value>> {
+    async fn prepare_step_inputs(
+        &self,
+        step: &WorkflowStep,
+        context: &WorkflowContext,
+    ) -> Result<HashMap<String, serde_json::Value>> {
         let mut inputs = HashMap::new();
-        
+
         for (input_key, variable_name) in &step.input_mapping {
             if let Some(value) = context.variables.get(variable_name) {
                 inputs.insert(input_key.clone(), value.clone());
             }
         }
-        
+
         Ok(inputs)
     }
 
-    async fn process_step_outputs(&self, _step: &WorkflowStep, response: &AgentResponse) -> Result<HashMap<String, serde_json::Value>> {
+    async fn process_step_outputs(
+        &self,
+        _step: &WorkflowStep,
+        response: &AgentResponse,
+    ) -> Result<HashMap<String, serde_json::Value>> {
         // Extract outputs from agent response
         Ok(HashMap::from([
-            ("success".to_string(), serde_json::Value::Bool(response.success)),
+            (
+                "success".to_string(),
+                serde_json::Value::Bool(response.success),
+            ),
             ("payload".to_string(), response.payload.clone()),
         ]))
     }
@@ -915,7 +985,10 @@ impl WorkflowOrchestrator {
         if let Some(workflow) = workflows.get_mut(&workflow_id) {
             for (output_key, variable_name) in output_mapping {
                 if let Some(value) = outputs.get(output_key) {
-                    workflow.context.variables.insert(variable_name.clone(), value.clone());
+                    workflow
+                        .context
+                        .variables
+                        .insert(variable_name.clone(), value.clone());
                 }
             }
         }
@@ -976,7 +1049,8 @@ impl WorkflowOrchestrator {
     /// Get workflow status
     pub async fn get_workflow_status(&self, workflow_id: Uuid) -> Result<WorkflowExecution> {
         let workflows = self.workflows.read().await;
-        workflows.get(&workflow_id)
+        workflows
+            .get(&workflow_id)
             .cloned()
             .ok_or_else(|| anyhow!("Workflow not found: {}", workflow_id))
     }
@@ -1051,8 +1125,17 @@ impl Agent for WorkflowOrchestrator {
 
         match request.request_type {
             AgentRequestType::ExecuteWorkflow => {
-                if let Ok(workflow_request) = serde_json::from_value::<WorkflowExecutionRequest>(request.payload.clone()) {
-                    match self.create_workflow(&workflow_request.template_id, workflow_request.context, workflow_request.variables).await {
+                if let Ok(workflow_request) =
+                    serde_json::from_value::<WorkflowExecutionRequest>(request.payload.clone())
+                {
+                    match self
+                        .create_workflow(
+                            &workflow_request.template_id,
+                            workflow_request.context,
+                            workflow_request.variables,
+                        )
+                        .await
+                    {
                         Ok(workflow_id) => {
                             response.success = true;
                             response.payload = serde_json::json!({
@@ -1069,7 +1152,10 @@ impl Agent for WorkflowOrchestrator {
                 }
             }
             _ => {
-                return Err(anyhow!("Workflow Orchestrator cannot handle request type: {:?}", request.request_type));
+                return Err(anyhow!(
+                    "Workflow Orchestrator cannot handle request type: {:?}",
+                    request.request_type
+                ));
             }
         }
 
@@ -1082,7 +1168,8 @@ impl Agent for WorkflowOrchestrator {
 
     async fn status(&self) -> AgentStatus {
         let workflows = self.workflows.read().await;
-        let active_workflows = workflows.values()
+        let active_workflows = workflows
+            .values()
             .filter(|w| matches!(w.status, WorkflowStatus::Running))
             .count();
 
@@ -1109,7 +1196,8 @@ impl Agent for WorkflowOrchestrator {
         // Cancel all running workflows
         let workflow_ids: Vec<Uuid> = {
             let workflows = self.workflows.read().await;
-            workflows.values()
+            workflows
+                .values()
                 .filter(|w| matches!(w.status, WorkflowStatus::Running))
                 .map(|w| w.id)
                 .collect()
@@ -1147,7 +1235,7 @@ mod tests {
     #[tokio::test]
     async fn test_workflow_template_registration() {
         let orchestrator = WorkflowOrchestrator::new();
-        
+
         let template = WorkflowTemplate {
             id: "test-template".to_string(),
             name: "Test Template".to_string(),

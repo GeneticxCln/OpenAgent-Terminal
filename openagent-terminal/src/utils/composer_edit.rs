@@ -6,25 +6,37 @@ pub fn is_word_char(c: char) -> bool {
 }
 
 pub fn move_word_left(text: &str, cursor: usize) -> usize {
-    if cursor == 0 { return 0; }
+    if cursor == 0 {
+        return 0;
+    }
     let mut idx = cursor;
     // Move left skipping spaces first
     while idx > 0 {
         let mut it = text[..idx].chars();
         let ch = it.next_back().unwrap_or('\0');
-        if ch.is_whitespace() { idx -= ch.len_utf8(); } else { break; }
+        if ch.is_whitespace() {
+            idx -= ch.len_utf8();
+        } else {
+            break;
+        }
     }
     // Then skip the word characters
     while idx > 0 {
         let mut it = text[..idx].chars();
         let ch = it.next_back().unwrap_or('\0');
-        if is_word_char(ch) { idx -= ch.len_utf8(); } else { break; }
+        if is_word_char(ch) {
+            idx -= ch.len_utf8();
+        } else {
+            break;
+        }
     }
     idx
 }
 
 pub fn move_word_right(text: &str, cursor: usize) -> usize {
-    if cursor >= text.len() { return text.len(); }
+    if cursor >= text.len() {
+        return text.len();
+    }
     let mut idx = cursor;
     let iter = text[cursor..].char_indices();
     // Skip current/next word run
@@ -34,10 +46,13 @@ pub fn move_word_right(text: &str, cursor: usize) -> usize {
         let w = is_word_char(ch);
         match in_word {
             None => in_word = Some(w),
-            Some(state) if state && !w => { return at; },
-            Some(state) if !state && w => { // start of next word; keep going to its end
+            Some(state) if state && !w => {
+                return at;
+            }
+            Some(state) if !state && w => {
+                // start of next word; keep going to its end
                 in_word = Some(true);
-            },
+            }
             _ => {}
         }
         idx = at + ch.len_utf8();

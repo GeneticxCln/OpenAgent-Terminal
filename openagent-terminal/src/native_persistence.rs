@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 // use std::sync::Arc; // not yet used
 use std::time::{Duration, Instant};
 
@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::fs as async_fs;
-use tokio::io::{AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
@@ -705,13 +705,13 @@ impl NativePersistence {
 
         // Load block index
         if self.block_persistence.index_file.exists() {
-let _index_data = async_fs::read(&self.block_persistence.index_file).await?;
+            let _index_data = async_fs::read(&self.block_persistence.index_file).await?;
             // Parse and populate block cache if needed
         }
 
         // Load tab state
         if self.tab_persistence.tabs_file.exists() {
-let _tab_data = async_fs::read(&self.tab_persistence.tabs_file).await?;
+            let _tab_data = async_fs::read(&self.tab_persistence.tabs_file).await?;
             // Parse and populate tab cache if needed
         }
 
@@ -720,7 +720,7 @@ let _tab_data = async_fs::read(&self.tab_persistence.tabs_file).await?;
         if let Ok(mut entries) = session_files {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 if entry.path().extension().map_or(false, |ext| ext == "json") {
-let _session_data = async_fs::read(entry.path()).await?;
+                    let _session_data = async_fs::read(entry.path()).await?;
                     // Parse session data if needed
                 }
             }

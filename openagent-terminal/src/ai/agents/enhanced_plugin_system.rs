@@ -1,17 +1,17 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
-use super::*;
-use super::conversation_manager::ConversationManager;
 use super::blitzy_project_context::BlitzyProjectContextAgent;
+use super::conversation_manager::ConversationManager;
 use super::workflow_orchestrator::WorkflowOrchestrator;
+use super::*;
 
 /// Enhanced plugin system with context awareness and security sandboxing
 pub struct EnhancedPluginSystem {
@@ -300,11 +300,11 @@ pub enum SystemFeature {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SandboxLevel {
-    None,        // No sandboxing (trusted plugins only)
-    Basic,       // Basic resource limits
-    Moderate,    // Network and filesystem restrictions  
-    Strict,      // Heavy sandboxing
-    Isolated,    // Complete isolation
+    None,     // No sandboxing (trusted plugins only)
+    Basic,    // Basic resource limits
+    Moderate, // Network and filesystem restrictions
+    Strict,   // Heavy sandboxing
+    Isolated, // Complete isolation
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -346,25 +346,28 @@ pub enum RiskLevel {
 pub trait Plugin: Send + Sync {
     /// Plugin metadata
     fn metadata(&self) -> &PluginMetadata;
-    
+
     /// Initialize the plugin
     async fn initialize(&mut self, context: PluginContext) -> Result<()>;
-    
+
     /// Execute plugin functionality
     async fn execute(&self, request: PluginRequest) -> Result<PluginResponse>;
-    
+
     /// Check if plugin can handle this request
     fn can_handle(&self, request_type: &str) -> bool;
-    
+
     /// Get plugin configuration schema
     fn configuration_schema(&self) -> Option<serde_json::Value>;
-    
+
     /// Update plugin configuration
-    async fn update_configuration(&mut self, config: HashMap<String, serde_json::Value>) -> Result<()>;
-    
+    async fn update_configuration(
+        &mut self,
+        config: HashMap<String, serde_json::Value>,
+    ) -> Result<()>;
+
     /// Get plugin status
     async fn status(&self) -> PluginStatus;
-    
+
     /// Shutdown plugin
     async fn shutdown(&mut self) -> Result<()>;
 }
@@ -468,17 +471,26 @@ impl EnhancedPluginSystem {
         self
     }
 
-    pub fn with_conversation_manager(mut self, conversation_manager: Arc<ConversationManager>) -> Self {
+    pub fn with_conversation_manager(
+        mut self,
+        conversation_manager: Arc<ConversationManager>,
+    ) -> Self {
         self.conversation_manager = Some(conversation_manager);
         self
     }
 
-    pub fn with_project_context_agent(mut self, project_context_agent: Arc<BlitzyProjectContextAgent>) -> Self {
+    pub fn with_project_context_agent(
+        mut self,
+        project_context_agent: Arc<BlitzyProjectContextAgent>,
+    ) -> Self {
         self.project_context_agent = Some(project_context_agent);
         self
     }
 
-    pub fn with_workflow_orchestrator(mut self, workflow_orchestrator: Arc<WorkflowOrchestrator>) -> Self {
+    pub fn with_workflow_orchestrator(
+        mut self,
+        workflow_orchestrator: Arc<WorkflowOrchestrator>,
+    ) -> Self {
         self.workflow_orchestrator = Some(workflow_orchestrator);
         self
     }
@@ -486,9 +498,10 @@ impl EnhancedPluginSystem {
     /// Load a plugin from a manifest file
     pub async fn load_plugin(&self, manifest_path: &Path) -> Result<String> {
         // Read and parse manifest
-        let manifest_content = tokio::fs::read_to_string(manifest_path).await
+        let manifest_content = tokio::fs::read_to_string(manifest_path)
+            .await
             .map_err(|e| anyhow!("Failed to read plugin manifest: {}", e))?;
-        
+
         let manifest: PluginManifest = serde_json::from_str(&manifest_content)
             .map_err(|e| anyhow!("Failed to parse plugin manifest: {}", e))?;
 
@@ -496,7 +509,9 @@ impl EnhancedPluginSystem {
         self.validate_plugin(&manifest).await?;
 
         // Check security policy
-        self.security_manager.evaluate_security_policy(&manifest.security_policy, &manifest.metadata).await?;
+        self.security_manager
+            .evaluate_security_policy(&manifest.security_policy, &manifest.metadata)
+            .await?;
 
         // Create plugin context
         let context = self.create_plugin_context(&manifest.metadata).await?;
@@ -516,7 +531,10 @@ impl EnhancedPluginSystem {
         };
 
         // Initialize the plugin
-        loaded_plugin.instance.initialize(loaded_plugin.context.clone()).await?;
+        loaded_plugin
+            .instance
+            .initialize(loaded_plugin.context.clone())
+            .await?;
         loaded_plugin.status = PluginStatus::Running;
 
         // Store plugin
@@ -531,7 +549,8 @@ impl EnhancedPluginSystem {
     /// Execute a plugin request
     pub async fn execute_plugin(&self, request: PluginRequest) -> Result<PluginResponse> {
         let mut plugins = self.plugins.write().await;
-        let plugin = plugins.get_mut(&request.plugin_id)
+        let plugin = plugins
+            .get_mut(&request.plugin_id)
             .ok_or_else(|| anyhow!("Plugin not found: {}", request.plugin_id))?;
 
         // Update usage stats
@@ -539,7 +558,9 @@ impl EnhancedPluginSystem {
         plugin.last_used = Some(Utc::now());
 
         // Check permissions
-        self.security_manager.check_permissions(&request, &plugin.context).await?;
+        self.security_manager
+            .check_permissions(&request, &plugin.context)
+            .await?;
 
         // Execute plugin
         let start_time = std::time::Instant::now();
@@ -559,8 +580,10 @@ impl EnhancedPluginSystem {
 
         // Update average execution time
         let total_invocations = plugin.usage_stats.total_invocations as f64;
-        plugin.usage_stats.average_execution_time_ms = 
-            (plugin.usage_stats.average_execution_time_ms * (total_invocations - 1.0) + execution_time) / total_invocations;
+        plugin.usage_stats.average_execution_time_ms =
+            (plugin.usage_stats.average_execution_time_ms * (total_invocations - 1.0)
+                + execution_time)
+                / total_invocations;
 
         result
     }
@@ -568,18 +591,20 @@ impl EnhancedPluginSystem {
     /// Discover available plugins
     pub async fn discover_plugins(&self) -> Result<Vec<PluginManifest>> {
         let mut discovered_plugins = Vec::new();
-        
+
         // Search plugin directory
         if self.config.plugin_directory.exists() {
             let mut entries = tokio::fs::read_dir(&self.config.plugin_directory).await?;
-            
+
             while let Some(entry) = entries.next_entry().await? {
                 if entry.file_type().await?.is_dir() {
                     let manifest_path = entry.path().join("plugin.json");
                     if manifest_path.exists() {
                         match self.load_manifest(&manifest_path).await {
                             Ok(manifest) => discovered_plugins.push(manifest),
-                            Err(e) => tracing::warn!("Failed to load manifest {:?}: {}", manifest_path, e),
+                            Err(e) => {
+                                tracing::warn!("Failed to load manifest {:?}: {}", manifest_path, e)
+                            }
                         }
                     }
                 }
@@ -589,7 +614,9 @@ impl EnhancedPluginSystem {
         // Update registry
         let mut registry = self.plugin_registry.write().await;
         for manifest in &discovered_plugins {
-            registry.available_plugins.insert(manifest.metadata.id.clone(), manifest.clone());
+            registry
+                .available_plugins
+                .insert(manifest.metadata.id.clone(), manifest.clone());
         }
 
         tracing::info!("Discovered {} plugins", discovered_plugins.len());
@@ -599,7 +626,9 @@ impl EnhancedPluginSystem {
     /// Install a plugin from a source
     pub async fn install_plugin(&self, plugin_id: &str, source: &str) -> Result<()> {
         let registry = self.plugin_registry.read().await;
-        let manifest = registry.available_plugins.get(plugin_id)
+        let manifest = registry
+            .available_plugins
+            .get(plugin_id)
             .ok_or_else(|| anyhow!("Plugin not found in registry: {}", plugin_id))?;
 
         // Create installation directory
@@ -607,7 +636,8 @@ impl EnhancedPluginSystem {
         tokio::fs::create_dir_all(&install_path).await?;
 
         // Download/copy plugin files (simplified implementation)
-        self.download_plugin(manifest, &install_path, source).await?;
+        self.download_plugin(manifest, &install_path, source)
+            .await?;
 
         // Create installation record
         let installation = PluginInstallation {
@@ -622,7 +652,9 @@ impl EnhancedPluginSystem {
 
         drop(registry);
         let mut registry = self.plugin_registry.write().await;
-        registry.installed_plugins.insert(plugin_id.to_string(), installation);
+        registry
+            .installed_plugins
+            .insert(plugin_id.to_string(), installation);
 
         tracing::info!("Installed plugin: {}", plugin_id);
         Ok(())
@@ -654,21 +686,25 @@ impl EnhancedPluginSystem {
     /// List loaded plugins
     pub async fn list_plugins(&self) -> Vec<PluginInfo> {
         let plugins = self.plugins.read().await;
-        plugins.values().map(|plugin| PluginInfo {
-            id: plugin.metadata.id.clone(),
-            name: plugin.metadata.name.clone(),
-            version: plugin.metadata.version.clone(),
-            status: plugin.status.clone(),
-            loaded_at: plugin.loaded_at,
-            last_used: plugin.last_used,
-            usage_stats: plugin.usage_stats.clone(),
-        }).collect()
+        plugins
+            .values()
+            .map(|plugin| PluginInfo {
+                id: plugin.metadata.id.clone(),
+                name: plugin.metadata.name.clone(),
+                version: plugin.metadata.version.clone(),
+                status: plugin.status.clone(),
+                loaded_at: plugin.loaded_at,
+                last_used: plugin.last_used,
+                usage_stats: plugin.usage_stats.clone(),
+            })
+            .collect()
     }
 
     /// Get plugin information
     pub async fn get_plugin_info(&self, plugin_id: &str) -> Result<PluginInfo> {
         let plugins = self.plugins.read().await;
-        let plugin = plugins.get(plugin_id)
+        let plugin = plugins
+            .get(plugin_id)
             .ok_or_else(|| anyhow!("Plugin not found: {}", plugin_id))?;
 
         Ok(PluginInfo {
@@ -687,20 +723,26 @@ impl EnhancedPluginSystem {
         let mut registry = self.plugin_registry.write().await;
         if let Some(installation) = registry.installed_plugins.get_mut(plugin_id) {
             installation.enabled = enabled;
-            
+
             if enabled {
                 registry.disabled_plugins.remove(plugin_id);
             } else {
-                registry.disabled_plugins.insert(plugin_id.to_string(), DisableReason::UserDisabled);
-                
+                registry
+                    .disabled_plugins
+                    .insert(plugin_id.to_string(), DisableReason::UserDisabled);
+
                 // Stop plugin if running
                 let mut plugins = self.plugins.write().await;
                 if let Some(mut plugin) = plugins.remove(plugin_id) {
                     let _ = plugin.instance.shutdown().await;
                 }
             }
-            
-            tracing::info!("Plugin {} {}", plugin_id, if enabled { "enabled" } else { "disabled" });
+
+            tracing::info!(
+                "Plugin {} {}",
+                plugin_id,
+                if enabled { "enabled" } else { "disabled" }
+            );
         }
 
         Ok(())
@@ -720,13 +762,16 @@ impl EnhancedPluginSystem {
 
         // Check version compatibility
         // This would involve semantic version parsing in a real implementation
-        
+
         // Check dependencies
         for dependency in &manifest.metadata.dependencies {
             if !dependency.optional {
                 let plugins = self.plugins.read().await;
                 if !plugins.contains_key(&dependency.plugin_id) {
-                    return Err(anyhow!("Required dependency not available: {}", dependency.plugin_id));
+                    return Err(anyhow!(
+                        "Required dependency not available: {}",
+                        dependency.plugin_id
+                    ));
                 }
             }
         }
@@ -737,11 +782,14 @@ impl EnhancedPluginSystem {
     async fn create_plugin_context(&self, metadata: &PluginMetadata) -> Result<PluginContext> {
         let context = PluginContext {
             conversation_session_id: None, // Would be set based on current context
-            project_root: None, // Would be set based on current context
+            project_root: None,            // Would be set based on current context
             user_preferences: HashMap::new(), // Would be loaded from user settings
             environment_variables: HashMap::new(), // Filtered environment variables
             accessible_agents: self.get_accessible_agents(metadata).await,
-            granted_permissions: self.security_manager.get_granted_permissions(&metadata.id).await,
+            granted_permissions: self
+                .security_manager
+                .get_granted_permissions(&metadata.id)
+                .await,
         };
 
         Ok(context)
@@ -750,15 +798,15 @@ impl EnhancedPluginSystem {
     async fn get_accessible_agents(&self, _metadata: &PluginMetadata) -> Vec<String> {
         // Return list of agents this plugin can interact with based on its permissions
         let mut agents = Vec::new();
-        
+
         if self.conversation_manager.is_some() {
             agents.push("conversation-manager".to_string());
         }
-        
+
         if self.project_context_agent.is_some() {
             agents.push("project-context-agent".to_string());
         }
-        
+
         if self.workflow_orchestrator.is_some() {
             agents.push("workflow-orchestrator".to_string());
         }
@@ -777,7 +825,12 @@ impl EnhancedPluginSystem {
         Ok(serde_json::from_str(&content)?)
     }
 
-    async fn download_plugin(&self, _manifest: &PluginManifest, _install_path: &Path, _source: &str) -> Result<()> {
+    async fn download_plugin(
+        &self,
+        _manifest: &PluginManifest,
+        _install_path: &Path,
+        _source: &str,
+    ) -> Result<()> {
         // Simplified implementation - in reality would download from various sources
         tracing::info!("Downloading plugin (mock implementation)");
         Ok(())
@@ -820,35 +873,38 @@ impl Agent for EnhancedPluginSystem {
         };
 
         match request.request_type {
-            AgentRequestType::Custom(ref custom_type) => {
-                match custom_type.as_str() {
-                    "ListPlugins" => {
-                        let plugins = self.list_plugins().await;
-                        response.success = true;
-                        response.payload = serde_json::to_value(plugins)?;
-                    }
-                    "ExecutePlugin" => {
-                        if let Ok(plugin_request) = serde_json::from_value::<PluginRequest>(request.payload.clone()) {
-                            match self.execute_plugin(plugin_request).await {
-                                Ok(plugin_response) => {
-                                    response.success = true;
-                                    response.payload = serde_json::to_value(plugin_response)?;
-                                }
-                                Err(e) => {
-                                    response.payload = serde_json::json!({
-                                        "error": e.to_string()
-                                    });
-                                }
+            AgentRequestType::Custom(ref custom_type) => match custom_type.as_str() {
+                "ListPlugins" => {
+                    let plugins = self.list_plugins().await;
+                    response.success = true;
+                    response.payload = serde_json::to_value(plugins)?;
+                }
+                "ExecutePlugin" => {
+                    if let Ok(plugin_request) =
+                        serde_json::from_value::<PluginRequest>(request.payload.clone())
+                    {
+                        match self.execute_plugin(plugin_request).await {
+                            Ok(plugin_response) => {
+                                response.success = true;
+                                response.payload = serde_json::to_value(plugin_response)?;
+                            }
+                            Err(e) => {
+                                response.payload = serde_json::json!({
+                                    "error": e.to_string()
+                                });
                             }
                         }
                     }
-                    _ => {
-                        return Err(anyhow!("Unknown plugin system request: {}", custom_type));
-                    }
                 }
-            }
+                _ => {
+                    return Err(anyhow!("Unknown plugin system request: {}", custom_type));
+                }
+            },
             _ => {
-                return Err(anyhow!("Plugin System cannot handle request type: {:?}", request.request_type));
+                return Err(anyhow!(
+                    "Plugin System cannot handle request type: {:?}",
+                    request.request_type
+                ));
             }
         }
 
@@ -856,9 +912,9 @@ impl Agent for EnhancedPluginSystem {
     }
 
     fn can_handle(&self, request_type: &AgentRequestType) -> bool {
-        matches!(request_type, 
-            AgentRequestType::Custom(custom_type) 
-            if custom_type == "ListPlugins" 
+        matches!(request_type,
+            AgentRequestType::Custom(custom_type)
+            if custom_type == "ListPlugins"
             || custom_type == "ExecutePlugin"
             || custom_type == "InstallPlugin"
             || custom_type == "UninstallPlugin"
@@ -868,7 +924,8 @@ impl Agent for EnhancedPluginSystem {
     async fn status(&self) -> AgentStatus {
         let plugins = self.plugins.read().await;
         let loaded_plugins = plugins.len();
-        let running_plugins = plugins.values()
+        let running_plugins = plugins
+            .values()
             .filter(|p| matches!(p.status, PluginStatus::Running))
             .count();
 
@@ -877,7 +934,10 @@ impl Agent for EnhancedPluginSystem {
             is_busy: running_plugins > 0,
             last_activity: Utc::now(),
             current_task: if loaded_plugins > 0 {
-                Some(format!("Managing {} plugins ({} running)", loaded_plugins, running_plugins))
+                Some(format!(
+                    "Managing {} plugins ({} running)",
+                    loaded_plugins, running_plugins
+                ))
             } else {
                 None
             },
@@ -888,10 +948,10 @@ impl Agent for EnhancedPluginSystem {
     async fn initialize(&mut self, _config: AgentConfig) -> Result<()> {
         // Create plugin directory if it doesn't exist
         tokio::fs::create_dir_all(&self.config.plugin_directory).await?;
-        
+
         // Discover existing plugins
         self.discover_plugins().await?;
-        
+
         self.is_initialized = true;
         tracing::info!("Enhanced Plugin System initialized");
         Ok(())
@@ -945,20 +1005,29 @@ impl PluginSecurityManager {
         }
     }
 
-    async fn evaluate_security_policy(&self, _policy: &SecurityPolicy, _metadata: &PluginMetadata) -> Result<()> {
+    async fn evaluate_security_policy(
+        &self,
+        _policy: &SecurityPolicy,
+        _metadata: &PluginMetadata,
+    ) -> Result<()> {
         // Security policy evaluation logic
         tracing::debug!("Evaluating plugin security policy");
         Ok(())
     }
 
-    async fn check_permissions(&self, _request: &PluginRequest, _context: &PluginContext) -> Result<()> {
+    async fn check_permissions(
+        &self,
+        _request: &PluginRequest,
+        _context: &PluginContext,
+    ) -> Result<()> {
         // Permission checking logic
         tracing::debug!("Checking plugin permissions");
         Ok(())
     }
 
     async fn get_granted_permissions(&self, plugin_id: &str) -> Vec<PluginPermission> {
-        self.permission_manager.granted_permissions
+        self.permission_manager
+            .granted_permissions
             .get(plugin_id)
             .cloned()
             .unwrap_or_default()
@@ -1018,7 +1087,10 @@ impl Plugin for MockPlugin {
         None
     }
 
-    async fn update_configuration(&mut self, _config: HashMap<String, serde_json::Value>) -> Result<()> {
+    async fn update_configuration(
+        &mut self,
+        _config: HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
         Ok(())
     }
 

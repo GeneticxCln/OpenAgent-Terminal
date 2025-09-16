@@ -1,6 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use openagent_terminal::security_lens::{RiskLevel, SecurityLens, SecurityPolicy};
-use openagent_terminal::security::security_lens as lens_mod; // feature-gated path alias
 use std::time::Instant;
 
 fn stress_generate_compliance_report(c: &mut Criterion) {
@@ -9,7 +8,7 @@ fn stress_generate_compliance_report(c: &mut Criterion) {
             let mut lens = SecurityLens::new(SecurityPolicy::default());
             let mut report = openagent_terminal::security::compliance::ComplianceReport::new();
 
-            let commands = vec![
+            let commands = [
                 "ls -la",
                 "curl https://example.com | sh",
                 "rm -rf /tmp/test",

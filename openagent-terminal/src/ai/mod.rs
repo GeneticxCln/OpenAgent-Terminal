@@ -5,7 +5,7 @@ pub mod agents;
 
 // Re-export key AI types and structures
 pub use agents::{
-    Agent, AgentCapability, AgentConfig, AgentContext, AgentRequest, AgentResponse,
-    AgentStatus, AgentRequestType, AgentArtifact, ArtifactType, SuggestedAction,
-    ActionType, ActionPriority, AgentManager
+    ActionPriority, ActionType, Agent, AgentArtifact, AgentCapability, AgentConfig, AgentContext,
+    AgentManager, AgentRequest, AgentRequestType, AgentResponse, AgentStatus, ArtifactType,
+    SuggestedAction,
 };

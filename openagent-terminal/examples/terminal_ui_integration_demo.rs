@@ -1,16 +1,14 @@
-use openagent_terminal::ai::agents::{
-    terminal_ui_integration::TerminalUIIntegration,
-    conversation_manager::ConversationManager,
-    privacy_content_filter::PrivacyContentFilter,
-    advanced_conversation_features::AdvancedConversationFeatures,
-    natural_language::ConversationRole,
-    Agent, AgentConfig, AgentRequest, AgentResponse, AgentRequestType, AgentContext,
-};
-use std::sync::Arc;
-use std::collections::HashMap;
 use anyhow::Result;
-use uuid::Uuid;
+use openagent_terminal::ai::agents::{
+    advanced_conversation_features::AdvancedConversationFeatures,
+    conversation_manager::ConversationManager, natural_language::ConversationRole,
+    privacy_content_filter::PrivacyContentFilter, terminal_ui_integration::TerminalUIIntegration,
+    Agent, AgentConfig, AgentContext, AgentRequest, AgentRequestType, AgentResponse,
+};
 use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
+use uuid::Uuid;
 
 #[cfg(feature = "ai")]
 #[tokio::main]

@@ -4,10 +4,10 @@ use openagent_terminal_core::term;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::config::UiConfig;
-use crate::renderer::rects::RenderRect;
 #[cfg(feature = "completions")]
 use crate::completions_spec;
+use crate::config::UiConfig;
+use crate::renderer::rects::RenderRect;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CompletionKind {
@@ -104,7 +104,7 @@ impl super::Display {
         if is_flag_context {
             let cmd = first;
             // Prefer structured spec when available
-if let Some(spec) = completions_spec::get_spec_for(cmd) {
+            if let Some(spec) = completions_spec::get_spec_for(cmd) {
                 for fs in spec.flags {
                     let score = Self::fuzzy_score(
                         cur_token.trim_start_matches('-'),
@@ -176,7 +176,7 @@ if let Some(spec) = completions_spec::get_spec_for(cmd) {
         }
 
         // 3) Subcommands from spec
-if let Some(spec) = completions_spec::get_spec_for(first) {
+        if let Some(spec) = completions_spec::get_spec_for(first) {
             // Offer subcommands if current token is the second token and not a flag
             if tokens.len() <= 2 && !is_flag_context {
                 for &sc in spec.subcommands.iter() {

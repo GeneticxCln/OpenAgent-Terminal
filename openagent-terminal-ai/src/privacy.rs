@@ -97,7 +97,7 @@ fn is_sensitive_key(key: &str) -> bool {
 }
 
 /// Comprehensive secret redaction function
-fn redact_secrets(text: &str) -> String {
+pub fn redact_secrets(text: &str) -> String {
     let patterns = vec![
         // Command-line flags with secrets (match these first to avoid generic kv rewriting)
         (

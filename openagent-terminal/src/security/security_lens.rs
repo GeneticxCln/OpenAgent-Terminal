@@ -1443,7 +1443,12 @@ impl SecurityLens {
                 }
 
                 // Container and Kubernetes
-                "kubernetes_change" | "kubernetes_prod_delete" | "kubernetes_helm_delete" | "container_docker_sock" | "container_unconfined" | "container_sensitive_mount" => {
+                "kubernetes_change"
+                | "kubernetes_prod_delete"
+                | "kubernetes_helm_delete"
+                | "container_docker_sock"
+                | "container_unconfined"
+                | "container_sensitive_mount" => {
                     links.push(MitigationLink {
                         title: "Kubernetes Security Guide".to_string(),
                         url: format!("{}/kubernetes-security", base_url),
@@ -1558,7 +1563,8 @@ impl SecurityLens {
                     links.push(MitigationLink {
                         title: "Linux Security Hardening".to_string(),
                         url: format!("{}/linux-security-hardening", base_url),
-                        description: "Guidance on MAC, sudoers, and privilege management".to_string(),
+                        description: "Guidance on MAC, sudoers, and privilege management"
+                            .to_string(),
                     });
                 }
 

@@ -150,10 +150,19 @@ pub trait PluginHost: Send + Sync {
     fn execute_command(&self, command: &str) -> Result<CommandOutput, ApiPluginError>;
 
     /// Store data persistently (namespaced to the given plugin_id)
-    fn store_data_for(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), ApiPluginError>;
+    fn store_data_for(
+        &self,
+        plugin_id: &str,
+        key: &str,
+        value: &[u8],
+    ) -> Result<(), ApiPluginError>;
 
     /// Retrieve stored data (namespaced to the given plugin_id)
-    fn retrieve_data_for(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, ApiPluginError>;
+    fn retrieve_data_for(
+        &self,
+        plugin_id: &str,
+        key: &str,
+    ) -> Result<Option<Vec<u8>>, ApiPluginError>;
 }
 
 /// Log levels for plugin logging
@@ -522,9 +531,11 @@ impl PluginManager {
         // Build WASIp1 context from the WasiCtxBuilder
         let wasi = wasi_builder.build_p1();
 
-        let mut tracker = ResourceTracker::default();
-        // Configure per-plugin max memory from manifest
-        tracker.max_memory_bytes = (permissions.max_memory_mb as usize).saturating_mul(1024 * 1024);
+        // Configure per-plugin resource tracker with max linear memory from manifest
+        let tracker = ResourceTracker {
+            max_memory_bytes: (permissions.max_memory_mb as usize).saturating_mul(1024 * 1024),
+            ..Default::default()
+        };
 
         let context = PluginContext {
             wasi,
@@ -2032,7 +2043,9 @@ timeout_ms=5000
             ..Default::default()
         };
         // Build a minimal Wasi context via builder
-        let wasi = wasmtime_wasi::WasiCtxBuilder::new().inherit_stdio().build_p1();
+        let wasi = wasmtime_wasi::WasiCtxBuilder::new()
+            .inherit_stdio()
+            .build_p1();
         let ctx = PluginContext {
             // Unused fields
             wasi,

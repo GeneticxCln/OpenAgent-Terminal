@@ -13,7 +13,7 @@ Summary
 - Security Lens (command risk analysis): MVP complete; wired into AI apply path with confirmation overlays and policy-driven blocking.
 - Blocks v2: In progress (command/result grouping and basic actions).
 - Plugin system and workflows: Prototypes exist in the workspace; API not yet stable or broadly integrated.
-- Testing & CI: Performance smoke tests active; GPU snapshot test infrastructure landed; fuzz testing planned.
+- Testing & CI: Performance smoke tests active; GPU snapshot gating and performance thresholds are active in CI; fuzz testing planned.
 - Privacy stance: No telemetry; local AI by default; API keys via environment variables.
 
 Feature completion snapshot

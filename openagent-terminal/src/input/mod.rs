@@ -132,7 +132,6 @@ fn redact_line(mut line: String) -> String {
         }
     }
 
-
     // Extended patterns (AWS/JWT) when enabled
     if extended {
         // Very rough AWS Access Key ID pattern: AKIA or ASIA followed by 16 alnum
@@ -224,7 +223,7 @@ fn sanitize_preview(text: &str, max_lines: usize, max_chars: usize) -> String {
     if out.ends_with('\n') {
         let _ = out.pop();
     }
-if (chars_budget == 0 || clean.lines().count() > max_lines) && !out.ends_with('…') {
+    if (chars_budget == 0 || clean.lines().count() > max_lines) && !out.ends_with('…') {
         out.push('…');
     }
     out
@@ -430,7 +429,9 @@ pub trait ActionContext<T: EventListener> {
     fn open_workflows_panel(&mut self) {}
 
     // Workflows parameter form overlay
-    fn workflows_params_active(&self) -> bool { false }
+    fn workflows_params_active(&self) -> bool {
+        false
+    }
     fn workflows_params_input_char(&mut self, _c: char) {}
     fn workflows_params_backspace(&mut self) {}
     fn workflows_params_move_selection(&mut self, _delta: isize) {}

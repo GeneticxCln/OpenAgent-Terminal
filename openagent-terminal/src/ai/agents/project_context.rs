@@ -1,4 +1,4 @@
-// Project Context Agent - Placeholder  
+// Project Context Agent - Placeholder
 // TODO: Implement project context management
 
 pub struct ProjectContextAgent;

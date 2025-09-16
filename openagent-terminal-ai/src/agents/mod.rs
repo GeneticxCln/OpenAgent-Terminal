@@ -1,32 +1,32 @@
 // Enhanced Agent System for OpenAgent Terminal
 // Integrating selected Blitzy Platform AI capabilities
 
-pub mod types;
-pub mod manager;
 pub mod code_generation;
+pub mod manager;
 pub mod project_context;
 pub mod quality;
+pub mod types;
 
-use crate::{AiRequest, AiProposal};
-use std::collections::HashMap;
+use crate::{AiProposal, AiRequest};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Core agent trait that all specialized agents must implement
 #[async_trait]
 pub trait AiAgent: Send + Sync {
     /// Unique identifier for this agent
     fn name(&self) -> &'static str;
-    
+
     /// Agent version for compatibility checking
     fn version(&self) -> &'static str;
-    
+
     /// Process a request and return responses
     async fn process(&self, request: AgentRequest) -> Result<AgentResponse, AgentError>;
-    
+
     /// Check if this agent can handle the given request
     fn can_handle(&self, request: &AgentRequest) -> bool;
-    
+
     /// Get agent capabilities and metadata
     fn capabilities(&self) -> AgentCapabilities;
 }
@@ -36,7 +36,7 @@ pub trait AiAgent: Send + Sync {
 pub enum AgentRequest {
     /// Basic terminal command generation (existing functionality)
     Command(AiRequest),
-    
+
     /// Code generation and manipulation
     CodeGeneration {
         language: Option<String>,
@@ -44,20 +44,20 @@ pub enum AgentRequest {
         prompt: String,
         action: CodeAction,
     },
-    
+
     /// Project analysis and context understanding
     ProjectContext {
         project_path: String,
         action: ContextAction,
     },
-    
+
     /// Code quality and security analysis
     Quality {
         code: String,
         language: Option<String>,
         action: QualityAction,
     },
-    
+
     /// Multi-agent collaboration request
     Collaboration {
         agents: Vec<String>,
@@ -71,7 +71,7 @@ pub enum AgentRequest {
 pub enum AgentResponse {
     /// Basic command proposals (backward compatibility)
     Commands(Vec<AiProposal>),
-    
+
     /// Code generation results
     Code {
         generated_code: String,
@@ -79,13 +79,13 @@ pub enum AgentResponse {
         explanation: String,
         suggestions: Vec<String>,
     },
-    
+
     /// Project context information
     Context {
         project_info: ProjectInfo,
         suggestions: Vec<ProjectSuggestion>,
     },
-    
+
     /// Quality analysis results
     QualityReport {
         score: f32,
@@ -93,7 +93,7 @@ pub enum AgentResponse {
         suggestions: Vec<QualityFix>,
         security_warnings: Vec<SecurityIssue>,
     },
-    
+
     /// Collaboration result
     CollaborationResult {
         participating_agents: Vec<String>,
@@ -282,9 +282,9 @@ pub enum Severity {
 /// Privacy level for agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PrivacyLevel {
-    Local,      // Processes everything locally
-    CloudSafe,  // Uses cloud APIs but sanitizes sensitive data
-    CloudFull,  // Uses cloud APIs with full context
+    Local,     // Processes everything locally
+    CloudSafe, // Uses cloud APIs but sanitizes sensitive data
+    CloudFull, // Uses cloud APIs with full context
 }
 
 /// Agent-specific errors

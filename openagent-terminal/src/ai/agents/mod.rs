@@ -1,26 +1,26 @@
 // Core AI Agent System
 // Provides foundational agent architecture for specialized AI tasks
 
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use anyhow::{Result, anyhow};
 use uuid::Uuid;
 
+pub mod advanced_conversation_features;
 pub mod blitzy_project_context;
 pub mod code_generation;
 pub mod communication_hub;
 pub mod conversation_manager;
 pub mod enhanced_plugin_system;
-pub mod advanced_conversation_features;
-pub mod privacy_content_filter;
-pub mod terminal_ui_integration;
 pub mod natural_language;
+pub mod privacy_content_filter;
 pub mod project_context;
 pub mod quality_validation;
 pub mod security_lens;
+pub mod terminal_ui_integration;
 pub mod workflow_orchestration;
 pub mod workflow_orchestrator;
 
@@ -29,28 +29,28 @@ pub mod workflow_orchestrator;
 pub trait Agent: Send + Sync {
     /// Unique identifier for this agent type
     fn id(&self) -> &str;
-    
+
     /// Human-readable name for this agent
     fn name(&self) -> &str;
-    
+
     /// Description of what this agent does
     fn description(&self) -> &str;
-    
+
     /// Agent capabilities and specializations
     fn capabilities(&self) -> Vec<AgentCapability>;
-    
+
     /// Process a request and return a response
     async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse>;
-    
+
     /// Check if agent can handle this type of request
     fn can_handle(&self, request_type: &AgentRequestType) -> bool;
-    
+
     /// Get agent's current status
     async fn status(&self) -> AgentStatus;
-    
+
     /// Initialize the agent with configuration
     async fn initialize(&mut self, config: AgentConfig) -> Result<()>;
-    
+
     /// Cleanup resources when agent is shut down
     async fn shutdown(&mut self) -> Result<()>;
 }
@@ -229,14 +229,14 @@ impl AgentManager {
     /// Register a new agent
     pub async fn register_agent(&self, mut agent: Box<dyn Agent>) -> Result<()> {
         let agent_id = agent.id().to_string();
-        
+
         // Initialize the agent
         agent.initialize(self.config.clone()).await?;
-        
+
         // Add to registry
         let mut agents = self.agents.write().await;
         agents.insert(agent_id.clone(), agent);
-        
+
         tracing::info!("Registered agent: {}", agent_id);
         Ok(())
     }
@@ -244,7 +244,7 @@ impl AgentManager {
     /// Unregister an agent
     pub async fn unregister_agent(&self, agent_id: &str) -> Result<()> {
         let mut agents = self.agents.write().await;
-        
+
         if let Some(mut agent) = agents.remove(agent_id) {
             agent.shutdown().await?;
             tracing::info!("Unregistered agent: {}", agent_id);
@@ -257,15 +257,18 @@ impl AgentManager {
     /// Route a request to the appropriate agent
     pub async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
         let agents = self.agents.read().await;
-        
+
         // Find an agent that can handle this request type
         for agent in agents.values() {
             if agent.can_handle(&request.request_type) {
                 return agent.handle_request(request).await;
             }
         }
-        
-        Err(anyhow!("No agent available to handle request type: {:?}", request.request_type))
+
+        Err(anyhow!(
+            "No agent available to handle request type: {:?}",
+            request.request_type
+        ))
     }
 
     /// Get all available agents
@@ -277,7 +280,7 @@ impl AgentManager {
     /// Get agent status by ID
     pub async fn get_agent_status(&self, agent_id: &str) -> Result<AgentStatus> {
         let agents = self.agents.read().await;
-        
+
         if let Some(agent) = agents.get(agent_id) {
             Ok(agent.status().await)
         } else {
@@ -289,26 +292,26 @@ impl AgentManager {
     pub async fn find_agents_by_capability(&self, capability: AgentCapability) -> Vec<String> {
         let agents = self.agents.read().await;
         let mut result = Vec::new();
-        
+
         for (id, agent) in agents.iter() {
             if agent.capabilities().contains(&capability) {
                 result.push(id.clone());
             }
         }
-        
+
         result
     }
 
     /// Shutdown all agents
     pub async fn shutdown_all(&self) -> Result<()> {
         let mut agents = self.agents.write().await;
-        
+
         for (id, agent) in agents.iter_mut() {
             if let Err(e) = agent.shutdown().await {
                 tracing::error!("Failed to shutdown agent {}: {}", id, e);
             }
         }
-        
+
         agents.clear();
         tracing::info!("All agents shut down");
         Ok(())
@@ -326,14 +329,20 @@ mod tests {
 
     #[async_trait]
     impl Agent for MockAgent {
-        fn id(&self) -> &str { &self.id }
-        fn name(&self) -> &str { &self.name }
-        fn description(&self) -> &str { "Mock agent for testing" }
-        
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn description(&self) -> &str {
+            "Mock agent for testing"
+        }
+
         fn capabilities(&self) -> Vec<AgentCapability> {
             vec![AgentCapability::CodeGeneration]
         }
-        
+
         async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
             Ok(AgentResponse {
                 request_id: request.id,
@@ -345,11 +354,11 @@ mod tests {
                 metadata: HashMap::new(),
             })
         }
-        
+
         fn can_handle(&self, request_type: &AgentRequestType) -> bool {
             matches!(request_type, AgentRequestType::GenerateCode)
         }
-        
+
         async fn status(&self) -> AgentStatus {
             AgentStatus {
                 is_healthy: true,
@@ -359,25 +368,29 @@ mod tests {
                 error_message: None,
             }
         }
-        
-        async fn initialize(&mut self, _config: AgentConfig) -> Result<()> { Ok(()) }
-        async fn shutdown(&mut self) -> Result<()> { Ok(()) }
+
+        async fn initialize(&mut self, _config: AgentConfig) -> Result<()> {
+            Ok(())
+        }
+        async fn shutdown(&mut self) -> Result<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
     async fn test_agent_manager() {
         let manager = AgentManager::new(AgentConfig::default());
-        
+
         let agent = MockAgent {
             id: "test-agent".to_string(),
             name: "Test Agent".to_string(),
         };
-        
+
         manager.register_agent(Box::new(agent)).await.unwrap();
-        
+
         let agents = manager.list_agents().await;
         assert!(agents.contains(&"test-agent".to_string()));
-        
+
         let request = AgentRequest {
             id: Uuid::new_v4(),
             request_type: AgentRequestType::GenerateCode,
@@ -393,7 +406,7 @@ mod tests {
             },
             metadata: HashMap::new(),
         };
-        
+
         let response = manager.handle_request(request).await.unwrap();
         assert!(response.success);
         assert_eq!(response.agent_id, "test-agent");

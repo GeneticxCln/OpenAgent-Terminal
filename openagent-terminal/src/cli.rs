@@ -4,9 +4,9 @@ use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
 #[cfg(feature = "ai")]
 use clap::builder::TypedValueParser as _;
+use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
 use log::{error, LevelFilter};
 use openagent_terminal_config::SerdeReplace;
 use serde::{Deserialize, Serialize};
@@ -81,7 +81,7 @@ pub struct Options {
 
     /// Enable Prometheus metrics exporter on the given TCP port (binds to 127.0.0.1)
     /// Alternatively, set OPENAGENT_PROM_PORT env var. Disabled by default.
-    #[clap(long = "metrics-port")] 
+    #[clap(long = "metrics-port")]
     pub metrics_port: Option<u16>,
 
     /// CLI options for config overrides.

@@ -30,7 +30,10 @@ pub mod permissions;
 pub mod runtime;
 
 /// Alias to simplify complex wasmtime typed function signatures in the public API
+#[cfg(feature = "wasm-runtime")]
 pub type ExecCommandExFn = wasmtime::TypedFunc<(i32, i32, i32, i32, i32, i32, i32), i32>;
+#[cfg(not(feature = "wasm-runtime"))]
+pub type ExecCommandExFn = ();
 
 /// Plugin system error types
 #[derive(Debug, Error)]
@@ -123,6 +126,7 @@ pub struct PluginCapabilities {
 }
 
 /// Standardized ABI for plugin communication
+#[cfg(feature = "wasm-runtime")]
 pub struct PluginAbi {
     /// Memory management functions
     pub alloc: Option<wasmtime::TypedFunc<i32, i32>>,
@@ -152,6 +156,9 @@ pub struct PluginAbi {
     pub get_last_response: Option<wasmtime::TypedFunc<(), i64>>,
     pub get_error_message: Option<wasmtime::TypedFunc<(), i64>>,
 }
+
+#[cfg(not(feature = "wasm-runtime"))]
+pub struct PluginAbi;
 
 impl PluginAbi {
     /// Extract ABI functions from a WASM instance
@@ -359,27 +366,30 @@ impl UnifiedPluginManager {
         // Auto-detect plugin type
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
-        let loaded_plugin = match extension {
-            #[cfg(feature = "wasm-runtime")]
-            "wasm" => self.load_wasm_plugin(path, plugin_name).await?,
+        #[cfg(feature = "wasm-runtime")]
+        if extension == "wasm" {
+            let loaded_plugin = self.load_wasm_plugin(path, plugin_name).await?;
+            let plugin_id = loaded_plugin.metadata.id.clone();
+            let mut plugins = self.plugins.write().await;
+            plugins.insert(plugin_id.clone(), Arc::new(loaded_plugin));
+            info!("Successfully loaded plugin: {}", plugin_id);
+            return Ok(plugin_id);
+        }
 
-            #[cfg(feature = "host-integration")]
-            "so" | "dll" | "dylib" => self.load_native_plugin(path, plugin_name).await?,
+        #[cfg(feature = "host-integration")]
+        if extension == "so" || extension == "dll" || extension == "dylib" {
+            let loaded_plugin = self.load_native_plugin(path, plugin_name).await?;
+            let plugin_id = loaded_plugin.metadata.id.clone();
+            let mut plugins = self.plugins.write().await;
+            plugins.insert(plugin_id.clone(), Arc::new(loaded_plugin));
+            info!("Successfully loaded plugin: {}", plugin_id);
+            return Ok(plugin_id);
+        }
 
-            _ => {
-                return Err(PluginSystemError::InvalidFormat(format!(
-                    "Unsupported plugin type: {}",
-                    extension
-                )))
-            }
-        };
-
-        let plugin_id = loaded_plugin.metadata.id.clone();
-        let mut plugins = self.plugins.write().await;
-        plugins.insert(plugin_id.clone(), Arc::new(loaded_plugin));
-
-        info!("Successfully loaded plugin: {}", plugin_id);
-        Ok(plugin_id)
+        Err(PluginSystemError::InvalidFormat(format!(
+            "Unsupported plugin type: {}",
+            extension
+        )))
     }
 
     /// Load WASM plugin
@@ -487,6 +497,7 @@ impl UnifiedPluginManager {
     }
 
     /// Load plugin permissions from manifest
+    #[cfg(feature = "wasm-runtime")]
     fn load_plugin_permissions(
         &self,
         wasm_path: &Path,
@@ -563,6 +574,7 @@ impl UnifiedPluginManager {
     }
 
     /// Execute a command on a plugin
+    #[allow(unused_variables)]
     pub async fn execute_command(
         &self,
         plugin_id: &str,
@@ -708,6 +720,11 @@ impl UnifiedPluginManager {
         let mut plugins = self.plugins.write().await;
 
         if let Some(plugin) = plugins.remove(plugin_id) {
+            // Use plugin in non-wasm builds to avoid unused warnings
+            #[cfg(not(feature = "wasm-runtime"))]
+            {
+                let _ = &plugin;
+            }
             // Call cleanup if available
             #[cfg(feature = "wasm-runtime")]
             if let Some(wasm_data) = &plugin.wasm_data {
@@ -767,6 +784,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "wasm-runtime")]
     async fn test_load_minimal_wasm_plugin() {
         // Build a minimal WASM module with just an exported memory. This exercises
         // the WASM runtime path without requiring full plugin ABI.
@@ -813,10 +831,22 @@ mod tests {
             &self,
             _command: &str,
         ) -> Result<crate::api::CommandOutput, crate::api::PluginError> {
-            Ok(crate::api::CommandOutput { stdout: String::new(), stderr: String::new(), exit_code: 0, execution_time_ms: 0 })
+            Ok(crate::api::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+                execution_time_ms: 0,
+            })
         }
         fn get_terminal_state(&self) -> crate::host::TerminalState {
-            crate::host::TerminalState { current_dir: String::new(), environment: Default::default(), shell: String::new(), terminal_size: (80, 24), is_interactive: true, command_history: vec![] }
+            crate::host::TerminalState {
+                current_dir: String::new(),
+                environment: Default::default(),
+                shell: String::new(),
+                terminal_size: (80, 24),
+                is_interactive: true,
+                command_history: vec![],
+            }
         }
         fn show_notification(
             &self,
@@ -865,7 +895,9 @@ mod tests {
             // Validate that host_log was invoked
             let captured = logs.lock().unwrap().clone();
             assert!(
-                captured.iter().any(|(_, msg)| msg.contains("hello from plugin")),
+                captured
+                    .iter()
+                    .any(|(_, msg)| msg.contains("hello from plugin")),
                 "expected host_log to receive message, got {:?}",
                 captured
             );

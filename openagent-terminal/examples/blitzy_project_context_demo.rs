@@ -1,10 +1,10 @@
 // Example: Blitzy Project Context Agent Demo
 // Demonstrates enhanced project analysis, Git integration, and conversation awareness
 
-use openagent_terminal::ai::agents::*;
 use openagent_terminal::ai::agents::blitzy_project_context::*;
 use openagent_terminal::ai::agents::conversation_manager::*;
 use openagent_terminal::ai::agents::natural_language::ConversationRole;
+use openagent_terminal::ai::agents::*;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,28 +13,32 @@ use uuid::Uuid;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
 
     println!("🚀 Blitzy Project Context Agent Demo");
     println!("=====================================");
 
     // Create and configure the conversation manager
     let mut conversation_manager = ConversationManager::new();
-    conversation_manager.initialize(AgentConfig::default()).await?;
-    
+    conversation_manager
+        .initialize(AgentConfig::default())
+        .await?;
+
     // Create a conversation session
-    let session_id = conversation_manager.create_session(Some("project-analysis".to_string())).await?;
-    
+    let session_id = conversation_manager
+        .create_session(Some("project-analysis".to_string()))
+        .await?;
+
     // Add initial context about what we're doing
-    conversation_manager.add_turn(
-        session_id,
-        ConversationRole::User,
-        "I want to analyze my Rust project structure and understand the codebase".to_string(),
-        None,
-        Vec::new(),
-    ).await?;
+    conversation_manager
+        .add_turn(
+            session_id,
+            ConversationRole::User,
+            "I want to analyze my Rust project structure and understand the codebase".to_string(),
+            None,
+            Vec::new(),
+        )
+        .await?;
 
     // Create the Blitzy Project Context Agent with conversation integration
     let project_agent = BlitzyProjectContextAgent::new()
@@ -43,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
             track_file_changes: true,
             analyze_git_history: true,
             scan_dependencies: true,
-            generate_file_summaries: false, // Disabled for demo
+            generate_file_summaries: false,  // Disabled for demo
             max_file_size_bytes: 512 * 1024, // 512KB limit
             excluded_dirs: vec![
                 "target".to_string(),
@@ -65,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Analyze the current project (the OpenAgent Terminal itself)
     println!("\n📊 Analyzing Project Structure...");
-    
+
     let current_dir = std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .to_string_lossy()
@@ -98,14 +102,20 @@ async fn main() -> anyhow::Result<()> {
     match project_agent.handle_request(agent_request).await {
         Ok(response) => {
             if response.success {
-                if let Ok(project_response) = serde_json::from_value::<ProjectContextResponse>(response.payload.clone()) {
+                if let Ok(project_response) =
+                    serde_json::from_value::<ProjectContextResponse>(response.payload.clone())
+                {
                     display_project_analysis(project_response);
-                    
+
                     // Display artifacts
                     if !response.artifacts.is_empty() {
                         println!("\n📁 Generated Artifacts:");
                         for artifact in &response.artifacts {
-                            println!("  • {} ({})", artifact.content, format!("{:?}", artifact.artifact_type));
+                            println!(
+                                "  • {} ({})",
+                                artifact.content,
+                                format!("{:?}", artifact.artifact_type)
+                            );
                         }
                     }
                 } else {
@@ -150,20 +160,20 @@ async fn main() -> anyhow::Result<()> {
 fn display_project_analysis(response: ProjectContextResponse) {
     println!("\n📊 Project Analysis Results:");
     println!("═══════════════════════════");
-    
+
     if let Some(project) = &response.project {
         println!("🏷️  Project: {}", project.name);
         println!("📍 Root: {}", project.root_path);
         println!("🔧 Type: {:?}", project.project_type);
-        
+
         if let Some(language) = &project.language {
             println!("💻 Language: {}", language);
         }
-        
+
         if let Some(version) = &project.metadata.version {
             println!("📦 Version: {}", version);
         }
-        
+
         if let Some(description) = &project.metadata.description {
             println!("📝 Description: {}", description);
         }
@@ -172,11 +182,11 @@ fn display_project_analysis(response: ProjectContextResponse) {
         if let Some(git_info) = &project.git_info {
             println!("\n🌿 Git Repository:");
             println!("  • Branch: {}", git_info.current_branch);
-            
+
             if let Some(remote_url) = &git_info.remote_url {
                 println!("  • Remote: {}", remote_url);
             }
-            
+
             let status = &git_info.status;
             if status.is_clean {
                 println!("  • Status: ✅ Clean");
@@ -192,13 +202,14 @@ fn display_project_analysis(response: ProjectContextResponse) {
                     println!("    - Untracked: {}", status.untracked_files.len());
                 }
             }
-            
+
             if !git_info.recent_commits.is_empty() {
                 println!("  • Recent Commits:");
                 for (i, commit) in git_info.recent_commits.iter().take(3).enumerate() {
-                    println!("    {}. {} - {} ({})", 
-                        i + 1, 
-                        &commit.hash[..8], 
+                    println!(
+                        "    {}. {} - {} ({})",
+                        i + 1,
+                        &commit.hash[..8],
                         commit.message,
                         commit.author
                     );
@@ -211,7 +222,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
             println!("\n📦 Dependencies:");
             let mut runtime_deps = Vec::new();
             let mut dev_deps = Vec::new();
-            
+
             for dep in &project.dependencies {
                 match dep.dependency_type {
                     DependencyType::Runtime => runtime_deps.push(dep),
@@ -219,7 +230,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
                     _ => {}
                 }
             }
-            
+
             if !runtime_deps.is_empty() {
                 println!("  • Runtime ({}):", runtime_deps.len());
                 for dep in runtime_deps.iter().take(5) {
@@ -230,7 +241,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
                     println!("    ... and {} more", runtime_deps.len() - 5);
                 }
             }
-            
+
             if !dev_deps.is_empty() {
                 println!("  • Development ({}):", dev_deps.len());
                 for dep in dev_deps.iter().take(3) {
@@ -246,17 +257,23 @@ fn display_project_analysis(response: ProjectContextResponse) {
         // Project structure
         println!("\n📁 Project Structure:");
         if !project.structure.entry_points.is_empty() {
-            println!("  • Entry Points: {}", project.structure.entry_points.join(", "));
+            println!(
+                "  • Entry Points: {}",
+                project.structure.entry_points.join(", ")
+            );
         }
-        
+
         if !project.structure.config_files.is_empty() {
             println!("  • Config Files: {}", project.structure.config_files.len());
         }
-        
+
         if !project.structure.documentation.is_empty() {
-            println!("  • Documentation: {}", project.structure.documentation.len());
+            println!(
+                "  • Documentation: {}",
+                project.structure.documentation.len()
+            );
         }
-        
+
         if !project.structure.tests.is_empty() {
             println!("  • Test Files: {}", project.structure.tests.len());
         }
@@ -265,34 +282,39 @@ fn display_project_analysis(response: ProjectContextResponse) {
         if !project.files.is_empty() {
             println!("\n📄 Files Summary:");
             println!("  • Total Files: {}", project.files.len());
-            
+
             let mut by_importance = HashMap::new();
             let mut total_lines = 0u32;
             let mut total_size = 0u64;
-            
+
             for file in &project.files {
-                *by_importance.entry(format!("{:?}", file.importance)).or_insert(0) += 1;
+                *by_importance
+                    .entry(format!("{:?}", file.importance))
+                    .or_insert(0) += 1;
                 if let Some(lines) = file.lines {
                     total_lines += lines;
                 }
                 total_size += file.size;
             }
-            
+
             for (importance, count) in by_importance {
                 println!("    - {}: {}", importance, count);
             }
-            
+
             if total_lines > 0 {
                 println!("  • Total Lines: {}", total_lines);
             }
-            println!("  • Total Size: {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
+            println!(
+                "  • Total Size: {:.2} MB",
+                total_size as f64 / 1024.0 / 1024.0
+            );
         }
     }
 
     // Context summary
     println!("\n📋 Context Summary:");
     println!("{}", response.context_summary);
-    
+
     if response.confidence_score > 0.0 {
         println!("🎯 Confidence: {:.1}%", response.confidence_score * 100.0);
     }
@@ -309,9 +331,12 @@ fn display_project_analysis(response: ProjectContextResponse) {
 fn display_detailed_project_info(project: ProjectInfo) {
     println!("\n🔬 Detailed Project Information:");
     println!("════════════════════════════════");
-    
-    println!("📊 Analysis completed at: {}", project.last_analyzed.format("%Y-%m-%d %H:%M:%S"));
-    
+
+    println!(
+        "📊 Analysis completed at: {}",
+        project.last_analyzed.format("%Y-%m-%d %H:%M:%S")
+    );
+
     // Directory analysis
     if !project.structure.directories.is_empty() {
         println!("\n📂 Directory Breakdown:");
@@ -327,31 +352,30 @@ fn display_detailed_project_info(project: ProjectInfo) {
                 DirectoryPurpose::Scripts => "📜",
                 DirectoryPurpose::Unknown => "❓",
             };
-            
+
             let size_mb = dir.size_bytes as f64 / 1024.0 / 1024.0;
-            println!("  {} {} ({} files, {:.2} MB)", 
-                purpose_emoji,
-                dir.path, 
-                dir.file_count, 
-                size_mb
+            println!(
+                "  {} {} ({} files, {:.2} MB)",
+                purpose_emoji, dir.path, dir.file_count, size_mb
             );
         }
     }
-    
+
     // Most important files
     println!("\n⭐ Most Important Files:");
-    let critical_files: Vec<_> = project.files.iter()
+    let critical_files: Vec<_> = project
+        .files
+        .iter()
         .filter(|f| matches!(f.importance, FileImportance::Critical))
         .take(10)
         .collect();
-        
+
     for file in critical_files {
         let size_kb = file.size as f64 / 1024.0;
         let lines_str = file.lines.map_or("?".to_string(), |l| l.to_string());
-        println!("  📄 {} ({} lines, {:.1} KB)", 
-            file.relative_path,
-            lines_str,
-            size_kb
+        println!(
+            "  📄 {} ({} lines, {:.1} KB)",
+            file.relative_path, lines_str, size_kb
         );
     }
 }

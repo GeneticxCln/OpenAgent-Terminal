@@ -31,6 +31,16 @@ Quick links
   - Roadmap: ./roadmaps/ROADMAP.md
   - Changelog: ../CHANGELOG.md
 
+CI overview
+- Snapshot gating and performance thresholds are enforced in CI.
+  - Core CI: .github/workflows/ci.yml
+  - Performance: .github/workflows/performance.yml
+  - WGPU Nightly Snapshots: .github/workflows/wgpu-nightly.yml
+- Highlights
+  - GPU snapshots: scenario comparisons with threshold >= 0.995 on Linux via xvfb
+  - Perf checks: cold start (≤800ms) and render latency (≤16ms)
+  - Coverage: llvm-cov with minimal threshold; clippy denies warnings; sanitizers run on subset
+
 Navigation tips
 - The docs/ folder is organized by topic. If a link is missing or 404s, please open an issue.
 - For the most current project status, see ./guides/STATUS.md.

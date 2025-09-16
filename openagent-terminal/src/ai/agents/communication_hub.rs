@@ -1,16 +1,15 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc, broadcast};
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tracing::{error, info, warn};
 use uuid::Uuid;
-use tracing::{info, warn, error};
 
 use super::{
-    Agent, AgentCapability, AgentConfig, AgentContext, AgentRequest, AgentResponse, 
-    AgentStatus, AgentRequestType, AgentArtifact, ArtifactType, SuggestedAction, 
-    ActionType, ActionPriority
+    ActionPriority, ActionType, Agent, AgentArtifact, AgentCapability, AgentConfig, AgentContext,
+    AgentRequest, AgentRequestType, AgentResponse, AgentStatus, ArtifactType, SuggestedAction,
 };
 
 /// Communication hub for routing messages between agents and coordinating workflows
@@ -51,14 +50,39 @@ pub struct WorkflowCoordinator {
 /// Events that can be broadcast to agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentEvent {
-    AgentRegistered { agent_id: String, capabilities: Vec<AgentCapability> },
-    AgentUnregistered { agent_id: String },
-    TaskCompleted { workflow_id: Uuid, task_id: String, result: TaskResult },
-    TaskFailed { workflow_id: Uuid, task_id: String, error: String },
-    WorkflowStarted { workflow_id: Uuid, template_name: String },
-    WorkflowCompleted { workflow_id: Uuid, success: bool },
-    ContextUpdated { context_type: String, data: serde_json::Value },
-    Custom { event_type: String, data: serde_json::Value },
+    AgentRegistered {
+        agent_id: String,
+        capabilities: Vec<AgentCapability>,
+    },
+    AgentUnregistered {
+        agent_id: String,
+    },
+    TaskCompleted {
+        workflow_id: Uuid,
+        task_id: String,
+        result: TaskResult,
+    },
+    TaskFailed {
+        workflow_id: Uuid,
+        task_id: String,
+        error: String,
+    },
+    WorkflowStarted {
+        workflow_id: Uuid,
+        template_name: String,
+    },
+    WorkflowCompleted {
+        workflow_id: Uuid,
+        success: bool,
+    },
+    ContextUpdated {
+        context_type: String,
+        data: serde_json::Value,
+    },
+    Custom {
+        event_type: String,
+        data: serde_json::Value,
+    },
 }
 
 /// Direct messages between agents
@@ -170,7 +194,7 @@ pub struct TaskResult {
 impl AgentCommunicationHub {
     pub fn new() -> Self {
         let (broadcast_tx, _) = broadcast::channel(1000);
-        
+
         Self {
             id: "communication-hub".to_string(),
             config: AgentConfig::default(),
@@ -186,23 +210,28 @@ impl AgentCommunicationHub {
     pub async fn register_agent(&self, agent: Box<dyn Agent>) -> Result<()> {
         let agent_id = agent.id().to_string();
         let capabilities = agent.capabilities();
-        
+
         // Add to agent registry
         {
             let mut agents = self.agents.write().await;
             agents.insert(agent_id.clone(), agent);
         }
-        
+
         // Update routing table
         {
             let mut router = self.message_router.write().await;
-            router.update_routing_for_agent(&agent_id, &capabilities).await;
+            router
+                .update_routing_for_agent(&agent_id, &capabilities)
+                .await;
         }
-        
+
         // Broadcast registration event
-        let event = AgentEvent::AgentRegistered { agent_id: agent_id.clone(), capabilities };
+        let event = AgentEvent::AgentRegistered {
+            agent_id: agent_id.clone(),
+            capabilities,
+        };
         let _ = self.event_bus.broadcast(event).await;
-        
+
         info!("Registered agent '{}' with communication hub", agent_id);
         Ok(())
     }
@@ -213,17 +242,19 @@ impl AgentCommunicationHub {
             let mut agents = self.agents.write().await;
             agents.remove(agent_id);
         }
-        
+
         // Remove from routing table
         {
             let mut router = self.message_router.write().await;
             router.remove_agent(agent_id).await;
         }
-        
+
         // Broadcast unregistration event
-        let event = AgentEvent::AgentUnregistered { agent_id: agent_id.to_string() };
+        let event = AgentEvent::AgentUnregistered {
+            agent_id: agent_id.to_string(),
+        };
         let _ = self.event_bus.broadcast(event).await;
-        
+
         info!("Unregistered agent '{}' from communication hub", agent_id);
         Ok(())
     }
@@ -235,11 +266,14 @@ impl AgentCommunicationHub {
             let router = self.message_router.read().await;
             router.find_best_agent(&request.request_type).await?
         };
-        
+
         // Get the agent and execute the request
         let agents = self.agents.read().await;
         if let Some(agent) = agents.get(&target_agent_id) {
-            info!("Routing request {} to agent '{}'", request.id, target_agent_id);
+            info!(
+                "Routing request {} to agent '{}'",
+                request.id, target_agent_id
+            );
             agent.handle_request(request).await
         } else {
             Err(anyhow!("Agent '{}' not found in registry", target_agent_id))
@@ -252,24 +286,31 @@ impl AgentCommunicationHub {
     }
 
     /// Start a multi-agent workflow
-    pub async fn start_workflow(&self, template_name: &str, context: serde_json::Value) -> Result<Uuid> {
+    pub async fn start_workflow(
+        &self,
+        template_name: &str,
+        context: serde_json::Value,
+    ) -> Result<Uuid> {
         let workflow_id = {
             let mut coordinator = self.workflow_coordinator.write().await;
             coordinator.start_workflow(template_name, context).await?
         };
-        
+
         // Broadcast workflow started event
-        let event = AgentEvent::WorkflowStarted { 
-            workflow_id, 
-            template_name: template_name.to_string() 
+        let event = AgentEvent::WorkflowStarted {
+            workflow_id,
+            template_name: template_name.to_string(),
         };
         let _ = self.event_bus.broadcast(event).await;
-        
-        info!("Started workflow '{}' with ID {}", template_name, workflow_id);
-        
+
+        info!(
+            "Started workflow '{}' with ID {}",
+            template_name, workflow_id
+        );
+
         // Begin executing the workflow
         self.execute_workflow(workflow_id).await?;
-        
+
         Ok(workflow_id)
     }
 
@@ -279,21 +320,17 @@ impl AgentCommunicationHub {
             let coordinator = self.workflow_coordinator.read().await;
             let workflow = coordinator.get_workflow(workflow_id).await?;
             let template_name = &workflow.template_name;
-            coordinator.get_workflow_template(template_name).await
+            coordinator
+                .get_workflow_template(template_name)
+                .await
                 .map(|t| t.execution_strategy.clone())
                 .unwrap_or(ExecutionStrategy::Sequential)
         };
-        
+
         match execution_strategy {
-            ExecutionStrategy::Sequential => {
-                self.execute_sequential_workflow(workflow_id).await
-            }
-            ExecutionStrategy::Parallel => {
-                self.execute_parallel_workflow(workflow_id).await
-            }
-            ExecutionStrategy::Dependency => {
-                self.execute_dependency_workflow(workflow_id).await
-            }
+            ExecutionStrategy::Sequential => self.execute_sequential_workflow(workflow_id).await,
+            ExecutionStrategy::Parallel => self.execute_parallel_workflow(workflow_id).await,
+            ExecutionStrategy::Dependency => self.execute_dependency_workflow(workflow_id).await,
             ExecutionStrategy::Custom(_) => {
                 Err(anyhow!("Custom execution strategies not yet implemented"))
             }
@@ -307,22 +344,27 @@ impl AgentCommunicationHub {
             let workflow = coordinator.get_workflow(workflow_id).await?;
             (workflow.execution_order.clone(), workflow.tasks.clone())
         };
-        
+
         for task_id in &execution_order {
             if let Some(task) = tasks.get(task_id) {
                 let result = self.execute_task(workflow_id, task.clone()).await;
-                
+
                 match result {
                     Ok(task_result) => {
                         {
                             let mut coordinator = self.workflow_coordinator.write().await;
-                            coordinator.update_task_result(workflow_id, task_id, task_result).await?;
+                            coordinator
+                                .update_task_result(workflow_id, task_id, task_result)
+                                .await?;
                         }
-                        
+
                         // Broadcast task completion
                         let task_result = {
                             let coordinator = self.workflow_coordinator.read().await;
-                            coordinator.get_task_result(workflow_id, task_id).await?.unwrap()
+                            coordinator
+                                .get_task_result(workflow_id, task_id)
+                                .await?
+                                .unwrap()
                         };
                         let event = AgentEvent::TaskCompleted {
                             workflow_id,
@@ -332,8 +374,11 @@ impl AgentCommunicationHub {
                         let _ = self.event_bus.broadcast(event).await;
                     }
                     Err(e) => {
-                        error!("Task '{}' in workflow {} failed: {}", task_id, workflow_id, e);
-                        
+                        error!(
+                            "Task '{}' in workflow {} failed: {}",
+                            task_id, workflow_id, e
+                        );
+
                         // Broadcast task failure
                         let event = AgentEvent::TaskFailed {
                             workflow_id,
@@ -341,7 +386,7 @@ impl AgentCommunicationHub {
                             error: e.to_string(),
                         };
                         let _ = self.event_bus.broadcast(event).await;
-                        
+
                         if task.template.critical {
                             {
                                 let mut coordinator = self.workflow_coordinator.write().await;
@@ -353,16 +398,19 @@ impl AgentCommunicationHub {
                 }
             }
         }
-        
+
         {
             let mut coordinator = self.workflow_coordinator.write().await;
             coordinator.mark_workflow_completed(workflow_id).await?;
         }
-        
+
         // Broadcast workflow completion
-        let event = AgentEvent::WorkflowCompleted { workflow_id, success: true };
+        let event = AgentEvent::WorkflowCompleted {
+            workflow_id,
+            success: true,
+        };
         let _ = self.event_bus.broadcast(event).await;
-        
+
         Ok(())
     }
 
@@ -375,19 +423,23 @@ impl AgentCommunicationHub {
     /// Execute workflow based on dependency graph
     async fn execute_dependency_workflow(&self, _workflow_id: Uuid) -> Result<()> {
         // TODO: Implement dependency-based execution using topological sort
-        Err(anyhow!("Dependency-based workflow execution not yet implemented"))
+        Err(anyhow!(
+            "Dependency-based workflow execution not yet implemented"
+        ))
     }
 
     /// Execute a single task by routing to an appropriate agent
     async fn execute_task(&self, workflow_id: Uuid, task: WorkflowTask) -> Result<TaskResult> {
         let start_time = std::time::Instant::now();
-        
+
         // Find an agent capable of handling this task
         let agent_id = {
             let router = self.message_router.read().await;
-            router.find_agent_by_capability(&task.template.required_capability).await?
+            router
+                .find_agent_by_capability(&task.template.required_capability)
+                .await?
         };
-        
+
         // Create agent request from task template
         let request = AgentRequest {
             id: Uuid::new_v4(),
@@ -395,7 +447,10 @@ impl AgentCommunicationHub {
             payload: task.template.request_template.clone(),
             context: AgentContext {
                 project_root: None,
-                current_directory: std::env::current_dir().unwrap_or_default().to_string_lossy().to_string(),
+                current_directory: std::env::current_dir()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
                 current_branch: None,
                 open_files: vec![],
                 recent_commands: vec![],
@@ -409,22 +464,29 @@ impl AgentCommunicationHub {
                 meta
             },
         };
-        
+
         // Execute the request
         let agents = self.agents.read().await;
         if let Some(agent) = agents.get(&agent_id) {
             let response = agent.handle_request(request).await?;
             let execution_time = start_time.elapsed().as_millis() as u64;
-            
+
             Ok(TaskResult {
                 success: response.success,
                 data: response.payload,
                 artifacts: response.artifacts,
                 execution_time_ms: execution_time,
-                error: if response.success { None } else { Some("Task failed".to_string()) },
+                error: if response.success {
+                    None
+                } else {
+                    Some("Task failed".to_string())
+                },
             })
         } else {
-            Err(anyhow!("No agent found with capability {:?}", task.template.required_capability))
+            Err(anyhow!(
+                "No agent found with capability {:?}",
+                task.template.required_capability
+            ))
         }
     }
 
@@ -462,17 +524,17 @@ impl AgentCommunicationHub {
     pub fn subscribe_to_events(&self) -> broadcast::Receiver<AgentEvent> {
         self.event_bus.subscribe()
     }
-    
+
     /// List all registered agents
     pub async fn list_agents(&self) -> Vec<String> {
         let agents = self.agents.read().await;
         agents.keys().cloned().collect()
     }
-    
+
     /// Get agent status by ID
     pub async fn get_agent_status(&self, agent_id: &str) -> Result<AgentStatus> {
         let agents = self.agents.read().await;
-        
+
         if let Some(agent) = agents.get(agent_id) {
             Ok(agent.status().await)
         } else {
@@ -506,24 +568,26 @@ impl Agent for AgentCommunicationHub {
     async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
         match request.request_type {
             AgentRequestType::ExecuteWorkflow => {
-                if let Ok(workflow_request) = serde_json::from_value::<WorkflowRequest>(request.payload.clone()) {
-                    let workflow_id = self.start_workflow(&workflow_request.template_name, workflow_request.context).await?;
-                    
+                if let Ok(workflow_request) =
+                    serde_json::from_value::<WorkflowRequest>(request.payload.clone())
+                {
+                    let workflow_id = self
+                        .start_workflow(&workflow_request.template_name, workflow_request.context)
+                        .await?;
+
                     Ok(AgentResponse {
                         request_id: request.id,
                         agent_id: self.id.clone(),
                         success: true,
                         payload: serde_json::json!({"workflow_id": workflow_id}),
                         artifacts: Vec::new(),
-                        next_actions: vec![
-                            SuggestedAction {
-                                action_type: ActionType::Custom("MonitorWorkflow".to_string()),
-                                description: format!("Monitor workflow {} progress", workflow_id),
-                                command: Some(format!("workflow status {}", workflow_id)),
-                                priority: ActionPriority::Low,
-                                safe_to_auto_execute: true,
-                            }
-                        ],
+                        next_actions: vec![SuggestedAction {
+                            action_type: ActionType::Custom("MonitorWorkflow".to_string()),
+                            description: format!("Monitor workflow {} progress", workflow_id),
+                            command: Some(format!("workflow status {}", workflow_id)),
+                            priority: ActionPriority::Low,
+                            safe_to_auto_execute: true,
+                        }],
                         metadata: HashMap::new(),
                     })
                 } else {
@@ -539,9 +603,11 @@ impl Agent for AgentCommunicationHub {
                 }
             }
             AgentRequestType::Custom(ref custom_type) if custom_type == "RouteRequest" => {
-                if let Ok(route_request) = serde_json::from_value::<RouteRequest>(request.payload.clone()) {
+                if let Ok(route_request) =
+                    serde_json::from_value::<RouteRequest>(request.payload.clone())
+                {
                     let response = self.route_request(route_request.inner_request).await?;
-                    
+
                     Ok(AgentResponse {
                         request_id: request.id,
                         agent_id: self.id.clone(),
@@ -563,18 +629,19 @@ impl Agent for AgentCommunicationHub {
                     })
                 }
             }
-            _ => Err(anyhow!("Communication Hub cannot handle request type: {:?}", request.request_type))
+            _ => Err(anyhow!(
+                "Communication Hub cannot handle request type: {:?}",
+                request.request_type
+            )),
         }
     }
 
     fn can_handle(&self, request_type: &AgentRequestType) -> bool {
-        matches!(
-            request_type,
-            AgentRequestType::ExecuteWorkflow
-        ) || matches!(
-            request_type,
-            AgentRequestType::Custom(custom_type) if custom_type == "RouteRequest"
-        )
+        matches!(request_type, AgentRequestType::ExecuteWorkflow)
+            || matches!(
+                request_type,
+                AgentRequestType::Custom(custom_type) if custom_type == "RouteRequest"
+            )
     }
 
     async fn status(&self) -> AgentStatus {
@@ -596,13 +663,13 @@ impl Agent for AgentCommunicationHub {
 
     async fn initialize(&mut self, config: AgentConfig) -> Result<()> {
         self.config = config;
-        
+
         // Initialize default workflow templates
         {
             let mut coordinator = self.workflow_coordinator.write().await;
             coordinator.register_default_templates().await?;
         }
-        
+
         self.is_initialized = true;
         info!("Agent Communication Hub initialized");
         Ok(())
@@ -615,7 +682,7 @@ impl Agent for AgentCommunicationHub {
             let mut coordinator = self.workflow_coordinator.write().await;
             let _ = coordinator.cancel_workflow(workflow_id).await;
         }
-        
+
         self.is_initialized = false;
         info!("Agent Communication Hub shut down");
         Ok(())
@@ -643,7 +710,11 @@ impl MessageRouter {
         }
     }
 
-    pub async fn update_routing_for_agent(&mut self, agent_id: &str, capabilities: &[AgentCapability]) {
+    pub async fn update_routing_for_agent(
+        &mut self,
+        agent_id: &str,
+        capabilities: &[AgentCapability],
+    ) {
         for capability in capabilities {
             self.routing_table
                 .entry(capability.clone())
@@ -668,22 +739,30 @@ impl MessageRouter {
     pub async fn find_agent_by_capability(&self, capability: &AgentCapability) -> Result<String> {
         if let Some(agents) = self.routing_table.get(capability) {
             if agents.is_empty() {
-                return Err(anyhow!("No agents available for capability: {:?}", capability));
+                return Err(anyhow!(
+                    "No agents available for capability: {:?}",
+                    capability
+                ));
             }
-            
+
             // Simple load balancing - choose agent with lowest load
             let best_agent = agents
                 .iter()
                 .min_by(|a, b| {
                     let load_a = self.agent_loads.get(*a).unwrap_or(&0.0);
                     let load_b = self.agent_loads.get(*b).unwrap_or(&0.0);
-                    load_a.partial_cmp(load_b).unwrap_or(std::cmp::Ordering::Equal)
+                    load_a
+                        .partial_cmp(load_b)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap();
-            
+
             Ok(best_agent.clone())
         } else {
-            Err(anyhow!("No agents registered for capability: {:?}", capability))
+            Err(anyhow!(
+                "No agents registered for capability: {:?}",
+                capability
+            ))
         }
     }
 
@@ -743,36 +822,49 @@ impl WorkflowCoordinator {
             description: "Generate and validate code with security analysis".to_string(),
             tasks: {
                 let mut tasks = HashMap::new();
-                tasks.insert("generate".to_string(), WorkflowTaskTemplate {
-                    name: "Generate Code".to_string(),
-                    description: "Generate code based on requirements".to_string(),
-                    required_capability: AgentCapability::CodeGeneration,
-                    request_template: serde_json::json!({"requirements": ""}),
-                    timeout_seconds: 30,
-                    retry_count: 2,
-                    critical: true,
-                });
-                tasks.insert("analyze_security".to_string(), WorkflowTaskTemplate {
-                    name: "Security Analysis".to_string(),
-                    description: "Analyze generated code for security issues".to_string(),
-                    required_capability: AgentCapability::SecurityAnalysis,
-                    request_template: serde_json::json!({"code": ""}),
-                    timeout_seconds: 15,
-                    retry_count: 1,
-                    critical: false,
-                });
+                tasks.insert(
+                    "generate".to_string(),
+                    WorkflowTaskTemplate {
+                        name: "Generate Code".to_string(),
+                        description: "Generate code based on requirements".to_string(),
+                        required_capability: AgentCapability::CodeGeneration,
+                        request_template: serde_json::json!({"requirements": ""}),
+                        timeout_seconds: 30,
+                        retry_count: 2,
+                        critical: true,
+                    },
+                );
+                tasks.insert(
+                    "analyze_security".to_string(),
+                    WorkflowTaskTemplate {
+                        name: "Security Analysis".to_string(),
+                        description: "Analyze generated code for security issues".to_string(),
+                        required_capability: AgentCapability::SecurityAnalysis,
+                        request_template: serde_json::json!({"code": ""}),
+                        timeout_seconds: 15,
+                        retry_count: 1,
+                        critical: false,
+                    },
+                );
                 tasks
             },
             execution_strategy: ExecutionStrategy::Sequential,
             dependencies: HashMap::new(),
         };
-        
-        self.workflow_templates.insert("code_generation_workflow".to_string(), code_gen_template);
+
+        self.workflow_templates
+            .insert("code_generation_workflow".to_string(), code_gen_template);
         Ok(())
     }
 
-    pub async fn start_workflow(&mut self, template_name: &str, context: serde_json::Value) -> Result<Uuid> {
-        let template = self.workflow_templates.get(template_name)
+    pub async fn start_workflow(
+        &mut self,
+        template_name: &str,
+        context: serde_json::Value,
+    ) -> Result<Uuid> {
+        let template = self
+            .workflow_templates
+            .get(template_name)
             .ok_or_else(|| anyhow!("Workflow template not found: {}", template_name))?
             .clone();
 
@@ -781,15 +873,18 @@ impl WorkflowCoordinator {
         let mut execution_order = Vec::new();
 
         for (task_id, task_template) in &template.tasks {
-            tasks.insert(task_id.clone(), WorkflowTask {
-                id: task_id.clone(),
-                template: task_template.clone(),
-                status: TaskStatus::Pending,
-                assigned_agent: None,
-                result: None,
-                started_at: None,
-                completed_at: None,
-            });
+            tasks.insert(
+                task_id.clone(),
+                WorkflowTask {
+                    id: task_id.clone(),
+                    template: task_template.clone(),
+                    status: TaskStatus::Pending,
+                    assigned_agent: None,
+                    result: None,
+                    started_at: None,
+                    completed_at: None,
+                },
+            );
             execution_order.push(task_id.clone());
         }
 
@@ -809,10 +904,11 @@ impl WorkflowCoordinator {
     }
 
     pub async fn get_workflow(&self, workflow_id: Uuid) -> Result<&ActiveWorkflow> {
-        self.active_workflows.get(&workflow_id)
+        self.active_workflows
+            .get(&workflow_id)
             .ok_or_else(|| anyhow!("Workflow not found: {}", workflow_id))
     }
-    
+
     pub async fn get_workflow_template(&self, template_name: &str) -> Option<&WorkflowTemplate> {
         self.workflow_templates.get(template_name)
     }
@@ -826,10 +922,15 @@ impl WorkflowCoordinator {
         self.active_workflows.keys().cloned().collect()
     }
 
-    pub async fn update_task_result(&mut self, workflow_id: Uuid, task_id: &str, result: TaskResult) -> Result<()> {
+    pub async fn update_task_result(
+        &mut self,
+        workflow_id: Uuid,
+        task_id: &str,
+        result: TaskResult,
+    ) -> Result<()> {
         if let Some(workflow) = self.active_workflows.get_mut(&workflow_id) {
             workflow.results.insert(task_id.to_string(), result);
-            
+
             if let Some(task) = workflow.tasks.get_mut(task_id) {
                 task.status = TaskStatus::Completed;
                 task.completed_at = Some(chrono::Utc::now());
@@ -838,7 +939,11 @@ impl WorkflowCoordinator {
         Ok(())
     }
 
-    pub async fn get_task_result(&self, workflow_id: Uuid, task_id: &str) -> Result<Option<TaskResult>> {
+    pub async fn get_task_result(
+        &self,
+        workflow_id: Uuid,
+        task_id: &str,
+    ) -> Result<Option<TaskResult>> {
         let workflow = self.get_workflow(workflow_id).await?;
         Ok(workflow.results.get(task_id).cloned())
     }
@@ -880,10 +985,15 @@ mod tests {
     async fn test_message_router() {
         let mut router = MessageRouter::new();
         let capabilities = vec![AgentCapability::CodeGeneration];
-        
-        router.update_routing_for_agent("test-agent", &capabilities).await;
-        
-        let agent_id = router.find_agent_by_capability(&AgentCapability::CodeGeneration).await.unwrap();
+
+        router
+            .update_routing_for_agent("test-agent", &capabilities)
+            .await;
+
+        let agent_id = router
+            .find_agent_by_capability(&AgentCapability::CodeGeneration)
+            .await
+            .unwrap();
         assert_eq!(agent_id, "test-agent");
     }
 
@@ -891,10 +1001,13 @@ mod tests {
     async fn test_workflow_coordinator() {
         let mut coordinator = WorkflowCoordinator::new();
         coordinator.register_default_templates().await.unwrap();
-        
+
         let context = serde_json::json!({"language": "rust"});
-        let workflow_id = coordinator.start_workflow("code_generation_workflow", context).await.unwrap();
-        
+        let workflow_id = coordinator
+            .start_workflow("code_generation_workflow", context)
+            .await
+            .unwrap();
+
         let status = coordinator.get_workflow_status(workflow_id).await.unwrap();
         assert_eq!(status, WorkflowStatus::Pending);
     }

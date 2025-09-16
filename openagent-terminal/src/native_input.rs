@@ -2433,7 +2433,7 @@ impl NativeInput {
             InputAction::CreateTab => {
                 // Implementation would trigger tab creation
             }
-InputAction::SwitchTab(_direction) => {
+            InputAction::SwitchTab(_direction) => {
                 // Implementation would switch tabs immediately
             }
             InputAction::SplitHorizontal => {
@@ -2596,7 +2596,7 @@ InputAction::SwitchTab(_direction) => {
     }
 
     /// Determine mouse context from position
-fn determine_mouse_context(&self, _position: (f64, f64)) -> MouseContext {
+    fn determine_mouse_context(&self, _position: (f64, f64)) -> MouseContext {
         // This would be implemented to check hit-testing against UI elements
         // For now, return a default context
         MouseContext::Terminal

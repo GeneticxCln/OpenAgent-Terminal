@@ -16,7 +16,8 @@ prop_compose! {
     fn arb_connection_string()(
         protocol in "(?:mongodb|postgres|postgresql|mysql|redis|amqp)",
         username in r"[a-zA-Z0-9_]{3,16}",
-        password in r"[a-zA-Z0-9_@#$%^&*!]{8,32}",
+        // Exclude '@' to avoid ambiguous delimiter in authority; in URIs '@' in password should be percent-encoded
+        password in r"[a-zA-Z0-9_#$%^&*!]{8,32}",
         host in r"[a-zA-Z0-9\.\-]{3,64}",
         port in 1024u16..65535u16
     ) -> String {

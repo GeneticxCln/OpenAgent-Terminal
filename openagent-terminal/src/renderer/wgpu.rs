@@ -4,8 +4,8 @@ use log::debug;
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use wgpu::util::DeviceExt;
 use crate::renderer::wgpu_rect_transfer::WgpuRectTransfer;
+use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
 use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
@@ -525,7 +525,7 @@ impl WgpuRenderer {
         atlas_report_interval_frames: u32,
         renderer_report_interval_frames: u32,
     ) -> Result<Self, Error> {
-// Prefer Vulkan backend explicitly. This build is WGPU-only; no other graphics API fallback.
+        // Prefer Vulkan backend explicitly. This build is WGPU-only; no other graphics API fallback.
         // changed later.
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -558,7 +558,7 @@ impl WgpuRenderer {
         // Choose surface format based on preference.
         let formats = surface_caps.formats.clone();
         let pick_non_srgb = || formats.iter().copied().find(|f| !f.is_srgb());
-// Force non-sRGB format for reliable blending/gamma on some Wayland setups.
+        // Force non-sRGB format for reliable blending/gamma on some Wayland setups.
         let format = pick_non_srgb().unwrap_or(formats[0]);
         let is_srgb_surface = false;
 
@@ -869,7 +869,11 @@ targets: &[Some(wgpu::ColorTargetState {
 
         // Create a rect transfer helper (staging+vertex) for batched uploads.
         let initial_rect_vb_capacity_vertices: usize = 64 * 1024; // 64k vertices
-        let rect_transfer = WgpuRectTransfer::new(&device, initial_rect_vb_capacity_vertices, std::mem::size_of::<RectVertex>());
+        let rect_transfer = WgpuRectTransfer::new(
+            &device,
+            initial_rect_vb_capacity_vertices,
+            std::mem::size_of::<RectVertex>(),
+        );
 
         // --- Sprite pipeline & resources ---
         // Minimal sprite shader (textured quad with tint)
@@ -1290,12 +1294,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             wgpu::Color::TRANSPARENT
         };
 
-
         // Upload vertices via staging+copy to minimize queue writes
         self.rect_transfer.begin_frame();
         if !self.rect_vertices_cpu.is_empty() {
             // Use the typed path by default, but we could also append_raw if we had &[u8]
-            self.rect_transfer.append_vertices(&self.device, &self.rect_vertices_cpu);
+            self.rect_transfer
+                .append_vertices(&self.device, &self.rect_vertices_cpu);
         }
 
         // Optionally stage perf HUD background as rounded rects before creating buffers
@@ -1360,7 +1364,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             // Flush staging -> GPU vertex buffer before drawing rects/UI
             let copied = self.rect_transfer.flush(&mut encoder, &self.device);
             if copied > 0 {
-self.metrics.rect_bytes_copied = copied;
+                self.metrics.rect_bytes_copied = copied;
                 self.metrics.rect_flush_count += 1;
             }
 
@@ -1383,11 +1387,15 @@ self.metrics.rect_bytes_copied = copied;
             if !self.rect_vertices_cpu.is_empty() {
                 pass.set_pipeline(&self.rect_pipeline);
                 pass.set_bind_group(0, &self.rect_bind_group, &[]);
-                let used_bytes = (self.rect_vertices_cpu.len() * std::mem::size_of::<RectVertex>()) as wgpu::BufferAddress;
+                let used_bytes = (self.rect_vertices_cpu.len() * std::mem::size_of::<RectVertex>())
+                    as wgpu::BufferAddress;
                 pass.set_vertex_buffer(0, self.rect_transfer.vertex_buffer().slice(0..used_bytes));
                 pass.draw(0..self.rect_vertices_cpu.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.rect_vertices_cpu.len() as u32);
+                self.metrics.vertices_submitted = self
+                    .metrics
+                    .vertices_submitted
+                    .saturating_add(self.rect_vertices_cpu.len() as u32);
             }
 
             // Draw pending UI rounded rects in the same pass for correct layering.
@@ -1396,7 +1404,10 @@ self.metrics.rect_bytes_copied = copied;
                 pass.set_vertex_buffer(0, ui_buf.slice(..));
                 pass.draw(0..self.pending_ui.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_ui.len() as u32);
+                self.metrics.vertices_submitted = self
+                    .metrics
+                    .vertices_submitted
+                    .saturating_add(self.pending_ui.len() as u32);
             }
 
             // Draw sprites (linear then nearest) for proper filter usage
@@ -1408,14 +1419,20 @@ self.metrics.rect_bytes_copied = copied;
                 pass.set_vertex_buffer(0, spr_buf.slice(..));
                 pass.draw(0..self.pending_sprites_linear.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_sprites_linear.len() as u32);
+                self.metrics.vertices_submitted = self
+                    .metrics
+                    .vertices_submitted
+                    .saturating_add(self.pending_sprites_linear.len() as u32);
             }
             if let Some(ref spr_buf) = spr_buf_nearest_opt {
                 pass.set_bind_group(0, &self.sprite_bind_group_nearest, &[]);
                 pass.set_vertex_buffer(0, spr_buf.slice(..));
                 pass.draw(0..self.pending_sprites_nearest.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_sprites_nearest.len() as u32);
+                self.metrics.vertices_submitted = self
+                    .metrics
+                    .vertices_submitted
+                    .saturating_add(self.pending_sprites_nearest.len() as u32);
             }
         }
 
@@ -1461,7 +1478,10 @@ self.metrics.rect_bytes_copied = copied;
                 pass.set_vertex_buffer(0, text_vbuf.slice(..));
                 pass.draw(0..self.pending_text.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self.metrics.vertices_submitted.saturating_add(self.pending_text.len() as u32);
+                self.metrics.vertices_submitted = self
+                    .metrics
+                    .vertices_submitted
+                    .saturating_add(self.pending_text.len() as u32);
             }
 
             self.pending_text.clear();
@@ -1516,8 +1536,11 @@ self.metrics.rect_bytes_copied = copied;
             let si = SizeInfo::new(
                 self.size.width.max(1) as f32,
                 self.size.height.max(1) as f32,
-                8.0, 16.0, 0.0, 0.0,
-                false
+                8.0,
+                16.0,
+                0.0,
+                0.0,
+                false,
             );
             self.stage_ui_rounded_rect(&si, pill);
         }
@@ -1781,10 +1804,22 @@ self.metrics.rect_bytes_copied = copied;
                     Some(r_prev) => {
                         // Flush previous run and start a new one.
                         flush_run(&mut staged_bg, r_prev);
-                        run = Some(BgRun { line, start_col: col, end_col: col, color, alpha });
+                        run = Some(BgRun {
+                            line,
+                            start_col: col,
+                            end_col: col,
+                            color,
+                            alpha,
+                        });
                     }
                     None => {
-                        run = Some(BgRun { line, start_col: col, end_col: col, color, alpha });
+                        run = Some(BgRun {
+                            line,
+                            start_col: col,
+                            end_col: col,
+                            color,
+                            alpha,
+                        });
                     }
                 }
             }

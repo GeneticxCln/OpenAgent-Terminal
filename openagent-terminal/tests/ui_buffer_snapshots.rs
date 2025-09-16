@@ -1,5 +1,5 @@
 use openagent_terminal_core::grid::{Dimensions, Grid};
-use openagent_terminal_core::index::{Column, Line, Point};
+use openagent_terminal_core::index::{Column, Line};
 use openagent_terminal_core::term::cell::Cell;
 
 fn grid_to_ascii(grid: &Grid<Cell>) -> String {
@@ -51,7 +51,9 @@ fn ui_buffer_wrapping_snapshot() {
         if col >= grid.columns() {
             col = 0;
             row += 1;
-            if (row as usize) >= grid.screen_lines() { break; }
+            if (row as usize) >= grid.screen_lines() {
+                break;
+            }
         }
     }
 

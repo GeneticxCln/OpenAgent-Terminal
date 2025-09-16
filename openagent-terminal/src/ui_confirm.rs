@@ -375,8 +375,8 @@ mod tests {
     // =====================
 
     fn build_policy(block_critical: bool, warn_confirm: bool) -> crate::security::SecurityPolicy {
-        use std::collections::HashMap;
         use crate::security::RiskLevel;
+        use std::collections::HashMap;
         let mut require_confirmation = HashMap::new();
         require_confirmation.insert(RiskLevel::Safe, false);
         require_confirmation.insert(RiskLevel::Caution, warn_confirm);
@@ -427,7 +427,7 @@ mod tests {
                 .unwrap_or(false);
             if requires_confirmation && risk.level != RiskLevel::Safe {
                 // Spawn resolver thread to accept/deny if requested
-let _resolver = accept.map(|decision| {
+                let _resolver = accept.map(|decision| {
                     thread::spawn(move || {
                         for _ in 0..100 {
                             let evs = th::take_events();
@@ -478,7 +478,10 @@ let _resolver = accept.map(|decision| {
         let policy = build_policy(true, true);
         let result = simulate_execute_command_policy("rm -rf /", policy, 100, None)
             .expect("policy evaluation should not error");
-        assert!(result.is_none(), "Critical command should be blocked without prompt");
+        assert!(
+            result.is_none(),
+            "Critical command should be blocked without prompt"
+        );
         // No pending confirmations should remain
         assert_eq!(th::pending_len(), 0);
     }

@@ -1,13 +1,14 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
-use super::*;
 use super::code_generation::CodeStyle;
 use super::natural_language::*;
+use super::*;
 
 /// Enhanced conversation manager for multi-turn conversations with context persistence
 pub struct ConversationManager {
@@ -41,21 +42,21 @@ pub struct PersistentConversationContext {
     pub current_directory: String,
     pub git_branch: Option<String>,
     pub git_status: Option<String>,
-    
+
     // File context
     pub open_files: Vec<FileContext>,
     pub recent_files: VecDeque<FileContext>,
     pub project_files: Vec<String>,
-    
+
     // Command context
     pub recent_commands: VecDeque<CommandExecution>,
     pub command_history: Vec<String>,
-    
+
     // Conversation memory
     pub topics: HashMap<String, TopicMemory>,
     pub entities: HashMap<String, Entity>,
     pub user_goals: Vec<UserGoal>,
-    
+
     // Agent coordination
     pub active_workflows: Vec<Uuid>,
     pub agent_preferences: HashMap<String, serde_json::Value>,
@@ -233,6 +234,46 @@ impl ConversationManager {
         }
     }
 
+    fn conversations_data_path() -> PathBuf {
+        // ~/.local/share/openagent-terminal/ai/conversations.json
+        let base = dirs::data_dir()
+            .unwrap_or_else(|| std::env::temp_dir())
+            .join("openagent-terminal")
+            .join("ai");
+        std::fs::create_dir_all(&base).ok();
+        base.join("conversations.json")
+    }
+
+    async fn save_all(&self) -> Result<()> {
+        let sessions: Vec<ConversationSession> = {
+            let conversations = self.conversations.read().await;
+            conversations.values().cloned().collect()
+        };
+        let payload = serde_json::to_vec_pretty(&sessions)?;
+        let path = Self::conversations_data_path();
+        tokio::fs::write(path, payload).await?;
+        Ok(())
+    }
+
+    async fn load_all(&self) -> Result<()> {
+        let path = Self::conversations_data_path();
+        if let Ok(bytes) = tokio::fs::read(&path).await {
+            if let Ok(sessions) = serde_json::from_slice::<Vec<ConversationSession>>(&bytes) {
+                let mut conversations = self.conversations.write().await;
+                conversations.clear();
+                for s in sessions {
+                    conversations.insert(s.id, s);
+                }
+                // Reset default session if any session exists
+                let mut default_session = self.default_session.write().await;
+                if default_session.is_none() {
+                    *default_session = conversations.keys().next().cloned();
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn with_config(mut self, config: ConversationConfig) -> Self {
         self.config = config;
         self
@@ -243,8 +284,12 @@ impl ConversationManager {
         let session_id = Uuid::new_v4();
         let session = ConversationSession {
             id: session_id,
-            title: title.unwrap_or_else(|| format!("Conversation {}", 
-                chrono::Utc::now().format("%Y-%m-%d %H:%M"))),
+            title: title.unwrap_or_else(|| {
+                format!(
+                    "Conversation {}",
+                    chrono::Utc::now().format("%Y-%m-%d %H:%M")
+                )
+            }),
             created_at: Utc::now(),
             last_active: Utc::now(),
             turns: VecDeque::new(),
@@ -270,26 +315,27 @@ impl ConversationManager {
     /// Get or create the default conversation session
     pub async fn get_default_session(&self) -> Result<Uuid> {
         let default_session = self.default_session.read().await;
-        
+
         if let Some(session_id) = *default_session {
             Ok(session_id)
         } else {
             drop(default_session);
-            self.create_session(Some("Default Conversation".to_string())).await
+            self.create_session(Some("Default Conversation".to_string()))
+                .await
         }
     }
 
     /// Add a turn to a conversation session
     pub async fn add_turn(
-        &self, 
-        session_id: Uuid, 
-        role: ConversationRole, 
+        &self,
+        session_id: Uuid,
+        role: ConversationRole,
         content: String,
         intent: Option<Intent>,
         entities: Vec<Entity>,
     ) -> Result<Uuid> {
         let mut conversations = self.conversations.write().await;
-        
+
         let session = conversations
             .get_mut(&session_id)
             .ok_or_else(|| anyhow!("Conversation session not found: {}", session_id))?;
@@ -310,7 +356,8 @@ impl ConversationManager {
         session.last_active = Utc::now();
 
         // Update context with new information
-        self.update_context_from_turn(&mut session.context, &content, &intent, &entities).await?;
+        self.update_context_from_turn(&mut session.context, &content, &intent, &entities)
+            .await?;
 
         // Prune old turns if needed
         if session.turns.len() > self.config.max_turns_per_session {
@@ -318,7 +365,12 @@ impl ConversationManager {
         }
 
         // Update topic memory
-        self.update_topic_memory(&mut session.context, &content, turn_id).await?;
+        self.update_topic_memory(&mut session.context, &content, turn_id)
+            .await?;
+
+        // Persist conversations after each turn
+        drop(conversations);
+        self.save_all().await?;
 
         tracing::debug!("Added turn {} to session {}", turn_id, session_id);
         Ok(turn_id)
@@ -327,7 +379,7 @@ impl ConversationManager {
     /// Get conversation context for a session
     pub async fn get_context(&self, session_id: Uuid) -> Result<PersistentConversationContext> {
         let conversations = self.conversations.read().await;
-        
+
         let session = conversations
             .get(&session_id)
             .ok_or_else(|| anyhow!("Conversation session not found: {}", session_id))?;
@@ -338,7 +390,7 @@ impl ConversationManager {
     /// Update conversation context with file system information
     pub async fn update_file_context(&self, session_id: Uuid, files: Vec<String>) -> Result<()> {
         let mut conversations = self.conversations.write().await;
-        
+
         let session = conversations
             .get_mut(&session_id)
             .ok_or_else(|| anyhow!("Conversation session not found: {}", session_id))?;
@@ -348,17 +400,23 @@ impl ConversationManager {
             if let Ok(metadata) = std::fs::metadata(&file_path) {
                 let file_context = FileContext {
                     path: file_path.clone(),
-                    last_modified: DateTime::from(metadata.modified().unwrap_or(std::time::SystemTime::now())),
+                    last_modified: DateTime::from(
+                        metadata.modified().unwrap_or(std::time::SystemTime::now()),
+                    ),
                     size: metadata.len(),
                     file_type: self.detect_file_type(&file_path),
-                    encoding: None, // Could be detected
+                    encoding: None,   // Could be detected
                     line_count: None, // Could be calculated
-                    summary: None, // Could be AI-generated
+                    summary: None,    // Could be AI-generated
                 };
 
                 // Update or add file context
-                if let Some(existing) = session.context.open_files.iter_mut()
-                    .find(|f| f.path == file_path) {
+                if let Some(existing) = session
+                    .context
+                    .open_files
+                    .iter_mut()
+                    .find(|f| f.path == file_path)
+                {
                     *existing = file_context;
                 } else {
                     session.context.open_files.push(file_context);
@@ -371,8 +429,8 @@ impl ConversationManager {
 
     /// Update conversation context with command execution
     pub async fn add_command_execution(
-        &self, 
-        session_id: Uuid, 
+        &self,
+        session_id: Uuid,
         command: String,
         exit_code: i32,
         output: String,
@@ -380,7 +438,7 @@ impl ConversationManager {
         duration_ms: u64,
     ) -> Result<()> {
         let mut conversations = self.conversations.write().await;
-        
+
         let session = conversations
             .get_mut(&session_id)
             .ok_or_else(|| anyhow!("Conversation session not found: {}", session_id))?;
@@ -410,39 +468,43 @@ impl ConversationManager {
     }
 
     /// Get conversation summary for context
-    pub async fn get_conversation_summary(&self, session_id: Uuid, max_turns: usize) -> Result<String> {
+    pub async fn get_conversation_summary(
+        &self,
+        session_id: Uuid,
+        max_turns: usize,
+    ) -> Result<String> {
         let conversations = self.conversations.read().await;
-        
+
         let session = conversations
             .get(&session_id)
             .ok_or_else(|| anyhow!("Conversation session not found: {}", session_id))?;
 
-        let recent_turns: Vec<&ConversationTurn> = session.turns
-            .iter()
-            .rev()
-            .take(max_turns)
-            .collect();
+        let recent_turns: Vec<&ConversationTurn> =
+            session.turns.iter().rev().take(max_turns).collect();
 
         let mut summary = String::new();
         summary.push_str(&format!("Conversation: {}\n", session.title));
-        summary.push_str(&format!("Active since: {}\n", session.created_at.format("%Y-%m-%d %H:%M UTC")));
-        
+        summary.push_str(&format!(
+            "Active since: {}\n",
+            session.created_at.format("%Y-%m-%d %H:%M UTC")
+        ));
+
         if !recent_turns.is_empty() {
             summary.push_str(&format!("Recent turns ({}):\n", recent_turns.len()));
-            
+
             for turn in recent_turns.iter().rev() {
                 let role = match turn.role {
                     ConversationRole::User => "User",
-                    ConversationRole::Assistant => "Assistant", 
+                    ConversationRole::Assistant => "Assistant",
                     ConversationRole::System => "System",
                 };
-                
+
                 let content = if turn.content.len() > 100 {
                     format!("{}...", &turn.content[..100])
                 } else {
                     turn.content.clone()
                 };
-                
+
                 summary.push_str(&format!("  {}: {}\n", role, content));
             }
         }
@@ -453,19 +515,22 @@ impl ConversationManager {
     /// Create a rich context string for AI agents
     pub async fn build_context_for_agent(&self, session_id: Uuid) -> Result<String> {
         let conversations = self.conversations.read().await;
-        
+
         let session = conversations
             .get(&session_id)
             .ok_or_else(|| anyhow!("Conversation session not found: {}", session_id))?;
 
         let mut context = String::new();
-        
+
         // Project context
         if let Some(project_root) = &session.context.project_root {
             context.push_str(&format!("Project: {}\n", project_root));
         }
-        context.push_str(&format!("Directory: {}\n", session.context.current_directory));
-        
+        context.push_str(&format!(
+            "Directory: {}\n",
+            session.context.current_directory
+        ));
+
         if let Some(branch) = &session.context.git_branch {
             context.push_str(&format!("Git branch: {}\n", branch));
         }
@@ -491,14 +556,20 @@ impl ConversationManager {
             context.push_str("User goals:\n");
             for goal in &session.context.user_goals {
                 if matches!(goal.status, GoalStatus::Active) {
-                    context.push_str(&format!("  - {} ({}% complete)\n", goal.description, (goal.progress * 100.0) as u8));
+                    context.push_str(&format!(
+                        "  - {} ({}% complete)\n",
+                        goal.description,
+                        (goal.progress * 100.0) as u8
+                    ));
                 }
             }
         }
 
         // Conversation preferences
-        context.push_str(&format!("Preferences: {:?} verbosity, {:?} explanations\n", 
-            session.preferences.verbosity, session.preferences.explanation_style));
+        context.push_str(&format!(
+            "Preferences: {:?} verbosity, {:?} explanations\n",
+            session.preferences.verbosity, session.preferences.explanation_style
+        ));
 
         Ok(context)
     }
@@ -518,20 +589,29 @@ impl ConversationManager {
         }
 
         // Extract file paths mentioned
-        if let Some(file_entity) = entities.iter().find(|e| matches!(e.entity_type, EntityType::FilePath)) {
+        if let Some(file_entity) = entities
+            .iter()
+            .find(|e| matches!(e.entity_type, EntityType::FilePath))
+        {
             // Add to recent files if not already open
-            if !context.open_files.iter().any(|f| f.path == file_entity.value) {
+            if !context
+                .open_files
+                .iter()
+                .any(|f| f.path == file_entity.value)
+            {
                 if let Ok(metadata) = std::fs::metadata(&file_entity.value) {
                     let file_context = FileContext {
                         path: file_entity.value.clone(),
-                        last_modified: DateTime::from(metadata.modified().unwrap_or(std::time::SystemTime::now())),
+                        last_modified: DateTime::from(
+                            metadata.modified().unwrap_or(std::time::SystemTime::now()),
+                        ),
                         size: metadata.len(),
                         file_type: self.detect_file_type(&file_entity.value),
                         encoding: None,
                         line_count: None,
                         summary: None,
                     };
-                    
+
                     context.recent_files.push_back(file_context);
                     if context.recent_files.len() > 20 {
                         context.recent_files.pop_front();
@@ -565,7 +645,7 @@ impl ConversationManager {
 
         for word in words {
             let topic = word.to_string();
-            
+
             if let Some(memory) = context.topics.get_mut(&topic) {
                 memory.last_mentioned = Utc::now();
                 memory.importance += 0.1;
@@ -575,19 +655,22 @@ impl ConversationManager {
                     context_snippet: content.chars().take(100).collect(),
                 });
             } else {
-                context.topics.insert(topic.clone(), TopicMemory {
-                    topic: topic.clone(),
-                    first_mentioned: Utc::now(),
-                    last_mentioned: Utc::now(),
-                    importance: 1.0,
-                    related_entities: Vec::new(),
-                    summary: content.chars().take(200).collect(),
-                    references: vec![ConversationReference {
-                        turn_id,
-                        relevance_score: 0.8,
-                        context_snippet: content.chars().take(100).collect(),
-                    }],
-                });
+                context.topics.insert(
+                    topic.clone(),
+                    TopicMemory {
+                        topic: topic.clone(),
+                        first_mentioned: Utc::now(),
+                        last_mentioned: Utc::now(),
+                        importance: 1.0,
+                        related_entities: Vec::new(),
+                        summary: content.chars().take(200).collect(),
+                        references: vec![ConversationReference {
+                            turn_id,
+                            relevance_score: 0.8,
+                            context_snippet: content.chars().take(100).collect(),
+                        }],
+                    },
+                );
             }
         }
 
@@ -595,21 +678,33 @@ impl ConversationManager {
     }
 
     /// Update user goals based on intent
-    async fn update_goals_from_intent(&self, context: &mut PersistentConversationContext, intent: &Intent) -> Result<()> {
+    async fn update_goals_from_intent(
+        &self,
+        context: &mut PersistentConversationContext,
+        intent: &Intent,
+    ) -> Result<()> {
         // Look for goal-indicating intents
         match intent.name.as_str() {
             "code_generation" => {
-                let goal_description = format!("Generate {} code", 
-                    intent.parameters.get("language").unwrap_or(&"code".to_string()));
-                self.add_or_update_goal(context, goal_description, 0.0).await?;
+                let goal_description = format!(
+                    "Generate {} code",
+                    intent
+                        .parameters
+                        .get("language")
+                        .unwrap_or(&"code".to_string())
+                );
+                self.add_or_update_goal(context, goal_description, 0.0)
+                    .await?;
             }
             "project_setup" => {
                 let goal_description = "Set up new project".to_string();
-                self.add_or_update_goal(context, goal_description, 0.0).await?;
+                self.add_or_update_goal(context, goal_description, 0.0)
+                    .await?;
             }
             "debugging" => {
                 let goal_description = "Debug and fix issues".to_string();
-                self.add_or_update_goal(context, goal_description, 0.0).await?;
+                self.add_or_update_goal(context, goal_description, 0.0)
+                    .await?;
             }
             _ => {}
         }
@@ -618,10 +713,18 @@ impl ConversationManager {
     }
 
     /// Add or update a user goal
-    async fn add_or_update_goal(&self, context: &mut PersistentConversationContext, description: String, progress: f32) -> Result<()> {
+    async fn add_or_update_goal(
+        &self,
+        context: &mut PersistentConversationContext,
+        description: String,
+        progress: f32,
+    ) -> Result<()> {
         // Check if similar goal exists
-        if let Some(existing_goal) = context.user_goals.iter_mut()
-            .find(|g| g.description.contains(&description) || description.contains(&g.description)) {
+        if let Some(existing_goal) = context
+            .user_goals
+            .iter_mut()
+            .find(|g| g.description.contains(&description) || description.contains(&g.description))
+        {
             existing_goal.progress = progress.max(existing_goal.progress);
         } else {
             let goal = UserGoal {
@@ -661,7 +764,8 @@ impl ConversationManager {
                 "html" => "HTML",
                 "css" => "CSS",
                 _ => "Unknown",
-            }.to_string()
+            }
+            .to_string()
         } else {
             "Unknown".to_string()
         }
@@ -706,10 +810,12 @@ impl Agent for ConversationManager {
             AgentRequestType::Custom(ref custom_type) => {
                 match custom_type.as_str() {
                     "CreateSession" => {
-                        let title = request.payload.get("title")
+                        let title = request
+                            .payload
+                            .get("title")
                             .and_then(|t| t.as_str())
                             .map(|s| s.to_string());
-                        
+
                         match self.create_session(title).await {
                             Ok(session_id) => {
                                 response.success = true;
@@ -727,9 +833,13 @@ impl Agent for ConversationManager {
                     "AddTurn" => {
                         // Handle adding a conversation turn
                         if let (Some(session_id), Some(content), Some(role)) = (
-                            request.payload.get("session_id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()),
+                            request
+                                .payload
+                                .get("session_id")
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uuid::parse_str(s).ok()),
                             request.payload.get("content").and_then(|v| v.as_str()),
-                            request.payload.get("role").and_then(|v| v.as_str())
+                            request.payload.get("role").and_then(|v| v.as_str()),
                         ) {
                             let conversation_role = match role {
                                 "user" => ConversationRole::User,
@@ -738,7 +848,16 @@ impl Agent for ConversationManager {
                                 _ => ConversationRole::User,
                             };
 
-                            match self.add_turn(session_id, conversation_role, content.to_string(), None, Vec::new()).await {
+                            match self
+                                .add_turn(
+                                    session_id,
+                                    conversation_role,
+                                    content.to_string(),
+                                    None,
+                                    Vec::new(),
+                                )
+                                .await
+                            {
                                 Ok(turn_id) => {
                                     response.success = true;
                                     response.payload = serde_json::json!({
@@ -776,7 +895,10 @@ impl Agent for ConversationManager {
                 }
             }
             _ => {
-                return Err(anyhow!("Conversation Manager cannot handle request type: {:?}", request.request_type));
+                return Err(anyhow!(
+                    "Conversation Manager cannot handle request type: {:?}",
+                    request.request_type
+                ));
             }
         }
 
@@ -786,16 +908,17 @@ impl Agent for ConversationManager {
     fn can_handle(&self, request_type: &AgentRequestType) -> bool {
         matches!(
             request_type,
-            AgentRequestType::Custom(custom_type) 
-            if custom_type == "CreateSession" 
-            || custom_type == "AddTurn" 
+            AgentRequestType::Custom(custom_type)
+            if custom_type == "CreateSession"
+            || custom_type == "AddTurn"
             || custom_type == "GetContext"
         )
     }
 
     async fn status(&self) -> AgentStatus {
         let conversations = self.conversations.read().await;
-        let active_conversations = conversations.values()
+        let active_conversations = conversations
+            .values()
             .filter(|s| matches!(s.status, ConversationStatus::Active))
             .count();
 
@@ -804,7 +927,10 @@ impl Agent for ConversationManager {
             is_busy: active_conversations > 0,
             last_activity: Utc::now(),
             current_task: if active_conversations > 0 {
-                Some(format!("Managing {} active conversations", active_conversations))
+                Some(format!(
+                    "Managing {} active conversations",
+                    active_conversations
+                ))
             } else {
                 None
             },
@@ -814,12 +940,15 @@ impl Agent for ConversationManager {
 
     async fn initialize(&mut self, _config: AgentConfig) -> Result<()> {
         self.is_initialized = true;
+        // Attempt to load previous conversations from disk
+        let _ = self.load_all().await;
         tracing::info!("Conversation Manager initialized");
         Ok(())
     }
 
     async fn shutdown(&mut self) -> Result<()> {
-        // Save conversation state if needed
+        // Save conversation state
+        let _ = self.save_all().await;
         self.is_initialized = false;
         tracing::info!("Conversation Manager shut down");
         Ok(())
@@ -874,11 +1003,14 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_session_creation() {
         let manager = ConversationManager::new();
-        let session_id = manager.create_session(Some("Test Session".to_string())).await.unwrap();
-        
+        let session_id = manager
+            .create_session(Some("Test Session".to_string()))
+            .await
+            .unwrap();
+
         let conversations = manager.conversations.read().await;
         let session = conversations.get(&session_id).unwrap();
-        
+
         assert_eq!(session.title, "Test Session");
         assert!(matches!(session.status, ConversationStatus::Active));
     }
@@ -887,18 +1019,21 @@ mod tests {
     async fn test_conversation_turns() {
         let manager = ConversationManager::new();
         let session_id = manager.create_session(None).await.unwrap();
-        
-        let turn_id = manager.add_turn(
-            session_id,
-            ConversationRole::User,
-            "Hello, world!".to_string(),
-            None,
-            Vec::new(),
-        ).await.unwrap();
+
+        let turn_id = manager
+            .add_turn(
+                session_id,
+                ConversationRole::User,
+                "Hello, world!".to_string(),
+                None,
+                Vec::new(),
+            )
+            .await
+            .unwrap();
 
         let conversations = manager.conversations.read().await;
         let session = conversations.get(&session_id).unwrap();
-        
+
         assert_eq!(session.turns.len(), 1);
         assert_eq!(session.turns[0].id, turn_id);
         assert_eq!(session.turns[0].content, "Hello, world!");

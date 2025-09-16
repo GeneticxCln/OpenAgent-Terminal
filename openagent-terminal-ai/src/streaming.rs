@@ -342,7 +342,11 @@ impl RetryStrategy {
 /// Providers pass an extractor which can return zero or more text fragments for a
 /// given SSE data payload. Cancellation is checked periodically. A small timeout
 /// keeps the loop responsive for cancellation and backpressure.
-#[cfg(any(feature = "ai-openai", feature = "ai-anthropic", feature = "ai-openrouter"))]
+#[cfg(any(
+    feature = "ai-openai",
+    feature = "ai-anthropic",
+    feature = "ai-openrouter"
+))]
 pub async fn consume_eventsource_response(
     response: reqwest::Response,
     cancel: &AtomicBool,
@@ -514,11 +518,7 @@ impl RetryStrategy {
             if let Some(idx) = lower.find(key) {
                 let start = idx + key.len();
                 let tail = &error[start..];
-                let val = tail
-                    .split([';', '\r', '\n'])
-                    .next()
-                    .unwrap_or("")
-                    .trim();
+                let val = tail.split([';', '\r', '\n']).next().unwrap_or("").trim();
                 if let Some(d) = parse_relative(val) {
                     return Some(d);
                 }
@@ -530,11 +530,7 @@ impl RetryStrategy {
             if let Some(idx) = lower.find(key) {
                 let start = idx + key.len();
                 let tail = &error[start..];
-                let val = tail
-                    .split([';', '\r', '\n'])
-                    .next()
-                    .unwrap_or("")
-                    .trim();
+                let val = tail.split([';', '\r', '\n']).next().unwrap_or("").trim();
                 if let Some(d) = parse_absolute(val) {
                     return Some(d);
                 }

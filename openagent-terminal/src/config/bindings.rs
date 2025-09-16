@@ -189,7 +189,7 @@ pub enum Action {
     /// Clear warning and error notices.
     ClearLogNotice,
 
-/// Dump WGPU atlas stats to the debug log.
+    /// Dump WGPU atlas stats to the debug log.
     DumpAtlasStats,
 
     /// Toggle subpixel text rendering (WGPU backend only).

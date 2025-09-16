@@ -2,9 +2,9 @@
 //! Only includes Security Lens components when the appropriate features are enabled
 
 #[cfg(feature = "security-lens")]
-pub mod security_lens;
-#[cfg(feature = "security-lens")]
 pub mod compliance;
+#[cfg(feature = "security-lens")]
+pub mod security_lens;
 
 #[cfg(feature = "security-lens")]
 pub use security_lens::*;

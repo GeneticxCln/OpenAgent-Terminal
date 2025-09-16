@@ -1,17 +1,17 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
+use std::io::{self, Write};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::io::{self, Write};
+use uuid::Uuid;
 
-use super::*;
-use super::conversation_manager::ConversationManager;
 use super::advanced_conversation_features::AdvancedConversationFeatures;
+use super::conversation_manager::ConversationManager;
 use super::privacy_content_filter::PrivacyContentFilter;
+use super::*;
 
 /// Terminal UI integration for rich conversation visualization
 pub struct TerminalUIIntegration {
@@ -47,17 +47,17 @@ pub struct UIComponent {
 /// Types of UI components
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ComponentType {
-    ConversationView,     // Main conversation display
-    BranchTree,          // Conversation branch visualization
-    GoalTracker,         // Goal progress tracking
-    PrivacyIndicator,    // Privacy/security status
-    SessionManager,      // Multi-session management
-    CommandPalette,      // Command input/selection
-    StatusBar,          // System status information
-    SummaryPanel,       // Conversation summaries
-    CompliancePanel,    // Privacy compliance dashboard
-    NotificationArea,   // Alerts and notifications
-    Custom(String),     // Custom component types
+    ConversationView, // Main conversation display
+    BranchTree,       // Conversation branch visualization
+    GoalTracker,      // Goal progress tracking
+    PrivacyIndicator, // Privacy/security status
+    SessionManager,   // Multi-session management
+    CommandPalette,   // Command input/selection
+    StatusBar,        // System status information
+    SummaryPanel,     // Conversation summaries
+    CompliancePanel,  // Privacy compliance dashboard
+    NotificationArea, // Alerts and notifications
+    Custom(String),   // Custom component types
 }
 
 /// Position in terminal coordinates
@@ -348,10 +348,10 @@ pub struct LayoutManager {
 /// Layout calculation engine
 #[derive(Debug, Clone)]
 pub enum LayoutEngine {
-    Fixed,      // Fixed positioning
-    Grid,       // Grid-based layout
-    Flexbox,    // Flexible box layout
-    Stack,      // Stacked layout
+    Fixed,   // Fixed positioning
+    Grid,    // Grid-based layout
+    Flexbox, // Flexible box layout
+    Stack,   // Stacked layout
     Custom(String),
 }
 
@@ -706,7 +706,7 @@ impl TerminalUIIntegration {
         dimensions: Dimensions,
     ) -> Result<String> {
         let component_id = format!("{:?}-{}", component_type, Uuid::new_v4());
-        
+
         let component = UIComponent {
             id: component_id.clone(),
             component_type: component_type.clone(),
@@ -727,7 +727,11 @@ impl TerminalUIIntegration {
         // Update layout
         self.layout_manager.update_layout(&mut components).await?;
 
-        tracing::info!("Created UI component: {} ({:?})", component_id, component_type);
+        tracing::info!(
+            "Created UI component: {} ({:?})",
+            component_id,
+            component_type
+        );
         Ok(component_id)
     }
 
@@ -741,7 +745,7 @@ impl TerminalUIIntegration {
         if let Some(component) = components.get_mut(component_id) {
             component.content = content;
             component.last_updated = Utc::now();
-            
+
             // Mark region as dirty for rendering
             let mut buffer = self.display_buffer.write().await;
             buffer.mark_dirty_region(Rectangle {
@@ -750,7 +754,7 @@ impl TerminalUIIntegration {
                 width: component.dimensions.width,
                 height: component.dimensions.height,
             });
-            
+
             tracing::debug!("Updated content for component: {}", component_id);
             Ok(())
         } else {
@@ -770,9 +774,8 @@ impl TerminalUIIntegration {
         }
 
         // Sort components by z-index for proper layering
-        let mut sorted_components: Vec<&UIComponent> = components.values()
-            .filter(|c| c.is_visible)
-            .collect();
+        let mut sorted_components: Vec<&UIComponent> =
+            components.values().filter(|c| c.is_visible).collect();
         sorted_components.sort_by_key(|c| c.z_index);
 
         // Render each component
@@ -805,7 +808,9 @@ impl TerminalUIIntegration {
 
             // Gate mouse events if disabled
             match event {
-                InputEventType::MouseClick(_) | InputEventType::MouseMove(_) | InputEventType::MouseScroll(_) => {
+                InputEventType::MouseClick(_)
+                | InputEventType::MouseMove(_)
+                | InputEventType::MouseScroll(_) => {
                     if !input_handler.mouse_enabled {
                         return Ok(false);
                     }
@@ -827,11 +832,12 @@ impl TerminalUIIntegration {
         }
 
         // Process input based on current mode/key bindings
-        let handled = if let Some(action) = self.input_handler.read().await.get_action_for_input(&event) {
-            self.execute_action(&action).await?
-        } else {
-            false
-        };
+        let handled =
+            if let Some(action) = self.input_handler.read().await.get_action_for_input(&event) {
+                self.execute_action(&action).await?
+            } else {
+                false
+            };
 
         Ok(handled)
     }
@@ -841,7 +847,8 @@ impl TerminalUIIntegration {
         if let Some(conversation_manager) = &self.conversation_manager {
             // Get conversation summary
             let summary = conversation_manager
-                .get_conversation_summary(session_id, 50).await
+                .get_conversation_summary(session_id, 50)
+                .await
                 .unwrap_or_default();
 
             // Find or create conversation view component
@@ -856,7 +863,8 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content).await?;
+            self.update_component_content(&component_id, content)
+                .await?;
         }
 
         Ok(())
@@ -868,7 +876,9 @@ impl TerminalUIIntegration {
             // Create tree visualization of conversation branches
             let tree_data = self.build_branch_tree_data(session_id).await?;
 
-            let component_id = self.find_or_create_component(ComponentType::BranchTree).await?;
+            let component_id = self
+                .find_or_create_component(ComponentType::BranchTree)
+                .await?;
 
             let content = ComponentContent {
                 title: "Conversation Branches".to_string(),
@@ -878,7 +888,8 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content).await?;
+            self.update_component_content(&component_id, content)
+                .await?;
         }
 
         Ok(())
@@ -890,7 +901,9 @@ impl TerminalUIIntegration {
             // Get goal tracking data
             let goals_data = self.build_goals_data(session_id).await?;
 
-            let component_id = self.find_or_create_component(ComponentType::GoalTracker).await?;
+            let component_id = self
+                .find_or_create_component(ComponentType::GoalTracker)
+                .await?;
 
             let content = ComponentContent {
                 title: "Goal Progress".to_string(),
@@ -900,7 +913,8 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content).await?;
+            self.update_component_content(&component_id, content)
+                .await?;
         }
 
         Ok(())
@@ -911,11 +925,17 @@ impl TerminalUIIntegration {
         if let Some(privacy_filter) = &self.privacy_filter {
             let status = privacy_filter.status().await;
 
-            let component_id = self.find_or_create_component(ComponentType::PrivacyIndicator).await?;
+            let component_id = self
+                .find_or_create_component(ComponentType::PrivacyIndicator)
+                .await?;
 
             let privacy_info = format!(
                 "Privacy Status: {}\nLast Activity: {}\nTask: {}",
-                if status.is_healthy { "✅ Protected" } else { "❌ Issue" },
+                if status.is_healthy {
+                    "✅ Protected"
+                } else {
+                    "❌ Issue"
+                },
                 status.last_activity.format("%H:%M:%S"),
                 status.current_task.unwrap_or_default()
             );
@@ -928,7 +948,8 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content).await?;
+            self.update_component_content(&component_id, content)
+                .await?;
         }
 
         Ok(())
@@ -939,10 +960,10 @@ impl TerminalUIIntegration {
         let mut current_theme = self.theme_manager.current_theme.write().await;
         if self.theme_manager.themes.contains_key(theme_name) {
             *current_theme = theme_name.to_string();
-            
+
             // Refresh all components with new theme
             self.refresh_all_components().await?;
-            
+
             tracing::info!("Switched to theme: {}", theme_name);
             Ok(())
         } else {
@@ -1004,13 +1025,27 @@ impl TerminalUIIntegration {
             background_color: Some(Color::Black),
             foreground_color: Some(Color::White),
             highlight_color: Some(Color::Blue),
-            padding: Padding { top: 1, right: 1, bottom: 1, left: 1 },
-            font_style: FontStyle { bold: false, italic: false, underline: false, strikethrough: false },
+            padding: Padding {
+                top: 1,
+                right: 1,
+                bottom: 1,
+                left: 1,
+            },
+            font_style: FontStyle {
+                bold: false,
+                italic: false,
+                underline: false,
+                strikethrough: false,
+            },
             alignment: Alignment::Left,
         }
     }
 
-    async fn render_component(&self, component: &UIComponent, buffer: &mut DisplayBuffer) -> Result<()> {
+    async fn render_component(
+        &self,
+        component: &UIComponent,
+        buffer: &mut DisplayBuffer,
+    ) -> Result<()> {
         // This would implement the actual rendering logic
         // For now, just mark the region as dirty
         buffer.mark_dirty_region(Rectangle {
@@ -1020,14 +1055,19 @@ impl TerminalUIIntegration {
             height: component.dimensions.height,
         });
 
-        tracing::debug!("Rendered component: {} at ({}, {})", 
-                       component.id, component.position.x, component.position.y);
+        tracing::debug!(
+            "Rendered component: {} at ({}, {})",
+            component.id,
+            component.position.x,
+            component.position.y
+        );
         Ok(())
     }
 
     async fn get_focused_component_id(&self) -> Option<String> {
         let components = self.ui_components.read().await;
-        components.values()
+        components
+            .values()
             .find(|c| c.is_focused)
             .map(|c| c.id.clone())
     }
@@ -1077,21 +1117,29 @@ impl TerminalUIIntegration {
 
     async fn focus_next_component(&self) -> Result<()> {
         let mut components = self.ui_components.write().await;
-        
+
         // Collect visible component IDs to avoid borrow checker issues
-        let visible_component_ids: Vec<String> = components.values()
+        let visible_component_ids: Vec<String> = components
+            .values()
             .filter(|c| c.is_visible)
             .map(|c| c.id.clone())
             .collect();
 
-        if let Some(focused_id) = components.values().find(|c| c.is_focused).map(|c| c.id.clone()) {
+        if let Some(focused_id) = components
+            .values()
+            .find(|c| c.is_focused)
+            .map(|c| c.id.clone())
+        {
             // Clear current focus
             if let Some(focused) = components.get_mut(&focused_id) {
                 focused.is_focused = false;
             }
 
             // Find next component
-            if let Some(pos) = visible_component_ids.iter().position(|id| id == &focused_id) {
+            if let Some(pos) = visible_component_ids
+                .iter()
+                .position(|id| id == &focused_id)
+            {
                 let next_pos = (pos + 1) % visible_component_ids.len();
                 let next_id = &visible_component_ids[next_pos];
                 if let Some(next_component) = components.get_mut(next_id) {
@@ -1111,22 +1159,34 @@ impl TerminalUIIntegration {
 
     async fn focus_previous_component(&self) -> Result<()> {
         let mut components = self.ui_components.write().await;
-        
+
         // Collect visible component IDs to avoid borrow checker issues
-        let visible_component_ids: Vec<String> = components.values()
+        let visible_component_ids: Vec<String> = components
+            .values()
             .filter(|c| c.is_visible)
             .map(|c| c.id.clone())
             .collect();
 
-        if let Some(focused_id) = components.values().find(|c| c.is_focused).map(|c| c.id.clone()) {
+        if let Some(focused_id) = components
+            .values()
+            .find(|c| c.is_focused)
+            .map(|c| c.id.clone())
+        {
             // Clear current focus
             if let Some(focused) = components.get_mut(&focused_id) {
                 focused.is_focused = false;
             }
 
             // Find previous component
-            if let Some(pos) = visible_component_ids.iter().position(|id| id == &focused_id) {
-                let prev_pos = if pos == 0 { visible_component_ids.len() - 1 } else { pos - 1 };
+            if let Some(pos) = visible_component_ids
+                .iter()
+                .position(|id| id == &focused_id)
+            {
+                let prev_pos = if pos == 0 {
+                    visible_component_ids.len() - 1
+                } else {
+                    pos - 1
+                };
                 let prev_id = &visible_component_ids[prev_pos];
                 if let Some(prev_component) = components.get_mut(prev_id) {
                     prev_component.is_focused = true;
@@ -1139,7 +1199,10 @@ impl TerminalUIIntegration {
 
     async fn scroll_focused_component(&self, delta: i32) -> Result<()> {
         let mut components = self.ui_components.write().await;
-        if let Some(focused) = components.values_mut().find(|c| c.is_focused && c.content.scrollable) {
+        if let Some(focused) = components
+            .values_mut()
+            .find(|c| c.is_focused && c.content.scrollable)
+        {
             let new_position = (focused.content.scroll_position as i32 + delta).max(0) as u16;
             focused.content.scroll_position = new_position;
             focused.last_updated = Utc::now();
@@ -1148,16 +1211,17 @@ impl TerminalUIIntegration {
     }
 
     async fn find_or_create_conversation_view(&self) -> Result<String> {
-        self.find_or_create_component(ComponentType::ConversationView).await
+        self.find_or_create_component(ComponentType::ConversationView)
+            .await
     }
 
     async fn find_or_create_component(&self, component_type: ComponentType) -> Result<String> {
         let components = self.ui_components.read().await;
-        
+
         // Look for existing component of this type
-        if let Some(component) = components.values().find(|c| 
+        if let Some(component) = components.values().find(|c| {
             std::mem::discriminant(&c.component_type) == std::mem::discriminant(&component_type)
-        ) {
+        }) {
             return Ok(component.id.clone());
         }
 
@@ -1165,13 +1229,17 @@ impl TerminalUIIntegration {
 
         // Create new component
         let position = Position { x: 0, y: 0 };
-        let dimensions = Dimensions { 
-            width: 80, height: 24, 
-            min_width: 20, min_height: 5, 
-            max_width: None, max_height: None 
+        let dimensions = Dimensions {
+            width: 80,
+            height: 24,
+            min_width: 20,
+            min_height: 5,
+            max_width: None,
+            max_height: None,
         };
 
-        self.create_component(component_type, position, dimensions).await
+        self.create_component(component_type, position, dimensions)
+            .await
     }
 
     async fn build_branch_tree_data(&self, _session_id: Uuid) -> Result<TreeNode> {
@@ -1216,13 +1284,21 @@ impl TerminalUIIntegration {
             data_series: vec![
                 DataSeries {
                     name: "Authentication Goal".to_string(),
-                    data: vec![DataPoint { x: 1.0, y: 75.0, label: Some("Auth".to_string()) }],
+                    data: vec![DataPoint {
+                        x: 1.0,
+                        y: 75.0,
+                        label: Some("Auth".to_string()),
+                    }],
                     color: Color::Green,
                     style: LineStyle::Solid,
                 },
                 DataSeries {
                     name: "Testing Goal".to_string(),
-                    data: vec![DataPoint { x: 2.0, y: 25.0, label: Some("Tests".to_string()) }],
+                    data: vec![DataPoint {
+                        x: 2.0,
+                        y: 25.0,
+                        label: Some("Tests".to_string()),
+                    }],
                     color: Color::Blue,
                     style: LineStyle::Solid,
                 },
@@ -1319,31 +1395,49 @@ impl LayoutManager {
 impl ThemeManager {
     pub fn new() -> Self {
         let mut themes = HashMap::new();
-        
+
         // Default theme
-        themes.insert("default".to_string(), Theme {
-            name: "Default".to_string(),
-            description: "Default terminal theme".to_string(),
-            colors: ColorPalette {
-                primary: Color::Blue,
-                secondary: Color::Cyan,
-                accent: Color::Yellow,
-                background: Color::Black,
-                foreground: Color::White,
-                success: Color::Green,
-                warning: Color::Yellow,
-                error: Color::Red,
-                info: Color::Cyan,
+        themes.insert(
+            "default".to_string(),
+            Theme {
+                name: "Default".to_string(),
+                description: "Default terminal theme".to_string(),
+                colors: ColorPalette {
+                    primary: Color::Blue,
+                    secondary: Color::Cyan,
+                    accent: Color::Yellow,
+                    background: Color::Black,
+                    foreground: Color::White,
+                    success: Color::Green,
+                    warning: Color::Yellow,
+                    error: Color::Red,
+                    info: Color::Cyan,
+                },
+                component_styles: HashMap::new(),
+                global_styles: GlobalStyles {
+                    default_font: FontStyle {
+                        bold: false,
+                        italic: false,
+                        underline: false,
+                        strikethrough: false,
+                    },
+                    default_border: BorderStyle {
+                        border_type: BorderType::Single,
+                        color: Some(Color::White),
+                        thickness: 1,
+                        rounded_corners: false,
+                    },
+                    default_padding: Padding {
+                        top: 1,
+                        right: 1,
+                        bottom: 1,
+                        left: 1,
+                    },
+                    animation_speed: Duration::milliseconds(200),
+                    cursor_blink_rate: Duration::milliseconds(500),
+                },
             },
-            component_styles: HashMap::new(),
-            global_styles: GlobalStyles {
-                default_font: FontStyle { bold: false, italic: false, underline: false, strikethrough: false },
-                default_border: BorderStyle { border_type: BorderType::Single, color: Some(Color::White), thickness: 1, rounded_corners: false },
-                default_padding: Padding { top: 1, right: 1, bottom: 1, left: 1 },
-                animation_speed: Duration::milliseconds(200),
-                cursor_blink_rate: Duration::milliseconds(500),
-            },
-        });
+        );
 
         Self {
             current_theme: RwLock::new("default".to_string()),
@@ -1356,18 +1450,27 @@ impl ThemeManager {
 impl InputHandler {
     pub fn new() -> Self {
         let mut key_bindings = HashMap::new();
-        
+
         // Default key bindings
         key_bindings.insert(
-            KeyCombination { key: Key::Char('q'), modifiers: vec![Modifier::Ctrl] },
+            KeyCombination {
+                key: Key::Char('q'),
+                modifiers: vec![Modifier::Ctrl],
+            },
             Action::System(SystemAction::Quit),
         );
         key_bindings.insert(
-            KeyCombination { key: Key::Char('r'), modifiers: vec![Modifier::Ctrl] },
+            KeyCombination {
+                key: Key::Char('r'),
+                modifiers: vec![Modifier::Ctrl],
+            },
             Action::System(SystemAction::Refresh),
         );
         key_bindings.insert(
-            KeyCombination { key: Key::Tab, modifiers: Vec::new() },
+            KeyCombination {
+                key: Key::Tab,
+                modifiers: Vec::new(),
+            },
             Action::Navigate(NavigationAction::FocusNext),
         );
 
@@ -1397,9 +1500,7 @@ impl InputHandler {
 
     pub fn get_action_for_input(&self, event: &InputEventType) -> Option<Action> {
         match event {
-            InputEventType::KeyPress(key_combo) => {
-                self.key_bindings.get(key_combo).cloned()
-            }
+            InputEventType::KeyPress(key_combo) => self.key_bindings.get(key_combo).cloned(),
             _ => None,
         }
     }
@@ -1416,7 +1517,9 @@ impl DisplayBuffer {
     }
 
     pub fn resize(&mut self, width: usize, height: usize) {
-        if height == 0 || width == 0 { return; }
+        if height == 0 || width == 0 {
+            return;
+        }
         // Resize rows
         self.buffer.resize(height, vec![Cell::default(); width]);
         // Resize each row length
@@ -1427,7 +1530,12 @@ impl DisplayBuffer {
         self.cursor_position.x = self.cursor_position.x.min(width.saturating_sub(1) as u16);
         self.cursor_position.y = self.cursor_position.y.min(height.saturating_sub(1) as u16);
         // Mark full screen dirty
-        self.mark_dirty_region(Rectangle { x: 0, y: 0, width: width as u16, height: height as u16 });
+        self.mark_dirty_region(Rectangle {
+            x: 0,
+            y: 0,
+            width: width as u16,
+            height: height as u16,
+        });
     }
 
     pub fn mark_dirty_region(&mut self, region: Rectangle) {
@@ -1452,7 +1560,12 @@ impl Default for Cell {
             character: ' ',
             foreground_color: Color::White,
             background_color: Color::Black,
-            style: FontStyle { bold: false, italic: false, underline: false, strikethrough: false },
+            style: FontStyle {
+                bold: false,
+                italic: false,
+                underline: false,
+                strikethrough: false,
+            },
         }
     }
 }
@@ -1494,50 +1607,19 @@ impl Agent for TerminalUIIntegration {
         };
 
         match request.request_type {
-            AgentRequestType::Custom(ref custom_type) => {
-                match custom_type.as_str() {
-                    "ShowConversation" => {
-                        if let Some(session_id) = request.payload.get("session_id")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok()) {
-                            match self.show_conversation(session_id).await {
-                                Ok(()) => {
-                                    response.success = true;
-                                    response.payload = serde_json::json!({
-                                        "message": "Conversation displayed"
-                                    });
-                                }
-                                Err(e) => {
-                                    response.payload = serde_json::json!({
-                                        "error": e.to_string()
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    "SetTheme" => {
-                        if let Some(theme_name) = request.payload.get("theme").and_then(|v| v.as_str()) {
-                            match self.set_theme(theme_name).await {
-                                Ok(()) => {
-                                    response.success = true;
-                                    response.payload = serde_json::json!({
-                                        "message": format!("Theme switched to {}", theme_name)
-                                    });
-                                }
-                                Err(e) => {
-                                    response.payload = serde_json::json!({
-                                        "error": e.to_string()
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    "Render" => {
-                        match self.render().await {
+            AgentRequestType::Custom(ref custom_type) => match custom_type.as_str() {
+                "ShowConversation" => {
+                    if let Some(session_id) = request
+                        .payload
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| Uuid::parse_str(s).ok())
+                    {
+                        match self.show_conversation(session_id).await {
                             Ok(()) => {
                                 response.success = true;
                                 response.payload = serde_json::json!({
-                                    "message": "UI rendered successfully"
+                                    "message": "Conversation displayed"
                                 });
                             }
                             Err(e) => {
@@ -1547,13 +1629,47 @@ impl Agent for TerminalUIIntegration {
                             }
                         }
                     }
-                    _ => {
-                        return Err(anyhow!("Unknown terminal UI request: {}", custom_type));
+                }
+                "SetTheme" => {
+                    if let Some(theme_name) = request.payload.get("theme").and_then(|v| v.as_str())
+                    {
+                        match self.set_theme(theme_name).await {
+                            Ok(()) => {
+                                response.success = true;
+                                response.payload = serde_json::json!({
+                                    "message": format!("Theme switched to {}", theme_name)
+                                });
+                            }
+                            Err(e) => {
+                                response.payload = serde_json::json!({
+                                    "error": e.to_string()
+                                });
+                            }
+                        }
                     }
                 }
-            }
+                "Render" => match self.render().await {
+                    Ok(()) => {
+                        response.success = true;
+                        response.payload = serde_json::json!({
+                            "message": "UI rendered successfully"
+                        });
+                    }
+                    Err(e) => {
+                        response.payload = serde_json::json!({
+                            "error": e.to_string()
+                        });
+                    }
+                },
+                _ => {
+                    return Err(anyhow!("Unknown terminal UI request: {}", custom_type));
+                }
+            },
             _ => {
-                return Err(anyhow!("Terminal UI Integration cannot handle request type: {:?}", request.request_type));
+                return Err(anyhow!(
+                    "Terminal UI Integration cannot handle request type: {:?}",
+                    request.request_type
+                ));
             }
         }
 
@@ -1593,7 +1709,7 @@ impl Agent for TerminalUIIntegration {
         self.apply_config().await?;
         // Initialize default components
         self.create_default_layout().await?;
-        
+
         self.is_initialized = true;
         tracing::info!("Terminal UI Integration initialized");
         Ok(())
@@ -1603,7 +1719,7 @@ impl Agent for TerminalUIIntegration {
         // Clear display and restore terminal
         print!("\x1B[2J\x1B[H"); // Clear screen
         io::stdout().flush()?;
-        
+
         self.is_initialized = false;
         tracing::info!("Terminal UI Integration shut down");
         Ok(())
@@ -1616,22 +1732,46 @@ impl TerminalUIIntegration {
         self.create_component(
             ComponentType::ConversationView,
             Position { x: 0, y: 0 },
-            Dimensions { width: 60, height: 20, min_width: 40, min_height: 10, max_width: None, max_height: None },
-        ).await?;
+            Dimensions {
+                width: 60,
+                height: 20,
+                min_width: 40,
+                min_height: 10,
+                max_width: None,
+                max_height: None,
+            },
+        )
+        .await?;
 
         // Create status bar
         self.create_component(
             ComponentType::StatusBar,
             Position { x: 0, y: 23 },
-            Dimensions { width: 80, height: 1, min_width: 80, min_height: 1, max_width: None, max_height: Some(1) },
-        ).await?;
+            Dimensions {
+                width: 80,
+                height: 1,
+                min_width: 80,
+                min_height: 1,
+                max_width: None,
+                max_height: Some(1),
+            },
+        )
+        .await?;
 
         // Create privacy indicator
         self.create_component(
             ComponentType::PrivacyIndicator,
             Position { x: 60, y: 0 },
-            Dimensions { width: 20, height: 10, min_width: 15, min_height: 5, max_width: None, max_height: None },
-        ).await?;
+            Dimensions {
+                width: 20,
+                height: 10,
+                min_width: 15,
+                min_height: 5,
+                max_width: None,
+                max_height: None,
+            },
+        )
+        .await?;
 
         Ok(())
     }
@@ -1651,12 +1791,22 @@ mod tests {
     #[tokio::test]
     async fn test_component_creation() {
         let ui = TerminalUIIntegration::new();
-        
-        let component_id = ui.create_component(
-            ComponentType::ConversationView,
-            Position { x: 0, y: 0 },
-            Dimensions { width: 80, height: 24, min_width: 20, min_height: 5, max_width: None, max_height: None },
-        ).await.unwrap();
+
+        let component_id = ui
+            .create_component(
+                ComponentType::ConversationView,
+                Position { x: 0, y: 0 },
+                Dimensions {
+                    width: 80,
+                    height: 24,
+                    min_width: 20,
+                    min_height: 5,
+                    max_width: None,
+                    max_height: None,
+                },
+            )
+            .await
+            .unwrap();
 
         assert!(component_id.starts_with("ConversationView-"));
 
@@ -1666,9 +1816,15 @@ mod tests {
 
     #[test]
     fn test_key_combination_hash() {
-        let key1 = KeyCombination { key: Key::Char('q'), modifiers: vec![Modifier::Ctrl] };
-        let key2 = KeyCombination { key: Key::Char('q'), modifiers: vec![Modifier::Ctrl] };
-        
+        let key1 = KeyCombination {
+            key: Key::Char('q'),
+            modifiers: vec![Modifier::Ctrl],
+        };
+        let key2 = KeyCombination {
+            key: Key::Char('q'),
+            modifiers: vec![Modifier::Ctrl],
+        };
+
         assert_eq!(key1, key2);
     }
 }

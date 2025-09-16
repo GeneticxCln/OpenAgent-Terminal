@@ -31,9 +31,9 @@ use openagent_terminal_core::tty;
 pub use openagent_terminal_config::SerdeReplace;
 
 #[cfg(feature = "ai")]
-mod ai_runtime;
-#[cfg(feature = "ai")]
 mod ai_context_provider;
+#[cfg(feature = "ai")]
+mod ai_runtime;
 mod cli;
 #[cfg(feature = "ai")]
 mod cli_ai;
@@ -83,12 +83,12 @@ mod shell_integration; // Native shell integration (experimental) // Feature-gat
 pub use security::security_lens;
 #[cfg(not(feature = "security-lens"))]
 pub use security::stub as security_lens;
-mod text_shaping;
-mod ui_confirm;
-mod workspace;
 #[cfg(feature = "completions")]
 mod completions_spec;
+mod text_shaping;
+mod ui_confirm;
 mod utils;
+mod workspace;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;

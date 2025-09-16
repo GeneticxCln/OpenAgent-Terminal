@@ -15,6 +15,7 @@ pub mod ai_runtime;
 pub mod cli;
 pub mod clipboard;
 pub mod command_history;
+pub mod command_pipeline;
 pub mod config;
 pub mod daemon;
 pub mod display;
@@ -34,8 +35,8 @@ pub mod scheduler;
 #[cfg(feature = "blocks")]
 pub mod storage;
 pub mod string;
-pub mod window_context;
 pub mod utils;
+pub mod window_context;
 
 // New component modules
 pub mod blocks_v2;

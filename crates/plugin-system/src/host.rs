@@ -2,8 +2,10 @@
 //!
 //! This module provides the host interface for plugins to interact with the terminal
 
+#[cfg(feature = "wasm-runtime")]
 use std::sync::Arc;
 
+#[cfg(feature = "wasm-runtime")]
 use anyhow::{anyhow, Result as AnyResult};
 
 use crate::api::{CommandOutput, PluginError};
@@ -92,8 +94,7 @@ pub fn add_host_functions(
     linker.func_wrap(
         "host",
         "host_log",
-        move |
-              mut caller: wasmtime::Caller<crate::WasmPluginContext>,
+        move |mut caller: wasmtime::Caller<crate::WasmPluginContext>,
               level: i32,
               ptr: i32,
               len: i32|

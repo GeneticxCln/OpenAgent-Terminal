@@ -5,7 +5,7 @@ This document provides a comprehensive overview of all TODO and FIXME comments f
 ## Executive Summary
 
 **Total Items Found**: 47+ TODO/FIXME comments across the codebase
-**Critical Issues**: 1 (PTY drop order)
+**Critical Issues**: 0 (previous PTY drop order resolved in v0.16.0)
 **High Priority**: 15+ items (Warp integration, WGPU backend, etc.)
 **Medium Priority**: 10+ items (Configuration, storage, etc.)
 **Low Priority**: 20+ items (Documentation, optimizations, etc.)
@@ -16,7 +16,7 @@ This document provides a comprehensive overview of all TODO and FIXME comments f
 - **File**: `openagent-terminal/src/main.rs:249`  
 - **Issue**: ConPTY drop order can cause deadlocks on Windows
 - **Impact**: Production stability issue on Windows
-- **Status**: Needs immediate attention - type system redesign required
+- **Status**: Resolved in v0.16.0 (commit 3b8fee7, PR #3). Enforced by typestate in openagent-terminal-core/src/tty/windows/pty_lifecycle.rs with tests; see docs/github-issues/001-critical-pty-drop-order.md.
 
 ## High Priority Issues 🟠
 
@@ -51,9 +51,9 @@ This document provides a comprehensive overview of all TODO and FIXME comments f
   - Cursor positioning from uniforms
 
 ### 5. Streaming Retry Logic
-- **File**: `openagent-terminal-ai/src/streaming.rs:297`
-- **Issue**: Parse Retry-After header from error responses
-- **Impact**: Suboptimal retry behavior with rate limits
+- **File**: `openagent-terminal-ai/src/streaming.rs`
+- **Status**: Resolved. Robust Retry-After parsing implemented in `parse_retry_after` and respected by the OpenAI retry strategy; backpressure via `StreamProcessor` buffering. Unit tests cover header parsing (numeric, float, http-date, reset headers).
+- **Impact**: Improved rate-limit handling and streaming reliability
 
 ## Medium Priority Issues 🟡
 
@@ -128,7 +128,7 @@ These appear to be test artifacts and are likely low priority.
 - Host API completeness (Medium)
 
 ### Platform Support
-- Windows PTY stability (Critical)
+- Windows PTY stability (Resolved in v0.16.0)
 - Unix/macOS compatibility (Low)
 
 ### User Interface
@@ -189,7 +189,7 @@ These appear to be test artifacts and are likely low priority.
 
 ---
 
-*Generated on: 2024-12-19*
+*Generated on: 2025-09-16*
 *Total items catalogued: 47+*
 *Issues created: 5*
 *Estimated effort: 6-8 weeks for complete resolution*

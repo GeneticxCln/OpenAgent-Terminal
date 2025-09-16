@@ -407,7 +407,7 @@ impl BlockManager {
                             }
 
                             // Check child events
-if let Some(ev) = mgr.poll_child_events().into_iter().next() {
+                            if let Some(ev) = mgr.poll_child_events().into_iter().next() {
                                 let openagent_terminal_core::tty::ChildEvent::Exited(code) = ev;
                                 local_exit = code.or(Some(0));
                                 break;
@@ -560,7 +560,7 @@ if let Some(ev) = mgr.poll_child_events().into_iter().next() {
                 }
 
                 // Check for child exit
-if let Some(evt) = pty.next_child_event() {
+                if let Some(evt) = pty.next_child_event() {
                     match evt {
                         ChildEvent::Exited(code) => {
                             exit_code = code.unwrap_or(0);

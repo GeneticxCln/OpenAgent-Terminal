@@ -237,7 +237,7 @@ impl NativeRenderer {
     }
 
     /// Render command blocks with immediate GPU acceleration
-pub fn render_blocks(
+    pub fn render_blocks(
         &mut self,
         _display: &mut Display,
         block_render_state: &BlockRenderState,
@@ -437,7 +437,7 @@ pub fn render_blocks(
     }
 
     /// Render block primitives immediately to GPU
-fn render_block_primitives(
+    fn render_block_primitives(
         &mut self,
         _display: &mut Display,
         element: &BlockRenderElement,
@@ -684,7 +684,7 @@ fn render_block_primitives(
     }
 
     /// Render tab primitives immediately to GPU
-fn render_tab_primitives(
+    fn render_tab_primitives(
         &mut self,
         _display: &mut Display,
         element: &TabRenderElement,

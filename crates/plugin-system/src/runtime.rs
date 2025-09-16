@@ -5,8 +5,10 @@
 //! lifecycle (init/cleanup) and command execution via the unified ABI
 //! defined in `lib.rs`.
 
+#[cfg(feature = "wasm-runtime")]
 use std::sync::Arc;
 
+#[cfg(feature = "wasm-runtime")]
 use crate::{
     api::{CommandOutput, Completion, Context, ContextRequest, HookEvent, HookResponse},
     PluginAbi, PluginSystemError,
@@ -277,7 +279,7 @@ pub async fn execute_wasm_command_internal(
 
         // Parse into standardized output
         let output: CommandOutput =
-serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
+            serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(output);
     }
 
@@ -328,7 +330,7 @@ pub async fn provide_completions_internal(
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
         let completions: Vec<Completion> =
-serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
+            serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(completions);
     }
 
@@ -373,7 +375,7 @@ pub async fn collect_context_internal(
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
         let context: Context =
-serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
+            serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(Some(context));
     }
 
@@ -426,7 +428,7 @@ pub async fn handle_event_internal(
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         dealloc_if_available(abi, &mut store, ptr, len);
         let resp: HookResponse =
-serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
+            serde_json::from_slice(&bytes).map_err(PluginSystemError::Serialization)?;
         return Ok(resp);
     }
 

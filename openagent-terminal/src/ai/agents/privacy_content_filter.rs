@@ -1,17 +1,17 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
+use chrono::{DateTime, Duration, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
-use regex::Regex;
+use uuid::Uuid;
 
-use super::*;
-use super::conversation_manager::ConversationManager;
 use super::advanced_conversation_features::AdvancedConversationFeatures;
+use super::conversation_manager::ConversationManager;
+use super::*;
 
 /// Privacy content filter for protecting sensitive information
 pub struct PrivacyContentFilter {
@@ -47,16 +47,16 @@ pub struct PrivacyPolicy {
 /// Data classification levels
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum DataClassification {
-    Public,           // No restrictions
-    Internal,         // Internal use only
-    Confidential,     // Limited access required
-    Restricted,       // Highly restricted access
-    TopSecret,        // Maximum security required
-    PersonalData,     // PII/personal information
-    FinancialData,    // Financial/payment information
-    HealthData,       // Medical/health information
-    LegalData,        // Legal/attorney-client privileged
-    Custom(String),   // Custom classification
+    Public,         // No restrictions
+    Internal,       // Internal use only
+    Confidential,   // Limited access required
+    Restricted,     // Highly restricted access
+    TopSecret,      // Maximum security required
+    PersonalData,   // PII/personal information
+    FinancialData,  // Financial/payment information
+    HealthData,     // Medical/health information
+    LegalData,      // Legal/attorney-client privileged
+    Custom(String), // Custom classification
 }
 
 /// Content scanner for detecting sensitive information
@@ -74,12 +74,12 @@ pub struct ContentScanner {
 /// Types of content scanners
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScannerType {
-    RegexPattern,     // Regular expression matching
-    KeywordList,      // Keyword/phrase matching  
-    ContextualNLP,    // Natural language processing
-    MachineLearning,  // ML-based classification
-    HashComparison,   // Hash-based matching
-    Custom(String),   // Custom scanner implementation
+    RegexPattern,    // Regular expression matching
+    KeywordList,     // Keyword/phrase matching
+    ContextualNLP,   // Natural language processing
+    MachineLearning, // ML-based classification
+    HashComparison,  // Hash-based matching
+    Custom(String),  // Custom scanner implementation
 }
 
 /// Pattern for content scanning
@@ -126,13 +126,13 @@ pub struct RedactionRule {
 /// Methods for redacting content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RedactionMethod {
-    FullRedaction,           // Complete removal: [REDACTED]
-    PartialRedaction,        // Partial masking: jo**@ex***.com
-    TokenReplacement,        // Token replacement: [EMAIL_ADDRESS]
-    Anonymization,           // Anonymize while preserving structure
-    Encryption,              // Encrypt sensitive parts
-    Hashing,                 // Replace with hash
-    Custom(String),          // Custom redaction logic
+    FullRedaction,    // Complete removal: [REDACTED]
+    PartialRedaction, // Partial masking: jo**@ex***.com
+    TokenReplacement, // Token replacement: [EMAIL_ADDRESS]
+    Anonymization,    // Anonymize while preserving structure
+    Encryption,       // Encrypt sensitive parts
+    Hashing,          // Replace with hash
+    Custom(String),   // Custom redaction logic
 }
 
 /// Conditions for applying redaction
@@ -146,13 +146,13 @@ pub struct RedactionCondition {
 /// Types of redaction conditions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConditionType {
-    Context,          // Based on surrounding content
-    UserRole,         // Based on user permissions
-    DataType,         // Based on data classification
-    Confidence,       // Based on detection confidence
-    TimeOfDay,        // Based on access time
-    Location,         // Based on user location
-    Custom(String),   // Custom condition logic
+    Context,        // Based on surrounding content
+    UserRole,       // Based on user permissions
+    DataType,       // Based on data classification
+    Confidence,     // Based on detection confidence
+    TimeOfDay,      // Based on access time
+    Location,       // Based on user location
+    Custom(String), // Custom condition logic
 }
 
 /// Comparison operators for conditions
@@ -195,7 +195,7 @@ pub struct TimeRestriction {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ComplianceStandard {
     GDPR,           // General Data Protection Regulation
-    CCPA,           // California Consumer Privacy Act  
+    CCPA,           // California Consumer Privacy Act
     HIPAA,          // Health Insurance Portability and Accountability Act
     SOX,            // Sarbanes-Oxley Act
     PciDss,         // Payment Card Industry Data Security Standard
@@ -229,12 +229,18 @@ impl RedactionEngine {
         if let Some(mapped) = self.anonymization_mappings.read().await.get(token) {
             return mapped.clone();
         }
-        let anon = format!("anon_{}", sha2::Sha256::digest(token.as_bytes())
-            .iter()
-            .take(8)
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>());
-        self.anonymization_mappings.write().await.insert(token.to_string(), anon.clone());
+        let anon = format!(
+            "anon_{}",
+            sha2::Sha256::digest(token.as_bytes())
+                .iter()
+                .take(8)
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        );
+        self.anonymization_mappings
+            .write()
+            .await
+            .insert(token.to_string(), anon.clone());
         anon
     }
 
@@ -284,7 +290,10 @@ pub struct DataClassifier {
 
 impl DataClassifier {
     pub async fn add_model(&self, model: ClassificationModel) {
-        self.classification_models.write().await.insert(model.model_id.clone(), model);
+        self.classification_models
+            .write()
+            .await
+            .insert(model.model_id.clone(), model);
     }
     pub async fn add_extractor(&self, ex: EntityExtractor) {
         self.entity_extractors.write().await.push(ex);
@@ -336,7 +345,7 @@ pub struct ValidationRule {
 #[derive(Debug, Clone)]
 pub enum ValidationType {
     FormatValidation,
-    ChecksumValidation, 
+    ChecksumValidation,
     ContextValidation,
     ExternalVerification,
     Custom(String),
@@ -363,12 +372,12 @@ pub struct ContextAnalyzer {
 /// Types of context analysis
 #[derive(Debug, Clone)]
 pub enum ContextType {
-    TopicalContext,     // Subject matter context
-    TemporalContext,    // Time-based context
-    SpatialContext,     // Location-based context
-    SocialContext,      // Social/relationship context
-    SecurityContext,    // Security classification context
-    Custom(String),     // Custom context type
+    TopicalContext,  // Subject matter context
+    TemporalContext, // Time-based context
+    SpatialContext,  // Location-based context
+    SocialContext,   // Social/relationship context
+    SecurityContext, // Security classification context
+    Custom(String),  // Custom context type
 }
 
 /// Privacy audit logging system
@@ -500,7 +509,11 @@ impl PrivacyContentFilter {
 
         // Run all enabled scanners in parallel
         let scanners_guard = self.content_scanners.read().await;
-        let enabled_scanners: Vec<ContentScanner> = scanners_guard.iter().filter(|s| s.is_enabled).cloned().collect();
+        let enabled_scanners: Vec<ContentScanner> = scanners_guard
+            .iter()
+            .filter(|s| s.is_enabled)
+            .cloned()
+            .collect();
         drop(scanners_guard);
 
         let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> = JoinSet::new();
@@ -512,7 +525,11 @@ impl PrivacyContentFilter {
             let context_clone = context_owned.clone();
             let scanner_clone = scanner.clone();
             joinset.spawn(async move {
-                let dets = PrivacyContentFilter::run_scanner_internal(&scanner_clone, &content_clone, context_clone.as_deref());
+                let dets = PrivacyContentFilter::run_scanner_internal(
+                    &scanner_clone,
+                    &content_clone,
+                    context_clone.as_deref(),
+                );
                 (scanner_clone, dets)
             });
         }
@@ -539,12 +556,19 @@ impl PrivacyContentFilter {
 
         // Log audit event
         if self.config.enable_audit_logging {
-            let data_classifications_refs: HashSet<&DataClassification> = data_classifications.iter().collect();
-            self.log_audit_event(AuditEventType::ContentScanned, None, None, &data_classifications_refs).await?;
+            let data_classifications_refs: HashSet<&DataClassification> =
+                data_classifications.iter().collect();
+            self.log_audit_event(
+                AuditEventType::ContentScanned,
+                None,
+                None,
+                &data_classifications_refs,
+            )
+            .await?;
         }
 
         let risk_score = self.calculate_risk_score(&detections);
-        
+
         Ok(ScanResult {
             content: content.to_string(),
             detections,
@@ -557,14 +581,15 @@ impl PrivacyContentFilter {
 
     /// Apply redaction to content based on privacy policies
     pub async fn redact_content(
-        &self, 
-        content: &str, 
+        &self,
+        content: &str,
         policy_id: &str,
-        user_context: Option<&UserContext>
+        user_context: Option<&UserContext>,
     ) -> Result<RedactionResult> {
         // Get privacy policy
         let policies = self.privacy_policies.read().await;
-        let policy = policies.get(policy_id)
+        let policy = policies
+            .get(policy_id)
             .ok_or_else(|| anyhow!("Privacy policy not found: {}", policy_id))?;
 
         if !policy.is_active {
@@ -579,19 +604,20 @@ impl PrivacyContentFilter {
 
         // Apply redaction rules
         for rule in &policy.redaction_rules {
-            if self.should_apply_redaction(rule, &scan_result, user_context).await? {
-                let rule_redactions = self.apply_redaction_rule(
-                    &redacted_content, 
-                    rule, 
-                    &scan_result.detections
-                ).await?;
+            if self
+                .should_apply_redaction(rule, &scan_result, user_context)
+                .await?
+            {
+                let rule_redactions = self
+                    .apply_redaction_rule(&redacted_content, rule, &scan_result.detections)
+                    .await?;
 
                 for redaction in rule_redactions {
                     // Apply the redaction to content
-                    redacted_content = self.redaction_engine.apply_redaction(
-                        &redacted_content,
-                        &redaction
-                    ).await?;
+                    redacted_content = self
+                        .redaction_engine
+                        .apply_redaction(&redacted_content, &redaction)
+                        .await?;
                     redactions_applied.push(redaction);
                 }
             }
@@ -610,11 +636,12 @@ impl PrivacyContentFilter {
         // Log audit event
         if self.config.enable_audit_logging {
             self.log_audit_event(
-                AuditEventType::ContentRedacted, 
+                AuditEventType::ContentRedacted,
                 user_context.map(|c| c.user_id.clone()),
                 None,
-                &result.data_classifications.iter().collect()
-            ).await?;
+                &result.data_classifications.iter().collect(),
+            )
+            .await?;
         }
 
         Ok(result)
@@ -636,30 +663,38 @@ impl PrivacyContentFilter {
 
     /// Get privacy compliance report
     pub async fn generate_compliance_report(
-        &self, 
+        &self,
         standard: ComplianceStandard,
-        date_range: (DateTime<Utc>, DateTime<Utc>)
+        date_range: (DateTime<Utc>, DateTime<Utc>),
     ) -> Result<ComplianceReport> {
         let audit = self.privacy_audit.read().await;
-        
-        let relevant_entries: Vec<&AuditEntry> = audit.audit_entries
+
+        let relevant_entries: Vec<&AuditEntry> = audit
+            .audit_entries
             .iter()
             .filter(|entry| {
-                entry.timestamp >= date_range.0 && 
-                entry.timestamp <= date_range.1 &&
-                entry.compliance_tags.contains(&format!("{:?}", standard))
+                entry.timestamp >= date_range.0
+                    && entry.timestamp <= date_range.1
+                    && entry.compliance_tags.contains(&format!("{:?}", standard))
             })
             .collect();
 
         let compliance_score = self.calculate_compliance_score(&relevant_entries, &standard);
-        let recommendations = self.generate_compliance_recommendations(&standard, &relevant_entries);
-        
+        let recommendations =
+            self.generate_compliance_recommendations(&standard, &relevant_entries);
+
         let report = ComplianceReport {
             standard,
             date_range,
             total_events: relevant_entries.len(),
-            violations: relevant_entries.iter().filter(|e| e.event_type == AuditEventType::PolicyViolation).count(),
-            high_risk_events: relevant_entries.iter().filter(|e| e.severity >= AuditSeverity::Error).count(),
+            violations: relevant_entries
+                .iter()
+                .filter(|e| e.event_type == AuditEventType::PolicyViolation)
+                .count(),
+            high_risk_events: relevant_entries
+                .iter()
+                .filter(|e| e.severity >= AuditSeverity::Error)
+                .count(),
             data_processed: relevant_entries.len(), // Simplified
             compliance_score,
             recommendations,
@@ -675,7 +710,7 @@ impl PrivacyContentFilter {
         &self,
         scanner: &ContentScanner,
         content: &str,
-        context: Option<&str>
+        context: Option<&str>,
     ) -> Result<Vec<SensitiveDataDetection>> {
         Ok(Self::run_scanner_internal(scanner, content, context))
     }
@@ -691,9 +726,14 @@ impl PrivacyContentFilter {
             ScannerType::RegexPattern => {
                 for pattern in &scanner.patterns {
                     if let PatternType::Regex = pattern.pattern_type {
-                        let regex = match Regex::new(&pattern.pattern) { Ok(r) => r, Err(_) => continue };
+                        let regex = match Regex::new(&pattern.pattern) {
+                            Ok(r) => r,
+                            Err(_) => continue,
+                        };
                         // Pre-compile false-positive filters as regex where possible
-                        let fp_filters: Vec<Regex> = pattern.false_positive_filters.iter()
+                        let fp_filters: Vec<Regex> = pattern
+                            .false_positive_filters
+                            .iter()
                             .filter_map(|p| Regex::new(p).ok())
                             .collect();
                         for mat in regex.find_iter(content) {
@@ -707,7 +747,9 @@ impl PrivacyContentFilter {
                             // Optional simple context window check (use safe slicing on char boundaries)
                             let window_start = mat.start().saturating_sub(64);
                             let window_end = (mat.end() + 64).min(content.len());
-                            let window = content.get(window_start..window_end).unwrap_or(matched_text);
+                            let window = content
+                                .get(window_start..window_end)
+                                .unwrap_or(matched_text);
                             if !pattern.context_requirements.is_empty() {
                                 let window_lower = window.to_ascii_lowercase();
                                 if !pattern
@@ -727,7 +769,10 @@ impl PrivacyContentFilter {
                             match scanner.id.as_str() {
                                 // Credit card numbers: validate with Luhn and normalize digits
                                 "credit-card-scanner" => {
-                                    let digits: String = matched_text.chars().filter(|c| c.is_ascii_digit()).collect();
+                                    let digits: String = matched_text
+                                        .chars()
+                                        .filter(|c| c.is_ascii_digit())
+                                        .collect();
                                     let len = digits.len();
                                     if (13..=19).contains(&len) && Self::luhn_check(&digits) {
                                         confidence = 0.99;
@@ -797,7 +842,9 @@ impl PrivacyContentFilter {
             if let Some(mut d) = ch.to_digit(10) {
                 if alt {
                     d *= 2;
-                    if d > 9 { d -= 9; }
+                    if d > 9 {
+                        d -= 9;
+                    }
                 }
                 sum += d;
                 alt = !alt;
@@ -808,7 +855,11 @@ impl PrivacyContentFilter {
         sum % 10 == 0
     }
 
-    async fn classify_content(&self, _content: &str, detections: &[SensitiveDataDetection]) -> Result<DataClassification> {
+    async fn classify_content(
+        &self,
+        _content: &str,
+        detections: &[SensitiveDataDetection],
+    ) -> Result<DataClassification> {
         // Simple classification based on detections
         let highest_sensitivity = detections
             .iter()
@@ -832,16 +883,18 @@ impl PrivacyContentFilter {
 
         let total_confidence: f32 = detections.iter().map(|d| d.confidence).sum();
         let avg_confidence = total_confidence / detections.len() as f32;
-        
+
         // Weight by sensitivity
-        let sensitivity_weight: f32 = detections.iter().map(|d| {
-            match d.sensitivity {
+        let sensitivity_weight: f32 = detections
+            .iter()
+            .map(|d| match d.sensitivity {
                 SensitivityLevel::Critical => 1.0,
                 SensitivityLevel::High => 0.8,
                 SensitivityLevel::Medium => 0.5,
                 SensitivityLevel::Low => 0.2,
-            }
-        }).sum::<f32>() / detections.len() as f32;
+            })
+            .sum::<f32>()
+            / detections.len() as f32;
 
         (avg_confidence * sensitivity_weight).clamp(0.0, 1.0)
     }
@@ -854,7 +907,9 @@ impl PrivacyContentFilter {
         context: Option<&str>,
         chunk_size: usize,
     ) -> Result<ScanResult> {
-        if chunk_size == 0 { return self.scan_content(content, context).await; }
+        if chunk_size == 0 {
+            return self.scan_content(content, context).await;
+        }
 
         let start_time = std::time::Instant::now();
         let overlap: usize = 64; // keep small rolling context between chunks
@@ -868,11 +923,18 @@ impl PrivacyContentFilter {
             let desired_end = (offset + chunk_size).min(len);
             // Adjust start and end to char boundaries to avoid slicing panics
             let mut start_idx = offset;
-            while start_idx > 0 && !content.is_char_boundary(start_idx) { start_idx -= 1; }
+            while start_idx > 0 && !content.is_char_boundary(start_idx) {
+                start_idx -= 1;
+            }
             let mut end_idx = desired_end;
-            while end_idx > start_idx && !content.is_char_boundary(end_idx) { end_idx -= 1; }
-            if end_idx <= start_idx { // nothing sensible to scan
-                if desired_end == len { break; }
+            while end_idx > start_idx && !content.is_char_boundary(end_idx) {
+                end_idx -= 1;
+            }
+            if end_idx <= start_idx {
+                // nothing sensible to scan
+                if desired_end == len {
+                    break;
+                }
                 offset = desired_end.saturating_sub(64);
                 continue;
             }
@@ -881,17 +943,26 @@ impl PrivacyContentFilter {
 
             // Run parallel scanners on this chunk
             let scanners_guard = self.content_scanners.read().await;
-            let enabled_scanners: Vec<ContentScanner> = scanners_guard.iter().filter(|s| s.is_enabled).cloned().collect();
+            let enabled_scanners: Vec<ContentScanner> = scanners_guard
+                .iter()
+                .filter(|s| s.is_enabled)
+                .cloned()
+                .collect();
             drop(scanners_guard);
 
-            let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> = JoinSet::new();
+            let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> =
+                JoinSet::new();
             let chunk_owned = chunk.to_string();
             for scanner in enabled_scanners {
                 let chunk_clone = chunk_owned.clone();
                 let scanner_clone = scanner.clone();
                 let context_clone = context.map(|s| s.to_string());
                 joinset.spawn(async move {
-                    let dets = PrivacyContentFilter::run_scanner_internal(&scanner_clone, &chunk_clone, context_clone.as_deref());
+                    let dets = PrivacyContentFilter::run_scanner_internal(
+                        &scanner_clone,
+                        &chunk_clone,
+                        context_clone.as_deref(),
+                    );
                     (scanner_clone, dets)
                 });
             }
@@ -899,7 +970,9 @@ impl PrivacyContentFilter {
             while let Some(res) = joinset.join_next().await {
                 if let Ok((scanner, dets)) = res {
                     for mut d in dets.into_iter() {
-                        if d.confidence < scanner.confidence_threshold { continue; }
+                        if d.confidence < scanner.confidence_threshold {
+                            continue;
+                        }
                         // Adjust positions to global indices
                         d.start_position += base_offset;
                         d.end_position += base_offset;
@@ -912,7 +985,9 @@ impl PrivacyContentFilter {
                 }
             }
 
-            if end_idx == len { break; }
+            if end_idx == len {
+                break;
+            }
             // move to next chunk with overlap, then re-adjust in next loop
             offset = end_idx.saturating_sub(overlap);
         }
@@ -927,7 +1002,8 @@ impl PrivacyContentFilter {
         let processing_time = start_time.elapsed();
         if self.config.enable_audit_logging {
             let refs: HashSet<&DataClassification> = data_classifications.iter().collect();
-            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs).await?;
+            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs)
+                .await?;
         }
 
         let risk_score = self.calculate_risk_score(&detections);
@@ -943,7 +1019,11 @@ impl PrivacyContentFilter {
 
     /// Streaming scanning interface: pass sequential chunks, we maintain a rolling overlap
     /// and de-duplicate detections across chunk boundaries.
-    pub async fn scan_content_streaming<I>(&self, chunks: I, context: Option<&str>) -> Result<ScanResult>
+    pub async fn scan_content_streaming<I>(
+        &self,
+        chunks: I,
+        context: Option<&str>,
+    ) -> Result<ScanResult>
     where
         I: IntoIterator<Item = String>,
     {
@@ -962,16 +1042,25 @@ impl PrivacyContentFilter {
 
             // Parallel scanners per chunk
             let scanners_guard = self.content_scanners.read().await;
-            let enabled_scanners: Vec<ContentScanner> = scanners_guard.iter().filter(|s| s.is_enabled).cloned().collect();
+            let enabled_scanners: Vec<ContentScanner> = scanners_guard
+                .iter()
+                .filter(|s| s.is_enabled)
+                .cloned()
+                .collect();
             drop(scanners_guard);
 
-            let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> = JoinSet::new();
+            let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> =
+                JoinSet::new();
             for scanner in enabled_scanners {
                 let combined_clone = combined.clone();
                 let scanner_clone = scanner.clone();
                 let context_clone = context.map(|s| s.to_string());
                 joinset.spawn(async move {
-                    let dets = PrivacyContentFilter::run_scanner_internal(&scanner_clone, &combined_clone, context_clone.as_deref());
+                    let dets = PrivacyContentFilter::run_scanner_internal(
+                        &scanner_clone,
+                        &combined_clone,
+                        context_clone.as_deref(),
+                    );
                     (scanner_clone, dets)
                 });
             }
@@ -979,7 +1068,9 @@ impl PrivacyContentFilter {
             while let Some(res) = joinset.join_next().await {
                 if let Ok((scanner, dets)) = res {
                     for mut d in dets.into_iter() {
-                        if d.confidence < scanner.confidence_threshold { continue; }
+                        if d.confidence < scanner.confidence_threshold {
+                            continue;
+                        }
                         // Map local position to global index
                         d.start_position += base_offset;
                         d.end_position += base_offset;
@@ -996,8 +1087,12 @@ impl PrivacyContentFilter {
             processed_len += chunk.len();
             if combined.len() >= overlap {
                 let mut start = combined.len() - overlap;
-                while start < combined.len() && !combined.is_char_boundary(start) { start += 1; }
-                if start > combined.len() { start = combined.len(); }
+                while start < combined.len() && !combined.is_char_boundary(start) {
+                    start += 1;
+                }
+                if start > combined.len() {
+                    start = combined.len();
+                }
                 tail = combined.get(start..).unwrap_or("").to_string();
             } else {
                 tail = combined;
@@ -1012,7 +1107,8 @@ impl PrivacyContentFilter {
         let processing_time = start_time.elapsed();
         if self.config.enable_audit_logging {
             let refs: HashSet<&DataClassification> = data_classifications.iter().collect();
-            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs).await?;
+            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs)
+                .await?;
         }
 
         let risk_score = self.calculate_risk_score(&detections);
@@ -1030,7 +1126,7 @@ impl PrivacyContentFilter {
         &self,
         _rule: &RedactionRule,
         _scan_result: &ScanResult,
-        _user_context: Option<&UserContext>
+        _user_context: Option<&UserContext>,
     ) -> Result<bool> {
         // Implement rule evaluation logic
         Ok(true) // Simplified for now
@@ -1040,16 +1136,14 @@ impl PrivacyContentFilter {
         &self,
         _content: &str,
         rule: &RedactionRule,
-        detections: &[SensitiveDataDetection]
+        detections: &[SensitiveDataDetection],
     ) -> Result<Vec<RedactionApplication>> {
         let mut applications = Vec::new();
 
         for detection in detections {
             let redacted_text = match &rule.redaction_method {
                 RedactionMethod::FullRedaction => "[REDACTED]".to_string(),
-                RedactionMethod::PartialRedaction => {
-                    self.partial_redact(&detection.matched_text)
-                }
+                RedactionMethod::PartialRedaction => self.partial_redact(&detection.matched_text),
                 RedactionMethod::TokenReplacement => {
                     format!("[{}]", detection.data_type.to_uppercase())
                 }
@@ -1074,11 +1168,11 @@ impl PrivacyContentFilter {
         if text.len() <= 4 {
             return "*".repeat(text.len());
         }
-        
+
         let first_part = &text[..2];
-        let last_part = &text[text.len()-2..];
+        let last_part = &text[text.len() - 2..];
         let middle_stars = "*".repeat(text.len() - 4);
-        
+
         format!("{}{}{}", first_part, middle_stars, last_part)
     }
 
@@ -1087,7 +1181,7 @@ impl PrivacyContentFilter {
         event_type: AuditEventType,
         user_id: Option<String>,
         session_id: Option<Uuid>,
-        data_classifications: &HashSet<&DataClassification>
+        data_classifications: &HashSet<&DataClassification>,
     ) -> Result<()> {
         let entry = AuditEntry {
             id: Uuid::new_v4(),
@@ -1095,11 +1189,21 @@ impl PrivacyContentFilter {
             event_type,
             user_id,
             session_id,
-            data_classification: data_classifications.iter().next().cloned().cloned().unwrap_or(DataClassification::Internal),
+            data_classification: data_classifications
+                .iter()
+                .next()
+                .cloned()
+                .cloned()
+                .unwrap_or(DataClassification::Internal),
             action_taken: "Content processed by privacy filter".to_string(),
             content_hash: None,
             policy_id: None,
-            compliance_tags: self.config.compliance_standards.iter().map(|s| format!("{:?}", s)).collect(),
+            compliance_tags: self
+                .config
+                .compliance_standards
+                .iter()
+                .map(|s| format!("{:?}", s))
+                .collect(),
             severity: AuditSeverity::Info,
         };
 
@@ -1112,12 +1216,20 @@ impl PrivacyContentFilter {
         Ok(())
     }
 
-    fn calculate_compliance_score(&self, _entries: &[&AuditEntry], _standard: &ComplianceStandard) -> f32 {
+    fn calculate_compliance_score(
+        &self,
+        _entries: &[&AuditEntry],
+        _standard: &ComplianceStandard,
+    ) -> f32 {
         // Simplified compliance score calculation
         0.85 // 85% compliance score
     }
 
-    fn generate_compliance_recommendations(&self, _standard: &ComplianceStandard, _entries: &[&AuditEntry]) -> Vec<String> {
+    fn generate_compliance_recommendations(
+        &self,
+        _standard: &ComplianceStandard,
+        _entries: &[&AuditEntry],
+    ) -> Vec<String> {
         vec![
             "Consider implementing additional encryption for sensitive data".to_string(),
             "Review access controls for confidential information".to_string(),
@@ -1197,14 +1309,18 @@ impl RedactionEngine {
         }
     }
 
-    pub async fn apply_redaction(&self, content: &str, redaction: &RedactionApplication) -> Result<String> {
+    pub async fn apply_redaction(
+        &self,
+        content: &str,
+        redaction: &RedactionApplication,
+    ) -> Result<String> {
         let mut result = content.to_string();
-        
+
         // Apply redaction at specified position
         if redaction.end_position <= content.len() {
             result.replace_range(
                 redaction.start_position..redaction.end_position,
-                &redaction.redacted_text
+                &redaction.redacted_text,
             );
         }
 
@@ -1233,7 +1349,8 @@ impl PrivacyAuditLog {
 
     pub fn cleanup_old_entries(&mut self) {
         let cutoff_date = Utc::now() - self.retention_period;
-        self.audit_entries.retain(|entry| entry.timestamp > cutoff_date);
+        self.audit_entries
+            .retain(|entry| entry.timestamp > cutoff_date);
     }
 }
 
@@ -1275,48 +1392,49 @@ impl Agent for PrivacyContentFilter {
         };
 
         match request.request_type {
-            AgentRequestType::Custom(ref custom_type) => {
-                match custom_type.as_str() {
-                    "ScanContent" => {
-                        if let Some(content) = request.payload.get("content").and_then(|v| v.as_str()) {
-                            match self.scan_content(content, None).await {
-                                Ok(scan_result) => {
-                                    response.success = true;
-                                    response.payload = serde_json::to_value(scan_result)?;
-                                }
-                                Err(e) => {
-                                    response.payload = serde_json::json!({
-                                        "error": e.to_string()
-                                    });
-                                }
+            AgentRequestType::Custom(ref custom_type) => match custom_type.as_str() {
+                "ScanContent" => {
+                    if let Some(content) = request.payload.get("content").and_then(|v| v.as_str()) {
+                        match self.scan_content(content, None).await {
+                            Ok(scan_result) => {
+                                response.success = true;
+                                response.payload = serde_json::to_value(scan_result)?;
+                            }
+                            Err(e) => {
+                                response.payload = serde_json::json!({
+                                    "error": e.to_string()
+                                });
                             }
                         }
-                    }
-                    "RedactContent" => {
-                        if let (Some(content), Some(policy_id)) = (
-                            request.payload.get("content").and_then(|v| v.as_str()),
-                            request.payload.get("policy_id").and_then(|v| v.as_str())
-                        ) {
-                            match self.redact_content(content, policy_id, None).await {
-                                Ok(redaction_result) => {
-                                    response.success = true;
-                                    response.payload = serde_json::to_value(redaction_result)?;
-                                }
-                                Err(e) => {
-                                    response.payload = serde_json::json!({
-                                        "error": e.to_string()
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    _ => {
-                        return Err(anyhow!("Unknown privacy filter request: {}", custom_type));
                     }
                 }
-            }
+                "RedactContent" => {
+                    if let (Some(content), Some(policy_id)) = (
+                        request.payload.get("content").and_then(|v| v.as_str()),
+                        request.payload.get("policy_id").and_then(|v| v.as_str()),
+                    ) {
+                        match self.redact_content(content, policy_id, None).await {
+                            Ok(redaction_result) => {
+                                response.success = true;
+                                response.payload = serde_json::to_value(redaction_result)?;
+                            }
+                            Err(e) => {
+                                response.payload = serde_json::json!({
+                                    "error": e.to_string()
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    return Err(anyhow!("Unknown privacy filter request: {}", custom_type));
+                }
+            },
             _ => {
-                return Err(anyhow!("Privacy Content Filter cannot handle request type: {:?}", request.request_type));
+                return Err(anyhow!(
+                    "Privacy Content Filter cannot handle request type: {:?}",
+                    request.request_type
+                ));
             }
         }
 
@@ -1356,7 +1474,7 @@ impl Agent for PrivacyContentFilter {
         // Initialize default scanners and policies
         self.initialize_default_scanners().await?;
         self.initialize_default_policies().await?;
-        
+
         self.is_initialized = true;
         tracing::info!("Privacy Content Filter initialized");
         Ok(())
@@ -1377,15 +1495,13 @@ impl PrivacyContentFilter {
             id: "email-scanner".to_string(),
             name: "Email Address Scanner".to_string(),
             scanner_type: ScannerType::RegexPattern,
-            patterns: vec![
-                ScanPattern {
-                    pattern: r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b".to_string(),
-                    pattern_type: PatternType::Regex,
-                    sensitivity: SensitivityLevel::Medium,
-                    context_requirements: Vec::new(),
-                    false_positive_filters: Vec::new(),
-                }
-            ],
+            patterns: vec![ScanPattern {
+                pattern: r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b".to_string(),
+                pattern_type: PatternType::Regex,
+                sensitivity: SensitivityLevel::Medium,
+                context_requirements: Vec::new(),
+                false_positive_filters: Vec::new(),
+            }],
             confidence_threshold: 0.8,
             data_classification: DataClassification::PersonalData,
             is_enabled: true,
@@ -1396,15 +1512,13 @@ impl PrivacyContentFilter {
             id: "phone-scanner".to_string(),
             name: "Phone Number Scanner".to_string(),
             scanner_type: ScannerType::RegexPattern,
-            patterns: vec![
-                ScanPattern {
-                    pattern: r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b".to_string(),
-                    pattern_type: PatternType::Regex,
-                    sensitivity: SensitivityLevel::High,
-                    context_requirements: Vec::new(),
-                    false_positive_filters: Vec::new(),
-                }
-            ],
+            patterns: vec![ScanPattern {
+                pattern: r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b".to_string(),
+                pattern_type: PatternType::Regex,
+                sensitivity: SensitivityLevel::High,
+                context_requirements: Vec::new(),
+                false_positive_filters: Vec::new(),
+            }],
             confidence_threshold: 0.7,
             data_classification: DataClassification::PersonalData,
             is_enabled: true,
@@ -1415,19 +1529,17 @@ impl PrivacyContentFilter {
             id: "credit-card-scanner".to_string(),
             name: "Credit Card Scanner".to_string(),
             scanner_type: ScannerType::RegexPattern,
-            patterns: vec![
-                ScanPattern {
-                    pattern: r"\b(?:\d[ -]?){13,19}\b".to_string(),
-                    pattern_type: PatternType::Regex,
-                    sensitivity: SensitivityLevel::Critical,
-                    context_requirements: Vec::new(),
-                    false_positive_filters: vec![
-                        // Common dummy/test numbers to reduce false positives
-                        r"^0+$".to_string(),
-                        r"^(?:1234[ -]?){3}1234$".to_string(),
-                    ],
-                }
-            ],
+            patterns: vec![ScanPattern {
+                pattern: r"\b(?:\d[ -]?){13,19}\b".to_string(),
+                pattern_type: PatternType::Regex,
+                sensitivity: SensitivityLevel::Critical,
+                context_requirements: Vec::new(),
+                false_positive_filters: vec![
+                    // Common dummy/test numbers to reduce false positives
+                    r"^0+$".to_string(),
+                    r"^(?:1234[ -]?){3}1234$".to_string(),
+                ],
+            }],
             confidence_threshold: 0.9,
             data_classification: DataClassification::FinancialData,
             is_enabled: true,
@@ -1438,15 +1550,13 @@ impl PrivacyContentFilter {
             id: "github-token-scanner".to_string(),
             name: "GitHub Token Scanner".to_string(),
             scanner_type: ScannerType::RegexPattern,
-            patterns: vec![
-                ScanPattern {
-                    pattern: r"\bghp_[A-Za-z0-9]{36}\b".to_string(),
-                    pattern_type: PatternType::Regex,
-                    sensitivity: SensitivityLevel::High,
-                    context_requirements: Vec::new(),
-                    false_positive_filters: Vec::new(),
-                }
-            ],
+            patterns: vec![ScanPattern {
+                pattern: r"\bghp_[A-Za-z0-9]{36}\b".to_string(),
+                pattern_type: PatternType::Regex,
+                sensitivity: SensitivityLevel::High,
+                context_requirements: Vec::new(),
+                false_positive_filters: Vec::new(),
+            }],
             confidence_threshold: 0.9,
             data_classification: DataClassification::Restricted,
             is_enabled: true,
@@ -1457,15 +1567,13 @@ impl PrivacyContentFilter {
             id: "aws-akid-scanner".to_string(),
             name: "AWS Access Key ID Scanner".to_string(),
             scanner_type: ScannerType::RegexPattern,
-            patterns: vec![
-                ScanPattern {
-                    pattern: r"\bAKIA[0-9A-Z]{16}\b".to_string(),
-                    pattern_type: PatternType::Regex,
-                    sensitivity: SensitivityLevel::High,
-                    context_requirements: Vec::new(),
-                    false_positive_filters: Vec::new(),
-                }
-            ],
+            patterns: vec![ScanPattern {
+                pattern: r"\bAKIA[0-9A-Z]{16}\b".to_string(),
+                pattern_type: PatternType::Regex,
+                sensitivity: SensitivityLevel::High,
+                context_requirements: Vec::new(),
+                false_positive_filters: Vec::new(),
+            }],
             confidence_threshold: 0.9,
             data_classification: DataClassification::Restricted,
             is_enabled: true,
@@ -1476,15 +1584,13 @@ impl PrivacyContentFilter {
             id: "jwt-scanner".to_string(),
             name: "JWT Scanner".to_string(),
             scanner_type: ScannerType::RegexPattern,
-            patterns: vec![
-                ScanPattern {
-                    pattern: r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b".to_string(),
-                    pattern_type: PatternType::Regex,
-                    sensitivity: SensitivityLevel::High,
-                    context_requirements: Vec::new(),
-                    false_positive_filters: Vec::new(),
-                }
-            ],
+            patterns: vec![ScanPattern {
+                pattern: r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b".to_string(),
+                pattern_type: PatternType::Regex,
+                sensitivity: SensitivityLevel::High,
+                context_requirements: Vec::new(),
+                false_positive_filters: Vec::new(),
+            }],
             confidence_threshold: 0.9,
             data_classification: DataClassification::Confidential,
             is_enabled: true,
@@ -1511,17 +1617,15 @@ impl PrivacyContentFilter {
                 DataClassification::Confidential,
                 DataClassification::Restricted,
             ],
-            redaction_rules: vec![
-                RedactionRule {
-                    id: "personal-data-redaction".to_string(),
-                    name: "Personal Data Redaction".to_string(),
-                    data_classification: DataClassification::PersonalData,
-                    redaction_method: RedactionMethod::PartialRedaction,
-                    preserve_format: true,
-                    replacement_pattern: None,
-                    conditions: Vec::new(),
-                }
-            ],
+            redaction_rules: vec![RedactionRule {
+                id: "personal-data-redaction".to_string(),
+                name: "Personal Data Redaction".to_string(),
+                data_classification: DataClassification::PersonalData,
+                redaction_method: RedactionMethod::PartialRedaction,
+                preserve_format: true,
+                replacement_pattern: None,
+                conditions: Vec::new(),
+            }],
             retention_policies: HashMap::from([
                 ("personal_data".to_string(), Duration::days(730)), // 2 years
                 ("financial_data".to_string(), Duration::days(2555)), // 7 years
@@ -1553,15 +1657,20 @@ mod tests {
     #[tokio::test]
     async fn test_content_scanning() {
         let filter = PrivacyContentFilter::new();
-        
+
         // Initialize with default scanners
         let mut filter_mut = filter;
         filter_mut.initialize(AgentConfig::default()).await.unwrap();
-        
+
         // Test email detection
-        let result = filter_mut.scan_content("Contact us at test@example.com", None).await.unwrap();
+        let result = filter_mut
+            .scan_content("Contact us at test@example.com", None)
+            .await
+            .unwrap();
         assert!(!result.detections.is_empty());
-        assert!(result.data_classifications.contains(&DataClassification::PersonalData));
+        assert!(result
+            .data_classifications
+            .contains(&DataClassification::PersonalData));
     }
 
     #[tokio::test]
@@ -1569,23 +1678,50 @@ mod tests {
         let mut filter = PrivacyContentFilter::new();
         filter.initialize(AgentConfig::default()).await.unwrap();
         // Valid test Visa number 4111 1111 1111 1111
-        let res_valid = filter.scan_content("card 4111-1111-1111-1111", None).await.unwrap();
-        assert!(res_valid.detections.iter().any(|d| d.scanner_id == "credit-card-scanner"));
+        let res_valid = filter
+            .scan_content("card 4111-1111-1111-1111", None)
+            .await
+            .unwrap();
+        assert!(res_valid
+            .detections
+            .iter()
+            .any(|d| d.scanner_id == "credit-card-scanner"));
         // Invalid (fails Luhn)
-        let res_invalid = filter.scan_content("card 4111-1111-1111-1112", None).await.unwrap();
-        assert!(!res_invalid.detections.iter().any(|d| d.scanner_id == "credit-card-scanner"));
+        let res_invalid = filter
+            .scan_content("card 4111-1111-1111-1112", None)
+            .await
+            .unwrap();
+        assert!(!res_invalid
+            .detections
+            .iter()
+            .any(|d| d.scanner_id == "credit-card-scanner"));
     }
 
     #[tokio::test]
     async fn test_token_scanners() {
         let mut filter = PrivacyContentFilter::new();
         filter.initialize(AgentConfig::default()).await.unwrap();
-        let res = filter.scan_content("token ghp_abcdefghijklmnopqrstuvwxyz0123456789", None).await.unwrap();
-        assert!(res.detections.iter().any(|d| d.scanner_id == "github-token-scanner"));
-        let res2 = filter.scan_content("AWS key AKIAABCDEFGHIJKLMNOP", None).await.unwrap();
-        assert!(res2.detections.iter().any(|d| d.scanner_id == "aws-akid-scanner"));
+        let res = filter
+            .scan_content("token ghp_abcdefghijklmnopqrstuvwxyz0123456789", None)
+            .await
+            .unwrap();
+        assert!(res
+            .detections
+            .iter()
+            .any(|d| d.scanner_id == "github-token-scanner"));
+        let res2 = filter
+            .scan_content("AWS key AKIAABCDEFGHIJKLMNOP", None)
+            .await
+            .unwrap();
+        assert!(res2
+            .detections
+            .iter()
+            .any(|d| d.scanner_id == "aws-akid-scanner"));
         let res3 = filter.scan_content("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", None).await.unwrap();
-        assert!(res3.detections.iter().any(|d| d.scanner_id == "jwt-scanner"));
+        assert!(res3
+            .detections
+            .iter()
+            .any(|d| d.scanner_id == "jwt-scanner"));
     }
 
     #[tokio::test]
@@ -1594,8 +1730,14 @@ mod tests {
         filter.initialize(AgentConfig::default()).await.unwrap();
         // Construct a  card split across boundary
         let content = format!("{}{}", "4111-1111-1111-", "1111 end");
-        let res = filter.scan_content_chunked(&content, None, 10).await.unwrap();
-        assert!(res.detections.iter().any(|d| d.scanner_id == "credit-card-scanner"));
+        let res = filter
+            .scan_content_chunked(&content, None, 10)
+            .await
+            .unwrap();
+        assert!(res
+            .detections
+            .iter()
+            .any(|d| d.scanner_id == "credit-card-scanner"));
     }
 
     #[test]

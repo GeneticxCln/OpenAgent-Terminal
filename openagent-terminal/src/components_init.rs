@@ -18,9 +18,7 @@ use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "plugins")]
 use plugin_api::{CommandOutput, PluginError};
 #[cfg(feature = "plugins")]
-use plugin_loader::{
-    LogLevel, PluginHost, PluginManager,
-};
+use plugin_loader::{LogLevel, PluginHost, PluginManager};
 #[cfg(feature = "workflow")]
 use workflow_engine::WorkflowEngine;
 
@@ -612,13 +610,19 @@ impl PluginHost for TerminalPluginHost {
         const MAX_BYTES: u64 = 50 * 1024 * 1024;
         let used = dir_size_bytes(&dir).unwrap_or(0);
         if used > MAX_BYTES {
-            return Err(PluginError::IoError(std::io::Error::other("Plugin storage quota exceeded")));
+            return Err(PluginError::IoError(std::io::Error::other(
+                "Plugin storage quota exceeded",
+            )));
         }
         let file = dir.join(sanitize_key_to_filename(key));
         std::fs::write(file, value).map_err(PluginError::IoError)
     }
 
-    fn retrieve_data_for(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, PluginError> {
+    fn retrieve_data_for(
+        &self,
+        plugin_id: &str,
+        key: &str,
+    ) -> Result<Option<Vec<u8>>, PluginError> {
         let dir = self.storage_dir.join(sanitize_key_to_filename(plugin_id));
         let file = dir.join(sanitize_key_to_filename(key));
         match std::fs::read(file) {

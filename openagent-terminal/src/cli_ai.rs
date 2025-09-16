@@ -5,10 +5,10 @@ use std::io::Write;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::{AiCommand, AiOptions};
-use rusqlite::Connection;
 use crate::config::ai::ProviderConfig as ProviderCfg;
 use crate::config::ai_providers::{get_default_provider_configs, ProviderCredentials};
 use crate::config::UiConfig;
+use rusqlite::Connection;
 
 pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
     match &opts.command {
@@ -185,24 +185,43 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             match format.as_str() {
                 "json" => {
                     let s = serde_json::to_string_pretty(&records)?;
-                    std::fs::write(&to, s).with_context(|| format!("Failed to write {}", to.display()))?;
-                    println!("Exported {} AI history entries to {} (JSON)", records.len(), to.display());
+                    std::fs::write(&to, s)
+                        .with_context(|| format!("Failed to write {}", to.display()))?;
+                    println!(
+                        "Exported {} AI history entries to {} (JSON)",
+                        records.len(),
+                        to.display()
+                    );
                 }
                 "csv" => {
                     let mut wtr = csv::Writer::from_path(&to)
                         .with_context(|| format!("Failed to open {} for CSV", to.display()))?;
-                    wtr.write_record(["ts", "mode", "working_directory", "shell_kind", "input", "output"])?;
+                    wtr.write_record([
+                        "ts",
+                        "mode",
+                        "working_directory",
+                        "shell_kind",
+                        "input",
+                        "output",
+                    ])?;
                     for rec in &records {
                         let ts = rec.get("ts").and_then(|v| v.as_str()).unwrap_or("");
                         let mode = rec.get("mode").and_then(|v| v.as_str()).unwrap_or("");
-                        let wd = rec.get("working_directory").and_then(|v| v.as_str()).unwrap_or("");
+                        let wd = rec
+                            .get("working_directory")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         let sh = rec.get("shell_kind").and_then(|v| v.as_str()).unwrap_or("");
                         let input = rec.get("input").and_then(|v| v.as_str()).unwrap_or("");
                         let output = rec.get("output").and_then(|v| v.as_str()).unwrap_or("");
                         wtr.write_record([ts, mode, wd, sh, input, output])?;
                     }
                     wtr.flush()?;
-                    println!("Exported {} AI history entries to {} (CSV)", records.len(), to.display());
+                    println!(
+                        "Exported {} AI history entries to {} (CSV)",
+                        records.len(),
+                        to.display()
+                    );
                 }
                 other => {
                     return Err(anyhow!(format!("Unsupported export format: {}", other)));
@@ -220,8 +239,9 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 Ok(conn) => {
                     // purge all but the last N by id
                     let k = *keep_last as i64;
-                    if k <= 0 { conn.execute("DELETE FROM conversations", [])?; }
-                    else {
+                    if k <= 0 {
+                        conn.execute("DELETE FROM conversations", [])?;
+                    } else {
                         conn.execute(
                             "DELETE FROM conversations WHERE id NOT IN (
                                 SELECT id FROM conversations ORDER BY id DESC LIMIT ?1
@@ -232,7 +252,11 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     println!("Purged AI history, kept last {} entries", keep_last);
                 }
                 Err(e) => {
-                    eprintln!("No SQLite AI history found at {} ({}).", db_path.display(), e);
+                    eprintln!(
+                        "No SQLite AI history found at {} ({}).",
+                        db_path.display(),
+                        e
+                    );
                     return Ok(2);
                 }
             }
@@ -243,7 +267,9 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     .filter(|e| {
                         if let Some(name) = e.file_name().to_str() {
                             name.starts_with("history-") && name.ends_with(".jsonl")
-                        } else { false }
+                        } else {
+                            false
+                        }
                     })
                     .collect();
                 rotated.sort_by_key(|e| e.file_name());

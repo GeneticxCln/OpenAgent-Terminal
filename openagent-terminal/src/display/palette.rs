@@ -7,7 +7,10 @@ pub enum PaletteEntry {
     Workflow(String),
     File(String), // absolute or relative path
     #[cfg(feature = "plugins")]
-    PluginCommand { plugin: String, command: String },
+    PluginCommand {
+        plugin: String,
+        command: String,
+    },
 }
 
 #[derive(Clone, Debug)]

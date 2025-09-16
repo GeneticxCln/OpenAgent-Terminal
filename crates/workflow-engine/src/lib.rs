@@ -300,10 +300,8 @@ impl WorkflowEngine {
     /// If multiple versions share the same name, the lexicographically highest version is preferred.
     pub async fn get_workflow_by_name(&self, name: &str) -> Option<(String, WorkflowDefinition)> {
         let map = self.workflows.read().await;
-        let mut candidates: Vec<(&String, &WorkflowDefinition)> = map
-            .iter()
-            .filter(|(_, def)| def.name == name)
-            .collect();
+        let mut candidates: Vec<(&String, &WorkflowDefinition)> =
+            map.iter().filter(|(_, def)| def.name == name).collect();
         if candidates.is_empty() {
             return None;
         }

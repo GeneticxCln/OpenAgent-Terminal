@@ -1,14 +1,14 @@
 // Code Generation Agent
 // Specialized AI agent for generating high-quality code from natural language descriptions
 
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use anyhow::{Result, anyhow};
 use uuid::Uuid;
 
-use openagent_terminal_ai::AiProvider;
 use super::*;
+use openagent_terminal_ai::AiProvider;
 
 /// Specialized agent for code generation tasks
 pub struct CodeGenerationAgent {
@@ -69,7 +69,7 @@ impl Default for CodeGenerationConfig {
         Self {
             preferred_languages: vec![
                 "rust".to_string(),
-                "typescript".to_string(), 
+                "typescript".to_string(),
                 "python".to_string(),
                 "go".to_string(),
             ],
@@ -93,7 +93,7 @@ impl CodeGenerationAgent {
             last_activity: chrono::Utc::now(),
         }
     }
-    
+
     pub fn with_ai_provider(mut self, ai_provider: Box<dyn AiProvider>) -> Self {
         self.ai_provider = Some(ai_provider);
         self
@@ -105,9 +105,13 @@ impl CodeGenerationAgent {
     }
 
     /// Create a system prompt for code generation
-    fn create_system_prompt(&self, request: &CodeGenerationRequest, context: &AgentContext) -> String {
+    fn create_system_prompt(
+        &self,
+        request: &CodeGenerationRequest,
+        context: &AgentContext,
+    ) -> String {
         let mut prompt = String::new();
-        
+
         prompt.push_str("You are an expert software engineer specialized in generating high-quality, production-ready code. ");
         prompt.push_str("Your code should be:\n");
         prompt.push_str("- Well-structured and readable\n");
@@ -120,33 +124,47 @@ impl CodeGenerationAgent {
         if let Some(lang) = &request.language {
             prompt.push_str(&format!("Generate code in {}.\n", lang));
         } else {
-            prompt.push_str(&format!("Prefer these languages: {}.\n", 
-                self.config.preferred_languages.join(", ")));
+            prompt.push_str(&format!(
+                "Prefer these languages: {}.\n",
+                self.config.preferred_languages.join(", ")
+            ));
         }
 
         // Add style preferences
-        match &request.style_preferences.as_ref().unwrap_or(&self.config.code_style) {
-            CodeStyle::Functional => prompt.push_str("Use functional programming patterns where appropriate.\n"),
-            CodeStyle::ObjectOriented => prompt.push_str("Use object-oriented design principles.\n"),
+        match &request
+            .style_preferences
+            .as_ref()
+            .unwrap_or(&self.config.code_style)
+        {
+            CodeStyle::Functional => {
+                prompt.push_str("Use functional programming patterns where appropriate.\n")
+            }
+            CodeStyle::ObjectOriented => {
+                prompt.push_str("Use object-oriented design principles.\n")
+            }
             CodeStyle::Procedural => prompt.push_str("Use procedural programming approach.\n"),
-            CodeStyle::Hybrid => prompt.push_str("Use the most appropriate programming paradigm for the task.\n"),
+            CodeStyle::Hybrid => {
+                prompt.push_str("Use the most appropriate programming paradigm for the task.\n")
+            }
         }
 
         // Add context information
         if let Some(project_root) = &context.project_root {
             prompt.push_str(&format!("Project context: {}\n", project_root));
         }
-        
+
         if !context.open_files.is_empty() {
-            prompt.push_str(&format!("Current files in workspace: {}\n", 
-                context.open_files.join(", ")));
+            prompt.push_str(&format!(
+                "Current files in workspace: {}\n",
+                context.open_files.join(", ")
+            ));
         }
 
         // Add test and documentation requirements
         if request.include_tests {
             prompt.push_str("Include comprehensive unit tests.\n");
         }
-        
+
         if request.include_docs {
             prompt.push_str("Include detailed documentation and examples.\n");
         }
@@ -170,16 +188,23 @@ impl CodeGenerationAgent {
     }
 
     /// Process a code generation request
-    async fn generate_code(&self, request: CodeGenerationRequest, context: &AgentContext) -> Result<CodeGenerationResponse> {
+    async fn generate_code(
+        &self,
+        request: CodeGenerationRequest,
+        context: &AgentContext,
+    ) -> Result<CodeGenerationResponse> {
         let system_prompt = self.create_system_prompt(&request, context);
-        
+
         let mut user_prompt = format!("Requirements: {}\n", request.requirements);
-        
+
         // Add existing code context if provided
         if let Some(existing) = &request.existing_code {
-            user_prompt.push_str(&format!("\nExisting code to modify or extend:\n```\n{}\n```\n", existing));
+            user_prompt.push_str(&format!(
+                "\nExisting code to modify or extend:\n```\n{}\n```\n",
+                existing
+            ));
         }
-        
+
         // Add context from files if provided
         if !request.context_files.is_empty() {
             user_prompt.push_str("\nRelevant context from project files:\n");
@@ -195,35 +220,40 @@ impl CodeGenerationAgent {
             shell_kind: Some("bash".to_string()), // TODO: Get from context
             context: vec![
                 ("mode".to_string(), "code_generation".to_string()),
-                ("language".to_string(), request.language.clone().unwrap_or("rust".to_string())),
+                (
+                    "language".to_string(),
+                    request.language.clone().unwrap_or("rust".to_string()),
+                ),
             ],
         };
 
         let proposals = if let Some(provider) = &self.ai_provider {
-            provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?
+            provider
+                .propose(ai_request)
+                .map_err(|e| anyhow!("AI provider error: {}", e))?
         } else {
             // Return a mock response when no AI provider is available
             vec![openagent_terminal_ai::AiProposal {
                 title: "Mock Code Generation".to_string(),
                 description: Some("Generated mock code response".to_string()),
-                proposed_commands: vec![
-                    serde_json::json!({
-                        "generated_code": "fn example() { println!(\"Hello, World!\"); }",
-                        "language": "rust",
-                        "explanation": "A simple example function that prints Hello World",
-                        "dependencies": [],
-                        "confidence_score": 0.8
-                    }).to_string()
-                ],
+                proposed_commands: vec![serde_json::json!({
+                    "generated_code": "fn example() { println!(\"Hello, World!\"); }",
+                    "language": "rust",
+                    "explanation": "A simple example function that prints Hello World",
+                    "dependencies": [],
+                    "confidence_score": 0.8
+                })
+                .to_string()],
             }]
         };
-        let response = proposals.first()
+        let response = proposals
+            .first()
             .ok_or_else(|| anyhow!("No response from AI provider"))?
             .proposed_commands
             .first()
             .unwrap_or(&"No code generated".to_string())
             .clone();
-        
+
         // Parse the JSON response
         let parsed: CodeGenerationResponse = serde_json::from_str(&response)
             .map_err(|e| anyhow!("Failed to parse code generation response: {}", e))?;
@@ -234,7 +264,7 @@ impl CodeGenerationAgent {
     /// Create artifacts from the code generation response
     fn create_artifacts(&self, response: &CodeGenerationResponse) -> Vec<AgentArtifact> {
         let mut artifacts = Vec::new();
-        
+
         // Main code artifact
         artifacts.push(AgentArtifact {
             id: Uuid::new_v4(),
@@ -243,7 +273,10 @@ impl CodeGenerationAgent {
             metadata: {
                 let mut meta = HashMap::new();
                 meta.insert("language".to_string(), response.language.clone());
-                meta.insert("confidence".to_string(), response.confidence_score.to_string());
+                meta.insert(
+                    "confidence".to_string(),
+                    response.confidence_score.to_string(),
+                );
                 meta
             },
         });
@@ -386,7 +419,10 @@ impl Agent for CodeGenerationAgent {
                     metadata: HashMap::new(),
                 })
             }
-            _ => Err(anyhow!("Unsupported request type: {:?}", request.request_type))
+            _ => Err(anyhow!(
+                "Unsupported request type: {:?}",
+                request.request_type
+            )),
         }
     }
 
@@ -407,14 +443,16 @@ impl Agent for CodeGenerationAgent {
     async fn initialize(&mut self, config: AgentConfig) -> Result<()> {
         // Load any custom configuration
         if let Some(code_config) = config.custom_settings.get("code_generation") {
-            if let Ok(parsed_config) = serde_json::from_value::<CodeGenerationConfig>(code_config.clone()) {
+            if let Ok(parsed_config) =
+                serde_json::from_value::<CodeGenerationConfig>(code_config.clone())
+            {
                 self.config = parsed_config;
             }
         }
 
         self.is_initialized = true;
         self.last_activity = chrono::Utc::now();
-        
+
         tracing::info!("Code Generation Agent initialized");
         Ok(())
     }
@@ -435,10 +473,12 @@ mod tests {
     async fn test_code_generation_agent_creation() {
         let provider = Box::new(OllamaProvider::new());
         let agent = CodeGenerationAgent::new(provider);
-        
+
         assert_eq!(agent.id(), "code-generation");
         assert_eq!(agent.name(), "Code Generation Agent");
-        assert!(agent.capabilities().contains(&AgentCapability::CodeGeneration));
+        assert!(agent
+            .capabilities()
+            .contains(&AgentCapability::CodeGeneration));
         assert!(agent.can_handle(&AgentRequestType::GenerateCode));
         assert!(!agent.can_handle(&AgentRequestType::CheckSecurity));
     }
@@ -447,7 +487,7 @@ mod tests {
     fn test_system_prompt_creation() {
         let provider = Box::new(OllamaProvider::new());
         let agent = CodeGenerationAgent::new(provider);
-        
+
         let request = CodeGenerationRequest {
             requirements: "Create a function to calculate fibonacci numbers".to_string(),
             language: Some("rust".to_string()),
@@ -457,7 +497,7 @@ mod tests {
             include_tests: true,
             include_docs: true,
         };
-        
+
         let context = AgentContext {
             project_root: Some("/home/user/project".to_string()),
             current_directory: "/home/user/project/src".to_string(),
@@ -467,9 +507,9 @@ mod tests {
             environment_vars: HashMap::new(),
             user_preferences: HashMap::new(),
         };
-        
+
         let prompt = agent.create_system_prompt(&request, &context);
-        
+
         assert!(prompt.contains("rust"));
         assert!(prompt.contains("functional"));
         assert!(prompt.contains("unit tests"));

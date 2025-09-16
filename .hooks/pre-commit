@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-commit hook: format, lint, and run a quick test subset.
+# Install: ln -sf ../../.hooks/pre-commit .git/hooks/pre-commit
+set -euo pipefail
+
+# Format (Rust)
+cargo +nightly fmt --all
+
+# Lint (clippy) - deny warnings on workspace
+cargo clippy --workspace --all-targets -- -D warnings
+
+# TypeScript tools, if present
+if [ -f .dev/package.json ]; then
+  (cd .dev && npm run type-check && npm run lint)
+fi
+
+# Fast checks
+cargo check --workspace --all-targets
+
+# Quick test subset for core app
+cargo test -p openagent-terminal -- --nocapture

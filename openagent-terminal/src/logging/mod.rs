@@ -16,8 +16,14 @@ use std::time::{Duration, Instant, SystemTime};
 use std::{env, process};
 
 // Optional at-rest encryption
-use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use rand::RngCore;
+// base64 engine (new API)
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 
 use log::{Level, LevelFilter};
 use regex::Regex;
@@ -279,7 +285,9 @@ impl OnDemandLogFile {
         unsafe { env::set_var(OPENAGENT_TERMINAL_LOG_ENV, path.as_os_str()) };
 
         let (encrypt, key_b64, cipher) = Self::load_cipher();
-        let retention_days = env::var("OPENAGENT_LOG_RETENTION_DAYS").ok().and_then(|v| v.parse::<u64>().ok());
+        let retention_days = env::var("OPENAGENT_LOG_RETENTION_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok());
 
         OnDemandLogFile {
             path,
@@ -294,7 +302,9 @@ impl OnDemandLogFile {
 
     fn with_path(path: PathBuf) -> Self {
         let (encrypt, key_b64, cipher) = Self::load_cipher();
-        let retention_days = env::var("OPENAGENT_LOG_RETENTION_DAYS").ok().and_then(|v| v.parse::<u64>().ok());
+        let retention_days = env::var("OPENAGENT_LOG_RETENTION_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok());
         OnDemandLogFile {
             path,
             file: None,
@@ -354,7 +364,7 @@ impl OnDemandLogFile {
 impl OnDemandLogFile {
     fn load_cipher() -> (bool, Option<String>, Option<Aes256Gcm>) {
         if let Ok(b64) = env::var("OPENAGENT_LOG_ENCRYPT_KEY") {
-            if let Ok(raw) = base64::decode(b64.as_bytes()) {
+            if let Ok(raw) = STANDARD.decode(b64.as_bytes()) {
                 if raw.len() == 32 {
                     let cipher = Aes256Gcm::new_from_slice(&raw).ok();
                     return (cipher.is_some(), Some(b64), cipher);
@@ -388,23 +398,22 @@ impl OnDemandLogFile {
             let mut nonce_bytes = [0u8; 12];
             rand::thread_rng().fill_bytes(&mut nonce_bytes);
             let nonce = Nonce::from_slice(&nonce_bytes);
-            match cipher.encrypt(nonce, buf) {
-                Ok(mut ciphertext) => {
-                    // Prepend nonce, base64-encode and write with ENC prefix
-                    let mut combined = Vec::with_capacity(12 + ciphertext.len());
-                    combined.extend_from_slice(&nonce_bytes);
-                    combined.append(&mut ciphertext);
-                    let mut line = b"ENCv1:".to_vec();
-                    line.extend_from_slice(base64::encode(combined).as_bytes());
-                    line.push(b'\n');
-                    return line;
-                }
-                Err(_) => {}
+            if let Ok(mut ciphertext) = cipher.encrypt(nonce, buf) {
+                // Prepend nonce, base64-encode and write with ENC prefix
+                let mut combined = Vec::with_capacity(12 + ciphertext.len());
+                combined.extend_from_slice(&nonce_bytes);
+                combined.append(&mut ciphertext);
+                let mut line = b"ENCv1:".to_vec();
+                line.extend_from_slice(STANDARD.encode(combined).as_bytes());
+                line.push(b'\n');
+                return line;
             }
         }
         // Fallback: write plaintext if encryption fails
         let mut v = buf.to_vec();
-        if !v.ends_with(b"\n") { v.push(b'\n'); }
+        if !v.ends_with(b"\n") {
+            v.push(b'\n');
+        }
         v
     }
 
@@ -417,7 +426,9 @@ impl OnDemandLogFile {
             for e in entries.flatten() {
                 let p = e.path();
                 let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                if !fname.starts_with("OpenAgentTerminal-") || !fname.ends_with(".log") { continue; }
+                if !fname.starts_with("OpenAgentTerminal-") || !fname.ends_with(".log") {
+                    continue;
+                }
                 if let Ok(meta) = e.metadata() {
                     if let Ok(modified) = meta.modified() {
                         if modified < cutoff {

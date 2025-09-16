@@ -66,7 +66,7 @@ impl WorkflowParamsState {
                 kind: p.param_type,
                 description: p.description,
                 required: p.required,
-value: p.default.unwrap_or(serde_json::Value::Null),
+                value: p.default.unwrap_or(serde_json::Value::Null),
                 options: p.options,
                 min: p.min,
                 max: p.max,
@@ -476,7 +476,14 @@ impl Display {
         let panel_w = panel_cols as f32 * size_info.cell_width();
         let panel_h = panel_lines as f32 * size_info.cell_height();
         let rects = vec![
-            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.18),
+            RenderRect::new(
+                0.0,
+                0.0,
+                size_info.width(),
+                size_info.height(),
+                tokens.overlay,
+                0.18,
+            ),
             RenderRect::new(panel_x, panel_y, panel_w, panel_h, tokens.surface, 0.98),
         ];
         let metrics = self.glyph_cache.font_metrics();

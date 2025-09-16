@@ -426,7 +426,7 @@ impl Display {
     }
 
     /// Draw individual Warp-style tab
-#[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn draw_warp_tab(
         &mut self,
         x: f32,

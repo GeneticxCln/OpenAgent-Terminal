@@ -9,7 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["wasm-runtime"]
+default = []
 wasm-runtime = ["wasmtime", "wasmtime-wasi"]
 host-integration = ["dep:libloading"]
 

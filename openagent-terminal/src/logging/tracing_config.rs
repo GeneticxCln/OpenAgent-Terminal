@@ -6,15 +6,15 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{env, process};
 
-use tracing::{Level};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use tracing::Level;
 use tracing_subscriber::{
-    fmt::{self, format::FmtSpan},
     filter::filter_fn,
+    fmt::{self, format::FmtSpan},
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter, Layer, Registry,
@@ -53,47 +53,49 @@ impl Default for TracingConfig {
 impl TracingConfig {
     /// Create configuration from environment variables and CLI options.
     pub fn from_env() -> Self {
-        let mut config = Self::default();
-
-        // Check if AI debug logging is enabled.
-        config.ai_debug_log = env::var(OPENAGENT_AI_DEBUG_LOG_ENV)
+        // Build config fields without reassigning a Default struct
+        let ai_debug_log = env::var(OPENAGENT_AI_DEBUG_LOG_ENV)
             .ok()
             .map(|v| v == "1" || v.to_lowercase() == "true")
             .unwrap_or(false);
 
-        // Set AI debug log path.
-        if config.ai_debug_log {
-            config.ai_debug_log_path = env::var(OPENAGENT_AI_DEBUG_LOG_PATH_ENV)
+        let ai_debug_log_path = if ai_debug_log {
+            env::var(OPENAGENT_AI_DEBUG_LOG_PATH_ENV)
                 .ok()
                 .map(PathBuf::from)
                 .or_else(|| {
                     let mut path = env::temp_dir();
                     path.push(format!("openagent_ai_debug_{}.log", process::id()));
                     Some(path)
-                });
-        }
+                })
+        } else {
+            None
+        };
 
         // Add default module filters.
-        config.module_filters = vec![
+        let module_filters = vec![
             // Core modules at info level.
             "openagent_terminal=info".to_string(),
             "openagent_terminal_core=info".to_string(),
             "openagent_terminal_config=info".to_string(),
-
             // AI module at debug level if AI debug is enabled.
-            if config.ai_debug_log {
+            if ai_debug_log {
                 "openagent_terminal_ai=debug".to_string()
             } else {
                 "openagent_terminal_ai=info".to_string()
             },
-
             // External dependencies at warn level to reduce noise.
             "winit=warn".to_string(),
             "mio=warn".to_string(),
             "notify=warn".to_string(),
         ];
 
-        config
+        TracingConfig {
+            base_level: Level::INFO,
+            ai_debug_log,
+            ai_debug_log_path,
+            module_filters,
+        }
     }
 
     /// Build the environment filter string.
@@ -123,10 +125,12 @@ impl ConditionalFileWriter {
         }
     }
 
+    #[allow(dead_code)]
     fn enable(&self) {
         self.enabled.store(true, Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     fn disable(&self) {
         self.enabled.store(false, Ordering::SeqCst);
     }
@@ -143,7 +147,7 @@ impl Write for ConditionalFileWriter {
                 OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&self.path)?
+                    .open(&self.path)?,
             );
             eprintln!("Created AI debug log at: {}", self.path.display());
         }
@@ -161,8 +165,10 @@ impl Write for ConditionalFileWriter {
 }
 
 /// Field redactor for sensitive information in structured logs.
+#[allow(dead_code)]
 pub struct SensitiveFieldRedactor;
 
+#[allow(dead_code)]
 impl SensitiveFieldRedactor {
     /// List of field names that should be redacted.
     const SENSITIVE_FIELDS: &'static [&'static str] = &[
@@ -202,8 +208,8 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
     let subscriber = Registry::default();
 
     // Add environment filter layer.
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(config.build_filter()));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(config.build_filter()));
 
     // Create stdout layer with formatting.
     let stdout_layer = fmt::layer()
@@ -217,9 +223,7 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
         .compact();
 
     // Build the subscriber with layers.
-    let subscriber = subscriber
-        .with(env_filter)
-        .with(stdout_layer);
+    let subscriber = subscriber.with(env_filter).with(stdout_layer);
 
     // Initialize Prometheus metrics exporter only when explicitly enabled via env
     if let Ok(addr) = std::env::var("OPENAGENT_PROM_PORT") {
@@ -228,12 +232,10 @@ pub fn initialize_tracing(config: TracingConfig) -> Result<(), Box<dyn std::erro
             if let Ok(handle) = PrometheusBuilder::new().install_recorder() {
                 // Spawn a tiny HTTP server to expose /metrics
                 std::thread::spawn(move || {
-                    for stream in listener.incoming() {
-                        if let Ok(mut s) = stream {
-                            let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\n");
-                            let body = handle.render();
-                            let _ = s.write_all(body.as_bytes());
-                        }
+                    for mut s in listener.incoming().flatten() {
+                        let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\n");
+                        let body = handle.render();
+                        let _ = s.write_all(body.as_bytes());
                     }
                 });
             }

@@ -1,17 +1,17 @@
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
-use super::*;
-use super::conversation_manager::ConversationManager;
-use super::natural_language::{ConversationTurn, ConversationRole};
 use super::blitzy_project_context::BlitzyProjectContextAgent;
+use super::conversation_manager::ConversationManager;
+use super::natural_language::{ConversationRole, ConversationTurn};
 use super::workflow_orchestrator::WorkflowOrchestrator;
+use super::*;
 
 /// Advanced conversation features manager
 pub struct AdvancedConversationFeatures {
@@ -286,19 +286,29 @@ impl SummarizationEngine {
         let target_len = ((text.len() as f32) * target_ratio).max(100.0) as usize;
         let mut summary_txt = if text.len() > target_len {
             let mut s = text[..target_len].to_string();
-            if let Some(pos) = s.rfind(['.', '!', '?']) { s.truncate(pos + 1); }
+            if let Some(pos) = s.rfind(['.', '!', '?']) {
+                s.truncate(pos + 1);
+            }
             s
         } else {
             text.to_string()
         };
-        if summary_txt.is_empty() { summary_txt = text.chars().take(strategy.max_length).collect(); }
+        if summary_txt.is_empty() {
+            summary_txt = text.chars().take(strategy.max_length).collect();
+        }
 
         // Basic key point extraction: take first lines
         let key_points = text
             .lines()
             .filter(|l| !l.trim().is_empty())
             .take(5)
-            .map(|l| KeyPoint { point: l.trim().to_string(), importance: 0.7, turn_references: vec![], related_entities: vec![], category: KeyPointCategory::Information })
+            .map(|l| KeyPoint {
+                point: l.trim().to_string(),
+                importance: 0.7,
+                turn_references: vec![],
+                related_entities: vec![],
+                category: KeyPointCategory::Information,
+            })
             .collect::<Vec<_>>();
 
         let conversation_summary = ConversationSummary {
@@ -308,12 +318,20 @@ impl SummarizationEngine {
             key_points,
             action_items: vec![],
             unresolved_questions: vec![],
-            context_preservation: ContextPreservation { essential_context: vec![], entity_mappings: HashMap::new(), goal_continuity: vec![], workflow_state: None },
+            context_preservation: ContextPreservation {
+                essential_context: vec![],
+                entity_mappings: HashMap::new(),
+                goal_continuity: vec![],
+                workflow_state: None,
+            },
             generated_at: Utc::now(),
             compression_ratio: target_ratio,
         };
 
-        self.summaries.write().await.insert(session_id, conversation_summary.clone());
+        self.summaries
+            .write()
+            .await
+            .insert(session_id, conversation_summary.clone());
         Ok(conversation_summary)
     }
 
@@ -386,9 +404,18 @@ pub struct GoalAutomation {
 }
 
 impl GoalAutomation {
-    pub async fn add_rule(&self, rule: AutomationRule) { self.automation_rules.write().await.push(rule); }
-    pub async fn add_template(&self, tpl: GoalTemplate) { self.goal_templates.write().await.insert(tpl.id.clone(), tpl); }
-    pub async fn add_detector(&self, id: String, det: CompletionDetector) { self.completion_detectors.write().await.insert(id, det); }
+    pub async fn add_rule(&self, rule: AutomationRule) {
+        self.automation_rules.write().await.push(rule);
+    }
+    pub async fn add_template(&self, tpl: GoalTemplate) {
+        self.goal_templates
+            .write()
+            .await
+            .insert(tpl.id.clone(), tpl);
+    }
+    pub async fn add_detector(&self, id: String, det: CompletionDetector) {
+        self.completion_detectors.write().await.insert(id, det);
+    }
 }
 
 /// Goal tracker for individual goals
@@ -766,11 +793,14 @@ impl AdvancedConversationFeatures {
         let context_snapshot = self.create_context_snapshot(session_id).await?;
 
         // Create new session for the branch
-        let branch_session_id = self.conversation_manager
-            .create_session(Some(format!("Branch: {}", branch_name))).await?;
+        let branch_session_id = self
+            .conversation_manager
+            .create_session(Some(format!("Branch: {}", branch_name)))
+            .await?;
 
         // Copy context from parent session if needed
-        self.copy_session_context(session_id, branch_session_id).await?;
+        self.copy_session_context(session_id, branch_session_id)
+            .await?;
 
         let branch_id = format!("branch-{}", Uuid::new_v4());
         let branch = ConversationBranch {
@@ -807,14 +837,19 @@ impl AdvancedConversationFeatures {
         tree.branches.insert(branch_id.clone(), branch);
         tree.last_updated = Utc::now();
 
-        tracing::info!("Created conversation branch: {} for session {}", branch_name, session_id);
+        tracing::info!(
+            "Created conversation branch: {} for session {}",
+            branch_name,
+            session_id
+        );
         Ok(branch_id)
     }
 
     /// Switch to a different branch
     pub async fn switch_branch(&self, session_id: Uuid, branch_id: String) -> Result<()> {
         let mut trees = self.conversation_trees.write().await;
-        let tree = trees.get_mut(&session_id)
+        let tree = trees
+            .get_mut(&session_id)
             .ok_or_else(|| anyhow!("No conversation tree found for session {}", session_id))?;
 
         if !tree.branches.contains_key(&branch_id) {
@@ -835,7 +870,11 @@ impl AdvancedConversationFeatures {
         tree.active_branch = branch_id;
         tree.last_updated = Utc::now();
 
-        tracing::info!("Switched to branch {} for session {}", tree.active_branch, session_id);
+        tracing::info!(
+            "Switched to branch {} for session {}",
+            tree.active_branch,
+            session_id
+        );
         Ok(())
     }
 
@@ -848,10 +887,11 @@ impl AdvancedConversationFeatures {
         strategy: MergeStrategy,
     ) -> Result<String> {
         let merge_id = format!("merge-{}", Uuid::new_v4());
-        
+
         // Validate branches exist
         let trees = self.conversation_trees.read().await;
-        let tree = trees.get(&session_id)
+        let tree = trees
+            .get(&session_id)
             .ok_or_else(|| anyhow!("No conversation tree found for session {}", session_id))?;
 
         for branch_id in &source_branches {
@@ -867,7 +907,9 @@ impl AdvancedConversationFeatures {
         drop(trees);
 
         // Perform merge based on strategy
-        let conflicts_resolved = self.resolve_merge_conflicts(&source_branches, &target_branch, &strategy).await?;
+        let conflicts_resolved = self
+            .resolve_merge_conflicts(&source_branches, &target_branch, &strategy)
+            .await?;
 
         // Create merge point
         let merge_point = MergePoint {
@@ -883,7 +925,7 @@ impl AdvancedConversationFeatures {
         let mut trees = self.conversation_trees.write().await;
         let tree = trees.get_mut(&session_id).unwrap();
         tree.merge_points.push(merge_point);
-        
+
         // Mark source branches as merged
         for branch_id in source_branches {
             if let Some(branch) = tree.branches.get_mut(&branch_id) {
@@ -893,7 +935,11 @@ impl AdvancedConversationFeatures {
 
         tree.last_updated = Utc::now();
 
-        tracing::info!("Merged branches into {} for session {}", target_branch, session_id);
+        tracing::info!(
+            "Merged branches into {} for session {}",
+            target_branch,
+            session_id
+        );
         Ok(merge_id)
     }
 
@@ -908,8 +954,10 @@ impl AdvancedConversationFeatures {
         }
 
         // Get conversation content
-        let conversation_content = self.conversation_manager
-            .get_conversation_summary(session_id, 50).await?;
+        let conversation_content = self
+            .conversation_manager
+            .get_conversation_summary(session_id, 50)
+            .await?;
 
         // Generate key points
         let key_points = self.extract_key_points(&conversation_content).await?;
@@ -918,7 +966,9 @@ impl AdvancedConversationFeatures {
         let action_items = self.extract_action_items(&conversation_content).await?;
 
         // Find unresolved questions
-        let unresolved_questions = self.extract_unresolved_questions(&conversation_content).await?;
+        let unresolved_questions = self
+            .extract_unresolved_questions(&conversation_content)
+            .await?;
 
         // Create context preservation strategy
         let context_preservation = self.create_context_preservation(session_id).await?;
@@ -926,7 +976,9 @@ impl AdvancedConversationFeatures {
         let summary = ConversationSummary {
             session_id,
             summary_type: summary_type.clone(),
-            content: self.generate_summary_content(&conversation_content, &summary_type).await?,
+            content: self
+                .generate_summary_content(&conversation_content, &summary_type)
+                .await?,
             key_points,
             action_items,
             unresolved_questions,
@@ -939,7 +991,11 @@ impl AdvancedConversationFeatures {
         let mut summaries = self.summarization_engine.summaries.write().await;
         summaries.insert(session_id, summary.clone());
 
-        tracing::info!("Generated {:?} summary for session {}", summary_type, session_id);
+        tracing::info!(
+            "Generated {:?} summary for session {}",
+            summary_type,
+            session_id
+        );
         Ok(summary)
     }
 
@@ -955,7 +1011,7 @@ impl AdvancedConversationFeatures {
         }
 
         let goal_id = format!("goal-{}", Uuid::new_v4());
-        
+
         // Create goal tracker
         let goal_tracker = GoalTracker {
             goal_id: goal_id.clone(),
@@ -975,7 +1031,11 @@ impl AdvancedConversationFeatures {
         let mut trackers = self.goal_automation.goal_tracker.write().await;
         trackers.insert(session_id, goal_tracker);
 
-        tracing::info!("Started goal tracking: {} for session {}", goal_description, session_id);
+        tracing::info!(
+            "Started goal tracking: {} for session {}",
+            goal_description,
+            session_id
+        );
         Ok(goal_id)
     }
 
@@ -987,7 +1047,8 @@ impl AdvancedConversationFeatures {
         progress: f32,
     ) -> Result<()> {
         let mut trackers = self.goal_automation.goal_tracker.write().await;
-        let tracker = trackers.get_mut(&session_id)
+        let tracker = trackers
+            .get_mut(&session_id)
             .ok_or_else(|| anyhow!("No goal tracker found for session {}", session_id))?;
 
         if tracker.goal_id != goal_id {
@@ -998,7 +1059,8 @@ impl AdvancedConversationFeatures {
         tracker.progress = progress.clamp(0.0, 1.0);
 
         // Check for milestone completions
-        self.check_milestone_completions(tracker, old_progress).await?;
+        self.check_milestone_completions(tracker, old_progress)
+            .await?;
 
         // Trigger automation rules if needed
         self.check_automation_triggers(tracker).await?;
@@ -1009,7 +1071,11 @@ impl AdvancedConversationFeatures {
             tracker.actual_completion = Some(Utc::now());
         }
 
-        tracing::info!("Updated goal {} progress to {:.1}%", goal_id, progress * 100.0);
+        tracing::info!(
+            "Updated goal {} progress to {:.1}%",
+            goal_id,
+            progress * 100.0
+        );
         Ok(())
     }
 
@@ -1025,7 +1091,7 @@ impl AdvancedConversationFeatures {
         }
 
         let group_id = format!("group-{}", Uuid::new_v4());
-        
+
         let session_group = SessionGroup {
             id: group_id.clone(),
             name,
@@ -1045,7 +1111,9 @@ impl AdvancedConversationFeatures {
         };
 
         let mut coordinator = self.session_coordinator.write().await;
-        coordinator.session_groups.insert(group_id.clone(), session_group);
+        coordinator
+            .session_groups
+            .insert(group_id.clone(), session_group);
 
         tracing::info!("Created session group: {}", group_id);
         Ok(group_id)
@@ -1058,15 +1126,21 @@ impl AdvancedConversationFeatures {
         Ok(ContextSnapshot {
             active_goals: Vec::new(), // Would be populated from goal automation
             project_state: self.get_project_state().await,
-            conversation_summary: self.conversation_manager
-                .get_conversation_summary(session_id, 10).await
+            conversation_summary: self
+                .conversation_manager
+                .get_conversation_summary(session_id, 10)
+                .await
                 .unwrap_or_default(),
             key_entities: Vec::new(), // Would extract from conversation
             workflow_state: self.get_workflow_state().await,
         })
     }
 
-    async fn copy_session_context(&self, _source_session: Uuid, _target_session: Uuid) -> Result<()> {
+    async fn copy_session_context(
+        &self,
+        _source_session: Uuid,
+        _target_session: Uuid,
+    ) -> Result<()> {
         // Implementation would copy relevant context between sessions
         Ok(())
     }
@@ -1105,11 +1179,19 @@ impl AdvancedConversationFeatures {
         })
     }
 
-    async fn generate_summary_content(&self, content: &str, _summary_type: &SummaryType) -> Result<String> {
+    async fn generate_summary_content(
+        &self,
+        content: &str,
+        _summary_type: &SummaryType,
+    ) -> Result<String> {
         // Simple implementation - would use more sophisticated NLP in production
         let words: Vec<&str> = content.split_whitespace().collect();
         let summary_length = (words.len() as f32 * self.config.summary_compression_target) as usize;
-        Ok(words.into_iter().take(summary_length).collect::<Vec<_>>().join(" "))
+        Ok(words
+            .into_iter()
+            .take(summary_length)
+            .collect::<Vec<_>>()
+            .join(" "))
     }
 
     async fn generate_milestones_for_goal(&self, _goal_type: &str) -> Result<Vec<Milestone>> {
@@ -1122,7 +1204,11 @@ impl AdvancedConversationFeatures {
         Ok(Vec::new())
     }
 
-    async fn check_milestone_completions(&self, _tracker: &mut GoalTracker, _old_progress: f32) -> Result<()> {
+    async fn check_milestone_completions(
+        &self,
+        _tracker: &mut GoalTracker,
+        _old_progress: f32,
+    ) -> Result<()> {
         // Implementation would check if any milestones should be marked as completed
         Ok(())
     }
@@ -1203,12 +1289,18 @@ impl Agent for AdvancedConversationFeatures {
                         });
                     }
                     _ => {
-                        return Err(anyhow!("Unknown advanced conversation request: {}", custom_type));
+                        return Err(anyhow!(
+                            "Unknown advanced conversation request: {}",
+                            custom_type
+                        ));
                     }
                 }
             }
             _ => {
-                return Err(anyhow!("Advanced Conversation Features cannot handle request type: {:?}", request.request_type));
+                return Err(anyhow!(
+                    "Advanced Conversation Features cannot handle request type: {:?}",
+                    request.request_type
+                ));
             }
         }
 
@@ -1236,7 +1328,10 @@ impl Agent for AdvancedConversationFeatures {
             is_busy: active_trees > 0 || active_sessions > 0,
             last_activity: Utc::now(),
             current_task: if active_trees > 0 {
-                Some(format!("Managing {} conversation trees with {} sessions", active_trees, active_sessions))
+                Some(format!(
+                    "Managing {} conversation trees with {} sessions",
+                    active_trees, active_sessions
+                ))
             } else {
                 None
             },
@@ -1298,20 +1393,26 @@ impl CrossSessionContext {
 impl SummarizationEngine {
     pub fn new() -> Self {
         let mut summary_strategies = HashMap::new();
-        summary_strategies.insert(SummaryType::Brief, SummaryStrategy {
-            max_length: 200,
-            key_point_threshold: 0.7,
-            entity_preservation: false,
-            goal_tracking: false,
-            temporal_awareness: false,
-        });
-        summary_strategies.insert(SummaryType::Comprehensive, SummaryStrategy {
-            max_length: 1000,
-            key_point_threshold: 0.5,
-            entity_preservation: true,
-            goal_tracking: true,
-            temporal_awareness: true,
-        });
+        summary_strategies.insert(
+            SummaryType::Brief,
+            SummaryStrategy {
+                max_length: 200,
+                key_point_threshold: 0.7,
+                entity_preservation: false,
+                goal_tracking: false,
+                temporal_awareness: false,
+            },
+        );
+        summary_strategies.insert(
+            SummaryType::Comprehensive,
+            SummaryStrategy {
+                max_length: 1000,
+                key_point_threshold: 0.5,
+                entity_preservation: true,
+                goal_tracking: true,
+                temporal_awareness: true,
+            },
+        );
 
         let mut compression_ratios = HashMap::new();
         compression_ratios.insert(ContentType::Conversation, 0.3);
@@ -1345,7 +1446,7 @@ mod tests {
     async fn test_advanced_conversation_features_creation() {
         let conv_manager = Arc::new(ConversationManager::new());
         let features = AdvancedConversationFeatures::new(conv_manager);
-        
+
         assert_eq!(features.id(), "advanced-conversation-features");
         assert_eq!(features.name(), "Advanced Conversation Features");
     }

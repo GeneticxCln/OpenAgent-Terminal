@@ -33,9 +33,9 @@ use winit::raw_window_handle::HasDisplayHandle;
 use winit::window::WindowId;
 
 use openagent_terminal_core::event::{Event as TerminalEvent, EventListener, Notify};
+use openagent_terminal_core::event_loop::Notifier;
 #[cfg(test)]
 use openagent_terminal_core::grid;
-use openagent_terminal_core::event_loop::Notifier;
 use openagent_terminal_core::grid::{BidirectionalIterator, Dimensions, Scroll};
 use openagent_terminal_core::index::{Boundary, Column, Direction, Line, Point, Side};
 use openagent_terminal_core::selection::{Selection, SelectionType};
@@ -71,9 +71,9 @@ use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 #[cfg(feature = "plugins")]
-use serde_json::json;
-#[cfg(feature = "plugins")]
 use plugin_loader::PluginEvent;
+#[cfg(feature = "plugins")]
+use serde_json::json;
 
 #[cfg(test)]
 pub(crate) fn collect_block_output_from_grid(
@@ -1283,12 +1283,12 @@ impl ApplicationHandler<Event> for Processor {
                         event.clone(),
                     );
                 }
-            },
+            }
             // Notebooks UI events
             #[cfg(feature = "blocks")]
             (EventType::NotebooksOpen, Some(window_id)) => {
                 self.notebooks_open(*window_id);
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksList(items), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
@@ -1300,7 +1300,7 @@ impl ApplicationHandler<Event> for Processor {
                         win.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksSelect(id), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
@@ -1308,7 +1308,7 @@ impl ApplicationHandler<Event> for Processor {
                     win.display.notebooks_panel.cells.clear();
                 }
                 self.notebooks_load_cells(*window_id, id);
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksCells(cells), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
@@ -1318,7 +1318,7 @@ impl ApplicationHandler<Event> for Processor {
                         win.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksRunCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1334,7 +1334,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksRunNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1350,7 +1350,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksAddCommand(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1378,7 +1378,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksAddMarkdown(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1417,7 +1417,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksConvertCellToMarkdown(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1437,7 +1437,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksConvertCellToCommand(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1457,7 +1457,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksExportNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1481,7 +1481,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::NotebooksEditApply { cell_id, content }, Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -1615,12 +1615,12 @@ impl ApplicationHandler<Event> for Processor {
                         }
                     }
                 }
-            },
+            }
             // Blocks search events handled at processor level
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, *window_id);
-            },
+            }
             #[cfg(feature = "blocks")]
             (EventType::BlocksSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1635,17 +1635,28 @@ impl ApplicationHandler<Event> for Processor {
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
                 self.process_workflows_search_perform(query, *window_id);
-            },
+            }
             #[cfg(feature = "workflow")]
-            (EventType::WorkflowsOpenParamsForm { workflow_id, workflow_name, params }, Some(window_id)) => {
+            (
+                EventType::WorkflowsOpenParamsForm {
+                    workflow_id,
+                    workflow_name,
+                    params,
+                },
+                Some(window_id),
+            ) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
-                    window_context.display.workflows_params.open(workflow_id, workflow_name, params);
+                    window_context.display.workflows_params.open(
+                        workflow_id,
+                        workflow_name,
+                        params,
+                    );
                     window_context.dirty = true;
                     if window_context.display.window.has_frame {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsCancelParams, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1655,9 +1666,15 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
-            (EventType::WorkflowsSubmitParams { workflow_id, values }, Some(window_id)) => {
+            (
+                EventType::WorkflowsSubmitParams {
+                    workflow_id,
+                    values,
+                },
+                Some(window_id),
+            ) => {
                 // Execute with provided params via engine
                 if let Some(components) = &self.components {
                     if let Some(engine) = &components.workflow_engine {
@@ -1670,14 +1687,23 @@ impl ApplicationHandler<Event> for Processor {
                                 Ok(exec_id) => {
                                     // Try fetch workflow name for UI
                                     let wf_name = {
-                                        let wf = engine.list_workflows().await.into_iter().find(|(id, _)| id == &workflow_id);
-                                        wf.map(|(_, d)| d.name).unwrap_or_else(|| workflow_id.clone())
+                                        let wf = engine
+                                            .list_workflows()
+                                            .await
+                                            .into_iter()
+                                            .find(|(id, _)| id == &workflow_id);
+                                        wf.map(|(_, d)| d.name)
+                                            .unwrap_or_else(|| workflow_id.clone())
                                     };
                                     let message = crate::message_bar::Message::new(
-                                        format!("Started workflow '{}' (execution {})", wf_name, exec_id),
+                                        format!(
+                                            "Started workflow '{}' (execution {})",
+                                            wf_name, exec_id
+                                        ),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(message), win));
+                                    let _ = proxy
+                                        .send_event(Event::new(EventType::Message(message), win));
                                     let _ = proxy.send_event(Event::new(
                                         EventType::WorkflowsProgressUpdate {
                                             execution_id: exec_id.clone(),
@@ -1696,7 +1722,9 @@ impl ApplicationHandler<Event> for Processor {
                                         use workflow_engine::WorkflowEvent;
                                         match rx.recv().await {
                                             Ok(ev) => match ev {
-                                                WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
+                                                WorkflowEvent::Started { execution_id }
+                                                    if execution_id == exec_id =>
+                                                {
                                                     let _ = proxy.send_event(Event::new(
                                                         EventType::WorkflowsProgressUpdate {
                                                             execution_id,
@@ -1709,7 +1737,10 @@ impl ApplicationHandler<Event> for Processor {
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepStarted { execution_id, step_id } if execution_id == exec_id => {
+                                                WorkflowEvent::StepStarted {
+                                                    execution_id,
+                                                    step_id,
+                                                } if execution_id == exec_id => {
                                                     let _ = proxy.send_event(Event::new(
                                                         EventType::WorkflowsProgressUpdate {
                                                             execution_id,
@@ -1722,7 +1753,10 @@ impl ApplicationHandler<Event> for Processor {
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepCompleted { execution_id, step_id } if execution_id == exec_id => {
+                                                WorkflowEvent::StepCompleted {
+                                                    execution_id,
+                                                    step_id,
+                                                } if execution_id == exec_id => {
                                                     let msg = format!("Completed step {step_id}");
                                                     let _ = proxy.send_event(Event::new(
                                                         EventType::WorkflowsProgressUpdate {
@@ -1736,7 +1770,10 @@ impl ApplicationHandler<Event> for Processor {
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepFailed { execution_id, step_id } if execution_id == exec_id => {
+                                                WorkflowEvent::StepFailed {
+                                                    execution_id,
+                                                    step_id,
+                                                } if execution_id == exec_id => {
                                                     let msg = format!("Failed step {step_id}");
                                                     let _ = proxy.send_event(Event::new(
                                                         EventType::WorkflowsProgressUpdate {
@@ -1750,7 +1787,10 @@ impl ApplicationHandler<Event> for Processor {
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::Completed { execution_id, status } if execution_id == exec_id => {
+                                                WorkflowEvent::Completed {
+                                                    execution_id,
+                                                    status,
+                                                } if execution_id == exec_id => {
                                                     let _ = proxy.send_event(Event::new(
                                                         EventType::WorkflowsProgressUpdate {
                                                             execution_id,
@@ -1763,7 +1803,11 @@ impl ApplicationHandler<Event> for Processor {
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::Log { execution_id, step_id: _, message } if execution_id == exec_id => {
+                                                WorkflowEvent::Log {
+                                                    execution_id,
+                                                    step_id: _,
+                                                    message,
+                                                } if execution_id == exec_id => {
                                                     let _ = proxy.send_event(Event::new(
                                                         EventType::WorkflowsProgressUpdate {
                                                             execution_id,
@@ -1787,11 +1831,12 @@ impl ApplicationHandler<Event> for Processor {
                                         format!("Workflow failed to start: {}", e),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(m), win));
                                 }
                             }
                         });
-                }
+                    }
                 }
                 // Close params overlay in current window
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -1801,10 +1846,9 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchResults(items), Some(window_id)) => {
-
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.workflows_panel.results = items;
                     window_context.dirty = true;
@@ -1812,7 +1856,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (
                 EventType::WorkflowsProgressUpdate {
@@ -1877,7 +1921,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsProgressClear(execution_id), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -2394,7 +2438,7 @@ impl ApplicationHandler<Event> for Processor {
                         window_context.display.window.request_redraw();
                     }
                 }
-            },
+            }
             #[cfg(feature = "plugins")]
             (EventType::PaletteRequestPluginCommands, Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -2428,7 +2472,7 @@ impl ApplicationHandler<Event> for Processor {
                         });
                     }
                 }
-            },
+            }
             #[cfg(feature = "plugins")]
             (EventType::PluginsRunCommand { plugin, command }, Some(window_id)) => {
                 if let Some(components) = &self.components {
@@ -2453,7 +2497,10 @@ impl ApplicationHandler<Event> for Processor {
                             match resp {
                                 Ok(r) if r.success => {
                                     let msg = if let Some(res) = r.result {
-                                        format!("Plugin '{}' ran command successfully:\n{}", plugin_name, res)
+                                        format!(
+                                            "Plugin '{}' ran command successfully:\n{}",
+                                            plugin_name, res
+                                        )
                                     } else {
                                         format!("Plugin '{}' ran command successfully", plugin_name)
                                     };
@@ -2461,7 +2508,8 @@ impl ApplicationHandler<Event> for Processor {
                                         msg,
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(m), win));
                                 }
                                 Ok(r) => {
                                     let msg = format!(
@@ -2473,14 +2521,16 @@ impl ApplicationHandler<Event> for Processor {
                                         msg,
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(m), win));
                                 }
                                 Err(e) => {
                                     let m = crate::message_bar::Message::new(
                                         format!("Plugin '{}' error: {}", plugin_name, e),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(m), win));
                                 }
                             }
                         });
@@ -2710,7 +2760,10 @@ pub enum EventType {
     #[cfg(feature = "plugins")]
     PaletteAppendPluginCommands(Vec<(String, String, Option<String>)>), // (plugin, command, subtitle)
     #[cfg(feature = "plugins")]
-    PluginsRunCommand { plugin: String, command: String },
+    PluginsRunCommand {
+        plugin: String,
+        command: String,
+    },
     #[cfg(feature = "workflow")]
     WorkflowsSearchResults(Vec<crate::display::workflow_panel::WorkflowItem>),
     #[cfg(feature = "workflow")]
@@ -7421,7 +7474,9 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             .as_ref()
                             .and_then(|w| w.get_current_ai_context())
                         {
-                            let (wd, sk) = crate::ai_context_provider::context_to_ai_params(&Some(ai_ctx.clone()));
+                            let (wd, sk) = crate::ai_context_provider::context_to_ai_params(&Some(
+                                ai_ctx.clone(),
+                            ));
                             (wd, sk, ai_ctx.last_command)
                         } else {
                             (None, None, None)
@@ -7429,7 +7484,12 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     };
 
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        runtime.propose_fix(error_text, last_command, working_directory, shell_kind);
+                        runtime.propose_fix(
+                            error_text,
+                            last_command,
+                            working_directory,
+                            shell_kind,
+                        );
                         *self.ctx.dirty = true;
                     }
                 }
@@ -7735,4 +7795,3 @@ pub(crate) fn schedule_blocks_search_for_test(
     let evt = Event::new(EventType::BlocksSearchPerform(query), window_id);
     scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
 }
-

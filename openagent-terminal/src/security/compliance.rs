@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ComplianceReport {
@@ -12,5 +11,8 @@ pub struct ComplianceReport {
 }
 
 impl ComplianceReport {
-    pub fn new() -> Self { Self::default() }
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
 }

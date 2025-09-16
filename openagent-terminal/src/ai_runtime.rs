@@ -330,7 +330,8 @@ fn persist_ai_conversation(
     output: &str,
 ) -> Result<(), String> {
     // Try SQLite first (best-effort). Fallback to JSONL on any error.
-    let sqlite_ok = persist_ai_conversation_sqlite(mode, working_directory, shell_kind, input, output).is_ok();
+    let sqlite_ok =
+        persist_ai_conversation_sqlite(mode, working_directory, shell_kind, input, output).is_ok();
 
     // Optionally disable JSONL fallback with OPENAGENT_AI_HISTORY_JSONL=0/false
     let jsonl_enabled = std::env::var("OPENAGENT_AI_HISTORY_JSONL")
@@ -459,8 +460,8 @@ fn persist_ai_conversation_sqlite(
         params![
             ts,
             mode,
-            working_directory.unwrap_or("") ,
-            shell_kind.unwrap_or("") ,
+            working_directory.unwrap_or(""),
+            shell_kind.unwrap_or(""),
             input,
             output
         ],
@@ -773,8 +774,10 @@ impl AiRuntime {
                         // Flush any pending chunk before finishing
                         if !batch_buf.is_empty() {
                             let payload = std::mem::take(&mut batch_buf);
-                            let _ = event_proxy
-                                .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                            let _ = event_proxy.send_event(Event::new(
+                                EventType::AiStreamChunk(payload),
+                                window_id,
+                            ));
                         }
                         info!("ai_runtime_stream_finished provider={}", provider.name());
                         let _ = event_proxy
@@ -805,8 +808,10 @@ impl AiRuntime {
                             // Flush any pending buffered chunk before finishing gracefully
                             if !batch_buf.is_empty() {
                                 let payload = std::mem::take(&mut batch_buf);
-                                let _ = event_proxy
-                                    .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                                let _ = event_proxy.send_event(Event::new(
+                                    EventType::AiStreamChunk(payload),
+                                    window_id,
+                                ));
                             }
                             // Treat cancellation as a graceful finish, do not surface an error
                             let _ = event_proxy
@@ -1379,10 +1384,7 @@ impl AiRuntime {
                     .flat_map(|p| p.proposed_commands.clone())
                     .collect();
                 let input_joined = if let Some(fc) = &failed_command {
-                    format!(
-                        "Error encountered while running '{}':\n{}",
-                        fc, error_text
-                    )
+                    format!("Error encountered while running '{}':\n{}", fc, error_text)
                 } else {
                     error_text.clone()
                 };
