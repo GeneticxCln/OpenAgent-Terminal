@@ -9,7 +9,7 @@ use openagent_terminal_ai::build_request_with_context;
 use openagent_terminal_ai::context::{
     BasicEnvProvider, ContextManager, FileTreeProvider, FileTreeRootStrategy, GitProvider,
 };
-use openagent_terminal_ai::privacy::{sanitize_request, AiPrivacyOptions};
+// Privacy sanitization is applied via build_request_with_context
 use openagent_terminal_ai::providers::{
     AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
 };
@@ -1164,20 +1164,33 @@ impl AiRuntime {
 
         debug!("Submitting AI query with context: {}", self.ui.scratch);
 
-        let (working_directory, shell_kind) = if let Some(ctx) = context {
+        let (working_directory, shell_kind) = if let Some(ctx) = context.as_ref() {
             let (wd, sk) = ctx.to_strings();
             (Some(wd), Some(sk))
         } else {
             (None, None)
         };
 
+        // Build request including rich context (env/git/file_tree) and sanitize via privacy options
+        let mut base_ctx: Vec<(String, String)> = vec![(
+            "platform".to_string(),
+            std::env::consts::OS.to_string(),
+        )];
+        // If provided, augment with last command and shell executable for extra context
+        if let Some(ref ctx) = context {
+            if let Some(last) = ctx.last_command.clone() {
+                base_ctx.push(("last_command".into(), last));
+            }
+            base_ctx.push(("shell_executable".into(), ctx.shell_executable.clone()));
+        }
         let req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
-            context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
+            context: base_ctx,
         };
-        let req = sanitize_request(&req_raw, AiPrivacyOptions::from_env());
+        let (cm, budget_kb) = self.build_context_manager();
+        let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
@@ -1275,6 +1288,7 @@ impl AiRuntime {
             shell_kind: shell_kind.clone(),
             context,
         };
+        // Enrich with configured context providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
@@ -1368,7 +1382,9 @@ impl AiRuntime {
             shell_kind: shell_kind.clone(),
             context,
         };
-        let req = sanitize_request(&req_raw, AiPrivacyOptions::from_env());
+        // Enrich with configured context providers and sanitize
+        let (cm, budget_kb) = self.build_context_manager();
+        let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {

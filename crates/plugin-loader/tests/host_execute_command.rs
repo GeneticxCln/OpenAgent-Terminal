@@ -26,7 +26,7 @@ impl PluginHost for MockHost {
     fn read_file(&self, _path: &str) -> Result<Vec<u8>, ApiPluginError> {
         Ok(vec![])
     }
-    fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), ApiPluginError> {
+fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), ApiPluginError> {
         Ok(())
     }
     fn execute_command(&self, command: &str) -> Result<CommandOutput, ApiPluginError> {
@@ -53,6 +53,19 @@ impl PluginHost for MockHost {
     ) -> Result<Option<Vec<u8>>, ApiPluginError> {
         Ok(None)
     }
+    fn store_document_for(
+        &self,
+        _plugin_id: &str,
+        _namespace: &str,
+        _doc_id: &str,
+        _doc_json: &str,
+    ) -> Result<(), ApiPluginError> { Ok(()) }
+    fn retrieve_document_for(
+        &self,
+        _plugin_id: &str,
+        _namespace: &str,
+        _doc_id: &str,
+    ) -> Result<Option<String>, ApiPluginError> { Ok(None) }
 }
 
 /// Build a tiny WASM module that calls env.host_execute_command once.

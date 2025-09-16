@@ -87,6 +87,37 @@ auto_focus = true
 animated_typing = true
 animation_speed = 1.0
 
+# Runtime context collection for AI (controls how much environment is sent; all sanitized via privacy rules)
+[ai.context]
+# Master enable for collecting terminal context
+enabled = true
+# Max bytes of context across providers (approximate); reduce to limit prompt size
+max_bytes = 32768  # 32KB
+# Ordered list of context providers to include
+# Supported providers: "env" (cwd, shell, safe env vars), "git" (branch/status), "file_tree" (relative file list)
+providers = ["env", "git", "file_tree"]
+
+[ai.context.timeouts]
+# Soft time limits; providers are collected in parallel and truncated on deadline
+per_provider_ms = 150
+overall_ms = 300
+# Optional per-provider overrides
+env_ms = 150
+git_ms = 200
+file_tree_ms = 250
+
+[ai.context.file_tree]
+# Limit number of file entries (after .gitignore filtering)
+max_entries = 500
+# Root strategy for file paths: "git" for repo root or "cwd" for current directory
+root_strategy = "git"
+
+[ai.context.git]
+# Include current branch name
+include_branch = true
+# Include summary status (modified/added/deleted/untracked counts)
+include_status = true
+
 # Provider-specific settings (optional)
 # Ollama (local, privacy-first)
 [ai.ollama]
@@ -450,10 +481,11 @@ position = "Top"
 show = true
 # Visibility behavior: "Auto" | "Always" | "Hover"
 # Auto => Always unless fullscreen (then Hover)
+# Hover => Show the bar only when the mouse is near the top/bottom edge
 visibility = "Auto"
 # Show close button on tabs
 show_close_button = true
-# Only render the close button when hovering a tab
+# Only render the close button when hovering a tab (region remains clickable)
 close_button_on_hover = false
 # Show modified indicator
 show_modified_indicator = true

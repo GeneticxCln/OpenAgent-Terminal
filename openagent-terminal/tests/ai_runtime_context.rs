@@ -56,4 +56,8 @@ fn ai_runtime_propagates_context_when_sanitization_disabled() {
     let seen = slot.lock().unwrap().clone().expect("no request captured");
     assert_eq!(seen.working_directory.as_deref(), Some("/tmp/wd"));
     assert_eq!(seen.shell_kind.as_deref(), Some("zsh"));
+    // Context should include recent command and shell executable metadata
+    let map: std::collections::HashMap<_, _> = seen.context.into_iter().collect();
+    assert_eq!(map.get("last_command").map(String::as_str), Some("ls"));
+    assert_eq!(map.get("shell_executable").map(String::as_str), Some("zsh"));
 }

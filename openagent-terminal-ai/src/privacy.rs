@@ -41,18 +41,20 @@ impl AiPrivacyOptions {
 pub fn sanitize_request(req: &AiRequest, opts: AiPrivacyOptions) -> AiRequest {
     let mut sanitized = req.clone();
 
-    // Redact working directory from scratch text and context.
+    // Compute common path placeholders
+    let placeholder_path = "[REDACTED_PATH]";
+
+    // Redact working directory from scratch text.
     if let Some(dir) = &req.working_directory {
         if opts.strip_cwd {
-            let placeholder = "[REDACTED_PATH]";
-            sanitized.scratch_text = sanitized.scratch_text.replace(dir, placeholder);
+            sanitized.scratch_text = sanitized.scratch_text.replace(dir, placeholder_path);
             // Replace common home path in text if present.
             if let Ok(home) = std::env::var("HOME") {
                 if !home.is_empty() {
-                    sanitized.scratch_text = sanitized.scratch_text.replace(&home, placeholder);
+                    sanitized.scratch_text = sanitized.scratch_text.replace(&home, placeholder_path);
                 }
             }
-            // Replace the precise working directory value with a generic redaction marker
+            // Replace the precise working directory field with a generic redaction marker
             sanitized.working_directory = Some("[REDACTED]".to_string());
         }
     }
@@ -62,20 +64,43 @@ pub fn sanitize_request(req: &AiRequest, opts: AiPrivacyOptions) -> AiRequest {
         sanitized.scratch_text = redact_secrets(&sanitized.scratch_text);
     }
 
-    // Redact sensitive entries in context
-    if opts.strip_sensitive {
-        sanitized.context = req
-            .context
-            .iter()
-            .map(|(k, v)| {
-                if is_sensitive_key(k) {
-                    (k.clone(), "[REDACTED]".to_string())
-                } else {
-                    (k.clone(), v.clone())
+    // Redact sensitive entries and path-like values in context
+    let home_opt = std::env::var("HOME").ok();
+    let wd_opt = req.working_directory.clone();
+    sanitized.context = req
+        .context
+        .iter()
+        .map(|(k, v)| {
+            let mut new_v = v.clone();
+            // Secrets by key
+            if opts.strip_sensitive && is_sensitive_key(k) {
+                return (k.clone(), "[REDACTED]".to_string());
+            }
+            // Path-like redaction in values
+            if opts.strip_cwd {
+                if let Some(dir) = &wd_opt {
+                    if !dir.is_empty() && new_v.contains(dir) {
+                        new_v = new_v.replace(dir, placeholder_path);
+                    }
                 }
-            })
-            .collect();
-    }
+                if let Some(home) = &home_opt {
+                    if !home.is_empty() && new_v.contains(home) {
+                        new_v = new_v.replace(home, placeholder_path);
+                    }
+                }
+                // For direct path-bearing keys, replace entirely
+                let key_lower = k.to_ascii_lowercase();
+                if key_lower == "cwd"
+                    || key_lower == "working_directory"
+                    || key_lower.ends_with(".home")
+                    || key_lower == "env.home"
+                {
+                    return (k.clone(), "[REDACTED]".to_string());
+                }
+            }
+            (k.clone(), new_v)
+        })
+        .collect();
 
     sanitized
 }
@@ -296,5 +321,46 @@ mysqldump -p hunter2 \
         assert!(redacted.contains("-p [REDACTED]"));
         // Ensure the backup path remains
         assert!(redacted.contains("--result-file=/tmp/backup.sql"));
+    }
+
+    #[test]
+    fn test_sanitize_request_redacts_context_paths() {
+        let req = AiRequest {
+            scratch_text: "ignore".to_string(),
+            working_directory: Some("/home/alice/projects/demo".to_string()),
+            shell_kind: Some("bash".to_string()),
+            context: vec![
+                ("cwd".into(), "/home/alice/projects/demo".into()),
+                ("env.HOME".into(), "/home/alice".into()),
+                (
+                    "note".into(),
+                    "Path inside value: /home/alice/projects/demo and $HOME".into(),
+                ),
+            ],
+        };
+        std::env::set_var("HOME", "/home/alice");
+        let out = sanitize_request(&req, AiPrivacyOptions::default());
+        assert_eq!(
+            out.context
+                .iter()
+                .find(|(k, _)| k == "cwd")
+                .map(|(_, v)| v.as_str()),
+            Some("[REDACTED]")
+        );
+        assert_eq!(
+            out.context
+                .iter()
+                .find(|(k, _)| k == "env.HOME")
+                .map(|(_, v)| v.as_str()),
+            Some("[REDACTED]")
+        );
+        let note = out
+            .context
+            .iter()
+            .find(|(k, _)| k == "note")
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert!(!note.contains("/home/alice"));
+        assert!(note.contains("[REDACTED_PATH]"));
     }
 }

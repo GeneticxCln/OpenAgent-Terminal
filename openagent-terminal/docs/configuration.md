@@ -98,7 +98,11 @@ Behavioral notes:
 
 ## Tab Bar
 
-The Warp-style tab bar is drawn as an overlay by default and no longer reserves a terminal row. Visibility can be set to "Auto", "Always", or "Hover"; when set to Auto, fullscreen windows behave like Hover.
+The Warp-style tab bar is drawn as an overlay by default and no longer reserves a terminal row. Visibility can be set to "Auto", "Always", or "Hover". Auto behaves as Always unless the window is fullscreen; in fullscreen it behaves like Hover.
+
+- Always: Tab bar is always visible.
+- Hover: Tab bar appears when the mouse is near the configured edge (Top/Bottom), within a small tolerance band. Close button rendering also supports hover-only via `workspace.tab_bar.close_button_on_hover`.
+- Auto: Behaves like Always, except on fullscreen where it behaves like Hover.
 
 ## Rendering (WGPU): Subpixel Text and Gamma
 

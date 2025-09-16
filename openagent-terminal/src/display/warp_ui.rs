@@ -571,20 +571,40 @@ impl Display {
             } else {
                 true
             };
-            if should_show {
-                let close_x = x + width - 25.0;
-                let close_y = y + height / 2.0 - 8.0;
-                let close_button = UiRoundedRect::new(
-                    close_x,
-                    close_y,
-                    16.0,
-                    16.0,
-                    8.0,
-                    Rgb::new(220, 220, 220),
-                    0.8,
-                );
-                self.stage_ui_rounded_rect(close_button);
-            }
+                if should_show {
+                    let close_x = x + width - 25.0;
+                    let close_y = y + height / 2.0 - 8.0;
+                    let close_w = 16.0;
+                    let close_h = 16.0;
+                    let close_button = UiRoundedRect::new(
+                        close_x,
+                        close_y,
+                        close_w,
+                        close_h,
+                        8.0,
+                        Rgb::new(220, 220, 220),
+                        0.8,
+                    );
+                    self.stage_ui_rounded_rect(close_button);
+
+                    // Draw a simple 'x' using small diagonal squares (approximate)
+                    let stroke = 2.0f32; // thickness of the diagonal
+                    let steps = 6usize;
+                    for i in 0..steps {
+                        let t = i as f32 / steps as f32;
+                        // Diagonal 1: top-left to bottom-right
+                        let dx1 = close_x + 3.0 + t * (close_w - 6.0);
+                        let dy1 = close_y + 3.0 + t * (close_h - 6.0);
+                        let diag1 = RenderRect::new(dx1, dy1, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
+                        // Diagonal 2: bottom-left to top-right
+                        let dx2 = close_x + 3.0 + t * (close_w - 6.0);
+                        let dy2 = close_y + close_h - 3.0 - t * (close_h - 6.0);
+                        let diag2 = RenderRect::new(dx2, dy2, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
+                        let size_info = self.size_info;
+                        let metrics = self.glyph_cache.font_metrics();
+                        self.renderer_draw_rects(&size_info, &metrics, vec![diag1, diag2]);
+                    }
+                }
         }
     }
 
@@ -648,6 +668,14 @@ impl Display {
             return;
         }
 
+        // Respect reduce motion preference for divider hover animations
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let reduce_motion = theme.ui.reduce_motion || config.theme.reduce_motion;
+
         // Calculate pane boundaries and draw split lines inside the grid content area,
         // accounting for window padding and any reserved tab bar row.
         let si = self.size_info;
@@ -674,7 +702,7 @@ impl Display {
 
         let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
 
-        self.draw_split_lines_recursive(split_layout, container, indicators);
+        self.draw_split_lines_recursive(split_layout, container, indicators, reduce_motion);
     }
 
     /// Recursively draw split lines
@@ -683,6 +711,7 @@ impl Display {
         layout: &crate::workspace::split_manager::SplitLayout,
         rect: crate::workspace::split_manager::PaneRect,
         indicators: &WarpSplitIndicators,
+        reduce_motion: bool,
     ) {
         // Determine current hover/drag target
         let hover_hit = self.split_drag.as_ref().or(self.split_hover.as_ref());
@@ -702,7 +731,9 @@ impl Display {
 
                 // Animate hover transitions for split line
                 let p = if is_hovered {
-                    if let Some(t0) = self.split_hover_anim_start {
+                    if reduce_motion {
+                        1.0
+                    } else if let Some(t0) = self.split_hover_anim_start {
                         let elapsed = t0.elapsed().as_millis() as f32;
                         let dur = 160.0;
                         (elapsed / dur).clamp(0.0, 1.0)
@@ -754,12 +785,37 @@ impl Display {
                         indicators.split_handle_alpha,
                     );
                     self.stage_ui_rounded_rect(handle);
+
+                    // Draw simple grip pattern inside the handle for better affordance
+                    let grip_cols = 3usize;
+                    let grip_w = (handle_w * 0.15).clamp(2.0, 4.0);
+                    let gap = (handle_w - grip_cols as f32 * grip_w) / (grip_cols as f32 + 1.0);
+                    let grip_h = (handle_h * 0.5).clamp(8.0, 22.0);
+                    let grip_y = handle_y + (handle_h - grip_h) / 2.0;
+                    for i in 0..grip_cols {
+                        let gx = handle_x + gap * (i as f32 + 1.0) + grip_w * i as f32;
+                        let grip_rect = RenderRect::new(
+                            gx,
+                            grip_y,
+                            grip_w,
+                            grip_h,
+                            Rgb::new(
+                                (indicators.split_handle_color.r as f32 * 0.85) as u8,
+                                (indicators.split_handle_color.g as f32 * 0.85) as u8,
+                                (indicators.split_handle_color.b as f32 * 0.85) as u8,
+                            ),
+                            (indicators.split_handle_alpha * 0.65).clamp(0.0, 1.0),
+                        );
+                        let size_info = self.size_info;
+                        let metrics = self.glyph_cache.font_metrics();
+                        self.renderer_draw_rects(&size_info, &metrics, vec![grip_rect]);
+                    }
                 }
 
                 // Recursively draw child splits
                 let (left_rect, right_rect) = rect.split_horizontal(*ratio);
-                self.draw_split_lines_recursive(left, left_rect, indicators);
-                self.draw_split_lines_recursive(right, right_rect, indicators);
+                self.draw_split_lines_recursive(left, left_rect, indicators, reduce_motion);
+                self.draw_split_lines_recursive(right, right_rect, indicators, reduce_motion);
             }
             crate::workspace::split_manager::SplitLayout::Vertical { top, bottom, ratio } => {
                 let split_y = rect.y + rect.height * ratio;
@@ -775,7 +831,9 @@ impl Display {
 
                 // Animate hover transitions for split line
                 let p = if is_hovered {
-                    if let Some(t0) = self.split_hover_anim_start {
+                    if reduce_motion {
+                        1.0
+                    } else if let Some(t0) = self.split_hover_anim_start {
                         let elapsed = t0.elapsed().as_millis() as f32;
                         let dur = 160.0;
                         (elapsed / dur).clamp(0.0, 1.0)
@@ -827,12 +885,37 @@ impl Display {
                         indicators.split_handle_alpha,
                     );
                     self.stage_ui_rounded_rect(handle);
+
+                    // Grip pattern (horizontal orientation): draw small bars
+                    let grip_rows = 3usize;
+                    let grip_h = (handle_h * 0.15).clamp(2.0, 4.0);
+                    let gap = (handle_h - grip_rows as f32 * grip_h) / (grip_rows as f32 + 1.0);
+                    let grip_w = (handle_w * 0.5).clamp(10.0, handle_w - 6.0);
+                    let grip_x = handle_x + (handle_w - grip_w) / 2.0;
+                    for i in 0..grip_rows {
+                        let gy = handle_y + gap * (i as f32 + 1.0) + grip_h * i as f32;
+                        let grip_rect = RenderRect::new(
+                            grip_x,
+                            gy,
+                            grip_w,
+                            grip_h,
+                            Rgb::new(
+                                (indicators.split_handle_color.r as f32 * 0.85) as u8,
+                                (indicators.split_handle_color.g as f32 * 0.85) as u8,
+                                (indicators.split_handle_color.b as f32 * 0.85) as u8,
+                            ),
+                            (indicators.split_handle_alpha * 0.65).clamp(0.0, 1.0),
+                        );
+                        let size_info = self.size_info;
+                        let metrics = self.glyph_cache.font_metrics();
+                        self.renderer_draw_rects(&size_info, &metrics, vec![grip_rect]);
+                    }
                 }
 
                 // Recursively draw child splits
                 let (top_rect, bottom_rect) = rect.split_vertical(*ratio);
-                self.draw_split_lines_recursive(top, top_rect, indicators);
-                self.draw_split_lines_recursive(bottom, bottom_rect, indicators);
+                self.draw_split_lines_recursive(top, top_rect, indicators, reduce_motion);
+                self.draw_split_lines_recursive(bottom, bottom_rect, indicators, reduce_motion);
             }
             crate::workspace::split_manager::SplitLayout::Single(_) => {
                 // No splits to draw
@@ -871,7 +954,7 @@ impl Display {
             indicator_size,
             indicator_size,
             4.0,
-            Rgb::new(100, 150, 250),
+            indicators.split_handle_color,
             0.9,
         );
         self.stage_ui_rounded_rect(zoom_indicator);

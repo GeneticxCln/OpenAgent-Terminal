@@ -89,6 +89,8 @@ mod text_shaping;
 mod ui_confirm;
 mod utils;
 mod workspace;
+#[cfg(feature = "blocks")]
+mod storage;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;

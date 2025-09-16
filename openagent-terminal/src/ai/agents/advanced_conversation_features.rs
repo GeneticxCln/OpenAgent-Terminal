@@ -387,6 +387,7 @@ pub struct ContextPreservation {
 }
 
 /// Summary strategy configuration
+#[derive(Clone)]
 pub struct SummaryStrategy {
     pub max_length: usize,
     pub key_point_threshold: f32,
@@ -1366,7 +1367,8 @@ impl SessionCoordinator {
     }
 
     pub fn set_priority(&mut self, session_id: Uuid, priority: SessionPriority) {
-        self.session_priorities.insert(session_id, priority);
+        // Insert a cloned value so we can still use `priority` below
+        self.session_priorities.insert(session_id, priority.clone());
         if let Some(info) = self.active_sessions.get_mut(&session_id) {
             info.priority = priority;
         }

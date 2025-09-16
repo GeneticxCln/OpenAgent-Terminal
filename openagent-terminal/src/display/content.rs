@@ -190,20 +190,12 @@ impl Iterator for RenderableContent<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let cell = self.terminal_content.display_iter.next()?;
-            let mut cell = RenderableCell::new(self, cell);
+            let cell = RenderableCell::new(self, cell);
 
             if self.cursor_point == cell.point {
                 // Store the cursor which should be rendered.
+                // Do not mutate the cell for block cursor; the cursor is rendered via shader overlay.
                 self.cursor = self.renderable_cursor(&cell);
-                if self.cursor.shape == CursorShape::Block {
-                    cell.fg = self.cursor.text_color;
-                    cell.bg = self.cursor.cursor_color;
-
-                    // Since we draw Block cursor by drawing cell below it with a proper color,
-                    // we must adjust alpha to make it visible.
-                    cell.bg_alpha = 1.;
-                }
-
                 return Some(cell);
             } else if !cell.is_empty() && !cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 // Skip empty cells and wide char spacers.
@@ -290,7 +282,7 @@ impl RenderableCell {
                     .unwrap_or_else(|| content.config.theme.resolve());
                 fg = theme.tokens.text;
                 bg = theme.tokens.selection;
-                bg_alpha = 1.0;
+                bg_alpha = 0.0; // Selection background drawn via shader overlay
             } else {
                 let config_fg = colors.selection.foreground;
                 let config_bg = colors.selection.background;
@@ -300,8 +292,10 @@ impl RenderableCell {
                     // Reveal inversed text when fg/bg is the same.
                     fg = content.color(NamedColor::Background as usize);
                     bg = content.color(NamedColor::Foreground as usize);
-                    bg_alpha = 1.0;
+                    // bg_alpha intentionally suppressed; background drawn via overlay
                 }
+                // Suppress CPU-side selection background; shader overlay will render it
+                bg_alpha = 0.0;
             }
         } else if content
             .search

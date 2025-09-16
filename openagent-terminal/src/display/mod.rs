@@ -83,6 +83,54 @@ pub mod window;
 pub mod workflow_panel;
 pub mod workspace_animations;
 
+/// Decide whether the overlay tab bar should be shown based on configuration and mouse position.
+///
+/// Behavior:
+/// - When visibility is Always, always show.
+/// - When visibility is Hover, show only when the cursor is within the tab bar band near the
+///   configured edge (Top/Bottom). A small tolerance is applied to ease acquisition.
+/// - When visibility is Auto, behave like Always unless the window is fullscreen; in fullscreen,
+///   behave like Hover.
+#[inline]
+pub(crate) fn should_show_tab_bar_overlay(
+    size_info: SizeInfo,
+    last_mouse_y_px: usize,
+    tab_cfg: &crate::config::workspace::TabBarConfig,
+    is_fullscreen: bool,
+    style: &crate::display::warp_ui::WarpTabStyle,
+) -> bool {
+    use crate::config::workspace::TabBarVisibility as Vis;
+
+    // Map Auto to Always/Hover based on fullscreen state.
+    let vis = match tab_cfg.visibility {
+        Vis::Always => Vis::Always,
+        Vis::Hover => Vis::Hover,
+        Vis::Auto => {
+            if is_fullscreen {
+                Vis::Hover
+            } else {
+                Vis::Always
+            }
+        }
+    };
+
+    match vis {
+        Vis::Always => true,
+        Vis::Hover => {
+            // Reveal when the cursor is near the bar edge.
+            let h = size_info.height();
+            let y = last_mouse_y_px as f32;
+            let band = (style.tab_height * 1.25).clamp(8.0, 64.0);
+            match tab_cfg.position {
+                crate::workspace::TabBarPosition::Top => y < band,
+                crate::workspace::TabBarPosition::Bottom => y > (h - band),
+                crate::workspace::TabBarPosition::Hidden => false,
+            }
+        }
+        Vis::Auto => unreachable!(),
+    }
+}
+
 mod bell;
 mod damage;
 mod meter;
@@ -1013,13 +1061,21 @@ impl Display {
             config.debug.renderer,
             config.debug.srgb_swapchain,
             config.debug.subpixel_text,
-            SubpixelOrientation::RGB,
+            config.debug.subpixel_orientation,
             config.debug.zero_evicted_atlas_layer,
             config.debug.atlas_eviction_policy,
             config.debug.atlas_report_interval_frames,
             config.debug.renderer_report_interval_frames,
         ))
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
+
+        // Apply initial debug runtime options to renderer.
+        if (config.debug.subpixel_gamma - 2.2).abs() > f32::EPSILON {
+            wgpu_renderer.set_subpixel_gamma(config.debug.subpixel_gamma);
+        }
+        if config.debug.renderer_perf_hud {
+            wgpu_renderer.toggle_perf_hud();
+        }
 
         // Load font common glyphs to accelerate rendering using the WGPU atlas.
         debug!("Filling glyph cache with common glyphs (wgpu)");
@@ -1904,6 +1960,76 @@ impl Display {
         self.damage_tracker
             .damage_selection(selection_range, display_offset);
 
+        // Update selection overlay uniform via renderer (single rect approximation per frame)
+        if let Some(sel) = selection_range {
+            // Build per-line spans in pixel space (Warp parity)
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
+            let sel_color = if config.debug.theme_selection {
+                theme.tokens.selection
+            } else {
+                config.colors.selection.background.color(self.colors[0], self.colors[0])
+            };
+            // We'll pack spans sequentially starting at buffer offset 32 (header+color)
+            // Header: header0.x = span_count
+            // Color written after header
+            let mut spans: Vec<[f32; 4]> = Vec::new();
+            // Iterate viewport rows intersecting the selection
+            let start_line = sel.start.line.0.max(-(display_offset as i32));
+            let end_line = sel.end.line.0.min(self.size_info.bottommost_line().0 as i32 - (display_offset as i32));
+            if start_line <= end_line {
+                for line_i in start_line..=end_line {
+                    if line_i < 0 || (line_i as usize) >= self.size_info.screen_lines() { continue; }
+                    let vp_line = line_i as usize;
+                    // Compute start/end columns for this row within selection
+                    let row_start_col = if sel.is_block {
+                        sel.start.column.0
+                    } else if line_i == sel.start.line.0 { sel.start.column.0 } else { 0 };
+                    let row_end_col = if sel.is_block {
+                        sel.end.column.0
+                    } else if line_i == sel.end.line.0 { sel.end.column.0 } else { self.size_info.columns().saturating_sub(1) };
+                    if row_end_col < row_start_col { continue; }
+                    let x0 = (row_start_col as f32) * size_info.cell_width() + size_info.padding_x();
+                    let y0 = (vp_line as f32) * size_info.cell_height() + size_info.padding_y();
+                    let w = ((row_end_col + 1 - row_start_col) as f32) * size_info.cell_width();
+                    let h = size_info.cell_height();
+                    spans.push([x0, y0, w, h]);
+                }
+            }
+            // Write header (count) and color, then spans to storage buffer
+            let count = (spans.len().min(256)) as u32;
+            let header: [f32; 4] = [count as f32, 0.0, 0.0, 0.0];
+            let color: [f32; 4] = [sel_color.r as f32 / 255.0, sel_color.g as f32 / 255.0, sel_color.b as f32 / 255.0, 0.85];
+            let mut bytes: Vec<u8> = Vec::with_capacity(16 + 16 + (count as usize) * 16);
+            bytes.extend_from_slice(bytemuck::cast_slice(&header));
+            bytes.extend_from_slice(bytemuck::cast_slice(&color));
+            if count > 0 {
+                bytes.extend_from_slice(bytemuck::cast_slice(&spans[..count as usize]));
+            }
+            // Zero the rest up to configured capacity to avoid stale data; write only used bytes is acceptable since shader reads by count
+            // Write into the selection storage buffer at offset 0
+            match &mut self.backend {
+                Backend::Wgpu { renderer } => {
+                    renderer.write_selection_storage(&bytes);
+                }
+            }
+        } else {
+            // No selection: write count=0
+            let header: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+            let color: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+            let mut bytes: Vec<u8> = Vec::with_capacity(32);
+            bytes.extend_from_slice(bytemuck::cast_slice(&header));
+            bytes.extend_from_slice(bytemuck::cast_slice(&color));
+            match &mut self.backend {
+                Backend::Wgpu { renderer } => {
+                    renderer.write_selection_storage(&bytes);
+                }
+            }
+        }
+
         // Ensure renderer is ready for drawing (WGPU).
 
         self.renderer_clear(background_color, config.window_opacity());
@@ -2132,15 +2258,41 @@ impl Display {
             self.draw_line_indicator(config, total_lines, None, display_offset);
         }
 
-        // Draw cursor (skip if inside a folded region or reserved tab bar rows).
+        // Draw cursor via text shader overlay using cursor uniforms.
         let cursor_elided = self.blocks.enabled
             && self
                 .blocks
                 .is_viewport_line_elided(display_offset, cursor.point().line);
-        // Legacy reserved-row cursor elision removed: overlay tab bar never reserves grid rows.
-        if !cursor_elided {
-            rects.extend(cursor.rects(&size_info, config.cursor.thickness()));
+        // Compute pixel-space parameters for the cursor
+        let cw = size_info.cell_width();
+        let ch = size_info.cell_height();
+        let px = size_info.padding_x();
+        let py = size_info.padding_y();
+        let x = cursor.point().column.0 as f32 * cw + px;
+        let y = cursor.point().line as f32 * ch + py;
+        let mut w = cw * (cursor.width().get() as f32);
+        let h = ch;
+        let shape = cursor.shape();
+        let shape_code: u32 = match shape {
+            openagent_terminal_core::vte::ansi::CursorShape::Block => 0,
+            openagent_terminal_core::vte::ansi::CursorShape::Beam => 1,
+            openagent_terminal_core::vte::ansi::CursorShape::Underline => 2,
+            openagent_terminal_core::vte::ansi::CursorShape::HollowBlock => 3,
+            openagent_terminal_core::vte::ansi::CursorShape::Hidden => 0,
+        };
+        let thickness_px = (config.cursor.thickness() * cw).max(1.0);
+        if shape_code == 1 {
+            // Beam: use thickness as width
+            w = thickness_px;
+        } else if shape_code == 2 {
+            // Underline: keep w=cell width, h=thickness handled in shader
+            // Leave w,h as cell size
         }
+        let color = cursor.color();
+        let hidden = matches!(shape, openagent_terminal_core::vte::ansi::CursorShape::Hidden);
+        let alpha = if cursor_elided || hidden { 0.0 } else { 1.0 };
+        let Backend::Wgpu { renderer } = &mut self.backend;
+        renderer.set_cursor_overlay(x, y, w, h, color, alpha, shape_code, thickness_px);
 
         // Push visual bell after url/underline/strikeout rects.
         let visual_bell_intensity = self.visual_bell.intensity();
@@ -2243,7 +2395,8 @@ impl Display {
                 .frame()
                 .add_viewport_rect(&size_info, x, y as i32, width, height);
 
-            // Draw rectangles.
+            // Draw rectangles and HUD text (if enabled).
+            self.draw_perf_hud_text(config);
             self.renderer_draw_rects(&size_info, &metrics, rects);
 
             // Relay messages to the user.
@@ -2267,7 +2420,8 @@ impl Display {
                 );
             }
         } else {
-            // Draw rectangles.
+            // Draw rectangles and HUD text (if enabled).
+            self.draw_perf_hud_text(config);
             self.renderer_draw_rects(&size_info, &metrics, rects);
         }
 
@@ -2349,12 +2503,20 @@ impl Display {
 
         // Draw overlay tab bar (legacy tab-row removed)
         if let Some(tm) = tab_manager {
-            if config.workspace.tab_bar.show
-                && config.workspace.tab_bar.position != crate::workspace::TabBarPosition::Hidden
-            {
+            let tab_cfg = &config.workspace.tab_bar;
+            if tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden {
                 let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
-                let _ =
-                    self.draw_warp_tab_bar(config, tm, config.workspace.tab_bar.position, &style);
+                let is_fs = self.window.is_fullscreen();
+                let show_bar = should_show_tab_bar_overlay(
+                    self.size_info,
+                    self.last_mouse_y,
+                    tab_cfg,
+                    is_fs,
+                    &style,
+                );
+                if show_bar {
+                    let _ = self.draw_warp_tab_bar(config, tm, tab_cfg.position, &style);
+                }
             }
         }
         // Draw persistent Quick Actions bar (mouse-first entrypoint)
@@ -3898,6 +4060,59 @@ impl Display {
             swap_timeout.as_millis()
         );
         scheduler.schedule(event, swap_timeout, false, timer_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tab_bar_overlay_visibility_always() {
+        let si = SizeInfo::new(800.0, 600.0, 8.0, 16.0, 0.0, 0.0, false);
+        let mut cfg = crate::config::workspace::TabBarConfig::default();
+        cfg.position = crate::workspace::TabBarPosition::Top;
+        cfg.visibility = crate::config::workspace::TabBarVisibility::Always;
+        let style = crate::display::warp_ui::WarpTabStyle::default();
+        // Far from the top; should still show because Always
+        assert!(should_show_tab_bar_overlay(si, 400, &cfg, false, &style));
+    }
+
+    #[test]
+    fn tab_bar_overlay_visibility_hover_top_and_bottom() {
+        let si = SizeInfo::new(1000.0, 700.0, 10.0, 20.0, 0.0, 0.0, false);
+        let mut cfg = crate::config::workspace::TabBarConfig::default();
+        let style = crate::display::warp_ui::WarpTabStyle::default();
+
+        // Top position
+        cfg.position = crate::workspace::TabBarPosition::Top;
+        cfg.visibility = crate::config::workspace::TabBarVisibility::Hover;
+        // Near top should show
+        assert!(should_show_tab_bar_overlay(si, 5, &cfg, false, &style));
+        // Far from top should hide
+        assert!(!should_show_tab_bar_overlay(si, 300, &cfg, false, &style));
+
+        // Bottom position
+        cfg.position = crate::workspace::TabBarPosition::Bottom;
+        // Near bottom should show
+        assert!(should_show_tab_bar_overlay(si, (si.height() as usize) - 2, &cfg, false, &style));
+        // Far from bottom should hide
+        assert!(!should_show_tab_bar_overlay(si, 100, &cfg, false, &style));
+    }
+
+    #[test]
+    fn tab_bar_overlay_visibility_auto_respects_fullscreen() {
+        let si = SizeInfo::new(900.0, 600.0, 9.0, 18.0, 0.0, 0.0, false);
+        let mut cfg = crate::config::workspace::TabBarConfig::default();
+        cfg.position = crate::workspace::TabBarPosition::Top;
+        cfg.visibility = crate::config::workspace::TabBarVisibility::Auto;
+        let style = crate::display::warp_ui::WarpTabStyle::default();
+
+        // Not fullscreen -> treated as Always
+        assert!(should_show_tab_bar_overlay(si, 400, &cfg, false, &style));
+        // Fullscreen -> treated as Hover (far from top should hide, near top should show)
+        assert!(!should_show_tab_bar_overlay(si, 400, &cfg, true, &style));
+        assert!(should_show_tab_bar_overlay(si, 3, &cfg, true, &style));
     }
 }
 

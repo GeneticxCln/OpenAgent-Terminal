@@ -2,7 +2,7 @@ use crate::storage::{StorageError, StorageResult};
 use sqlx::{Pool, Row, Sqlite};
 
 /// Database schema version
-const CURRENT_VERSION: i32 = 1;
+const CURRENT_VERSION: i32 = 2;
 
 /// Migration definition
 struct Migration {
@@ -73,6 +73,84 @@ const MIGRATIONS: &[Migration] = &[Migration {
             CREATE TRIGGER IF NOT EXISTS blocks_updated_at AFTER UPDATE ON blocks BEGIN
                 UPDATE blocks SET updated_at = strftime('%s', 'now') * 1000 WHERE id = new.id;
             END;
+        "#,
+}, Migration {
+    version: 2,
+    name: "plugin_kv_docs_and_ai_transcripts",
+    up_sql: r#"
+            -- Namespaces for plugins (optional but useful for indexing)
+            CREATE TABLE IF NOT EXISTS plugin_namespaces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_id TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                UNIQUE(plugin_id, namespace)
+            );
+
+            -- Key/Value storage for plugins (namespaced)
+            CREATE TABLE IF NOT EXISTS plugin_kv (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_id TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value BLOB NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                UNIQUE(plugin_id, namespace, key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_plugin_kv_plugin_ns ON plugin_kv(plugin_id, namespace);
+            CREATE TRIGGER IF NOT EXISTS plugin_kv_updated_at AFTER UPDATE ON plugin_kv BEGIN
+                UPDATE plugin_kv SET updated_at = strftime('%s', 'now') * 1000 WHERE id = new.id;
+            END;
+
+            -- Document storage for plugins (JSON documents)
+            CREATE TABLE IF NOT EXISTS plugin_docs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_id TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                doc_id TEXT NOT NULL,
+                doc_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                UNIQUE(plugin_id, namespace, doc_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_plugin_docs_plugin_ns ON plugin_docs(plugin_id, namespace);
+            CREATE TRIGGER IF NOT EXISTS plugin_docs_updated_at AFTER UPDATE ON plugin_docs BEGIN
+                UPDATE plugin_docs SET updated_at = strftime('%s', 'now') * 1000 WHERE id = new.id;
+            END;
+
+            -- Optional per-plugin quota configuration (null namespace => default for plugin)
+            CREATE TABLE IF NOT EXISTS plugin_quotas (
+                plugin_id TEXT NOT NULL,
+                namespace TEXT,
+                max_total_bytes INTEGER,
+                max_value_bytes INTEGER,
+                max_keys INTEGER,
+                max_docs INTEGER,
+                PRIMARY KEY (plugin_id, namespace)
+            );
+
+            -- AI conversations and turns (transcripts)
+            CREATE TABLE IF NOT EXISTS ai_conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_active INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                metadata TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_conversations_last_active ON ai_conversations(last_active);
+
+            CREATE TABLE IF NOT EXISTS ai_turns (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                intent_json TEXT,
+                entities_json TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_turns_session_ts ON ai_turns(session_id, timestamp);
         "#,
 }];
 

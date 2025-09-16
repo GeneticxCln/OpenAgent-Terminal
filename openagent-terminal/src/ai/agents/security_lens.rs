@@ -607,12 +607,10 @@ impl Agent for SecurityLensAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::providers::OllamaProvider;
 
     #[tokio::test]
     async fn test_security_lens_agent_creation() {
-        let provider = Box::new(OllamaProvider::new());
-        let agent = SecurityLensAgent::new(provider);
+        let agent = SecurityLensAgent::new();
 
         assert_eq!(agent.id(), "security-lens");
         assert_eq!(agent.name(), "Security Lens Agent");
@@ -625,8 +623,7 @@ mod tests {
 
     #[test]
     fn test_pattern_analysis() {
-        let provider = Box::new(OllamaProvider::new());
-        let agent = SecurityLensAgent::new(provider);
+        let agent = SecurityLensAgent::new();
 
         // Test dangerous command detection
         let dangerous_command = "sudo rm -rf /";
@@ -642,8 +639,7 @@ mod tests {
 
     #[test]
     fn test_api_key_detection() {
-        let provider = Box::new(OllamaProvider::new());
-        let agent = SecurityLensAgent::new(provider);
+        let agent = SecurityLensAgent::new();
 
         let code_with_secret = r#"API_KEY="sk-1234567890abcdef""#;
         let risks = agent.analyze_with_patterns(code_with_secret, &[]);
@@ -657,8 +653,7 @@ mod tests {
 
     #[test]
     fn test_risk_level_determination() {
-        let provider = Box::new(OllamaProvider::new());
-        let agent = SecurityLensAgent::new(provider);
+        let agent = SecurityLensAgent::new();
 
         let pattern_risks = vec![SecurityRisk {
             id: "test1".to_string(),

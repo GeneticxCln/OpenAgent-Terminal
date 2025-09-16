@@ -513,6 +513,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn tab_bar_config_parses_and_defaults() {
+        // Minimal config: rely on defaults
+        let ui = crate::config::ui_config::UiConfig::default();
+        let tb = &ui.workspace.tab_bar;
+        assert!(tb.show);
+        assert_eq!(tb.position, TabBarPosition::Top);
+        assert_eq!(tb.visibility, TabBarVisibility::Auto);
+        assert!(tb.show_close_button);
+        assert!(!tb.close_button_on_hover);
+        assert!(tb.show_modified_indicator);
+        assert!(tb.show_new_tab_button);
+        assert!(!tb.show_tab_numbers);
+        assert_eq!(tb.max_title_length, 20);
+    }
+
+    #[test]
+    fn tab_bar_config_from_toml_values() {
+        let toml_str = r#"
+            [workspace]
+            warp_style = true
+            [workspace.tab_bar]
+            position = "Bottom"
+            show = true
+            visibility = "Hover"
+            show_close_button = false
+            close_button_on_hover = true
+            show_modified_indicator = false
+            show_new_tab_button = false
+            show_tab_numbers = true
+            max_title_length = 12
+        "#;
+        let value: toml::Value = toml::from_str(toml_str).expect("toml parse");
+        let mut ui: crate::config::ui_config::UiConfig =
+            crate::config::ui_config::UiConfig::deserialize(value).expect("ui config deser");
+        // After loading hook usually resolves theme; not needed for this unit test
+        let tb = &mut ui.workspace.tab_bar;
+        assert_eq!(tb.position, TabBarPosition::Bottom);
+        assert!(tb.show);
+        assert_eq!(tb.visibility, TabBarVisibility::Hover);
+        assert!(!tb.show_close_button);
+        assert!(tb.close_button_on_hover);
+        assert!(!tb.show_modified_indicator);
+        assert!(!tb.show_new_tab_button);
+        assert!(tb.show_tab_numbers);
+        assert_eq!(tb.max_title_length, 12);
+    }
+
+    #[test]
     fn drag_sanitize_clamps_and_orders_alphas_and_snaps() {
         let mut drag = DragConfig {
             enable_pane_drag: true,

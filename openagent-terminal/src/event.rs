@@ -5170,6 +5170,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     // Workspace / panes: wire to real WorkspaceManager
     fn workspace_split_horizontal(&mut self) {
+        // Prefer Warp integration when available to ensure PTY lifecycle and session persistence
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::SplitRight)
+                .unwrap_or(false);
+            let msg = if ok {
+                "Split pane horizontally (Warp)".into()
+            } else {
+                "Split pane horizontally failed".into()
+            };
+            self.message_buffer
+                .push(Message::new(msg, crate::message_bar::MessageType::Warning));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
+        // Fallback: native split manager without PTY wiring
         let ratio = self.config.workspace.splits.default_ratio;
         let res = self.workspace.split_horizontal(ratio);
         let msg = if let Some(id) = res {
@@ -5184,6 +5203,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_split_vertical(&mut self) {
+        // Prefer Warp integration when available to ensure PTY lifecycle and session persistence
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::SplitDown)
+                .unwrap_or(false);
+            let msg = if ok {
+                "Split pane vertically (Warp)".into()
+            } else {
+                "Split pane vertically failed".into()
+            };
+            self.message_buffer
+                .push(Message::new(msg, crate::message_bar::MessageType::Warning));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
+        // Fallback: native split manager without PTY wiring
         let ratio = self.config.workspace.splits.default_ratio;
         let res = self.workspace.split_vertical(ratio);
         let msg = if let Some(id) = res {
@@ -5198,6 +5236,29 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_focus_next_pane(&mut self) {
+        // Prefer Warp directional navigation when available
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
+                    crate::workspace::warp_split_manager::WarpNavDirection::Right,
+                ))
+                .unwrap_or(false);
+            let msg = if ok {
+                "Focused next pane (Warp)"
+            } else {
+                "Focus next pane failed"
+            };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
+        // Fallback: native cycling
         let ok = self.workspace.focus_next_pane();
         let msg = if ok {
             "Focused next pane"
@@ -5213,6 +5274,29 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_focus_previous_pane(&mut self) {
+        // Prefer Warp directional navigation when available
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
+                    crate::workspace::warp_split_manager::WarpNavDirection::Left,
+                ))
+                .unwrap_or(false);
+            let msg = if ok {
+                "Focused previous pane (Warp)"
+            } else {
+                "Focus previous pane failed"
+            };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
+        // Fallback: native cycling
         let ok = self.workspace.focus_previous_pane();
         let msg = if ok {
             "Focused previous pane"
@@ -5228,6 +5312,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_close_pane(&mut self) {
+        // Prefer Warp integration for cleanup guarantees
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::ClosePane)
+                .unwrap_or(false);
+            let msg = if ok { "Closed pane (Warp)" } else { "Close pane failed" };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
+        // Fallback
         let ok = self.workspace.close_pane();
         let msg = if ok {
             "Closed pane"
@@ -5243,6 +5344,24 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_resize_left(&mut self) {
+        // Prefer Warp integration for consistent ratio logic
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
+                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandLeft,
+                ))
+                .unwrap_or(false);
+            let msg = if ok { "Resized pane left (Warp)" } else { "Resize left failed" };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.resize_left();
         let msg = if ok {
             "Resized pane left"
@@ -5258,6 +5377,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_resize_right(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
+                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandRight,
+                ))
+                .unwrap_or(false);
+            let msg = if ok { "Resized pane right (Warp)" } else { "Resize right failed" };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.resize_right();
         let msg = if ok {
             "Resized pane right"
@@ -5273,6 +5409,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_resize_up(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
+                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandUp,
+                ))
+                .unwrap_or(false);
+            let msg = if ok { "Resized pane up (Warp)" } else { "Resize up failed" };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.resize_up();
         let msg = if ok {
             "Resized pane up"
@@ -5288,6 +5441,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_resize_down(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
+                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandDown,
+                ))
+                .unwrap_or(false);
+            let msg = if ok { "Resized pane down (Warp)" } else { "Resize down failed" };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.resize_down();
         let msg = if ok {
             "Resized pane down"
@@ -5303,6 +5473,24 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_create_tab(&mut self) {
+        // Prefer Warp integration for tab creation to spawn PTY/Term immediately
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::CreateTab)
+                .unwrap_or(false);
+            let msg = if ok {
+                "Created new tab (Warp)".into()
+            } else {
+                "Create tab failed".into()
+            };
+            self.message_buffer
+                .push(Message::new(msg, crate::message_bar::MessageType::Warning));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let title = format!("Tab {}", self.workspace.tab_count() + 1);
         let working_dir = std::env::current_dir().ok();
         let tab_id = self.workspace.create_tab(title.clone(), working_dir);
@@ -5314,6 +5502,23 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_close_tab(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::CloseTab)
+                .unwrap_or(false);
+            let msg = if ok {
+                "Closed tab (Warp)".into()
+            } else {
+                "Close tab failed".into()
+            };
+            self.message_buffer
+                .push(Message::new(msg, crate::message_bar::MessageType::Warning));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         if let Some(active_tab) = self.workspace.active_tab() {
             let tab_id = active_tab.id;
             let tab_title = active_tab.title.clone();
@@ -5331,6 +5536,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_next_tab(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::NextTab)
+                .unwrap_or(false);
+            let msg = if ok {
+                "Switched to next tab (Warp)"
+            } else {
+                "Switch to next tab failed"
+            };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.next_tab();
         let msg = if ok {
             "Switched to next tab"
@@ -5346,6 +5570,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_previous_tab(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::PreviousTab)
+                .unwrap_or(false);
+            let msg = if ok {
+                "Switched to previous tab (Warp)"
+            } else {
+                "Switch to previous tab failed"
+            };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.previous_tab();
         let msg = if ok {
             "Switched to previous tab"
@@ -5374,6 +5617,21 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn workspace_toggle_zoom(&mut self) {
+        if self.workspace.has_warp() {
+            let ok = self
+                .workspace
+                .execute_warp_action(&crate::workspace::WarpAction::ZoomPane)
+                .unwrap_or(false);
+            let msg = if ok { "Toggled pane zoom (Warp)" } else { "Toggle zoom failed" };
+            self.message_buffer.push(Message::new(
+                msg.into(),
+                crate::message_bar::MessageType::Warning,
+            ));
+            self.display.pending_update.dirty = true;
+            *self.dirty = true;
+            return;
+        }
+
         let ok = self.workspace.toggle_zoom();
         let msg = if ok {
             "Toggled pane zoom"

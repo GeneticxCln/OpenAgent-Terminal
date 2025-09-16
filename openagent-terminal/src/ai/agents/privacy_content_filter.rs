@@ -8,6 +8,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use uuid::Uuid;
+// Needed for sha256 digest and base64 encoding helpers
+use sha2::Digest;
+use base64::Engine;
 
 use super::advanced_conversation_features::AdvancedConversationFeatures;
 use super::conversation_manager::ConversationManager;
@@ -912,7 +915,7 @@ impl PrivacyContentFilter {
         }
 
         let start_time = std::time::Instant::now();
-        let overlap: usize = 64; // keep small rolling context between chunks
+        let overlap: usize = (chunk_size / 2).clamp(1, 64); // dynamic rolling context between chunks based on chunk size
         let mut detections: Vec<SensitiveDataDetection> = Vec::new();
         let mut data_classifications: HashSet<DataClassification> = HashSet::new();
         let mut seen: HashSet<(usize, usize, String)> = HashSet::new();
@@ -935,11 +938,15 @@ impl PrivacyContentFilter {
                 if desired_end == len {
                     break;
                 }
-                offset = desired_end.saturating_sub(64);
+                // Ensure forward progress if boundaries collapse
+                offset = desired_end;
                 continue;
             }
-            let chunk = &content[start_idx..end_idx];
-            let base_offset = start_idx;
+            // Expand scanning window by overlap on both sides to capture matches across boundaries
+            let win_start = start_idx.saturating_sub(overlap);
+            let win_end = (end_idx + overlap).min(len);
+            let chunk = &content[win_start..win_end];
+            let base_offset = win_start;
 
             // Run parallel scanners on this chunk
             let scanners_guard = self.content_scanners.read().await;
@@ -988,8 +995,12 @@ impl PrivacyContentFilter {
             if end_idx == len {
                 break;
             }
-            // move to next chunk with overlap, then re-adjust in next loop
-            offset = end_idx.saturating_sub(overlap);
+            // move to next chunk with overlap (ensure forward progress)
+            let mut next_offset = end_idx.saturating_sub(overlap);
+            if next_offset <= offset {
+                next_offset = offset.saturating_add(1);
+            }
+            offset = next_offset;
         }
 
         // Sort detections
@@ -1028,7 +1039,7 @@ impl PrivacyContentFilter {
         I: IntoIterator<Item = String>,
     {
         let start_time = std::time::Instant::now();
-        let overlap: usize = 64;
+        let overlap: usize = 32; // reasonable default overlap for streaming
         let mut tail = String::new();
         let mut processed_len: usize = 0;
 
@@ -1165,15 +1176,36 @@ impl PrivacyContentFilter {
     }
 
     fn partial_redact(&self, text: &str) -> String {
-        if text.len() <= 4 {
-            return "*".repeat(text.len());
+        // Redaction strategy:
+        // - For very short strings (<=4), fully redact
+        // - For email-like strings (contain '@'), keep first 2 and last 2 characters, redact the middle
+        // - Otherwise, keep only the last 3 characters visible, redact the rest
+        let char_count = text.chars().count();
+        if char_count <= 4 {
+            return "*".repeat(char_count);
         }
 
-        let first_part = &text[..2];
-        let last_part = &text[text.len() - 2..];
-        let middle_stars = "*".repeat(text.len() - 4);
-
-        format!("{}{}{}", first_part, middle_stars, last_part)
+        if text.contains('@') {
+            let first_part: String = text.chars().take(2).collect();
+            let last_part: String = text.chars().rev().take(2).collect::<Vec<char>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let star_count = char_count.saturating_sub(6).max(1);
+            let middle_stars = "*".repeat(star_count);
+            format!("{}{}{}", first_part, middle_stars, last_part)
+        } else {
+            let last_part: String = text
+                .chars()
+                .rev()
+                .take(3)
+                .collect::<Vec<char>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let stars = "*".repeat(char_count.saturating_sub(3));
+            format!("{}{}", stars, last_part)
+        }
     }
 
     async fn log_audit_event(

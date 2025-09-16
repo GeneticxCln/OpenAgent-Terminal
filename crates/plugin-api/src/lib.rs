@@ -36,6 +36,9 @@ pub struct PluginPermissions {
     pub environment_variables: Vec<String>,
     pub max_memory_mb: u32,
     pub timeout_ms: u64,
+    /// Allow access to host-managed persistent storage APIs
+    #[serde(default)]
+    pub storage: bool,
 }
 
 impl Default for PluginPermissions {
@@ -48,6 +51,7 @@ impl Default for PluginPermissions {
             environment_variables: vec![],
             max_memory_mb: 50,
             timeout_ms: 5000,
+            storage: false,
         }
     }
 }

@@ -204,6 +204,29 @@ struct Proj {
   gamma: f32,
 };
 
+struct Cursor {
+  // Packed as two vec4s for std140 friendliness
+  // pos_size.xy = pos (pixels), pos_size.zw = size (pixels)
+  pos_size: vec4<f32>,
+  // color_rgba = cursor color (sRGB in [0,1])
+  color_rgba: vec4<f32>,
+  // extra.x = shape (0=block,1=beam,2=underline,3=hollow-block (treated as block)),
+  // extra.y = thickness (pixels)
+  extra: vec4<f32>,
+};
+
+struct SelSpan {
+  rect: vec4<f32>;
+};
+
+struct SelectionBuffer {
+  // header0.x = span count
+  header0: vec4<f32>;
+  // color for selection overlay (sRGB [0,1])
+  color_rgba: vec4<f32>;
+  spans: array<SelSpan>;
+};
+
 fn to_lin_gamma(u: f32, gamma: f32) -> f32 {
   if (u <= 0.04045) { return u / 12.92; }
   return pow((u + 0.055) / 1.055, gamma);
@@ -216,6 +239,8 @@ fn srgb_to_linear_gamma(c: vec3<f32>, gamma: f32) -> vec3<f32> {
 @group(0) @binding(0) var<uniform> proj: Proj;
 @group(0) @binding(1) var atlas: texture_2d_array<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+@group(0) @binding(3) var<uniform> cursor: Cursor;
+@group(0) @binding(4) var<storage, read> selection: SelectionBuffer;
 
 struct VsIn {
   @location(0) pos: vec2<f32>,
@@ -231,6 +256,7 @@ struct VsOut {
   @location(1) color: vec4<f32>,
   @location(2) flags: u32,
   @location(3) layer: u32,
+  @location(4) world_pos: vec2<f32>,
 };
 
 @vertex
@@ -243,6 +269,7 @@ fn vs_main(in: VsIn) -> VsOut {
   out.color = in.color;
   out.flags = in.flags;
   out.layer = in.layer;
+  out.world_pos = in.pos;
   return out;
 }
 
@@ -256,31 +283,81 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
   let fg_lin = srgb_to_linear_gamma(in.color.rgb, proj.gamma);
 
   // Keep multicolor glyphs (emoji/color fonts) as-is
+  var out_col: vec4<f32>;
   if (is_colored) {
-    return s;
-  }
-
-  if (subpixel) {
-    // Approximate LCD subpixel rendering by sampling alpha at 3 horizontal subpixel offsets.
-    // Map one screen pixel to UV delta using derivatives.
-    let du = abs(dpdx(in.uv).x);
-    if (du > 0.0) {
-      let off = du / 3.0;
-      let a_l = textureSample(atlas, atlas_sampler, in.uv + vec2<f32>(-off, 0.0), i32(in.layer)).a;
-      let a_m = s.a;
-      let a_r = textureSample(atlas, atlas_sampler, in.uv + vec2<f32>(off, 0.0), i32(in.layer)).a;
-      var cov = vec3<f32>(a_l, a_m, a_r);
-      if (bgr) { cov = vec3<f32>(a_r, a_m, a_l); }
-      let out_rgb_lin = fg_lin * cov;
-      let out_alpha = max(max(cov.r, cov.g), cov.b) * in.color.a;
-      return vec4<f32>(out_rgb_lin, out_alpha);
+    out_col = s;
+  } else {
+    if (subpixel) {
+      // Approximate LCD subpixel rendering by sampling alpha at 3 horizontal subpixel offsets.
+      // Map one screen pixel to UV delta using derivatives.
+      let du = abs(dpdx(in.uv).x);
+      if (du > 0.0) {
+        let off = du / 3.0;
+        let a_l = textureSample(atlas, atlas_sampler, in.uv + vec2<f32>(-off, 0.0), i32(in.layer)).a;
+        let a_m = s.a;
+        let a_r = textureSample(atlas, atlas_sampler, in.uv + vec2<f32>(off, 0.0), i32(in.layer)).a;
+        var cov = vec3<f32>(a_l, a_m, a_r);
+        if (bgr) { cov = vec3<f32>(a_r, a_m, a_l); }
+        let out_rgb_lin = fg_lin * cov;
+        let out_alpha = max(max(cov.r, cov.g), cov.b) * in.color.a;
+        out_col = vec4<f32>(out_rgb_lin, out_alpha);
+      } else {
+        let coverage = s.a;
+        let out_alpha = coverage * in.color.a;
+        out_col = vec4<f32>(fg_lin, out_alpha);
+      }
+    } else {
+      // Grayscale fallback: use alpha coverage tinted with foreground color.
+      let coverage = s.a;
+      let out_alpha = coverage * in.color.a;
+      out_col = vec4<f32>(fg_lin, out_alpha);
     }
   }
 
-  // Grayscale fallback: use alpha coverage tinted with foreground color.
-  let coverage = s.a;
-  let out_alpha = coverage * in.color.a;
-  return vec4<f32>(fg_lin, out_alpha);
+  // Selection overlay blending in screen space (per-line spans)
+  let span_count = u32(selection.header0.x);
+  if (span_count > 0u) {
+    for (var i: u32 = 0u; i < span_count; i = i + 1u) {
+      let r = selection.spans[i].rect;
+      let in_sel = in.world_pos.x >= r.x && in.world_pos.x < (r.x + r.z)
+                && in.world_pos.y >= r.y && in.world_pos.y < (r.y + r.w);
+      if (in_sel) {
+        out_col = mix(out_col, vec4<f32>(selection.color_rgba.rgb, 1.0), selection.color_rgba.a);
+        break;
+      }
+    }
+  }
+
+  // Cursor overlay blending in screen space
+  let c_pos = cursor.pos_size.xy;
+  let c_size = cursor.pos_size.zw;
+  let shape = cursor.extra.x;
+  let thick = cursor.extra.y;
+  let inside_block = in.world_pos.x >= c_pos.x && in.world_pos.x < (c_pos.x + c_size.x)
+                  && in.world_pos.y >= c_pos.y && in.world_pos.y < (c_pos.y + c_size.y);
+  var overlay: f32 = 0.0;
+  if (shape == 0.0) {
+    // Block
+    if (inside_block) { overlay = 1.0; }
+  } else if (shape == 1.0) {
+    // Beam
+    if (in.world_pos.x >= c_pos.x && in.world_pos.x < (c_pos.x + max(thick, 1.0))
+        && in.world_pos.y >= c_pos.y && in.world_pos.y < (c_pos.y + c_size.y)) { overlay = 1.0; }
+  } else if (shape == 2.0) {
+    // Underline
+    let y0 = (c_pos.y + c_size.y - max(thick, 1.0));
+    if (in.world_pos.y >= y0 && in.world_pos.y < (y0 + max(thick, 1.0))
+        && in.world_pos.x >= c_pos.x && in.world_pos.x < (c_pos.x + c_size.x)) { overlay = 1.0; }
+  } else {
+    // Hollow block -> treat as block overlay
+    if (inside_block) { overlay = 1.0; }
+  }
+  if (overlay > 0.0) {
+    // Mix cursor color over the current color; cursor.color_rgba.a controls strength
+    out_col = mix(out_col, vec4<f32>(cursor.color_rgba.rgb, 1.0), cursor.color_rgba.a);
+  }
+
+  return out_col;
 }
 "#;
 
@@ -326,6 +403,8 @@ pub struct WgpuRenderer {
     // Uniforms/bindings
     proj_buffer: wgpu::Buffer,
     text_bind_group: wgpu::BindGroup,
+    cursor_buffer: wgpu::Buffer,
+    selection_buffer: wgpu::Buffer,
     // Preferences/state
     is_srgb_surface: bool,
     subpixel_enabled: bool,
@@ -802,8 +881,44 @@ fragment: Some(wgpu::FragmentState {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
+        // Create cursor uniform buffer (pos_size, color_rgba, extra)
+        let cursor_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text-cursor-buffer"),
+            size: 48, // 3 vec4<f32> = 48 bytes
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Create selection storage buffer (header + color + spans)
+        // Allocate for up to 256 spans: header(16) + color(16) + spans(256 * 16) = 16 + 16 + 4096 = 4128 bytes
+        let selection_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text-selection-buffer"),
+            size: 16 + 16 + (256 * 16),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let text_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("text-bind-group"),
             layout: &text_bgl,
@@ -819,6 +934,14 @@ fragment: Some(wgpu::FragmentState {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: cursor_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: selection_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -963,12 +1086,110 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }),
     multiview: None,
 });
-        // Build a tiny 2x2 checkerboard as the initial sprite atlas (no external files)
-        let sprite_tex_size = wgpu::Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 1,
-        };
+        // Build a procedurally generated UI sprite atlas (9 icons x 16px).
+        // Slot order matches usage in UI code: [action, workflow, tab, split_v, split_h, focus, zoom, blocks, gear]
+        fn build_ui_sprite_atlas() -> (Vec<u8>, u32, u32) {
+            const TILE: usize = 16;
+            const SLOTS: usize = 9;
+            let atlas_w: usize = TILE * SLOTS;
+            let atlas_h: usize = TILE;
+            let mut pixels = vec![0u8; atlas_w * atlas_h * 4];
+
+            // Helpers implemented as functions to avoid borrow conflicts.
+            fn put(
+                pixels: &mut [u8], atlas_w: usize, slots: usize, tile: usize,
+                tx: usize, x: usize, y: usize, rgba: [u8; 4],
+            ) {
+                if tx >= slots || x >= tile || y >= tile { return; }
+                let ax = tx * tile + x;
+                let idx = (y * atlas_w + ax) * 4;
+                pixels[idx..idx + 4].copy_from_slice(&rgba);
+            }
+            fn draw_rect(
+                pixels: &mut [u8], atlas_w: usize, slots: usize, tile: usize,
+                tx: usize, x0: usize, y0: usize, w: usize, h: usize, rgba: [u8; 4],
+            ) {
+                let x1 = (x0 + w).min(tile);
+                let y1 = (y0 + h).min(tile);
+                for yy in y0..y1 { for xx in x0..x1 { put(pixels, atlas_w, slots, tile, tx, xx, yy, rgba); } }
+            }
+            fn draw_circle(
+                pixels: &mut [u8], atlas_w: usize, slots: usize, tile: usize,
+                tx: usize, cx: f32, cy: f32, r: f32, rgba: [u8; 4],
+            ) {
+                let r2 = r * r;
+                for y in 0..tile { for x in 0..tile {
+                    let dx = x as f32 - cx; let dy = y as f32 - cy;
+                    if dx*dx + dy*dy <= r2 { put(pixels, atlas_w, slots, tile, tx, x, y, rgba); }
+                }}
+            }
+
+            // Colors
+            let white = [255, 255, 255, 255];
+
+            // 0: action (magnifier)
+            draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 0, 7.0, 7.0, 5.0, white);
+            for t in 0..5 {
+                let x = 10 + t; let y = 10 + t;
+                if x < TILE && y < TILE { put(&mut pixels, atlas_w, SLOTS, TILE, 0, x, y, white); }
+            }
+
+            // 1: workflow (three nodes + connectors)
+            draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 1, 4.0, 4.0, 2.0, white);
+            draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 1, 12.0, 4.0, 2.0, white);
+            draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 1, 8.0, 12.0, 2.0, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 1, 4, 3, 8, 1, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 1, 7, 4, 2, 8, white);
+
+            // 2: tab (plus)
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 2, 7, 3, 2, 10, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 2, 3, 7, 10, 2, white);
+
+            // 3: split_v (vertical divider)
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 3, 7, 1, 2, 14, white);
+
+            // 4: split_h (horizontal divider)
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 4, 1, 7, 14, 2, white);
+
+            // 5: focus (crosshair)
+            draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 5, 8.0, 8.0, 6.5, [255, 255, 255, 64]);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 5, 0, 7, 16, 2, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 5, 7, 0, 2, 16, white);
+
+            // 6: zoom (square border)
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 6, 3, 3, 10, 2, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 6, 3, 11, 10, 2, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 6, 3, 3, 2, 10, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 6, 11, 3, 2, 10, white);
+
+            // 7: blocks (3x3 grid)
+            for by in 0..3 { for bx in 0..3 { draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 7, 3 + bx*4, 3 + by*4, 2, 2, white); } }
+
+            // 8: gear (simple)
+            draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 8, 8.0, 8.0, 6.5, white);
+            // inner dim hole
+            for y in 0..TILE { for x in 0..TILE {
+                let dx = x as f32 - 8.0; let dy = y as f32 - 8.0; let r2 = dx*dx + dy*dy;
+                if r2 <= 3.5*3.5 { put(&mut pixels, atlas_w, SLOTS, TILE, 8, x, y, [255,255,255,32]); }
+            }}
+            // teeth
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 7, 0, 2, 3, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 7, 13, 2, 3, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 0, 7, 3, 2, white);
+            draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 13, 7, 3, 2, white);
+            for t in 0..3 {
+                let a = t as usize;
+                if 2 + a < TILE { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 2 + a, 2 + a, white); }
+                if 12 >= a && 2 + a < TILE { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 12 - a, 2 + a, white); }
+                if 2 + a < TILE && 12 >= a { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 2 + a, 12 - a, white); }
+                if 12 >= a { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 12 - a, 12 - a, white); }
+            }
+
+            (pixels, atlas_w as u32, atlas_h as u32)
+        }
+
+        let (sprite_pixels, sprite_w, sprite_h) = build_ui_sprite_atlas();
+        let sprite_tex_size = wgpu::Extent3d { width: sprite_w, height: sprite_h, depth_or_array_layers: 1 };
         let sprite_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sprite-texture"),
             size: sprite_tex_size,
@@ -1004,46 +1225,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             label: Some("sprite-bg-linear"),
             layout: &sprite_bgl,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&sprite_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sprite_sampler_linear),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&sprite_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sprite_sampler_linear) },
             ],
         });
         let sprite_bind_group_nearest = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sprite-bg-nearest"),
             layout: &sprite_bgl,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&sprite_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sprite_sampler_nearest),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&sprite_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sprite_sampler_nearest) },
             ],
         });
-        // Upload checkerboard pixels
-        let checker: [u8; 16] = [
-            255, 255, 255, 255, 32, 32, 32, 255, 32, 32, 32, 255, 255, 255, 255, 255,
-        ];
+        // Upload atlas pixels
         queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &sprite_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &checker,
+            wgpu::TexelCopyTextureInfo { texture: &sprite_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            &sprite_pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * 2),
-                rows_per_image: Some(2),
+                bytes_per_row: Some(4 * sprite_w),
+                rows_per_image: Some(sprite_h),
             },
             sprite_tex_size,
         );
@@ -1082,6 +1283,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             pending_eviction: None,
             proj_buffer,
             text_bind_group,
+            cursor_buffer,
+            selection_buffer,
             is_srgb_surface,
             subpixel_enabled,
             subpixel_bgr,
@@ -1748,12 +1951,43 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         self.pending_ui.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
     }
 
+    /// Update cursor overlay uniforms for the text shader.
+    /// shape: 0=block, 1=beam, 2=underline, 3=hollow-block. thickness_px used for beam/underline/hollow.
+    pub fn set_cursor_overlay(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgb, alpha: f32, shape: u32, thickness_px: f32) {
+        let pos_size = [x, y, w, h];
+        let color_rgba = [
+            (color.r as f32) / 255.0,
+            (color.g as f32) / 255.0,
+            (color.b as f32) / 255.0,
+            alpha.clamp(0.0, 1.0),
+        ];
+        let extra = [shape as f32, thickness_px.max(0.0), 0.0, 0.0];
+        let mut buf = [0.0f32; 12];
+        buf[0..4].copy_from_slice(&pos_size);
+        buf[4..8].copy_from_slice(&color_rgba);
+        buf[8..12].copy_from_slice(&extra);
+        self.queue.write_buffer(&self.cursor_buffer, 0, bytemuck::cast_slice(&buf));
+    }
+
+    /// Update selection overlay as a single rectangle with color/alpha in pixel space.
+    /// Pass width/height=0 or alpha=0 to disable.
+    pub fn write_selection_storage(&mut self, bytes: &[u8]) {
+        self.queue.write_buffer(&self.selection_buffer, 0, bytes);
+    }
+
     pub fn draw_cells<I: Iterator<Item = RenderableCell>>(
         &mut self,
         size_info: &SizeInfo,
         glyph_cache: &mut GlyphCache,
         cells: I,
     ) {
+        // Before staging text, initialize selection storage with zero spans
+        let header: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+        let color: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+        let mut bytes: Vec<u8> = Vec::with_capacity(32);
+        bytes.extend_from_slice(bytemuck::cast_slice(&header));
+        bytes.extend_from_slice(bytemuck::cast_slice(&color));
+        self.queue.write_buffer(&self.selection_buffer, 0, &bytes);
         // Stage text vertices to render on the next draw_rects pass.
         let subpixel = self.subpixel_enabled;
         let bgr = self.subpixel_bgr;

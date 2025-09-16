@@ -163,6 +163,23 @@ pub trait PluginHost: Send + Sync {
         plugin_id: &str,
         key: &str,
     ) -> Result<Option<Vec<u8>>, ApiPluginError>;
+
+    /// Store a JSON document in a namespace with a document id
+    fn store_document_for(
+        &self,
+        plugin_id: &str,
+        namespace: &str,
+        doc_id: &str,
+        doc_json: &str,
+    ) -> Result<(), ApiPluginError>;
+
+    /// Retrieve a JSON document
+    fn retrieve_document_for(
+        &self,
+        plugin_id: &str,
+        namespace: &str,
+        doc_id: &str,
+    ) -> Result<Option<String>, ApiPluginError>;
 }
 
 /// Log levels for plugin logging
@@ -1167,8 +1184,12 @@ impl PluginManager {
                         .read(&caller, data_ptr as usize, &mut data_buf)
                         .map_err(|_| anyhow::anyhow!("Failed to read data from plugin memory"))?;
 
+                    // Permission check
+                    let ctx = caller.data();
+                    if !ctx.permissions.storage {
+                        return Ok(-1);
+                    }
                     if let Some(ref host) = host_clone {
-                        let ctx = caller.data();
                         match host.store_data_for(&ctx.plugin_id, &key, &data_buf) {
                             Ok(()) => Ok(0),
                             Err(_) => Ok(-2),
@@ -1205,8 +1226,12 @@ impl PluginManager {
                         .map_err(|_| anyhow::anyhow!("Failed to read key from plugin memory"))?;
                     let key = String::from_utf8_lossy(&key_buf);
 
+                    // Permission check
+                    let ctx = caller.data();
+                    if !ctx.permissions.storage {
+                        return Ok(-1);
+                    }
                     if let Some(ref host) = host_clone {
-                        let ctx = caller.data();
                         match host.retrieve_data_for(&ctx.plugin_id, &key) {
                             Ok(Some(data)) => {
                                 let len_bytes = (data.len() as u32).to_le_bytes();
@@ -1224,7 +1249,7 @@ impl PluginManager {
                                 }
                                 Ok(0)
                             }
-                            Ok(None) => Ok(-1),
+                            Ok(None) => Ok(-4),
                             Err(_) => Ok(-2),
                         }
                     } else {
@@ -1237,6 +1262,96 @@ impl PluginManager {
                     "Failed to add host_retrieve_data: {}",
                     e
                 ))
+            })?;
+
+        // Host store document function
+        let host_clone = self.host.clone();
+        linker
+            .func_wrap(
+                "env",
+                "host_store_document",
+                move |mut caller: Caller<'_, PluginContext>,
+                      ns_ptr: i32,
+                      ns_len: i32,
+                      id_ptr: i32,
+                      id_len: i32,
+                      json_ptr: i32,
+                      json_len: i32|
+                      -> Result<i32, anyhow::Error> {
+                    let memory = caller
+                        .get_export("memory")
+                        .and_then(|e| e.into_memory())
+                        .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+                    let mut ns_buf = vec![0u8; ns_len as usize];
+                    memory.read(&caller, ns_ptr as usize, &mut ns_buf).map_err(|_| anyhow::anyhow!("Failed to read ns"))?;
+                    let namespace = String::from_utf8_lossy(&ns_buf).to_string();
+                    let mut id_buf = vec![0u8; id_len as usize];
+                    memory.read(&caller, id_ptr as usize, &mut id_buf).map_err(|_| anyhow::anyhow!("Failed to read id"))?;
+                    let doc_id = String::from_utf8_lossy(&id_buf).to_string();
+                    let mut json_buf = vec![0u8; json_len as usize];
+                    memory.read(&caller, json_ptr as usize, &mut json_buf).map_err(|_| anyhow::anyhow!("Failed to read json"))?;
+                    let json_str = String::from_utf8_lossy(&json_buf).to_string();
+
+                    let ctx = caller.data();
+                    if !ctx.permissions.storage { return Ok(-1); }
+                    if let Some(ref host) = host_clone {
+                        match host.store_document_for(&ctx.plugin_id, &namespace, &doc_id, &json_str) {
+                            Ok(()) => Ok(0),
+                            Err(_) => Ok(-2),
+                        }
+                    } else { Ok(-3) }
+                },
+            )
+            .map_err(|e| {
+                PluginError::InitializationFailed(format!("Failed to add host_store_document: {}", e))
+            })?;
+
+        // Host retrieve document function
+        let host_clone = self.host.clone();
+        linker
+            .func_wrap(
+                "env",
+                "host_retrieve_document",
+                move |mut caller: Caller<'_, PluginContext>,
+                      ns_ptr: i32,
+                      ns_len: i32,
+                      id_ptr: i32,
+                      id_len: i32,
+                      result_ptr: i32,
+                      result_len_ptr: i32|
+                      -> Result<i32, anyhow::Error> {
+                    let memory = caller
+                        .get_export("memory")
+                        .and_then(|e| e.into_memory())
+                        .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
+                    let mut ns_buf = vec![0u8; ns_len as usize];
+                    memory.read(&caller, ns_ptr as usize, &mut ns_buf).map_err(|_| anyhow::anyhow!("Failed to read ns"))?;
+                    let namespace = String::from_utf8_lossy(&ns_buf).to_string();
+                    let mut id_buf = vec![0u8; id_len as usize];
+                    memory.read(&caller, id_ptr as usize, &mut id_buf).map_err(|_| anyhow::anyhow!("Failed to read id"))?;
+                    let doc_id = String::from_utf8_lossy(&id_buf).to_string();
+
+                    let ctx = caller.data();
+                    if !ctx.permissions.storage { return Ok(-1); }
+                    if let Some(ref host) = host_clone {
+                        match host.retrieve_document_for(&ctx.plugin_id, &namespace, &doc_id) {
+                            Ok(Some(json)) => {
+                                let data = json.into_bytes();
+                                let len_bytes = (data.len() as u32).to_le_bytes();
+                                memory.write(&mut caller, result_len_ptr as usize, &len_bytes).map_err(|_| anyhow::anyhow!("Failed to write result length"))?;
+                                if result_ptr != 0 {
+                                    memory.write(&mut caller, result_ptr as usize, &data).map_err(|_| anyhow::anyhow!("Failed to write result data"))?;
+                                }
+                                Ok(0)
+                            }
+                            Ok(None) => Ok(-4),
+                            Err(_) => Ok(-2),
+                        }
+                    } else { Ok(-3) }
+                },
+            )
+            .map_err(|e| {
+                PluginError::InitializationFailed(format!("Failed to add host_retrieve_document: {}", e))
             })?;
 
         Ok(())

@@ -363,6 +363,98 @@ fn test_warp_pane_pty_mapping_after_init() {
     assert!(ai_ctx.last_command.as_deref() == Some("ls -la"));
 }
 
+/// New: Verify split right/down create PTY managers and closing pane cleans up
+#[test]
+fn test_warp_split_and_close_affect_pty_count() {
+    // Ensure PTY creation path is enabled in test mode
+    std::env::set_var("OPENAGENT_TERMINAL_TEST_REAL_PTY", "1");
+
+    let config = test_config();
+    let size_info = test_size_info();
+    let mut workspace = WorkspaceManager::with_warp(WorkspaceId(3), config, size_info, None);
+
+    let window_id = winit::window::WindowId::dummy();
+    workspace
+        .initialize_warp_for_tests_no_eventloop(window_id, false)
+        .expect("warp init (split)");
+
+    // Count PTY managers before any splits
+    let count_ptys = |ws: &WorkspaceManager| -> usize {
+        ws.warp
+            .as_ref()
+            .expect("warp")
+            .pty_collection_handle()
+            .lock()
+            .count()
+    };
+    let initial_count = count_ptys(&workspace);
+    assert!(initial_count >= 1, "expected at least one PTY after init");
+
+    // Split right
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitRight)
+        .unwrap());
+    let count_after_right = count_ptys(&workspace);
+    assert_eq!(count_after_right, initial_count + 1, "SplitRight should create a new PTY manager");
+
+    // Split down
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitDown)
+        .unwrap());
+    let count_after_down = count_ptys(&workspace);
+    assert_eq!(count_after_down, initial_count + 2, "SplitDown should create another PTY manager");
+
+    // Close current pane
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::ClosePane)
+        .unwrap());
+    let count_after_close = count_ptys(&workspace);
+    assert_eq!(count_after_close, initial_count + 1, "ClosePane should remove the PTY manager for the closed pane");
+}
+
+/// New: Verify zoom toggles pane layout to a single pane and back
+#[test]
+fn test_warp_zoom_toggles_pane_layout() {
+    // We don't need PTY specifics for this; use default real PTY behavior for consistency
+    std::env::set_var("OPENAGENT_TERMINAL_TEST_REAL_PTY", "1");
+
+    let config = test_config();
+    let size_info = test_size_info();
+    let mut workspace = WorkspaceManager::with_warp(WorkspaceId(4), config, size_info, None);
+
+    let window_id = winit::window::WindowId::dummy();
+    workspace
+        .initialize_warp_for_tests_no_eventloop(window_id, false)
+        .expect("warp init (zoom)");
+
+    // Create an additional split to ensure pane_count > 1
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitRight)
+        .unwrap());
+
+    // Before zoom: pane count should be > 1
+    let warp = workspace.warp.as_ref().expect("warp");
+    let info_before = warp.debug_info();
+    assert!(info_before.active_pane_count > 1, "setup should have multiple panes before zoom");
+
+    // Zoom active pane
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::ZoomPane)
+        .unwrap());
+    let info_zoomed = workspace.warp.as_ref().unwrap().debug_info();
+    assert_eq!(info_zoomed.active_pane_count, 1, "ZoomPane should reduce layout to a single pane");
+
+    // Unzoom
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::ZoomPane)
+        .unwrap());
+    let info_unzoomed = workspace.warp.as_ref().unwrap().debug_info();
+    assert!(
+        info_unzoomed.active_pane_count > 1,
+        "Second ZoomPane should restore the previous layout"
+    );
+}
+
 /// Documentation test - ensure examples compile
 #[test]
 fn test_example_usage() {

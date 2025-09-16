@@ -740,6 +740,28 @@ impl WarpTabManager {
         }
     }
 
+    /// Remove pane context from a tab to prevent leaks when panes are closed
+    pub fn remove_pane_from_tab(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
+        if let Some(tab) = self.tabs.get_mut(&tab_id) {
+            tab.panes.remove(&pane_id).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Update PaneContext.focused flags to reflect the active_pane of the tab
+    pub fn update_focus_flags(&mut self, tab_id: TabId) -> bool {
+        if let Some(tab) = self.tabs.get_mut(&tab_id) {
+            let active = tab.active_pane;
+            for (pid, pane) in tab.panes.iter_mut() {
+                pane.focused = *pid == active;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     /// Update working directory for a tab (for session restoration fallback)
     pub fn update_tab_working_directory(&mut self, tab_id: TabId, new_dir: PathBuf) -> bool {
         if let Some(tab) = self.tabs.get_mut(&tab_id) {

@@ -273,6 +273,9 @@ impl WarpIntegration {
                     }
                 }
             }
+
+            // Ensure focus flags reflect the tab's active pane after restoration
+            let _ = self.tab_manager.update_focus_flags(tab_id);
         }
 
         let elapsed = start.elapsed();
@@ -668,11 +671,27 @@ impl WarpIntegration {
             self.tab_manager.update_tab_split_layout(tab_id, layout);
 
             // Create terminal for new pane if initialized; otherwise skip gracefully
-            if self.window_id.is_some() && self.size_info.is_some() && self.event_proxy.is_some() {
+            if self.window_id.is_some()
+                && self.size_info.is_some()
+                && (self.event_proxy.is_some() || Self::is_test_real_pty())
+            {
                 self.create_terminal_for_pane(new_pane_id, &working_dir)?;
+
+                // Register PaneContext for the new pane if a terminal was created
+                if let Some(term) = self.terminals.get(&new_pane_id) {
+                    let pane_context = super::tab_manager::PaneContext {
+                        terminal: term.clone(),
+                        window_context: None,
+                        title_override: None,
+                        focused: false,
+                    };
+                    let _ = self
+                        .tab_manager
+                        .add_pane_to_tab(tab_id, new_pane_id, pane_context);
+                }
             } else {
                 info!(
-                    "Warp not initialized; skipping terminal creation for pane {:?}",
+                    "Warp not fully initialized; skipping terminal creation for pane {:?}",
                     new_pane_id
                 );
             }
@@ -720,11 +739,27 @@ impl WarpIntegration {
             self.tab_manager.update_tab_split_layout(tab_id, layout);
 
             // Create terminal for new pane if initialized; otherwise skip gracefully
-            if self.window_id.is_some() && self.size_info.is_some() && self.event_proxy.is_some() {
+            if self.window_id.is_some()
+                && self.size_info.is_some()
+                && (self.event_proxy.is_some() || Self::is_test_real_pty())
+            {
                 self.create_terminal_for_pane(new_pane_id, &working_dir)?;
+
+                // Register PaneContext for the new pane if a terminal was created
+                if let Some(term) = self.terminals.get(&new_pane_id) {
+                    let pane_context = super::tab_manager::PaneContext {
+                        terminal: term.clone(),
+                        window_context: None,
+                        title_override: None,
+                        focused: false,
+                    };
+                    let _ = self
+                        .tab_manager
+                        .add_pane_to_tab(tab_id, new_pane_id, pane_context);
+                }
             } else {
                 info!(
-                    "Warp not initialized; skipping terminal creation for pane {:?}",
+                    "Warp not fully initialized; skipping terminal creation for pane {:?}",
                     new_pane_id
                 );
             }
@@ -765,6 +800,7 @@ impl WarpIntegration {
         if navigation_success {
             // Update active pane in tab
             self.tab_manager.set_active_pane(tab_id, current_pane);
+            let _ = self.tab_manager.update_focus_flags(tab_id);
 
             // Send UI update event
             self.send_ui_update_event(WarpUiUpdateType::PaneFocused {
@@ -942,11 +978,15 @@ impl WarpIntegration {
             // Clean up terminal resources for the closed pane
             self.cleanup_pane(current_pane);
 
+            // Remove PaneContext from the tab to avoid leaks
+            let _ = self.tab_manager.remove_pane_from_tab(tab_id, current_pane);
+
             // Update the tab with new layout and active pane
             self.tab_manager.update_tab_split_layout(tab_id, layout);
             if active_pane_id != current_pane {
                 self.tab_manager.set_active_pane(tab_id, active_pane_id);
             }
+            let _ = self.tab_manager.update_focus_flags(tab_id);
 
             // Check if this was the last pane in the tab
             let remaining_panes = self

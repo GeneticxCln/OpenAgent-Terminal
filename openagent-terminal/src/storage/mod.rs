@@ -5,6 +5,7 @@ use thiserror::Error;
 
 pub mod blocks;
 pub mod migrations;
+pub mod plugins;
 
 /// Storage error types
 #[derive(Debug, Error)]
@@ -62,5 +63,10 @@ impl Storage {
     /// Get block storage interface
     pub fn blocks(&self) -> blocks::BlockStorage {
         blocks::BlockStorage::new(self.pool.clone())
+    }
+
+    /// Get plugin storage interface
+    pub fn plugins(&self) -> plugins::PluginStorage {
+        plugins::PluginStorage::new(self.pool.clone())
     }
 }

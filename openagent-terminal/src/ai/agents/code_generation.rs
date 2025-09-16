@@ -467,12 +467,10 @@ impl Agent for CodeGenerationAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::providers::OllamaProvider;
 
     #[tokio::test]
     async fn test_code_generation_agent_creation() {
-        let provider = Box::new(OllamaProvider::new());
-        let agent = CodeGenerationAgent::new(provider);
+        let agent = CodeGenerationAgent::new();
 
         assert_eq!(agent.id(), "code-generation");
         assert_eq!(agent.name(), "Code Generation Agent");
@@ -485,8 +483,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_creation() {
-        let provider = Box::new(OllamaProvider::new());
-        let agent = CodeGenerationAgent::new(provider);
+        let agent = CodeGenerationAgent::new();
 
         let request = CodeGenerationRequest {
             requirements: "Create a function to calculate fibonacci numbers".to_string(),
