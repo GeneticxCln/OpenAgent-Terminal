@@ -266,7 +266,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           done
 # Compare against goldens with per-platform threshold
 for scenario in confirm_overlay message_bar_error message_bar_warning search_bar_cursor folded_blocks split_panes split_overlay tab_bar tab_bar_hover tab_bar_drag tab_bar_overflow tab_bar_bottom tab_bar_reduce_motion; do
-            SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal --release -F preview_ui --example snapshot_capture -- --threshold=0.995 --scenario=$scenario --backend=wgpu
+            SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal --release -F preview_ui --example snapshot_capture -- --threshold=0.996 --scenario=$scenario --backend=wgpu
           done
 
       - name: GPU snapshots (AI overlays)
@@ -277,7 +277,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           # Build with ai feature for overlay rendering (no provider needed)
           for scenario in ai_loading ai_error ai_proposals; do
             xvfb-run -a cargo run -p openagent-terminal --release -F ai,preview_ui --example snapshot_capture -- --update-golden --scenario=$scenario
-            xvfb-run -a cargo run -p openagent-terminal --release -F ai,preview_ui --example snapshot_capture -- --threshold=0.995 --scenario=$scenario
+            xvfb-run -a cargo run -p openagent-terminal --release -F ai,preview_ui --example snapshot_capture -- --threshold=0.996 --scenario=$scenario
           done
 
       - name: Perf cold start check (<= 800ms)
@@ -322,6 +322,18 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
         run: cargo test -p plugin-loader -- --nocapture
       - name: Plugin system tests
         run: cargo test -p plugin-system -- --nocapture
+
+  shader-sync-check:
+    name: Shader sync check (RectKind vs WGSL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Run shader sync unit test
+        run: cargo test -p openagent-terminal --lib rect_kind_count_embedded_in_wgsl -- --nocapture
 
   wgpu-linux:
     name: WGPU smoke + perf
@@ -370,9 +382,31 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           set -euo pipefail
 # Compare against committed goldens for a subset of scenarios
           for scenario in confirm_overlay tab_bar split_overlay; do
-            SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.995 --scenario=$scenario --backend=wgpu
+            SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.996 --scenario=$scenario --backend=wgpu
           done
 
+
+  wgpu-dpi-theme-snapshots:
+    name: WGPU DPI/theme snapshots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build snapshot example
+        run: cargo build -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture
+      - name: Run snapshots at multiple DPI scales (wgpu)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scale in 1.0 1.5 2.0; do
+            export WINIT_X11_SCALE_FACTOR=$scale
+            for scenario in tab_bar split_overlay confirm_overlay; do
+              SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.996 --scenario=$scenario --backend=wgpu
+            done
+          done
 
   coverage:
     name: Coverage (llvm-cov)
@@ -388,17 +422,21 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
       - name: Generate coverage (exclude GUI crate)
+        # NOTE:
+        # - We intentionally exclude the GUI app crate (openagent-terminal) from coverage reporting
+        #   because its winit/wgpu integrations are difficult to exercise in a headless CI environment.
+        #   The coverage threshold applies to core libraries, engine, and supporting crates.
         run: |
           set -euo pipefail
           cargo llvm-cov --workspace --exclude openagent-terminal --lcov --output-path lcov.info
-          # Enforce a minimal workspace coverage threshold (lines). Adjust as needed.
+          # Enforce a minimal workspace coverage threshold (lines) across non-GUI crates.
           THRESH=$(cargo llvm-cov --workspace --json | jq -r '."coverage"."line" // .coverage.line // empty')
           echo "Coverage(line): ${THRESH}%"
           # Fallback: compute from summary if tool version differs
           if [ -z "$THRESH" ]; then
             THRESH=$(cargo llvm-cov --workspace --summary-only | sed -n 's/.*lines: \([0-9.]*\)%.*/\1/p')
           fi
-          REQ=60
+          REQ=80
           awk -v a="$THRESH" -v b="$REQ" 'BEGIN { exit (a+0 >= b ? 0 : 1) }'
       - name: Upload coverage artifact
         if: always()

@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 use super::{
     ActionPriority, ActionType, Agent, AgentArtifact, AgentCapability, AgentConfig, AgentContext,
-    AgentRequest, AgentRequestType, AgentResponse, AgentStatus, ArtifactType, SuggestedAction,
+    AgentRequest, AgentRequestType, AgentResponse, AgentStatus, SuggestedAction,
 };
 
 /// Communication hub for routing messages between agents and coordinating workflows

@@ -2,6 +2,7 @@ use crate::cli::TerminalType;
 use crate::config::{MigrationConfig, UnifiedConfig};
 use anyhow::{anyhow, Result};
 use std::fs;
+use crate::parsers::wezterm::WezTermParser;
 
 mod alacritty;
 mod iterm2;
@@ -11,8 +12,25 @@ mod windows_terminal;
 
 pub use alacritty::AlacrittyParser;
 pub use iterm2::ITerm2Parser;
-pub use kitty::KittyParser;
-pub use wezterm::WezTermParser;
+
+/// Utility: Check if a font family is available on the system.
+pub fn system_has_font_family(family: &str) -> bool {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let family_lower = family.to_lowercase();
+    // Collect faces into a local Vec to make drop order explicit and avoid borrow issues
+    let faces: Vec<_> = db.faces().collect();
+    for face in faces {
+        if face
+            .families
+            .iter()
+            .any(|pair| pair.0.to_lowercase().contains(&family_lower))
+        {
+            return true;
+        }
+    }
+    false
+}
 pub use windows_terminal::WindowsTerminalParser;
 
 /// Parse a configuration file based on the terminal type
@@ -28,7 +46,7 @@ pub fn parse_config(migration_config: &MigrationConfig) -> Result<UnifiedConfig>
     match migration_config.terminal_type {
         TerminalType::Alacritty => AlacrittyParser::new().parse(&content),
         TerminalType::ITerm2 => ITerm2Parser::new().parse(&content),
-        TerminalType::Kitty => KittyParser::new().parse(&content),
+        TerminalType::Kitty => kitty::KittyParser::new().parse(&content),
         TerminalType::WindowsTerminal => WindowsTerminalParser::new().parse(&content),
         TerminalType::WezTerm => WezTermParser::new().parse(&content),
         TerminalType::Hyper => parse_hyper_config(&content),
@@ -241,7 +259,7 @@ pub fn parse_by_extension(extension: &str, content: &str) -> Result<UnifiedConfi
         }
         "conf" => {
             // Likely Kitty
-            KittyParser::new().parse(content)
+            kitty::KittyParser::new().parse(content)
         }
         "js" => {
             // Hyper terminal

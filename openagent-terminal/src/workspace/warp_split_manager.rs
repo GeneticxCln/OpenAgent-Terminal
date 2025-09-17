@@ -88,7 +88,10 @@ impl WarpSplitManager {
         let target_pane = self.find_pane_in_direction(&pane_rects, current_rect, direction);
 
         if let Some(target_id) = target_pane {
+            // Update focus history and MRU: record previous and new focus
             self.update_focus_history(*current_pane);
+            // Seed MRU with the previous pane as well so cycling can traverse 3+ panes
+            self.add_to_recent_panes(*current_pane);
             *current_pane = target_id;
             self.add_to_recent_panes(target_id);
             true
@@ -199,24 +202,33 @@ impl WarpSplitManager {
 
     /// Cycle through recent panes (Warp Cmd+; behavior)
     pub fn cycle_recent_panes(&mut self, current_pane: &mut PaneId) -> bool {
+        // Must have at least two distinct entries to cycle
         if self.recent_panes.len() < 2 {
             return false;
         }
 
-        // Move current pane to end and get the next recent pane
-        if let Some(pos) = self.recent_panes.iter().position(|&id| id == *current_pane) {
-            let next_pos = (pos + 1) % self.recent_panes.len();
-            let next_pane = self.recent_panes[next_pos];
+        // Find the position of the current pane in MRU; if not present, cannot cycle reliably
+        let Some(pos) = self.recent_panes.iter().position(|&id| id == *current_pane) else {
+            return false;
+        };
 
-            self.update_focus_history(*current_pane);
-            *current_pane = next_pane;
-
-            // Move the selected pane to the front of recent panes
-            if let Some(idx) = self.recent_panes.iter().position(|&id| id == next_pane) {
-                let pane = self.recent_panes.remove(idx).unwrap();
-                self.recent_panes.push_front(pane);
+        // Rotate to the next distinct pane in MRU order without modifying MRU
+        let len = self.recent_panes.len();
+        let mut next_idx = (pos + 1) % len;
+        let mut found: Option<PaneId> = None;
+        for _ in 0..(len - 1) {
+            let candidate = self.recent_panes[next_idx];
+            if candidate != *current_pane {
+                found = Some(candidate);
+                break;
             }
+            next_idx = (next_idx + 1) % len;
+        }
 
+        if let Some(target) = found {
+            // Update focus history; preserve MRU order
+            self.update_focus_history(*current_pane);
+            *current_pane = target;
             true
         } else {
             false
@@ -445,6 +457,50 @@ pub enum WarpResizeDirection {
 impl Default for WarpSplitManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_pane_cycle_changes_focus() {
+        // Build a simple layout: H( V(p0, p2), p1 )
+        let p0 = PaneId(1);
+        let p1 = PaneId(2);
+        let p2 = PaneId(3);
+        let mut layout = SplitLayout::Horizontal {
+            left: Box::new(SplitLayout::Vertical {
+                top: Box::new(SplitLayout::Single(p0)),
+                bottom: Box::new(SplitLayout::Single(p2)),
+                ratio: 0.5,
+            }),
+            right: Box::new(SplitLayout::Single(p1)),
+            ratio: 0.5,
+        };
+        let mut wsm = WarpSplitManager::new();
+        let mut current = p0;
+        // Navigate Right to p1, then Down to p2 to seed MRU
+        assert!(wsm.navigate_pane(&layout, &mut current, WarpNavDirection::Right));
+        assert_eq!(current, p1);
+        assert!(wsm.navigate_pane(&layout, &mut current, WarpNavDirection::Down));
+        assert_eq!(current, p2);
+        // Cycle recent panes should move focus to p1
+        assert!(wsm.cycle_recent_panes(&mut current));
+        assert_eq!(current, p1);
+        // Cycle again should move to the next in MRU order (p0)
+        assert!(wsm.cycle_recent_panes(&mut current));
+        assert_eq!(current, p0);
+
+        // Ensure closing a pane removes it from tracking
+        wsm.remove_pane_from_tracking(p1);
+        // Now cycle should still succeed and move focus to the remaining MRU (p2)
+        let ok = wsm.cycle_recent_panes(&mut current);
+        assert!(ok);
+        assert_eq!(current, p2);
+        // Layout remains unchanged; normalize shouldn't panic
+        super::SplitManager::new().normalize(&mut layout);
     }
 }
 

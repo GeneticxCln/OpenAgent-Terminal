@@ -4,8 +4,7 @@
 // Test AI Command Assistance
 #[cfg(feature = "ai")]
 mod ai_tests {
-    use super::*;
-    use openagent_terminal::ai_runtime::{AiRuntime, AiUiState};
+    use openagent_terminal::ai_runtime::AiRuntime;
     use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 
     pub struct MockProvider;
@@ -412,7 +411,6 @@ mod integration_tests {
 // Performance tests
 #[cfg(all(feature = "ai", feature = "blocks", feature = "security-lens"))]
 mod performance_tests {
-    use super::*;
     use openagent_terminal::command_history::CommandHistory;
     use openagent_terminal::security_config::{SecurityConfig, SecurityLensFactory};
     use std::time::Instant;

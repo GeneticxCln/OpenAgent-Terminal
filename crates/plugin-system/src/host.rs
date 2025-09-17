@@ -8,11 +8,10 @@ use std::sync::Arc;
 #[cfg(feature = "wasm-runtime")]
 use anyhow::{anyhow, Result as AnyResult};
 
+#[allow(unused_imports)]
 use crate::api::{CommandOutput, PluginError};
 #[cfg(feature = "wasm-runtime")]
 use serde_json;
-#[cfg(feature = "wasm-runtime")]
-use std::time::Duration;
 
 /// Host interface that plugins can call into
 pub trait HostInterface: Send + Sync {

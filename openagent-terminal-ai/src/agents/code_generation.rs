@@ -2,13 +2,26 @@ use super::{
     AgentCapabilities, AgentError, AgentRequest, AgentResponse, AiAgent, CodeAction, CodeContext,
     PrivacyLevel,
 };
+use crate::agents::types::ConcurrencyState;
 use crate::{AiProvider, AiRequest};
 use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::{RwLock, Semaphore};
+use std::collections::{HashMap, HashSet};
+use tokio::time::{timeout, Duration};
+use uuid::Uuid;
+use tracing::{debug};
 
 /// Enhanced code generation agent that goes beyond simple command suggestions
 pub struct CodeGenerationAgent {
     provider: Box<dyn AiProvider>,
     config: CodeGenConfig,
+    /// Concurrency state to prevent race conditions
+    concurrency_state: ConcurrencyState,
+    /// Active operations tracking
+    active_operations: Arc<RwLock<HashMap<String, HashSet<Uuid>>>>,
+    /// Operation timeout
+    timeout_duration: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +58,62 @@ impl CodeGenerationAgent {
     }
 
     pub fn with_config(provider: Box<dyn AiProvider>, config: CodeGenConfig) -> Self {
-        Self { provider, config }
+        Self { 
+            provider, 
+            config,
+            concurrency_state: ConcurrencyState::default(),
+            active_operations: Arc::new(RwLock::new(HashMap::new())),
+            timeout_duration: Duration::from_secs(60),
+        }
+    }
+    
+    /// Register a new operation to prevent race conditions
+    async fn register_operation(&self, operation_type: &str) -> Result<OperationGuard, AgentError> {
+        let operation_id = Uuid::new_v4();
+        let key = format!("{}", operation_type);
+        
+        // Check for semaphore limits
+        let semaphore = {
+            let mut locks = self.concurrency_state.operation_locks.lock().await;
+            locks.entry(key.clone())
+                .or_insert_with(|| Arc::new(Semaphore::new(3)))
+                .clone()
+        };
+        
+        // Try to acquire semaphore with timeout
+        let permit = match timeout(Duration::from_secs(5), semaphore.acquire_owned()).await {
+            Ok(Ok(permit)) => permit,
+            Ok(Err(e)) => return Err(AgentError::ProcessingError(
+                format!("Failed to acquire semaphore: {}", e)
+            )),
+            Err(_) => return Err(AgentError::ProcessingError(
+                "Timeout waiting for operation lock".to_string()
+            )),
+        };
+        
+        // Register operation
+        {
+            let mut active_ops = self.active_operations.write().await;
+            active_ops.entry(key.clone())
+                .or_insert_with(HashSet::new)
+                .insert(operation_id);
+        }
+        
+        // Update resource usage
+        {
+            let mut usage = self.concurrency_state.resource_usage.write().await;
+            usage.active_threads += 1;
+        }
+        
+        debug!("Registered operation: {} ({})", operation_type, operation_id);
+        
+        Ok(OperationGuard {
+            id: operation_id,
+            key,
+            active_operations: self.active_operations.clone(),
+            _permit: permit,
+            resource_usage: self.concurrency_state.resource_usage.clone(),
+        })
     }
 
     /// Generate code based on natural language description
@@ -227,6 +295,17 @@ impl AiAgent for CodeGenerationAgent {
                 prompt,
                 action,
             } => {
+                // Register a scoped operation guard to enforce concurrency limits
+                let op_label = match &action {
+                    CodeAction::Generate => "generate",
+                    CodeAction::Complete => "complete",
+                    CodeAction::Refactor => "refactor",
+                    CodeAction::Explain => "explain",
+                    CodeAction::Optimize => "optimize",
+                    CodeAction::Convert { .. } => "convert",
+                };
+                let _guard = self.register_operation(&format!("code_generation:{}", op_label)).await?;
+
                 let result = match action {
                     CodeAction::Generate => {
                         let (code, explanation) = self
@@ -355,5 +434,46 @@ impl AiAgent for CodeGenerationAgent {
             requires_internet: false, // Depends on underlying provider
             privacy_level: PrivacyLevel::Local, // Depends on underlying provider
         }
+    }
+}
+
+/// RAII guard for tracking active operations
+struct OperationGuard {
+    id: Uuid,
+    key: String,
+    active_operations: Arc<RwLock<HashMap<String, HashSet<Uuid>>>>,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+    resource_usage: Arc<RwLock<crate::agents::types::ResourceUsage>>,
+}
+
+impl Drop for OperationGuard {
+    fn drop(&mut self) {
+        let active_ops = self.active_operations.clone();
+        let key = self.key.clone();
+        let id = self.id;
+        let resource_usage = self.resource_usage.clone();
+        
+        // Spawn a task to release the operation when dropped
+        // This is needed because we can't use .await in drop()
+        tokio::spawn(async move {
+            // Unregister operation
+            {
+                let mut ops = active_ops.write().await;
+                if let Some(set) = ops.get_mut(&key) {
+                    set.remove(&id);
+                    if set.is_empty() {
+                        ops.remove(&key);
+                    }
+                }
+            }
+            
+            // Update resource usage
+            {
+                let mut usage = resource_usage.write().await;
+                usage.active_threads = usage.active_threads.saturating_sub(1);
+            }
+            
+            debug!("Released operation lock: {} ({})", key, id);
+        });
     }
 }

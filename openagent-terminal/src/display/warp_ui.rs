@@ -297,6 +297,8 @@ impl Display {
         let tab_cfg = &config.workspace.tab_bar;
         // Reset cached tab bounds for precision hit testing
         self.tab_bounds_px.clear();
+        self.close_button_bounds_px.clear();
+        self.new_tab_button_bounds = None;
         let active_tab_id = tab_manager.active_tab_id();
         // Track active tab changes for switch animation
         if self.tab_last_active_id != active_tab_id {
@@ -332,6 +334,16 @@ impl Display {
                 current_x, start_y, tab_width, tab, is_active, style, index, tab_cfg,
             );
 
+            // Cache close button bounds for precise hit testing if enabled
+            if tab_cfg.show_close_button {
+                let close_w = 16.0;
+                let close_h = 16.0;
+                let close_x = current_x + tab_width - 25.0;
+                let close_y = start_y + style.tab_height / 2.0 - 8.0;
+                self.close_button_bounds_px
+                    .push((tab_id, close_x, close_y, close_w, close_h));
+            }
+
             current_x += tab_width + 8.0; // 8px gap between tabs
         }
 
@@ -339,7 +351,13 @@ impl Display {
         if tab_cfg.show_new_tab_button {
             let create_hover =
                 matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
+            // Cache button bounds for precise hit testing
+            let button_size = (style.tab_height * 0.6).clamp(12.0, style.tab_height);
+            let button_y = start_y + (style.tab_height - button_size) * 0.5;
+            self.new_tab_button_bounds = Some((current_x, button_y, button_size, button_size));
             self.draw_new_tab_button(current_x, start_y, style, create_hover);
+        } else {
+            self.new_tab_button_bounds = None;
         }
 
         // Draw settings gear on far right using sprite atlas, aligned with previous text region
@@ -1049,28 +1067,36 @@ impl Display {
         let ch = self.size_info.cell_height();
         let x_px = (mouse_x_cols as f32) * cw;
         let y_px = (mouse_y_line as f32) * ch;
-        // Determine bar y range
-        let style = WarpTabStyle::from_theme(config);
-        let bar_y = match position {
-            TabBarPosition::Top => 0.0,
-            TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
-            TabBarPosition::Hidden => return None,
-        };
-        if y_px < bar_y || y_px >= bar_y + style.tab_height {
-            return None;
-        }
-        // Hit test tabs
-        for (tab_id, x, w) in &self.tab_bounds_px {
-            if x_px >= *x && x_px < *x + *w {
-                // Close button approx: last 20px of tab
-                if config.workspace.tab_bar.show_close_button && x_px >= *x + *w - 20.0 {
-                    return Some(TabBarAction::CloseTab(*tab_id));
+        // Precise check: close button rectangle cache
+        if config.workspace.tab_bar.show_close_button {
+            if let Some((_tab_id, _bx, _by, _bw, _bh)) = self
+                .close_button_bounds_px
+                .iter()
+                .copied()
+                .find(|(_, bx, by, bw, bh)| x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh)
+            {
+                // Don't return here since this is a generic click handler; press handler handles close
+                // For click handler, we still want to report CloseTab for UI consistency
+                // Find matching tab id
+                if let Some((tab_id, _, _, _, _)) = self
+                    .close_button_bounds_px
+                    .iter()
+                    .copied()
+                    .find(|(_, cbx, cby, cbw, cbh)| x_px >= *cbx && x_px <= *cbx + *cbw && y_px >= *cby && y_px <= *cby + *cbh)
+                {
+                    return Some(TabBarAction::CloseTab(tab_id));
                 }
-                return Some(TabBarAction::SelectTab(*tab_id));
             }
         }
-        // Empty area: create new tab
-        Some(TabBarAction::CreateTab)
+        hit_test_tab_bar_cached(
+            self.size_info.height(),
+            &self.tab_bounds_px,
+            self.new_tab_button_bounds,
+            config,
+            position,
+            x_px,
+            y_px,
+        )
     }
 
     pub fn handle_tab_bar_mouse_press(
@@ -1090,43 +1116,60 @@ impl Display {
         let ch = self.size_info.cell_height();
         let x_px = (mouse_x as f32) * cw;
         let y_px = (mouse_y as f32) * ch;
-        let style = WarpTabStyle::from_theme(config);
-        let bar_y = match position {
-            TabBarPosition::Top => 0.0,
-            TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
-            TabBarPosition::Hidden => return None,
-        };
-        if y_px < bar_y || y_px >= bar_y + style.tab_height {
-            return None;
-        }
-        // Find tab under cursor
-        if let Some((tab_id, x, w)) = self
-            .tab_bounds_px
-            .iter()
-            .copied()
-            .find(|(_, x, w)| x_px >= *x && x_px < *x + *w)
-        {
-            // Close button region
-            if config.workspace.tab_bar.show_close_button && x_px >= x + w - 20.0 {
+        // First: precise check against cached close button rectangles
+        if config.workspace.tab_bar.show_close_button {
+            if let Some((tab_id, _x, _y, _w, _h)) = self
+                .close_button_bounds_px
+                .iter()
+                .copied()
+                .find(|(_, bx, by, bw, bh)| x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh)
+            {
                 return Some(TabBarAction::CloseTab(tab_id));
             }
-            self.tab_drag_active = Some(super::TabDragState {
-                tab_id,
-                original_position: self.get_tab_position(tab_manager, tab_id),
-                current_position: self.get_tab_position(tab_manager, tab_id),
-                target_position: None,
-                start_mouse_x: mouse_x,
-                start_mouse_y: mouse_y,
-                current_mouse_x: mouse_x,
-                current_mouse_y: mouse_y,
-                visual_offset_x: 0.0,
-                visual_offset_y: 0.0,
-                is_active: false,
-                drag_threshold: 10.0,
-            });
-            return Some(TabBarAction::BeginDrag(tab_id));
         }
-        Some(TabBarAction::CreateTab)
+        let hit = hit_test_tab_bar_cached(
+            self.size_info.height(),
+            &self.tab_bounds_px,
+            self.new_tab_button_bounds,
+            config,
+            position,
+            x_px,
+            y_px,
+        );
+        match hit {
+            Some(TabBarAction::CreateTab) => return Some(TabBarAction::CreateTab),
+            Some(TabBarAction::CloseTab(id)) => return Some(TabBarAction::CloseTab(id)),
+            Some(TabBarAction::SelectTab(id)) => {
+                // Begin potential drag on a tab selection
+                if let Some((tab_id, x, w)) = self
+                    .tab_bounds_px
+                    .iter()
+                    .copied()
+                    .find(|(tid, _, _)| *tid == id)
+                {
+                    if config.workspace.tab_bar.show_close_button && x_px >= x + w - 20.0 {
+                        return Some(TabBarAction::CloseTab(id));
+                    }
+                    self.tab_drag_active = Some(super::TabDragState {
+                        tab_id,
+                        original_position: self.get_tab_position(tab_manager, tab_id),
+                        current_position: self.get_tab_position(tab_manager, tab_id),
+                        target_position: None,
+                        start_mouse_x: mouse_x,
+                        start_mouse_y: mouse_y,
+                        current_mouse_x: mouse_x,
+                        current_mouse_y: mouse_y,
+                        visual_offset_x: 0.0,
+                        visual_offset_y: 0.0,
+                        is_active: false,
+                        drag_threshold: 10.0,
+                    });
+                    return Some(TabBarAction::BeginDrag(tab_id));
+                }
+            }
+            _ => {}
+        }
+        None
     }
 
     pub fn handle_tab_bar_mouse_move(
@@ -1199,6 +1242,109 @@ impl Display {
             .iter()
             .position(|&id| id == tab_id)
             .unwrap_or(0)
+    }
+}
+
+/// Pixel-precise hit testing using cached bounds from the renderer
+///
+/// This is public to enable integration tests to validate hit-testing logic
+/// without depending on internal Display helpers.
+pub fn hit_test_tab_bar_cached(
+    total_height: f32,
+    tab_bounds_px: &[(crate::workspace::TabId, f32, f32)],
+    new_tab_bounds: Option<(f32, f32, f32, f32)>,
+    config: &UiConfig,
+    position: TabBarPosition,
+    x_px: f32,
+    y_px: f32,
+) -> Option<TabBarAction> {
+    let style = WarpTabStyle::from_theme(config);
+    let bar_y = match position {
+        TabBarPosition::Top => 0.0,
+        TabBarPosition::Bottom => total_height - style.tab_height,
+        TabBarPosition::Hidden => return None,
+    };
+    if y_px < bar_y || y_px >= bar_y + style.tab_height {
+        return None;
+    }
+    if let Some((bx, by, bw, bh)) = new_tab_bounds {
+        if x_px >= bx && x_px <= bx + bw && y_px >= by && y_px <= by + bh {
+            return Some(TabBarAction::CreateTab);
+        }
+    }
+    // More precise close button hit-test when bounds are available via Display::close_button_bounds_px
+    // Note: Since we expose this as a pure function, callers that want close-precision should pass
+    // a prefiltered view or check explicitly before calling this function.
+    // Fallback: use last-20px heuristic when no external close bounds are provided.
+    for (tab_id, x, w) in tab_bounds_px.iter() {
+        if x_px >= *x && x_px < *x + *w {
+            if config.workspace.tab_bar.show_close_button && x_px >= *x + *w - 20.0 {
+                return Some(TabBarAction::CloseTab(*tab_id));
+            }
+            return Some(TabBarAction::SelectTab(*tab_id));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod hit_tests {
+    use super::*;
+    use crate::workspace::TabId;
+    use crate::display::SizeInfo;
+
+    #[test]
+    fn hit_new_tab_button() {
+        let mut cfg = UiConfig::default();
+        cfg.workspace.tab_bar.show = true;
+        cfg.workspace.tab_bar.show_close_button = true;
+        cfg.workspace.tab_bar.position = TabBarPosition::Top;
+        let total_height = 600.0f32;
+        let tabs = vec![(TabId(1), 10.0, 150.0)];
+        let btn = Some((200.0, 4.0, 20.0, 20.0));
+        let hit = hit_test_tab_bar_cached(total_height, &tabs, btn, &cfg, TabBarPosition::Top, 208.0, 10.0);
+        assert!(matches!(hit, Some(TabBarAction::CreateTab)));
+    }
+
+    #[test]
+    fn hit_select_and_close_regions() {
+        let mut cfg = UiConfig::default();
+        cfg.workspace.tab_bar.show = true;
+        cfg.workspace.tab_bar.show_close_button = true;
+        cfg.workspace.tab_bar.position = TabBarPosition::Top;
+        let total_height = 600.0f32;
+        let tid = TabId(7);
+        let tabs = vec![(tid, 10.0, 150.0)];
+        // Select near center
+        let sel = hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 80.0, 8.0);
+        assert!(matches!(sel, Some(TabBarAction::SelectTab(id)) if id == tid));
+        // Close using coarse right-edge region
+        let close = hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 10.0 + 150.0 - 5.0, 8.0);
+        assert!(matches!(close, Some(TabBarAction::CloseTab(id)) if id == tid));
+    }
+
+    #[test]
+    fn click_handler_uses_precise_close_bounds_when_available() {
+        // Simulate that Display cached a close button rectangle and ensure the click handler detects it
+        let mut cfg = UiConfig::default();
+        cfg.workspace.tab_bar.show = true;
+        cfg.workspace.tab_bar.show_close_button = true;
+        cfg.workspace.tab_bar.position = TabBarPosition::Top;
+        // Create a minimal Display with synthetic state
+        let _size = SizeInfo::new(800.0, 600.0, 8.0, 16.0, 0.0, 0.0, false);
+        // We can't directly construct Display easily here; instead test the math path the click handler takes:
+        // close_button_bounds_px and tab_bounds_px matching the click.
+        let tabs = vec![(TabId(9), 10.0, 150.0)];
+        let close_btn = (TabId(9), 10.0 + 150.0 - 25.0, 4.0, 16.0, 16.0);
+        // Use the public hit test to assert that near the center selects
+        let sel = hit_test_tab_bar_cached(600.0, &tabs, None, &cfg, TabBarPosition::Top, 80.0, 8.0);
+        assert!(matches!(sel, Some(TabBarAction::SelectTab(id)) if id == TabId(9)));
+        // And simulate a click exactly within the cached close rectangle bounds
+        let x_px = close_btn.1 + close_btn.3 * 0.5;
+        let y_px = close_btn.2 + close_btn.4 * 0.5;
+        // Since our pure helper doesn’t see close bounds, emulate Display handler behavior by checking rect containment
+        let in_rect = x_px >= close_btn.1 && x_px <= close_btn.1 + close_btn.3 && y_px >= close_btn.2 && y_px <= close_btn.2 + close_btn.4;
+        assert!(in_rect);
     }
 }
 

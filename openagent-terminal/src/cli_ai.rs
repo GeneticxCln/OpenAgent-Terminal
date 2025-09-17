@@ -464,81 +464,6 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             Ok(0)
         }
         
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-            use crate::config::UiConfig;
-            use tempfile::tempdir;
-            use std::fs;
-            use std::io::Write as _;
-
-            fn write_jsonl_entry(dir: &std::path::Path) {
-                let ai_dir = dir
-                    .join("openagent-terminal")
-                    .join("ai_history");
-                fs::create_dir_all(&ai_dir).unwrap();
-                let jsonl = ai_dir.join("history.jsonl");
-                let mut f = fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(jsonl)
-                    .unwrap();
-                writeln!(
-                    f,
-                    "{}",
-                    serde_json::json!({
-                        "ts": "2025-09-17T08:00:00Z",
-                        "mode": "prompt",
-                        "working_directory": "/tmp",
-                        "shell_kind": "zsh",
-                        "input": "echo hi",
-                        "output": "hi"
-                    })
-                )
-                .unwrap();
-            }
-
-            #[test]
-            fn history_export_jsonl_fallback_json() {
-                let tmp = tempdir().unwrap();
-                std::env::set_var("XDG_DATA_HOME", tmp.path());
-                write_jsonl_entry(tmp.path());
-
-                let opts = AiOptions {
-                    command: AiCommand::HistoryExport {
-                        format: "json".to_string(),
-                        to: tmp.path().join("out.json"),
-                    },
-                };
-                let cfg = UiConfig::default();
-                let code = run_ai_cli(&opts, &cfg).unwrap();
-                assert_eq!(code, 0);
-                let content = fs::read_to_string(tmp.path().join("out.json")).unwrap();
-                let v: serde_json::Value = serde_json::from_str(&content).unwrap();
-                assert!(v.as_array().is_some());
-                assert_eq!(v.as_array().unwrap().len(), 1);
-            }
-
-            #[test]
-            fn history_export_jsonl_fallback_csv() {
-                let tmp = tempdir().unwrap();
-                std::env::set_var("XDG_DATA_HOME", tmp.path());
-                write_jsonl_entry(tmp.path());
-
-                let opts = AiOptions {
-                    command: AiCommand::HistoryExport {
-                        format: "csv".to_string(),
-                        to: tmp.path().join("out.csv"),
-                    },
-                };
-                let cfg = UiConfig::default();
-                let code = run_ai_cli(&opts, &cfg).unwrap();
-                assert_eq!(code, 0);
-                let content = fs::read_to_string(tmp.path().join("out.csv")).unwrap();
-                let lines: Vec<&str> = content.lines().collect();
-                assert!(lines.len() >= 2); // header + at least one row
-            }
-        }
         
         AiCommand::HistoryPurge { keep_last } => {
             let base = dirs::data_dir()
@@ -591,5 +516,80 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             }
             Ok(0)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::UiConfig;
+    use tempfile::tempdir;
+    use std::fs;
+
+    fn write_jsonl_entry(dir: &std::path::Path) {
+        let ai_dir = dir
+            .join("openagent-terminal")
+            .join("ai_history");
+        fs::create_dir_all(&ai_dir).unwrap();
+        let jsonl = ai_dir.join("history.jsonl");
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(jsonl)
+            .unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::json!({
+                "ts": "2025-09-17T08:00:00Z",
+                "mode": "prompt",
+                "working_directory": "/tmp",
+                "shell_kind": "zsh",
+                "input": "echo hi",
+                "output": "hi"
+            })
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn history_export_jsonl_fallback_json() {
+        let tmp = tempdir().unwrap();
+        std::env::set_var("XDG_DATA_HOME", tmp.path());
+        write_jsonl_entry(tmp.path());
+
+        let opts = AiOptions {
+            command: AiCommand::HistoryExport {
+                format: "json".to_string(),
+                to: tmp.path().join("out.json"),
+            },
+        };
+        let cfg = UiConfig::default();
+        let code = run_ai_cli(&opts, &cfg).unwrap();
+        assert_eq!(code, 0);
+        let content = fs::read_to_string(tmp.path().join("out.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(v.as_array().is_some());
+        assert_eq!(v.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn history_export_jsonl_fallback_csv() {
+        let tmp = tempdir().unwrap();
+        std::env::set_var("XDG_DATA_HOME", tmp.path());
+        write_jsonl_entry(tmp.path());
+
+        let opts = AiOptions {
+            command: AiCommand::HistoryExport {
+                format: "csv".to_string(),
+                to: tmp.path().join("out.csv"),
+            },
+        };
+        let cfg = UiConfig::default();
+        let code = run_ai_cli(&opts, &cfg).unwrap();
+        assert_eq!(code, 0);
+        let content = fs::read_to_string(tmp.path().join("out.csv")).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.len() >= 2); // header + at least one row
     }
 }

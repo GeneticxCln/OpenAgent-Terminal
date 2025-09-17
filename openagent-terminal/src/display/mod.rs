@@ -598,6 +598,10 @@ pub struct Display {
     pub tab_animations: Vec<tab_bar::TabAnimation>,
     /// Cached tab bounds in pixels for precise hit testing and drop targeting
     pub tab_bounds_px: Vec<(crate::workspace::TabId, f32, f32)>,
+    /// Cached per-tab close button bounds in pixels (tab_id, x, y, w, h)
+    pub close_button_bounds_px: Vec<(crate::workspace::TabId, f32, f32, f32, f32)>,
+    /// Cached "+" new-tab button bounds in pixels (x, y, w, h)
+    pub new_tab_button_bounds: Option<(f32, f32, f32, f32)>,
     /// Workspace animation manager for smooth UI transitions
     #[allow(dead_code)]
     pub workspace_animations: workspace_animations::WorkspaceAnimationManager,
@@ -1283,6 +1287,8 @@ impl Display {
             workspace_animations: workspace_animations::WorkspaceAnimationManager::new(),
             pane_drag_manager: pane_drag_drop::PaneDragManager::new(),
             tab_bounds_px: Vec::new(),
+            close_button_bounds_px: Vec::new(),
+            new_tab_button_bounds: None,
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,

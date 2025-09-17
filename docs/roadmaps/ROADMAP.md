@@ -230,8 +230,8 @@ include_env_vars = false
 **Timeline: 6-8 weeks**
 
 ### 6.1 Plugin Host Architecture
-- [ ] WASI-based plugin runtime using Wasmtime
-- [ ] Alternative: IPC-based plugins with JSON-RPC
+- [x] WASI-based plugin runtime using Wasmtime (v1.0 supported path)
+- [ ] Alternative: IPC-based plugins with JSON-RPC (post‑v1.0 exploration)
 - [ ] Plugin manifest format:
   ```toml
   [plugin]
@@ -259,7 +259,7 @@ include_env_vars = false
 - [ ] Plugin signing and verification
 
 ### 6.3 Plugin API
-- [ ] Version 1.0 API specification:
+- [ ] Version 1.0 API specification (WASM-first; native host-integration out of scope for v1.0):
   ```rust
   // Plugin trait v1.0
   trait Plugin {

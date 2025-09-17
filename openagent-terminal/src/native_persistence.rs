@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-// use std::sync::Arc; // not yet used
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -26,6 +25,10 @@ use crate::workspace::TabId;
 pub struct NativePersistence {
     /// Data directory for immediate file operations
     data_dir: PathBuf,
+
+    /// Optional sync provider (enabled only when the `sync` feature is on)
+    #[cfg(feature = "sync")]
+    sync_provider: std::sync::Arc<tokio::sync::Mutex<Option<openagent_terminal_sync::LocalFsProvider>>>,
 
     /// Block persistence state
     block_persistence: BlockPersistence,
@@ -268,6 +271,36 @@ impl Default for PersistenceStats {
     }
 }
 
+#[cfg(all(test, feature = "sync"))]
+mod tests_sync {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_sync_enqueue_updates_status() {
+        use std::time::Duration as StdDuration;
+        // Create a temp dir and initialize persistence (with sync provider)
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+        let persistence = NativePersistence::new(data_dir.clone()).await.unwrap();
+
+        // Enqueue a settings-related sync op (doesn't require Block/Tab types)
+        persistence.enqueue_sync(SyncOperation::SaveSplitLayout {
+            layout_id: "test_layout".to_string(),
+            layout_data: vec![1, 2, 3],
+        });
+
+        // Give the background task a moment to process
+        tokio::time::sleep(StdDuration::from_millis(100)).await;
+
+        // The LocalFsProvider writes a status file under data_dir/sync/sync_status.json
+        let status_file = data_dir.join("sync").join("sync_status.json");
+        assert!(status_file.exists(), "expected sync status file to exist");
+        let content = std::fs::read_to_string(status_file).unwrap();
+        assert!(content.contains("last_push") || content.contains("last_pull"));
+    }
+}
+
 impl NativePersistence {
     /// Create new native persistence with immediate capabilities
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
@@ -334,6 +367,23 @@ impl NativePersistence {
             checkpoint_interval: Duration::from_secs(30), // Checkpoint every 30 seconds
         };
 
+        // Initialize optional sync provider behind feature flag
+        #[cfg(feature = "sync")]
+        let sync_provider = {
+            use openagent_terminal_sync::{LocalFsProvider, SyncConfig};
+            let cfg = SyncConfig {
+                provider: "local_fs".to_string(),
+                data_dir: Some(data_dir.join("sync")),
+                endpoint_env: None,
+                encryption_key_env: None,
+            };
+            // Local FS provider is best-effort; if it fails, fall back to None
+            match LocalFsProvider::new(&cfg) {
+                Ok(p) => std::sync::Arc::new(tokio::sync::Mutex::new(Some(p))),
+                Err(_) => std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            }
+        };
+
         let backup_manager = BackupManager {
             backup_dir,
             backup_interval: Duration::from_secs(300), // Backup every 5 minutes
@@ -350,6 +400,8 @@ impl NativePersistence {
             event_callbacks: Vec::new(),
             wal,
             backup_manager,
+            #[cfg(feature = "sync")]
+            sync_provider,
             sync_sender: None,
             perf_stats: PersistenceStats {
                 last_reset: Instant::now(),
@@ -365,13 +417,43 @@ impl NativePersistence {
         persistence.sync_sender = Some(sync_tx);
 
         // Spawn sync worker for immediate processing
-        tokio::spawn(async move {
-            while let Some(operation) = sync_rx.recv().await {
-                // Process sync operation immediately - no lazy processing
-                debug!("Processing sync operation: {:?}", operation);
-                // TODO: Implement actual sync processing
-            }
-        });
+        #[cfg(feature = "sync")]
+        {
+            let provider_arc = persistence.sync_provider.clone();
+            tokio::spawn(async move {
+                use openagent_terminal_sync::{SyncProvider, SyncScope};
+                while let Some(operation) = sync_rx.recv().await {
+                    debug!("Processing sync operation: {:?}", operation);
+                    let guard = provider_arc.lock().await;
+                    if let Some(provider) = guard.as_ref() {
+                        // Minimal mapping of operations to scopes
+                        let scope = match &operation {
+                            SyncOperation::SaveBlock(_) | SyncOperation::DeleteBlock(_) => SyncScope::History,
+                            SyncOperation::SaveTabState(_) | SyncOperation::SaveSplitLayout { .. } => SyncScope::Settings,
+                            SyncOperation::CreateBackup(_) | SyncOperation::Checkpoint => {
+                                // Backups/checkpoints don't affect sync directly; skip
+                                continue;
+                            }
+                        };
+                        // Best-effort push; log on failure
+                        if let Err(e) = provider.push(scope) {
+                            debug!("sync push failed: {:?}", e);
+                        }
+                    } else {
+                        debug!("sync provider unavailable; skipping operation");
+                    }
+                }
+            });
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            // Without sync feature, drain the channel to avoid buildup (no-ops)
+            tokio::spawn(async move {
+                while let Some(operation) = sync_rx.recv().await {
+                    debug!("Sync feature disabled; ignoring operation: {:?}", operation);
+                }
+            });
+        }
 
         info!(
             "Native persistence initialized at {:?}",
@@ -441,6 +523,11 @@ impl NativePersistence {
 
         // Emit immediate event
         self.emit_event(PersistenceEvent::BlockSaved(block.id));
+
+        // Notify sync layer (best-effort)
+        if let Some(tx) = &self.sync_sender {
+            let _ = tx.send(SyncOperation::SaveBlock(block.clone()));
+        }
 
         // Schedule backup if needed
         if self.should_create_backup() {
@@ -536,6 +623,11 @@ impl NativePersistence {
         // Emit immediate event
         self.emit_event(PersistenceEvent::BlockDeleted(block_id));
 
+        // Notify sync layer (best-effort)
+        if let Some(tx) = &self.sync_sender {
+            let _ = tx.send(SyncOperation::DeleteBlock(block_id));
+        }
+
         debug!("Block {} deleted in {:?}", block_id, start_time.elapsed());
 
         Ok(())
@@ -584,6 +676,11 @@ impl NativePersistence {
             self.emit_event(PersistenceEvent::TabStateSaved(tab_id));
         }
 
+        // Notify sync layer (best-effort)
+        if let Some(tx) = &self.sync_sender {
+            let _ = tx.send(SyncOperation::SaveTabState(tab_state.clone()));
+        }
+
         debug!("Tab state saved in {:?}", start_time.elapsed());
 
         Ok(())
@@ -629,6 +726,14 @@ impl NativePersistence {
 
         // Emit immediate event
         self.emit_event(PersistenceEvent::SplitLayoutSaved(layout_id.to_string()));
+
+        // Notify sync layer (best-effort)
+        if let Some(tx) = &self.sync_sender {
+            let _ = tx.send(SyncOperation::SaveSplitLayout {
+                layout_id: layout_id.to_string(),
+                layout_data: layout_data.to_vec(),
+            });
+        }
 
         debug!(
             "Split layout {} saved in {:?}",
@@ -848,6 +953,12 @@ impl NativePersistence {
 
         Ok(())
     }
+    /// Enqueue a sync operation (best-effort). Public to facilitate testing.
+    pub fn enqueue_sync(&self, op: SyncOperation) {
+        if let Some(tx) = &self.sync_sender {
+            let _ = tx.send(op);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -919,6 +1030,8 @@ mod tests {
                 last_backup: Instant::now(),
                 backup_queue: Vec::new(),
             },
+            #[cfg(feature = "sync")]
+            sync_provider: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             sync_sender: None,
             perf_stats: PersistenceStats::default(),
         };

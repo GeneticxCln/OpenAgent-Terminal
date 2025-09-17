@@ -48,7 +48,6 @@ mod tests {
     use crate::term::{Config as TermConfig, Term};
     use polling::{Event as PollEvent, PollMode, Poller};
     use proptest::prelude::*;
-    use std::io::{Read, Write};
     use std::sync::{Arc as StdArc, Mutex as StdMutex};
 
     #[derive(Clone, Default)]
@@ -172,6 +171,18 @@ mod tests {
         let second = [0x07, b'X']; // BEL then 'X'
         let out2 = el.filter_and_send_osc133(&mut state, &second);
         assert_eq!(out2, b"X");
+    }
+
+    #[test]
+    fn drain_channel_stops_on_shutdown_and_handles_resize() {
+        let mut el = make_event_loop();
+        let mut state = State::default();
+        // Send a resize followed by shutdown
+        let sender = el.channel();
+        let _ = sender.send(Msg::Resize(WindowSize { num_cols: 80, num_lines: 24, cell_width: 8, cell_height: 16 }));
+        let _ = sender.send(Msg::Shutdown);
+        let cont = el.drain_recv_channel(&mut state);
+        assert!(!cont, "EventLoop should stop draining on Shutdown");
     }
 }
 

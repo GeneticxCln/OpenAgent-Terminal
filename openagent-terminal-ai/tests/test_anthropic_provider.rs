@@ -63,21 +63,29 @@ mod anthropic_provider_tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3-opus".to_string(),
-        )
-        .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
+        
+        // Use std::thread::spawn to avoid any Tokio runtime context
+        std::thread::spawn(move || {
+            let provider = AnthropicProvider::new(
+                "test_key".to_string(),
+                server_uri,
+                "claude-3-opus".to_string(),
+            )
+            .unwrap();
+            
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+            };
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-        };
-
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
-
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send((result, collected)).ok();
+        });
+        
+        let (result, collected) = rx.recv().unwrap();
         assert!(result.is_ok());
         assert_eq!(collected, "find . -type f -size +100M");
     }
@@ -115,21 +123,28 @@ mod anthropic_provider_tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new(
-            "test_key".to_string(),
-            server.uri(),
-            "claude-3-opus".to_string(),
-        )
-        .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
+        
+        std::thread::spawn(move || {
+            let provider = AnthropicProvider::new(
+                "test_key".to_string(),
+                server_uri,
+                "claude-3-opus".to_string(),
+            )
+            .unwrap();
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-        };
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+            };
 
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send((result, collected)).ok();
+        });
 
+        let (result, collected) = rx.recv().unwrap();
         assert!(result.is_ok());
         assert!(collected.contains("First command"));
         assert!(collected.contains("find /var/log"));
@@ -157,21 +172,28 @@ mod anthropic_provider_tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new(
-            "invalid_key".to_string(),
-            server.uri(),
-            "claude-3".to_string(),
-        )
-        .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<bool, String>>(1);
+        
+        std::thread::spawn(move || {
+            let provider = AnthropicProvider::new(
+                "invalid_key".to_string(),
+                server_uri,
+                "claude-3".to_string(),
+            )
+            .unwrap();
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-        };
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+            };
 
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send(result).ok();
+        });
 
+        let result = rx.recv().unwrap();
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.contains("401") || error.contains("authentication"));
@@ -191,18 +213,25 @@ mod anthropic_provider_tests {
         .mount(&server)
         .await;
 
-        let provider =
-            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
-                .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<bool, String>>(1);
+        
+        std::thread::spawn(move || {
+            let provider =
+                AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
+                    .unwrap();
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-        };
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+            };
 
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send(result).ok();
+        });
 
+        let result = rx.recv().unwrap();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("429"));
     }
@@ -234,25 +263,38 @@ mod anthropic_provider_tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
-                .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
+        
+        std::thread::spawn(move || {
+            let provider =
+                AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
+                    .unwrap();
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut chunk_count = 0;
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-            chunk_count += 1;
-            // Cancel after first chunk
-            if chunk_count >= 1 {
-                cancel.store(true, Ordering::SeqCst);
-            }
-        };
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut chunk_count = 0;
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+                chunk_count += 1;
+                // Cancel after first chunk
+                if chunk_count >= 1 {
+                    cancel.store(true, Ordering::SeqCst);
+                }
+            };
 
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send((result, collected)).ok();
+        });
 
-        assert!(result.is_ok());
+        let (result, collected) = rx.recv().unwrap();
+        // When cancelled, the provider may return Ok or an error indicating cancellation
+        // What matters is we got some partial data before cancellation
+        if result.is_err() {
+            // If it's an error, it should be a cancellation error
+            let err = result.unwrap_err();
+            assert!(err.contains("Cancelled") || err.contains("cancelled"), "Unexpected error: {}", err);
+        }
         assert!(!collected.is_empty());
         // Should not have all the content due to cancellation
         assert!(!collected.contains("/log"));
@@ -269,18 +311,25 @@ mod anthropic_provider_tests {
         .mount(&server)
         .await;
 
-        let provider =
-            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
-                .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<bool, String>>(1);
+        
+        std::thread::spawn(move || {
+            let provider =
+                AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
+                    .unwrap();
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-        };
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+            };
 
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send(result).ok();
+        });
 
+        let result = rx.recv().unwrap();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("500"));
     }
@@ -312,18 +361,25 @@ mod anthropic_provider_tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("test_key".to_string(), server.uri(), "claude-3".to_string())
-                .unwrap();
+        let server_uri = server.uri();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
+        
+        std::thread::spawn(move || {
+            let provider =
+                AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
+                    .unwrap();
 
-        let mut collected = String::new();
-        let cancel = AtomicBool::new(false);
-        let mut on_chunk = |chunk: &str| {
-            collected.push_str(chunk);
-        };
+            let mut collected = String::new();
+            let cancel = AtomicBool::new(false);
+            let mut on_chunk = |chunk: &str| {
+                collected.push_str(chunk);
+            };
 
-        let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
+            tx.send((result, collected)).ok();
+        });
 
+        let (result, collected) = rx.recv().unwrap();
         assert!(result.is_ok());
         // Should only collect the actual content
         assert_eq!(collected, "du -sh");

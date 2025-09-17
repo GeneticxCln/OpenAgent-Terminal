@@ -631,6 +631,42 @@ impl PluginHost for TerminalPluginHost {
             Err(e) => Err(PluginError::IoError(e)),
         }
     }
+
+    fn store_document_for(
+        &self,
+        plugin_id: &str,
+        namespace: &str,
+        doc_id: &str,
+        doc_json: &str,
+    ) -> Result<(), PluginError> {
+        let base = self
+            .storage_dir
+            .join(sanitize_key_to_filename(plugin_id))
+            .join("docs")
+            .join(sanitize_key_to_filename(namespace));
+        std::fs::create_dir_all(&base).map_err(PluginError::IoError)?;
+        let file = base.join(format!("{}.json", sanitize_key_to_filename(doc_id)));
+        std::fs::write(file, doc_json.as_bytes()).map_err(PluginError::IoError)
+    }
+
+    fn retrieve_document_for(
+        &self,
+        plugin_id: &str,
+        namespace: &str,
+        doc_id: &str,
+    ) -> Result<Option<String>, PluginError> {
+        let file = self
+            .storage_dir
+            .join(sanitize_key_to_filename(plugin_id))
+            .join("docs")
+            .join(sanitize_key_to_filename(namespace))
+            .join(format!("{}.json", sanitize_key_to_filename(doc_id)));
+        match std::fs::read_to_string(file) {
+            Ok(json) => Ok(Some(json)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(PluginError::IoError(e)),
+        }
+    }
 }
 
 /// Integration helper for using components with the terminal

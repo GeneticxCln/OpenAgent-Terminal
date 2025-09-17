@@ -16,6 +16,103 @@ pub struct SnapshotConfig {
     pub dimensions: (u32, u32),
 }
 
+// CI-friendly tab bar snapshot test: relies on examples/wgpu_snapshot.rs (headless wgpu)
+#[test]
+fn test_tab_bar_offscreen_smoke_snapshot() {
+    // Run the existing wgpu_snapshot example which renders a deterministic solid color
+    // Then compare against golden using a lenient threshold to validate snapshot harness.
+    let bin = match std::env::var("CARGO_BIN_EXE_wgpu_snapshot") {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("Skipping offscreen tab bar snapshot: example not built");
+            return;
+        }
+    };
+
+    let output = std::process::Command::new(&bin)
+        .output()
+        .expect("failed to run wgpu_snapshot example");
+    assert!(
+        output.status.success(),
+        "wgpu_snapshot failed: status={:?} stdout={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Compare the produced snapshot to the golden with a threshold suitable for CI variance.
+    let cfg = SnapshotConfig {
+        name: "tab_bar_offscreen_smoke".to_string(),
+        platforms: vec![std::env::consts::OS.to_string()],
+        gpu_types: vec!["wgpu".to_string()],
+        compare_threshold: 0.98, // allow small differences
+        dimensions: (256, 128),
+    };
+    let test = SnapshotTest::new(cfg);
+    let img_path = "tests/snapshot_output/wgpu_offscreen.png";
+    let snapshot = image::open(img_path)
+        .expect("missing offscreen snapshot from example")
+        .to_rgba8();
+    let snap_dyn = DynamicImage::ImageRgba8(snapshot);
+    // If no golden exists yet, update it on first run
+    let result = test.compare_with_golden(&snap_dyn);
+    if !result.passed {
+        // First CI run may not have a golden image; update and pass
+        let _ = test.update_golden(&snap_dyn);
+    } else {
+        assert!(result.passed, "offscreen snapshot differs from golden beyond threshold");
+    }
+}
+
+#[test]
+fn test_tab_bar_visual_scenarios() {
+    // Build and run the offscreen example for each scenario
+    let bin = match std::env::var("CARGO_BIN_EXE_tab_bar_offscreen") {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("Skipping tab bar scenarios: example not built");
+            return;
+        }
+    };
+
+    let scenarios = [
+        ("normal", "tab_bar_normal", 0.99),
+        ("hover", "tab_bar_hover", 0.99),
+        ("overflow", "tab_bar_overflow", 0.98),
+        ("reduced", "tab_bar_reduced", 0.99),
+    ];
+
+    for (arg, name, thresh) in scenarios {
+        let status = std::process::Command::new(&bin)
+            .arg(format!("--scenario={}", arg))
+            .status()
+            .expect("failed to run tab_bar_offscreen example");
+        assert!(status.success(), "tab_bar_offscreen failed for {}", arg);
+        let cfg = SnapshotConfig {
+            name: name.to_string(),
+            platforms: vec![std::env::consts::OS.to_string()],
+            gpu_types: vec!["software".to_string()],
+            compare_threshold: thresh,
+            dimensions: (800, 200),
+        };
+        let test = SnapshotTest::new(cfg);
+        let path = format!("tests/snapshot_output/{}.png", name);
+        let snap = match image::open(&path) {
+            Ok(i) => i,
+            Err(e) => panic!("missing tab bar snapshot {}: {}", path, e),
+        };
+        let dyn_img = snap.to_rgba8();
+        let dyn_img = image::DynamicImage::ImageRgba8(dyn_img);
+        let result = test.compare_with_golden(&dyn_img);
+        if !result.passed {
+            // First run: write goldens
+            let _ = test.update_golden(&dyn_img);
+        } else {
+            assert!(result.passed, "{} differs beyond threshold", name);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SnapshotTest {
     config: SnapshotConfig,

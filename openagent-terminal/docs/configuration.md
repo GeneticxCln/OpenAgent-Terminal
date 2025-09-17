@@ -112,7 +112,7 @@ OpenAgent Terminal’s WGPU backend supports LCD subpixel text rendering with ad
   - Auto enables subpixel only on compatible surfaces; use Enabled to force it.
 - `subpixel_orientation`: "RGB" | "BGR"
   - Matches your physical LCD stripe order (most are RGB; some panels are BGR).
-- `subpixel_gamma`: float (typical 2.2)
+- `subpixel_gamma`: float (typical 2.2). Valid range: 1.4 – 3.0 (clamped).
   - Adjusts foreground linearization for per-channel coverage; increases perceived sharpness/contrast.
 
 Example:
@@ -130,6 +130,9 @@ Runtime shortcuts (default):
 - Toggle subpixel text: Ctrl+Shift+L (Cmd+Shift+L on macOS)
 - Cycle orientation RGB/BGR: Ctrl+Shift+Y (Cmd+Shift+Y on macOS)
 - Perf HUD toggle: Ctrl+Shift+F (Cmd+Shift+F)
+- Toggle subpixel: Ctrl+Shift+L (Cmd+Shift+L on macOS)
+- Cycle RGB/BGR: Ctrl+Shift+Y (Cmd+Shift+Y)
+- Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+…)
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
 
 ## Rendering backend

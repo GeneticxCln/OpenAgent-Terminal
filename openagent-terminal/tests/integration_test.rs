@@ -15,7 +15,6 @@ mod integration_tests {
         workflow_orchestrator::{
             RetryConfig, StepErrorHandling, WorkflowConfig, WorkflowContext, WorkflowOrchestrator,
             WorkflowStep, WorkflowStepType, WorkflowTemplate, WorkflowCategory, ConditionType,
-            WorkflowTrigger, WorkflowVariable, VariableType,
         },
         Agent, AgentConfig, AgentRequest, AgentRequestType, AgentContext,
     };
@@ -370,7 +369,7 @@ mod integration_tests {
     async fn test_workflow_orchestration_integration() -> Result<()> {
         let (
             _conversation_manager,
-            privacy_filter,
+            _privacy_filter,
             _advanced_features,
             _terminal_ui,
             _natural_language,
@@ -593,7 +592,7 @@ mod integration_tests {
 
         // 4. Analyze current project context
         let current_dir = std::env::current_dir()?;
-        let project_info = project_context
+        let _project_info = project_context
             .analyze_project(current_dir.to_str().unwrap())
             .await?;
 
@@ -699,7 +698,7 @@ mod integration_tests {
 
         workflow_orchestrator.register_template(template).await?;
 
-        let execution_id = workflow_orchestrator
+        let _execution_id = workflow_orchestrator
             .create_workflow(
                 "integration_workflow",
                 WorkflowContext {
@@ -724,7 +723,7 @@ mod integration_tests {
             chrono::Utc::now() - chrono::Duration::hours(1),
             chrono::Utc::now(),
         );
-        let compliance_report = privacy_filter
+        let _compliance_report = privacy_filter
             .generate_compliance_report(ComplianceStandard::GDPR, date_range)
             .await?;
 

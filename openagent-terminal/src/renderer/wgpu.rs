@@ -7,6 +7,7 @@ use std::cell::Cell;
 use crate::renderer::wgpu_rect_transfer::WgpuRectTransfer;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
+use crate::renderer::rects::RectKind;
 
 use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
 
@@ -25,7 +26,7 @@ use super::text::glyph_cache::Glyph;
 use super::ui::{UiRoundedRect, UiSprite};
 use super::{GlyphCache, LoadGlyph, LoaderApi};
 
-const RECT_SHADER_WGSL: &str = r#"
+const RECT_SHADER_WGSL_RAW: &str = r#"
 // Uniforms for rect/underline rendering
 struct RectUniforms {
   cell_size: vec2<f32>,        // (cellWidth, cellHeight)
@@ -584,6 +585,11 @@ impl WgpuAtlas {
     }
 }
 
+fn build_rect_shader_wgsl(num_rect_kinds: u32) -> String {
+    // Prepend a constant that mirrors the Rust enum variant count.
+    format!("const NUM_RECT_KINDS: u32 = {}u;\n{}", num_rect_kinds, RECT_SHADER_WGSL_RAW)
+}
+
 impl WgpuRenderer {
     /// Preload common ASCII glyphs into the WGPU atlas and cache.
     pub fn preload_glyphs(&mut self, glyph_cache: &mut GlyphCache) {
@@ -691,9 +697,11 @@ impl WgpuRenderer {
         let subpixel_bgr = matches!(subpixel_orientation, SubpixelOrientation::BGR);
 
         // Build rectangle pipeline.
+        let rect_kinds = RectKind::NumKinds as u32;
+        let rect_wgsl_source = build_rect_shader_wgsl(rect_kinds);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect-shader"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(RECT_SHADER_WGSL)),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(rect_wgsl_source)),
         });
         // Rect uniforms/bindings
         let rect_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -2331,6 +2339,17 @@ fn build_text_vertices(
 
 struct WgpuGlyphLoader<'a> {
     renderer: &'a mut WgpuRenderer,
+}
+
+#[cfg(test)]
+mod shader_sync_tests {
+    use super::*;
+    #[test]
+    fn rect_kind_count_embedded_in_wgsl() {
+        let num = RectKind::NumKinds as u32;
+        let src = build_rect_shader_wgsl(num);
+        assert!(src.contains(&format!("const NUM_RECT_KINDS: u32 = {}u;", num)));
+    }
 }
 
 impl LoadGlyph for WgpuGlyphLoader<'_> {

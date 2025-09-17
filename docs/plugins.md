@@ -1,5 +1,7 @@
 # Plugins
 
+Status (v1.0): WebAssembly (WASM/WASI) plugins are the only supported plugin type. Native host-integration is not supported in v1.0 and is tracked on the roadmap for a future release.
+
 This project exposes a minimal, versioned plugin API for extending OpenAgent Terminal with additional capabilities. The goals are:
 
 - Stability: a small, well-documented surface area with clear versioning
@@ -21,7 +23,7 @@ API versioning and stability
 
 Current status
 
-- MVP in progress: Wasmtime runtime path is prioritized (WASM only); native plugins are not supported yet
+- v1.0: Wasmtime runtime path is the supported path (WASM/WASI only); native host-integration is not supported
 - JSON-over-memory ABI implemented (metadata + event handling)
 - Host-side loader at crates/plugin-loader with permission enforcement and event dispatch
 - Multi-location discovery: system (/usr/share/openagent-terminal/plugins), user (~/.config/openagent-terminal/plugins), project (./plugins), and data-dir
@@ -57,6 +59,13 @@ Best practices
 - Prefer streaming interfaces for long-running tasks
 
 For detailed design notes see docs/adr/003-plugin-system.md
+
+Roadmap: Native host-integration (post‑v1.0)
+
+- Objective: Provide an optional native host-integration path for trusted, first‑party extensions where WASM is too restrictive
+- Constraints: Security-first design, explicit capability model, and strong separation from end-user default experience
+- Status: Not available in v1.0; tracked in docs/roadmaps (see RELEASE_PLAN_V1.0 and ROADMAP)
+- Acceptance: No native host runtime or UI is exposed to end users until this milestone is reached
 
 Release profile (strict, Warp-like)
 

@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use super::blitzy_project_context::BlitzyProjectContextAgent;
 use super::conversation_manager::ConversationManager;
-use super::natural_language::{ConversationRole, ConversationTurn};
 use super::workflow_orchestrator::WorkflowOrchestrator;
 use super::*;
 

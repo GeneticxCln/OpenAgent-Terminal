@@ -38,7 +38,7 @@ CI overview
   - Performance: .github/workflows/performance.yml
   - WGPU Nightly Snapshots: .github/workflows/wgpu-nightly.yml
 - Highlights
-  - GPU snapshots: scenario comparisons with threshold >= 0.995 on Linux via xvfb
+- GPU snapshots: scenario comparisons with threshold >= 0.996 on Linux via xvfb
   - Perf checks: cold start (≤800ms) and render latency (≤16ms)
   - Coverage: llvm-cov with minimal threshold; clippy denies warnings; sanitizers run on subset
 

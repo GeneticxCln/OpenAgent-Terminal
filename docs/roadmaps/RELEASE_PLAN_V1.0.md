@@ -345,7 +345,7 @@ This document outlines a comprehensive 12-week plan to transform OpenAgent-Termi
 
 ### High-Risk Items
 1. **WGPU Renderer**: Consider removing if not stable
-2. **Plugin System**: Simplify or defer to v1.1
+- **Plugin System**: WASM/WASI path only for v1.0; native host-integration deferred to ≥ v1.1
 3. **Performance Targets**: May need adjustment based on hardware
 4. **Security Audit**: Could reveal significant issues
 

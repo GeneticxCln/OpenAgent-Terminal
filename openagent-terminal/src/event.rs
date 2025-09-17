@@ -7504,8 +7504,15 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         ));
 
                         // Store command for when confirmation is resolved
-                        // TODO: Store pending security confirmations in a proper state manager
-                        // For now, we'll rely on the event system to handle this
+                        // Store the pending command in a proper state manager
+                        {
+                            let workspace = &mut self.ctx.workspace;
+                            workspace.store_pending_security_confirmation(
+                                confirm_id.clone(),
+                                command.clone(),
+                                dry_run,
+                            );
+                        }
                     } else {
                         // No confirmation required, proceed directly
                         let _ = self.ctx.event_proxy.send_event(Event::new(

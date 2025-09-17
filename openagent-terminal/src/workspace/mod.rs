@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -39,6 +40,14 @@ pub use warp_integration::{WarpAction, WarpIntegration, WarpIntegrationError, Wa
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WorkspaceId(pub usize);
 
+/// Pending security confirmation data
+#[derive(Debug, Clone)]
+pub struct PendingSecurityConfirmation {
+    pub command: String,
+    pub dry_run: bool,
+    pub timestamp: std::time::Instant,
+}
+
 /// Workspace manager handles tabs and split panes for a window
 pub struct WorkspaceManager {
     /// Unique identifier for this workspace
@@ -58,6 +67,9 @@ pub struct WorkspaceManager {
 
     /// Window size information
     pub size_info: SizeInfo,
+
+    /// Pending security confirmations awaiting user response
+    pending_security_confirmations: HashMap<String, PendingSecurityConfirmation>,
 }
 
 impl WorkspaceManager {
@@ -70,6 +82,7 @@ impl WorkspaceManager {
             warp: None,
             config,
             size_info,
+            pending_security_confirmations: HashMap::new(),
         }
     }
 
@@ -88,6 +101,7 @@ impl WorkspaceManager {
             warp: Some(warp_integration),
             config,
             size_info,
+            pending_security_confirmations: HashMap::new(),
         }
     }
 
@@ -442,6 +456,52 @@ impl WorkspaceManager {
         // Read from configuration flag `workspace.enabled`.
         self.config.workspace.enabled
     }
+
+    /// Store a pending security confirmation
+    pub fn store_pending_security_confirmation(
+        &mut self,
+        confirmation_id: String,
+        command: String,
+        dry_run: bool,
+    ) {
+        let confirmation = PendingSecurityConfirmation {
+            command,
+            dry_run,
+            timestamp: std::time::Instant::now(),
+        };
+        self.pending_security_confirmations.insert(confirmation_id, confirmation);
+        
+        // Clean up old confirmations (older than 5 minutes)
+        self.cleanup_expired_confirmations();
+    }
+
+    /// Retrieve and remove a pending security confirmation
+    pub fn consume_pending_security_confirmation(
+        &mut self,
+        confirmation_id: &str,
+    ) -> Option<PendingSecurityConfirmation> {
+        self.pending_security_confirmations.remove(confirmation_id)
+    }
+
+    /// Check if a security confirmation is pending
+    pub fn has_pending_security_confirmation(&self, confirmation_id: &str) -> bool {
+        self.pending_security_confirmations.contains_key(confirmation_id)
+    }
+
+    /// Clean up expired security confirmations (older than 5 minutes)
+    fn cleanup_expired_confirmations(&mut self) {
+        let expiry_duration = std::time::Duration::from_secs(300); // 5 minutes
+        let now = std::time::Instant::now();
+        
+        self.pending_security_confirmations.retain(|_, confirmation| {
+            now.duration_since(confirmation.timestamp) < expiry_duration
+        });
+    }
+
+    /// Get the number of pending security confirmations
+    pub fn pending_security_confirmations_count(&self) -> usize {
+        self.pending_security_confirmations.len()
+    }
 }
 
 /// Persistent state for a tab that can be serialized
@@ -553,5 +613,134 @@ mod tests {
             !wm_false.is_enabled(),
             "expected workspace to be disabled when config flag is false"
         );
+    }
+    
+    #[test]
+    fn test_security_confirmation_management() {
+        let config = UiConfig::default();
+        let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
+        let mut wm = make_workspace(config, si);
+        
+        // Test storing and retrieving confirmations
+        let confirm_id = "test_confirmation_123".to_string();
+        let command = "rm -rf /important/data".to_string();
+        
+        // Initially no confirmations
+        assert_eq!(wm.pending_security_confirmations_count(), 0);
+        assert!(!wm.has_pending_security_confirmation(&confirm_id));
+        
+        // Store a confirmation
+        wm.store_pending_security_confirmation(confirm_id.clone(), command.clone(), false);
+        
+        // Verify it was stored
+        assert_eq!(wm.pending_security_confirmations_count(), 1);
+        assert!(wm.has_pending_security_confirmation(&confirm_id));
+        
+        // Consume the confirmation
+        let confirmation = wm.consume_pending_security_confirmation(&confirm_id).unwrap();
+        assert_eq!(confirmation.command, command);
+        assert!(!confirmation.dry_run);
+        
+        // Verify it was removed
+        assert_eq!(wm.pending_security_confirmations_count(), 0);
+        assert!(!wm.has_pending_security_confirmation(&confirm_id));
+        
+        // Consuming again should return None
+        assert!(wm.consume_pending_security_confirmation(&confirm_id).is_none());
+    }
+    
+    #[test]
+    fn test_security_confirmation_dry_run_flag() {
+        let config = UiConfig::default();
+        let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
+        let mut wm = make_workspace(config, si);
+        
+        // Store a dry-run confirmation
+        let confirm_id = "dry_run_test".to_string();
+        wm.store_pending_security_confirmation(
+            confirm_id.clone(),
+            "test command".to_string(),
+            true, // dry_run = true
+        );
+        
+        let confirmation = wm.consume_pending_security_confirmation(&confirm_id).unwrap();
+        assert!(confirmation.dry_run);
+    }
+    
+    #[test]
+    fn test_multiple_security_confirmations() {
+        let config = UiConfig::default();
+        let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
+        let mut wm = make_workspace(config, si);
+        
+        // Store multiple confirmations
+        wm.store_pending_security_confirmation("id1".to_string(), "cmd1".to_string(), false);
+        wm.store_pending_security_confirmation("id2".to_string(), "cmd2".to_string(), true);
+        wm.store_pending_security_confirmation("id3".to_string(), "cmd3".to_string(), false);
+        
+        assert_eq!(wm.pending_security_confirmations_count(), 3);
+        
+        // Consume one by one
+        let conf1 = wm.consume_pending_security_confirmation("id1").unwrap();
+        assert_eq!(conf1.command, "cmd1");
+        assert_eq!(wm.pending_security_confirmations_count(), 2);
+        
+        let conf3 = wm.consume_pending_security_confirmation("id3").unwrap();
+        assert_eq!(conf3.command, "cmd3");
+        assert_eq!(wm.pending_security_confirmations_count(), 1);
+        
+        let conf2 = wm.consume_pending_security_confirmation("id2").unwrap();
+        assert_eq!(conf2.command, "cmd2");
+        assert!(conf2.dry_run);
+        assert_eq!(wm.pending_security_confirmations_count(), 0);
+    }
+    
+    #[test]
+    fn test_security_confirmation_timestamp() {
+        let config = UiConfig::default();
+        let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
+        let mut wm = make_workspace(config, si);
+        
+        let before = std::time::Instant::now();
+        
+        wm.store_pending_security_confirmation(
+            "timestamp_test".to_string(),
+            "test command".to_string(),
+            false,
+        );
+        
+        let after = std::time::Instant::now();
+        
+        let confirmation = wm.consume_pending_security_confirmation("timestamp_test").unwrap();
+        
+        // Timestamp should be between before and after
+        assert!(confirmation.timestamp >= before);
+        assert!(confirmation.timestamp <= after);
+    }
+    
+    #[test]
+    fn test_security_confirmation_cleanup_on_store() {
+        let config = UiConfig::default();
+        let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
+        let mut wm = make_workspace(config, si);
+        
+        // Store a confirmation
+        wm.store_pending_security_confirmation(
+            "normal_test".to_string(),
+            "normal command".to_string(),
+            false,
+        );
+        
+        assert_eq!(wm.pending_security_confirmations_count(), 1);
+        
+        // The cleanup is called internally, but we can't easily test expiration
+        // without manipulating time, so we just verify the call doesn't break anything
+        wm.store_pending_security_confirmation(
+            "another_test".to_string(),
+            "another command".to_string(),
+            true,
+        );
+        
+        assert_eq!(wm.pending_security_confirmations_count(), 2);
     }
 }

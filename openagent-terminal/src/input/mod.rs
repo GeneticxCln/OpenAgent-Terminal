@@ -231,6 +231,60 @@ fn sanitize_preview(text: &str, max_lines: usize, max_chars: usize) -> String {
 
 pub mod keyboard;
 
+#[cfg(test)]
+mod sanitization_tests {
+    use super::*;
+
+    #[test]
+    fn strip_ansi_removes_csi_and_osc() {
+        let s = "\x1b[31mred\x1b[0m and \x1b]0;title\x07name \x1b]133;A\x07rest";
+        let out = strip_ansi(s);
+        // ANSI color and OSC sequences removed, plain text preserved
+        assert_eq!(out, "red and name rest");
+    }
+
+    #[test]
+    fn redact_line_bearer_and_kv() {
+        let s = "Authorization: Bearer abcdef123".to_string();
+        let red = redact_line(s);
+        assert_eq!(red, "Authorization: Bearer {{REDACTED}}");
+
+        let s2 = "token: supersecret".to_string();
+        let red2 = redact_line(s2);
+        assert_eq!(red2, "token: {{REDACTED}}");
+    }
+
+    #[test]
+    fn redact_line_extended_patterns() {
+        // Enable extended redaction via env (used when config flag not initialized)
+        std::env::set_var("OPENAGENT_PRIVACY_EXTENDED", "1");
+
+        // AWS key-like strings
+        let aws = "AKIA12345678901234".to_string();
+        let red = redact_line(aws);
+        assert_eq!(red, "{{REDACTED_AWS_KEY}}");
+
+        let asia = "ASIAABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string();
+        let red2 = redact_line(asia);
+        assert!(red2.contains("{{REDACTED_AWS_KEY}}"));
+
+        // JWT-like: three segments separated by '.' -> redact middle+signature
+        let jwt = "token abc.def.ghi".to_string();
+        let red_jwt = redact_line(jwt);
+        assert_eq!(red_jwt, "token abc.{{REDACTED_JWT}}");
+
+        std::env::remove_var("OPENAGENT_PRIVACY_EXTENDED");
+    }
+
+    #[test]
+    fn sanitize_preview_enforces_limits_and_redacts() {
+        let s = "line1\nline2 password: topsecret\nline3";
+        let out = sanitize_preview(s, 2, 100);
+        // Only first two lines, with secret redacted and ellipsis for truncation
+        assert_eq!(out, "line1\nline2 password: {{REDACTED}}…");
+    }
+}
+
 /// Font size change interval in px.
 pub const FONT_SIZE_STEP: f32 = 1.;
 

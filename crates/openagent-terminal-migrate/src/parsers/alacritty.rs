@@ -312,9 +312,25 @@ impl ConfigParser for AlacrittyParser {
 
         // Parse mouse settings
         if let Some(mouse) = alacritty_config.get("mouse") {
+            // Parse mouse bindings if present
+            let bindings = mouse.get("bindings").and_then(|v| v.as_sequence()).map(|seq| {
+                seq.iter()
+                    .filter_map(|b| {
+                        let mouse_btn = b.get("mouse").and_then(|v| v.as_str())?.to_string();
+                        let action = b.get("action").and_then(|v| v.as_str())?.to_string();
+                        let mods = b
+                            .get("mods")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.split('|').map(|m| m.trim().to_string()).collect::<Vec<_>>() );
+                        let mode = b.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        Some(MouseBinding { mouse: mouse_btn, action, mods, mode })
+                    })
+                    .collect::<Vec<_>>()
+            });
+
             config.terminal.mouse = Some(MouseConfig {
                 hide_when_typing: mouse.get("hide_when_typing").and_then(|v| v.as_bool()),
-                bindings: None, // TODO: Parse mouse bindings
+                bindings,
             });
         }
 
@@ -336,6 +352,26 @@ impl ConfigParser for AlacrittyParser {
             }
         }
 
+        // Font family availability warning (if configured)
+        if let Some(normal) = &config.font.normal {
+            if let Some(family) = &normal.family {
+                if !crate::parsers::system_has_font_family(family) {
+                    let mut custom = config.custom.clone();
+                    let mut arr = custom
+                        .get("font_warnings")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    arr.push(serde_json::json!({
+                        "family": family,
+                        "warning": "Font family not found on this system; fallback will be used"
+                    }));
+                    custom.insert("font_warnings".into(), serde_json::Value::Array(arr));
+                    config.custom = custom;
+                }
+            }
+        }
+
         // Parse key bindings
         if let Some(key_bindings) = alacritty_config.get("key_bindings") {
             if let Some(bindings_array) = key_bindings.as_sequence() {
@@ -345,6 +381,17 @@ impl ConfigParser for AlacrittyParser {
                             .get("mods")
                             .and_then(|v| v.as_str())
                             .map(|s| s.split('|').map(|m| m.trim().to_string()).collect());
+
+                        let command = if let Some(cmd) = binding.get("command") {
+                            let program = cmd.get("program").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let args = cmd.get("args").and_then(|v| v.as_sequence()).map(|a| {
+                                a.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect::<Vec<_>>()
+                            });
+                            match program {
+                                Some(p) => Some(Command { program: p, args }),
+                                None => None,
+                            }
+                        } else { None };
 
                         let key_binding = KeyBinding {
                             key: key.to_string(),
@@ -357,7 +404,7 @@ impl ConfigParser for AlacrittyParser {
                                 .get("chars")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
-                            command: None, // TODO: Parse command bindings
+                            command,
                             mode: binding
                                 .get("mode")
                                 .and_then(|v| v.as_str())

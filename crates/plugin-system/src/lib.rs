@@ -21,6 +21,7 @@ pub use api::{
     CommandOutput, Completion, CompletionKind, Context, ContextRequest, HookEvent, HookResponse,
     HookType, PluginConfig, PluginError, SensitivityLevel,
 };
+pub use host::{HostInterface, LogLevel, TerminalState, Notification};
 pub use permissions::{PluginPermissions, SecurityPolicy};
 pub use runtime::{PluginManager, PluginRuntime};
 

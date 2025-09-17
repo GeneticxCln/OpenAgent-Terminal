@@ -338,7 +338,7 @@ impl NativeRenderer {
     fn generate_block_primitives(
         &mut self,
         element: &mut BlockRenderElement,
-        size_info: &SizeInfo,
+        _size_info: &SizeInfo,
     ) -> Result<()> {
         element.render_primitives.clear();
 
@@ -494,9 +494,9 @@ impl NativeRenderer {
     /// Render tabs with immediate GPU acceleration
     pub fn render_tabs(
         &mut self,
-        display: &mut Display,
+        _display: &mut Display,
         tab_animations: &HashMap<TabId, TabAnimation>,
-        size_info: &SizeInfo,
+        _size_info: &SizeInfo,
     ) -> Result<()> {
         for (&tab_id, animation) in tab_animations {
             let render_element = self.tab_render_state.entry(tab_id).or_insert_with(|| {

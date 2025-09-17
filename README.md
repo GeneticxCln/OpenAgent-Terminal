@@ -158,6 +158,11 @@ See `examples/openagent-terminal.example.toml` for a fuller starter configuratio
 
 ## Build variants & features
 
+Plugin system status
+
+- v1.0 supports WebAssembly (WASM/WASI) plugins only via the Wasmtime-based loader
+- Native host-integration is not supported in v1.0 and remains on the roadmap; no native plugin runtime or UI is exposed to end users
+
 Common builds for the main binary (feature-gated components):
 
 - Terminal only (no AI, default features):
@@ -223,13 +228,15 @@ Metrics exporter (Prometheus)
 - Enable via `--metrics-port <port>` or `OPENAGENT_PROM_PORT`.
 - Scrape `http://127.0.0.1:<port>/metrics`.
 
-- Documentation Hub: ../docs/README.md
-- Installation Guide: ../INSTALL.md
-- Configuration Manual: docs/configuration.md  
-- AI Architecture: ../docs/adr/001-ai-architecture.md
-- Security Lens: docs/security_lens.md
-- Contributing: ../CONTRIBUTING.md
-- Full Documentation Index: ../docs/
+- Documentation Hub: docs/README.md
+- Installation Guide: INSTALL.md
+- Configuration Manual: openagent-terminal/docs/configuration.md  
+- AI Architecture: docs/adr/001-ai-architecture.md
+- Security Lens: openagent-terminal/docs/security_lens.md
+- Contributing: CONTRIBUTING.md
+- Full Documentation Index: docs/
+- Example configs: ./configs/
+- Example env file: ./.env.example
 
 ## FAQ
 
@@ -247,7 +254,7 @@ A: Yes. Full backward compatibility with existing Alacritty configurations.
 
 ## License
 
-Apache 2.0 - Based on [Alacritty](https://github.com/alacritty/alacritty). See [ATTRIBUTION.md](ATTRIBUTION.md) for details.
+Apache 2.0 - Based on [Alacritty](https://github.com/alacritty/alacritty). See [ATTRIBUTION.md](docs/guides/ATTRIBUTION.md) for details.
 
 ---
 

@@ -5,7 +5,7 @@ use openagent_terminal::ai::agents::{
     conversation_manager::ConversationManager,
     privacy_content_filter::{
         ComplianceStandard, DataClassification, PrivacyContentFilter, PrivacyFilterConfig,
-        PrivacyPolicy, RedactionMethod, RedactionRule, SensitivityLevel, UserContext,
+        PrivacyPolicy, RedactionMethod, RedactionRule, UserContext,
     },
     Agent, AgentConfig,
 };
@@ -365,7 +365,7 @@ async fn main() -> Result<()> {
     println!("=======================================");
 
     // Show how privacy filter integrates with advanced conversation features
-    let integrated_filter = PrivacyContentFilter::new()
+    let _integrated_filter = PrivacyContentFilter::new()
         .with_conversation_manager(conversation_manager.clone())
         .with_advanced_features(advanced_features.clone());
 

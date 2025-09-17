@@ -288,12 +288,10 @@ impl AiProvider for AnthropicProvider {
         };
         let mut attempt = 0usize;
 
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
-
-        rt.block_on(async {
+        // Check if we're already in a runtime context
+        let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // We're already in an async runtime, use it directly
+            handle.block_on(async {
             loop {
                 if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err("Cancelled".to_string());
@@ -416,5 +414,137 @@ impl AiProvider for AnthropicProvider {
                 return Ok(true);
             }
         })
+        } else {
+            // We're not in an async context, create a runtime
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| format!("Failed to create runtime: {}", e))?;
+
+            rt.block_on(async {
+                loop {
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        return Err("Cancelled".to_string());
+                    }
+                    let client = match reqwest::Client::builder()
+                        .connect_timeout(std::time::Duration::from_secs(5))
+                        .user_agent("openagent-terminal-ai/0.1")
+                        .build()
+                    {
+                        Ok(c) => c,
+                        Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+                    };
+
+                    let send_result = client
+                        .post(&url)
+                        .header("x-api-key", &self.api_key)
+                        .header("anthropic-version", "2023-06-01")
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .json(&request_body)
+                        // Streaming may take a long time; override client timeout for this request
+                        .timeout(std::time::Duration::from_secs(600))
+                        .send()
+                        .await;
+                    let response = match send_result {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            let msg = format!("Failed to send request: {}", e);
+                            if retry.should_retry(attempt, &msg, cancel) {
+                                let delay = retry.delay_for_attempt(attempt, &msg);
+                                if ai_log_summary() {
+                                    info!(
+                                        "anthropic_stream_retry attempt={} delay_ms={}",
+                                        attempt + 1,
+                                        delay.as_millis()
+                                    );
+                                }
+                                tokio::time::sleep(delay).await;
+                                attempt += 1;
+                                continue;
+                            } else {
+                                return Err(msg);
+                            }
+                        }
+                    };
+
+                    if !response.status().is_success() {
+                        let status = response.status();
+                        let headers = response.headers().clone();
+                        let error_text = match response.text().await {
+                            Ok(t) => t,
+                            Err(_) => "Unknown error".to_string(),
+                        };
+                        let mut msg = format!("API error {}: {}", status, error_text);
+                        if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                            msg.push_str(&format!("; retry-after: {}", s));
+                        }
+                        if let Some(s) = headers
+                            .get("x-ratelimit-reset-after")
+                            .or_else(|| headers.get("x-rate-limit-reset-after"))
+                            .and_then(|v| v.to_str().ok())
+                        {
+                            msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
+                        }
+                        if let Some(s) = headers
+                            .get("x-ratelimit-reset")
+                            .or_else(|| headers.get("x-rate-limit-reset"))
+                            .and_then(|v| v.to_str().ok())
+                        {
+                            msg.push_str(&format!("; x-ratelimit-reset: {}", s));
+                        }
+                        error!("Anthropic API error {}: {}", status, error_text);
+                        if retry.should_retry(attempt, &msg, cancel) {
+                            let delay = retry.delay_for_attempt(attempt, &msg);
+                            if ai_log_summary() {
+                                info!(
+                                    "anthropic_stream_retry_http attempt={} delay_ms={}",
+                                    attempt + 1,
+                                    delay.as_millis()
+                                );
+                            }
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        } else {
+                            return Err(msg);
+                        }
+                    }
+
+                    // Stream SSE using unified helper; extract Anthropic delta.text per event
+                    crate::streaming::consume_eventsource_response(
+                        response,
+                        cancel,
+                        on_chunk,
+                        |data: &str| {
+                            let mut out = Vec::new();
+                            match serde_json::from_str::<AnthropicStreamData>(data) {
+                                Ok(ev) => {
+                                    if let Some(delta) = ev.delta {
+                                        if let Some(txt) = delta.text {
+                                            if ai_log_verbose() {
+                                                debug!("anthropic_stream_chunk len={}", txt.len());
+                                            }
+                                            out.push(txt);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    debug!("Skipping unexpected Anthropic SSE data: {}", e);
+                                }
+                            }
+                            out
+                        },
+                    )
+                    .await?;
+
+                    if ai_log_summary() {
+                        info!("anthropic_stream_finished");
+                    }
+                    return Ok(true);
+                }
+            })
+        };
+        result
     }
 }

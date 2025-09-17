@@ -12,7 +12,11 @@ pub mod streaming;
 #[cfg(feature = "agents")]
 pub mod agents;
 
+#[cfg(feature = "agents")]
+use serde::{Deserialize, Serialize};
+
 /// A request to the AI provider, typically from a scratch buffer.
+#[cfg_attr(feature = "agents", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct AiRequest {
     pub scratch_text: String,
@@ -23,6 +27,7 @@ pub struct AiRequest {
 }
 
 /// A single proposed change or command from the AI provider.
+#[cfg_attr(feature = "agents", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct AiProposal {
     pub title: String,

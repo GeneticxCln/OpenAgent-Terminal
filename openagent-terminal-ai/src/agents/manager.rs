@@ -3,6 +3,7 @@ use super::{
     PrivacyLevel, ProjectInfo,
 };
 use std::collections::HashMap;
+use futures_util::future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -103,7 +104,6 @@ impl Default for AgentPerformanceStats {
             current_load: 0,
         }
     }
-}
 }
 
 #[derive(Debug, Clone)]
@@ -328,7 +328,7 @@ impl AgentManager {
 
         // Wait for all agents to respond
         let results: Vec<Result<AgentResponse, AgentError>> =
-            futures::future::join_all(tasks).await;
+            future::join_all(tasks).await;
 
         // Combine results from all participating agents
         let mut successful_results = Vec::new();
@@ -402,7 +402,7 @@ impl AgentManager {
                 }
                 _ => false,
             },
-            RequestPattern::ProjectType(proj_type) => {
+            RequestPattern::ProjectType(_proj_type) => {
                 // This would require project context analysis
                 // For now, return false
                 false
@@ -426,7 +426,7 @@ impl AgentManager {
     async fn synthesize_collaboration_result(
         &self,
         results: Vec<(String, AgentResponse)>,
-        goal: String,
+        _goal: String,
     ) -> Result<AgentResponse, AgentError> {
         let participating_agents: Vec<String> =
             results.iter().map(|(name, _)| name.clone()).collect();
