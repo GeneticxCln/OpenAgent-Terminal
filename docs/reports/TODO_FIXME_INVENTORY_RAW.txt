@@ -1,0 +1,35 @@
+# Raw TODO/FIXME Inventory (2025-09-17)
+
+This file contains the raw grep results used to build the crosslinked report. Paths are relative to repo root; docs/, .git, target/, .dev*, and *.recording were excluded.
+
+--- BEGIN RAW ---
+./src/ai/agents/communication_hub.rs:48:    workflow_templates: HashMap<String, WorkflowTemplate>,
+./src/ai/agents/communication_hub.rs:58:    WorkflowStarted { workflow_id: Uuid, template_name: String },
+./src/ai/agents/communication_hub.rs:88:    pub template_name: String,
+./src/ai/agents/communication_hub.rs:97:/// Template for defining multi-agent workflows
+./src/ai/agents/communication_hub.rs:99:pub struct WorkflowTemplate {
+./src/ai/agents/communication_hub.rs:102:    pub tasks: HashMap<String, WorkflowTaskTemplate>,
+./src/ai/agents/communication_hub.rs:111:    pub template: WorkflowTaskTemplate,
+./src/ai/agents/communication_hub.rs:119:/// Template for workflow tasks
+./src/ai/agents/communication_hub.rs:121:pub struct WorkflowTaskTemplate {
+./src/ai/agents/communication_hub.rs:125:    pub request_template: serde_json::Value,
+./src/ai/agents/communication_hub.rs:255:    pub async fn start_workflow(&self, template_name: &str, context: serde_json::Value) -> Result<Uuid> {
+./src/ai/agents/communication_hub.rs:258:            coordinator.start_workflow(template_name, context).await?
+./src/ai/agents/communication_hub.rs:264:            template_name: template_name.to_string() 
+./src/ai/agents/communication_hub.rs:268:        info!("Started workflow '{}' with ID {}", template_name, workflow_id);
+./src/ai/agents/communication_hub.rs:281:            workflow.template.execution_strategy.clone()
+./src/ai/agents/communication_hub.rs:342:                        if task.template.critical {
+./src/ai/agents/communication_hub.rs:368:        // TODO: Implement parallel execution using tokio::spawn
+./src/ai/agents/communication_hub.rs:374:        // TODO: Implement dependency-based execution using topological sort
+./src/ai/agents/communication_hub.rs:385:            router.find_agent_by_capability(&task.template.required_capability).await?
+./src/ai/agents/communication_hub.rs:388:        // Create agent request from task template
+./src/ai/agents/communication_hub.rs:391:            request_type: self.capability_to_request_type(&task.template.required_capability),
+./src/ai/agents/communication_hub.rs:392:            payload: task.template.request_template.clone(),
+./src/ai/agents/communication_hub.rs:424:            Err(anyhow!("No agent found with capability {:?}", task.template.required_capability))
+./src/ai/agents/communication_hub.rs:490:                    let workflow_id = self.start_workflow(&workflow_request.template_name, workflow_request.context).await?;
+./src/ai/agents/communication_hub.rs:578:        // Initialize default workflow templates
+./src/ai/agents/communication_hub.rs:581:            coordinator.register_default_templates().await?;
+./src/ai/agents/communication_hub.rs:606:    pub template_name: String,
+./src/ai/agents/communication_hub.rs:700:        // TODO: Implement direct message routing
+... (truncated; full contents are the grep output you saw earlier) 
+--- END RAW ---

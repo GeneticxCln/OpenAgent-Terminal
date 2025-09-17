@@ -92,12 +92,19 @@ Note: Command notebooks integrate with Blocks (history) and will link each execu
 
 ## Configuration
 
-### AI streaming and logs
+### AI streaming, logs, and history storage
 
 - OPENAGENT_AI_STREAM_REDRAW_MS: Throttle AI streaming redraws and batch chunk flushes; default 16 ms.
   - Lower values (e.g., 8) update more frequently during AI streaming; higher (e.g., 32) reduce redraw load.
 - Paste preview privacy: Previews strip ANSI escape codes, truncate to 10 lines (~1200 chars), and redact obvious secrets (e.g., Authorization: Bearer ..., api_key=..., password: ...).
 - Verbose AI logs: Set OPENAGENT_AI_LOG_VERBOSITY=summary or verbose to log AI streaming events and proposal outcomes. Frame timings are logged with render.frame and render.frame_complete spans via tracing.
+
+AI history storage and export
+- Location: Linux: ~/.local/share/openagent-terminal/ai_history/
+- Files:
+  - history.db (SQLite) — primary store
+  - history.jsonl (JSON Lines) — append-only log with one JSON object per line
+- CLI export: If the SQLite database isn’t available, the CLI automatically falls back to exporting from history.jsonl (supports --format json or csv).
 
 ### Workspace pane drag and precise tab drop targets
 

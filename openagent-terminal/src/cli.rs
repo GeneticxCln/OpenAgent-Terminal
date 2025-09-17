@@ -422,7 +422,7 @@ pub enum AiCommand {
         #[clap(long, value_hint = ValueHint::FilePath)]
         write_env_snippet: Option<PathBuf>,
     },
-    /// Export AI conversation history from SQLite
+    /// Export AI conversation history (SQLite with JSONL fallback)
     HistoryExport {
         /// Format: json or csv
         #[clap(long, value_parser = clap::builder::PossibleValuesParser::new(["json", "csv"]).map(|s| s.to_string()))]
