@@ -7,6 +7,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use polling::os::iocp::{CompletionPacket, PollerIocpExt};
 use polling::{Event, Poller};
+use log::warn;
 
 use windows_sys::Win32::Foundation::{BOOLEAN, FALSE, HANDLE};
 use windows_sys::Win32::System::Threading::{
@@ -43,7 +44,9 @@ extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
     } else {
         Some(exit_code as i32)
     };
-    event_tx.sender.send(ChildEvent::Exited(exit_code)).ok();
+    if let Err(err) = event_tx.sender.send(ChildEvent::Exited(exit_code)) {
+        warn!("Failed to send ChildEvent::Exited to channel: {}", err);
+    }
 
     let interest = event_tx.interest.lock().unwrap();
     if let Some(interest) = interest.as_ref() {

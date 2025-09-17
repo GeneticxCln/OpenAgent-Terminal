@@ -127,6 +127,9 @@ pub struct Debug {
     /// Toggle on-screen performance HUD overlay (frame time, draw calls).
     pub renderer_perf_hud: bool,
 
+    /// When true, include damage rect metrics in the HUD (count and total invalidated pixels).
+    pub renderer_perf_hud_damage_metrics: bool,
+
     /// Record ref test.
     #[config(skip)]
     #[serde(skip_serializing)]
@@ -173,6 +176,7 @@ impl Default for Debug {
             atlas_report_interval_frames: 0,
             renderer_report_interval_frames: 0,
             renderer_perf_hud: false,
+            renderer_perf_hud_damage_metrics: false,
             theme_block_cursor: false,
             theme_text_cursors: false,
             theme_selection: false,

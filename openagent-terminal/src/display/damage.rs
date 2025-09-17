@@ -430,4 +430,75 @@ mod tests {
             y
         );
     }
+
+    #[test]
+    fn rect_overlap_and_merge_basic() {
+        let a = Rect::new(10, 10, 20, 10);
+        let b = Rect::new(25, 12, 10, 10);
+        assert!(rects_overlap(a, b));
+        let m = merge_rects(a, b);
+        assert_eq!(m.x, 10);
+        assert_eq!(m.y, 10);
+        assert_eq!(m.width, 25); // spans from 10..35
+        assert_eq!(m.height, 12); // spans from 10..22
+
+        let c = Rect::new(100, 100, 10, 10);
+        assert!(!rects_overlap(a, c));
+        let m2 = merge_rects(a, c);
+        assert_eq!(m2.x, 10);
+        assert_eq!(m2.y, 10);
+        assert_eq!(m2.width, 100 + 10 - 10); // rightmost - leftmost
+        assert_eq!(m2.height, 100 + 10 - 10); // top - bottom
+    }
+
+    #[test]
+    fn viewport_damage_y_roundtrip() {
+        let size_info = SizeInfo::new(300.0, 200.0, 10.0, 20.0, 0.0, 0.0, true);
+        // A range of viewport y and heights
+        for &(y, h) in &[(0, 10), (5, 15), (50, 30), (150, 1)] {
+            let dy = viewport_y_to_damage_y(&size_info, y, h);
+            let r = Rect::new(0, dy, 10, h);
+            let vy = damage_y_to_viewport_y(&size_info, &r);
+            assert_eq!(vy, y);
+        }
+    }
+
+    #[test]
+    fn frame_intersects_range() {
+        let mut frame = FrameDamage::default();
+        frame.reset(5, 10);
+        // Damage line 2, columns 3..=5
+        frame.damage_line(LineDamageBounds::new(2, 3, 3));
+        // A range fully outside damaged columns should not intersect
+        let start = Point::new(2, openagent_terminal_core::index::Column(0));
+        let end = Point::new(2, openagent_terminal_core::index::Column(2));
+        assert!(!frame.intersects(start, end));
+        // A range overlapping the damaged span should intersect (start at damaged col)
+        let start2 = Point::new(2, openagent_terminal_core::index::Column(3));
+        let end2 = Point::new(2, openagent_terminal_core::index::Column(7));
+        assert!(frame.intersects(start2, end2));
+    }
+
+    #[test]
+    fn render_iterator_merges_adjacent_lines() {
+        // Two adjacent damaged lines with identical column spans should merge into one rect
+        let mut tracker = DamageTracker::new(20, 80);
+        let left = 2;
+        let len = 20; // columns
+        tracker
+            .frame()
+            .damage_line(LineDamageBounds::new(5, left, len));
+        tracker
+            .frame()
+            .damage_line(LineDamageBounds::new(6, left, len));
+
+        let size_info: SizeInfo<u32> = SizeInfo::new(800.0, 600.0, 10.0, 20.0, 0.0, 0.0, true).into();
+        let rects = tracker.shape_frame_damage(size_info);
+        assert!(rects.len() >= 1);
+        // Because of overdamage, these two lines should overlap and be merged into a single rect
+        // There might be other rects (e.g., from defaults), so find the covering rect.
+        // Check if any rect has height >= 2 * cell_height (approx), i.e., 40 or more
+        let has_merged = rects.iter().any(|r| r.height >= 40);
+        assert!(has_merged, "expected a merged rect with height >= 40, got: {:?}", rects);
+    }
 }

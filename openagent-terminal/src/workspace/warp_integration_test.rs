@@ -455,6 +455,133 @@ fn test_warp_zoom_toggles_pane_layout() {
     );
 }
 
+/// New: Equalize splits sets all ratios to 0.5 recursively
+#[test]
+fn test_equalize_splits_ratios() {
+    std::env::set_var("OPENAGENT_TERMINAL_TEST_HEADLESS", "1");
+    let config = test_config();
+    let size_info = test_size_info();
+    let mut workspace = WorkspaceManager::with_warp(WorkspaceId(5), config, size_info, None);
+
+    let window_id = winit::window::WindowId::dummy();
+    workspace
+        .initialize_warp_for_tests_no_eventloop(window_id, false)
+        .expect("warp init (equalize)");
+
+    // Create a couple of splits to produce nested layout
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitRight)
+        .unwrap());
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitDown)
+        .unwrap());
+
+    // Nudge ratios away from 0.5 via a resize operation
+    let _ = workspace
+        .execute_warp_action(&super::WarpAction::ResizePane(
+            crate::workspace::warp_split_manager::WarpResizeDirection::ExpandRight,
+        ))
+        .unwrap();
+
+    // Equalize
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::EqualizeSplits)
+        .unwrap());
+
+    let warp = workspace.warp.as_ref().expect("warp");
+    let layout = warp.active_split_layout_clone().expect("layout");
+
+    fn assert_ratios_half(layout: &crate::workspace::split_manager::SplitLayout) {
+        match layout {
+            crate::workspace::split_manager::SplitLayout::Horizontal { left, right, ratio } => {
+                assert!((*ratio - 0.5).abs() < 1e-6);
+                assert_ratios_half(left);
+                assert_ratios_half(right);
+            }
+            crate::workspace::split_manager::SplitLayout::Vertical { top, bottom, ratio } => {
+                assert!((*ratio - 0.5).abs() < 1e-6);
+                assert_ratios_half(top);
+                assert_ratios_half(bottom);
+            }
+            crate::workspace::split_manager::SplitLayout::Single(_) => {}
+        }
+    }
+
+    assert_ratios_half(&layout);
+}
+
+/// New: Recent pane cycling toggles focus among MRU panes
+#[test]
+fn test_recent_pane_cycling() {
+    std::env::set_var("OPENAGENT_TERMINAL_TEST_HEADLESS", "1");
+    let config = test_config();
+    let size_info = test_size_info();
+    let mut workspace = WorkspaceManager::with_warp(WorkspaceId(6), config, size_info, None);
+
+    let window_id = winit::window::WindowId::dummy();
+    workspace
+        .initialize_warp_for_tests_no_eventloop(window_id, false)
+        .expect("warp init (recent)");
+
+    // Create three panes
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitRight)
+        .unwrap());
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::SplitDown)
+        .unwrap());
+
+    // Navigate to build up recent history: Right then Down
+    let _ = workspace
+        .execute_warp_action(&super::WarpAction::NavigatePane(
+            crate::workspace::warp_split_manager::WarpNavDirection::Right,
+        ))
+        .unwrap();
+    let _ = workspace
+        .execute_warp_action(&super::WarpAction::NavigatePane(
+            crate::workspace::warp_split_manager::WarpNavDirection::Down,
+        ))
+        .unwrap();
+
+    // Capture the currently active pane id
+    let (tab_id, before_pane) = workspace
+        .warp
+        .as_ref()
+        .unwrap()
+        .active_ids()
+        .expect("active ids");
+
+    // Cycle recent panes; expect focus to change
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::CycleRecentPanes)
+        .unwrap());
+    let (_, after_pane) = workspace
+        .warp
+        .as_ref()
+        .unwrap()
+        .active_ids()
+        .expect("active ids after");
+
+    assert_ne!(before_pane, after_pane, "CycleRecentPanes should change focus");
+
+    // Cycle again should keep focus within existing panes
+    assert!(workspace
+        .execute_warp_action(&super::WarpAction::CycleRecentPanes)
+        .unwrap());
+    let (_, after_second) = workspace
+        .warp
+        .as_ref()
+        .unwrap()
+        .active_ids()
+        .expect("active ids after 2nd");
+    assert_ne!(after_pane, after_second);
+    assert_ne!(before_pane, after_second);
+
+    // Tab id should remain the same
+    let (tab_id_now, _) = workspace.warp.as_ref().unwrap().active_ids().unwrap();
+    assert_eq!(tab_id, tab_id_now);
+}
+
 /// Documentation test - ensure examples compile
 #[test]
 fn test_example_usage() {

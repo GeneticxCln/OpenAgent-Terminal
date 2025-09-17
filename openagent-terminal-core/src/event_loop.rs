@@ -12,7 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use polling::{Event as PollingEvent, Events, PollMode};
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::event::{self, Event, EventListener, WindowSize};
 use crate::sync::FairMutex;
@@ -37,6 +37,142 @@ pub enum Msg {
 
     /// Instruction to resize the PTY.
     Resize(WindowSize),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::{Event, EventListener, WindowSize};
+    use crate::sync::FairMutex;
+    use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
+    use crate::term::{Config as TermConfig, Term};
+    use polling::{Event as PollEvent, PollMode, Poller};
+    use proptest::prelude::*;
+    use std::io::{Read, Write};
+    use std::sync::{Arc as StdArc, Mutex as StdMutex};
+
+    #[derive(Clone, Default)]
+    struct TestListener {
+        events: StdArc<StdMutex<Vec<Event>>>,
+    }
+
+    impl EventListener for TestListener {
+        fn send_event(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    struct DummyPty {
+        r: std::io::Cursor<Vec<u8>>,
+        w: std::io::Cursor<Vec<u8>>,
+    }
+
+    unsafe impl Send for DummyPty {}
+
+    impl DummyPty {
+        fn new() -> Self {
+            Self { r: std::io::Cursor::new(Vec::new()), w: std::io::Cursor::new(Vec::new()) }
+        }
+    }
+
+    impl EventedReadWrite for DummyPty {
+        type Reader = std::io::Cursor<Vec<u8>>;
+        type Writer = std::io::Cursor<Vec<u8>>;
+
+        unsafe fn register(
+            &mut self,
+            _poll: &Arc<Poller>,
+            _interest: PollEvent,
+            _poll_opts: PollMode,
+        ) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn reregister(
+            &mut self,
+            _poll: &Arc<Poller>,
+            _interest: PollEvent,
+            _poll_opts: PollMode,
+        ) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn deregister(&mut self, _poll: &Arc<Poller>) -> std::io::Result<()> { Ok(()) }
+
+        fn reader(&mut self) -> &mut Self::Reader { &mut self.r }
+        fn writer(&mut self) -> &mut Self::Writer { &mut self.w }
+    }
+
+    impl EventedPty for DummyPty {
+        fn next_child_event(&mut self) -> Option<ChildEvent> { None }
+    }
+
+    impl event::OnResize for DummyPty {
+        fn on_resize(&mut self, _window_size: WindowSize) {}
+    }
+
+    fn make_event_loop() -> EventLoop<DummyPty, TestListener> {
+        let term = Term::new(TermConfig::default(), &(24usize, 80usize), TestListener::default());
+        let terminal = Arc::new(FairMutex::new(term));
+        let event_proxy = TestListener::default();
+        let pty = DummyPty::new();
+        EventLoop::new(terminal, event_proxy, pty, false, false).expect("event loop new")
+    }
+
+    proptest! {
+        #[test]
+        fn osc133_passthrough_no_esc(bytes in proptest::collection::vec(
+            any::<u8>().prop_filter("no ESC (0x1b)", |b| *b != 0x1b), 0..4096))
+        {
+            let el = make_event_loop();
+            let mut state = State::default();
+            let out = el.filter_and_send_osc133(&mut state, &bytes);
+            prop_assert_eq!(out, bytes);
+        }
+    }
+
+    #[test]
+    fn osc133_basic_bel_sequence() {
+        let el = make_event_loop();
+        let mut state = State::default();
+        let mut input = Vec::new();
+        input.extend_from_slice(&[0x1b, b']']); // ESC ]
+        input.extend_from_slice(b"133;A");
+        input.push(0x07); // BEL
+        input.extend_from_slice(b"hello");
+
+        let out = el.filter_and_send_osc133(&mut state, &input);
+        // OSC 133;A should be stripped, leaving trailing bytes
+        assert_eq!(out, b"hello");
+    }
+
+    #[test]
+    fn osc133_st_sequence_with_payload() {
+        let el = make_event_loop();
+        let mut state = State::default();
+        let mut input = Vec::new();
+        input.extend_from_slice(&[0x1b, b']']); // ESC ]
+        input.extend_from_slice(b"133;B;cmd=ls");
+        input.extend_from_slice(&[0x1b, b'\\']); // ESC \\
+
+        let out = el.filter_and_send_osc133(&mut state, &input);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn osc133_partial_across_reads() {
+        let el = make_event_loop();
+        let mut state = State::default();
+        // First chunk: start, but no terminator
+        let first = b"\x1b]133;A"; // ESC ] 133;A
+        let out1 = el.filter_and_send_osc133(&mut state, first);
+        assert!(out1.is_empty());
+
+        // Second chunk: terminator + data
+        let second = [0x07, b'X']; // BEL then 'X'
+        let out2 = el.filter_and_send_osc133(&mut state, &second);
+        assert_eq!(out2, b"X");
+    }
 }
 
 /// The main event loop.
@@ -266,6 +402,10 @@ where
                         let skip = if combined[end] == BEL { 1 } else { 2 };
                         i = end + skip;
                         continue;
+                    } else {
+                        // Incomplete OSC 133 sequence: buffer the remainder and break.
+                        state.osc133_accum.extend_from_slice(&combined[i..]);
+                        break;
                     }
                 } else {
                     // Not OSC 133; treat ESC ] as normal bytes, output and advance by 1.
@@ -463,9 +603,13 @@ where
                     interest.writable = needs_write;
 
                     // Re-register with new interest.
-                    self.pty
+                    if let Err(err) = self
+                        .pty
                         .reregister(&self.poll, interest, poll_opts)
-                        .unwrap();
+                    {
+                        error!("Event loop reregister error: {err}");
+                        break 'event_loop;
+                    }
                 }
             }
 
@@ -490,19 +634,26 @@ impl event::Notify for Notifier {
     where
         B: Into<Cow<'static, [u8]>>,
     {
-        let bytes = bytes.into();
-        // Terminal hangs if we send 0 bytes through.
-        if bytes.is_empty() {
-            return;
+        if let Err(_err) = self.try_notify(bytes) {
+            // Avoid spamming logs with detailed payloads; just warn on failure.
+            warn!("Notifier.notify: failed to send bytes to event loop");
         }
+    }
 
-        let _ = self.0.send(Msg::Input(bytes));
+    fn try_notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) -> Result<(), event::NotifyError> {
+        let bytes = bytes.into();
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        self.0.send(Msg::Input(bytes)).map_err(|_| event::NotifyError::SendFailed)
     }
 }
 
 impl event::OnResize for Notifier {
     fn on_resize(&mut self, window_size: WindowSize) {
-        let _ = self.0.send(Msg::Resize(window_size));
+        if let Err(err) = self.0.send(Msg::Resize(window_size)) {
+            warn!("Notifier.on_resize: failed to send resize to event loop: {err}");
+        }
     }
 }
 

@@ -22,9 +22,9 @@ This document reflects the current state of TODO/FIXME markers cross-checked aga
 
 ### 2. Native Search: Complete Filter Coverage
 - File: `openagent-terminal/src/native_search.rs`
-- Issue: Some filter kinds fall back to a default path (not implemented yet)
+- Status: DateFilter and SizeFilter implemented; new filters added: HasTag, ExitCode, StatusFilter. Additional filter kinds remain planned/not yet implemented.
 - Impact: Search precision/UX
-- Action: Enumerate supported filters and implement the remaining ones (or document limits)
+- Action: Enumerate supported filters (see docs/native_search_filters.md) and implement/document remaining ones; remove any ambiguous fallback behavior
 
 ### 3. Input/UI: Tab Bar Interactions via Cached Geometry
 - Files: `openagent-terminal/src/input/mod.rs` (see TODO around cached geometry)
@@ -40,7 +40,11 @@ This document reflects the current state of TODO/FIXME markers cross-checked aga
 ### A. Warp Integration Features
 - File: `openagent-terminal/src/workspace/warp_integration.rs`
 - Status: Implemented — create/close/next/prev tab; split right/down; pane navigation/resize; zoom/cycle/equalize; session save/load; PTY creation with working-dir fallback; pane focus updates
-- Note: Keep minor polish/edge cases tracked with normal issue labels
+- Specific polish items to track:
+  - Strengthen session restore coverage (partial-restore warning flows, working-dir fallback UX)
+  - Ensure window context is bound consistently after restoration (focus/activation)
+  - Add regression tests for split equalization and recent-pane cycling
+  - Verify PTY size propagation on first frame and after DPI changes
 
 ### B. AI Runtime Context & Streaming Reliability
 - Files: `openagent-terminal/src/ai_runtime.rs`, `openagent-terminal-ai/*`
@@ -49,8 +53,11 @@ This document reflects the current state of TODO/FIXME markers cross-checked aga
 
 ### C. WGPU Rendering Backend — Core Parity
 - Files: `openagent-terminal/src/display/*`, `openagent-terminal/src/renderer/*`
-- Status: WGPU-only path enforced; cursor overlay via renderer uniforms; rect pipelines present; shader-kind sync assertions in place
-- Note: Keep perf HUD polish/validation as ongoing
+- Status: WGPU-only path enforced (OpenGL fallback removed); cursor overlay via renderer uniforms; rect pipelines present; shader-kind sync assertions in place
+- Remaining perf HUD polish tasks:
+  - Validate overlays at different DPI/scales and themes for readability
+  - Stabilize/update thresholding used in perf CI where applicable
+  - Document keyboard toggles and HUD fields in user docs
 
 ## Medium Priority Issues 🟡 (Current)
 
@@ -59,10 +66,10 @@ This document reflects the current state of TODO/FIXME markers cross-checked aga
 - Issues: Confidence calculation; better NLP; parameter extraction; shell-kind propagation in suggestions
 - Impact: Proposal quality/UX
 
-### 6. AI CLI: JSONL Fallback Export
+### 6. AI CLI: JSONL Fallback Export — Completed
 - File: `openagent-terminal/src/cli_ai.rs`
-- Issue: When SQLite DB is unavailable, JSONL export path is not implemented
-- Impact: CLI usability; easy fix
+- Status: Implemented fallback to history.jsonl when SQLite is unavailable or prepare fails; tests and usage docs added.
+- Impact: CLI usability; resilience in fresh/locked environments
 
 ### 7. Event Error Handling
 - File: `openagent-terminal-core/src/event.rs`
@@ -91,8 +98,9 @@ This document reflects the current state of TODO/FIXME markers cross-checked aga
 
 ### D1. Native Plugin Loading/Execution (host-integration)
 - File: `crates/plugin-system/src/lib.rs`
-- Status: Explicitly returns “not implemented”; WASM runtime is the supported plugin path
-- Action: Track as a post-1.0 roadmap item
+- Status: Deferred for v1.0; explicitly returns “not implemented”
+- Supported plugin path for v1.0: WASM runtime (wasmtime/WASI)
+- Action: Track native plugin support as a post-1.0 roadmap item
 
 ## Issues by Component (Updated)
 
@@ -149,7 +157,6 @@ This document reflects the current state of TODO/FIXME markers cross-checked aga
 ## Tracking (Suggested)
 
 - New issues to open:
-  - [ENHANCEMENT] AI CLI: JSONL fallback export when DB missing
   - [FEATURE] Native search: complete filter coverage
   - [ENHANCEMENT] Tab bar: interaction via cached geometry
   - [ENHANCEMENT] Event notify: error handling strategy

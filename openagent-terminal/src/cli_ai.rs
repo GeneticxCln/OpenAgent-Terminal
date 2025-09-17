@@ -150,66 +150,133 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 .join("openagent-terminal")
                 .join("ai_history");
             let db_path = base.join("history.db");
+            
+            eprintln!("🔍 Looking for AI history at: {}", base.display());
+            
+            // Validate output format
+            if !matches!(format.as_str(), "json" | "csv" | "jsonl") {
+                return Err(anyhow!("Unsupported export format: '{}'. Supported formats: json, csv, jsonl", format));
+            }
+            
+            // Ensure output directory exists
+            if let Some(parent) = to.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent)
+                        .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
+                }
+            }
+            
             let conn = match Connection::open(&db_path) {
-                Ok(c) => c,
+                Ok(c) => {
+                    eprintln!("📊 Found SQLite database, reading history...");
+                    c
+                }
                 Err(e) => {
-                    tracing::warn!(
-                        "AI history database not available at {} ({}). Attempting JSONL fallback...",
+                    eprintln!("⚠️  AI history database not available at {} ({}). Attempting JSONL fallback...",
                         db_path.display(), e
                     );
                     // Fallback to JSONL line-by-line export
                     let jsonl = base.join("history.jsonl");
                     if !jsonl.exists() {
-                    tracing::warn!(
-                        "No JSONL history found at {}. Nothing to export.",
-                        jsonl.display()
-                    );
+                        eprintln!("❌ No JSONL history found at {}. Nothing to export.", jsonl.display());
+                        eprintln!("💡 Tip: AI history is created after using the AI features in the terminal.");
                         return Ok(2);
                     }
-                    // Read JSONL records
+                    eprintln!("📝 Using JSONL fallback from: {}", jsonl.display());
+                    // Read JSONL records with progress reporting
                     let file = std::fs::File::open(&jsonl)
                         .with_context(|| format!("Failed to open {}", jsonl.display()))?;
                     let reader = std::io::BufReader::new(file);
                     let mut records: Vec<serde_json::Value> = Vec::new();
+                    let mut line_count = 0;
+                    let mut skipped_lines = 0;
+                    
+                    eprintln!("⏳ Reading JSONL records...");
+                    
                     for line in reader.lines() {
                         if let Ok(l) = line {
+                            line_count += 1;
+                            if line_count % 1000 == 0 {
+                                eprintln!("   Read {} lines...", line_count);
+                            }
+                            
                             if l.trim().is_empty() { continue; }
                             match serde_json::from_str::<serde_json::Value>(&l) {
                                 Ok(v) => records.push(v),
                                 Err(parse_err) => {
-                                    tracing::warn!("Skipping invalid JSONL line: {}", parse_err);
+                                    skipped_lines += 1;
+                                    if skipped_lines <= 5 {  // Only warn about first 5 errors
+                                        eprintln!("⚠️  Skipping invalid JSONL line {}: {}", line_count, parse_err);
+                                    }
                                 }
                             }
                         }
                     }
+                    
+                    if skipped_lines > 0 {
+                        eprintln!("⚠️  Skipped {} invalid lines total", skipped_lines);
+                    }
                     if records.is_empty() {
-                        tracing::warn!("JSONL history is empty. Nothing to export.");
+                        eprintln!("❌ JSONL history is empty. Nothing to export.");
                         return Ok(2);
                     }
+                    
+                    eprintln!("✅ Loaded {} history records", records.len());
                     // Write output from JSONL
+                    eprintln!("💾 Writing {} format to: {}", format.to_uppercase(), to.display());
+                    
                     match format.as_str() {
                         "json" => {
-                            let s = serde_json::to_string_pretty(&records)?;
+                            eprintln!("   Serializing to JSON...");
+                            let s = serde_json::to_string_pretty(&records)
+                                .with_context(|| "Failed to serialize records to JSON")?;
+                            eprintln!("   Writing {} bytes to file...", s.len());
                             std::fs::write(&to, s)
                                 .with_context(|| format!("Failed to write {}", to.display()))?;
                             println!(
-                                "Exported {} AI history entries to {} (JSON via JSONL fallback)",
+                                "✅ Exported {} AI history entries to {} (JSON via JSONL fallback)",
+                                records.len(),
+                                to.display()
+                            );
+                        }
+                        "jsonl" => {
+                            // Export back to JSONL format (useful for filtering/reformatting)
+                            let mut output = Vec::new();
+                            for record in &records {
+                                serde_json::to_writer(&mut output, record)
+                                    .with_context(|| "Failed to serialize record")?;
+                                output.push(b'\n');
+                            }
+                            std::fs::write(&to, output)
+                                .with_context(|| format!("Failed to write {}", to.display()))?;
+                            println!(
+                                "✅ Exported {} AI history entries to {} (JSONL via JSONL fallback)",
                                 records.len(),
                                 to.display()
                             );
                         }
                         "csv" => {
+                            eprintln!("   Creating CSV writer...");
                             let mut wtr = csv::Writer::from_path(&to)
                                 .with_context(|| format!("Failed to open {} for CSV", to.display()))?;
+                            
+                            eprintln!("   Writing CSV header...");
                             wtr.write_record([
-                                "ts",
+                                "timestamp",
                                 "mode",
                                 "working_directory",
                                 "shell_kind",
                                 "input",
                                 "output",
                             ])?;
-                            for rec in &records {
+                            
+                            eprintln!("   Writing {} records to CSV...", records.len());
+                            let mut written_records = 0;
+                            for (i, rec) in records.iter().enumerate() {
+                                if i > 0 && i % 500 == 0 {
+                                    eprintln!("   Processed {} records...", i);
+                                }
+                                
                                 let ts = rec.get("ts").and_then(|v| v.as_str()).unwrap_or("");
                                 let mode = rec.get("mode").and_then(|v| v.as_str()).unwrap_or("");
                                 let wd = rec
@@ -219,17 +286,26 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                                 let sh = rec.get("shell_kind").and_then(|v| v.as_str()).unwrap_or("");
                                 let input = rec.get("input").and_then(|v| v.as_str()).unwrap_or("");
                                 let output = rec.get("output").and_then(|v| v.as_str()).unwrap_or("");
-                                wtr.write_record([ts, mode, wd, sh, input, output])?;
+                                
+                                match wtr.write_record([ts, mode, wd, sh, input, output]) {
+                                    Ok(_) => written_records += 1,
+                                    Err(e) => {
+                                        eprintln!("⚠️  Failed to write record {}: {}", i + 1, e);
+                                    }
+                                }
                             }
                             wtr.flush()?;
                             println!(
-                                "Exported {} AI history entries to {} (CSV via JSONL fallback)",
-                                records.len(),
+                                "✅ Exported {} AI history entries to {} (CSV via JSONL fallback)",
+                                written_records,
                                 to.display()
                             );
+                            if written_records != records.len() {
+                                eprintln!("⚠️  Note: {} records failed to write", records.len() - written_records);
+                            }
                         }
                         other => {
-                            return Err(anyhow!(format!("Unsupported export format: {}", other)));
+                            return Err(anyhow!("Unsupported export format: '{}'. Supported formats: json, csv, jsonl", other));
                         }
                     }
                     return Ok(0);
