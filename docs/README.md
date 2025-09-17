@@ -7,6 +7,7 @@ Quick links
   - Installation: ../INSTALL.md
   - Configuration: ../openagent-terminal/docs/configuration.md
   - Features overview: ./features.md
+  - AI CLI usage: ./guides/AI_CLI_USAGE.md
 - Architecture & design
   - Architecture overview: ./ARCHITECTURE.md
   - ADRs (design decisions): ./adr/README.md
