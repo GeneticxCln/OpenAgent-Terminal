@@ -101,11 +101,20 @@ impl Debug for Event {
 }
 
 /// Byte sequences are sent to a `Notify` in response to some events.
+#[derive(Debug)]
+pub enum NotifyError {
+    SendFailed,
+}
+
 pub trait Notify {
     /// Notify that an escape sequence should be written to the PTY.
-    ///
-    /// TODO this needs to be able to error somehow.
     fn notify<B: Into<Cow<'static, [u8]>>>(&self, _: B);
+
+    /// Fallible form of notify; default bridges to infallible notify and returns Ok(()).
+    fn try_notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) -> Result<(), NotifyError> {
+        self.notify(bytes);
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone, Debug)]

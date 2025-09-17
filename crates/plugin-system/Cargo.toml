@@ -10,7 +10,7 @@ rust-version.workspace = true
 
 [features]
 default = []
-wasm-runtime = ["wasmtime", "wasmtime-wasi"]
+wasm-runtime = ["wasmtime", "wasmtime-wasi", "dep:reqwest", "dep:regex"]
 host-integration = ["dep:libloading"]
 
 [dependencies]
@@ -28,10 +28,13 @@ libloading = { version = "0.8", optional = true }
 # WASM runtime
 wasmtime = { version = "36.0", optional = true }
 wasmtime-wasi = { version = "36.0", optional = true }
+# HTTP client (blocking) for host_net_fetch under wasm-runtime
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"], optional = true }
 
 # Security and permissions
 globset = "0.4"
 dunce = "1.0"
+regex = { version = "1", optional = true }
 
 # Plugin metadata and communication
 toml = "0.9"

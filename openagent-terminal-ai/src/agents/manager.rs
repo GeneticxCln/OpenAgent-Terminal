@@ -4,8 +4,10 @@ use super::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
 
 /// Agent Manager coordinates multiple AI agents and handles request routing
 pub struct AgentManager {
@@ -20,6 +22,88 @@ pub struct AgentManager {
 
     /// Request routing rules
     routing_rules: Vec<RoutingRule>,
+
+    /// Agent performance metrics
+    metrics: Arc<RwLock<AgentMetrics>>,
+}
+
+/// Performance metrics for agents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMetrics {
+    /// Per-agent performance statistics
+    pub agent_stats: HashMap<String, AgentPerformanceStats>,
+    
+    /// Global statistics
+    pub total_requests: u64,
+    pub total_successful_requests: u64,
+    pub average_response_time: Duration,
+    pub last_reset: std::time::SystemTime,
+}
+
+/// Performance statistics for individual agents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPerformanceStats {
+    /// Total number of requests handled
+    pub request_count: u64,
+    
+    /// Number of successful requests
+    pub success_count: u64,
+    
+    /// Number of failed requests
+    pub error_count: u64,
+    
+    /// Average response time
+    pub avg_response_time: Duration,
+    
+    /// Min/Max response times
+    pub min_response_time: Duration,
+    pub max_response_time: Duration,
+    
+    /// Last request timestamp
+    pub last_request_time: std::time::SystemTime,
+    
+    /// User satisfaction scores (if available)
+    pub satisfaction_scores: Vec<f32>,
+    
+    /// Average satisfaction score
+    pub avg_satisfaction: f32,
+    
+    /// Utilization metrics
+    pub total_processing_time: Duration,
+    pub peak_concurrent_requests: u32,
+    pub current_load: u32,
+}
+
+impl Default for AgentMetrics {
+    fn default() -> Self {
+        Self {
+            agent_stats: HashMap::new(),
+            total_requests: 0,
+            total_successful_requests: 0,
+            average_response_time: Duration::ZERO,
+            last_reset: std::time::SystemTime::now(),
+        }
+    }
+}
+
+impl Default for AgentPerformanceStats {
+    fn default() -> Self {
+        Self {
+            request_count: 0,
+            success_count: 0,
+            error_count: 0,
+            avg_response_time: Duration::ZERO,
+            min_response_time: Duration::MAX,
+            max_response_time: Duration::ZERO,
+            last_request_time: std::time::SystemTime::UNIX_EPOCH,
+            satisfaction_scores: Vec::new(),
+            avg_satisfaction: 0.0,
+            total_processing_time: Duration::ZERO,
+            peak_concurrent_requests: 0,
+            current_load: 0,
+        }
+    }
+}
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +165,7 @@ impl AgentManager {
             config,
             project_context: Arc::new(RwLock::new(None)),
             routing_rules,
+            metrics: Arc::new(RwLock::new(AgentMetrics::default())),
         }
     }
 
@@ -139,9 +224,13 @@ impl AgentManager {
         request: AgentRequest,
     ) -> Result<AgentResponse, AgentError> {
         debug!("Processing agent request: {:?}", request);
+        let start_time = Instant::now();
 
         // Determine the best agent for this request
         let agent_name = self.route_request(&request).await?;
+
+        // Update current load
+        self.increment_agent_load(&agent_name).await;
 
         // Get the agent
         let agents = self.agents.read().await;
@@ -151,22 +240,43 @@ impl AgentManager {
 
         // Check if agent can handle the request
         if !agent.can_handle(&request) {
+            self.decrement_agent_load(&agent_name).await;
             return Err(AgentError::NotSupported(format!(
                 "Agent {} cannot handle this request type",
                 agent_name
             )));
         }
 
-        // Process the request with timeout
-        let response = tokio::time::timeout(
+        // Process the request with timeout and metrics collection
+        let result = tokio::time::timeout(
             std::time::Duration::from_millis(self.config.request_timeout_ms),
             agent.process(request),
         )
         .await
-        .map_err(|_| AgentError::ProcessingError("Request timeout".to_string()))??;
+        .map_err(|_| AgentError::ProcessingError("Request timeout".to_string()));
 
-        info!("Request processed successfully by agent: {}", agent_name);
-        Ok(response)
+        let processing_time = start_time.elapsed();
+        
+        // Update metrics
+        match &result {
+            Ok(Ok(_)) => {
+                self.record_success(&agent_name, processing_time).await;
+                info!("Request processed successfully by agent: {} ({}ms)", agent_name, processing_time.as_millis());
+            }
+            Ok(Err(e)) => {
+                self.record_error(&agent_name, processing_time).await;
+                warn!("Agent {} returned error: {}", agent_name, e);
+            }
+            Err(e) => {
+                self.record_error(&agent_name, processing_time).await;
+                error!("Agent {} request failed: {}", agent_name, e);
+            }
+        }
+
+        // Decrement load
+        self.decrement_agent_load(&agent_name).await;
+
+        result?
     }
 
     /// Process a collaboration request involving multiple agents
@@ -401,6 +511,170 @@ impl AgentManager {
         } else {
             None
         }
+    }
+
+    /// Increment the current load for an agent
+    async fn increment_agent_load(&self, agent_name: &str) {
+        let mut metrics = self.metrics.write().await;
+        let stats = metrics.agent_stats.entry(agent_name.to_string())
+            .or_insert_with(AgentPerformanceStats::default);
+        
+        stats.current_load += 1;
+        if stats.current_load > stats.peak_concurrent_requests {
+            stats.peak_concurrent_requests = stats.current_load;
+        }
+    }
+
+    /// Decrement the current load for an agent
+    async fn decrement_agent_load(&self, agent_name: &str) {
+        let mut metrics = self.metrics.write().await;
+        if let Some(stats) = metrics.agent_stats.get_mut(agent_name) {
+            if stats.current_load > 0 {
+                stats.current_load -= 1;
+            }
+        }
+    }
+
+    /// Record a successful request
+    async fn record_success(&self, agent_name: &str, processing_time: Duration) {
+        let mut metrics = self.metrics.write().await;
+        
+        // Update global metrics
+        metrics.total_requests += 1;
+        metrics.total_successful_requests += 1;
+        
+        // Update agent-specific metrics
+        let stats = metrics.agent_stats.entry(agent_name.to_string())
+            .or_insert_with(AgentPerformanceStats::default);
+        
+        stats.request_count += 1;
+        stats.success_count += 1;
+        stats.last_request_time = std::time::SystemTime::now();
+        stats.total_processing_time += processing_time;
+        
+        // Update response time statistics
+        if processing_time < stats.min_response_time {
+            stats.min_response_time = processing_time;
+        }
+        if processing_time > stats.max_response_time {
+            stats.max_response_time = processing_time;
+        }
+        
+        // Calculate moving average for response time
+        let total_time = stats.avg_response_time * (stats.request_count - 1) as u32 + processing_time;
+        stats.avg_response_time = total_time / stats.request_count as u32;
+    }
+
+    /// Record a failed request
+    async fn record_error(&self, agent_name: &str, processing_time: Duration) {
+        let mut metrics = self.metrics.write().await;
+        
+        // Update global metrics
+        metrics.total_requests += 1;
+        
+        // Update agent-specific metrics
+        let stats = metrics.agent_stats.entry(agent_name.to_string())
+            .or_insert_with(AgentPerformanceStats::default);
+        
+        stats.request_count += 1;
+        stats.error_count += 1;
+        stats.last_request_time = std::time::SystemTime::now();
+        
+        // Still track processing time for failed requests
+        if processing_time < stats.min_response_time {
+            stats.min_response_time = processing_time;
+        }
+        if processing_time > stats.max_response_time {
+            stats.max_response_time = processing_time;
+        }
+    }
+
+    /// Get performance metrics for all agents
+    pub async fn get_metrics(&self) -> AgentMetrics {
+        let metrics = self.metrics.read().await;
+        metrics.clone()
+    }
+
+    /// Get performance metrics for a specific agent
+    pub async fn get_agent_metrics(&self, agent_name: &str) -> Option<AgentPerformanceStats> {
+        let metrics = self.metrics.read().await;
+        metrics.agent_stats.get(agent_name).cloned()
+    }
+
+    /// Reset performance metrics
+    pub async fn reset_metrics(&self) {
+        let mut metrics = self.metrics.write().await;
+        *metrics = AgentMetrics::default();
+        info!("Agent performance metrics reset");
+    }
+
+    /// Record user satisfaction score for an agent's response
+    pub async fn record_satisfaction(&self, agent_name: &str, score: f32) {
+        if score < 0.0 || score > 1.0 {
+            warn!("Invalid satisfaction score: {}. Score should be between 0.0 and 1.0", score);
+            return;
+        }
+        
+        let mut metrics = self.metrics.write().await;
+        if let Some(stats) = metrics.agent_stats.get_mut(agent_name) {
+            stats.satisfaction_scores.push(score);
+            
+            // Calculate new average satisfaction
+            let sum: f32 = stats.satisfaction_scores.iter().sum();
+            stats.avg_satisfaction = sum / stats.satisfaction_scores.len() as f32;
+            
+            // Keep only last 100 satisfaction scores to prevent unbounded growth
+            if stats.satisfaction_scores.len() > 100 {
+                stats.satisfaction_scores.remove(0);
+                let sum: f32 = stats.satisfaction_scores.iter().sum();
+                stats.avg_satisfaction = sum / stats.satisfaction_scores.len() as f32;
+            }
+        }
+    }
+
+    /// Get agent performance summary for routing decisions
+    pub async fn get_routing_recommendations(&self) -> HashMap<String, f32> {
+        let metrics = self.metrics.read().await;
+        let mut recommendations = HashMap::new();
+        
+        for (agent_name, stats) in &metrics.agent_stats {
+            // Calculate a composite score based on:
+            // - Success rate (40%)
+            // - Average response time (30%)
+            // - User satisfaction (20%)
+            // - Current load (10%)
+            
+            let success_rate = if stats.request_count > 0 {
+                stats.success_count as f32 / stats.request_count as f32
+            } else {
+                1.0 // No data yet, assume perfect
+            };
+            
+            // Normalize response time (lower is better, scale to 0-1)
+            let response_score = if stats.avg_response_time.is_zero() {
+                1.0
+            } else {
+                let millis = stats.avg_response_time.as_millis() as f32;
+                (1000.0 - millis.min(1000.0)) / 1000.0 // Cap at 1 second
+            };
+            
+            // Current load penalty (lower load is better)
+            let load_score = if stats.current_load == 0 {
+                1.0
+            } else {
+                (10.0 - stats.current_load as f32).max(0.0) / 10.0
+            };
+            
+            let composite_score = 
+                success_rate * 0.4 +
+                response_score * 0.3 +
+                stats.avg_satisfaction * 0.2 +
+                load_score * 0.1;
+            
+            recommendations.insert(agent_name.clone(), composite_score);
+        }
+        
+        recommendations
     }
 }
 

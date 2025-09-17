@@ -392,9 +392,12 @@ impl Processor {
                     crate::message_bar::MessageType::Error /* Info type not present; fallback to visible tier */
                 };
                 let message = crate::message_bar::Message::new(banner, ty);
-                let _ = self
-                    .proxy
-                    .send_event(Event::new(EventType::Message(message), Some(window_id)));
+if let Err(e) = self
+    .proxy
+    .send_event(Event::new(EventType::Message(message), Some(window_id)))
+{
+    tracing::warn!("failed to post Message event: {:?}", e);
+}
             }
         }
 
@@ -405,9 +408,12 @@ impl Processor {
                 .to_string();
             let message =
                 crate::message_bar::Message::new(hint, crate::message_bar::MessageType::Warning);
-            let _ = self
+if let Err(e) = self
                 .proxy
-                .send_event(Event::new(EventType::Message(message), window_id));
+                .send_event(Event::new(EventType::Message(message), window_id))
+{
+    tracing::warn!("failed to post onboarding Message: {:?}", e);
+}
             // Copy onboarding examples to ~/.config on first run
             if let Some(cfg_dir) = dirs::config_dir().map(|d| d.join("openagent-terminal")) {
                 let examples_dst = cfg_dir.join("examples").join("workflows");
@@ -433,10 +439,12 @@ impl Processor {
                 if win.display.window.has_frame {
                     win.display.window.request_redraw();
                 }
-                let _ = self.proxy.send_event(Event::new(
+if let Err(e) = self.proxy.send_event(Event::new(
                     EventType::WorkflowsSearchPerform(String::new()),
                     window_id,
-                ));
+                )) {
+                    tracing::warn!("failed to post WorkflowsSearchPerform: {:?}", e);
+                }
             }
         }
 
@@ -654,10 +662,12 @@ impl Processor {
         {
             test_posted_events::record(EventType::BlocksSearchResults(Vec::new()));
         }
-        let _ = self.proxy.send_event(Event::new(
+if let Err(e) = self.proxy.send_event(Event::new(
             EventType::BlocksSearchResults(Vec::new()),
             window_id,
-        ));
+        )) {
+            tracing::warn!("failed to post empty BlocksSearchResults: {:?}", e);
+        }
     }
 
     fn build_search_query_from_state(
@@ -1127,9 +1137,12 @@ impl ApplicationHandler<Event> for Processor {
                         ),
                         crate::message_bar::MessageType::Warning,
                     );
-                    let _ = self
+if let Err(e) = self
                         .proxy
-                        .send_event(Event::new(EventType::Message(message), *window_id));
+                        .send_event(Event::new(EventType::Message(message), *window_id))
+                    {
+                        tracing::warn!("failed to post SecurityLens block Message: {:?}", e);
+                    }
                     return;
                 }
 
@@ -1157,7 +1170,7 @@ impl ApplicationHandler<Event> for Processor {
                     self.pending_security_ai
                         .insert(id.clone(), (command.clone(), dry_run, *window_id));
 
-                    let _ = self.proxy.send_event(Event::new(
+if let Err(e) = self.proxy.send_event(Event::new(
                         EventType::ConfirmOpen {
                             id: id.clone(),
                             title: match risk.level {
@@ -1171,7 +1184,9 @@ impl ApplicationHandler<Event> for Processor {
                             cancel_label: Some("Cancel".into()),
                         },
                         *window_id,
-                    ));
+                    )) {
+                        tracing::warn!("failed to post ConfirmOpen: {:?}", e);
+                    }
                 } else {
                     // Even if not required by policy, show a preview confirmation before executing
                     let id = crate::ui_confirm::generate_id();
@@ -1185,7 +1200,7 @@ impl ApplicationHandler<Event> for Processor {
                     self.pending_security_ai
                         .insert(id.clone(), (command.clone(), dry_run, *window_id));
 
-                    let _ = self.proxy.send_event(Event::new(
+if let Err(e) = self.proxy.send_event(Event::new(
                         EventType::ConfirmOpen {
                             id: id.clone(),
                             title: "Confirm running command".into(),
@@ -1194,7 +1209,9 @@ impl ApplicationHandler<Event> for Processor {
                             cancel_label: Some("Cancel".into()),
                         },
                         *window_id,
-                    ));
+                    )) {
+                        tracing::warn!("failed to post ConfirmOpen (preview): {:?}", e);
+                    }
                 }
             }
             // Intercept paste commands for Security Lens gating before forwarding to windows
@@ -1208,9 +1225,12 @@ impl ApplicationHandler<Event> for Processor {
                                 format!("Blocked risky paste: {}", risk.explanation),
                                 crate::message_bar::MessageType::Warning,
                             );
-                            let _ = self
+if let Err(e) = self
                                 .proxy
-                                .send_event(Event::new(EventType::Message(message), *window_id));
+                                .send_event(Event::new(EventType::Message(message), *window_id))
+                            {
+                                tracing::warn!("failed to post paste block Message: {:?}", e);
+                            }
                             return;
                         }
                         // Require confirmation path
@@ -1240,7 +1260,7 @@ impl ApplicationHandler<Event> for Processor {
                                 RiskLevel::Caution => "Caution: Confirm paste".into(),
                                 RiskLevel::Safe => "Confirm paste".into(),
                             };
-                            let _ = self.proxy.send_event(Event::new(
+if let Err(e) = self.proxy.send_event(Event::new(
                                 EventType::ConfirmOpen {
                                     id: id.clone(),
                                     title,
@@ -1249,15 +1269,20 @@ impl ApplicationHandler<Event> for Processor {
                                     cancel_label: Some("Cancel".into()),
                                 },
                                 *window_id,
-                            ));
+                            )) {
+                                tracing::warn!("failed to post ConfirmOpen (paste): {:?}", e);
+                            }
                             return;
                         }
                     }
                 }
                 // No gating needed or safe: forward as checked
-                let _ = self
+if let Err(e) = self
                     .proxy
-                    .send_event(Event::new(EventType::PasteCommandChecked(text), *window_id));
+                    .send_event(Event::new(EventType::PasteCommandChecked(text), *window_id))
+                {
+                    tracing::warn!("failed to post PasteCommandChecked: {:?}", e);
+                }
             }
 
             (payload, None) => {
@@ -2983,7 +3008,9 @@ pub struct ActionContext<'a, N, T> {
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
     #[inline]
     fn write_to_pty<B: Into<Cow<'static, [u8]>>>(&self, val: B) {
-        self.notifier.notify(val);
+        if let Err(e) = self.notifier.try_notify(val) {
+            tracing::warn!("notify to PTY failed: {:?}", e);
+        }
     }
 
     /// Request a redraw.

@@ -194,11 +194,17 @@ impl WarpIntegration {
 
         let tab_id = self.tab_manager.create_warp_tab(Some(current_dir));
 
-        // Create the actual terminal for the default pane
+        // Create the actual terminal for the default pane when appropriate. In test modes without
+        // an event loop, we may skip creating a terminal.
         if let Some(tab) = self.tab_manager.active_tab() {
             let active_pane = tab.active_pane;
             let working_dir = tab.working_directory.clone();
-            self.create_terminal_for_pane(active_pane, &working_dir)?;
+
+            if self.event_proxy.is_some() || Self::is_test_real_pty() {
+                self.create_terminal_for_pane(active_pane, &working_dir)?;
+            } else {
+                info!("Skipping terminal creation for default tab (no event proxy and not in test real PTY mode)");
+            }
         }
 
         self.perf_stats.tab_creation_time_ms = start.elapsed().as_millis() as u64;
@@ -1263,6 +1269,19 @@ impl WarpIntegration {
     /// Get performance statistics
     pub fn performance_stats(&self) -> &WarpPerformanceStats {
         &self.perf_stats
+    }
+
+    /// Return the active tab and pane identifiers, if available (for tests/UX checks).
+    pub fn active_ids(&self) -> Option<(TabId, PaneId)> {
+        let tab = self.tab_manager.active_tab()?;
+        Some((tab.id, tab.active_pane))
+    }
+
+    /// Return a clone of the active tab's split layout (for tests/inspection).
+    pub fn active_split_layout_clone(&self) -> Option<super::split_manager::SplitLayout> {
+        self.tab_manager
+            .active_tab()
+            .map(|t| t.split_layout.clone())
     }
 
     /// Check if auto-save is needed

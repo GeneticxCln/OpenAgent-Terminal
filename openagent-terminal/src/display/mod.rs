@@ -1757,27 +1757,74 @@ impl Display {
         let fps = if last_ms > 0.0 { 1000.0 / last_ms } else { 0.0 };
         let stats = renderer.frame_ms_stats();
         let copy_kb = (m.rect_bytes_copied as f32) / 1024.0;
+
+        // Optionally compute damage metrics for the HUD
+        let mut damage_suffix = String::new();
+        if config.debug.renderer_perf_hud_damage_metrics {
+            let rects = self
+                .damage_tracker
+                .shape_frame_damage(self.size_info.into());
+            let mut total_px: i64 = 0;
+            for r in &rects {
+                total_px += (r.width.max(0) as i64) * (r.height.max(0) as i64);
+            }
+            damage_suffix = format!(" | dmg_rects={} dmg_px={}", rects.len(), total_px);
+        }
+
         let s = if let Some((avg, min, max)) = stats {
             format!(
-                "{last_ms:.1} ms ({fps:.1} fps) | avg {avg:.1} min {min:.1} max {max:.1} | draws={} verts={} copy={copy_kb:.1}KB flush={} batch={}",
-                m.draw_calls, m.vertices_submitted, m.rect_flush_count, m.primitives_batched
+                "{last_ms:.1} ms ({fps:.1} fps) | avg {avg:.1} min {min:.1} max {max:.1} | draws={} verts={} copy={copy_kb:.1}KB flush={} batch={}{}",
+                m.draw_calls, m.vertices_submitted, m.rect_flush_count, m.primitives_batched, damage_suffix
             )
         } else {
             format!(
-                "{last_ms:.1} ms ({fps:.1} fps) | draws={} verts={} copy={copy_kb:.1}KB flush={} batch={}",
-                m.draw_calls, m.vertices_submitted, m.rect_flush_count, m.primitives_batched
+                "{last_ms:.1} ms ({fps:.1} fps) | draws={} verts={} copy={copy_kb:.1}KB flush={} batch={}{}",
+                m.draw_calls, m.vertices_submitted, m.rect_flush_count, m.primitives_batched, damage_suffix
             )
         };
-        // Use top-left cell area
-        let fg = crate::display::color::Rgb::new(240, 240, 240);
-        let bg = crate::display::color::Rgb::new(0, 0, 0);
-        let point = Point::new(0, Column(1));
-        // Use renderer.draw_string directly to avoid cfg coupling
+
+        // Theme-aware colors
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let (bg_color, fg_color, alpha) = match config.debug.render_timer_style {
+            crate::config::debug::RenderTimerStyle::LowContrast => (
+                theme.tokens.surface_muted,
+                theme.tokens.text,
+                0.65,
+            ),
+            crate::config::debug::RenderTimerStyle::Warning => (
+                theme.tokens.warning,
+                theme.tokens.surface,
+                0.80,
+            ),
+        };
+
+        // DPI-friendly sizing using cell metrics
+        use unicode_width::UnicodeWidthStr;
+        let cw = self.size_info.cell_width();
+        let ch = self.size_info.cell_height();
+        let pad_x = (cw * 0.5).max(6.0);
+        let pad_y = (ch * 0.2).max(4.0);
+        let text_cells = s.width();
+        let bg_w = (text_cells as f32) * cw + pad_x * 2.0;
+        let bg_h = ch + pad_y * 2.0;
+        let bg_x = self.size_info.padding_x();
+        let bg_y = self.size_info.padding_y();
+
+        // Stage rounded background before drawing text
+        let pill = crate::renderer::ui::UiRoundedRect::new(bg_x, bg_y, bg_w, bg_h, 6.0, bg_color, alpha);
         let size_info_copy = self.size_info;
+        renderer.stage_ui_rounded_rect(&size_info_copy, pill);
+
+        // Draw text at top-left inside the pill (start at first visible column)
+        let point = Point::new(0, Column(0));
         renderer.draw_string(
             point,
-            fg,
-            bg,
+            fg_color,
+            bg_color,
             s.chars(),
             &size_info_copy,
             &mut self.glyph_cache,

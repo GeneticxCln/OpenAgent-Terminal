@@ -19,6 +19,24 @@ use tracing::{debug, info, warn};
 use crate::blocks_v2::BlockId;
 use crate::shell_integration::CommandId;
 
+/// Parse human-friendly sizes like "10KB", "2MB", "1GB" (case-insensitive). Base 1024.
+fn parse_human_size(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() { return None; }
+    let split_idx = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let (num_part, unit_part) = s.split_at(split_idx);
+    let val: u64 = num_part.parse().ok()?;
+    let unit = unit_part.trim().to_ascii_uppercase();
+    let mult: u64 = match unit.as_str() {
+        "" | "B" => 1,
+        "K" | "KB" => 1024,
+        "M" | "MB" => 1024 * 1024,
+        "G" | "GB" => 1024 * 1024 * 1024,
+        _ => return None,
+    };
+    Some(val.saturating_mul(mult))
+}
+
 /// Native search and filtering manager
 pub struct SearchIntegration {
     /// Text search engine for immediate results
@@ -208,7 +226,10 @@ pub struct SearchResult {
     pub relevance_score: f64,
     pub match_positions: Vec<MatchPosition>,
     pub metadata: HashMap<String, String>,
+    /// Last-modified or primary time used for DateFilter
     pub timestamp: Instant,
+    /// Creation time when available; used for CreatedAfter/CreatedBefore filters
+    pub created_at: Option<Instant>,
 }
 
 /// Match position in content
@@ -242,10 +263,14 @@ pub enum SearchFilter {
     RegexFilter {
         regex: Regex,
     },
+    /// Filter by the primary timestamp field (commonly last-modified)
     DateFilter {
         from: Option<Instant>,
         to: Option<Instant>,
     },
+    /// Filter by creation time when available on the result
+    CreatedAfter { at: Instant },
+    CreatedBefore { at: Instant },
     TypeFilter {
         types: HashSet<String>,
     },
@@ -259,6 +284,14 @@ pub enum SearchFilter {
     ContextFilter {
         contexts: HashSet<SearchContext>,
     },
+    /// Match when the result has a tag equal to `tag` (case-insensitive).
+    HasTag { tag: String },
+    /// Match command results by exit codes. Non-command results will not match.
+    ExitCode { codes: HashSet<i32> },
+    /// Match command results by success (exit_code == 0) or failure (exit_code != 0).
+    StatusFilter { success: bool },
+    /// Match command results by shell kind (e.g., "bash", "zsh", "fish"). Case-insensitive.
+    Shell { kinds: HashSet<String> },
     Custom {
         name: String,
         predicate: Arc<dyn Fn(&SearchResult) -> bool + Send + Sync>,
@@ -282,6 +315,8 @@ impl fmt::Debug for SearchFilter {
                 .field("from", &from.map(|_| ".."))
                 .field("to", &to.map(|_| ".."))
                 .finish(),
+            SearchFilter::CreatedAfter { .. } => write!(f, "CreatedAfter(..)"),
+            SearchFilter::CreatedBefore { .. } => write!(f, "CreatedBefore(..)"),
             SearchFilter::TypeFilter { types } => f.debug_tuple("TypeFilter").field(types).finish(),
             SearchFilter::SizeFilter { min_size, max_size } => f
                 .debug_struct("SizeFilter")
@@ -294,6 +329,10 @@ impl fmt::Debug for SearchFilter {
             SearchFilter::ContextFilter { contexts } => {
                 f.debug_tuple("ContextFilter").field(contexts).finish()
             }
+            SearchFilter::HasTag { tag } => f.debug_tuple("HasTag").field(tag).finish(),
+            SearchFilter::ExitCode { codes } => f.debug_tuple("ExitCode").field(codes).finish(),
+            SearchFilter::StatusFilter { success } => f.debug_tuple("StatusFilter").field(success).finish(),
+            SearchFilter::Shell { kinds } => f.debug_tuple("Shell").field(kinds).finish(),
             SearchFilter::Custom { name, .. } => f.debug_tuple("Custom").field(name).finish(),
         }
     }
@@ -394,6 +433,7 @@ pub struct CommandMetadata {
     pub exit_code: i32,
     pub duration: Duration,
     pub category: Option<String>,
+    pub shell_kind: Option<String>,
     pub tags: Vec<String>,
     pub frequency: usize,
 }
@@ -1061,6 +1101,24 @@ impl SearchIntegration {
 
         // Convert command matches to search results
         for cmd_match in command_matches {
+            let mut md = HashMap::from([
+                (
+                    "exit_code".to_string(),
+                    cmd_match.metadata.exit_code.to_string(),
+                ),
+                (
+                    "duration".to_string(),
+                    format!("{:?}", cmd_match.metadata.duration),
+                ),
+                ("working_dir".to_string(), cmd_match.metadata.working_dir.clone()),
+            ]);
+            if !cmd_match.metadata.tags.is_empty() {
+                md.insert("tags".to_string(), cmd_match.metadata.tags.join(", "));
+            }
+            // Include shell_kind only if explicitly provided by metadata.
+            if let Some(ref shell) = cmd_match.metadata.shell_kind {
+                md.insert("shell_kind".to_string(), shell.clone());
+            }
             let result = SearchResult {
                 id: format!("cmd_{:?}", cmd_match.command_id),
                 title: cmd_match.command.clone(),
@@ -1073,18 +1131,9 @@ impl SearchIntegration {
                     match_type: cmd_match.match_type,
                     context: Some(cmd_match.context),
                 }],
-                metadata: HashMap::from([
-                    (
-                        "exit_code".to_string(),
-                        cmd_match.metadata.exit_code.to_string(),
-                    ),
-                    (
-                        "duration".to_string(),
-                        format!("{:?}", cmd_match.metadata.duration),
-                    ),
-                    ("working_dir".to_string(), cmd_match.metadata.working_dir),
-                ]),
+                metadata: md,
                 timestamp: cmd_match.metadata.timestamp,
+                created_at: Some(cmd_match.metadata.timestamp),
             };
             results.push(result);
         }
@@ -1119,6 +1168,7 @@ impl SearchIntegration {
                         ("tags".to_string(), metadata.tags.join(", ")),
                     ]),
                     timestamp: metadata.modified,
+                    created_at: Some(metadata.created),
                 };
                 results.push(result);
             }
@@ -1152,6 +1202,7 @@ impl SearchIntegration {
                     ),
                 ]),
                 timestamp: file_entry.modified,
+                created_at: None,
             };
             results.push(result);
         }
@@ -1188,6 +1239,7 @@ impl SearchIntegration {
                             ("lines".to_string(), metadata.line_count.to_string()),
                         ]),
                         timestamp: metadata.modified,
+                        created_at: None,
                     };
                     results.push(result);
                 }
@@ -1273,13 +1325,330 @@ impl SearchIntegration {
                             false
                         }
                     }
+                    SearchFilter::HasTag { tag } => {
+                        if let Some(tags) = result.metadata.get("tags") {
+                            let tag_norm = tag.trim().to_ascii_lowercase();
+                            tags.split(',')
+                                .map(|s| s.trim().to_ascii_lowercase())
+                                .any(|t| t == tag_norm)
+                        } else {
+                            false
+                        }
+                    }
+                    SearchFilter::ExitCode { codes } => {
+                        if let Some(code_str) = result.metadata.get("exit_code") {
+                            if let Ok(code) = code_str.parse::<i32>() {
+                                return codes.contains(&code);
+                            }
+                        }
+                        false
+                    }
+                    SearchFilter::StatusFilter { success } => {
+                        if let Some(code_str) = result.metadata.get("exit_code") {
+                            if let Ok(code) = code_str.parse::<i32>() {
+                                return (*success && code == 0) || (!*success && code != 0);
+                            }
+                        }
+                        false
+                    }
+                    SearchFilter::Shell { kinds } => {
+                        if let Some(shell) = result.metadata.get("shell_kind") {
+                            let shell_norm = shell.trim().to_ascii_lowercase();
+                            kinds.iter().map(|k| k.to_ascii_lowercase()).any(|k| k == shell_norm)
+                        } else {
+                            false
+                        }
+                    }
                     SearchFilter::Custom { predicate, .. } => predicate(result),
-                    _ => true, // Other filters not implemented yet
+                    SearchFilter::DateFilter { from, to } => {
+                        let ts = result.timestamp;
+                        if let Some(f) = from {
+                            if ts < *f { return false; }
+                        }
+                        if let Some(t) = to {
+                            if ts > *t { return false; }
+                        }
+                        true
+                    }
+                    SearchFilter::CreatedAfter { at } => {
+                        if let Some(created) = result.created_at {
+                            created >= *at
+                        } else {
+                            false
+                        }
+                    }
+                    SearchFilter::CreatedBefore { at } => {
+                        if let Some(created) = result.created_at {
+                            created <= *at
+                        } else {
+                            false
+                        }
+                    }
+                    SearchFilter::SizeFilter { min_size, max_size } => {
+                        // Prefer explicit numeric size; otherwise parse human-friendly values like 2KB/3MB
+                        let meta_size = result
+                            .metadata
+                            .get("size")
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .or_else(|| result.metadata.get("size").and_then(|s| parse_human_size(s)));
+                        if let Some(bytes) = meta_size {
+                            if let Some(minb) = min_size.map(|v| v as u64) {
+                                if bytes < minb { return false; }
+                            }
+                            if let Some(maxb) = max_size.map(|v| v as u64) {
+                                if bytes > maxb { return false; }
+                            }
+                            true
+                        } else {
+                            // If size unknown, only keep when no bounds are specified
+                            min_size.is_none() && max_size.is_none()
+                        }
+                    }
                 }
             })
             .collect();
 
         Ok(filtered)
+    }
+
+    #[cfg(test)]
+    mod tests_native_filters {
+        use super::*;
+
+        #[test]
+        fn date_filter_bounds_work() {
+            let now = Instant::now();
+            let before = now - Duration::from_secs(60);
+            let after = now + Duration::from_secs(60);
+            let mk = |ts: Instant| SearchResult {
+                id: "id".into(),
+                title: "t".into(),
+                content: "c".into(),
+                context: SearchContext::Global,
+                relevance_score: 1.0,
+                match_positions: vec![],
+                metadata: HashMap::new(),
+                timestamp: ts,
+                created_at: Some(ts),
+            };
+            let results = vec![mk(before), mk(now), mk(after)];
+            let engine = SearchIntegration::new();
+            let out = engine
+                .apply_single_filter(results, &SearchFilter::DateFilter { from: Some(now), to: None })
+                .unwrap();
+            // now and after
+            assert_eq!(out.len(), 2);
+        }
+
+        #[test]
+        fn size_filter_parses_human_units() {
+            let now = Instant::now();
+            let mut small = SearchResult {
+                id: "a".into(),
+                title: "a".into(),
+                content: String::new(),
+                context: SearchContext::FileSystem,
+                relevance_score: 0.0,
+                match_positions: vec![],
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: Some(now),
+            };
+            small.metadata.insert("size".into(), "512".into());
+            let mut big = small.clone();
+            big.id = "b".into();
+            big.metadata.insert("size".into(), "2KB".into());
+            let engine = SearchIntegration::new();
+            let filtered = engine
+                .apply_single_filter(
+                    vec![small, big.clone()],
+                    &SearchFilter::SizeFilter { min_size: Some(1024), max_size: Some(4096) },
+                )
+                .unwrap();
+            assert_eq!(filtered.len(), 1);
+            assert_eq!(filtered[0].id, big.id);
+        }
+
+        #[test]
+        fn has_tag_matches() {
+            let now = Instant::now();
+            let mut res = SearchResult {
+                id: "blk1".into(),
+                title: "block".into(),
+                content: String::new(),
+                context: SearchContext::AllBlocks,
+                relevance_score: 0.0,
+                match_positions: vec![],
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: Some(now),
+            };
+            res.metadata.insert("tags".into(), "foo, Bar, baz".into());
+            let engine = SearchIntegration::new();
+            let out = engine
+                .apply_single_filter(vec![res.clone()], &SearchFilter::HasTag { tag: "bar".into() })
+                .unwrap();
+            assert_eq!(out.len(), 1);
+            let out2 = engine
+                .apply_single_filter(vec![res], &SearchFilter::HasTag { tag: "qux".into() })
+                .unwrap();
+            assert_eq!(out2.len(), 0);
+        }
+
+        #[test]
+        fn exit_code_and_status_filters() {
+            let now = Instant::now();
+            let mk = |id: &str, code: i32| {
+                let mut md = HashMap::new();
+                md.insert("exit_code".into(), code.to_string());
+                SearchResult {
+                    id: id.into(),
+                    title: id.into(),
+                    content: String::new(),
+                    context: SearchContext::CommandHistory,
+                    relevance_score: 0.0,
+                    match_positions: vec![],
+                    metadata: md,
+                    timestamp: now,
+                    created_at: Some(now),
+                }
+            };
+            let a = mk("ok", 0);
+            let b = mk("fail", 2);
+            let engine = SearchIntegration::new();
+            // ExitCode filter picks only code 0
+            let only_zero = engine
+                .apply_single_filter(
+                    vec![a.clone(), b.clone()],
+                    &SearchFilter::ExitCode { codes: [0].into_iter().collect() },
+                )
+                .unwrap();
+            assert_eq!(only_zero.len(), 1);
+            assert_eq!(only_zero[0].id, "ok");
+            // StatusFilter success picks only code==0
+            let success = engine
+                .apply_single_filter(vec![a.clone(), b.clone()], &SearchFilter::StatusFilter { success: true })
+                .unwrap();
+            assert_eq!(success.len(), 1);
+            assert_eq!(success[0].id, "ok");
+            // StatusFilter failure picks non-zero
+            let failure = engine
+                .apply_single_filter(vec![a, b], &SearchFilter::StatusFilter { success: false })
+                .unwrap();
+            assert_eq!(failure.len(), 1);
+            assert_eq!(failure[0].id, "fail");
+        }
+
+        #[test]
+        fn shell_filter_matches() {
+            let now = Instant::now();
+            let mut bash_cmd = SearchResult {
+                id: "1".into(),
+                title: "cmd".into(),
+                content: String::new(),
+                context: SearchContext::CommandHistory,
+                relevance_score: 0.0,
+                match_positions: vec![],
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: Some(now),
+            };
+            bash_cmd.metadata.insert("shell_kind".into(), "bash".into());
+            let mut zsh_cmd = bash_cmd.clone();
+            zsh_cmd.id = "2".into();
+            zsh_cmd.metadata.insert("shell_kind".into(), "Zsh".into());
+            let engine = SearchIntegration::new();
+            let bash_only = engine
+                .apply_single_filter(
+                    vec![bash_cmd.clone(), zsh_cmd.clone()],
+                    &SearchFilter::Shell { kinds: ["bash".into()].into_iter().collect() },
+                )
+                .unwrap();
+            assert_eq!(bash_only.len(), 1);
+            assert_eq!(bash_only[0].id, "1");
+            // Case-insensitive matching
+            let zsh_filter = engine
+                .apply_single_filter(
+                    vec![bash_cmd.clone(), zsh_cmd.clone()],
+                    &SearchFilter::Shell { kinds: ["ZSH".into()].into_iter().collect() },
+                )
+                .unwrap();
+            assert_eq!(zsh_filter.len(), 1);
+            assert_eq!(zsh_filter[0].id, "2");
+        }
+
+        #[test]
+        fn created_filters_require_created_at_and_match_bounds() {
+            let now = Instant::now();
+            let before = now - Duration::from_secs(120);
+            let after = now + Duration::from_secs(120);
+            // With created_at before 'now'
+            let mut r_before = SearchResult {
+                id: "before".into(),
+                title: "t".into(),
+                content: String::new(),
+                context: SearchContext::Global,
+                relevance_score: 0.0,
+                match_positions: vec![],
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: Some(before),
+            };
+            // With created_at after 'now'
+            let mut r_after = r_before.clone();
+            r_after.id = "after".into();
+            r_after.created_at = Some(after);
+            // Without created_at
+            let mut r_none = r_before.clone();
+            r_none.id = "none".into();
+            r_none.created_at = None;
+
+            let engine = SearchIntegration::new();
+
+            // CreatedAfter should keep only 'after'
+            let out_after = engine
+                .apply_single_filter(
+                    vec![r_before.clone(), r_after.clone(), r_none.clone()],
+                    &SearchFilter::CreatedAfter { at: now },
+                )
+                .unwrap();
+            assert_eq!(out_after.len(), 1);
+            assert_eq!(out_after[0].id, "after");
+
+            // CreatedBefore should keep only 'before'
+            let out_before = engine
+                .apply_single_filter(
+                    vec![r_before.clone(), r_after.clone(), r_none.clone()],
+                    &SearchFilter::CreatedBefore { at: now },
+                )
+                .unwrap();
+            assert_eq!(out_before.len(), 1);
+            assert_eq!(out_before[0].id, "before");
+        }
+
+        #[test]
+        fn shell_filter_does_not_match_without_shell_kind() {
+            let now = Instant::now();
+            let r_no_shell = SearchResult {
+                id: "x".into(),
+                title: "cmd".into(),
+                content: String::new(),
+                context: SearchContext::CommandHistory,
+                relevance_score: 0.0,
+                match_positions: vec![],
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: Some(now),
+            };
+            let engine = SearchIntegration::new();
+            let filtered = engine
+                .apply_single_filter(
+                    vec![r_no_shell],
+                    &SearchFilter::Shell { kinds: ["bash".into()].into_iter().collect() },
+                )
+                .unwrap();
+            assert_eq!(filtered.len(), 0);
+        }
     }
 
     /// Add search filter immediately
@@ -1795,7 +2164,10 @@ impl InvertedIndex {
                 match_positions: Vec::new(),
                 metadata: HashMap::new(),
                 timestamp: Instant::now(),
+                created_at: None,
             })
+            .collect()
+        })
             .collect()
     }
 }
@@ -1925,6 +2297,7 @@ mod tests {
             match_positions: Vec::new(),
             metadata: HashMap::new(),
             timestamp: Instant::now(),
+            created_at: Some(Instant::now()),
         };
 
         // Test filter application (would need full implementation)

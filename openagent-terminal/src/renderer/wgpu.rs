@@ -1505,20 +1505,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 .append_vertices(&self.device, &self.rect_vertices_cpu);
         }
 
-        // Optionally stage perf HUD background as rounded rects before creating buffers
-        if self.perf_hud_enabled {
-            // Draw small background in top-left (8px padding)
-            let bg = UiRoundedRect {
-                x: 8.0,
-                y: 8.0,
-                width: 140.0,
-                height: 40.0,
-                radius: 6.0,
-                color: crate::display::color::Rgb::new(0, 0, 0),
-                alpha: 0.5,
-            };
-            self.stage_ui_rounded_rect(size_info, bg);
-        }
 
         // Prepare UI vertex buffer outside the pass to satisfy borrow checker.
         let ui_buf_opt = (!self.pending_ui.is_empty()).then(|| {
@@ -1726,54 +1712,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         self.metrics.rect_flush_count = 0;
         self.metrics.primitives_batched = 0;
 
-        // If perf HUD enabled, render a minimal overlay background (text overlay is postponed to Display-level draw)
-        let hud_cfg = crate::config::UiConfig::default().debug.renderer_perf_hud;
-        if self.perf_hud_enabled || hud_cfg {
-            let _pad = 6.0f32;
-            let bg_h = 20.0f32;
-            let bg_w = 180.0f32;
-            let bg_x = 12.0f32;
-            let bg_y = 12.0f32;
-            let tokens = crate::display::color::Rgb::new(20, 20, 20);
-            let pill = UiRoundedRect::new(bg_x, bg_y, bg_w, bg_h, 6.0, tokens, 0.65);
-            let si = SizeInfo::new(
-                self.size.width.max(1) as f32,
-                self.size.height.max(1) as f32,
-                8.0,
-                16.0,
-                0.0,
-                0.0,
-                false,
-            );
-            self.stage_ui_rounded_rect(&si, pill);
-        }
-        // Also allow config to toggle HUD globally
-        let hud_cfg = crate::config::UiConfig::default().debug.renderer_perf_hud;
-        if self.perf_hud_enabled || hud_cfg {
-            let _hud_text = format!("{:.1} ms", self.last_frame_ms);
-            // Stage a rounded bg rect was already done before pass; now stage text on top via second pass
-            // Convert pixels to a character string at an approximate top-left area using text vertices
-            // We render it in the text pass by staging a tiny text quad set; reuse draw_string path
-            // Build a throwaway glyph loader by calling draw_string directly
-            // We emulate Display::draw_ai_text call here
-            // Approximate a single-cell baseline in the top left
-            // We piggy-back the text pass by creating text vertices via the glyph loader API
-            // For simplicity, draw at pixel (16,16) via a background rect already placed
-            // The text pass uses pending_text, populated by draw_string; call a small helper
-            // We'll map a minimal point (line=0,col=0) and rely on Display to position normally.
-            // Since we don't have Display here, we stage with a helper in draw_cells path next frame.
-            // As a compromise, draw using UI sprite path is not suitable; so we skip adding text here.
-            // Instead, draw a tiny white rect as a visual indicator next to the bg.
-            let ind = RenderRect::new(
-                12.0,
-                12.0,
-                40.0,
-                2.0,
-                crate::display::color::Rgb::new(255, 255, 255),
-                0.8,
-            );
-            self.pending_bg.push(ind);
-        }
 
         // Periodic atlas reporting.
         if self.report_interval_frames > 0 {

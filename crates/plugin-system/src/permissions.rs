@@ -22,10 +22,10 @@ pub struct PluginPermissions {
     /// File write access patterns (glob patterns)
     pub write_files: Vec<String>,
 
-    /// Network access permission
+    /// Network access permission (coarse switch)
     pub network: bool,
 
-    /// Command execution permission
+    /// Command execution permission (coarse switch)
     pub execute_commands: bool,
 
     /// Environment variable access
@@ -34,11 +34,59 @@ pub struct PluginPermissions {
     /// Maximum memory usage in MB
     pub max_memory_mb: u32,
 
-    /// Execution timeout in milliseconds
+    /// Default execution timeout in milliseconds
     pub timeout_ms: u64,
 
     /// Additional security restrictions
     pub security_restrictions: HashMap<String, serde_json::Value>,
+
+    /// Optional domain allowlist for outbound network requests
+    #[serde(default)]
+    pub net_allow_domains: Vec<String>,
+
+    /// Optional HTTP method allowlist (e.g., ["GET","POST"]) for network requests
+    #[serde(default)]
+    pub net_methods_allow: Vec<String>,
+
+    /// Optional per-request response size cap in bytes
+    #[serde(default)]
+    pub net_max_response_bytes: Option<u64>,
+
+    /// Optional per-request timeout override in milliseconds
+    #[serde(default)]
+    pub net_timeout_ms: Option<u64>,
+
+    /// Optional explicit exec rules; when present, they further restrict allowed commands
+    #[serde(default)]
+    pub exec_allow: Vec<ExecRule>,
+
+    /// Optional more explicit file read rules; when present, they further restrict read_files globs
+    #[serde(default)]
+    pub file_read_allow: Vec<PathAllow>,
+}
+
+/// Explicit file read rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathAllow {
+    pub root: String,
+    #[serde(default)]
+    pub recursive: bool,
+    #[serde(default)]
+    pub max_bytes: Option<u64>,
+}
+
+/// Explicit exec rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecRule {
+    pub cmd: String,
+    #[serde(default)]
+    pub args_pattern: Option<String>,
+    #[serde(default)]
+    pub cwd_allow: Vec<String>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub max_output_bytes: Option<u64>,
 }
 
 impl Default for PluginPermissions {
@@ -52,6 +100,12 @@ impl Default for PluginPermissions {
             max_memory_mb: 50,
             timeout_ms: 5000,
             security_restrictions: HashMap::new(),
+            net_allow_domains: vec![],
+            net_methods_allow: vec![],
+            net_max_response_bytes: None,
+            net_timeout_ms: None,
+            exec_allow: vec![],
+            file_read_allow: vec![],
         }
     }
 }
