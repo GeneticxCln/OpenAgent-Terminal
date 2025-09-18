@@ -13,7 +13,7 @@ const RATIO_EPS: f32 = 0.05; // Clamp split ratios to avoid degenerate sizes
 pub struct PaneId(pub usize);
 
 /// Layout structure for split panes
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SplitLayout {
     /// Single pane with no splits
     Single(PaneId),
@@ -328,6 +328,11 @@ impl SplitLayout {
                 _ => None,
             }
         }
+    }
+
+    /// Public helper to fetch the ratio at a given divider path (copy of value)
+    pub fn ratio_at_path(&self, path: &[SplitChild]) -> Option<(SplitAxis, f32)> {
+        self.get_ratio_at_path_internal(path).map(|(ax, r)| (ax, *r))
     }
 
     pub fn set_ratio_at_path_internal(
@@ -1077,6 +1082,35 @@ impl SplitManager {
         }
 
         success
+    }
+
+    /// Drag a divider located by screen point (x,y) by a pixel delta, translating to ratio delta.
+    /// Returns true if a divider was found and updated.
+    pub fn drag_divider(
+        &mut self,
+        layout: &mut SplitLayout,
+        container: PaneRect,
+        x: f32,
+        y: f32,
+        delta_pixels: f32,
+    ) -> bool {
+        // Hit-test near point with a small tolerance
+        let tol = 4.0;
+        if let Some(hit) = layout.hit_test_divider(container, x, y, tol) {
+            // Determine current ratio at path
+            if let Some((axis, ratio)) = layout.ratio_at_path(&hit.path) {
+                let new_ratio = match axis {
+                    SplitAxis::Horizontal => Self::clamp_ratio(ratio + delta_pixels / hit.rect.width),
+                    SplitAxis::Vertical => Self::clamp_ratio(ratio + delta_pixels / hit.rect.height),
+                };
+                let updated = layout.set_ratio_at_path_internal(&hit.path, axis, new_ratio);
+                if updated {
+                    self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
+                }
+                return updated;
+            }
+        }
+        false
     }
 
     #[allow(clippy::only_used_in_recursion)]
