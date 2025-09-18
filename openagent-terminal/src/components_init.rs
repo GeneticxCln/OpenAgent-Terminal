@@ -431,6 +431,11 @@ pub(crate) async fn initialize_plugin_manager(
     }
     dirs_vec.push(plugins_dir.clone());
 
+    // Preinstall bundled plugins (WASM) to data plugins dir so they are always present
+    if let Err(e) = install_bundled_plugins(&plugins_dir).await {
+        warn!("Failed to preinstall bundled plugins: {}", e);
+    }
+
     // Create plugin host with storage dir
     let storage_dir = if let Some(data) = dirs::data_dir() {
         data.join("openagent-terminal")
@@ -782,6 +787,73 @@ fn dir_size_bytes(dir: &std::path::Path) -> Option<u64> {
 }
 
 #[cfg(feature = "plugins")]
+async fn install_bundled_plugins(dir: &PathBuf) -> Result<(), anyhow::Error> {
+    use tokio::fs;
+    fs::create_dir_all(dir).await.ok();
+
+    struct Builtin<'a> { stem: &'a str, manifest: &'a str }
+    const BUILTINS: &[Builtin] = &[
+        Builtin{ stem: "dev-tools-bundled", manifest: r#"[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"# },
+        Builtin{ stem: "docker-helper-bundled", manifest: r#"[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"# },
+        Builtin{ stem: "git-context-bundled", manifest: r#"[permissions]
+read_files=[]
+write_files=[]
+environment_variables=[]
+network=false
+execute_commands=false
+max_memory_mb=50
+timeout_ms=5000
+"# },
+    ];
+
+    // Minimal WASM that returns success for plugin_handle_event
+    const WAT_SRC: &str = r#"(module
+      (memory (export "memory") 1)
+      (func (export "plugin_alloc") (param i32) (result i32)
+        (i32.const 0)
+      )
+      (func (export "plugin_init") (result i32)
+        (i32.const 0)
+      )
+      (func (export "plugin_cleanup") (result i32)
+        (i32.const 0)
+      )
+      ;; handle_event(event_ptr,event_len) -> i32 rc (0=ok)
+      (func (export "plugin_handle_event") (param i32 i32) (result i32)
+        (i32.const 0)
+      )
+    )"#;
+    let wasm_bytes = wat::parse_str(WAT_SRC)?;
+
+    for b in BUILTINS {
+        let wasm_path = dir.join(format!("{}.wasm", b.stem));
+        let toml_path = dir.join(format!("{}.toml", b.stem));
+        if fs::metadata(&wasm_path).await.is_err() {
+            fs::write(&wasm_path, &wasm_bytes).await?;
+        }
+        if fs::metadata(&toml_path).await.is_err() {
+            fs::write(&toml_path, b.manifest.as_bytes()).await?;
+        }
+    }
+    Ok(())
+}
+
 fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
     use notify::{
         Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode,

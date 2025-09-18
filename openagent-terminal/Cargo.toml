@@ -81,6 +81,7 @@ optional = true
 
 [dependencies]
 ahash = { version = "0.8.6", features = ["no-rng"] }
+wat = "1.238.1"
 lsp-types = { version = "0.95.1", optional = true }
 bitflags = "2.2.1"
 clap = { version = "4.2.7", features = ["derive", "env"] }
