@@ -13,6 +13,8 @@ pub mod ai_context_provider;
 #[cfg(feature = "ai")]
 pub mod ai_runtime;
 pub mod cli;
+#[cfg(feature = "plugins")]
+pub mod cli_plugins;
 pub mod clipboard;
 pub mod command_history;
 pub mod command_pipeline;
