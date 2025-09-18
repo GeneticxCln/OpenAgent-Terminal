@@ -822,6 +822,29 @@ timeout_ms=5000
 "# },
     ];
 
+    // Try copying real WASM artifacts from target/wasm32-wasi if available; otherwise fall back to a minimal stub.
+    // Helper to locate built .wasm files (release/debug; with/without lib prefix; snake/hyphen variants).
+    fn locate_wasm_artifact(crate_snake: &str) -> Option<PathBuf> {
+        let target_dir = std::env::var("CARGO_TARGET_DIR").ok().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("target"));
+        let mut names: Vec<String> = vec![
+            format!("{}.wasm", crate_snake),
+            format!("lib{}.wasm", crate_snake),
+            format!("{}.wasm", crate_snake.replace('-', "_")),
+            format!("lib{}.wasm", crate_snake.replace('-', "_")),
+        ];
+        // Also accept crate names without underscores
+        let no_underscore = crate_snake.replace('_', "");
+        names.push(format!("{}.wasm", no_underscore));
+        names.push(format!("lib{}.wasm", no_underscore));
+        for prof in ["release", "debug"] {
+            for n in &names {
+                let p = target_dir.join("wasm32-wasi").join(prof).join(n);
+                if p.exists() { return Some(p); }
+            }
+        }
+        None
+    }
+
     // Minimal WASM that returns success for plugin_handle_event
     const WAT_SRC: &str = r#"(module
       (memory (export "memory") 1)
@@ -841,11 +864,28 @@ timeout_ms=5000
     )"#;
     let wasm_bytes = wat::parse_str(WAT_SRC)?;
 
+    // Map bundled names to likely crate names (snake-case) in /plugins dir
+    use std::collections::HashMap;
+    let mut map: HashMap<&str, &str> = HashMap::new();
+    map.insert("dev-tools-bundled", "dev-tools");
+    map.insert("docker-helper-bundled", "docker-helper");
+    map.insert("git-context-bundled", "git-context");
+
     for b in BUILTINS {
         let wasm_path = dir.join(format!("{}.wasm", b.stem));
         let toml_path = dir.join(format!("{}.toml", b.stem));
         if fs::metadata(&wasm_path).await.is_err() {
-            fs::write(&wasm_path, &wasm_bytes).await?;
+            // Prefer real artifact if found, else write stub
+            let real = map.get(b.stem).and_then(|c| locate_wasm_artifact(c));
+            if let Some(real_path) = real {
+                if let Ok(bytes) = tokio::fs::read(&real_path).await {
+                    fs::write(&wasm_path, bytes).await?;
+                } else {
+                    fs::write(&wasm_path, &wasm_bytes).await?;
+                }
+            } else {
+                fs::write(&wasm_path, &wasm_bytes).await?;
+            }
         }
         if fs::metadata(&toml_path).await.is_err() {
             fs::write(&toml_path, b.manifest.as_bytes()).await?;
