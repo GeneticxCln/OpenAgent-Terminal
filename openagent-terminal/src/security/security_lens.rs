@@ -134,6 +134,15 @@ pub struct SecurityLens {
     rate_limit_tracker: RateLimitTracker,
 }
 
+/// Summary of a compiled security pattern for introspection/CLI
+#[derive(Debug, Clone, Serialize)]
+pub struct PatternSummary {
+    pub category: String,
+    pub pattern: String,
+    pub risk_level: RiskLevel,
+    pub platform_specific: bool,
+}
+
 #[derive(Debug)]
 struct RateLimitTracker {
     detections: Vec<DetectionRecord>,
@@ -1828,6 +1837,39 @@ impl SecurityLens {
 
         let risk = self.analyze_command(command);
         self.policy.block_critical && matches!(risk.level, RiskLevel::Critical)
+    }
+
+    /// Return a summary of all active patterns (built-in, platform-specific, and custom)
+    pub fn patterns_summary(&self) -> Vec<PatternSummary> {
+        let mut out = Vec::new();
+        // Built-in dangerous patterns
+        for (_rx, factor, level) in &self.dangerous_patterns {
+            out.push(PatternSummary {
+                category: factor.category.clone(),
+                pattern: factor.pattern.clone(),
+                risk_level: *level,
+                platform_specific: false,
+            });
+        }
+        // Platform-specific patterns
+        for (_rx, factor, level) in &self.platform_patterns {
+            out.push(PatternSummary {
+                category: factor.category.clone(),
+                pattern: factor.pattern.clone(),
+                risk_level: *level,
+                platform_specific: true,
+            });
+        }
+        // Custom patterns from policy
+        for custom in &self.policy.custom_patterns {
+            out.push(PatternSummary {
+                category: "custom".to_string(),
+                pattern: custom.pattern.clone(),
+                risk_level: custom.risk_level,
+                platform_specific: false,
+            });
+        }
+        out
     }
 }
 

@@ -2103,6 +2103,61 @@ impl Display {
                 || (config.workspace.warp_style && config.workspace.warp_overlay_only);
             let _sampler = self.meter.sampler();
 
+            // Dim inactive panes if enabled (draw before grid text or after depending on desired effect)
+            if config.workspace.dim_inactive_panes {
+                if let Some(tm) = tab_manager {
+                    if let Some(active_tab) = tm.active_tab() {
+                        // Compute container rect like elsewhere
+                        let si = self.size_info;
+                        let x0 = si.padding_x();
+                        let mut y0 = si.padding_y();
+                        let mut w = si.width() - 2.0 * si.padding_x();
+                        let mut h = si.height() - 2.0 * si.padding_y();
+                        let tab_cfg = &config.workspace.tab_bar;
+                        let is_fs = self.window.is_fullscreen();
+                        let eff_vis = match tab_cfg.visibility {
+                            crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                            crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                            crate::config::workspace::TabBarVisibility::Auto => {
+                                if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                            }
+                        };
+                        if tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden && matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
+                            let ch = si.cell_height();
+                            match tab_cfg.position {
+                                crate::workspace::TabBarPosition::Top => { y0 += ch; h = (h - ch).max(0.0); }
+                                crate::workspace::TabBarPosition::Bottom => { h = (h - ch).max(0.0); }
+                                _ => {}
+                            }
+                        }
+                        let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
+                        let _keep_borrow = &self.workspace_animations; // keep borrow local; actual rects computed below
+                        // Fetch pane rects from SplitManager via the workspace manager; we do not have direct access here, so replicate logic using active_tab
+                        let pane_rects = crate::workspace::SplitManager::new()
+                            .calculate_pane_rects(&active_tab.split_layout, container);
+                        // Build overlay rects: all panes except active
+                        let theme = config
+                            .resolved_theme
+                            .as_ref()
+                            .cloned()
+                            .unwrap_or_else(|| config.theme.resolve());
+                        let overlay_color = config.workspace.splits.overlay_color.unwrap_or(theme.tokens.overlay);
+                        let alpha = config.workspace.dim_inactive_alpha.clamp(0.0, 1.0);
+                        let mut rects: Vec<RenderRect> = Vec::new();
+                        for (pid, r) in pane_rects.iter().copied() {
+                            if pid != active_tab.active_pane {
+                                rects.push(RenderRect::new(r.x, r.y, r.width, r.height, overlay_color, alpha));
+                            }
+                        }
+                        if !rects.is_empty() {
+                            let metrics = self.glyph_cache.font_metrics();
+                            let size_copy = self.size_info;
+                            self.renderer_draw_rects(&size_copy, &metrics, rects);
+                        }
+                    }
+                }
+            }
+
             // Ensure macOS hasn't reset our viewport.
             #[cfg(target_os = "macos")]
             self.renderer_set_viewport(&size_info);

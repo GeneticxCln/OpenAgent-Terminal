@@ -86,6 +86,28 @@ export class WorkspaceManager extends EventEmitter {
     }
   }
 
+  private workspaceFilePath(id: string): string {
+    return path.join(this.configPath, `workspace-${id}.json`);
+  }
+
+  // Basic deep merge utility for plain objects; arrays are replaced.
+  private deepMerge<T extends Record<string, any>>(...objects: (T | undefined | null)[]): T {
+    const isObject = (o: any) => o && typeof o === 'object' && !Array.isArray(o);
+    const result: any = {};
+    for (const obj of objects) {
+      if (!obj) continue;
+      for (const [key, value] of Object.entries(obj)) {
+        if (isObject(value)) {
+          result[key] = this.deepMerge(result[key] ?? {}, value as any);
+        } else {
+          // primitives and arrays: replace
+          result[key] = Array.isArray(value) ? [...value] : value;
+        }
+      }
+    }
+    return result as T;
+  }
+
   private startAutosave(): void {
     this.autosaveInterval = setInterval(() => {
       if (this.activeWorkspace) {
@@ -118,7 +140,7 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   public loadWorkspace(id: string): WorkspaceConfig | null {
-    const workspacePath = path.join(this.configPath, `workspace-${id}.json`);
+    const workspacePath = this.workspaceFilePath(id);
 
     if (!fs.existsSync(workspacePath)) {
       return null;
@@ -144,7 +166,7 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   public saveWorkspace(workspace: WorkspaceConfig): void {
-    const workspacePath = path.join(this.configPath, `workspace-${workspace.id}.json`);
+    const workspacePath = this.workspaceFilePath(workspace.id);
 
     try {
       workspace.lastModified = Date.now();
@@ -169,6 +191,73 @@ export class WorkspaceManager extends EventEmitter {
     });
 
     return workspaces.sort((a, b) => b.lastModified - a.lastModified);
+  }
+
+  // Workspace lifecycle operations
+  public renameWorkspace(id: string, newName: string): boolean {
+    const isActive = this.activeWorkspace?.id === id;
+    let ws = isActive ? this.activeWorkspace : this.loadWorkspace(id);
+    if (!ws) return false;
+    ws.name = newName;
+    ws.lastModified = Date.now();
+    this.saveWorkspace(ws);
+    this.emit('workspace:renamed', { id, name: newName });
+    return true;
+  }
+
+  public deleteWorkspace(id: string): boolean {
+    const filePath = this.workspaceFilePath(id);
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      if (this.activeWorkspace?.id === id) {
+        this.activeWorkspace = null;
+        this.panes.clear();
+        this.emit('workspace:active-cleared', { id });
+      }
+      this.emit('workspace:deleted', { id });
+      return true;
+    } catch (error) {
+      this.emit('error', { type: 'delete', error, id });
+      return false;
+    }
+  }
+
+  public duplicateWorkspace(id: string, newName?: string): WorkspaceConfig | null {
+    // Prefer active workspace snapshot if matching
+    const ws = this.activeWorkspace?.id === id ? this.activeWorkspace : this.loadWorkspace(id);
+    if (!ws) return null;
+    const copy: WorkspaceConfig = {
+      ...ws,
+      id: this.generateId(),
+      name: newName ?? `${ws.name} (copy)`,
+      createdAt: Date.now(),
+      lastModified: Date.now(),
+      // panes cloned shallowly; IDs preserved intentionally
+      panes: ws.panes.map(p => ({ ...p, aiContext: p.aiContext ? { ...p.aiContext, history: [...p.aiContext.history] } : undefined })),
+    };
+    this.activeWorkspace = copy;
+    this.saveWorkspace(copy);
+    this.emit('workspace:duplicated', { from: id, to: copy.id });
+    return copy;
+  }
+
+  public setGlobalConfig(config: Record<string, any>, merge: boolean = true): boolean {
+    if (!this.activeWorkspace) return false;
+    if (merge) {
+      this.activeWorkspace.globalConfig = this.deepMerge(this.activeWorkspace.globalConfig ?? {}, config ?? {});
+    } else {
+      this.activeWorkspace.globalConfig = { ...(config ?? {}) };
+    }
+    this.activeWorkspace.lastModified = Date.now();
+    this.saveWorkspace(this.activeWorkspace);
+    this.emit('workspace:global-config-updated', { id: this.activeWorkspace.id });
+    return true;
+  }
+
+  public getActiveWorkspaceId(): string | null {
+    return this.activeWorkspace?.id ?? null;
   }
 
   // Pane Management
@@ -431,15 +520,11 @@ export class WorkspaceManager extends EventEmitter {
     if (!pane) return {};
 
     const globalConfig = this.activeWorkspace?.globalConfig || {};
-    const projectConfig = this.getProjectConfig(pane.projectPath);
+    const projectWorkspace = (this.getProjectConfig(pane.projectPath)?.workspace as Record<string, any> | undefined) || {};
     const paneConfig = pane.configOverrides || {};
 
-    // Merge configs with proper precedence: pane > project > global
-    return {
-      ...globalConfig,
-      ...(projectConfig?.workspace || {}),
-      ...paneConfig,
-    };
+    // Deep merge with precedence: pane > project > global
+    return this.deepMerge<Record<string, any>>(globalConfig, projectWorkspace, paneConfig);
   }
 
   // Utility Methods

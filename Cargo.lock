@@ -4642,6 +4642,7 @@ dependencies = [
  "unicode-bidi",
  "unicode-width",
  "uuid",
+ "wat",
  "wgpu",
  "windows-sys 0.59.0",
  "winit",

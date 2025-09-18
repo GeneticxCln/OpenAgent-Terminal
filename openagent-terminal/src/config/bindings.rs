@@ -374,6 +374,18 @@ pub enum Action {
     /// Resize pane down.
     ResizePaneDown,
 
+    /// Focus pane in the left direction.
+    FocusPaneLeft,
+
+    /// Focus pane in the right direction.
+    FocusPaneRight,
+
+    /// Focus pane in the up direction.
+    FocusPaneUp,
+
+    /// Focus pane in the down direction.
+    FocusPaneDown,
+
     /// No action.
     None,
 }
@@ -595,10 +607,16 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         "]",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusNextPane;
         "[",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPreviousPane;
         "w",      ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ClosePane;
-        ArrowLeft,  ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneLeft;
-        ArrowRight, ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneRight;
-        ArrowUp,    ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneUp;
-        ArrowDown,  ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::ResizePaneDown;
+        // Default directional focus on Ctrl+Alt+Arrows (non-Warp too)
+        ArrowLeft,  ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneLeft;
+        ArrowRight, ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneRight;
+        ArrowUp,    ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneUp;
+        ArrowDown,  ModifiersState::CONTROL | ModifiersState::ALT, ~BindingMode::SEARCH; Action::FocusPaneDown;
+        // Move resize to Ctrl+Shift+Arrows by default
+        ArrowLeft,  ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResizePaneLeft;
+        ArrowRight, ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResizePaneRight;
+        ArrowUp,    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResizePaneUp;
+        ArrowDown,  ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResizePaneDown;
         Copy; Action::Copy;
         Copy,  +BindingMode::VI; Action::ClearSelection;
         Paste, ~BindingMode::VI; Action::Paste;

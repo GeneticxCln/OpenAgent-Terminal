@@ -80,22 +80,22 @@ fn build_warp_macos_bindings() -> Vec<KeyBinding> {
     push_unique(&mut v, kb_char("d", super_m, Action::SplitHorizontal));
     push_unique(&mut v, kb_char("d", super_shift, Action::SplitVertical));
 
-    // Pane navigation (Cmd+Alt+Arrows). We approximate with next/previous.
+    // Pane navigation (Cmd+Alt+Arrows) -> directional focus
     push_unique(
         &mut v,
-        kb_named(NamedKey::ArrowLeft, super_alt, Action::FocusPreviousPane),
+        kb_named(NamedKey::ArrowLeft, super_alt, Action::FocusPaneLeft),
     );
     push_unique(
         &mut v,
-        kb_named(NamedKey::ArrowUp, super_alt, Action::FocusPreviousPane),
+        kb_named(NamedKey::ArrowUp, super_alt, Action::FocusPaneUp),
     );
     push_unique(
         &mut v,
-        kb_named(NamedKey::ArrowRight, super_alt, Action::FocusNextPane),
+        kb_named(NamedKey::ArrowRight, super_alt, Action::FocusPaneRight),
     );
     push_unique(
         &mut v,
-        kb_named(NamedKey::ArrowDown, super_alt, Action::FocusNextPane),
+        kb_named(NamedKey::ArrowDown, super_alt, Action::FocusPaneDown),
     );
 
     // Pane resizing (Cmd+Ctrl+Arrows)
@@ -130,19 +130,19 @@ fn build_warp_macos_bindings() -> Vec<KeyBinding> {
 /// focus actions land in Action, switch these to directional variants.
 #[cfg(not(target_os = "macos"))]
 fn nav_action_left() -> Action {
-    Action::FocusPreviousPane
+    Action::FocusPaneLeft
 }
 #[cfg(not(target_os = "macos"))]
 fn nav_action_up() -> Action {
-    Action::FocusPreviousPane
+    Action::FocusPaneUp
 }
 #[cfg(not(target_os = "macos"))]
 fn nav_action_right() -> Action {
-    Action::FocusNextPane
+    Action::FocusPaneRight
 }
 #[cfg(not(target_os = "macos"))]
 fn nav_action_down() -> Action {
-    Action::FocusNextPane
+    Action::FocusPaneDown
 }
 
 /// Build Warp-style keybindings for non-macOS platforms (Ctrl-based).

@@ -2679,6 +2679,7 @@ pub enum AiCopyFormat {
 /// OpenAgent Terminal events.
 #[derive(Debug, Clone)]
 pub enum EventType {
+    WorkspaceHoverFocusRequest { mouse_x_px: f32, mouse_y_px: f32, container: crate::workspace::split_manager::PaneRect },
     Terminal(TerminalEvent),
     ConfigReload(PathBuf),
     Message(Message),
@@ -3029,6 +3030,47 @@ pub struct ActionContext<'a, N, T> {
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
+    fn workspace_hover_focus(&mut self, mouse_x_px: f32, mouse_y_px: f32) {
+        // Compute pane rects and focus the pane under the mouse if different
+        if !self.config.workspace.focus_follows_mouse { return; }
+        if let Some(active_tab) = self.workspace.active_tab() {
+            let si = self.display.size_info;
+            // Recompute container similar to input but with current config
+            let x0 = si.padding_x();
+            let mut y0 = si.padding_y();
+            let mut w = si.width() - 2.0 * si.padding_x();
+            let mut h = si.height() - 2.0 * si.padding_y();
+            let tab_cfg = &self.config.workspace.tab_bar;
+            let is_fs = self.display.window.is_fullscreen();
+            let eff_vis = match tab_cfg.visibility {
+                crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
+                crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
+                crate::config::workspace::TabBarVisibility::Auto => if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always },
+            };
+            if tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden && matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
+                let ch = si.cell_height();
+                match tab_cfg.position {
+                    crate::workspace::TabBarPosition::Top => { y0 += ch; h = (h - ch).max(0.0); }
+                    crate::workspace::TabBarPosition::Bottom => { h = (h - ch).max(0.0); }
+                    _ => {}
+                }
+            }
+            let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
+            let rects = self.workspace.splits.calculate_pane_rects(&active_tab.split_layout, container);
+            let current = active_tab.active_pane;
+            // Find pane whose rect contains (mouse_x_px, mouse_y_px)
+            let hit = rects.iter().find(|(_, r)| mouse_x_px >= r.x && mouse_x_px <= r.x + r.width && mouse_y_px >= r.y && mouse_y_px <= r.y + r.height).map(|(id, _)| *id);
+            if let Some(target) = hit {
+                if target != current {
+                    if let Some(tab_mut) = self.workspace.active_tab_mut() {
+                        tab_mut.active_pane = target;
+                        self.display.pending_update.dirty = true;
+                        *self.dirty = true;
+                    }
+                }
+            }
+        }
+    }
     #[inline]
     fn write_to_pty<B: Into<Cow<'static, [u8]>>>(&self, val: B) {
         if let Err(e) = self.notifier.try_notify(val) {
@@ -5522,6 +5564,55 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
+    fn workspace_focus_pane_left(&mut self) {
+        // Prefer Warp directional navigation when available
+        if self.workspace.has_warp() {
+            let _ = self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
+                crate::workspace::warp_split_manager::WarpNavDirection::Left,
+            ));
+        } else {
+            let _ = self.workspace.focus_pane_left();
+        }
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_focus_pane_right(&mut self) {
+        if self.workspace.has_warp() {
+            let _ = self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
+                crate::workspace::warp_split_manager::WarpNavDirection::Right,
+            ));
+        } else {
+            let _ = self.workspace.focus_pane_right();
+        }
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_focus_pane_up(&mut self) {
+        if self.workspace.has_warp() {
+            let _ = self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
+                crate::workspace::warp_split_manager::WarpNavDirection::Up,
+            ));
+        } else {
+            let _ = self.workspace.focus_pane_up();
+        }
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    fn workspace_focus_pane_down(&mut self) {
+        if self.workspace.has_warp() {
+            let _ = self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
+                crate::workspace::warp_split_manager::WarpNavDirection::Down,
+            ));
+        } else {
+            let _ = self.workspace.focus_pane_down();
+        }
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
     fn workspace_create_tab(&mut self) {
         // Prefer Warp integration for tab creation to spawn PTY/Term immediately
         if self.workspace.has_warp() {
@@ -6055,8 +6146,28 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     target_split: target_opt,
                     before,
                 }) => {
-                    // Move semantics within the active tab: re-parent the dragged pane next to
-                    // target
+                    // If Shift is held, attempt a fast swap of adjacent panes
+                    let shift_down = self.modifiers.state().shift_key();
+                    if shift_down {
+                        if let Some(target_pid) = target_opt {
+                            if let Some(active_tab) = self.workspace.active_tab_mut() {
+                                let sm = crate::workspace::SplitManager::new();
+                                let swapped = sm.swap_adjacent_panes(
+                                    &mut active_tab.split_layout,
+                                    drag_state.source_split,
+                                    target_pid,
+                                );
+                                if swapped {
+                                    // Keep focus on the dragged (now swapped) pane
+                                    active_tab.active_pane = drag_state.source_split;
+                                    self.display.pending_update.dirty = true;
+                                    *self.dirty = true;
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    // Otherwise: Move semantics within the active tab: re-parent the dragged pane next to target
                     if let Some(target_pid) = target_opt {
                         if let Some(active_tab) = self.workspace.active_tab_mut() {
                             // Map SplitDirection to SplitAxis
@@ -6912,6 +7023,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
     pub fn handle_event(&mut self, event: WinitEvent<Event>) {
         match event {
             WinitEvent::UserEvent(Event { payload, .. }) => match payload {
+                EventType::WorkspaceHoverFocusRequest { .. } => { /* handled via direct ActionContext call; ignore */ }
                 EventType::ComponentsInitialized(_) => (),
                 EventType::SearchNext => self.ctx.goto_match(None),
                 EventType::Scroll(scroll) => self.ctx.scroll(scroll),
@@ -7142,9 +7254,28 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     *self.ctx.dirty = true;
                 }
                 // Warp-style workspace events
-                EventType::WarpUiUpdate(_update_type) => {
-                    // Warp UI updates are handled at the display level
-                    *self.ctx.dirty = true;
+                EventType::WarpUiUpdate(update_type) => {
+                    match update_type {
+                        crate::workspace::WarpUiUpdateType::SessionAutoSave => {
+                            // Trigger session autosave when Warp is enabled and due
+                            if self.ctx.config.workspace.sessions.enabled
+                                && self.ctx.workspace.has_warp()
+                            {
+                                if let Some(warp) = &mut self.ctx.workspace.warp {
+                                    if warp.should_auto_save() {
+                                        let _ = warp.execute_warp_action(
+                                            &crate::workspace::WarpAction::SaveSession,
+                                        );
+                                    }
+                                }
+                            }
+                            *self.ctx.dirty = true;
+                        }
+                        // Other UI updates just mark dirty for redraw
+                        _ => {
+                            *self.ctx.dirty = true;
+                        }
+                    }
                 }
                 // Confirmation overlay events are handled at the window-processor level
                 EventType::ConfirmOpen { .. }
@@ -7454,96 +7585,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     *self.ctx.dirty = true;
                 }
                 #[cfg(feature = "ai")]
-                EventType::SecurityCheckAiApply { command, dry_run } => {
-                    // Integrate SecurityLens analysis and confirmation overlay
-                    use crate::security_lens::{RiskLevel, SecurityLens};
-
-                    let mut security_lens = SecurityLens::new(self.ctx.config.security.clone());
-                    let risk_analysis = security_lens.analyze_command(&command);
-
-                    // Check if command should be blocked
-                    if self.ctx.config.security.block_critical
-                        && risk_analysis.level == RiskLevel::Critical
-                    {
-                        // Block critical commands if policy requires it
-                        self.ctx
-                            .message_buffer
-                            .push(crate::message_bar::Message::new(
-                                format!("Blocked critical command: {}", risk_analysis.explanation),
-                                crate::message_bar::MessageType::Error,
-                            ));
-                        *self.ctx.dirty = true;
-                        return;
-                    }
-
-                    // Check if confirmation is required based on policy
-                    let requires_confirmation = self
-                        .ctx
-                        .config
-                        .security
-                        .require_confirmation
-                        .get(&risk_analysis.level)
-                        .copied()
-                        .unwrap_or(false);
-
-                    if requires_confirmation {
-                        // Show security confirmation overlay
-                        // Generate unique ID for this confirmation
-                        let confirm_id = format!(
-                            "security_{}",
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis()
-                        );
-
-                        // Create confirmation request
-                        let title = match risk_analysis.level {
-                            RiskLevel::Critical => "🔴 CRITICAL: Confirm Command".to_string(),
-                            RiskLevel::Warning => "🟡 WARNING: Confirm Command".to_string(),
-                            RiskLevel::Caution => "🟠 CAUTION: Confirm Command".to_string(),
-                            RiskLevel::Safe => "✅ Confirm Command".to_string(),
-                        };
-
-                        let mut body = format!("Risk Level: {:?}\n\n", risk_analysis.level);
-                        body.push_str(&risk_analysis.explanation);
-                        if !risk_analysis.mitigations.is_empty() {
-                            body.push_str("\n\nSuggested mitigations:\n");
-                            for mitigation in &risk_analysis.mitigations {
-                                body.push_str(&format!("  • {}\n", mitigation));
-                            }
-                        }
-                        body.push_str(&format!("\nCommand to execute:\n  {}", command));
-
-                        let _ = self.ctx.event_proxy.send_event(Event::new(
-                            EventType::ConfirmOpen {
-                                id: confirm_id.clone(),
-                                title,
-                                body,
-                                confirm_label: Some("Execute".to_string()),
-                                cancel_label: Some("Cancel".to_string()),
-                            },
-                            self.ctx.display.window.id(),
-                        ));
-
-                        // Store command for when confirmation is resolved
-                        // Store the pending command in a proper state manager
-                        {
-                            let workspace = &mut self.ctx.workspace;
-                            workspace.store_pending_security_confirmation(
-                                confirm_id.clone(),
-                                command.clone(),
-                                dry_run,
-                            );
-                        }
-                    } else {
-                        // No confirmation required, proceed directly
-                        let _ = self.ctx.event_proxy.send_event(Event::new(
-                            EventType::AiApplyAsCommandChecked { command, dry_run },
-                            self.ctx.display.window.id(),
-                        ));
-                    }
-                    *self.ctx.dirty = true;
+                EventType::SecurityCheckAiApply { .. } => {
+                    // Handled at Processor level to avoid duplicate prompts
                 }
                 #[cfg(feature = "ai")]
                 EventType::AiApplyAsCommandChecked { command, dry_run } => {

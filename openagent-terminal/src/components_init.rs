@@ -894,6 +894,7 @@ timeout_ms=5000
     Ok(())
 }
 
+#[cfg(feature = "plugins")]
 fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
     use notify::{
         Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode,

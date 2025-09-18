@@ -613,6 +613,12 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_resize_up(&mut self) {}
     fn workspace_resize_down(&mut self) {}
 
+    // Directional focus helpers (left/right/up/down)
+    fn workspace_focus_pane_left(&mut self) {}
+    fn workspace_focus_pane_right(&mut self) {}
+    fn workspace_focus_pane_up(&mut self) {}
+    fn workspace_focus_pane_down(&mut self) {}
+
     // Tab management (placeholders; real implementation lives in event::ActionContext)
     fn workspace_create_tab(&mut self) {}
     fn workspace_close_tab(&mut self) {}
@@ -663,6 +669,9 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_tab_bar_drag_release(&mut self, _button: MouseButton) -> bool {
         false
     }
+
+    // Hover focus: focus pane under given pixel coordinates
+    fn workspace_hover_focus(&mut self, _mouse_x_px: f32, _mouse_y_px: f32) {}
 
     // Pane drag-and-drop helpers (Alt+LeftDrag)
     fn workspace_pane_drag_press(
@@ -1592,6 +1601,11 @@ impl<T: EventListener> Execute<T> for Action {
             Action::ResizePaneRight => ctx.workspace_resize_right(),
             Action::ResizePaneUp => ctx.workspace_resize_up(),
             Action::ResizePaneDown => ctx.workspace_resize_down(),
+            // Directional pane focus actions (non-Warp mode support)
+            Action::FocusPaneLeft => ctx.workspace_focus_pane_left(),
+            Action::FocusPaneRight => ctx.workspace_focus_pane_right(),
+            Action::FocusPaneUp => ctx.workspace_focus_pane_up(),
+            Action::FocusPaneDown => ctx.workspace_focus_pane_down(),
             // Tab management actions
             Action::CreateTab => ctx.workspace_create_tab(),
             Action::CloseTab => ctx.workspace_close_tab(),
@@ -2316,6 +2330,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         .mark_fully_damaged();
                     self.ctx.mark_dirty();
                 }
+            }
+        }
+
+        // Focus follows mouse: focus pane under pointer when enabled and not dragging/ selecting
+        if self.ctx.config().workspace.focus_follows_mouse {
+            let display = self.ctx.display();
+            let dragging_divider = display.split_drag.is_some();
+            let dragging_pane = display.pane_drag_manager.current_drag().is_some();
+            let selecting = {
+                let m = self.ctx.mouse();
+                (m.left_button_state == ElementState::Pressed || m.right_button_state == ElementState::Pressed)
+                    && !self.ctx.selection_is_empty()
+            };
+            if !dragging_divider && !dragging_pane && !selecting {
+                self.ctx.workspace_hover_focus(x as f32, y as f32);
             }
         }
 

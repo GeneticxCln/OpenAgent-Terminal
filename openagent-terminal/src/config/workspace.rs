@@ -61,6 +61,18 @@ pub struct WorkspaceConfig {
     /// Set to false to show full UI immediately on startup.
     #[config(default = true)]
     pub clean_startup: bool,
+
+    /// Focus follows mouse: when enabled, moving the mouse over a pane focuses it.
+    #[config(default = false)]
+    pub focus_follows_mouse: bool,
+
+    /// Dim inactive panes to better indicate focus.
+    #[config(default = false)]
+    pub dim_inactive_panes: bool,
+
+    /// Alpha for dimming inactive panes (0..1). Applied with theme overlay color.
+    #[config(default = 0.15)]
+    pub dim_inactive_alpha: f32,
 }
 
 impl Default for WorkspaceConfig {
@@ -78,6 +90,9 @@ impl Default for WorkspaceConfig {
             drag: DragConfig::default(),
             clean_startup: true,
             warp_overlay_only: true,
+            focus_follows_mouse: false,
+            dim_inactive_panes: false,
+            dim_inactive_alpha: 0.15,
         }
     }
 }

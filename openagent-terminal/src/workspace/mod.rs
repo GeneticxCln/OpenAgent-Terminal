@@ -288,6 +288,119 @@ impl WorkspaceManager {
         }
     }
 
+    /// Focus pane in a direction using geometry; returns true if focus changed
+    pub fn focus_pane_direction(&mut self, dir: crate::workspace::warp_split_manager::WarpNavDirection) -> bool {
+        // Compute content container rect similar to hit_test_split_divider using read-only borrows
+        let si = self.size_info;
+        let x0 = si.padding_x();
+        let mut y0 = si.padding_y();
+        let w = si.width() - 2.0 * si.padding_x();
+        let mut h = si.height() - 2.0 * si.padding_y();
+        if self.config.workspace.tab_bar.show
+            && !self.config.workspace.warp_overlay_only
+            && self.config.workspace.tab_bar.position
+                != crate::config::workspace::TabBarPosition::Hidden
+        {
+            let is_fs = false;
+            let eff_vis = match self.config.workspace.tab_bar.visibility {
+                crate::config::workspace::TabBarVisibility::Always => {
+                    crate::config::workspace::TabBarVisibility::Always
+                }
+                crate::config::workspace::TabBarVisibility::Hover => {
+                    crate::config::workspace::TabBarVisibility::Hover
+                }
+                crate::config::workspace::TabBarVisibility::Auto => {
+                    if is_fs {
+                        crate::config::workspace::TabBarVisibility::Hover
+                    } else {
+                        crate::config::workspace::TabBarVisibility::Always
+                    }
+                }
+            };
+            if matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
+                let ch = si.cell_height();
+                match self.config.workspace.tab_bar.position {
+                    crate::config::workspace::TabBarPosition::Top => {
+                        y0 += ch;
+                        h = (h - ch).max(0.0);
+                    }
+                    crate::config::workspace::TabBarPosition::Bottom => {
+                        h = (h - ch).max(0.0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let container = split_manager::PaneRect::new(x0, y0, w, h);
+
+        // Snapshot active pane and compute rects without holding a mutable borrow
+        let (current, rects) = if let Some(tab) = self.active_tab() {
+            (tab.active_pane, self.splits.calculate_pane_rects(&tab.split_layout, container))
+        } else {
+            return false;
+        };
+
+        // Determine the target in the requested direction
+        if let Some(cur) = rects.iter().find(|(id, _)| *id == current).map(|(_, r)| *r) {
+            if let Some(target_id) = Self::find_pane_in_direction(&rects, cur, dir) {
+                if target_id != current {
+                    if let Some(tab_mut) = self.active_tab_mut() {
+                        tab_mut.active_pane = target_id;
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn find_pane_in_direction(
+        rects: &[(PaneId, split_manager::PaneRect)],
+        cur: split_manager::PaneRect,
+        dir: crate::workspace::warp_split_manager::WarpNavDirection,
+    ) -> Option<PaneId> {
+        use crate::workspace::warp_split_manager::WarpNavDirection as D;
+        let cx = cur.x + cur.width / 2.0;
+        let cy = cur.y + cur.height / 2.0;
+        let mut candidates: Vec<(PaneId, f32, f32)> = Vec::new();
+        for &(id, r) in rects {
+            if r.x == cur.x && r.y == cur.y && r.width == cur.width && r.height == cur.height {
+                continue;
+            }
+            let px = r.x + r.width / 2.0;
+            let py = r.y + r.height / 2.0;
+            let valid = match dir {
+                D::Left => px < cx,
+                D::Right => px > cx,
+                D::Up => py < cy,
+                D::Down => py > cy,
+            };
+            if !valid { continue; }
+            let dist = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
+            let align = match dir {
+                D::Left | D::Right => 1.0 / (1.0 + (py - cy).abs()),
+                D::Up | D::Down => 1.0 / (1.0 + (px - cx).abs()),
+            };
+            candidates.push((id, dist, align));
+        }
+        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)));
+        candidates.first().map(|(id, _, _)| *id)
+    }
+
+    pub fn focus_pane_left(&mut self) -> bool {
+        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Left)
+    }
+    pub fn focus_pane_right(&mut self) -> bool {
+        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Right)
+    }
+    pub fn focus_pane_up(&mut self) -> bool {
+        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Up)
+    }
+    pub fn focus_pane_down(&mut self) -> bool {
+        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Down)
+    }
+
     /// Close the current pane
     pub fn close_pane(&mut self) -> bool {
         if let Some(tab) = self.active_tab_mut() {

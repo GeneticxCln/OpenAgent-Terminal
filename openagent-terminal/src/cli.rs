@@ -538,6 +538,27 @@ pub enum SecurityCommand {
         #[clap(long, action=clap::ArgAction::SetTrue)]
         json: bool,
     },
+    /// Assess a single command string against the current policy (or an override policy)
+    Assess {
+        /// Command to assess
+        #[clap(value_hint = ValueHint::Other)]
+        command: String,
+        /// Optional policy file path (TOML) to override loaded config
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        policy: Option<PathBuf>,
+        /// Output JSON report
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+    },
+    /// List active security patterns (built-in, platform, and custom)
+    ListPatterns {
+        /// Optional policy file path (TOML) to override loaded config
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        policy: Option<PathBuf>,
+        /// Output JSON
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+    },
 }
 
 /// Options for the native WebView editor

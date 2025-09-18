@@ -78,7 +78,7 @@ impl SplitLayout {
     }
 }
 
-/// Rectangle representing a pane's position and size
+/// Rectangle representing a pane's position
 #[derive(Debug, Clone, Copy)]
 pub struct PaneRect {
     pub x: f32,
@@ -89,12 +89,7 @@ pub struct PaneRect {
 
 impl PaneRect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
+        Self { x, y, width, height }
     }
 
     /// Split this rectangle horizontally at the given ratio
@@ -333,6 +328,65 @@ impl SplitLayout {
     /// Public helper to fetch the ratio at a given divider path (copy of value)
     pub fn ratio_at_path(&self, path: &[SplitChild]) -> Option<(SplitAxis, f32)> {
         self.get_ratio_at_path_internal(path).map(|(ax, r)| (ax, *r))
+    }
+
+    /// Build a map of split ratios keyed by a stable path string.
+    ///
+    /// Keys are formatted as:
+    /// - "H:" for the root horizontal split, "V:" for the root vertical split
+    /// - Children append "/L", "/R", "/T", or "/B" for Left/Right/Top/Bottom traversals respectively
+    ///   e.g., "H:R" means the right child of the root is a split whose ratio is recorded.
+    pub fn collect_split_ratios_map(&self) -> std::collections::HashMap<String, f32> {
+        fn path_key(axis: SplitAxis, path: &[SplitChild]) -> String {
+            let mut s = String::new();
+            s.push(match axis {
+                SplitAxis::Horizontal => 'H',
+                SplitAxis::Vertical => 'V',
+            });
+            s.push(':');
+            for (i, c) in path.iter().enumerate() {
+                if i > 0 {
+                    s.push('/');
+                }
+                s.push(match c {
+                    SplitChild::Left => 'L',
+                    SplitChild::Right => 'R',
+                    SplitChild::Top => 'T',
+                    SplitChild::Bottom => 'B',
+                });
+            }
+            s
+        }
+        fn rec(
+            node: &SplitLayout,
+            path: &mut Vec<SplitChild>,
+            out: &mut std::collections::HashMap<String, f32>,
+        ) {
+            match node {
+                SplitLayout::Horizontal { left, right, ratio } => {
+                    out.insert(path_key(SplitAxis::Horizontal, path), *ratio);
+                    path.push(SplitChild::Left);
+                    rec(left, path, out);
+                    path.pop();
+                    path.push(SplitChild::Right);
+                    rec(right, path, out);
+                    path.pop();
+                }
+                SplitLayout::Vertical { top, bottom, ratio } => {
+                    out.insert(path_key(SplitAxis::Vertical, path), *ratio);
+                    path.push(SplitChild::Top);
+                    rec(top, path, out);
+                    path.pop();
+                    path.push(SplitChild::Bottom);
+                    rec(bottom, path, out);
+                    path.pop();
+                }
+                SplitLayout::Single(_) => {}
+            }
+        }
+        let mut out = std::collections::HashMap::new();
+        rec(self, &mut Vec::new(), &mut out);
+        out
     }
 
     pub fn set_ratio_at_path_internal(
@@ -710,7 +764,7 @@ impl SplitManager {
             total_panes,
             active_pane: self.cached_state.active_pane, // Preserve active pane
             pane_rects: pane_rects.into_iter().collect(),
-            split_ratios: HashMap::new(), // TODO: Extract ratios from layout
+            split_ratios: layout.collect_split_ratios_map(),
             last_update: std::time::Instant::now(),
         };
     }
@@ -1142,6 +1196,36 @@ impl SplitManager {
             }
             _ => false,
         }
+    }
+
+    /// Swap two adjacent leaf panes if they are siblings under a split node.
+    pub fn swap_adjacent_panes(&self, layout: &mut SplitLayout, pane1: PaneId, pane2: PaneId) -> bool {
+        fn rec(node: &mut SplitLayout, a: PaneId, b: PaneId) -> bool {
+            match node {
+                SplitLayout::Horizontal { left, right, .. } => {
+                    // Check direct children first
+                    if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) = (left.as_ref(), right.as_ref()) {
+                        if (*id1 == a && *id2 == b) || (*id1 == b && *id2 == a) {
+                            std::mem::swap(left, right);
+                            return true;
+                        }
+                    }
+                    // Recurse
+                    rec(left, a, b) || rec(right, a, b)
+                }
+                SplitLayout::Vertical { top, bottom, .. } => {
+                    if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) = (top.as_ref(), bottom.as_ref()) {
+                        if (*id1 == a && *id2 == b) || (*id1 == b && *id2 == a) {
+                            std::mem::swap(top, bottom);
+                            return true;
+                        }
+                    }
+                    rec(top, a, b) || rec(bottom, a, b)
+                }
+                SplitLayout::Single(_) => false,
+            }
+        }
+        rec(layout, pane1, pane2)
     }
 
     /// Get the count of panes in a layout
@@ -1624,6 +1708,6 @@ mod tests {
 
                 // Structural sanity
                 assert!(matches!(layout, SplitLayout::Horizontal { .. }));
-            }
         }
-}
+        }
+    }
