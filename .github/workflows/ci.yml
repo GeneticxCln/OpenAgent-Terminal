@@ -408,6 +408,21 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
             done
           done
 
+  windows-pty-repro:
+    name: Windows PTY repro tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Run Windows PTY repro tests (core crate)
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          cargo test -p openagent-terminal-core --test windows_pty_repro -- --nocapture --test-threads=1
+
   coverage:
     name: Coverage (llvm-cov)
     runs-on: ubuntu-latest
