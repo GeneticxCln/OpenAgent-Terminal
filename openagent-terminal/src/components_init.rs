@@ -113,7 +113,6 @@ impl std::fmt::Debug for InitializedComponents {
 /// Initialize all components
 pub async fn initialize_components(
     config: &ComponentConfig,
-    _window: &winit::window::Window,
 ) -> Result<InitializedComponents> {
     info!("Initializing OpenAgent Terminal components...");
 

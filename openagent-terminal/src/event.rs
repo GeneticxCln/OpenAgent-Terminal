@@ -510,8 +510,31 @@ if let Err(e) = self.proxy.send_event(Event::new(
             self.scheduler.schedule(evt, interval, true, tid);
         }
 
-        // If components are already initialized, set them on the new window
-        if let Some(components) = &self.components {
+        // Ensure components (plugins, etc.) are initialized by default on first window
+        if self.components.is_none() {
+            let cfg = ComponentConfig {
+                enable_wgpu: cfg!(feature = "wgpu"),
+                enable_harfbuzz: cfg!(feature = "harfbuzz"),
+                enable_blocks: cfg!(feature = "blocks"),
+                enable_workflows: cfg!(feature = "workflow"),
+                // Always enable when the cargo feature is present
+                enable_plugins: cfg!(feature = "plugins"),
+                ..Default::default()
+            };
+            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => match rt.block_on(crate::components_init::initialize_components(&cfg)) {
+                    Ok(components) => {
+                        let arc = Arc::new(components);
+                        if let Some(wc) = self.windows.get_mut(&window_id) {
+                            wc.set_components(arc.clone());
+                        }
+                        self.components = Some(arc);
+                    }
+                    Err(e) => warn!("Component initialization failed: {}", e),
+                },
+                Err(e) => warn!("Failed to create runtime for initialization: {}", e),
+            }
+        } else if let Some(components) = &self.components {
             if let Some(window_context) = self.windows.get_mut(&window_id) {
                 window_context.set_components(components.clone());
             }
@@ -535,13 +558,13 @@ if let Err(e) = self.proxy.send_event(Event::new(
             enable_harfbuzz: cfg!(feature = "harfbuzz"),
             enable_blocks: cfg!(feature = "blocks"),
             enable_workflows: cfg!(feature = "workflow"),
-            // Gate plugin system behind preview flag even when the cargo feature is enabled
-            enable_plugins: cfg!(feature = "plugins") && self.config.debug.plugins_preview,
+            // Always enable plugin system when the cargo feature is enabled
+            enable_plugins: cfg!(feature = "plugins"),
             ..Default::default()
         };
 
         info!("Initializing terminal components...");
-        match crate::components_init::initialize_components(&config, window).await {
+        match crate::components_init::initialize_components(&config).await {
             Ok(components) => {
                 self.components = Some(Arc::new(components));
                 info!("✓ All components initialized successfully");
