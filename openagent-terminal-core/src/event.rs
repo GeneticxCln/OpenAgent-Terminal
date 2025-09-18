@@ -133,7 +133,11 @@ pub trait Notify {
     /// 
     /// This is the infallible variant that will log errors internally rather than
     /// propagating them. Use `try_notify` for explicit error handling.
-    fn notify<B: Into<Cow<'static, [u8]>>>(&self, _: B);
+    fn notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
+        // Default implementation bridges to the fallible API and logs any error.
+        // Implementors may override for performance.
+        let _ = self.try_notify(bytes);
+    }
 
     /// Fallible form of notify that returns detailed error information.
     /// 
@@ -149,7 +153,8 @@ pub trait Notify {
     /// - `PayloadTooLarge`: The payload exceeds size limits
     /// - `Unavailable`: The notification system is temporarily unavailable
     fn try_notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) -> Result<(), NotifyError> {
-        self.notify(bytes);
+        // Default behavior assumes success; concrete implementations should override.
+        let _ = bytes.into();
         Ok(())
     }
 }

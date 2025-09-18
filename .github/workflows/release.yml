@@ -53,11 +53,32 @@ jobs:
         run: cargo test --release
       - name: Build
         run: cargo build --release
-      - name: Upload portable executable
+      - name: Upload portable executable (unsigned)
         run: |
           cp ./target/release/openagent-terminal.exe ./openagent-terminal-${GITHUB_REF##*/}-portable.exe
           ./.github/workflows/upload_asset.sh \
             ./openagent-terminal-${GITHUB_REF##*/}-portable.exe $GITHUB_TOKEN
+
+      - name: Sign portable executable (optional)
+        if: ${{ secrets.WINDOWS_SIGNING_CERT && secrets.WINDOWS_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Signing Windows portable executable..."
+          # Expect a base64-encoded PFX in WINDOWS_SIGNING_CERT
+          echo "$WINDOWS_SIGNING_CERT" | base64 -d > signing_cert.pfx
+          # Use osslsigncode if available on runner; otherwise skip gracefully
+          if command -v osslsigncode >/dev/null 2>&1; then
+            osslsigncode sign -pkcs12 signing_cert.pfx -pass "$WINDOWS_SIGNING_PASSWORD" \
+              -in ./openagent-terminal-${GITHUB_REF##*/}-portable.exe \
+              -out ./openagent-terminal-${GITHUB_REF##*/}-portable-signed.exe \
+              -n "OpenAgent Terminal" -i "https://github.com/GeneticxCln/OpenAgent-Terminal"
+            ./.github/workflows/upload_asset.sh \
+              ./openagent-terminal-${GITHUB_REF##*/}-portable-signed.exe $GITHUB_TOKEN
+          else
+            echo "osslsigncode not available; skipping portable exe signing"
+          fi
+          rm -f signing_cert.pfx
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.5
       - name: Create msi installer
@@ -65,6 +86,22 @@ jobs:
           wix extension add WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
           -out "./openagent-terminal-${GITHUB_REF##*/}-installer.msi" "openagent-terminal/windows/wix/openagent-terminal.wxs"
+      - name: Sign msi installer (optional)
+        if: ${{ secrets.WINDOWS_SIGNING_CERT && secrets.WINDOWS_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$WINDOWS_SIGNING_CERT" | base64 -d > signing_cert.pfx
+          if command -v osslsigncode >/dev/null 2>&1; then
+            osslsigncode sign -pkcs12 signing_cert.pfx -pass "$WINDOWS_SIGNING_PASSWORD" \
+              -in ./openagent-terminal-${GITHUB_REF##*/}-installer.msi \
+              -out ./openagent-terminal-${GITHUB_REF##*/}-installer-signed.msi \
+              -n "OpenAgent Terminal" -i "https://github.com/GeneticxCln/OpenAgent-Terminal"
+            mv ./openagent-terminal-${GITHUB_REF##*/}-installer-signed.msi ./openagent-terminal-${GITHUB_REF##*/}-installer.msi
+          else
+            echo "osslsigncode not available; skipping MSI signing"
+          fi
+          rm -f signing_cert.pfx
       - name: Upload msi installer
         run: |
           ./.github/workflows/upload_asset.sh \

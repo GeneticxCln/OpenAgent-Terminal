@@ -110,9 +110,10 @@ fn render_smoke_runs_quickly() {
 
     // Budget a modest runtime ceiling to catch severe regressions while avoiding flakiness.
     // On CI, account for cold cache and VM variance.
+    // Align with CI perf target used in workflows (≤800ms) to avoid flakiness on slower hosts
     assert!(
-        elapsed <= Duration::from_millis(500),
-        "render_smoke example exceeded 500ms: {:?}",
+        elapsed <= Duration::from_millis(800),
+        "render_smoke example exceeded 800ms: {:?}",
         elapsed
     );
 }

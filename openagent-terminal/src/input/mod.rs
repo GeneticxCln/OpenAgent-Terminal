@@ -1651,7 +1651,41 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return false;
         }
 
-        // Examine cached bounds with a fresh immutable display borrow
+        // First pass (read-only): determine if close/new-tab was clicked using cached geometry
+        let mut close_target: Option<crate::workspace::TabId> = None;
+        let mut create_new_tab: bool = false;
+        {
+            let display_ref = self.ctx.display();
+            // Close button rectangles (per-tab)
+            for (tab_id, bx, by, bw, bh) in display_ref.close_button_bounds_px.iter().copied() {
+                if px >= bx && px <= bx + bw && py >= by && py <= by + bh {
+                    close_target = Some(tab_id);
+                    break;
+                }
+            }
+            // New-tab button rectangle (single)
+            if close_target.is_none() {
+                if let Some((bx, by, bw, bh)) = display_ref.new_tab_button_bounds {
+                    if px >= bx && px <= bx + bw && py >= by && py <= by + bh {
+                        create_new_tab = true;
+                    }
+                }
+            }
+        }
+        // Apply actions after the read-only borrow scope ended
+        if let Some(tab_id) = close_target {
+            self.ctx.workspace_switch_to_tab(tab_id);
+            self.ctx.workspace_close_tab();
+            self.ctx.mark_dirty();
+            return true;
+        }
+        if create_new_tab {
+            self.ctx.workspace_create_tab();
+            self.ctx.mark_dirty();
+            return true;
+        }
+
+        // Examine cached tab bounds for selection with a fresh immutable display borrow
         let clicked = {
             let display_ref = self.ctx.display();
             let mut hit: Option<crate::workspace::TabId> = None;
@@ -1670,7 +1704,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return true;
         }
 
-        // TODO(step 4/5): Handle close button, new-tab button, and drag using cached geometry.
+        // Drag operations are handled by dedicated press/move/release handlers elsewhere.
         false
     }
 

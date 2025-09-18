@@ -155,6 +155,13 @@ impl NaturalLanguageAgent {
         turn_id
     }
 
+    /// Basic confidence scorer combining intent confidence and entity presence
+    fn compute_confidence(intent_confidence: f64, entity_count: usize) -> f64 {
+        let ic = intent_confidence.clamp(0.0, 1.0);
+        let es = ((entity_count as f64) / 3.0).min(1.0);
+        (ic * 0.6 + es * 0.4).clamp(0.0, 1.0)
+    }
+
     /// Process natural language input and determine intent
     pub fn process_input(&mut self, input: &str, context: &AgentContext) -> Result<ProcessedInput> {
         // Extract entities
@@ -167,11 +174,13 @@ impl NaturalLanguageAgent {
         self.context_manager
             .update_from_input(input, &entities, &intent);
 
+        let intent_conf = intent.confidence;
+        let conf = Self::compute_confidence(intent_conf, entities.len());
         Ok(ProcessedInput {
             original_text: input.to_string(),
             intent: Some(intent),
             entities,
-            confidence: 0.85,      // TODO: Implement proper confidence calculation
+            confidence: conf,
             suggested_agent: None, // Will be set based on intent
         })
     }
@@ -658,12 +667,60 @@ impl IntentClassifier {
 
                 if score > best_score {
                     best_score = score;
+                    // Naive parameter extraction from the input text
+                    let mut params: HashMap<String, String> = HashMap::new();
+                    // --key=value
+                    if let Ok(re) = regex::Regex::new(r"--([A-Za-z0-9][A-Za-z0-9-_]*)=([^\s]+)") {
+                        for cap in re.captures_iter(text) {
+                            let key = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                            let val = cap.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
+                            if !key.is_empty() {
+                                params.entry(key).or_insert(val);
+                            }
+                        }
+                    }
+                    // --key value and -k value; single-char flags as booleans
+                    let tokens: Vec<&str> = text.split_whitespace().collect();
+                    let mut i = 0usize;
+                    while i < tokens.len() {
+                        let tok = tokens[i];
+                        if tok.starts_with("--") {
+                            let key = &tok[2..];
+                            if !key.is_empty() && !key.contains('=') {
+                                if i + 1 < tokens.len() && !tokens[i + 1].starts_with('-') {
+                                    params.entry(key.to_string()).or_insert(tokens[i + 1].to_string());
+                                    i += 1;
+                                } else {
+                                    params.entry(key.to_string()).or_insert("true".to_string());
+                                }
+                            }
+                        } else if tok.starts_with('-') && !tok.starts_with("--") {
+                            let chars: Vec<char> = tok.chars().collect();
+                            if chars.len() == 2 {
+                                // -k value or boolean flag
+                                let k = chars[1].to_string();
+                                if i + 1 < tokens.len() && !tokens[i + 1].starts_with('-') {
+                                    params.entry(k).or_insert(tokens[i + 1].to_string());
+                                    i += 1;
+                                } else {
+                                    params.entry(k).or_insert("true".to_string());
+                                }
+                            } else if chars.len() > 2 {
+                                // Combined short flags like -abc
+                                for c in chars.iter().skip(1) {
+                                    params.entry(c.to_string()).or_insert("true".to_string());
+                                }
+                            }
+                        }
+                        i += 1;
+                    }
+
                     best_intent = Some(Intent {
                         name: intent_name.clone(),
                         confidence: score
                             / (pattern.keywords.len() as f64
                                 + pattern.required_entities.len() as f64 * 0.5),
-                        parameters: HashMap::new(), // TODO: Extract parameters
+                        parameters: params,
                         target_agent: pattern.target_agent.clone(),
                     });
                 }
