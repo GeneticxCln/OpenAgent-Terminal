@@ -39,6 +39,8 @@ mod cli;
 mod cli_ai;
 #[cfg(feature = "security-lens")]
 mod cli_security;
+#[cfg(feature = "plugins")]
+mod cli_plugins;
 #[cfg(feature = "sync")]
 mod cli_sync;
 mod clipboard;
@@ -176,6 +178,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // We print nothing here; stdout/stderr was handled by run_cli.
                 std::process::exit(code);
             }
+        }
+        #[cfg(feature = "plugins")]
+        Some(Subcommands::Plugins(ref plugin_opts)) => {
+            // Lightweight current-thread runtime for CLI-only operations
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let code = rt.block_on(crate::cli_plugins::run_plugins_cli(plugin_opts))?;
+            if code != 0 {
+                std::process::exit(code)
+            };
         }
         None => run_openagent_terminal(options)?,
     }

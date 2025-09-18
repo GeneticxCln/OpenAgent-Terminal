@@ -401,7 +401,7 @@ steps:
 
 /// Initialize plugin manager
 #[cfg(feature = "plugins")]
-async fn initialize_plugin_manager(
+pub(crate) async fn initialize_plugin_manager(
     plugins_dir: PathBuf,
     enforce_signatures: bool,
     require_signatures_for_all: bool,

@@ -286,6 +286,9 @@ pub enum Subcommands {
     Security(SecurityCliOptions),
     /// Open a native editor window (Monaco) for a file path
     WebEdit(WebEditOptions),
+    /// Plugins CLI (list/discover/load/unload/send event)
+    #[cfg(feature = "plugins")]
+    Plugins(super::cli_plugins::PluginsOptions),
     /// Command notebooks (create/list/add/run)
     #[cfg(feature = "blocks")]
     Notebook(crate::notebooks::NotebookOptions),
