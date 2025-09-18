@@ -208,6 +208,16 @@ impl StreamProcessor {
         }
     }
 
+    /// Create a StreamProcessor with a custom buffer limit (primarily for tests).
+    pub fn with_buffer_limit(retry_config: RetryConfig, limit: usize) -> Self {
+        Self {
+            parser: SseParser::new(),
+            retry_config,
+            buffer_limit: limit,
+            buffered_events: Vec::new(),
+        }
+    }
+
     /// Process incoming data with backpressure handling
     pub fn process_data(
         &mut self,
