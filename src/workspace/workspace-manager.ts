@@ -196,7 +196,7 @@ export class WorkspaceManager extends EventEmitter {
   // Workspace lifecycle operations
   public renameWorkspace(id: string, newName: string): boolean {
     const isActive = this.activeWorkspace?.id === id;
-    let ws = isActive ? this.activeWorkspace : this.loadWorkspace(id);
+    const ws = isActive ? this.activeWorkspace : this.loadWorkspace(id);
     if (!ws) return false;
     ws.name = newName;
     ws.lastModified = Date.now();
@@ -235,7 +235,12 @@ export class WorkspaceManager extends EventEmitter {
       createdAt: Date.now(),
       lastModified: Date.now(),
       // panes cloned shallowly; IDs preserved intentionally
-      panes: ws.panes.map(p => ({ ...p, aiContext: p.aiContext ? { ...p.aiContext, history: [...p.aiContext.history] } : undefined })),
+      panes: ws.panes.map(p => ({
+        ...p,
+        ...(p.aiContext
+          ? { aiContext: { ...p.aiContext, history: [...p.aiContext.history] } }
+          : {}),
+      })),
     };
     this.activeWorkspace = copy;
     this.saveWorkspace(copy);
