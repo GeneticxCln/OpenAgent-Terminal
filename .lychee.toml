@@ -1,0 +1,20 @@
+# lychee configuration
+# See https://github.com/lycheeverse/lychee for all options.
+
+# Exclude patterns (regex) for links we don't want to check
+exclude = [
+  "^mailto:",
+  "^tel:",
+  "^#",                 # in-page anchors
+  "^http://127\.0\.0\.1", # local references used in docs
+  "^http://localhost",
+]
+
+# Treat these HTTP status codes as success
+accept = [200, 204, 403]
+
+# User agent to reduce 403s from some CDNs
+user_agent = "Mozilla/5.0 (compatible; OpenAgent-Lychee/1.0)"
+
+# Request timeout seconds
+timeout = 20
