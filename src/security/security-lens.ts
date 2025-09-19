@@ -157,8 +157,8 @@ export class SecurityLens {
   private policy: SecurityPolicy;
   private secretCache = new Set<string>();
 
-  constructor(policy: SecurityPolicy = this.getDefaultPolicy()) {
-    this.policy = policy;
+  constructor(policy?: SecurityPolicy) {
+    this.policy = policy ?? this.getDefaultPolicy();
   }
 
   private getDefaultPolicy(): SecurityPolicy {
