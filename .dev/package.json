@@ -8,8 +8,8 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "test": "node --test dist/**/*.test.js || true",
-    "lint": "eslint -c ./.eslintrc.cjs ../src/**/*.ts",
-    "lint:fix": "eslint -c ./.eslintrc.cjs ../src/**/*.ts --fix",
+    "lint": "bash -lc 'cd .. && eslint -c .dev/eslint.config.js src/**/*.ts'",
+    "lint:fix": "bash -lc 'cd .. && eslint -c .dev/eslint.config.js src/**/*.ts --fix'",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist/",
     "dev": "npm run build:watch",
@@ -18,10 +18,10 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "typescript": "~5.3.3"
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
