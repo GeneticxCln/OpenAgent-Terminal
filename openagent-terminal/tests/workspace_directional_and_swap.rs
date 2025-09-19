@@ -62,7 +62,7 @@ fn directional_focus_moves_to_nearest_in_direction() {
 
 #[test]
 fn swap_adjacent_panes_swaps_siblings_only() {
-    let mut sm = SplitManager::new();
+    let sm = SplitManager::new();
     // Horizontal split of two leaves A|B
     let a = crate_root::workspace::split_manager::PaneId(10);
     let b = crate_root::workspace::split_manager::PaneId(11);

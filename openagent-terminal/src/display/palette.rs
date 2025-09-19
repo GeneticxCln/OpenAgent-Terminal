@@ -6,6 +6,8 @@ pub enum PaletteEntry {
     Action(Action),
     Workflow(String),
     File(String), // absolute or relative path
+    /// Recent/suggested command entry (with optional cwd and last exit status)
+    Command { cmd: String, cwd: Option<String>, exit: Option<i32> },
     #[cfg(feature = "plugins")]
     PluginCommand {
         plugin: String,
@@ -892,9 +894,10 @@ impl Display {
                         let x = (slot as f32) * STEP;
                         (x, 0.0, STEP, 1.0)
                     }
-                    let (uv_x, uv_y, uv_w, uv_h) = match &orig_item.entry {
+            let (uv_x, uv_y, uv_w, uv_h) = match &orig_item.entry {
                         PaletteEntry::Workflow(_) => uv_for_slot(1),
                         PaletteEntry::File(_) => uv_for_slot(2),
+                        PaletteEntry::Command { .. } => uv_for_slot(0),
                         #[cfg(feature = "plugins")]
                         PaletteEntry::PluginCommand { .. } => uv_for_slot(8),
                         PaletteEntry::Action(a) => {
@@ -1122,6 +1125,7 @@ impl Display {
                         PaletteEntry::Action(_) => " [⚙ Action]",
                         PaletteEntry::Workflow(_) => " [⚡ Workflow]",
                         PaletteEntry::File(_) => " [📄 File]",
+                        PaletteEntry::Command { .. } => " [› Command]",
                         #[cfg(feature = "plugins")]
                         PaletteEntry::PluginCommand { .. } => " [🔌 Plugin]",
                     };
@@ -1379,7 +1383,7 @@ impl Display {
 
         // Footer hints
         if line <= footer_line {
-            let hints = "Enter • Run    Alt+Enter • cd dir    Esc • Close    ↑/↓ • Navigate";
+        let hints = "Enter • Run    Shift+Enter • Edit    Alt+Enter • cd dir    Esc • Close    ↑/↓ • Navigate";
             self.draw_ai_text(
                 Point::new(footer_line, Column(panel_start_col + 2)),
                 muted_fg,

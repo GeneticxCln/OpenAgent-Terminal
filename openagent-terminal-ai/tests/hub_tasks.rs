@@ -1,3 +1,4 @@
+#![cfg(feature = "agents")]
 use std::sync::Arc;
 use async_trait::async_trait;
 use openagent_terminal_ai::agents::{AiAgent, AgentRequest, AgentResponse, AgentError, AgentCapabilities, PrivacyLevel};

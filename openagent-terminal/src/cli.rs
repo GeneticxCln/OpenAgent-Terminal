@@ -284,8 +284,6 @@ pub enum Subcommands {
     /// Security Lens utilities: validate policies, run tests
     #[cfg(feature = "security-lens")]
     Security(SecurityCliOptions),
-    /// Open a native editor window (Monaco) for a file path
-    WebEdit(WebEditOptions),
     /// Plugins CLI (list/discover/load/unload/send event)
     #[cfg(feature = "plugins")]
     Plugins(super::cli_plugins::PluginsOptions),
@@ -561,13 +559,6 @@ pub enum SecurityCommand {
     },
 }
 
-/// Options for the native WebView editor
-#[derive(Serialize, Deserialize, Args, Default, Debug, Clone, PartialEq, Eq)]
-pub struct WebEditOptions {
-    /// File to open in the editor
-    #[clap(value_hint = ValueHint::FilePath)]
-    pub file: std::path::PathBuf,
-}
 
 /// Parameters to the `config` IPC subcommand.
 #[cfg(unix)]

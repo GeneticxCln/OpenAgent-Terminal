@@ -424,6 +424,20 @@ impl DisplayUpdate {
 }
 
 /// The display wraps a window, font rasterizer, and GPU renderer.
+/// Runtime-only fade animation for a tab that was just closed.
+#[derive(Debug, Clone)]
+pub struct TabCloseFade {
+    pub tab_id: crate::workspace::TabId,
+    pub start_time: Instant,
+    pub duration_ms: u32,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: Rgb,
+}
+
+/// The display wraps a window, font rasterizer, and GPU renderer.
 pub struct Display {
     pub window: Window,
 
@@ -558,6 +572,18 @@ pub struct Display {
     /// Always-on completions state (experimental).
     #[cfg(feature = "completions")]
     pub completions: completions::CompletionsState,
+    /// Cached mapping of overlay viewport lines to item indices for hover/click hit testing
+    #[cfg(feature = "completions")]
+    pub completions_overlay_item_lines: Vec<(usize, usize)>,
+    /// Overlay bounds for hit testing: (start_line, end_line, start_col, end_col)
+    #[cfg(feature = "completions")]
+    pub completions_overlay_bounds: Option<(usize, usize, usize, usize)>,
+    /// Last active state to drive simple fade-in animation
+    #[cfg(feature = "completions")]
+    pub completions_last_active: bool,
+    /// Animation start timestamp for fade-in
+    #[cfg(feature = "completions")]
+    pub completions_anim_start: Option<Instant>,
 
     /// Workflows panel state.
     #[cfg(feature = "workflow")]
@@ -602,6 +628,8 @@ pub struct Display {
     pub close_button_bounds_px: Vec<(crate::workspace::TabId, f32, f32, f32, f32)>,
     /// Cached "+" new-tab button bounds in pixels (x, y, w, h)
     pub new_tab_button_bounds: Option<(f32, f32, f32, f32)>,
+    /// Active fade-out animations for tabs that were just closed
+    pub tab_close_fades: Vec<TabCloseFade>,
     /// Workspace animation manager for smooth UI transitions
     #[allow(dead_code)]
     pub workspace_animations: workspace_animations::WorkspaceAnimationManager,
@@ -624,6 +652,8 @@ pub struct Display {
     pub blocks_header_hover_chip: Option<usize>,
     /// Last pressed chip index (for flash)
     pub blocks_press_flash_chip: Option<usize>,
+    /// Hovered status pill in the blocks header (viewport line) for tooltip display
+    pub blocks_header_hover_status: Option<usize>,
 
     /// Palette animation state
     #[allow(dead_code)]
@@ -647,6 +677,15 @@ impl Display {
     #[allow(dead_code)]
     pub fn is_wgpu_backend(&self) -> bool {
         true
+    }
+
+    /// Inject external completion items (e.g., from the native IDE) to be merged into the overlay.
+    #[cfg(feature = "completions")]
+    pub fn set_external_completions(
+        &mut self,
+        items: Vec<crate::display::completions::CompletionItem>,
+    ) {
+        self.completions.external = items;
     }
 
     /// Return true when clean-startup suppression of overlays should be active.
@@ -1236,6 +1275,14 @@ impl Display {
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
             #[cfg(feature = "completions")]
             completions: completions::CompletionsState::new(),
+            #[cfg(feature = "completions")]
+            completions_overlay_item_lines: Vec::new(),
+            #[cfg(feature = "completions")]
+            completions_overlay_bounds: None,
+            #[cfg(feature = "completions")]
+            completions_last_active: false,
+            #[cfg(feature = "completions")]
+            completions_anim_start: None,
             debug_split_overlay: None,
             #[cfg(feature = "ai")]
             ai_panel_last_active: false,
@@ -1289,6 +1336,8 @@ impl Display {
             tab_bounds_px: Vec::new(),
             close_button_bounds_px: Vec::new(),
             new_tab_button_bounds: None,
+            // Tab close fade effects
+            tab_close_fades: Vec::new(),
             split_hover: None,
             split_drag: None,
             split_hover_anim_start: None,
@@ -1296,6 +1345,7 @@ impl Display {
             blocks_press_flash_until: None,
             blocks_header_hover_chip: None,
             blocks_press_flash_chip: None,
+            blocks_header_hover_status: None,
         })
     }
 
@@ -2101,7 +2151,10 @@ impl Display {
             // Compute clean-startup suppression before taking a meter sampler borrow on `self`.
             let suppress_reserve = self.clean_startup_active()
                 || (config.workspace.warp_style && config.workspace.warp_overlay_only);
-            let _sampler = self.meter.sampler();
+            // Temporarily move meter out to avoid overlapping &mut self borrows during rendering.
+            let mut meter = std::mem::take(&mut self.meter);
+            {
+                let _render_sampler = meter.sampler();
 
             // Dim inactive panes if enabled (draw before grid text or after depending on desired effect)
             if config.workspace.dim_inactive_panes {
@@ -2111,7 +2164,7 @@ impl Display {
                         let si = self.size_info;
                         let x0 = si.padding_x();
                         let mut y0 = si.padding_y();
-                        let mut w = si.width() - 2.0 * si.padding_x();
+                        let w = si.width() - 2.0 * si.padding_x();
                         let mut h = si.height() - 2.0 * si.padding_y();
                         let tab_cfg = &config.workspace.tab_bar;
                         let is_fs = self.window.is_fullscreen();
@@ -2257,10 +2310,11 @@ impl Display {
 
                     cell
                 });
-            // Drop sampler guard before borrowing `self` mutably again for drawing.
-            drop(_sampler);
             let Backend::Wgpu { renderer } = &mut self.backend;
             renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
+            }
+            // Move meter back after sampling is finished.
+            self.meter = meter;
         }
 
         let mut rects = lines.rects(&metrics, &size_info);
@@ -2583,7 +2637,8 @@ impl Display {
         // Draw always-on completions overlay (experimental) when enabled and applicable.
         #[cfg(feature = "completions")]
         {
-            if config.debug.completions {
+            // Show completions overlay whenever there are suggestions available in Warp-style UI.
+            if self.completions_active() && config.workspace.warp_style && config.workspace.completions_enabled {
                 let cursor_point_usize =
                     Point::new(cursor_point.line.0 as usize, cursor_point.column);
                 self.draw_completions_overlay_with_context(
@@ -2811,25 +2866,200 @@ impl Display {
                         self.damage_tracker.frame().damage_line(damage);
                         self.damage_tracker.next_frame().damage_line(damage);
 
-                        // Draw header text
-                        let mut col = 0usize;
-                        let point = Point::new(line, Column(col));
-                        {
+                        // Theme tokens
+                        let theme = config
+                            .resolved_theme
+                            .as_ref()
+                            .cloned()
+                            .unwrap_or_else(|| config.theme.resolve());
+                        let tokens = theme.tokens;
+
+                        // Draw status pill, left-aligned command text, and right-aligned duration.
+                        let cols = self.size_info.columns();
+                        let cw = self.size_info.cell_width();
+                        let ch = self.size_info.cell_height();
+                        let pad_x = self.size_info.padding_x();
+                        let pad_y = self.size_info.padding_y();
+
+                        // Attempt to fetch the block for richer UI (status/cwd/time)
+                        let block_opt = self
+                            .blocks
+                            .block_at_header_viewport_line(display_offset, line)
+                            .cloned();
+
+                        // Status pill geometry (columns [0,3))
+                        let pill_start_col = 0usize;
+                        let pill_w_cols = 3usize;
+                        let pill_x = (pill_start_col as f32) * cw;
+                        let pill_y = (line as f32) * ch + (ch * 0.15);
+                        let pill_w = (pill_w_cols as f32) * cw;
+                        let pill_h = (ch * 0.70).max(10.0);
+
+                        // Compute status glyph and color
+                        let (status_glyph, status_color) = if let Some(ref b) = block_opt {
+                            match b.exit {
+                                Some(0) => ("✓".to_string(), tokens.success),
+                                Some(_) => ("✗".to_string(), tokens.error),
+                                None => {
+                                    // Spinner frames
+                                    const FRAMES: [&str; 10] = [
+                                        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+                                    ];
+                                    let ms = Instant::now().duration_since(b.started_at).as_millis()
+                                        as usize;
+                                    let idx = (ms / 120) % FRAMES.len();
+                                    (FRAMES[idx].to_string(), tokens.accent)
+                                }
+                            }
+                        } else {
+                            (".".to_string(), tokens.accent)
+                        };
+
+                        // Status pill background
+                        let mut pill_radius = pill_h / 2.0;
+                        if pill_radius > 22.0 { pill_radius = 22.0; }
+                        let pill_rect = UiRoundedRect::new(pill_x, pill_y, pill_w, pill_h, pill_radius, status_color, 0.24);
+                        self.stage_ui_rounded_rect(pill_rect);
+                        // Status glyph centered within pill
+                        let glyph_col = pill_start_col + 1; // center in 3-col pill
+                        let point = Point::new(line, Column(glyph_col));
+                        let size_info_copy = self.size_info;
+                        let Backend::Wgpu { renderer } = &mut self.backend;
+                        renderer.draw_string(
+                            point,
+                            status_color,
+                            tokens.surface_muted,
+                            status_glyph.chars(),
+                            &size_info_copy,
+                            &mut self.glyph_cache,
+                        );
+
+                        // Compute time string for right alignment
+                        use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
+                        let (time_str, time_cols) = if let Some(ref b) = block_opt {
+                            let elapsed = if let Some(ended_at) = b.ended_at {
+                                ended_at.duration_since(b.started_at)
+                            } else {
+                                Instant::now().duration_since(b.started_at)
+                            };
+                            let s = if elapsed.as_secs() < 60 {
+                                format!("{:.1}s", elapsed.as_secs_f32())
+                            } else if elapsed.as_secs() < 3600 {
+                                format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                            } else {
+                                format!(
+                                    "{}h{}m",
+                                    elapsed.as_secs() / 3600,
+                                    (elapsed.as_secs() % 3600) / 60
+                                )
+                            };
+                            let cols = s.width();
+                            (s, cols)
+                        } else {
+                            (String::new(), 0)
+                        };
+
+                        // Right-align duration at the edge
+                        if time_cols > 0 && time_cols <= cols {
+                            let time_start_col = cols.saturating_sub(time_cols);
+                            let tpoint = Point::new(line, Column(time_start_col));
                             let size_info_copy = self.size_info;
                             let Backend::Wgpu { renderer } = &mut self.backend;
                             renderer.draw_string(
-                                point,
-                                fg,
-                                bg,
-                                header.chars(),
+                                tpoint,
+                                tokens.text_muted,
+                                tokens.surface_muted,
+                                time_str.chars(),
                                 &size_info_copy,
                                 &mut self.glyph_cache,
                             );
                         }
-                        use unicode_width::UnicodeWidthStr as _;
-                        col += header.width() + 2;
 
-                        // Draw action chips: [Copy] [Rerun] [Export]
+                        // Draw command text and cwd between status pill and time area
+                        let mut col_left = pill_start_col + pill_w_cols + 1; // space after pill
+                        let right_guard = if time_cols > 0 { cols.saturating_sub(time_cols + 1) } else { cols.saturating_sub(1) };
+                        if let Some(ref b) = block_opt {
+                            // Draw "▶ " prefix
+                            if col_left + 2 < right_guard {
+                                let pfx = "▶ ";
+                                let p = Point::new(line, Column(col_left));
+                                let size_info_copy = self.size_info;
+                                let Backend::Wgpu { renderer } = &mut self.backend;
+                                renderer.draw_string(p, fg, bg, pfx.chars(), &size_info_copy, &mut self.glyph_cache);
+                                col_left += pfx.width();
+                            }
+                            // Draw command and truncated cwd
+                            let cmd = b.cmd.clone().unwrap_or_else(|| String::from("(command)"));
+                            let mut budget = right_guard.saturating_sub(col_left);
+                            if budget > 0 {
+                                // Reserve some space for cwd separator if possible
+                                let mut text = String::new();
+                                text.push_str(&cmd);
+                                // CWD display
+                                if let Some(ref cwd) = b.cwd {
+                                    let sep = "  —  ";
+                                    let sep_w = sep.width();
+                                    let cwd_full = cwd.clone();
+                                    let mut cwd_show = cwd_full.clone();
+                                    // Simple clamp for cwd to fit remaining budget after sep
+                                    if cwd_show.width() + sep_w > budget.saturating_sub(cmd.width()) {
+                                        // Ensure some room for cwd tail
+                                        let mut remaining = budget
+                                            .saturating_sub(cmd.width())
+                                            .saturating_sub(sep_w);
+                                        if remaining > 1 {
+                                            // Ellipsize from the left
+                                            let mut acc = 0usize;
+                                            let mut out = String::from("…");
+                                            // Take last chars up to remaining-1 (for ellipsis)
+                                            for ch in cwd_full.chars().rev() {
+                                                let w = ch.width().unwrap_or(1);
+                                                if acc + w >= remaining.saturating_sub(1) { break; }
+                                                out.push(ch);
+                                                acc += w;
+                                            }
+                                            let rev: String = out.chars().collect::<Vec<_>>().into_iter().rev().collect();
+                                            cwd_show = rev;
+                                        } else {
+                                            cwd_show.clear();
+                                        }
+                                    }
+                                    // Compose and draw cmd + cwd
+                                    let mut draw_text = String::new();
+                                    draw_text.push_str(&cmd);
+                                    if !cwd_show.is_empty() {
+                                        draw_text.push_str(sep);
+                                        draw_text.push_str(&cwd_show);
+                                    }
+                                    // Finally draw within budget
+                                    let p = Point::new(line, Column(col_left));
+                                    let size_info_copy = self.size_info;
+                                    let Backend::Wgpu { renderer } = &mut self.backend;
+                                    renderer.draw_string(p, fg, bg, draw_text.chars(), &size_info_copy, &mut self.glyph_cache);
+                                    col_left += draw_text.width();
+                                } else {
+                                    // Only command
+                                    let p = Point::new(line, Column(col_left));
+                                    let size_info_copy = self.size_info;
+                                    let Backend::Wgpu { renderer } = &mut self.backend;
+                                    renderer.draw_string(p, fg, bg, cmd.chars(), &size_info_copy, &mut self.glyph_cache);
+                                    col_left += cmd.width();
+                                }
+                            }
+                        } else {
+                            // Fallback: draw header string if block unavailable
+                            let point = Point::new(line, Column(0));
+                            let size_info_copy = self.size_info;
+                            let Backend::Wgpu { renderer } = &mut self.backend;
+                            renderer.draw_string(point, fg, bg, header.chars(), &size_info_copy, &mut self.glyph_cache);
+                            col_left = header.width() + 2;
+                        }
+
+                        // Compute chip starting column based on the legacy header width to stay in-sync with hit-testing
+                        use unicode_width::UnicodeWidthStr as _;
+                        let mut col = header.width() + 2;
+
+                        // Draw action chips: [Copy] [Rerun] [Export], ensuring they don't overlap the right-aligned time
                         let chips = ["[Copy]", "[Rerun]", "[Export]"];
                         let hover_line = self.blocks_header_hover_line;
                         let hover_chip = self.blocks_header_hover_chip;
@@ -2841,38 +3071,22 @@ impl Display {
                         } else {
                             None
                         };
+                        let time_guard = if time_cols > 0 { cols.saturating_sub(time_cols + 1) } else { cols };
                         for (i, chip) in chips.iter().enumerate() {
-                            if col < self.size_info.columns() {
+                            if col < self.size_info.columns() && col + chip.width() < time_guard {
                                 // Optional hover highlight/press flash with pill background
                                 if hover_line == Some(line) {
-                                    let cw = self.size_info.cell_width();
-                                    let ch = self.size_info.cell_height();
                                     let x_px = (col as f32) * cw;
                                     let w_px = (chip.len() as f32) * cw;
                                     let y_px = (line as f32) * ch + (ch * 0.15);
                                     let h_px = (ch * 0.70).max(10.0);
-                                    let theme = config
-                                        .resolved_theme
-                                        .as_ref()
-                                        .cloned()
-                                        .unwrap_or_else(|| config.theme.resolve());
-                                    let hl = theme.tokens.accent;
+                                    let hl = tokens.accent;
                                     let is_hover = hover_chip == Some(i);
                                     let is_press = press_chip == Some(i);
-                                    let alpha = if is_press {
-                                        0.42
-                                    } else if is_hover {
-                                        0.28
-                                    } else {
-                                        0.18
-                                    };
+                                    let alpha = if is_press { 0.42 } else if is_hover { 0.28 } else { 0.18 };
                                     let mut radius = h_px / 2.0;
-                                    if radius > 22.0 {
-                                        radius = 22.0;
-                                    }
-                                    let pill = UiRoundedRect::new(
-                                        x_px, y_px, w_px, h_px, radius, hl, alpha,
-                                    );
+                                    if radius > 22.0 { radius = 22.0; }
+                                    let pill = UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, hl, alpha);
                                     self.stage_ui_rounded_rect(pill);
                                 }
 
@@ -2881,7 +3095,7 @@ impl Display {
                                 let Backend::Wgpu { renderer } = &mut self.backend;
                                 renderer.draw_string(
                                     point,
-                                    fg, // keep fg for text readability; could use tokens.accent for emphasis
+                                    fg,
                                     bg,
                                     chip.chars(),
                                     &size_info_copy,
@@ -2890,6 +3104,43 @@ impl Display {
                                 col += chip.width() + 1;
                             }
                         }
+
+                        // Tooltip on hover over status pill
+                        if self.blocks_header_hover_status == Some(line) {
+                            // Build tooltip text using available block info
+                            let tip = if let Some(ref b) = block_opt {
+                                let status = match b.exit { Some(0) => "success", Some(code) => { if code != 0 { "error" } else { "success" } }, None => "running" };
+                                let exit_s = match b.exit { Some(code) => format!("exit {}", code), None => "no exit yet".to_string() };
+                                let cwd_s = b.cwd.clone().unwrap_or_else(|| "~".to_string());
+                                let elapsed = if let Some(ended_at) = b.ended_at { ended_at.duration_since(b.started_at) } else { Instant::now().duration_since(b.started_at) };
+                                let t = if elapsed.as_secs() < 60 {
+                                    format!("{:.1}s", elapsed.as_secs_f32())
+                                } else if elapsed.as_secs() < 3600 {
+                                    format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                                } else {
+                                    format!("{}h{}m", elapsed.as_secs() / 3600, (elapsed.as_secs() % 3600) / 60)
+                                };
+                                format!("{} • {} • cwd {} • {}", status, exit_s, cwd_s, if b.ended_at.is_some() { format!("took {}", t) } else { format!("elapsed {}", t) })
+                            } else {
+                                "Command details unavailable".to_string()
+                            };
+                            use unicode_width::UnicodeWidthStr as _;
+                            let tcols = tip.width();
+                            // Position tooltip above the header line when possible
+                            let tip_line = if line > 0 { line - 1 } else { line };
+                            let tip_col = pill_start_col + pill_w_cols + 1; // near the status pill
+                            let tx = (tip_col as f32) * cw;
+                            let ty = (tip_line as f32) * ch + (ch * 0.05);
+                            let tw = (tcols as f32) * cw + 8.0;
+                            let th = (ch * 0.90).max(12.0);
+                            let pill = UiRoundedRect::new(tx, ty, tw, th, (th * 0.5).min(18.0), tokens.surface, 0.95);
+                            self.stage_ui_rounded_rect(pill);
+                            let p = Point::new(tip_line, Column(tip_col));
+                            let size_info_copy = self.size_info;
+                            let Backend::Wgpu { renderer } = &mut self.backend;
+                            renderer.draw_string(p, tokens.text, tokens.surface, tip.chars(), &size_info_copy, &mut self.glyph_cache);
+                        }
+
                         continue;
                     }
                 }
@@ -2927,6 +3178,16 @@ impl Display {
         // Clearing debug highlights from the previous frame requires full redraw.
         if matches!(self.raw_window_handle, RawWindowHandle::Wayland(_)) {
             self.request_frame(scheduler);
+        }
+
+        // While any block is running, schedule periodic frames to animate spinner and elapsed time
+        if self.blocks.any_running() {
+            let window_id = self.window.id();
+            let timer_id = TimerId::new(Topic::Frame, window_id);
+            let event = Event::new(EventType::Frame, window_id);
+            // Coalesce previous frame timer and schedule a new one ~120ms later (spinner cadence)
+            let _ = scheduler.unschedule(timer_id);
+            scheduler.schedule(event, std::time::Duration::from_millis(120), false, timer_id);
         }
 
         self.damage_tracker.swap_damage();
@@ -3350,7 +3611,8 @@ impl Display {
                         );
                         self.stage_ui_rounded_rect(pill);
                         // Label text
-                        let text_color = if is_hovered {
+                        let run_active = *label == "[Run]" && !self.composer_text.is_empty();
+                        let text_color = if is_hovered || run_active {
                             tokens.accent
                         } else {
                             tokens.text
@@ -3609,7 +3871,8 @@ impl Display {
                     );
                     self.stage_ui_rounded_rect(pill);
                     // Label text
-                    let text_color = if is_hovered {
+                    let run_active = *label == "[Run]" && !self.composer_text.is_empty();
+                    let text_color = if is_hovered || run_active {
                         tokens.accent
                     } else {
                         tokens.text

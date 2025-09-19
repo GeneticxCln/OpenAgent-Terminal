@@ -17,12 +17,6 @@ members = [
     "crates/openagent-terminal-migrate",
     "crates/openagent-terminal-themes",
     "crates/openagent-terminal-snippets",
-    # IDE components
-    "crates/openagent-terminal-ide-indexer",
-    "crates/openagent-terminal-ide-lsp",
-    "crates/openagent-terminal-ide-dap",
-    "crates/openagent-terminal-ide-editor",
-    "crates/openagent-terminal-web-editors",
 ]
 resolver = "2"
 

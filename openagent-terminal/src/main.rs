@@ -52,6 +52,7 @@ mod input;
 #[cfg(unix)]
 mod ipc;
 mod logging;
+mod ide;
 mod logging_v2;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -159,11 +160,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             if code != 0 {
                 std::process::exit(code)
             };
-        }
-        Some(Subcommands::WebEdit(ref opts)) => {
-            // Native overlay editor: set env to request opening after first window init
-            std::env::set_var("OPENAGENT_OPEN_FILE", &opts.file);
-            run_openagent_terminal(options)?;
         }
         #[cfg(feature = "blocks")]
         Some(Subcommands::Notebook(ref nb_opts)) => {

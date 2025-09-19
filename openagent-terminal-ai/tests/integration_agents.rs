@@ -1,3 +1,4 @@
+#![cfg(feature = "agents")]
 use std::sync::Arc;
 use chrono::Utc;
 use tokio::time::{sleep, Duration};

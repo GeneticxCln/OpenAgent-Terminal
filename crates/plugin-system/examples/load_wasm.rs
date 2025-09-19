@@ -3,10 +3,10 @@ use plugin_system::permissions::ExecRule;
 
 fn main() -> anyhow::Result<()> {
     // Create the manager
-    let mut manager = UnifiedPluginManager::new(".")?;
+    let manager = UnifiedPluginManager::new(".")?;
 
     // Union permissions for the three demo plugins
-    let perms = PluginPermissions {
+    let _perms = PluginPermissions {
         read_files: vec!["/etc/hostname".into()],
         network: true,
         net_allow_domains: vec!["example.com".into()],
@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
     #[cfg(feature = "wasm-runtime")]
-    manager.set_default_host_from_permissions(&perms);
+    manager.set_default_host_from_permissions(&_perms);
 
     // Choose which demo to run
     let wasm_path = std::env::args().nth(1).unwrap_or_else(||

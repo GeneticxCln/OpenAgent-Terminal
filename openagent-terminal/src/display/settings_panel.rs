@@ -78,6 +78,8 @@ pub struct SettingsPanelState {
 
     // Workspace page (pane drag & highlights)
     pub ws_highlight_color: Option<[u8; 3]>,
+    /// Warp-style completions overlay toggle
+    pub ws_completions_enabled: bool,
     pub ws_highlight_alpha_base: f32,
     pub ws_highlight_alpha_hover: f32,
     pub ws_tab_highlight_alpha_base: f32,
@@ -154,6 +156,7 @@ impl Default for SettingsPanelState {
             message: None,
             // Workspace defaults get filled on open()
             ws_highlight_color: None,
+            ws_completions_enabled: true,
             ws_highlight_alpha_base: 0.15,
             ws_highlight_alpha_hover: 0.5,
             ws_tab_highlight_alpha_base: 0.12,
@@ -240,6 +243,7 @@ impl SettingsPanelState {
         self.general_selected = GeneralField::LiveReload;
 
         // Workspace (drag & highlights)
+        self.ws_completions_enabled = config.workspace.completions_enabled;
         let dcfg = &config.workspace.drag;
         self.ws_highlight_color = dcfg.highlight_color.get().map(|c| [c.r, c.g, c.b]);
         self.ws_highlight_alpha_base = dcfg.highlight_alpha_base;
@@ -459,6 +463,11 @@ impl SettingsPanelState {
             }
         } else if self.category == SettingsCategory::Workspace {
             // Provide basic editing gestures via single-letter commands on this page:
+            // 'o' toggles Warp-style completions overlay
+            if ch == 'o' || ch == 'O' {
+                self.ws_completions_enabled = !self.ws_completions_enabled;
+                return;
+            }
             // h/H: adjust highlight_alpha_base/hover; t/T: tab alphas; n/N: new-tab alphas,
             // s: increase vertical snap, S: decrease, e: increase new-tab edge snap, E: decrease.
             // c: clear highlight_color (use theme), C: set placeholder color 120,180,255.
@@ -617,19 +626,22 @@ impl SettingsPanelState {
                 self.message = Some("Saved".to_string());
                 Ok(())
             }
-            SettingsCategory::Workspace => save_workspace_drag_to_config(
-                self.ws_highlight_color.map(|c| (c[0], c[1], c[2])),
-                self.ws_highlight_alpha_base,
-                self.ws_highlight_alpha_hover,
-                self.ws_tab_highlight_alpha_base,
-                self.ws_tab_highlight_alpha_hover,
-                self.ws_new_tab_highlight_alpha_base,
-                self.ws_new_tab_highlight_alpha_hover,
-                self.ws_tab_drop_snap_px,
-                self.ws_new_tab_snap_extra_px,
-            )
-            .map(|_| self.message = Some("Saved workspace drag/highlights".into()))
-            .map_err(|e| format!("Failed to save workspace: {}", e)),
+            SettingsCategory::Workspace => {
+                save_workspace_drag_to_config(
+                    self.ws_highlight_color.map(|c| (c[0], c[1], c[2])),
+                    self.ws_highlight_alpha_base,
+                    self.ws_highlight_alpha_hover,
+                    self.ws_tab_highlight_alpha_base,
+                    self.ws_tab_highlight_alpha_hover,
+                    self.ws_new_tab_highlight_alpha_base,
+                    self.ws_new_tab_highlight_alpha_hover,
+                    self.ws_tab_drop_snap_px,
+                    self.ws_new_tab_snap_extra_px,
+                )
+                .and_then(|_| save_workspace_completions_to_config(self.ws_completions_enabled))
+                .map(|_| self.message = Some("Saved workspace settings".into()))
+                .map_err(|e| format!("Failed to save workspace: {}", e))
+            }
         }
     }
 
@@ -1514,8 +1526,15 @@ impl Display {
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &s2, num_cols - 2);
                 line += 2;
 
+                // Completions toggle row
+                let comp_lbl = "Completions overlay (Warp): ";
+                let comp_val = if st.ws_completions_enabled { "on" } else { "off" };
+                let comp_row = format!("{}{} (press 'o' to toggle)", comp_lbl, comp_val);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &comp_row, num_cols - 2);
+                line += 2;
+
                 // Save hint
-                let hint = "Enter: Save  •  Esc: Close  •  Ctrl+Left/Right: Switch category  •  Values edit via config today (UI preview)";
+                let hint = "Enter: Save  •  Esc: Close  •  Ctrl+Left/Right: Switch category";
                 self.draw_ai_text(
                     Point::new(line, Column(2)),
                     tokens.text_muted,
@@ -1817,6 +1836,33 @@ fn save_workspace_drag_to_config(
     workspace_drag_write_to_toml(
         &mut root, color_rgb, hl_base, hl_hover, tab_base, tab_hover, new_base, new_hover, snap_v,
         snap_new,
+    );
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let s = toml::to_string_pretty(&root).unwrap_or_default();
+    fs::write(&path, s)
+}
+
+fn save_workspace_completions_to_config(enabled: bool) -> std::io::Result<()> {
+    let path = config_path();
+    let mut root = if let Ok(text) = fs::read_to_string(&path) {
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
+    } else {
+        toml::Value::Table(toml::value::Table::new())
+    };
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
+    let tbl = root.as_table_mut().unwrap();
+    let ws_tbl = tbl
+        .entry("workspace")
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ws = ws_tbl.as_table_mut().unwrap();
+    ws.insert(
+        "completions_enabled".into(),
+        toml::Value::Boolean(enabled),
     );
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;

@@ -385,6 +385,9 @@ pub trait ActionContext<T: EventListener> {
     // Execute composer text via native command pipeline (event-layer responsibility)
     fn execute_composer_command(&mut self, _text: String) {}
 
+    // IDE integration hooks
+    fn ide_on_command_end(&mut self, _exit_code: Option<i32>) {}
+
     // Inline AI suggestions (feature = "ai")
     #[cfg(feature = "ai")]
     fn inline_suggestion_visible(&self) -> bool {
@@ -414,6 +417,8 @@ pub trait ActionContext<T: EventListener> {
     fn palette_confirm(&mut self) {}
     fn palette_cancel(&mut self) {}
     fn palette_confirm_cd(&mut self) {}
+    /// Confirm selection into composer for editing (used for Commands via Shift+Enter)
+    fn palette_confirm_edit(&mut self) {}
     fn run_workflow_by_name(&mut self, _name: &str) {}
 
     // Blocks Search panel - basic functionality
@@ -437,6 +442,11 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_confirm(&mut self) {}
     fn blocks_search_cancel(&mut self) {}
 
+    // Completions overlay controls
+    fn completions_active(&self) -> bool { false }
+    fn completions_move_selection(&mut self, _delta: isize) {}
+    fn completions_confirm(&mut self) {}
+    fn completions_clear(&mut self) {}
     // Blocks Search panel - enhanced functionality
     fn blocks_search_cycle_mode(&mut self) {}
     fn blocks_search_cycle_sort_field(&mut self) {}
@@ -994,19 +1004,12 @@ impl<T: EventListener> Execute<T> for Action {
             }
             Action::ToggleAiPanel => ctx.open_ai_panel(),
             Action::OpenDebugPanel => {
-                // Toggle DAP overlay
-                #[cfg(feature = "dap")]
-                {
-                    // If already open, close
-                    if cfg!(feature = "dap") {
-                        if ctx.display().dap_overlay.active {
-                            ctx.display().dap_close();
-                        } else {
-                            ctx.display().dap_open(None);
-                        }
-                        ctx.mark_dirty();
-                    }
-                }
+                // DAP overlay has been removed; surface a notice instead
+                let msg = crate::message_bar::Message::new(
+                    "Debug panel is not available in this build".into(),
+                    crate::message_bar::MessageType::Warning,
+                );
+                ctx.send_user_event(crate::event::EventType::Message(msg));
             }
             #[cfg(feature = "ai")]
             Action::AiExplain => {
@@ -2330,6 +2333,23 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         .mark_fully_damaged();
                     self.ctx.mark_dirty();
                 }
+                // Detect hover over status pill area (first few columns on the header line)
+                let mut status_hover: Option<usize> = None;
+                if let Some(hline) = new_hover {
+                    // Status pill spans columns [0, 3)
+                    if view.column.0 < 3 {
+                        status_hover = Some(hline);
+                    }
+                }
+                if self.ctx.display().blocks_header_hover_status != status_hover {
+                    self.ctx.display().blocks_header_hover_status = status_hover;
+                    self.ctx
+                        .display()
+                        .damage_tracker
+                        .frame()
+                        .mark_fully_damaged();
+                    self.ctx.mark_dirty();
+                }
             }
         }
 
@@ -2358,6 +2378,58 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 let my = point.line.0 as usize;
                 self.ctx.workspace_tab_bar_hit(mx, my).is_some()
             } else {
+                false
+            }
+        };
+
+        // Completions hover: update selection on hover and set pointer on items
+        let completions_hover = {
+            #[cfg(feature = "completions")]
+            {
+                let cfg = self.ctx.config();
+                if cfg.workspace.warp_style && cfg.workspace.completions_enabled && self.ctx.display().completions_active() {
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+                        let bounds_opt = { self.ctx.display().completions_overlay_bounds };
+                        if let Some((start_line, end_line, start_col, end_col)) = bounds_opt {
+                            let inside_cols = point.column.0 >= start_col && point.column.0 < end_col;
+                            if view.line >= start_line && view.line <= end_line && inside_cols {
+                                // Try to map to an item row (use short immutable borrow scope)
+                                let hovered_idx_opt: Option<usize> = {
+                                    let dref = self.ctx.display();
+                                    dref
+                                        .completions_overlay_item_lines
+                                        .iter()
+                                        .find(|(l, _)| *l == view.line)
+                                        .map(|(_, i)| *i)
+                                };
+                                if let Some(idx) = hovered_idx_opt {
+                                    if self.ctx.display().completions.selected_index != idx {
+                                        self.ctx.display().completions.selected_index = idx;
+                                        self.ctx.display().pending_update.dirty = true;
+                                        self.ctx.mark_dirty();
+                                    }
+                                    true
+                                } else {
+                                    // Hovering header area
+                                    true
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(feature = "completions"))]
+            {
                 false
             }
         };
@@ -2509,6 +2581,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             if ai_hover
                 || tab_hover
                 || quick_actions_hover
+                || completions_hover
                 || self.ctx.display().blocks_header_hover_line.is_some()
             {
                 self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
@@ -2575,9 +2648,40 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 let mut new_chip_hover: Option<usize> = None;
                 if let Some(header) = header {
                     use crate::display::blocks::Blocks;
+                    use unicode_width::UnicodeWidthStr as _;
                     let mouse_col = point.column.0;
+                    // Reserve right-most columns for the duration, mirroring draw logic
+                    let time_cols = {
+                        if let Some(b) = self
+                            .ctx
+                            .display()
+                            .blocks
+                            .block_at_header_viewport_line(display_offset, view.line)
+                        {
+                            let elapsed = if let Some(ended_at) = b.ended_at {
+                                ended_at.duration_since(b.started_at)
+                            } else {
+                                std::time::Instant::now().duration_since(b.started_at)
+                            };
+                            let s = if elapsed.as_secs() < 60 {
+                                format!("{:.1}s", elapsed.as_secs_f32())
+                            } else if elapsed.as_secs() < 3600 {
+                                format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                            } else {
+                                format!(
+                                    "{}h{}m",
+                                    elapsed.as_secs() / 3600,
+                                    (elapsed.as_secs() % 3600) / 60
+                                )
+                            };
+                            s.width()
+                        } else {
+                            0
+                        }
+                    };
                     let cols = self.ctx.size_info().columns();
-                    new_chip_hover = Blocks::chip_hit_at(&header, mouse_col, cols);
+                    let clip_cols = cols.saturating_sub(time_cols + 1);
+                    new_chip_hover = Blocks::chip_hit_at(&header, mouse_col, clip_cols);
                 }
                 if self.ctx.display().blocks_header_hover_chip != new_chip_hover {
                     self.ctx.display().blocks_header_hover_chip = new_chip_hover;
@@ -2823,6 +2927,52 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // Handle clickable fold headers (skip in tests to avoid requiring full Display mock).
             #[cfg(not(test))]
             {
+                // Click-to-accept/cancel on completions overlay (Warp-like)
+                if button == MouseButton::Left {
+                    #[cfg(feature = "completions")]
+                    {
+                        let cfg = self.ctx.config();
+                        if cfg.workspace.warp_style && cfg.workspace.completions_enabled && self.ctx.display().completions_active() {
+                            let display_offset = self.ctx.terminal().grid().display_offset();
+                            let point = self
+                                .ctx
+                                .mouse()
+                                .point(&self.ctx.size_info(), display_offset);
+                            if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+                                let bounds_opt = { self.ctx.display().completions_overlay_bounds };
+                                if let Some((start_line, end_line, start_col, end_col)) = bounds_opt {
+                                    let inside_cols = point.column.0 >= start_col && point.column.0 < end_col;
+                                    let inside_lines = view.line >= start_line && view.line <= end_line;
+                                    if inside_lines && inside_cols {
+                                        let hovered_idx_opt: Option<usize> = {
+                                            let dref = self.ctx.display();
+                                            dref
+                                                .completions_overlay_item_lines
+                                                .iter()
+                                                .find(|(l, _)| *l == view.line)
+                                                .map(|(_, i)| *i)
+                                        };
+                                        if let Some(idx) = hovered_idx_opt {
+                                            if self.ctx.display().completions.selected_index != idx {
+                                                self.ctx.display().completions.selected_index = idx;
+                                            }
+                                            self.ctx.completions_confirm();
+                                            return;
+                                        } else {
+                                            // Clicked header area; do nothing
+                                            return;
+                                        }
+                                    } else {
+                                        // Clicked outside overlay: clear
+                                        self.ctx.completions_clear();
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if button == MouseButton::Left && self.ctx.display().blocks.enabled {
                     if let Some(view) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, point)
@@ -2866,10 +3016,31 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                         );
                                     }
                                     1 => {
-                                        // Rerun the command for the block under cursor in its recorded cwd
-                                        self.ctx.send_user_event(
-                                            crate::event::EventType::BlocksRerunUnderCursor,
-                                        );
+                                        // Rerun or Edit & Run: Alt+Click pre-fills composer for editing
+                                        let mods = self.ctx.modifiers().state();
+                                        if mods.alt_key() {
+                                            // Pre-fill composer with command under cursor and focus composer
+                                            let display_offset = self.ctx.terminal().grid().display_offset();
+                                            let cmd_opt = {
+                                                let display = self.ctx.display();
+                                                display
+                                                    .blocks
+                                                    .block_at_header_viewport_line(display_offset, view.line)
+                                                    .and_then(|b| b.cmd.clone())
+                                            };
+                                                if let Some(cmd) = cmd_opt {
+                                                    self.ctx.display().composer_text = cmd;
+                                                    self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
+                                                    self.ctx.display().composer_sel_anchor = None;
+                                                    self.ctx.display().composer_view_col_offset = 0;
+                                                    self.ctx.display().composer_focused = true;
+                                                }
+                                        } else {
+                                            // Immediate rerun
+                                            self.ctx.send_user_event(
+                                                crate::event::EventType::BlocksRerunUnderCursor,
+                                            );
+                                        }
                                     }
                                     2 => {
                                         // Export header text under cursor (acts as Export for now)

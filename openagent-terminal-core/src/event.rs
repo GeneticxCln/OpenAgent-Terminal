@@ -130,31 +130,33 @@ impl std::error::Error for NotifyError {}
 
 pub trait Notify {
     /// Notify that an escape sequence should be written to the PTY.
-    /// 
-    /// This is the infallible variant that will log errors internally rather than
-    /// propagating them. Use `try_notify` for explicit error handling.
+    ///
+    /// This is the infallible variant. The default implementation is a no-op
+    /// that simply consumes the bytes. Implementors are encouraged to override
+    /// this (and/or `try_notify`) to provide actual behavior.
     fn notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
-        // Default implementation bridges to the fallible API and logs any error.
-        // Implementors may override for performance.
-        let _ = self.try_notify(bytes);
+        // Default no-op: consume bytes to avoid unused warnings.
+        let _ = bytes.into();
     }
 
     /// Fallible form of notify that returns detailed error information.
-    /// 
+    ///
     /// This should be the preferred method when error handling is important.
     /// The default implementation bridges to the infallible `notify` method,
-    /// but implementations should override this to provide proper error reporting.
-    /// 
+    /// calling it and then returning `Ok(())`.
+    ///
     /// # Errors
-    /// 
-    /// Returns `NotifyError` variants based on the specific failure:
+    ///
+    /// Implementations that override this method should return `NotifyError`
+    /// variants based on the specific failure:
     /// - `SendFailed`: Generic send failure
     /// - `Disconnected`: The notification channel is no longer available
     /// - `PayloadTooLarge`: The payload exceeds size limits
     /// - `Unavailable`: The notification system is temporarily unavailable
     fn try_notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) -> Result<(), NotifyError> {
-        // Default behavior assumes success; concrete implementations should override.
-        let _ = bytes.into();
+        // Bridge to the infallible method by default.
+        let bytes = bytes.into();
+        self.notify(bytes);
         Ok(())
     }
 }

@@ -40,6 +40,11 @@ impl Blocks {
         }
     }
 
+    /// Return true if any command block is currently running (exit is None).
+    pub fn any_running(&self) -> bool {
+        self.blocks.iter().any(|b| b.exit.is_none())
+    }
+
     /// Compute the start/end column ranges for action chips following a given header text.
     /// Chips are rendered with a single space between them, starting at header.width() + 2.
     pub fn compute_header_chip_ranges(header: &str) -> Vec<(usize, usize)> {
@@ -280,25 +285,6 @@ impl Blocks {
                         }
                     };
 
-                    // Calculate elapsed time
-                    let elapsed = if let Some(ended_at) = block.ended_at {
-                        ended_at.duration_since(block.started_at)
-                    } else {
-                        Instant::now().duration_since(block.started_at)
-                    };
-
-                    let time_str = if elapsed.as_secs() < 60 {
-                        format!("{:.1}s", elapsed.as_secs_f32())
-                    } else if elapsed.as_secs() < 3600 {
-                        format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
-                    } else {
-                        format!(
-                            "{}h{}m",
-                            elapsed.as_secs() / 3600,
-                            (elapsed.as_secs() % 3600) / 60
-                        )
-                    };
-
                     // Format working directory (show last component if too long)
                     let cwd_str = if let Some(ref cwd) = block.cwd {
                         if cwd.len() > 40 {
@@ -310,7 +296,8 @@ impl Blocks {
                         String::from("~")
                     };
 
-                    return Some(format!("▶ {} [{}] {} ({})", cmd, status, time_str, cwd_str));
+                    // Note: Duration is now drawn right-aligned in the overlay; omit from header text.
+                    return Some(format!("▶ {} [{}] ({})", cmd, status, cwd_str));
                 }
             }
         }

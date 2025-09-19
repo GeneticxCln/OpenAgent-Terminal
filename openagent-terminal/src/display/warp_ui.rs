@@ -315,9 +315,11 @@ impl Display {
         let tab_width = (available_width / tab_count as f32).clamp(120.0, 200.0);
 
         let mut current_x = style.tab_padding;
+        let mut overflowed = false;
 
         for (index, &tab_id) in tab_order.iter().enumerate() {
             if current_x + tab_width > size_info.width() {
+                overflowed = true;
                 break;
             }
 
@@ -401,6 +403,39 @@ impl Display {
                 Some(nearest),
             ));
         }
+
+        // Overflow indicator when tabs exceed available width
+        if overflowed {
+            // Draw subtle fade/ellipsis at the right edge to indicate more tabs exist
+            let _cw = self.size_info.cell_width();
+            let ch = self.size_info.cell_height();
+            let ellipsis_cols = 3usize;
+            let text_col = cols.saturating_sub(ellipsis_cols + 6); // leave room for gear
+            let text_line = ((start_y + style.tab_height * 0.5) / ch) as usize;
+            let bg = style.inactive_bg;
+            let fg = tokens.text_muted;
+            // Soft fade rectangle near the right edge
+            let fade_w = (style.tab_height * 1.2).clamp(24.0, 64.0);
+            let fade_x = self.size_info.width() - fade_w - 8.0;
+            let fade = RenderRect::new(fade_x, start_y + 1.0, fade_w, style.tab_height - 2.0, bg, 0.6);
+            let size_info = self.size_info;
+            let metrics = self.glyph_cache.font_metrics();
+            self.renderer_draw_rects(&size_info, &metrics, vec![fade]);
+            // Ellipsis text
+            self.draw_warp_tab_text(Point::new(text_line, Column(text_col)), fg, bg, "…", ellipsis_cols);
+        }
+
+        // Hover tooltip for tab title/cwd
+        if let Some(hover_id) = match self.tab_hover {
+            Some(crate::display::TabHoverTarget::Tab(id)) => Some(id),
+            Some(crate::display::TabHoverTarget::Close(id)) => Some(id),
+            _ => None,
+        } {
+            self.draw_tab_hover_tooltip(config, tab_manager, position, style, hover_id);
+        }
+
+        // Draw any active close fade animations
+        self.draw_tab_close_fades(style);
 
         Some(TabBarGeometry {
             start_line: (start_y / size_info.cell_height()) as usize,
@@ -1124,6 +1159,8 @@ impl Display {
                 .copied()
                 .find(|(_, bx, by, bw, bh)| x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh)
             {
+                // Start a fade-out animation for this tab before it is removed
+                self.start_tab_close_fade(config, position, tab_manager, tab_id);
                 return Some(TabBarAction::CloseTab(tab_id));
             }
         }
@@ -1148,6 +1185,8 @@ impl Display {
                     .find(|(tid, _, _)| *tid == id)
                 {
                     if config.workspace.tab_bar.show_close_button && x_px >= x + w - 20.0 {
+                        // Start fade-out since a close is about to happen via coarse region
+                        self.start_tab_close_fade(config, position, tab_manager, id);
                         return Some(TabBarAction::CloseTab(id));
                     }
                     self.tab_drag_active = Some(super::TabDragState {
@@ -1386,6 +1425,205 @@ impl WarpAnimation {
     /// Check if animation is complete
     pub fn is_complete(&self) -> bool {
         self.start_time.elapsed().as_millis() >= self.duration_ms as u128
+    }
+}
+
+impl Display {
+    /// Start a runtime fade-out for a tab being closed by capturing its last-known geometry.
+    fn start_tab_close_fade(
+        &mut self,
+        config: &UiConfig,
+        position: TabBarPosition,
+        tab_manager: &TabManager,
+        tab_id: TabId,
+    ) {
+        // Find tab bounds from the last draw pass
+        if let Some((_, x, w)) = self
+            .tab_bounds_px
+            .iter()
+            .copied()
+            .find(|(tid, _, _)| *tid == tab_id)
+        {
+            let style = WarpTabStyle::from_theme(config);
+            let y = match position {
+                TabBarPosition::Top => 0.0,
+                TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
+                TabBarPosition::Hidden => 0.0,
+            };
+            let is_active = tab_manager.active_tab_id().is_some_and(|id| id == tab_id);
+            let color = if is_active { style.active_bg } else { style.inactive_bg };
+            self.tab_close_fades.push(crate::display::TabCloseFade {
+                tab_id,
+                start_time: Instant::now(),
+                duration_ms: (style.animation_duration_ms).max(120),
+                x,
+                y,
+                w,
+                h: style.tab_height,
+                color,
+            });
+        }
+    }
+
+    /// Draw any active tab close fade overlays and clean up completed ones.
+    fn draw_tab_close_fades(&mut self, style: &WarpTabStyle) {
+        if self.tab_close_fades.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let mut rects: Vec<RenderRect> = Vec::new();
+        let mut pills: Vec<UiRoundedRect> = Vec::new();
+        let mut remaining: Vec<crate::display::TabCloseFade> = Vec::new();
+        for fade in self.tab_close_fades.iter() {
+            let elapsed = now.saturating_duration_since(fade.start_time).as_millis() as u32;
+            if elapsed >= fade.duration_ms {
+                // Do not keep
+                continue;
+            }
+            let t = (elapsed as f32 / fade.duration_ms as f32).clamp(0.0, 1.0);
+            let alpha = 1.0 - (1.0 - t).powi(3); // ease-out for opacity falloff
+            // Rounded pill with diminishing alpha
+            let rr = UiRoundedRect::new(
+                fade.x,
+                fade.y,
+                fade.w,
+                fade.h,
+                style.corner_radius.max(6.0),
+                fade.color,
+                (1.0 - t) * 0.9,
+            );
+            pills.push(rr);
+            // Subtle dark overlay to reinforce disappearing
+            let overlay = RenderRect::new(
+                fade.x,
+                fade.y,
+                fade.w,
+                fade.h,
+                Rgb::new(0, 0, 0),
+                alpha * 0.06,
+            );
+            rects.push(overlay);
+            remaining.push(fade.clone());
+        }
+        // Replace with remaining animations
+        self.tab_close_fades = remaining;
+        // Stage pills and draw rects
+        for rr in pills {
+            self.stage_ui_rounded_rect(rr);
+        }
+        if !rects.is_empty() {
+            let size_info = self.size_info;
+            let metrics = self.glyph_cache.font_metrics();
+            self.renderer_draw_rects(&size_info, &metrics, rects);
+        }
+    }
+
+    /// Draw a tooltip showing the full title and working directory for the hovered tab.
+    fn draw_tab_hover_tooltip(
+        &mut self,
+        config: &UiConfig,
+        tab_manager: &TabManager,
+        position: TabBarPosition,
+        style: &WarpTabStyle,
+        tab_id: TabId,
+    ) {
+        let tab = match tab_manager.get_tab(tab_id) {
+            Some(t) => t,
+            None => return,
+        };
+        // Compute hover progress for fade-in
+        let hover_alpha = if let Some(t0) = self.tab_hover_anim_start {
+            let elapsed = t0.elapsed().as_millis() as f32;
+            let dur = style.animation_duration_ms.max(1) as f32;
+            (elapsed / dur).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        // Determine anchor X (tab center) from cached bounds
+        let (tab_x, tab_w) = match self
+            .tab_bounds_px
+            .iter()
+            .find(|(tid, _, _)| *tid == tab_id)
+            .map(|(_, x, w)| (*x, *w))
+        {
+            Some(v) => v,
+            None => return,
+        };
+        let center_x = tab_x + tab_w * 0.5;
+
+        // Tooltip strings
+        let title_str = tab.title.as_str();
+        let cwd_str = tab.working_directory.to_string_lossy();
+
+        // Measure sizes in columns
+        use unicode_width::UnicodeWidthStr as _;
+        let cw = self.size_info.cell_width();
+        let ch = self.size_info.cell_height();
+        let pad_x_px = (cw * 0.7).max(8.0);
+        let pad_y_px = (ch * 0.3).max(4.0);
+        let line_gap_px = (ch * 0.15).max(2.0);
+
+        let title_cols = title_str.width();
+        let cwd_cols = cwd_str.width();
+        let text_cols = title_cols.max(cwd_cols).max(6);
+        let text_w_px = text_cols as f32 * cw;
+        let text_h_px = ch * 2.0 + line_gap_px;
+        let bg_w = text_w_px + pad_x_px * 2.0;
+        let bg_h = text_h_px + pad_y_px * 2.0;
+        // Position above or below the tab bar
+        let bar_y = match position {
+            TabBarPosition::Top => 0.0,
+            TabBarPosition::Bottom => self.size_info.height() - style.tab_height,
+            TabBarPosition::Hidden => 0.0,
+        };
+        let bg_x = (center_x - bg_w * 0.5).clamp(4.0, self.size_info.width() - bg_w - 4.0);
+        let bg_y = match position {
+            TabBarPosition::Top => (bar_y + style.tab_height + 6.0).min(self.size_info.height() - bg_h - 4.0),
+            TabBarPosition::Bottom => (bar_y - bg_h - 6.0).max(4.0),
+            TabBarPosition::Hidden => 0.0,
+        };
+
+        // Colors from theme
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let bg_color = tokens.surface;
+        let fg_color = tokens.text;
+
+        // Background pill
+        let pill = UiRoundedRect::new(
+            bg_x,
+            bg_y,
+            bg_w,
+            bg_h,
+            (theme.ui.corner_radius_px * 0.75).min(bg_h * 0.5),
+            bg_color,
+            0.92 * hover_alpha,
+        );
+        self.stage_ui_rounded_rect(pill);
+
+        // Draw text lines inside the pill using grid-aligned drawing
+        let title_line = ((bg_y + pad_y_px + ch * 0.1) / ch) as usize;
+        let cwd_line = ((bg_y + pad_y_px + ch + line_gap_px) / ch) as usize;
+        let start_col = ((bg_x + pad_x_px) / cw) as usize;
+        self.draw_warp_tab_text(
+            Point::new(title_line, Column(start_col)),
+            fg_color,
+            bg_color,
+            title_str,
+            text_cols,
+        );
+        self.draw_warp_tab_text(
+            Point::new(cwd_line, Column(start_col)),
+            tokens.text_muted,
+            bg_color,
+            &cwd_str,
+            text_cols,
+        );
     }
 }
 

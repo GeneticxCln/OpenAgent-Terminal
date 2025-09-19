@@ -69,6 +69,10 @@ pub struct WindowContext {
     pub workspace: crate::workspace::WorkspaceManager,
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
+    /// Native Warp-style IDE manager
+    pub ide: crate::ide::IdeManager,
+    /// Last started command captured from OSC 133; used for IDE error suggestions
+    last_command: Option<String>,
 }
 
 impl WindowContext {
@@ -344,6 +348,8 @@ impl WindowContext {
                     None
                 }
             },
+            ide: crate::ide::IdeManager::new(),
+            last_command: None,
         };
 
         // Apply effective reduce-motion preference from config: override takes precedence over
@@ -378,6 +384,9 @@ impl WindowContext {
         self.config = self.window_config.override_config_rc(self.config.clone());
 
         self.display.update_config(&self.config);
+        // Update IDE project root to current working directory (best effort)
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        self.ide.set_project_root(cwd);
         self.terminal.lock().set_options(self.config.term_options());
 
         // Reload cursor if its thickness has changed.
@@ -603,36 +612,83 @@ impl WindowContext {
 
         let old_is_searching = self.search_state.history_index.is_some();
 
+        // Feed native IDE completions into the overlay when enabled
+        #[cfg(feature = "completions")]
+        {
+            use openagent_terminal_core::index::Column as Col;
+            use openagent_terminal_core::term::cell::Flags as CellFlags;
+            // Build prefix up to cursor from the current line
+            let cursor_point = terminal.grid().cursor.point;
+            let row = &terminal.grid()[cursor_point.line];
+            let mut prefix = String::new();
+            for x in 0..cursor_point.column.0 {
+                let cell = &row[Col(x)];
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                let ch = cell.c;
+                if ch != '\u{0}' {
+                    prefix.push(ch);
+                }
+            }
+            let cursor_pos = prefix.chars().count();
+            // Query IDE completions (sync) and map to overlay items
+            let ide_items = self.ide.handle_input(&prefix, cursor_pos);
+            let mapped: Vec<crate::display::completions::CompletionItem> = ide_items
+                .into_iter()
+                .map(|it| crate::display::completions::CompletionItem {
+                    label: it.text,
+                    kind: match it.kind {
+                        crate::ide::warp_ide::CompletionKind::FilePath => {
+                            crate::display::completions::CompletionKind::File
+                        }
+                        crate::ide::warp_ide::CompletionKind::Command => {
+                            crate::display::completions::CompletionKind::Command
+                        }
+                        crate::ide::warp_ide::CompletionKind::GitRef => {
+                            crate::display::completions::CompletionKind::Branch
+                        }
+                    },
+                    details: it.description,
+                    icon: it.icon,
+                    score: it.confidence.max(0.0),
+                })
+                .collect();
+            self.display.set_external_completions(mapped);
+        }
+
         let context = ActionContext {
-            cursor_blink_timed_out: &mut self.cursor_blink_timed_out,
-            prev_bell_cmd: &mut self.prev_bell_cmd,
-            message_buffer: &mut self.message_buffer,
-            inline_search_state: &mut self.inline_search_state,
-            search_state: &mut self.search_state,
-            modifiers: &mut self.modifiers,
             notifier: &mut self.notifier,
-            display: &mut self.display,
+            terminal: &mut terminal,
+            clipboard,
             mouse: &mut self.mouse,
             touch: &mut self.touch,
+            modifiers: &mut self.modifiers,
+            display: &mut self.display,
+            message_buffer: &mut self.message_buffer,
+            config: &self.config,
+            cursor_blink_timed_out: &mut self.cursor_blink_timed_out,
+            prev_bell_cmd: &mut self.prev_bell_cmd,
+            #[cfg(target_os = "macos")]
+            event_loop,
+            event_proxy,
+            scheduler,
+            search_state: &mut self.search_state,
+            inline_search_state: &mut self.inline_search_state,
             dirty: &mut self.dirty,
             occluded: &mut self.occluded,
-            terminal: &mut terminal,
+            preserve_title: self.preserve_title,
             #[cfg(not(windows))]
             master_fd: self.master_fd,
             #[cfg(not(windows))]
             shell_pid: self.shell_pid,
-            preserve_title: self.preserve_title,
-            config: &self.config,
-            event_proxy,
-            #[cfg(target_os = "macos")]
-            event_loop,
-            clipboard,
-            scheduler,
             #[cfg(feature = "ai")]
             ai_runtime: self.ai_runtime.as_mut(),
             #[cfg(feature = "plugins")]
             components: self.components.as_ref(),
             workspace: &mut self.workspace,
+            ide: &mut self.ide,
+            last_command: &mut self.last_command,
         };
         let mut processor = input::Processor::new(context);
 

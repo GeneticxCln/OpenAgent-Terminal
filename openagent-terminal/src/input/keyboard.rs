@@ -122,6 +122,37 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Completions overlay: navigation and confirm when active (Warp-like)
+        if self.ctx.completions_active() && !self.ctx.palette_active() && !self.ctx.blocks_search_active() && !self.ctx.workflows_panel_active() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.completions_move_selection(-1);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.completions_move_selection(1);
+                    return;
+                }
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.completions_confirm();
+                    return;
+                }
+                Key::Named(NamedKey::Tab) => {
+                    if mods.shift_key() {
+                        self.ctx.completions_move_selection(-1);
+                    } else {
+                        self.ctx.completions_move_selection(1);
+                    }
+                    return;
+                }
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.completions_clear();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // Bottom composer: click-to-focus + rich text editing while palette is inactive
         if self.ctx.display().composer_focused && !self.ctx.palette_active() {
             use openagent_terminal_core::term::ClipboardType;
@@ -147,6 +178,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     }
                     Key::Named(NamedKey::Enter) => {
+                        // Shift+Enter: accept current composer text and run
+                        if mods.shift_key() {
+                            let text = self.ctx.display().composer_text.clone();
+                            if !text.trim().is_empty() {
+                                self.ctx.execute_composer_command(text);
+                            }
+                            // Clear composer state
+                            self.ctx.display().composer_text.clear();
+                            self.ctx.display().composer_cursor = 0;
+                            self.ctx.display().composer_sel_anchor = None;
+                            self.ctx.display().composer_view_col_offset = 0;
+                            self.ctx.display().composer_focused = false;
+                            self.ctx.mark_dirty();
+                            return;
+                        }
                         #[cfg(feature = "ai")]
                         {
                             self.ctx.open_ai_panel();
@@ -539,6 +585,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     let mods = self.ctx.modifiers().state();
                     if mods.contains(ModifiersState::ALT) {
                         self.ctx.palette_confirm_cd();
+                    } else if mods.contains(ModifiersState::SHIFT) {
+                        self.ctx.palette_confirm_edit();
                     } else {
                         self.ctx.palette_confirm();
                     }
@@ -812,44 +860,28 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if self.ctx.notebooks_panel_active() {
             // If the editor overlay is currently active (editing a notebook cell),
             // handle basic save/close controls here.
-            #[cfg(all(feature = "blocks", feature = "editor"))]
+            // Legacy editor overlay was removed; ignore in-progress overlay edits if any
             if self.ctx.display().notebooks_edit_session.is_some() {
                 let mods = self.ctx.modifiers().state();
                 match key.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
-                        // Cancel edit session and close overlay without applying
-                        #[cfg(feature = "blocks")]
-                        {
-                            self.ctx.display().notebooks_edit_session = None;
-                        }
-                        #[cfg(feature = "editor")]
-                        self.ctx.display().editor_overlay_close();
+                        // Cancel edit session (no overlay to close)
+                        self.ctx.display().notebooks_edit_session = None;
                         self.ctx.mark_dirty();
                         return;
                     }
                     Key::Character(c) if mods.control_key() && c.eq_ignore_ascii_case("s") => {
-                        // Save and apply edits if there is an active session
-                        #[cfg(feature = "editor")]
-                        self.ctx.display().editor_overlay_save();
-                        #[cfg(feature = "blocks")]
-                        {
-                            if let Some(session) = self.ctx.display().notebooks_edit_session.clone()
-                            {
-                                let path = session.path.clone();
-                                let cell_id = session.cell_id.clone();
-                                if let Ok(contents) = std::fs::read_to_string(&path) {
-                                    self.ctx.send_user_event(
-                                        crate::event::EventType::NotebooksEditApply {
-                                            cell_id,
-                                            content: contents,
-                                        },
-                                    );
-                                }
-                                self.ctx.display().notebooks_edit_session = None;
+                        // Save and apply edits (best-effort read)
+                        if let Some(session) = self.ctx.display().notebooks_edit_session.clone() {
+                            let path = session.path.clone();
+                            let cell_id = session.cell_id.clone();
+                            if let Ok(contents) = std::fs::read_to_string(&path) {
+                                self.ctx.send_user_event(
+                                    crate::event::EventType::NotebooksEditApply { cell_id, content: contents },
+                                );
                             }
+                            self.ctx.display().notebooks_edit_session = None;
                         }
-                        #[cfg(feature = "editor")]
-                        self.ctx.display().editor_overlay_close();
                         self.ctx.mark_dirty();
                         return;
                     }
@@ -922,37 +954,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Character(c)
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("e") =>
                 {
-                    // Begin edit of the selected cell using the editor overlay when available.
-                    #[cfg(all(feature = "blocks", feature = "editor"))]
-                    {
-                        let idx = self.ctx.display().notebooks_panel.selected_cell;
-                        if let Some(cell) =
-                            self.ctx.display().notebooks_panel.cells.get(idx).cloned()
-                        {
-                            // Create a temp file with appropriate extension
-                            let ext = if cell.cell_type == "md" { "md" } else { "sh" };
-                            let mut path = std::env::temp_dir();
-                            path.push(format!("openagent_cell_{}.{}", cell.id, ext));
-                            let _ = std::fs::write(&path, cell.summary.clone());
-                            // Track edit session and open overlay
-                            self.ctx.display().notebooks_edit_session =
-                                Some(crate::display::notebook_panel::NotebookEditSession {
-                                    cell_id: cell.id.clone(),
-                                    path: path.clone(),
-                                });
-                            self.ctx.display().editor_overlay_open(path);
-                            self.ctx.mark_dirty();
-                        }
-                    }
-                    #[cfg(any(not(feature = "blocks"), not(feature = "editor")))]
-                    {
-                        let msg = crate::message_bar::Message::new(
-                            "Notebooks feature not enabled in this build".into(),
-                            crate::message_bar::MessageType::Warning,
-                        );
-                        self.ctx
-                            .send_user_event(crate::event::EventType::Message(msg));
-                    }
+                    // Editor overlay removed: show message instead
+                    let msg = crate::message_bar::Message::new(
+                        "Inline editor not available in this build".into(),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    self.ctx
+                        .send_user_event(crate::event::EventType::Message(msg));
                     return;
                 }
                 Key::Character(c)
@@ -1192,6 +1200,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
                 // Submit via Enter: behaves like clicking [Run]
+                Key::Named(NamedKey::Enter) if mods.shift_key() => {
+                    // Shift+Enter: accept and run composer text via native command pipeline
+                    let text = self.ctx.display().composer_text.clone();
+                    if !text.trim().is_empty() {
+                        self.ctx.execute_composer_command(text);
+                    }
+                    // Reset composer state
+                    self.ctx.display().composer_text.clear();
+                    self.ctx.display().composer_cursor = 0;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.display().composer_view_col_offset = 0;
+                    self.ctx.display().composer_focused = false;
+                    self.ctx.mark_dirty();
+                    return;
+                }
                 Key::Named(NamedKey::Enter) => {
                     // Push composer text into history before submission
                     let txt = self.ctx.display().composer_text.trim().to_string();

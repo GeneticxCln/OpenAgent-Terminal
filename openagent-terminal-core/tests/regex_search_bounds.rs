@@ -20,7 +20,10 @@ fn make_term_with_text(text: &str, cols: usize, lines: usize) -> Term<Mock> {
     let cfg = TermConfig::default();
     let mut term = Term::new(cfg, &Size { c: cols, l: lines }, Mock);
     let mut parser: ansi::Processor = ansi::Processor::new();
-    parser.advance(&mut term, text.as_bytes());
+
+    // Normalize newlines to CRLF so each new line starts at column 0.
+    let bytes = text.replace('\n', "\r\n").into_bytes();
+    parser.advance(&mut term, &bytes);
     term
 }
 
@@ -42,9 +45,9 @@ fn search_right_and_left_with_max_lines_and_sides() {
     let m1 = term.search_next(&mut re_ci, origin, Direction::Right, Side::Left, Some(2)).expect("m1");
     assert_eq!(*m1.start(), Point::new(openagent_terminal_core::index::Line(0), Column(6)));
 
-    // Case-sensitive should skip 'beta' line 0 and find 'BETA' line 1
+    // Case-sensitive should skip 'beta' line 0 and find 'BETA' on line 2 within bounds
     let m2 = term.search_next(&mut re_cs, origin, Direction::Right, Side::Left, Some(2)).expect("m2");
-    assert_eq!(m2.start().line, openagent_terminal_core::index::Line(1));
+    assert_eq!(m2.start().line, openagent_terminal_core::index::Line(2));
 
     // Leftward search from below should find previous occurrence
     let origin2 = Point::new(openagent_terminal_core::index::Line(2), Column(19));

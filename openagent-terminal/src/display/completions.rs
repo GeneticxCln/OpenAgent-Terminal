@@ -9,7 +9,7 @@ use crate::completions_spec;
 use crate::config::UiConfig;
 use crate::renderer::rects::RenderRect;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CompletionKind {
     Flag,
     File,
@@ -31,18 +31,22 @@ pub struct CompletionItem {
 #[derive(Clone, Debug)]
 pub struct CompletionsState {
     pub items: Vec<CompletionItem>,
+    pub external: Vec<CompletionItem>,
     pub last_prefix: String,
     pub last_compute: Instant,
     pub debounce: Duration,
+    pub selected_index: usize,
 }
 
 impl CompletionsState {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
+            external: Vec::new(),
             last_prefix: String::new(),
             last_compute: Instant::now() - Duration::from_secs(10),
             debounce: Duration::from_millis(120),
+            selected_index: 0,
         }
     }
 }
@@ -266,6 +270,10 @@ impl super::Display {
     ) {
         // Do not draw in alt-screen or when other modal overlays likely active
         if alt_screen {
+            // Overlay not drawn in alt-screen; ensure we reset active state for animation and hit testing
+            self.completions_last_active = false;
+            self.completions_overlay_item_lines.clear();
+            self.completions_overlay_bounds = None;
             return;
         }
         // Skip when palette or confirm overlay is active — drawn elsewhere
@@ -279,10 +287,71 @@ impl super::Display {
         {
             let cwd = None::<PathBuf>; // Future: track via shell integration/OSC
             self.completions.items = Self::compute_completions_for_prefix(prefix, cwd);
+            // Reset selection when prefix changes
+            if self.completions.selected_index >= self.completions.items.len() {
+                self.completions.selected_index = 0;
+            }
             self.completions.last_prefix = prefix.to_string();
             self.completions.last_compute = now;
         }
+        // Merge in external completions (from IDE) with Warp-like interleave
+        if !self.completions.external.is_empty() {
+            use std::collections::{HashMap, HashSet};
+            // Deduplicate within each source by highest score per label
+            let mut local_by_label: HashMap<String, CompletionItem> = HashMap::new();
+            for it in self.completions.items.drain(..) {
+                local_by_label
+                    .entry(it.label.clone())
+                    .and_modify(|e| {
+                        if it.score > e.score {
+                            *e = it.clone();
+                        }
+                    })
+                    .or_insert(it);
+            }
+            let mut ext_by_label: HashMap<String, CompletionItem> = HashMap::new();
+            for it in self.completions.external.iter().cloned() {
+                ext_by_label
+                    .entry(it.label.clone())
+                    .and_modify(|e| {
+                        if it.score > e.score {
+                            *e = it.clone();
+                        }
+                    })
+                    .or_insert(it);
+            }
+            // Remove duplicates across sources; prefer external items
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut ext_sorted: Vec<_> = ext_by_label.into_values().collect();
+            ext_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            for it in &ext_sorted { seen.insert(it.label.clone()); }
+            let mut loc_sorted: Vec<_> = local_by_label
+                .into_iter()
+                .filter(|(k, _)| !seen.contains(k))
+                .map(|(_, v)| v)
+                .collect();
+            loc_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            // Interleave starting with external (Warp-like bias for smarter suggestions)
+            let mut interleaved: Vec<CompletionItem> = Vec::new();
+            let mut i = 0usize;
+            let mut j = 0usize;
+            while i < ext_sorted.len() || j < loc_sorted.len() {
+                if i < ext_sorted.len() {
+                    interleaved.push(ext_sorted[i].clone());
+                    i += 1;
+                }
+                if j < loc_sorted.len() {
+                    interleaved.push(loc_sorted[j].clone());
+                    j += 1;
+                }
+            }
+            self.completions.items = interleaved;
+        }
         if self.completions.items.is_empty() {
+            // Reset hit testing and animation state when no items
+            self.completions_last_active = false;
+            self.completions_overlay_item_lines.clear();
+            self.completions_overlay_bounds = None;
             return;
         }
 
@@ -312,7 +381,14 @@ impl super::Display {
         let lines = self.size_info.screen_lines;
         let box_width_cols = cols.min(48);
         let max_rows = 8usize;
-        let needed_rows = self.completions.items.len().min(max_rows);
+        // Rough estimate: we may add up to one header per category shown; cap by max_rows
+        let distinct_kinds = {
+            use std::collections::HashSet;
+            let mut s = HashSet::new();
+            for it in &self.completions.items { s.insert(it.kind.clone()); }
+            s.len()
+        };
+        let needed_rows = (self.completions.items.len() + distinct_kinds).min(max_rows);
         let start_line = if vp.line + 2 + needed_rows >= lines {
             vp.line.saturating_sub(needed_rows + 1)
         } else {
@@ -324,8 +400,19 @@ impl super::Display {
         let w = box_width_cols as f32 * self.size_info.cell_width();
         let h = (needed_rows as f32 + 1.0) * self.size_info.cell_height();
 
+        // Simple fade-in animation on open
+        if !self.completions_last_active {
+            self.completions_last_active = true;
+            self.completions_anim_start = Some(now);
+        }
+        let alpha = if let Some(ts) = self.completions_anim_start {
+            let ms = now.saturating_duration_since(ts).as_millis() as f32;
+            (ms / 120.0).clamp(0.0, 1.0) * 0.96
+        } else {
+            0.96
+        };
         // Background
-        let rects = vec![RenderRect::new(x, y, w, h, tokens.surface, 0.96)];
+        let rects = vec![RenderRect::new(x, y, w, h, tokens.surface, alpha)];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
         self.renderer_draw_rects(&size_copy, &metrics, rects);
@@ -343,32 +430,70 @@ impl super::Display {
             box_width_cols,
         );
 
-        // Items
+        // Items with Warp-like section headers per category as they first appear
+        // Cache overlay bounds for hit testing
+        let end_line = start_line + needed_rows;
+        self.completions_overlay_bounds = Some((start_line, end_line, start_col, start_col + box_width_cols));
+
         let mut line = start_line + 1;
-        // If AI inline suggestion is available in future, we could show it as a top row here.
-        let items_to_draw: Vec<_> = self
-            .completions
-            .items
-            .iter()
-            .take(max_rows)
-            .cloned()
-            .collect();
-        for item in items_to_draw {
+        use std::collections::HashSet;
+        let mut seen_kinds: HashSet<CompletionKind> = HashSet::new();
+        let mut rows_used = 0usize;
+        let mut item_idx = 0usize; // index into items only (exclude headers)
+        self.completions_overlay_item_lines.clear();
+        let items_snapshot = self.completions.items.clone();
+        for item in items_snapshot.into_iter() {
+            // Stop when reaching max rows (accounting for headers)
+            if rows_used >= max_rows { break; }
+            // Determine section header if first time we see this kind
+            let header_opt = if !seen_kinds.contains(&item.kind) {
+                seen_kinds.insert(item.kind.clone());
+                match item.kind {
+                    CompletionKind::Command => Some("Commands".to_string()),
+                    CompletionKind::File | CompletionKind::Dir => Some("Files".to_string()),
+                    CompletionKind::Branch => Some("Branches".to_string()),
+                    CompletionKind::Flag => Some("Flags".to_string()),
+                    CompletionKind::Argument => Some("Arguments".to_string()),
+                }
+            } else { None };
+
+            if let Some(header) = header_opt {
+                if rows_used >= max_rows { break; }
+                // Draw header row in muted color
+                self.draw_ai_text(
+                    Point::new(line, Column(start_col)),
+                    muted,
+                    tokens.surface,
+                    &format!("{}", header),
+                    box_width_cols,
+                );
+                line += 1;
+                rows_used += 1;
+                if rows_used >= max_rows { break; }
+            }
+
+            // Draw item row
             let icon = item.icon;
             let mut row = String::new();
             row.push_str(icon);
             row.push(' ');
             row.push_str(&item.label);
-            // Reserve space for details preview tail
             let avail = box_width_cols;
+            // Highlight selected item using item index (headers excluded)
+            let color = if self.completions.selected_index == item_idx { accent } else { fg };
             self.draw_ai_text(
                 Point::new(line, Column(start_col)),
-                fg,
+                color,
                 tokens.surface,
                 &row,
                 avail,
             );
+            // Record mapping for hover/click hit-testing (viewport line -> item index)
+            self.completions_overlay_item_lines.push((line, item_idx));
             line += 1;
+            rows_used += 1;
+            item_idx += 1;
+            if rows_used >= max_rows { break; }
         }
 
         // Simple flag inspector: if current token matches a known flag, show a tooltip to the right
@@ -402,5 +527,38 @@ impl super::Display {
                 }
             }
         }
+    }
+
+    // Public helpers used by ActionContext for navigation/acceptance
+    pub fn completions_active(&self) -> bool {
+        !self.completions.external.is_empty() || !self.completions.items.is_empty()
+    }
+
+    pub fn completions_move_selection(&mut self, delta: isize) {
+        if self.completions.items.is_empty() {
+            self.completions.selected_index = 0;
+            return;
+        }
+        let len = self.completions.items.len();
+        let mut idx = self.completions.selected_index as isize + delta;
+        if idx < 0 {
+            idx = 0;
+        } else if idx as usize >= len {
+            idx = len.saturating_sub(1) as isize;
+        }
+        self.completions.selected_index = idx as usize;
+    }
+
+    pub fn completions_selected_label(&self) -> Option<String> {
+        self.completions
+            .items
+            .get(self.completions.selected_index)
+            .map(|it| it.label.clone())
+    }
+
+    pub fn completions_clear(&mut self) {
+        self.completions.external.clear();
+        self.completions.items.clear();
+        self.completions.selected_index = 0;
     }
 }

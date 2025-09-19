@@ -75,6 +75,8 @@ pub struct InitializedComponents {
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     #[cfg(feature = "plugins")]
     pub plugin_manager: Option<Arc<PluginManager>>,
+    #[cfg(feature = "blocks")]
+    pub storage: Option<Arc<crate::storage::Storage>>,
     pub runtime: Arc<Runtime>,
 }
 
@@ -105,6 +107,10 @@ impl std::fmt::Debug for InitializedComponents {
                 "plugin_manager",
                 &self.plugin_manager.as_ref().map(|_| "Some"),
             );
+        }
+        #[cfg(feature = "blocks")]
+        {
+            let _ = ds.field("storage", &self.storage.as_ref().map(|_| "Some"));
         }
         ds.field("runtime", &"<runtime>").finish()
     }
@@ -145,6 +151,38 @@ pub async fn initialize_components(
         }
     } else {
         debug!("HarfBuzz text shaping disabled");
+        None
+    };
+
+    // Initialize Storage (SQLite) used by blocks/plugins persistence
+    #[cfg(feature = "blocks")]
+    let storage = if config.enable_blocks {
+        let db_path = config.data_dir.join("terminal.db");
+        match crate::storage::Storage::new(&db_path).await {
+            Ok(storage) => {
+                info!("✓ Storage initialized at {}", db_path.display());
+                // Exercise core interfaces with safe operations to wire code paths
+                let bs = storage.blocks();
+                let _ = bs
+                    .search_blocks(
+                        &crate::storage::blocks::BlockFilter::default(),
+                        &crate::storage::blocks::BlockSort::default(),
+                    )
+                    .await;
+                let _ = bs.get_session_blocks("bootstrap").await;
+
+                let ps = storage.plugins();
+                let _ = ps.get_kv("bootstrap.health", "default", "ping").await;
+                let _ = ps.get_doc("bootstrap.health", "default", "readme").await;
+                let _ = bs.update_block_tags(0, Vec::new()).await;
+                Some(Arc::new(storage))
+            }
+            Err(e) => {
+                warn!("Failed to initialize storage: {}", e);
+                None
+            }
+        }
+    } else {
         None
     };
 
@@ -279,7 +317,9 @@ pub async fn initialize_components(
         #[cfg(feature = "workflow")]
         workflow_engine,
         #[cfg(feature = "plugins")]
-        plugin_manager,
+        plugin_manager: plugin_mgr,
+        #[cfg(feature = "blocks")]
+        storage,
         runtime,
     })
 }

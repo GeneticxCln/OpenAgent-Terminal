@@ -547,7 +547,7 @@ if let Err(e) = self.proxy.send_event(Event::new(
     #[allow(dead_code)]
     pub async fn initialize_components(
         &mut self,
-        window: &winit::window::Window,
+        _window: &winit::window::Window,
     ) -> Result<(), Box<dyn Error>> {
         if self.components.is_some() {
             return Ok(()); // Already initialized
@@ -2482,6 +2482,11 @@ if let Err(e) = self
             (EventType::Frame, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.window.has_frame = true;
+                    // If any command block is running, drive a redraw for spinner/elapsed updates
+                    let running = window_context.display.blocks.any_running();
+                    if running {
+                        window_context.dirty = true;
+                    }
                     if window_context.dirty {
                         window_context.display.window.request_redraw();
                     }
@@ -2999,6 +3004,8 @@ impl Default for InlineSearchState {
 
 pub struct ActionContext<'a, N, T> {
     pub notifier: &'a mut N,
+    /// Native IDE manager reference
+    pub ide: &'a mut crate::ide::IdeManager,
     pub terminal: &'a mut Term<T>,
     pub clipboard: &'a mut Clipboard,
     pub mouse: &'a mut Mouse,
@@ -3027,9 +3034,72 @@ pub struct ActionContext<'a, N, T> {
     #[cfg(feature = "plugins")]
     pub components: Option<&'a std::sync::Arc<InitializedComponents>>,
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
+    /// Last started command captured during CommandStart
+    pub last_command: &'a mut Option<String>,
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
+    fn completions_active(&self) -> bool {
+        self.display.completions_active()
+    }
+    fn completions_move_selection(&mut self, delta: isize) {
+        self.display.completions_move_selection(delta);
+        *self.dirty = true;
+    }
+    fn completions_clear(&mut self) {
+        self.display.completions_clear();
+        *self.dirty = true;
+    }
+    fn completions_confirm(&mut self) {
+        // Compute prefix up to cursor
+        use openagent_terminal_core::index::Column as Col;
+        use openagent_terminal_core::term::cell::Flags as CellFlags;
+        let cursor_point = self.terminal.grid().cursor.point;
+        let row = &self.terminal.grid()[cursor_point.line];
+        let mut prefix = String::new();
+        for x in 0..cursor_point.column.0 {
+            let cell = &row[Col(x)];
+            if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) { continue; }
+            let ch = cell.c;
+            if ch != '\u{0}' { prefix.push(ch); }
+        }
+        let token = if prefix.ends_with(' ') { "".to_string() } else { prefix.split_whitespace().last().unwrap_or("").to_string() };
+        if let Some(label) = self.display.completions_selected_label() {
+            let suffix = if !token.is_empty() && label.starts_with(&token) {
+                label[token.len()..].to_string()
+            } else if token.is_empty() {
+                label
+            } else {
+                // Fallback: insert a space and the label
+                format!(" {}", label)
+            };
+            if !suffix.is_empty() {
+                self.on_terminal_input_start();
+                self.write_to_pty(suffix.into_bytes());
+            }
+            self.display.completions_clear();
+            *self.dirty = true;
+        }
+    }
+
+    fn ide_on_command_end(&mut self, exit_code: Option<i32>) {
+        if let Some(code) = exit_code {
+            if code != 0 {
+                // Produce a suggestion using the native IDE manager with the last started command
+                let cmd = self.last_command.as_deref().unwrap_or("");
+                let suggestions = self.ide.handle_error(cmd, code, "");
+                if let Some(s) = suggestions.first() {
+                    let msg = crate::message_bar::Message::new(
+                        format!("Command failed (exit {}). Suggestion: {}", code, s.text),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self
+                        .event_proxy
+                        .send_event(Event::new(EventType::Message(msg), self.display.window.id()));
+                }
+            }
+        }
+    }
     fn workspace_hover_focus(&mut self, mouse_x_px: f32, mouse_y_px: f32) {
         // Compute pane rects and focus the pane under the mouse if different
         if !self.config.workspace.focus_follows_mouse { return; }
@@ -3038,7 +3108,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             // Recompute container similar to input but with current config
             let x0 = si.padding_x();
             let mut y0 = si.padding_y();
-            let mut w = si.width() - 2.0 * si.padding_x();
+            let w = si.width() - 2.0 * si.padding_x();
             let mut h = si.height() - 2.0 * si.padding_y();
             let tab_cfg = &self.config.workspace.tab_bar;
             let is_fs = self.display.window.is_fullscreen();
@@ -3346,6 +3416,36 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
 
+        // Recent commands from recent blocks (top 30, most recent first)
+        {
+            let blocks_ref = &self.display.blocks.blocks;
+            let mut added = 0usize;
+            for block in blocks_ref.iter().rev() {
+                if let Some(cmd) = &block.cmd {
+                    let exit = block.exit;
+                    let cwd = block.cwd.clone();
+                    let status = match exit {
+                        Some(0) => "✓",
+                        Some(_) => "✗",
+                        None => "…",
+                    };
+                    let title = format!("Command: {}", cmd);
+                    let mut subtitle = String::new();
+                    subtitle.push_str(status);
+                    if let Some(code) = exit { subtitle.push_str(&format!(" exit {}", code)); }
+                    if let Some(c) = &cwd { subtitle.push_str(&format!("  —  {}", c)); }
+                    items.push(PaletteItem {
+                        key: format!("cmd:{}:{}", block.start_total_line, cmd),
+                        title,
+                        subtitle: if subtitle.is_empty() { None } else { Some(subtitle) },
+                        entry: PaletteEntry::Command { cmd: cmd.clone(), cwd, exit },
+                    });
+                    added += 1;
+                    if added >= 30 { break; }
+                }
+            }
+        }
+
         // Recent files from MRU (top 20)
         if let Ok(cwd) = std::env::current_dir() {
             let recent = self.display.palette.recent_file_paths(20);
@@ -3412,72 +3512,124 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.display.window.request_redraw();
         }
 
-        // Spawn background recursive scan with ignore list and cap, append results once ready
+        // Spawn background recursive scan of project files (repo root if available), append results once ready
         let proxy = self.event_proxy.clone();
         let window_id = self.display.window.id();
         let cwd = std::env::current_dir().ok();
         std::thread::spawn(move || {
-            let Some(root) = cwd else {
-                return;
-            };
-            use std::collections::VecDeque;
+            use std::collections::{HashSet, VecDeque};
             use std::fs;
-            let mut queue: VecDeque<std::path::PathBuf> = VecDeque::new();
-            queue.push_back(root.clone());
-            let ignore_dirs = [
-                ".git",
-                "target",
-                "node_modules",
-                "dist",
-                "build",
-                ".venv",
-                ".cache",
-                ".tox",
-                ".mypy_cache",
-                "venv",
-                ".idea",
-                ".vscode",
-            ];
-            let ignore_set: std::collections::HashSet<&str> = ignore_dirs.iter().copied().collect();
-            let mut out: Vec<String> = Vec::new();
-            let max_files: usize = 3000;
-            while let Some(dir) = queue.pop_front() {
-                let rd = match fs::read_dir(&dir) {
-                    Ok(rd) => rd,
-                    Err(_) => continue,
-                };
-                for entry in rd.flatten() {
-                    // Stop if over cap
-                    if out.len() >= max_files {
+            use std::path::{Path, PathBuf};
+
+            fn find_repo_root(mut dir: PathBuf) -> PathBuf {
+                let mut seen: usize = 0;
+                while seen < 20 {
+                    if dir.join(".git").is_dir() {
+                        return dir;
+                    }
+                    if let Some(parent) = dir.parent() {
+                        dir = parent.to_path_buf();
+                        seen += 1;
+                    } else {
                         break;
                     }
+                }
+                dir
+            }
+
+            fn read_gitignore(root: &Path) -> (HashSet<String>, Vec<String>) {
+                let mut dirs = HashSet::new();
+                let mut globs = Vec::new();
+                let path = root.join(".gitignore");
+                if let Ok(text) = fs::read_to_string(&path) {
+                    for line in text.lines() {
+                        let s = line.trim();
+                        if s.is_empty() || s.starts_with('#') { continue; }
+                        // Normalize simple directory entries and wildcard globs against leaf names
+                        let entry = s.trim_start_matches("./").trim_start_matches('/');
+                        if entry.ends_with('/') {
+                            dirs.insert(entry.trim_end_matches('/').to_string());
+                        } else if entry.contains('*') || entry.contains('?') {
+                            globs.push(entry.to_string());
+                        } else {
+                            // bare name: ignore both files and dirs by leaf
+                            dirs.insert(entry.to_string());
+                        }
+                    }
+                }
+                (dirs, globs)
+            }
+
+            fn name_matches_globs(name: &str, globs: &[String]) -> bool {
+                // Very small wildcard matcher: supports '*' matching any chars and '?' matching one char
+                fn matches(pat: &str, text: &str) -> bool {
+                    let (mut pi, mut ti) = (0usize, 0usize);
+                    let (mut star, mut mark) = (None, 0usize);
+                    let p = pat.as_bytes();
+                    let t = text.as_bytes();
+                    while ti < t.len() {
+                        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
+                            pi += 1; ti += 1; continue;
+                        }
+                        if pi < p.len() && p[pi] == b'*' {
+                            star = Some(pi); pi += 1; mark = ti; continue;
+                        }
+                        if let Some(si) = star {
+                            pi = si + 1; mark += 1; ti = mark; continue;
+                        }
+                        return false;
+                    }
+                    while pi < p.len() && p[pi] == b'*' { pi += 1; }
+                    pi == p.len()
+                }
+                globs.iter().any(|g| matches(g, name))
+            }
+
+            let Some(cwd) = cwd else { return; };
+            let root = find_repo_root(cwd);
+
+            let default_ignore = [
+                ".git","target","node_modules","dist","build",".venv","venv",".cache",".tox",".mypy_cache",".idea",".vscode"
+            ];
+            let default_set: HashSet<&str> = default_ignore.iter().copied().collect();
+            let (git_dirs, git_globs) = read_gitignore(&root);
+
+            let mut out: Vec<String> = Vec::new();
+            let max_files: usize = 5000;
+            let mut queue: VecDeque<PathBuf> = VecDeque::new();
+            queue.push_back(root.clone());
+
+            while let Some(dir) = queue.pop_front() {
+                let rd = match fs::read_dir(&dir) { Ok(rd) => rd, Err(_) => continue };
+                for entry in rd.flatten() {
+                    if out.len() >= max_files { break; }
                     let path = entry.path();
-                    let name_os = entry.file_name();
-                    let name = name_os.to_string_lossy();
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let ft = match entry.file_type() { Ok(ft) => ft, Err(_) => continue };
                     // Skip symlinks
-                    let ft = match entry.file_type() {
-                        Ok(ft) => ft,
-                        Err(_) => continue,
-                    };
+                    #[cfg(unix)]
+                    if ft.is_symlink() { continue; }
                     if ft.is_dir() {
-                        // Ignore directories by name
-                        if ignore_set.contains(name.as_ref()) {
+                        // Skip default ignored dirs or .gitignore-listed dirs
+                        if default_set.contains(name.as_str()) || git_dirs.contains(&name) || name_matches_globs(&name, &git_globs) {
                             continue;
                         }
-                        // Ignore hidden dot-directories except current directory root
-                        if name.starts_with('.') && !["."].contains(&name.as_ref()) {
+                        // Skip hidden dot-directories except repo root
+                        if name.starts_with('.') && !dir.as_path().eq(&root) {
                             continue;
                         }
                         queue.push_back(path);
                     } else if ft.is_file() {
+                        // Skip ignored files by leaf name
+                        if git_dirs.contains(&name) || name_matches_globs(&name, &git_globs) {
+                            continue;
+                        }
                         out.push(path.to_string_lossy().to_string());
                     }
                 }
-                if out.len() >= max_files {
-                    break;
-                }
+                if out.len() >= max_files { break; }
             }
-            // Post results
+
             if !out.is_empty() {
                 let _ = proxy.send_event(Event::new(EventType::PaletteAppendFiles(out), window_id));
             }
@@ -3501,6 +3653,24 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn palette_move_selection(&mut self, delta: isize) {
         self.display.palette.move_selection(delta);
         self.mark_dirty();
+    }
+
+    fn palette_confirm_edit(&mut self) {
+        // For commands: insert into composer for editing instead of running
+        if let Some(entry) = self.display.palette.selected_entry().cloned() {
+            if let PaletteEntry::Command { cmd, .. } = entry {
+                self.display.composer_text = cmd;
+                self.display.composer_cursor = self.display.composer_text.len();
+                self.display.composer_sel_anchor = None;
+                self.display.composer_focused = true;
+                // Close palette
+                self.display.palette.close();
+                *self.dirty = true;
+                if self.display.window.has_frame {
+                    self.display.window.request_redraw();
+                }
+            }
+        }
     }
 
     fn palette_confirm(&mut self) {
@@ -3563,6 +3733,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 PaletteEntry::File(_path) => {
                     // Default action: open the File Tree overlay
                     self.open_file_tree_panel();
+                }
+                PaletteEntry::Command { cmd, cwd, .. } => {
+                    if let Some(cwd) = cwd {
+                        self.spawn_shell_command_in_cwd(cmd, cwd);
+                    } else {
+                        self.paste(&cmd, true);
+                    }
                 }
                 #[cfg(feature = "plugins")]
                 PaletteEntry::PluginCommand { plugin, command } => {
@@ -7019,6 +7196,111 @@ pub struct AccumulatedScroll {
 }
 
 impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
+    /// Sanitize terminal output for safe suggestion display: strip ANSI and redact secrets.
+    fn sanitize_error_output(text: &str, max_chars: usize) -> String {
+        fn strip_ansi(input: &str) -> String {
+            let mut out = String::with_capacity(input.len());
+            let bytes = input.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() {
+                if bytes[i] == 0x1B {
+                    if i + 1 < bytes.len() {
+                        let next = bytes[i + 1];
+                        if next == b'[' {
+                            i += 2;
+                            while i < bytes.len() {
+                                let b = bytes[i];
+                                if (0x40..=0x7E).contains(&b) { i += 1; break; }
+                                i += 1;
+                            }
+                            continue;
+                        } else if next == b']' {
+                            i += 2;
+                            while i < bytes.len() {
+                                if bytes[i] == 0x07 { i += 1; break; }
+                                if bytes[i] == 0x1B && i + 1 < bytes.len() && bytes[i + 1] == b'\\' { i += 2; break; }
+                                i += 1;
+                            }
+                            continue;
+                        }
+                    }
+                    i += 1;
+                    continue;
+                }
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+            out
+        }
+        fn redact_line(mut line: String) -> String {
+            let lower = line.to_lowercase();
+            let keywords = [
+                "api_key", "apikey", "token", "secret", "password", "passwd", "authorization", "auth",
+            ];
+            // Authorization: Bearer ...
+            if let Some(pos) = lower.find("bearer ") {
+                let cut = pos + "bearer ".len();
+                if cut <= line.len() {
+                    line.replace_range(cut.., "{{REDACTED}}");
+                    return line;
+                }
+            }
+            let extended = Processor::privacy_extended_flag().unwrap_or(false);
+            if extended {
+                if let Some(idx) = lower.find("akia") {
+                    let start = idx; let end = (start + 20).min(line.len());
+                    line.replace_range(start..end, "{{REDACTED_AWS_KEY}}");
+                    return line;
+                }
+                if let Some(idx) = lower.find("asia") {
+                    let start = idx; let end = (start + 20).min(line.len());
+                    line.replace_range(start..end, "{{REDACTED_AWS_KEY}}");
+                    return line;
+                }
+                if let Some(first_dot) = line.find('.') {
+                    if line[first_dot + 1..].find('.').is_some() {
+                        let mid_start = first_dot + 1;
+                        line.replace_range(mid_start..line.len(), "{{REDACTED_JWT}}");
+                        return line;
+                    }
+                }
+            }
+            for kw in keywords.iter() {
+                if let Some(kw_pos) = lower.find(kw) {
+                    let after_kw = kw_pos + kw.len();
+                    let mut sep_idx: Option<usize> = None;
+                    for (i, ch) in line.char_indices().skip(after_kw) {
+                        if ch == ':' || ch == '=' { sep_idx = Some(i); break; }
+                    }
+                    if let Some(sep) = sep_idx {
+                        let mut val_start = sep + 1;
+                        while val_start < line.len() {
+                            if let Some(c) = line[val_start..].chars().next() {
+                                if c.is_whitespace() { val_start += c.len_utf8(); } else { break; }
+                            } else { break; }
+                        }
+                        if val_start < line.len() {
+                            line.replace_range(val_start.., "{{REDACTED}}");
+                            return line;
+                        }
+                    }
+                }
+            }
+            line
+        }
+        let mut clean = strip_ansi(text);
+        clean = clean.replace("\r\n", "\n");
+        let mut out = String::new();
+        for raw in clean.lines() {
+            let red = redact_line(raw.to_string());
+            if out.len() + red.len() + 1 > max_chars { break; }
+            out.push_str(&red);
+            out.push('\n');
+        }
+        if out.ends_with('\n') { let _ = out.pop(); }
+        out
+    }
+
     /// Handle events from winit.
     pub fn handle_event(&mut self, event: WinitEvent<Event>) {
         match event {
@@ -7060,10 +7342,76 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         let total_lines = { self.ctx.terminal().grid().total_lines() };
                         self.ctx.display().blocks.on_event(total_lines, &ev);
 
+                        // Track last started command for IDE error suggestions
+                        if let CoreCommandBlockEvent::CommandStart { cmd } = &ev {
+                            if let Some(c) = cmd.clone() {
+                                *self.ctx.last_command = Some(c);
+                            }
+                        }
+
                         // Update active tab error indicator when a command ends
                         if let CoreCommandBlockEvent::CommandEnd { exit, .. } = ev {
                             let non_zero = exit.map(|c| c != 0).unwrap_or(false);
                             self.ctx.workspace_mark_active_tab_error(non_zero);
+
+                            // IDE: surface basic suggestions for non-zero exits using command and output preview
+if let Some(code) = exit {
+                                if code != 0 {
+                                    // Try to extract the output for the last block range
+                                    let mut output_preview = String::new();
+                                    // Extract start/end total lines of the last block in a short mutable borrow scope
+                                    let (start_opt, end_opt) = {
+                                        let blocks = &self.ctx.display().blocks.blocks;
+                                        if let Some(last_block) = blocks.last() {
+                                            (Some(last_block.start_total_line), last_block.end_total_line)
+                                        } else {
+                                            (None, None)
+                                        }
+                                    };
+                                    let grid = self.ctx.terminal().grid();
+                                    if let (Some(start), Some(end)) = (start_opt, end_opt) {
+                                            // Collect up to the last 200 visible lines of the block to limit cost
+                                            let max_collect = 200usize;
+                                            let start_collect = end.saturating_sub(max_collect).max(start);
+                                            let top = grid.topmost_line();
+                                            for abs in start_collect..=end {
+                                                let line = top + (abs as i32);
+                                                if line < grid.topmost_line() || line > grid.bottommost_line() {
+                                                    continue;
+                                                }
+                                                let row = &grid[line];
+                                                let len = row.line_length().0.min(grid.columns());
+                                                if len == 0 {
+                                                    output_preview.push('\n');
+                                                    continue;
+                                                }
+                                                for col in 0..len {
+                                                    let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                                    output_preview.push(ch);
+                                                }
+                                                output_preview.push('\n');
+                                            }
+                                            // Trim very long previews
+                                            if output_preview.len() > 4000 {
+                                                output_preview.truncate(4000);
+                                            }
+                                        }
+                                    // Produce a suggestion using the native IDE manager with the last started command
+                                    let cmd = self.ctx.last_command.as_deref().unwrap_or("");
+                                    // Sanitize the output preview before passing to IDE (remove ANSI, redact secrets)
+                                    let sanitized = Self::sanitize_error_output(&output_preview, 4000);
+                                    let suggestions = self.ctx.ide.handle_error(cmd, code, &sanitized);
+                                    if let Some(s) = suggestions.first() {
+                                        let msg = crate::message_bar::Message::new(
+                                            format!("Command failed (exit {}). Suggestion: {}", code, s.text),
+                                            crate::message_bar::MessageType::Warning,
+                                        );
+                                        let _ = self
+.ctx.event_proxy
+                                            .send_event(Event::new(EventType::Message(msg), self.ctx.display.window.id()));
+                                    }
+                                }
+                            }
                         }
 
                         // Broadcast plugin hooks for pre/post command and directory changes.
@@ -7095,7 +7443,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                         });
                                     }
                                     CoreCommandBlockEvent::CommandEnd { exit, cwd } => {
-                                        // Post-command hook
+                    // Post-command hook
                                         let evt = PluginEvent {
                                             event_type: "post_command".into(),
                                             data: json!({
@@ -7128,6 +7476,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
 
                         *self.ctx.dirty = true;
+
                     }
                     TerminalEvent::ResetTitle => {
                         let window_config = &self.ctx.config.window;

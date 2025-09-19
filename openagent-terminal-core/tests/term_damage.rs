@@ -1,6 +1,7 @@
 use openagent_terminal_core::event::{Event, EventListener};
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::term::{Config as TermConfig, Term};
+use openagent_terminal_core::vte::ansi::Handler;
 
 #[derive(Copy, Clone)]
 struct Mock;
@@ -36,6 +37,11 @@ fn damage_full_then_partial_and_scroll_forces_full() {
             let _ = it.next();
         }
         other => panic!("Expected Partial damage after reset, got: {:?}", other),
+    }
+
+    // Create some scrollback so scrolling changes display_offset.
+for _ in 0..6 {
+        term.newline();
     }
 
     // Reset and scroll; this should force full damage due to display_offset change.

@@ -34,6 +34,10 @@ pub struct WorkspaceConfig {
     #[config(default = true)]
     pub warp_style: bool,
 
+    /// Enable Warp-style completions overlay
+    #[config(default = true)]
+    pub completions_enabled: bool,
+
     /// When using Warp-style UI, draw the tab bar as an overlay without reserving a grid row.
     /// This prevents the legacy/classic row reservation path from interfering with the layout.
     #[config(default = true)]
@@ -84,6 +88,7 @@ impl Default for WorkspaceConfig {
             quick_actions: QuickActionsConfig::default(),
             keybindings: WorkspaceKeybindings::default(),
             warp_style: true,
+            completions_enabled: true,
             warp_session_file: None,
             sessions: SessionConfig::default(),
             warp_style_bindings: WarpStyleBindingsConfig::default(),
