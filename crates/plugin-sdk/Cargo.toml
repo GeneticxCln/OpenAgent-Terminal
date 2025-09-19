@@ -27,4 +27,4 @@ path = "src/lib.rs"
 
 [target.wasm32-wasi.dependencies]
 # WASI-specific dependencies
-wasi = "0.11"
+wasi = "0.14"
