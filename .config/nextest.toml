@@ -1,0 +1,19 @@
+# Configuration for cargo-nextest: https://nexte.st
+
+[profile.default]
+# Fail fast off to collect more failures in CI
+fail-fast = false
+# Status output level: "failures" (default), "summary", "all"
+status-level = "summary"
+
+# Retry transiently failing tests up to N times (optional)
+#retries = 1
+
+[profile.ci]
+# Use in CI if you want different defaults
+fail-fast = false
+status-level = "all"
+
+[report]
+# JUnit report for CI systems that ingest it (optional)
+#output = "junit.xml"

@@ -47,6 +47,8 @@ ollama serve
 ollama pull codellama
 ```
 
+Security note: Always review install scripts before piping curl to sh. Prefer your OS package manager or the official installer when available. See docs/AI_ENVIRONMENT_SECURITY.md.
+
 **Cloud AI:**
 ```bash
 # OpenAI
@@ -185,9 +187,13 @@ Common builds for the main binary (feature-gated components):
   ```bash
   cargo build -p openagent-terminal --features "plugins,workflow"
   ```
+- Full dev build (no AI provider):
+  ```bash
+  cargo build -p openagent-terminal --features "full"
+  ```
 - Full set for local development (AI + plugins + security lens):
   ```bash
-  cargo build -p openagent-terminal --features "ai-ollama,plugins,workflow,security-lens-full"
+  cargo build -p openagent-terminal --features "full,ai-ollama"
   ```
 
 Notes:
@@ -231,12 +237,13 @@ Metrics exporter (Prometheus)
 - Documentation Hub: docs/README.md
 - Installation Guide: INSTALL.md
 - Configuration Manual: openagent-terminal/docs/configuration.md  
+- AI Environment Security: docs/AI_ENVIRONMENT_SECURITY.md
 - AI Architecture: docs/adr/001-ai-architecture.md
 - Security Lens: openagent-terminal/docs/security_lens.md
 - Contributing: CONTRIBUTING.md
 - Full Documentation Index: docs/
 - Example configs: ./configs/
-- Example env file: ./.env.example
+- Example env file: ./.env.example (copy to .env and adjust values)
 
 ## FAQ
 

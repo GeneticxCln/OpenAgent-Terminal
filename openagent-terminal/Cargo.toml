@@ -172,6 +172,8 @@ embed-resource = "3.0.2"
 # Cloud sync and account features are excluded by default in this open-source project.
 # Optional local/self-hosted sync remains available behind the `sync` feature flag.
 default = ["wayland", "x11", "blocks", "workflow", "wgpu", "completions", "security-lens"]
+# Convenience alias for a comprehensive local dev build (no provider-specific AI by default)
+full = ["wgpu", "workflow", "completions", "harfbuzz", "blocks", "plugins", "security-lens-full"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Experimental placeholders/scaffolding that is planned but not yet actively used
