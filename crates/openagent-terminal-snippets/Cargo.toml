@@ -20,7 +20,7 @@ tera = "1.19"
 regex = "1.10"
 
 # File system operations
-dirs = "5.0"
+dirs = "6.0"
 walkdir = "2.4"
 
 # For command execution
