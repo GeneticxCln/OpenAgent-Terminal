@@ -24,6 +24,7 @@ resolver = "2"
 edition = "2021"
 rust-version = "1.79.0"
 repository = "https://github.com/GeneticxCln/OpenAgent-Terminal"
+license = "Apache-2.0 OR MIT"
 
 [profile.release]
 lto = "thin"

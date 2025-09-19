@@ -2,7 +2,7 @@
 name = "openagent-terminal-ide-editor"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "Minimal terminal-first text editor core (buffer, cursor, edits) for OpenAgent Terminal."
 
 [dependencies]

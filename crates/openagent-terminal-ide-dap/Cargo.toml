@@ -2,7 +2,7 @@
 name = "openagent-terminal-ide-dap"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "Minimal Debug Adapter Protocol (DAP) client for OpenAgent Terminal IDE features."
 
 [dependencies]

@@ -2,7 +2,7 @@
 name = "openagent-terminal-ide-indexer"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "Project indexer and file tree for OpenAgent Terminal (IDE features)."
 
 [dependencies]

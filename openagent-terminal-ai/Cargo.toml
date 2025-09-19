@@ -2,7 +2,7 @@
 name = "openagent-terminal-ai"
 version = "0.1.0"
 authors = ["OpenAgent Terminal Contributors"]
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "Optional AI interfaces for OpenAgent Terminal (privacy-first, opt-in)"
 repository.workspace = true
 edition.workspace = true

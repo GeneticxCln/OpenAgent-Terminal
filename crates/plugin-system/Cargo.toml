@@ -2,7 +2,7 @@
 name = "plugin-system"
 version = "0.1.0"
 authors = ["OpenAgent Terminal Contributors"]
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "Unified plugin system for OpenAgent Terminal with WASM runtime and host integration"
 repository.workspace = true
 edition.workspace = true

@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install nightly toolchain for rustfmt
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain (1.79.0) with rustfmt
+        uses: dtolnay/rust-toolchain@1.79.0
         with:
           components: rustfmt
-      - name: Format (rustfmt, nightly)
-        run: cargo +nightly fmt --all -- --check
+      - name: Format (rustfmt)
+        run: cargo fmt --all -- --check
 
   clippy-all:
     name: Clippy (all targets, all features, deny warnings)
@@ -96,13 +96,8 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install nightly toolchain for rustfmt
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-
-      - name: Format (rustfmt, nightly)
-        run: cargo +nightly fmt --all -- --check
+      - name: Format (rustfmt)
+        run: cargo fmt --all -- --check
 
       - name: Determine feature arguments
         id: features

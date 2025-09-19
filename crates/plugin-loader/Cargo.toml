@@ -2,7 +2,7 @@
 name = "plugin-loader"
 version = "0.1.0"
 authors = ["OpenAgent Terminal Contributors"]
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "WebAssembly plugin loader for OpenAgent Terminal"
 repository.workspace = true
 edition.workspace = true

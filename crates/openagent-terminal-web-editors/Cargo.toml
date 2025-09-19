@@ -2,7 +2,7 @@
 name = "openagent-terminal-web-editors"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 description = "Browser-based web editor (CodeMirror) for OpenAgent Terminal with WS bridge to LSP and filesystem."
 
 [dependencies]
