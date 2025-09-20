@@ -31,13 +31,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // If a pane drag is active, allow Escape to cancel it immediately.
         if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) = key.logical_key {
-            if self
-                .ctx
-                .display()
-                .pane_drag_manager
-                .current_drag()
-                .is_some()
-            {
+            if self.ctx.display().pane_drag_manager.current_drag().is_some() {
                 self.ctx.display().pane_drag_manager.cancel_drag();
                 self.ctx.display().pending_update.dirty = true;
                 self.ctx.mark_dirty();
@@ -68,13 +62,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if mods.control_key() && mods.alt_key() {
             match key.logical_key.as_ref() {
                 Key::Character(c) if (c.eq_ignore_ascii_case("b")) => {
-                    self.ctx
-                        .send_user_event(crate::event::EventType::BlocksToggleFoldUnderCursor);
+                    self.ctx.send_user_event(crate::event::EventType::BlocksToggleFoldUnderCursor);
                     return;
                 }
                 Key::Character(c) if (c.eq_ignore_ascii_case("c")) => {
-                    self.ctx
-                        .send_user_event(crate::event::EventType::BlocksCopyHeaderUnderCursor);
+                    self.ctx.send_user_event(crate::event::EventType::BlocksCopyHeaderUnderCursor);
                     return;
                 }
                 Key::Character(c) if (c.eq_ignore_ascii_case("e")) => {
@@ -123,7 +115,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Completions overlay: navigation and confirm when active (Warp-like)
-        if self.ctx.completions_active() && !self.ctx.palette_active() && !self.ctx.blocks_search_active() && !self.ctx.workflows_panel_active() {
+        if self.ctx.completions_active()
+            && !self.ctx.palette_active()
+            && !self.ctx.blocks_search_active()
+            && !self.ctx.workflows_panel_active()
+        {
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::ArrowUp) => {
                     self.ctx.completions_move_selection(-1);
@@ -289,11 +285,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
 
             // Commit mode: full text editing and commit on Enter
-            let word_mod = if is_mac {
-                mods.alt_key()
-            } else {
-                mods.control_key()
-            };
+            let word_mod = if is_mac { mods.alt_key() } else { mods.control_key() };
             let shift = mods.shift_key();
             let ctrl_or_cmd = mods.control_key() || mods.super_key();
 
@@ -345,18 +337,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     Key::Character(c) if c.eq_ignore_ascii_case("c") => {
                         if let Some((s, e)) = selection_range(&mut self.ctx) {
                             let text = self.ctx.display().composer_text[s..e].to_string();
-                            self.ctx
-                                .clipboard_mut()
-                                .store(ClipboardType::Clipboard, text);
+                            self.ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
                         }
                         return;
                     }
                     Key::Character(c) if c.eq_ignore_ascii_case("x") => {
                         if let Some((s, e)) = selection_range(&mut self.ctx) {
                             let text = self.ctx.display().composer_text[s..e].to_string();
-                            self.ctx
-                                .clipboard_mut()
-                                .store(ClipboardType::Clipboard, text);
+                            self.ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
                             delete_selection(&mut self.ctx);
                             self.ctx.mark_dirty();
                         }
@@ -460,10 +448,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         } else {
                             prev_char(&self.ctx.display().composer_text, cur)
                         };
-                        self.ctx
-                            .display()
-                            .composer_text
-                            .replace_range(prev..cur, "");
+                        self.ctx.display().composer_text.replace_range(prev..cur, "");
                         self.ctx.display().composer_cursor = prev;
                         ensure_caret_visible(&mut self.ctx);
                         self.ctx.mark_dirty();
@@ -482,10 +467,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             } else {
                                 next_char(&self.ctx.display().composer_text, cur)
                             };
-                            self.ctx
-                                .display()
-                                .composer_text
-                                .replace_range(cur..next, "");
+                            self.ctx.display().composer_text.replace_range(cur..next, "");
                             ensure_caret_visible(&mut self.ctx);
                             self.ctx.mark_dirty();
                         }
@@ -877,7 +859,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             let cell_id = session.cell_id.clone();
                             if let Ok(contents) = std::fs::read_to_string(&path) {
                                 self.ctx.send_user_event(
-                                    crate::event::EventType::NotebooksEditApply { cell_id, content: contents },
+                                    crate::event::EventType::NotebooksEditApply {
+                                        cell_id,
+                                        content: contents,
+                                    },
                                 );
                             }
                             self.ctx.display().notebooks_edit_session = None;
@@ -959,8 +944,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         "Inline editor not available in this build".into(),
                         crate::message_bar::MessageType::Warning,
                     );
-                    self.ctx
-                        .send_user_event(crate::event::EventType::Message(msg));
+                    self.ctx.send_user_event(crate::event::EventType::Message(msg));
                     return;
                 }
                 Key::Character(c)
@@ -975,10 +959,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             d.notebooks_panel.cells.get(idx).map(|c| c.id.clone())
                         };
                         if let Some(cell_id) = cell_id_opt {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::NotebooksDeleteCell(
-                                    cell_id,
-                                ));
+                            self.ctx.send_user_event(crate::event::EventType::NotebooksDeleteCell(
+                                cell_id,
+                            ));
                         }
                     }
                     return;
@@ -1357,11 +1340,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Remove prev char by grapheme; approximate via chars
                         let mut s = self.ctx.display().composer_text.clone();
                         let idx = s.char_indices().nth(cur - 1).map(|(i, _)| i).unwrap_or(0);
-                        let next_idx = s
-                            .char_indices()
-                            .nth(cur)
-                            .map(|(i, _)| i)
-                            .unwrap_or_else(|| s.len());
+                        let next_idx =
+                            s.char_indices().nth(cur).map(|(i, _)| i).unwrap_or_else(|| s.len());
                         s.replace_range(idx..next_idx, "");
                         self.ctx.display().composer_text = s;
                         self.ctx.display().composer_cursor = cur - 1;
@@ -1451,6 +1431,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.send_user_event(crate::event::EventType::AiToggle);
                     return;
                 }
+                #[cfg(feature = "ai")]
+                Key::Character(c) if c.eq_ignore_ascii_case("p") => {
+                    // Toggle provider dropdown in composer (Warp parity quick-action)
+                    let open = self.ctx.display().ai_provider_dropdown_open;
+                    self.ctx.display().ai_provider_dropdown_open = !open;
+                    self.ctx.mark_dirty();
+                    return;
+                }
                 _ => {}
             }
         }
@@ -1465,8 +1453,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 match key.logical_key.as_ref() {
                     // Copy as code (Ctrl+Shift+C)
                     Key::Character(c) if c.eq_ignore_ascii_case("c") => {
-                        self.ctx
-                            .send_user_event(crate::event::EventType::AiCopyCode);
+                        self.ctx.send_user_event(crate::event::EventType::AiCopyCode);
                         return;
                     }
                     // Copy all (Ctrl+Shift+T)
@@ -1489,8 +1476,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     }
                     // Regenerate
                     Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                        self.ctx
-                            .send_user_event(crate::event::EventType::AiRegenerate);
+                        self.ctx.send_user_event(crate::event::EventType::AiRegenerate);
                         return;
                     }
                     // Insert to prompt
@@ -1506,24 +1492,21 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     }
                     // Apply as command (Safe-run: dry-run by default)
                     Key::Character(c) if c.eq_ignore_ascii_case("e") => {
-                        self.ctx
-                            .send_user_event(crate::event::EventType::AiApplyDryRun);
+                        self.ctx.send_user_event(crate::event::EventType::AiApplyDryRun);
                         return;
                     }
                     // Explain (Ctrl+X)
                     Key::Character(c) if c.eq_ignore_ascii_case("x") => {
                         let selected_text = self.ctx.terminal().selection_to_string();
                         let target = selected_text.filter(|s| !s.is_empty());
-                        self.ctx
-                            .send_user_event(crate::event::EventType::AiExplain(target));
+                        self.ctx.send_user_event(crate::event::EventType::AiExplain(target));
                         return;
                     }
                     // Fix (Ctrl+F)
                     Key::Character(c) if c.eq_ignore_ascii_case("f") => {
                         let selected_text = self.ctx.terminal().selection_to_string();
                         let target = selected_text.filter(|s| !s.is_empty());
-                        self.ctx
-                            .send_user_event(crate::event::EventType::AiFix(target));
+                        self.ctx.send_user_event(crate::event::EventType::AiFix(target));
                         return;
                     }
                     Key::Named(NamedKey::End) => {
@@ -1642,11 +1625,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 Key::Named(NamedKey::Enter) if mods.control_key() => {
                     if let Some(runtime) = self.ctx.ai_runtime_mut() {
                         if let Some((cmd, _)) = runtime.apply_command(false) {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::AiApplyAsCommand {
-                                    command: cmd,
-                                    dry_run: false,
-                                });
+                            self.ctx.send_user_event(crate::event::EventType::AiApplyAsCommand {
+                                command: cmd,
+                                dry_run: false,
+                            });
                         }
                     }
                     return;
@@ -1668,8 +1650,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 self.ctx.mark_dirty();
                             }
                         } else {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::AiSelectPrev);
+                            self.ctx.send_user_event(crate::event::EventType::AiSelectPrev);
                         }
                     }
                     return;
@@ -1683,8 +1664,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                 self.ctx.mark_dirty();
                             }
                         } else {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::AiSelectNext);
+                            self.ctx.send_user_event(crate::event::EventType::AiSelectNext);
                         }
                     }
                     return;
@@ -1767,11 +1747,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Mask `Alt` modifier from input when we won't send esc.
-        let mods = if self.alt_send_esc(&key, text) {
-            mods
-        } else {
-            mods & !ModifiersState::ALT
-        };
+        let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
 
         let build_key_sequence = Self::should_build_sequence(&key, text, mode, mods);
         let is_modifier_key = Self::is_modifier_key(&key);
@@ -1914,10 +1890,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let mut binding_action = |binding: &KeyBinding| {
             let key = match (&binding.trigger, &logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
-                (_, code) => BindingKey::Keycode {
-                    key: code.clone(),
-                    location: key.location.into(),
-                },
+                (_, code) => {
+                    BindingKey::Keycode { key: code.clone(), location: key.location.into() }
+                }
             };
 
             if binding.is_triggered_by(mode, mods, &key) {
@@ -1967,11 +1942,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // Mask `Alt` modifier from input when we won't send esc.
         let text = key.text_with_all_modifiers().unwrap_or_default();
-        let mods = if self.alt_send_esc(&key, text) {
-            mods
-        } else {
-            mods & !ModifiersState::ALT
-        };
+        let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
 
         let bytes = match key.logical_key.as_ref() {
             Key::Named(NamedKey::Enter)
@@ -2017,13 +1988,8 @@ fn build_sequence(key: KeyEvent, mods: ModifiersState, mode: TermMode) -> Vec<u8
     let kitty_event_type = mode.contains(TermMode::REPORT_EVENT_TYPES)
         && (key.repeat || key.state == ElementState::Released);
 
-    let context = SequenceBuilder {
-        mode,
-        modifiers,
-        kitty_seq,
-        kitty_encode_all,
-        kitty_event_type,
-    };
+    let context =
+        SequenceBuilder { mode, modifiers, kitty_seq, kitty_encode_all, kitty_event_type };
 
     let associated_text = key.text_with_all_modifiers().filter(|text| {
         mode.contains(TermMode::REPORT_ASSOCIATED_TEXT)
@@ -2040,10 +2006,7 @@ fn build_sequence(key: KeyEvent, mods: ModifiersState, mode: TermMode) -> Vec<u8
         .or_else(|| context.try_build_textual(&key, associated_text));
 
     let (payload, terminator) = match sequence_base {
-        Some(SequenceBase {
-            payload,
-            terminator,
-        }) => (payload, terminator),
+        Some(SequenceBase { payload, terminator }) => (payload, terminator),
         _ => return Vec::new(),
     };
 
@@ -2108,11 +2071,7 @@ impl SequenceBuilder {
             let shift = self.modifiers.contains(SequenceModifiers::SHIFT);
 
             let ch = character.chars().next().unwrap();
-            let unshifted_ch = if shift {
-                ch.to_lowercase().next().unwrap()
-            } else {
-                ch
-            };
+            let unshifted_ch = if shift { ch.to_lowercase().next().unwrap() } else { ch };
 
             let alternate_key_code = u32::from(ch);
             let mut unicode_key_code = u32::from(unshifted_ch);
@@ -2380,10 +2339,7 @@ pub struct SequenceBase {
 
 impl SequenceBase {
     fn new(payload: Cow<'static, str>, terminator: SequenceTerminator) -> Self {
-        Self {
-            payload,
-            terminator,
-        }
+        Self { payload, terminator }
     }
 }
 

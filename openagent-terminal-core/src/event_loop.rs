@@ -44,8 +44,8 @@ mod tests {
     use super::*;
     use crate::event::{Event, EventListener, WindowSize};
     use crate::sync::FairMutex;
-    use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
     use crate::term::{Config as TermConfig, Term};
+    use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
     use polling::{Event as PollEvent, PollMode, Poller};
     use proptest::prelude::*;
     use std::sync::{Arc as StdArc, Mutex as StdMutex};
@@ -96,14 +96,22 @@ mod tests {
             Ok(())
         }
 
-        fn deregister(&mut self, _poll: &Arc<Poller>) -> std::io::Result<()> { Ok(()) }
+        fn deregister(&mut self, _poll: &Arc<Poller>) -> std::io::Result<()> {
+            Ok(())
+        }
 
-        fn reader(&mut self) -> &mut Self::Reader { &mut self.r }
-        fn writer(&mut self) -> &mut Self::Writer { &mut self.w }
+        fn reader(&mut self) -> &mut Self::Reader {
+            &mut self.r
+        }
+        fn writer(&mut self) -> &mut Self::Writer {
+            &mut self.w
+        }
     }
 
     impl EventedPty for DummyPty {
-        fn next_child_event(&mut self) -> Option<ChildEvent> { None }
+        fn next_child_event(&mut self) -> Option<ChildEvent> {
+            None
+        }
     }
 
     impl event::OnResize for DummyPty {
@@ -179,7 +187,12 @@ mod tests {
         let mut state = State::default();
         // Send a resize followed by shutdown
         let sender = el.channel();
-        let _ = sender.send(Msg::Resize(WindowSize { num_cols: 80, num_lines: 24, cell_width: 8, cell_height: 16 }));
+        let _ = sender.send(Msg::Resize(WindowSize {
+            num_cols: 80,
+            num_lines: 24,
+            cell_width: 8,
+            cell_height: 16,
+        }));
         let _ = sender.send(Msg::Shutdown);
         let cont = el.drain_recv_channel(&mut state);
         assert!(!cont, "EventLoop should stop draining on Shutdown");
@@ -229,10 +242,7 @@ where
     }
 
     pub fn channel(&self) -> EventLoopSender {
-        EventLoopSender {
-            sender: self.tx.clone(),
-            poller: self.poll.clone(),
-        }
+        EventLoopSender { sender: self.tx.clone(), poller: self.poll.clone() }
     }
 
     /// Drain the channel.
@@ -446,9 +456,8 @@ where
         }
         match payload[0] as char {
             'A' => {
-                self.event_proxy.send_event(event::Event::CommandBlock(
-                    event::CommandBlockEvent::PromptStart,
-                ));
+                self.event_proxy
+                    .send_event(event::Event::CommandBlock(event::CommandBlockEvent::PromptStart));
             }
             'B' => {
                 // Parse optional cmd
@@ -493,9 +502,8 @@ where
                 ));
             }
             'D' => {
-                self.event_proxy.send_event(event::Event::CommandBlock(
-                    event::CommandBlockEvent::PromptEnd,
-                ));
+                self.event_proxy
+                    .send_event(event::Event::CommandBlock(event::CommandBlockEvent::PromptEnd));
             }
             _ => (),
         }
@@ -529,9 +537,8 @@ where
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
                 let handler = state.parser.sync_timeout();
-                let timeout = handler
-                    .sync_timeout()
-                    .map(|st| st.saturating_duration_since(Instant::now()));
+                let timeout =
+                    handler.sync_timeout().map(|st| st.saturating_duration_since(Instant::now()));
 
                 events.clear();
                 if let Err(err) = self.poll.wait(&mut events, timeout) {
@@ -614,10 +621,7 @@ where
                     interest.writable = needs_write;
 
                     // Re-register with new interest.
-                    if let Err(err) = self
-                        .pty
-                        .reregister(&self.poll, interest, poll_opts)
-                    {
+                    if let Err(err) = self.pty.reregister(&self.poll, interest, poll_opts) {
                         error!("Event loop reregister error: {err}");
                         break 'event_loop;
                     }
@@ -753,10 +757,7 @@ impl State {
 impl Writing {
     #[inline]
     fn new(c: Cow<'static, [u8]>) -> Writing {
-        Writing {
-            source: c,
-            written: 0,
-        }
+        Writing { source: c, written: 0 }
     }
 
     #[inline]

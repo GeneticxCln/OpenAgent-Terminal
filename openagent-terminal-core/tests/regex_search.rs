@@ -10,11 +10,20 @@ impl EventListener for TestListener {
     fn send_event(&self, _event: Event) {}
 }
 
-struct TestDims { lines: usize, cols: usize }
+struct TestDims {
+    lines: usize,
+    cols: usize,
+}
 impl Dimensions for TestDims {
-    fn screen_lines(&self) -> usize { self.lines }
-    fn total_lines(&self) -> usize { self.lines }
-    fn columns(&self) -> usize { self.cols }
+    fn screen_lines(&self) -> usize {
+        self.lines
+    }
+    fn total_lines(&self) -> usize {
+        self.lines
+    }
+    fn columns(&self) -> usize {
+        self.cols
+    }
 }
 
 fn make_term() -> Term<TestListener> {
@@ -54,11 +63,14 @@ fn regex_search_basic_right_and_left() {
 
     // Now search via search_next API to the right, from origin before the match
     let origin = Point::new(Line(row1), Column(0));
-    let next = term.search_next(&mut re, origin, Direction::Right, Side::Left, None).expect("search_next");
+    let next =
+        term.search_next(&mut re, origin, Direction::Right, Side::Left, None).expect("search_next");
     assert_eq!(next.start().column.0, 4);
 
     // Search left from end of line, should find same token
     let origin_left = Point::new(Line(row1), Column(19));
-    let prev = term.search_next(&mut re, origin_left, Direction::Left, Side::Left, None).expect("search_left");
+    let prev = term
+        .search_next(&mut re, origin_left, Direction::Left, Side::Left, None)
+        .expect("search_left");
     assert_eq!(prev.start().column.0, 4);
 }

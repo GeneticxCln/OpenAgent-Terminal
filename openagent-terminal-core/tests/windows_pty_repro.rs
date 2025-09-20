@@ -12,12 +12,14 @@ fn drain_available<T: EventedPty>(pty: &mut T) -> u64 {
     let mut buf = [0u8; 64 * 1024];
     loop {
         match pty.reader().read(&mut buf) {
-            Ok(0) => break,              // EOF or no data
-            Ok(n) => total += n as u64,  // drained some
-            Err(_) => break,             // WouldBlock or other benign error
+            Ok(0) => break,             // EOF or no data
+            Ok(n) => total += n as u64, // drained some
+            Err(_) => break,            // WouldBlock or other benign error
         }
         // If we didn't fill the buffer, try once more; otherwise continue draining.
-        if total == 0 { break; }
+        if total == 0 {
+            break;
+        }
     }
     total
 }
@@ -88,9 +90,7 @@ fn pty_powershell_interactive_resize_then_exit() {
     }
 
     // Send a small command then exit to ensure input path works without poller registration.
-    let _ = pty
-        .writer()
-        .write(b"Write-Output 'ready'\r\nexit\r\n");
+    let _ = pty.writer().write(b"Write-Output 'ready'\r\nexit\r\n");
 
     let exit = wait_for_exit(&mut pty, Duration::from_secs(10));
     assert!(exit.is_some(), "PowerShell did not exit within timeout");
@@ -105,7 +105,8 @@ fn pty_cmd_noninteractive_large_burst_exits() {
         vec![
             "/C".to_string(),
             // 5000 lines of moderate width text
-            "for /L %i in (1,1,5000) do @echo this_is_a_test_line_%i_ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
+            "for /L %i in (1,1,5000) do @echo this_is_a_test_line_%i_ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                .to_string(),
         ],
     );
     let opts = Options {

@@ -94,22 +94,12 @@ fn ai_stop_event_triggers_graceful_finish() {
     rt.cancel();
 
     let events = Arc::new(Mutex::new(Vec::<EventType>::new()));
-    let mut app = CaptureApp {
-        events: events.clone(),
-    };
+    let mut app = CaptureApp { events: events.clone() };
     let _ = el.run_app(&mut app);
 
     let evs = events.lock().unwrap();
     let saw_finished = evs.iter().any(|e| matches!(e, EventType::AiStreamFinished));
     let saw_error = evs.iter().any(|e| matches!(e, EventType::AiStreamError(_)));
-    assert!(
-        saw_finished,
-        "expected AiStreamFinished after cancel: {:?}",
-        *evs
-    );
-    assert!(
-        !saw_error,
-        "did not expect AiStreamError on cancel: {:?}",
-        *evs
-    );
+    assert!(saw_finished, "expected AiStreamFinished after cancel: {:?}", *evs);
+    assert!(!saw_error, "did not expect AiStreamError on cancel: {:?}", *evs);
 }

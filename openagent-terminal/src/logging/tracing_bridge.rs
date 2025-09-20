@@ -71,10 +71,7 @@ struct LogMessageVisitor {
 
 impl LogMessageVisitor {
     fn new() -> Self {
-        Self {
-            message: String::new(),
-            fields: Vec::new(),
-        }
+        Self { message: String::new(), fields: Vec::new() }
     }
 }
 
@@ -83,8 +80,7 @@ impl Visit for LogMessageVisitor {
         if field.name() == "message" {
             self.message = format!("{:?}", value);
         } else {
-            self.fields
-                .push((field.name().to_string(), format!("{:?}", value)));
+            self.fields.push((field.name().to_string(), format!("{:?}", value)));
         }
     }
 
@@ -92,29 +88,24 @@ impl Visit for LogMessageVisitor {
         if field.name() == "message" {
             self.message = value.to_string();
         } else {
-            self.fields
-                .push((field.name().to_string(), value.to_string()));
+            self.fields.push((field.name().to_string(), value.to_string()));
         }
     }
 
     fn record_i64(&mut self, field: &Field, value: i64) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 
     fn record_u64(&mut self, field: &Field, value: u64) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 
     fn record_f64(&mut self, field: &Field, value: f64) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 
     fn record_bool(&mut self, field: &Field, value: bool) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 }
 
@@ -155,9 +146,7 @@ pub fn initialize_tracing_bridge() -> Result<(), Box<dyn std::error::Error>> {
     let log_forwarding_layer = LogForwardingLayer::new();
 
     // Set up the subscriber with the log forwarding layer
-    let subscriber = Registry::default()
-        .with(env_filter)
-        .with(log_forwarding_layer);
+    let subscriber = Registry::default().with(env_filter).with(log_forwarding_layer);
 
     // Initialize the global subscriber
     tracing::subscriber::set_global_default(subscriber)?;
@@ -228,12 +217,7 @@ mod tests {
     impl TestLogger {
         fn new() -> (Self, Arc<Mutex<Vec<String>>>) {
             let messages = Arc::new(Mutex::new(Vec::new()));
-            (
-                Self {
-                    messages: messages.clone(),
-                },
-                messages,
-            )
+            (Self { messages: messages.clone() }, messages)
         }
     }
 
@@ -273,11 +257,7 @@ mod tests {
         // Check that messages were forwarded
         let logged_messages = messages.lock().unwrap();
         assert!(logged_messages.len() >= 2);
-        assert!(logged_messages
-            .iter()
-            .any(|msg| msg.contains("test message")));
-        assert!(logged_messages
-            .iter()
-            .any(|msg| msg.contains("something went wrong")));
+        assert!(logged_messages.iter().any(|msg| msg.contains("test message")));
+        assert!(logged_messages.iter().any(|msg| msg.contains("something went wrong")));
     }
 }

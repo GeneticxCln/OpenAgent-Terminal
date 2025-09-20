@@ -3,9 +3,9 @@
 
 use openagent_terminal as crate_root; // re-exported name in workspace
 
-use crate_root::workspace::{split_manager::SplitLayout, SplitManager, WorkspaceManager};
 use crate_root::config::UiConfig;
 use crate_root::display::SizeInfo;
+use crate_root::workspace::{split_manager::SplitLayout, SplitManager, WorkspaceManager};
 
 fn make_size_info() -> SizeInfo {
     // width, height, cell_w, cell_h, pad_x, pad_y, dynamic_padding
@@ -78,14 +78,12 @@ fn swap_adjacent_panes_swaps_siblings_only() {
 
     // Verify swapped: now left should be B, right should be A
     match &layout {
-        SplitLayout::Horizontal { left, right, .. } => {
-            match (left.as_ref(), right.as_ref()) {
-                (SplitLayout::Single(lid), SplitLayout::Single(rid)) => {
-                    assert_eq!((*lid, *rid), (b, a));
-                }
-                _ => panic!("unexpected structure after swap"),
+        SplitLayout::Horizontal { left, right, .. } => match (left.as_ref(), right.as_ref()) {
+            (SplitLayout::Single(lid), SplitLayout::Single(rid)) => {
+                assert_eq!((*lid, *rid), (b, a));
             }
-        }
+            _ => panic!("unexpected structure after swap"),
+        },
         _ => panic!("expected horizontal root"),
     }
 

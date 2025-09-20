@@ -16,10 +16,14 @@ fn parse_max_ms() -> u64 {
     while let Some(arg) = args.next() {
         if arg == "--max-ms" {
             if let Some(v) = args.next() {
-                if let Ok(n) = v.parse::<u64>() { max_ms = n; }
+                if let Ok(n) = v.parse::<u64>() {
+                    max_ms = n;
+                }
             }
         } else if let Some(rest) = arg.strip_prefix("--max-ms=") {
-            if let Ok(n) = rest.parse::<u64>() { max_ms = n; }
+            if let Ok(n) = rest.parse::<u64>() {
+                max_ms = n;
+            }
         }
     }
     max_ms

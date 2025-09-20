@@ -56,11 +56,7 @@ pub fn initialize_with_tracing_bridge(
     let filter = create_env_filter(options.log_level());
     // Use a MakeWriter-compatible closure that clones the file handle for each write
     let file_for_writer = log_file;
-    let file_writer = move || {
-        file_for_writer
-            .try_clone()
-            .expect("failed to clone log file handle")
-    };
+    let file_writer = move || file_for_writer.try_clone().expect("failed to clone log file handle");
     let message_bar_layer = MessageBarLayer::new(event_proxy, log_path.clone());
 
     // Create layered subscriber
@@ -75,24 +71,14 @@ pub fn initialize_with_tracing_bridge(
                 .with_line_number(true)
                 .with_span_events(FmtSpan::CLOSE),
         )
-        .with(
-            fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_target(true)
-                .with_ansi(true)
-                .compact(),
-        )
+        .with(fmt::layer().with_writer(std::io::stdout).with_target(true).with_ansi(true).compact())
         .with(message_bar_layer);
 
     // Set up AI debug logging if enabled
     if let Some(ai_file) = create_ai_log_file()? {
         let ai_filter =
             EnvFilter::new("openagent_terminal_ai=debug,openagent_terminal::ai_runtime=debug");
-        let ai_writer = move || {
-            ai_file
-                .try_clone()
-                .expect("failed to clone AI log file handle")
-        };
+        let ai_writer = move || ai_file.try_clone().expect("failed to clone AI log file handle");
         let subscriber = subscriber.with(
             fmt::layer()
                 .with_writer(ai_writer)
@@ -125,10 +111,8 @@ fn create_env_filter(level: LevelFilter) -> EnvFilter {
     // but silence noisy third-party WARNs that are informational on many systems.
     // - calloop warns about transient token mismatches on some backends
     // - wgpu_hal::vulkan::instance warns when validation layers/extensions are unavailable
-    let default_filter = format!(
-        "openagent={},warn,calloop=error,wgpu_hal::vulkan::instance=error",
-        level_str
-    );
+    let default_filter =
+        format!("openagent={},warn,calloop=error,wgpu_hal::vulkan::instance=error", level_str);
 
     EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new(&default_filter))
@@ -140,10 +124,7 @@ fn create_log_file() -> io::Result<(File, PathBuf)> {
     let mut path = env::temp_dir();
     path.push(format!("OpenAgentTerminal-{}.log", process::id()));
 
-    let file = OpenOptions::new()
-        .create_new(true)
-        .append(true)
-        .open(&path)?;
+    let file = OpenOptions::new().create_new(true).append(true).open(&path)?;
 
     Ok((file, path))
 }
@@ -158,10 +139,8 @@ fn create_ai_log_file() -> io::Result<Option<File>> {
         return Ok(None);
     }
 
-    let path = env::var("OPENAGENT_AI_DEBUG_LOG_PATH")
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
+    let path =
+        env::var("OPENAGENT_AI_DEBUG_LOG_PATH").ok().map(PathBuf::from).unwrap_or_else(|| {
             let mut p = env::temp_dir();
             p.push(format!("openagent_ai_debug_{}.log", process::id()));
             p
@@ -180,10 +159,7 @@ struct MessageBarLayer {
 
 impl MessageBarLayer {
     fn new(event_proxy: EventLoopProxy<Event>, log_path: PathBuf) -> Self {
-        Self {
-            event_proxy: Arc::new(Mutex::new(event_proxy)),
-            log_path,
-        }
+        Self { event_proxy: Arc::new(Mutex::new(event_proxy)), log_path }
     }
 }
 
@@ -241,9 +217,7 @@ struct MessageVisitor {
 
 impl MessageVisitor {
     fn new() -> Self {
-        Self {
-            message: String::new(),
-        }
+        Self { message: String::new() }
     }
 }
 
@@ -278,9 +252,7 @@ const ALLOWED_TARGETS: &[&str] = &[
 /// Check if a target should be logged (for filtering)
 #[allow(dead_code)]
 pub fn is_allowed_target(target: &str) -> bool {
-    ALLOWED_TARGETS
-        .iter()
-        .any(|allowed| target.starts_with(allowed))
+    ALLOWED_TARGETS.iter().any(|allowed| target.starts_with(allowed))
 }
 
 /// Convenience macros for structured logging

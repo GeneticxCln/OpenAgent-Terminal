@@ -22,11 +22,7 @@ impl AiProvider for CaptureProvider {
 
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
         *self.last.lock().unwrap() = Some(req);
-        Ok(vec![AiProposal {
-            title: "ok".into(),
-            description: None,
-            proposed_commands: vec![],
-        }])
+        Ok(vec![AiProposal { title: "ok".into(), description: None, proposed_commands: vec![] }])
     }
 }
 

@@ -109,8 +109,7 @@ impl HintState {
         }
 
         // Sort and dedup ranges. Currently overlapped but not exactly same ranges are kept.
-        self.matches
-            .sort_by_key(|bounds| (*bounds.start(), Reverse(*bounds.end())));
+        self.matches.sort_by_key(|bounds| (*bounds.start(), Reverse(*bounds.end())));
         self.matches.dedup_by_key(|bounds| *bounds.start());
 
         let mut generator = HintLabels::new(&self.alphabet, HINT_SPLIT_PERCENTAGE);
@@ -164,11 +163,7 @@ impl HintState {
 
             // Hyperlinks take precedence over regex matches.
             let hyperlink = term.grid()[*bounds.start()].hyperlink();
-            Some(HintMatch {
-                bounds,
-                hyperlink,
-                hint,
-            })
+            Some(HintMatch { bounds, hyperlink, hint })
         } else {
             // Store character to preserve the selection.
             self.keys.push(c);
@@ -281,21 +276,12 @@ impl HintLabels {
         let alphabet: Vec<char> = alphabet.into().chars().collect();
         let split_point = ((alphabet.len() - 1) as f32 * split_ratio.min(1.)) as usize;
 
-        Self {
-            indices: vec![0],
-            split_point,
-            alphabet,
-        }
+        Self { indices: vec![0], split_point, alphabet }
     }
 
     /// Get the characters for the next label.
     fn next(&mut self) -> Vec<char> {
-        let characters = self
-            .indices
-            .iter()
-            .rev()
-            .map(|index| self.alphabet[*index])
-            .collect();
+        let characters = self.indices.iter().rev().map(|index| self.alphabet[*index]).collect();
         self.increment();
         characters
     }
@@ -419,28 +405,17 @@ pub fn highlighted_at<T>(
             return None;
         }
 
-        if let Some((hyperlink, bounds)) = hint
-            .content
-            .hyperlinks
-            .then(|| hyperlink_at(term, point))
-            .flatten()
+        if let Some((hyperlink, bounds)) =
+            hint.content.hyperlinks.then(|| hyperlink_at(term, point)).flatten()
         {
-            return Some(HintMatch {
-                bounds,
-                hyperlink: Some(hyperlink),
-                hint: hint.clone(),
-            });
+            return Some(HintMatch { bounds, hyperlink: Some(hyperlink), hint: hint.clone() });
         }
 
         let bounds = hint.content.regex.as_ref().and_then(|regex| {
             regex.with_compiled(|regex| regex_match_at(term, point, regex, hint.post_processing))
         });
         if let Some(bounds) = bounds.flatten() {
-            return Some(HintMatch {
-                bounds,
-                hint: hint.clone(),
-                hyperlink: None,
-            });
+            return Some(HintMatch { bounds, hint: hint.clone(), hyperlink: None });
         }
 
         None
@@ -593,10 +568,7 @@ impl<'a, T> HintPostProcessor<'a, T> {
                 return;
             }
 
-            match self
-                .term
-                .regex_search_right(self.regex, self.start, self.end)
-            {
+            match self.term.regex_search_right(self.regex, self.start, self.end) {
                 Some(rm) => regex_match = rm,
                 None => return,
             }
@@ -611,10 +583,7 @@ impl<T> Iterator for HintPostProcessor<'_, T> {
         let next_match = self.next_match.take()?;
 
         if self.start <= self.end {
-            if let Some(rm) = self
-                .term
-                .regex_search_right(self.regex, self.start, self.end)
-            {
+            if let Some(rm) = self.term.regex_search_right(self.regex, self.start, self.end) {
                 self.next_processed_match(rm);
             }
         }
@@ -714,17 +683,11 @@ mod tests {
 
         let mut unique_hyperlinks = visible_unique_hyperlinks_iter(&term);
         assert_eq!(
-            Some(Match::new(
-                Point::new(Line(0), Column(0)),
-                Point::new(Line(0), Column(1))
-            )),
+            Some(Match::new(Point::new(Line(0), Column(0)), Point::new(Line(0), Column(1)))),
             unique_hyperlinks.next()
         );
         assert_eq!(
-            Some(Match::new(
-                Point::new(Line(0), Column(2)),
-                Point::new(Line(0), Column(2))
-            )),
+            Some(Match::new(Point::new(Line(0), Column(2)), Point::new(Line(0), Column(2)))),
             unique_hyperlinks.next()
         );
         assert_eq!(None, unique_hyperlinks.next());

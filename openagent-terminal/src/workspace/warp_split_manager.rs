@@ -51,8 +51,7 @@ impl WarpSplitManager {
         current_pane: PaneId,
         new_pane_id: PaneId,
     ) -> bool {
-        self.base
-            .split_pane(layout, current_pane, new_pane_id, 0.5, true)
+        self.base.split_pane(layout, current_pane, new_pane_id, 0.5, true)
     }
 
     /// Split current pane downward (Warp Cmd+Shift+D behavior)
@@ -62,8 +61,7 @@ impl WarpSplitManager {
         current_pane: PaneId,
         new_pane_id: PaneId,
     ) -> bool {
-        self.base
-            .split_pane(layout, current_pane, new_pane_id, 0.5, false)
+        self.base.split_pane(layout, current_pane, new_pane_id, 0.5, false)
     }
 
     /// Navigate to pane in direction (Warp Cmd+Alt+Arrow behavior)
@@ -75,10 +73,8 @@ impl WarpSplitManager {
     ) -> bool {
         let pane_rects =
             self.calculate_pane_positions(layout, PaneRect::new(0.0, 0.0, 100.0, 100.0));
-        let current_rect = pane_rects
-            .iter()
-            .find(|(id, _)| *id == *current_pane)
-            .map(|(_, rect)| *rect);
+        let current_rect =
+            pane_rects.iter().find(|(id, _)| *id == *current_pane).map(|(_, rect)| *rect);
 
         let Some(current_rect) = current_rect else {
             return false;
@@ -461,6 +457,7 @@ impl Default for WarpSplitManager {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

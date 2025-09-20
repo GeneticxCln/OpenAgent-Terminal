@@ -96,29 +96,15 @@ fn ai_stream_cancellation_is_graceful() {
 
     // Capture events until stream finishes (or errors)
     let captured = Arc::new(Mutex::new(Vec::<EventType>::new()));
-    let mut app = CaptureApp {
-        captured: captured.clone(),
-    };
+    let mut app = CaptureApp { captured: captured.clone() };
 
     // Run the event loop; it will exit from user_event once terminal event is received
     let _ = event_loop.run_app(&mut app);
 
     // Validate that we got AiStreamFinished and not AiStreamError
     let events = captured.lock().unwrap();
-    let saw_finished = events
-        .iter()
-        .any(|e| matches!(e, EventType::AiStreamFinished));
-    let saw_error = events
-        .iter()
-        .any(|e| matches!(e, EventType::AiStreamError(_)));
-    assert!(
-        saw_finished,
-        "expected AiStreamFinished event on cancellation, got: {:?}",
-        *events
-    );
-    assert!(
-        !saw_error,
-        "did not expect AiStreamError on cancellation, got: {:?}",
-        *events
-    );
+    let saw_finished = events.iter().any(|e| matches!(e, EventType::AiStreamFinished));
+    let saw_error = events.iter().any(|e| matches!(e, EventType::AiStreamError(_)));
+    assert!(saw_finished, "expected AiStreamFinished event on cancellation, got: {:?}", *events);
+    assert!(!saw_error, "did not expect AiStreamError on cancellation, got: {:?}", *events);
 }

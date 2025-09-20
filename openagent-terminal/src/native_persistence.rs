@@ -28,7 +28,8 @@ pub struct NativePersistence {
 
     /// Optional sync provider (enabled only when the `sync` feature is on)
     #[cfg(feature = "sync")]
-    sync_provider: std::sync::Arc<tokio::sync::Mutex<Option<openagent_terminal_sync::LocalFsProvider>>>,
+    sync_provider:
+        std::sync::Arc<tokio::sync::Mutex<Option<openagent_terminal_sync::LocalFsProvider>>>,
 
     /// Block persistence state
     block_persistence: BlockPersistence,
@@ -62,18 +63,9 @@ pub enum PersistenceEvent {
     BlockDeleted(BlockId),
     TabStateSaved(TabId),
     SplitLayoutSaved(String),
-    BackupCreated {
-        backup_path: PathBuf,
-        timestamp: DateTime<Utc>,
-    },
-    SyncCompleted {
-        operation_count: usize,
-        duration: Duration,
-    },
-    ErrorOccurred {
-        error: String,
-        operation: String,
-    },
+    BackupCreated { backup_path: PathBuf, timestamp: DateTime<Utc> },
+    SyncCompleted { operation_count: usize, duration: Duration },
+    ErrorOccurred { error: String, operation: String },
 }
 
 /// Block persistence for immediate saves
@@ -221,10 +213,7 @@ pub enum SyncOperation {
     SaveBlock(Block),
     DeleteBlock(BlockId),
     SaveTabState(TabManagerState),
-    SaveSplitLayout {
-        layout_id: String,
-        layout_data: Vec<u8>,
-    },
+    SaveSplitLayout { layout_id: String, layout_data: Vec<u8> },
     CreateBackup(BackupTask),
     Checkpoint,
 }
@@ -305,9 +294,7 @@ impl NativePersistence {
     /// Create new native persistence with immediate capabilities
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         // Ensure data directory exists
-        async_fs::create_dir_all(&data_dir)
-            .await
-            .context("Failed to create data directory")?;
+        async_fs::create_dir_all(&data_dir).await.context("Failed to create data directory")?;
 
         let blocks_dir = data_dir.join("blocks");
         let tabs_file = data_dir.join("tabs.json");
@@ -403,10 +390,7 @@ impl NativePersistence {
             #[cfg(feature = "sync")]
             sync_provider,
             sync_sender: None,
-            perf_stats: PersistenceStats {
-                last_reset: Instant::now(),
-                ..Default::default()
-            },
+            perf_stats: PersistenceStats { last_reset: Instant::now(), ..Default::default() },
         };
 
         // Load existing data immediately
@@ -428,8 +412,11 @@ impl NativePersistence {
                     if let Some(provider) = guard.as_ref() {
                         // Minimal mapping of operations to scopes
                         let scope = match &operation {
-                            SyncOperation::SaveBlock(_) | SyncOperation::DeleteBlock(_) => SyncScope::History,
-                            SyncOperation::SaveTabState(_) | SyncOperation::SaveSplitLayout { .. } => SyncScope::Settings,
+                            SyncOperation::SaveBlock(_) | SyncOperation::DeleteBlock(_) => {
+                                SyncScope::History
+                            }
+                            SyncOperation::SaveTabState(_)
+                            | SyncOperation::SaveSplitLayout { .. } => SyncScope::Settings,
                             SyncOperation::CreateBackup(_) | SyncOperation::Checkpoint => {
                                 // Backups/checkpoints don't affect sync directly; skip
                                 continue;
@@ -455,10 +442,7 @@ impl NativePersistence {
             });
         }
 
-        info!(
-            "Native persistence initialized at {:?}",
-            persistence.data_dir
-        );
+        info!("Native persistence initialized at {:?}", persistence.data_dir);
 
         Ok(persistence)
     }
@@ -483,17 +467,10 @@ impl NativePersistence {
         let start_time = Instant::now();
 
         // Write to WAL first for consistency
-        self.write_to_wal(
-            LogOperation::SaveBlock(block.id),
-            bincode::serialize(block)?,
-        )
-        .await?;
+        self.write_to_wal(LogOperation::SaveBlock(block.id), bincode::serialize(block)?).await?;
 
         // Generate file path
-        let file_path = self
-            .block_persistence
-            .blocks_dir
-            .join(format!("{}.json", block.id));
+        let file_path = self.block_persistence.blocks_dir.join(format!("{}.json", block.id));
 
         // Serialize block data immediately
         let block_data = serde_json::to_vec_pretty(block).context("Failed to serialize block")?;
@@ -512,9 +489,7 @@ impl NativePersistence {
             dirty: false,
         };
 
-        self.block_persistence
-            .block_cache
-            .insert(block.id, cache_entry);
+        self.block_persistence.block_cache.insert(block.id, cache_entry);
         self.block_persistence.last_save = Instant::now();
 
         // Update performance stats
@@ -531,8 +506,7 @@ impl NativePersistence {
 
         // Schedule backup if needed
         if self.should_create_backup() {
-            self.schedule_backup(file_path, BackupPriority::Normal)
-                .await?;
+            self.schedule_backup(file_path, BackupPriority::Normal).await?;
         }
 
         debug!("Block {} saved in {:?}", block.id, start_time.elapsed());
@@ -547,21 +521,14 @@ impl NativePersistence {
         // Check cache first for immediate access
         if let Some(cache_entry) = self.block_persistence.block_cache.get(&block_id) {
             self.perf_stats.cache_hits += 1;
-            debug!(
-                "Block {} loaded from cache in {:?}",
-                block_id,
-                start_time.elapsed()
-            );
+            debug!("Block {} loaded from cache in {:?}", block_id, start_time.elapsed());
             return Ok(Some(cache_entry.block.clone()));
         }
 
         self.perf_stats.cache_misses += 1;
 
         // Load from disk immediately
-        let file_path = self
-            .block_persistence
-            .blocks_dir
-            .join(format!("{}.json", block_id));
+        let file_path = self.block_persistence.blocks_dir.join(format!("{}.json", block_id));
 
         if !file_path.exists() {
             return Ok(None);
@@ -583,19 +550,13 @@ impl NativePersistence {
             dirty: false,
         };
 
-        self.block_persistence
-            .block_cache
-            .insert(block_id, cache_entry);
+        self.block_persistence.block_cache.insert(block_id, cache_entry);
 
         // Update performance stats
         self.perf_stats.blocks_loaded += 1;
         self.perf_stats.total_read_time += start_time.elapsed();
 
-        debug!(
-            "Block {} loaded from disk in {:?}",
-            block_id,
-            start_time.elapsed()
-        );
+        debug!("Block {} loaded from disk in {:?}", block_id, start_time.elapsed());
 
         Ok(Some(block))
     }
@@ -605,18 +566,15 @@ impl NativePersistence {
         let start_time = Instant::now();
 
         // Write to WAL first
-        self.write_to_wal(LogOperation::DeleteBlock(block_id), Vec::new())
-            .await?;
+        self.write_to_wal(LogOperation::DeleteBlock(block_id), Vec::new()).await?;
 
         // Remove from cache immediately
         if let Some(cache_entry) = self.block_persistence.block_cache.remove(&block_id) {
             // Delete file immediately
             if cache_entry.file_path.exists() {
-                async_fs::remove_file(&cache_entry.file_path)
-                    .await
-                    .with_context(|| {
-                        format!("Failed to delete block file: {:?}", cache_entry.file_path)
-                    })?;
+                async_fs::remove_file(&cache_entry.file_path).await.with_context(|| {
+                    format!("Failed to delete block file: {:?}", cache_entry.file_path)
+                })?;
             }
         }
 
@@ -653,10 +611,10 @@ impl NativePersistence {
             .context("Failed to write tab state")?;
 
         // Save session data immediately
-        let session_file = self.tab_persistence.sessions_dir.join(format!(
-            "{}.json",
-            self.tab_persistence.current_session.session_id
-        ));
+        let session_file = self
+            .tab_persistence
+            .sessions_dir
+            .join(format!("{}.json", self.tab_persistence.current_session.session_id));
 
         let session_data = serde_json::to_vec_pretty(&self.tab_persistence.current_session)
             .context("Failed to serialize session")?;
@@ -697,10 +655,7 @@ impl NativePersistence {
         )
         .await?;
 
-        let file_path = self
-            .split_persistence
-            .layouts_dir
-            .join(format!("{}.bin", layout_id));
+        let file_path = self.split_persistence.layouts_dir.join(format!("{}.bin", layout_id));
 
         // Write layout data immediately
         async_fs::write(&file_path, layout_data)
@@ -715,9 +670,7 @@ impl NativePersistence {
             dirty: false,
         };
 
-        self.split_persistence
-            .layout_cache
-            .insert(layout_id.to_string(), cache_entry);
+        self.split_persistence.layout_cache.insert(layout_id.to_string(), cache_entry);
         self.split_persistence.last_save = Instant::now();
 
         // Update performance stats
@@ -735,11 +688,7 @@ impl NativePersistence {
             });
         }
 
-        debug!(
-            "Split layout {} saved in {:?}",
-            layout_id,
-            start_time.elapsed()
-        );
+        debug!("Split layout {} saved in {:?}", layout_id, start_time.elapsed());
 
         Ok(())
     }
@@ -764,13 +713,9 @@ impl NativePersistence {
             .await
             .context("Failed to open WAL file")?;
 
-        file.write_all(&entry_data)
-            .await
-            .context("Failed to write to WAL")?;
+        file.write_all(&entry_data).await.context("Failed to write to WAL")?;
 
-        file.write_all(b"\n")
-            .await
-            .context("Failed to write WAL separator")?;
+        file.write_all(b"\n").await.context("Failed to write WAL separator")?;
 
         file.sync_all().await.context("Failed to sync WAL file")?;
 
@@ -793,9 +738,7 @@ impl NativePersistence {
         self.wal.log_entries.clear();
 
         // Truncate WAL file
-        async_fs::write(&self.wal.log_file, b"")
-            .await
-            .context("Failed to truncate WAL file")?;
+        async_fs::write(&self.wal.log_file, b"").await.context("Failed to truncate WAL file")?;
 
         self.wal.last_checkpoint = Instant::now();
 
@@ -845,21 +788,14 @@ impl NativePersistence {
         let timestamp = Utc::now();
         let backup_filename = format!(
             "{}_{}.backup",
-            source_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy(),
+            source_path.file_name().unwrap_or_default().to_string_lossy(),
             timestamp.format("%Y%m%d_%H%M%S")
         );
 
         let backup_path = self.backup_manager.backup_dir.join(backup_filename);
 
-        let backup_task = BackupTask {
-            source_path,
-            backup_path: backup_path.clone(),
-            timestamp,
-            priority,
-        };
+        let backup_task =
+            BackupTask { source_path, backup_path: backup_path.clone(), timestamp, priority };
 
         // Execute backup immediately for high/critical priority
         if priority >= BackupPriority::High {
@@ -877,14 +813,9 @@ impl NativePersistence {
         let start_time = Instant::now();
 
         // Copy file immediately
-        async_fs::copy(&task.source_path, &task.backup_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to backup {:?} to {:?}",
-                    task.source_path, task.backup_path
-                )
-            })?;
+        async_fs::copy(&task.source_path, &task.backup_path).await.with_context(|| {
+            format!("Failed to backup {:?} to {:?}", task.source_path, task.backup_path)
+        })?;
 
         // Update backup stats
         self.perf_stats.backups_created += 1;
@@ -896,11 +827,7 @@ impl NativePersistence {
             timestamp: task.timestamp,
         });
 
-        debug!(
-            "Backup created in {:?}: {:?}",
-            start_time.elapsed(),
-            task.backup_path
-        );
+        debug!("Backup created in {:?}: {:?}", start_time.elapsed(), task.backup_path);
 
         Ok(())
     }
@@ -941,15 +868,9 @@ impl NativePersistence {
         let duration = start_time.elapsed();
 
         // Emit sync completion event
-        self.emit_event(PersistenceEvent::SyncCompleted {
-            operation_count,
-            duration,
-        });
+        self.emit_event(PersistenceEvent::SyncCompleted { operation_count, duration });
 
-        info!(
-            "Force sync completed: {} operations in {:?}",
-            operation_count, duration
-        );
+        info!("Force sync completed: {} operations in {:?}", operation_count, duration);
 
         Ok(())
     }
@@ -969,9 +890,7 @@ mod tests {
     #[tokio::test]
     async fn test_native_persistence_creation() {
         let temp_dir = TempDir::new().unwrap();
-        let persistence = NativePersistence::new(temp_dir.path().to_path_buf())
-            .await
-            .unwrap();
+        let persistence = NativePersistence::new(temp_dir.path().to_path_buf()).await.unwrap();
 
         assert!(persistence.data_dir.exists());
         assert!(persistence.block_persistence.blocks_dir.exists());

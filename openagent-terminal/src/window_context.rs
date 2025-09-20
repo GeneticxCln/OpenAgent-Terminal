@@ -89,9 +89,7 @@ impl WindowContext {
             .as_raw();
 
         let mut identity = config.window.identity.clone();
-        options
-            .window_identity
-            .override_identity_config(&mut identity);
+        options.window_identity.override_identity_config(&mut identity);
 
         // Prefer X11 on Unix if not set (reduces Wayland surface quirks for WGPU)
         #[cfg(all(unix, not(target_os = "macos")))]
@@ -113,10 +111,8 @@ impl WindowContext {
                 }
                 Err(e) => {
                     tracing::error!("WGPU init failed: {e:?}");
-                    Err(
-                        "WGPU initialization failed; OpenGL fallback is removed in this build"
-                            .into(),
-                    )
+                    Err("WGPU initialization failed; OpenGL fallback is removed in this build"
+                        .into())
                 }
             }
         }
@@ -144,9 +140,7 @@ impl WindowContext {
         config_overrides: ParsedOptions,
     ) -> Result<Self, Box<dyn Error>> {
         let mut identity = config.window.identity.clone();
-        options
-            .window_identity
-            .override_identity_config(&mut identity);
+        options.window_identity.override_identity_config(&mut identity);
 
         let window = Window::new(event_loop, &config, &identity, &mut options)?;
 
@@ -166,9 +160,7 @@ impl WindowContext {
         proxy: EventLoopProxy<Event>,
     ) -> Result<Self, Box<dyn Error>> {
         let mut pty_config = config.pty_config();
-        options
-            .terminal_options
-            .override_pty_config(&mut pty_config);
+        options.terminal_options.override_pty_config(&mut pty_config);
 
         let preserve_title = options.window_identity.title.is_some();
 
@@ -185,11 +177,7 @@ impl WindowContext {
         // This object contains all of the state about what's being displayed. It's
         // wrapped in a clonable mutex since both the I/O loop and display need to
         // access it.
-        let terminal = Term::new(
-            config.term_options(),
-            &display.size_info,
-            event_proxy.clone(),
-        );
+        let terminal = Term::new(config.term_options(), &display.size_info, event_proxy.clone());
         let terminal = Arc::new(FairMutex::new(terminal));
 
         // Create the PTY.
@@ -197,11 +185,7 @@ impl WindowContext {
         // The PTY forks a process to run the shell on the slave side of the
         // pseudoterminal. A file descriptor for the master side is retained for
         // reading/writing to the shell.
-        let pty = tty::new(
-            &pty_config,
-            display.size_info.into(),
-            display.window.id().into(),
-        )?;
+        let pty = tty::new(&pty_config, display.size_info.into(), display.window.id().into())?;
 
         #[cfg(not(windows))]
         let master_fd = pty.file().as_raw_fd();
@@ -337,6 +321,8 @@ impl WindowContext {
                                 &prov_cfg,
                             );
                             rt.set_context_config(config.ai.context.clone());
+                            rt.set_routing_mode(config.ai.routing);
+                            rt.set_apply_joiner(config.ai.apply_joiner);
                             Some(rt)
                         }
                     } else {
@@ -355,20 +341,15 @@ impl WindowContext {
         // Apply effective reduce-motion preference from config: override takes precedence over
         // theme
         let effective_reduce_motion =
-            window_context
-                .config
-                .reduce_motion_override
-                .unwrap_or_else(|| {
-                    window_context
-                        .config
-                        .resolved_theme
-                        .as_ref()
-                        .map(|t| t.ui.reduce_motion)
-                        .unwrap_or(false)
-                });
-        window_context
-            .display
-            .set_reduce_motion(effective_reduce_motion);
+            window_context.config.reduce_motion_override.unwrap_or_else(|| {
+                window_context
+                    .config
+                    .resolved_theme
+                    .as_ref()
+                    .map(|t| t.ui.reduce_motion)
+                    .unwrap_or(false)
+            });
+        window_context.display.set_reduce_motion(effective_reduce_motion);
 
         // Note: Warp functionality will be initialized later in the event processor
         // after the WindowContext is fully set up and Arc-wrapped
@@ -411,11 +392,7 @@ impl WindowContext {
         // Apply effective reduce-motion preference from config: override takes precedence over
         // theme
         let effective_reduce_motion = self.config.reduce_motion_override.unwrap_or_else(|| {
-            self.config
-                .resolved_theme
-                .as_ref()
-                .map(|t| t.ui.reduce_motion)
-                .unwrap_or(false)
+            self.config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false)
         });
         self.display.set_reduce_motion(effective_reduce_motion);
 
@@ -439,9 +416,7 @@ impl WindowContext {
             && (!self.config.window.dynamic_title
                 || self.display.window.title() == old_config.window.identity.title)
         {
-            self.display
-                .window
-                .set_title(self.config.window.identity.title.clone());
+            self.display.window.set_title(self.config.window.identity.title.clone());
         }
 
         let opaque = self.config.window_opacity() >= 1.;
@@ -451,18 +426,14 @@ impl WindowContext {
         self.display.window.set_has_shadow(opaque);
 
         #[cfg(target_os = "macos")]
-        self.display
-            .window
-            .set_option_as_alt(self.config.window.option_as_alt());
+        self.display.window.set_option_as_alt(self.config.window.option_as_alt());
 
         // Change opacity and blur state.
         self.display.window.set_transparent(!opaque);
         self.display.window.set_blur(self.config.window.blur);
 
         // Update hint keys.
-        self.display
-            .hint_state
-            .update_alphabet(self.config.hints.alphabet());
+        self.display.hint_state.update_alphabet(self.config.hints.alphabet());
 
         // Update cursor blinking.
         let event = Event::new(TerminalEvent::CursorBlinkingChange.into(), None);
@@ -496,6 +467,8 @@ impl WindowContext {
                 let mut rt =
                     crate::ai_runtime::AiRuntime::from_secure_config(provider_name, &prov_cfg);
                 rt.set_context_config(self.config.ai.context.clone());
+                rt.set_routing_mode(self.config.ai.routing);
+                rt.set_apply_joiner(self.config.ai.apply_joiner);
                 self.ai_runtime = Some(rt);
             } else {
                 self.ai_runtime = None;
@@ -591,10 +564,7 @@ impl WindowContext {
     ) {
         match event {
             WinitEvent::AboutToWait
-            | WinitEvent::WindowEvent {
-                event: WindowEvent::RedrawRequested,
-                ..
-            } => {
+            | WinitEvent::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
                 // Skip further event handling with no staged updates.
                 if self.event_queue.is_empty() {
                     return;
@@ -725,13 +695,7 @@ impl WindowContext {
         if self.dirty
             && self.display.window.has_frame
             && !self.occluded
-            && !matches!(
-                event,
-                WinitEvent::WindowEvent {
-                    event: WindowEvent::RedrawRequested,
-                    ..
-                }
-            )
+            && !matches!(event, WinitEvent::WindowEvent { event: WindowEvent::RedrawRequested, .. })
         {
             self.display.window.request_redraw();
         }
@@ -762,10 +726,7 @@ impl WindowContext {
                 // This is a simplified approach - in production code we'd need a different pattern
                 // to avoid the Arc<Mutex<WindowContext>> dependency
                 info!("Warp-style workspace enabled but initialization requires architectural changes");
-                info!(
-                    "Warp session file: {:?}",
-                    self.config.workspace.warp_session_file
-                );
+                info!("Warp session file: {:?}", self.config.workspace.warp_session_file);
             }
         }
         Ok(())

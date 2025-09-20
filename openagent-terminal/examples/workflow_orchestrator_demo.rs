@@ -24,17 +24,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize core agents
     let mut conversation_manager = ConversationManager::new();
-    conversation_manager
-        .initialize(AgentConfig::default())
-        .await?;
+    conversation_manager.initialize(AgentConfig::default()).await?;
     let conversation_manager = Arc::new(conversation_manager);
 
     let project_context_agent = BlitzyProjectContextAgent::new()
         .with_conversation_manager(Arc::clone(&conversation_manager));
     let mut project_context_agent = project_context_agent;
-    project_context_agent
-        .initialize(AgentConfig::default())
-        .await?;
+    project_context_agent.initialize(AgentConfig::default()).await?;
     let project_context_agent = Arc::new(project_context_agent);
 
     let code_gen_agent = CodeGenerationAgent::new();
@@ -48,24 +44,19 @@ async fn main() -> anyhow::Result<()> {
         .with_project_context_agent(Arc::clone(&project_context_agent));
 
     let mut workflow_orchestrator = workflow_orchestrator;
-    workflow_orchestrator
-        .initialize(AgentConfig::default())
-        .await?;
+    workflow_orchestrator.initialize(AgentConfig::default()).await?;
 
     // Register agents with the orchestrator
     println!("\n📋 Registering Agents...");
     workflow_orchestrator
         .register_agent(Arc::clone(&project_context_agent) as Arc<dyn Agent>)
         .await?;
-    workflow_orchestrator
-        .register_agent(Arc::clone(&code_gen_agent) as Arc<dyn Agent>)
-        .await?;
+    workflow_orchestrator.register_agent(Arc::clone(&code_gen_agent) as Arc<dyn Agent>).await?;
     println!("✅ Registered project context and code generation agents");
 
     // Create a conversation session
-    let session_id = conversation_manager
-        .create_session(Some("Workflow Demo Session".to_string()))
-        .await?;
+    let session_id =
+        conversation_manager.create_session(Some("Workflow Demo Session".to_string())).await?;
     conversation_manager
         .add_turn(
             session_id,
@@ -79,9 +70,7 @@ async fn main() -> anyhow::Result<()> {
     // Define a comprehensive workflow template
     println!("\n🛠️  Creating Workflow Template...");
     let workflow_template = create_project_analysis_workflow_template().await?;
-    workflow_orchestrator
-        .register_template(workflow_template)
-        .await?;
+    workflow_orchestrator.register_template(workflow_template).await?;
     println!("✅ Registered 'project-analysis-and-codegen' workflow template");
 
     // Create workflow context
@@ -94,14 +83,8 @@ async fn main() -> anyhow::Result<()> {
             ("PROJECT_TYPE".to_string(), "rust".to_string()),
         ]),
         variables: HashMap::from([
-            (
-                "project_path".to_string(),
-                serde_json::Value::String(".".to_string()),
-            ),
-            (
-                "analysis_depth".to_string(),
-                serde_json::Value::String("comprehensive".to_string()),
-            ),
+            ("project_path".to_string(), serde_json::Value::String(".".to_string())),
+            ("analysis_depth".to_string(), serde_json::Value::String("comprehensive".to_string())),
             ("generate_docs".to_string(), serde_json::Value::Bool(true)),
         ]),
         shared_state: HashMap::new(),
@@ -165,11 +148,7 @@ async fn create_project_analysis_workflow_template() -> anyhow::Result<WorkflowT
         category: WorkflowCategory::Analysis,
         version: "1.0.0".to_string(),
         author: Some("OpenAgent Terminal".to_string()),
-        tags: vec![
-            "analysis".to_string(),
-            "codegen".to_string(),
-            "project".to_string(),
-        ],
+        tags: vec!["analysis".to_string(), "codegen".to_string(), "project".to_string()],
         steps: vec![
             // Step 1: Analyze project structure
             WorkflowStep {
@@ -256,10 +235,7 @@ async fn create_project_analysis_workflow_template() -> anyhow::Result<WorkflowT
                 input_mapping: HashMap::from([
                     ("request_id".to_string(), "request_id".to_string()),
                     ("project_path".to_string(), "project_path".to_string()),
-                    (
-                        "project_analysis".to_string(),
-                        "project_analysis".to_string(),
-                    ),
+                    ("project_analysis".to_string(), "project_analysis".to_string()),
                 ]),
                 output_mapping: HashMap::from([
                     ("success".to_string(), "codegen_success".to_string()),
@@ -284,14 +260,8 @@ async fn create_project_analysis_workflow_template() -> anyhow::Result<WorkflowT
                 retry_attempts: 1,
                 error_handling: StepErrorHandling::Skip,
                 input_mapping: HashMap::from([
-                    (
-                        "conversation_session_id".to_string(),
-                        "conversation_session_id".to_string(),
-                    ),
-                    (
-                        "project_analysis".to_string(),
-                        "project_analysis".to_string(),
-                    ),
+                    ("conversation_session_id".to_string(), "conversation_session_id".to_string()),
+                    ("project_analysis".to_string(), "project_analysis".to_string()),
                     ("generated_code".to_string(), "generated_code".to_string()),
                 ]),
                 output_mapping: HashMap::from([(
@@ -367,10 +337,7 @@ async fn monitor_workflow_progress(
 
         // Check for status changes
         if workflow.status != last_status {
-            println!(
-                "  📍 Workflow status: {:?} -> {:?}",
-                last_status, workflow.status
-            );
+            println!("  📍 Workflow status: {:?} -> {:?}", last_status, workflow.status);
             last_status = workflow.status.clone();
 
             match workflow.status {
@@ -444,20 +411,14 @@ async fn display_workflow_results(
     println!("📊 Workflow: {}", workflow.title);
     println!("🆔 ID: {}", workflow.id);
     println!("📝 Description: {}", workflow.description);
-    println!(
-        "⏱️  Created: {}",
-        workflow.created_at.format("%Y-%m-%d %H:%M:%S")
-    );
+    println!("⏱️  Created: {}", workflow.created_at.format("%Y-%m-%d %H:%M:%S"));
     if let Some(started) = workflow.started_at {
         println!("🚀 Started: {}", started.format("%Y-%m-%d %H:%M:%S"));
     }
     if let Some(completed) = workflow.completed_at {
         println!("✅ Completed: {}", completed.format("%Y-%m-%d %H:%M:%S"));
         let duration = completed - workflow.started_at.unwrap_or(workflow.created_at);
-        println!(
-            "⏱️  Duration: {:.2}s",
-            duration.num_milliseconds() as f64 / 1000.0
-        );
+        println!("⏱️  Duration: {:.2}s", duration.num_milliseconds() as f64 / 1000.0);
     }
     println!("📊 Status: {:?}", workflow.status);
 
@@ -473,13 +434,7 @@ async fn display_workflow_results(
             StepExecutionStatus::Retrying => "🔁",
         };
 
-        println!(
-            "  {}. {} {} ({:?})",
-            i + 1,
-            status_emoji,
-            step.step_id,
-            step.status
-        );
+        println!("  {}. {} {} ({:?})", i + 1, status_emoji, step.step_id, step.status);
 
         if let Some(started) = step.started_at {
             println!("     Started: {}", started.format("%H:%M:%S"));
@@ -488,10 +443,7 @@ async fn display_workflow_results(
             println!("     Completed: {}", completed.format("%H:%M:%S"));
             if let Some(started) = step.started_at {
                 let duration = completed - started;
-                println!(
-                    "     Duration: {:.2}s",
-                    duration.num_milliseconds() as f64 / 1000.0
-                );
+                println!("     Duration: {:.2}s", duration.num_milliseconds() as f64 / 1000.0);
             }
         }
         if step.attempts > 1 {
@@ -508,11 +460,8 @@ async fn display_workflow_results(
             serde_json::Value::String(s) => s.clone(),
             _ => value.to_string(),
         };
-        let display_value = if value_str.len() > 50 {
-            format!("{}...", &value_str[..50])
-        } else {
-            value_str
-        };
+        let display_value =
+            if value_str.len() > 50 { format!("{}...", &value_str[..50]) } else { value_str };
         println!("  • {}: {}", key, display_value);
     }
 
@@ -530,10 +479,7 @@ async fn display_workflow_results(
         if let Some(step_id) = &error.step_id {
             println!("  Failed Step: {}", step_id);
         }
-        println!(
-            "  Occurred: {}",
-            error.occurred_at.format("%Y-%m-%d %H:%M:%S")
-        );
+        println!("  Occurred: {}", error.occurred_at.format("%Y-%m-%d %H:%M:%S"));
         println!("  Recoverable: {}", error.recoverable);
     }
 
@@ -644,9 +590,7 @@ async fn demonstrate_workflow_templates(orchestrator: &WorkflowOrchestrator) -> 
         updated_at: Utc::now(),
     };
 
-    orchestrator
-        .register_template(simple_codegen_template)
-        .await?;
+    orchestrator.register_template(simple_codegen_template).await?;
     println!("✅ Registered 'simple-codegen' workflow template");
 
     // Create a testing workflow template

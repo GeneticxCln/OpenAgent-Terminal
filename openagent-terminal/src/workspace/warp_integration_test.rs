@@ -89,13 +89,9 @@ fn test_warp_actions_uninitialized() {
 
     // These should return Ok(false) since Warp isn't initialized
     // Note: Currently returns true for some actions, update test to match current behavior
-    assert!(workspace
-        .execute_warp_action(&WarpAction::CreateTab)
-        .is_ok());
+    assert!(workspace.execute_warp_action(&WarpAction::CreateTab).is_ok());
     assert!(workspace.execute_warp_action(&WarpAction::NextTab).is_ok());
-    assert!(workspace
-        .execute_warp_action(&WarpAction::SplitRight)
-        .is_ok());
+    assert!(workspace.execute_warp_action(&WarpAction::SplitRight).is_ok());
 }
 
 /// Mock window context for testing
@@ -105,9 +101,7 @@ struct MockWindowContext {
 
 impl MockWindowContext {
     fn new() -> Arc<Self> {
-        Arc::new(Self {
-            _id: winit::window::WindowId::dummy(),
-        })
+        Arc::new(Self { _id: winit::window::WindowId::dummy() })
     }
 }
 
@@ -129,35 +123,17 @@ fn test_session_file_handling() {
 #[test]
 fn test_warp_actions() {
     // Test conversion from standard actions to Warp actions
-    assert_eq!(
-        Action::CreateTab.to_warp_action(),
-        Some(WarpAction::CreateTab)
-    );
-    assert_eq!(
-        Action::CloseTab.to_warp_action(),
-        Some(WarpAction::CloseTab)
-    );
+    assert_eq!(Action::CreateTab.to_warp_action(), Some(WarpAction::CreateTab));
+    assert_eq!(Action::CloseTab.to_warp_action(), Some(WarpAction::CloseTab));
     assert_eq!(Action::NextTab.to_warp_action(), Some(WarpAction::NextTab));
-    assert_eq!(
-        Action::PreviousTab.to_warp_action(),
-        Some(WarpAction::PreviousTab)
-    );
-    assert_eq!(
-        Action::SplitHorizontal.to_warp_action(),
-        Some(WarpAction::SplitRight)
-    );
-    assert_eq!(
-        Action::SplitVertical.to_warp_action(),
-        Some(WarpAction::SplitDown)
-    );
+    assert_eq!(Action::PreviousTab.to_warp_action(), Some(WarpAction::PreviousTab));
+    assert_eq!(Action::SplitHorizontal.to_warp_action(), Some(WarpAction::SplitRight));
+    assert_eq!(Action::SplitVertical.to_warp_action(), Some(WarpAction::SplitDown));
     assert_eq!(
         Action::FocusNextPane.to_warp_action(),
         Some(WarpAction::NavigatePane(WarpNavDirection::Right))
     );
-    assert_eq!(
-        Action::ClosePane.to_warp_action(),
-        Some(WarpAction::ClosePane)
-    );
+    assert_eq!(Action::ClosePane.to_warp_action(), Some(WarpAction::ClosePane));
 
     // Test that non-Warp actions return None
     assert_eq!(Action::Copy.to_warp_action(), None);
@@ -327,14 +303,9 @@ fn test_warp_pane_pty_mapping_without_init() {
     let mut workspace = WorkspaceManager::with_warp(WorkspaceId(1), config, size_info, None);
 
     // Create a tab without initialization; should not error and should not spawn terminals
-    assert!(workspace
-        .execute_warp_action(&WarpAction::CreateTab)
-        .is_ok());
+    assert!(workspace.execute_warp_action(&WarpAction::CreateTab).is_ok());
     let stats = workspace.warp.as_ref().unwrap().performance_stats();
-    assert_eq!(
-        stats.active_terminals, 0,
-        "No terminals should be active before init"
-    );
+    assert_eq!(stats.active_terminals, 0, "No terminals should be active before init");
 }
 
 /// New: Verify pane↔PTY mapping after proper initialization
@@ -374,42 +345,33 @@ fn test_warp_split_and_close_affect_pty_count() {
     let mut workspace = WorkspaceManager::with_warp(WorkspaceId(3), config, size_info, None);
 
     let window_id = winit::window::WindowId::dummy();
-    workspace
-        .initialize_warp_for_tests_no_eventloop(window_id, false)
-        .expect("warp init (split)");
+    workspace.initialize_warp_for_tests_no_eventloop(window_id, false).expect("warp init (split)");
 
     // Count PTY managers before any splits
     let count_ptys = |ws: &WorkspaceManager| -> usize {
-        ws.warp
-            .as_ref()
-            .expect("warp")
-            .pty_collection_handle()
-            .lock()
-            .count()
+        ws.warp.as_ref().expect("warp").pty_collection_handle().lock().count()
     };
     let initial_count = count_ptys(&workspace);
     assert!(initial_count >= 1, "expected at least one PTY after init");
 
     // Split right
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitRight)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitRight).unwrap());
     let count_after_right = count_ptys(&workspace);
     assert_eq!(count_after_right, initial_count + 1, "SplitRight should create a new PTY manager");
 
     // Split down
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitDown)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitDown).unwrap());
     let count_after_down = count_ptys(&workspace);
     assert_eq!(count_after_down, initial_count + 2, "SplitDown should create another PTY manager");
 
     // Close current pane
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::ClosePane)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::ClosePane).unwrap());
     let count_after_close = count_ptys(&workspace);
-    assert_eq!(count_after_close, initial_count + 1, "ClosePane should remove the PTY manager for the closed pane");
+    assert_eq!(
+        count_after_close,
+        initial_count + 1,
+        "ClosePane should remove the PTY manager for the closed pane"
+    );
 }
 
 /// New: Verify zoom toggles pane layout to a single pane and back
@@ -423,14 +385,10 @@ fn test_warp_zoom_toggles_pane_layout() {
     let mut workspace = WorkspaceManager::with_warp(WorkspaceId(4), config, size_info, None);
 
     let window_id = winit::window::WindowId::dummy();
-    workspace
-        .initialize_warp_for_tests_no_eventloop(window_id, false)
-        .expect("warp init (zoom)");
+    workspace.initialize_warp_for_tests_no_eventloop(window_id, false).expect("warp init (zoom)");
 
     // Create an additional split to ensure pane_count > 1
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitRight)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitRight).unwrap());
 
     // Before zoom: pane count should be > 1
     let warp = workspace.warp.as_ref().expect("warp");
@@ -438,16 +396,12 @@ fn test_warp_zoom_toggles_pane_layout() {
     assert!(info_before.active_pane_count > 1, "setup should have multiple panes before zoom");
 
     // Zoom active pane
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::ZoomPane)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::ZoomPane).unwrap());
     let info_zoomed = workspace.warp.as_ref().unwrap().debug_info();
     assert_eq!(info_zoomed.active_pane_count, 1, "ZoomPane should reduce layout to a single pane");
 
     // Unzoom
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::ZoomPane)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::ZoomPane).unwrap());
     let info_unzoomed = workspace.warp.as_ref().unwrap().debug_info();
     assert!(
         info_unzoomed.active_pane_count > 1,
@@ -469,12 +423,8 @@ fn test_equalize_splits_ratios() {
         .expect("warp init (equalize)");
 
     // Create a couple of splits to produce nested layout
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitRight)
-        .unwrap());
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitDown)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitRight).unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitDown).unwrap());
 
     // Nudge ratios away from 0.5 via a resize operation
     let _ = workspace
@@ -484,9 +434,7 @@ fn test_equalize_splits_ratios() {
         .unwrap();
 
     // Equalize
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::EqualizeSplits)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::EqualizeSplits).unwrap());
 
     let warp = workspace.warp.as_ref().expect("warp");
     let layout = warp.active_split_layout_clone().expect("layout");
@@ -519,17 +467,11 @@ fn test_recent_pane_cycling() {
     let mut workspace = WorkspaceManager::with_warp(WorkspaceId(6), config, size_info, None);
 
     let window_id = winit::window::WindowId::dummy();
-    workspace
-        .initialize_warp_for_tests_no_eventloop(window_id, false)
-        .expect("warp init (recent)");
+    workspace.initialize_warp_for_tests_no_eventloop(window_id, false).expect("warp init (recent)");
 
     // Create three panes
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitRight)
-        .unwrap());
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::SplitDown)
-        .unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitRight).unwrap());
+    assert!(workspace.execute_warp_action(&super::WarpAction::SplitDown).unwrap());
 
     // Navigate to build up recent history: Right then Down
     let _ = workspace
@@ -544,36 +486,18 @@ fn test_recent_pane_cycling() {
         .unwrap();
 
     // Capture the currently active pane id
-    let (tab_id, before_pane) = workspace
-        .warp
-        .as_ref()
-        .unwrap()
-        .active_ids()
-        .expect("active ids");
+    let (tab_id, before_pane) = workspace.warp.as_ref().unwrap().active_ids().expect("active ids");
 
     // Cycle recent panes; expect focus to change
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::CycleRecentPanes)
-        .unwrap());
-    let (_, after_pane) = workspace
-        .warp
-        .as_ref()
-        .unwrap()
-        .active_ids()
-        .expect("active ids after");
+    assert!(workspace.execute_warp_action(&super::WarpAction::CycleRecentPanes).unwrap());
+    let (_, after_pane) = workspace.warp.as_ref().unwrap().active_ids().expect("active ids after");
 
     assert_ne!(before_pane, after_pane, "CycleRecentPanes should change focus");
 
     // Cycle again should keep focus within existing panes
-    assert!(workspace
-        .execute_warp_action(&super::WarpAction::CycleRecentPanes)
-        .unwrap());
-    let (_, after_second) = workspace
-        .warp
-        .as_ref()
-        .unwrap()
-        .active_ids()
-        .expect("active ids after 2nd");
+    assert!(workspace.execute_warp_action(&super::WarpAction::CycleRecentPanes).unwrap());
+    let (_, after_second) =
+        workspace.warp.as_ref().unwrap().active_ids().expect("active ids after 2nd");
     assert_ne!(after_pane, after_second);
     assert_ne!(before_pane, after_second);
 

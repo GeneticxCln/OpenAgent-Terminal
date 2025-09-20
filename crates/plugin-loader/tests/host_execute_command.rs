@@ -9,9 +9,7 @@ pub struct MockHost {
 
 impl MockHost {
     pub fn new() -> Self {
-        Self {
-            executed: std::sync::Mutex::new(Vec::new()),
-        }
+        Self { executed: std::sync::Mutex::new(Vec::new()) }
     }
 }
 
@@ -26,7 +24,7 @@ impl PluginHost for MockHost {
     fn read_file(&self, _path: &str) -> Result<Vec<u8>, ApiPluginError> {
         Ok(vec![])
     }
-fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), ApiPluginError> {
+    fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), ApiPluginError> {
         Ok(())
     }
     fn execute_command(&self, command: &str) -> Result<CommandOutput, ApiPluginError> {
@@ -59,13 +57,17 @@ fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), ApiPluginError> {
         _namespace: &str,
         _doc_id: &str,
         _doc_json: &str,
-    ) -> Result<(), ApiPluginError> { Ok(()) }
+    ) -> Result<(), ApiPluginError> {
+        Ok(())
+    }
     fn retrieve_document_for(
         &self,
         _plugin_id: &str,
         _namespace: &str,
         _doc_id: &str,
-    ) -> Result<Option<String>, ApiPluginError> { Ok(None) }
+    ) -> Result<Option<String>, ApiPluginError> {
+        Ok(None)
+    }
 }
 
 /// Build a tiny WASM module that calls env.host_execute_command once.
@@ -122,15 +124,8 @@ async fn test_host_execute_command_permission_denied() {
     let name = mgr.load_plugin(&wasm_path).await.expect("load");
 
     // Send an event to trigger plugin_handle_event; expect permission denial path to bubble as error (-1) mapped to error result
-    let evt = PluginEvent {
-        event_type: "run".into(),
-        data: serde_json::json!({}),
-        timestamp: 0,
-    };
-    let resp = mgr
-        .send_event_to_plugin(&name, &evt)
-        .await
-        .expect("event call ok");
+    let evt = PluginEvent { event_type: "run".into(), data: serde_json::json!({}), timestamp: 0 };
+    let resp = mgr.send_event_to_plugin(&name, &evt).await.expect("event call ok");
 
     // host_execute_command returns -1 on permission denied; our send_event surface returns success=true for handle_event rc=0 only.
     // With this minimal module, plugin_handle_event just calls host and returns rc as-is. If host returns -1, send_event will surface non-zero rc.
@@ -158,15 +153,8 @@ async fn test_host_execute_command_allowed() {
 
     let name = mgr.load_plugin(&wasm_path).await.expect("load");
 
-    let evt = PluginEvent {
-        event_type: "run".into(),
-        data: serde_json::json!({}),
-        timestamp: 0,
-    };
-    let resp = mgr
-        .send_event_to_plugin(&name, &evt)
-        .await
-        .expect("event call ok");
+    let evt = PluginEvent { event_type: "run".into(), data: serde_json::json!({}), timestamp: 0 };
+    let resp = mgr.send_event_to_plugin(&name, &evt).await.expect("event call ok");
 
     // Our minimal handler returns host rc directly; success expected (0)
     assert!(resp.success);

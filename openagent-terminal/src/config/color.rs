@@ -25,15 +25,11 @@ pub struct Colors {
 
 impl Colors {
     pub fn footer_bar_foreground(&self) -> Rgb {
-        self.footer_bar
-            .foreground
-            .unwrap_or(self.primary.background)
+        self.footer_bar.foreground.unwrap_or(self.primary.background)
     }
 
     pub fn footer_bar_background(&self) -> Rgb {
-        self.footer_bar
-            .background
-            .unwrap_or(self.primary.foreground)
+        self.footer_bar.background.unwrap_or(self.primary.foreground)
     }
 }
 
@@ -125,10 +121,7 @@ pub struct InvertedCellColors {
 
 impl Default for InvertedCellColors {
     fn default() -> Self {
-        Self {
-            foreground: CellRgb::CellBackground,
-            background: CellRgb::CellForeground,
-        }
+        Self { foreground: CellRgb::CellBackground, background: CellRgb::CellForeground }
     }
 }
 

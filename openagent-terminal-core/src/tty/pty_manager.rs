@@ -163,11 +163,7 @@ impl PtyManager {
             last_activity: Instant::now(),
         };
 
-        debug!(
-            "Creating PTY manager for pane {} in {}",
-            pane_id,
-            working_directory.display()
-        );
+        debug!("Creating PTY manager for pane {} in {}", pane_id, working_directory.display());
 
         Ok(Self {
             id: pane_id,
@@ -231,9 +227,7 @@ impl PtyManager {
             Err(e) => {
                 let error_msg = format!("Failed to create PTY: {}", e);
                 error!("{}", error_msg);
-                self.status = PtyStatus::Error {
-                    message: error_msg.clone(),
-                };
+                self.status = PtyStatus::Error { message: error_msg.clone() };
                 Err(PtyManagerError::PtyCreation(error_msg))
             }
         }
@@ -241,11 +235,7 @@ impl PtyManager {
 
     /// Update working directory context
     pub fn update_working_directory(&mut self, new_dir: PathBuf) {
-        debug!(
-            "Updating working directory for pane {} to {}",
-            self.id,
-            new_dir.display()
-        );
+        debug!("Updating working directory for pane {} to {}", self.id, new_dir.display());
         self.context.working_directory = new_dir;
         self.context.last_activity = Instant::now();
     }
@@ -370,10 +360,7 @@ pub struct PtyManagerCollection {
 impl PtyManagerCollection {
     /// Create new collection
     pub fn new() -> Self {
-        Self {
-            managers: HashMap::new(),
-            next_id: 1,
-        }
+        Self { managers: HashMap::new(), next_id: 1 }
     }
 
     /// Create a new PTY manager and return its ID
@@ -387,8 +374,7 @@ impl PtyManagerCollection {
         self.next_id += 1;
 
         let manager = PtyManager::new(pty_id, working_directory, shell_config, environment)?;
-        self.managers
-            .insert(pty_id, Arc::new(parking_lot::Mutex::new(manager)));
+        self.managers.insert(pty_id, Arc::new(parking_lot::Mutex::new(manager)));
 
         debug!("Created PTY manager with ID: {}", pty_id);
         Ok(pty_id)
@@ -546,15 +532,9 @@ mod tests {
         assert_eq!(ShellKind::from_shell_name("bash"), ShellKind::Bash);
         assert_eq!(ShellKind::from_shell_name("/usr/bin/zsh"), ShellKind::Zsh);
         assert_eq!(ShellKind::from_shell_name("fish"), ShellKind::Fish);
-        assert_eq!(
-            ShellKind::from_shell_name("powershell.exe"),
-            ShellKind::PowerShell
-        );
+        assert_eq!(ShellKind::from_shell_name("powershell.exe"), ShellKind::PowerShell);
         assert_eq!(ShellKind::from_shell_name("pwsh"), ShellKind::PowerShell);
-        assert_eq!(
-            ShellKind::from_shell_name("unknown_shell"),
-            ShellKind::Unknown
-        );
+        assert_eq!(ShellKind::from_shell_name("unknown_shell"), ShellKind::Unknown);
     }
 
     #[test]
@@ -577,9 +557,7 @@ mod tests {
         let env = HashMap::new();
         let working_dir = PathBuf::from("/tmp");
 
-        let pty_id = collection
-            .create_pty_manager(working_dir, shell_config, env)
-            .unwrap();
+        let pty_id = collection.create_pty_manager(working_dir, shell_config, env).unwrap();
         assert_eq!(collection.count(), 1);
         assert!(collection.get_manager(pty_id).is_some());
 

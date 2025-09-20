@@ -150,10 +150,7 @@ mod tests {
     fn test_terminal_type_display() {
         assert_eq!(TerminalType::Alacritty.to_string(), "Alacritty");
         assert_eq!(TerminalType::ITerm2.to_string(), "iTerm2");
-        assert_eq!(
-            TerminalType::WindowsTerminal.to_string(),
-            "Windows Terminal"
-        );
+        assert_eq!(TerminalType::WindowsTerminal.to_string(), "Windows Terminal");
     }
 
     #[test]

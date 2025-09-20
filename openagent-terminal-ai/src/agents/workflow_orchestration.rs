@@ -2,21 +2,21 @@
 //! Provides baseline execution graph with sequential execution and hooks for parallel/dependency execution.
 
 use crate::agents::types::{
-    WorkflowExecutionGraph, WorkflowNode, WorkflowEdge, ExecutionStrategy, WorkflowStatus,
-    NodeStatus, NodeType, JoinStrategy, ExecutionCondition, AgentExecutionContext, ConcurrencyState
+    AgentExecutionContext, ConcurrencyState, ExecutionStrategy, JoinStrategy, NodeStatus, NodeType,
+    WorkflowEdge, WorkflowExecutionGraph, WorkflowNode, WorkflowStatus,
 };
-use crate::agents::{AiAgent, AgentRequest, AgentResponse};
+use crate::agents::{AgentRequest, AgentResponse, AiAgent};
 
-use anyhow::{Result, anyhow, Context};
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
+use futures_util::future;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
-use futures_util::future;
+use tokio::sync::{broadcast, RwLock};
 use tokio::time::{timeout, Duration};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use tracing::{info, warn, error, debug, instrument};
 
 /// Main workflow orchestrator for managing agent execution graphs
 pub struct WorkflowOrchestrator {
@@ -186,7 +186,7 @@ impl WorkflowOrchestrator {
     /// Create a new workflow orchestrator
     pub fn new(config: OrchestratorConfig) -> Self {
         let (event_sender, _) = broadcast::channel(1000);
-        
+
         Self {
             active_workflows: Arc::new(RwLock::new(HashMap::new())),
             agents: Arc::new(RwLock::new(HashMap::new())),
@@ -220,7 +220,7 @@ impl WorkflowOrchestrator {
 
         // Create execution state
         let execution_state = self.create_execution_state(&graph).await?;
-        
+
         let active_execution = ActiveWorkflowExecution {
             graph: graph.clone(),
             context,
@@ -241,22 +241,17 @@ impl WorkflowOrchestrator {
         }
 
         // Send start event
-        let _ = self.event_sender.send(WorkflowEvent::WorkflowStarted {
-            workflow_id,
-            name: graph.name.clone(),
-        });
+        let _ = self
+            .event_sender
+            .send(WorkflowEvent::WorkflowStarted { workflow_id, name: graph.name.clone() });
 
         // Execute based on strategy
         let result = match graph.execution_strategy {
-            ExecutionStrategy::Sequential => {
-                self.execute_sequential(workflow_id).await
-            }
+            ExecutionStrategy::Sequential => self.execute_sequential(workflow_id).await,
             ExecutionStrategy::Parallel { max_concurrency } => {
                 self.execute_parallel(workflow_id, max_concurrency).await
             }
-            ExecutionStrategy::Hybrid => {
-                self.execute_hybrid(workflow_id).await
-            }
+            ExecutionStrategy::Hybrid => self.execute_hybrid(workflow_id).await,
             ExecutionStrategy::Custom { executor_name } => {
                 self.execute_custom(workflow_id, &executor_name).await
             }
@@ -264,7 +259,7 @@ impl WorkflowOrchestrator {
 
         // Cleanup and finalize
         let final_result = self.finalize_workflow(workflow_id, result).await?;
-        
+
         info!(%workflow_id, status = ?final_result.status, "Workflow execution completed");
         Ok(final_result)
     }
@@ -305,7 +300,7 @@ impl WorkflowOrchestrator {
                 let has_capable_agent = agents.values().any(|agent| {
                     agent.capabilities().features.iter().any(|f| f == agent_capability)
                 });
-                
+
                 if !has_capable_agent {
                     warn!("No agent available for capability: {}", agent_capability);
                 }
@@ -332,11 +327,13 @@ impl WorkflowOrchestrator {
 
         // Build dependency relationships from edges
         for edge in edges {
-            dependencies.entry(edge.to.clone())
+            dependencies
+                .entry(edge.to.clone())
                 .or_insert_with(HashSet::new)
                 .insert(edge.from.clone());
-            
-            dependents.entry(edge.from.clone())
+
+            dependents
+                .entry(edge.from.clone())
                 .or_insert_with(HashSet::new)
                 .insert(edge.to.clone());
         }
@@ -344,21 +341,16 @@ impl WorkflowOrchestrator {
         // Add explicit dependencies from nodes
         for node in nodes.values() {
             for dep in &node.dependencies {
-                dependencies.entry(node.id.clone())
+                dependencies
+                    .entry(node.id.clone())
                     .or_insert_with(HashSet::new)
                     .insert(dep.clone());
-                
-                dependents.entry(dep.clone())
-                    .or_insert_with(HashSet::new)
-                    .insert(node.id.clone());
+
+                dependents.entry(dep.clone()).or_insert_with(HashSet::new).insert(node.id.clone());
             }
         }
 
-        Ok(DependencyGraph {
-            dependencies,
-            dependents,
-            topo_order: None,
-        })
+        Ok(DependencyGraph { dependencies, dependents, topo_order: None })
     }
 
     /// Detect cycles in dependency graph using DFS
@@ -404,16 +396,15 @@ impl WorkflowOrchestrator {
                 if black.contains(dep) {
                     continue;
                 }
-                
+
                 if gray.contains(dep) {
                     // Found cycle
                     let cycle_start = path.iter().position(|n| n == dep).unwrap();
                     return Some(path[cycle_start..].to_vec());
                 }
 
-                if let Some(cycle) = self.dfs_cycle_detection(
-                    dep, graph, white, gray, black, path
-                ) {
+                if let Some(cycle) = self.dfs_cycle_detection(dep, graph, white, gray, black, path)
+                {
                     return Some(cycle);
                 }
             }
@@ -431,12 +422,14 @@ impl WorkflowOrchestrator {
         graph: &WorkflowExecutionGraph,
     ) -> Result<ExecutionState> {
         let dependency_graph = self.build_dependency_graph(&graph.nodes, &graph.edges)?;
-        
+
         // Find nodes with no dependencies (ready to execute)
-        let ready_nodes: VecDeque<String> = graph.nodes
+        let ready_nodes: VecDeque<String> = graph
+            .nodes
             .iter()
             .filter(|(_, node)| {
-                dependency_graph.dependencies
+                dependency_graph
+                    .dependencies
                     .get(&node.id)
                     .map(|deps| deps.is_empty())
                     .unwrap_or(true)
@@ -460,13 +453,13 @@ impl WorkflowOrchestrator {
         debug!("Starting sequential execution");
 
         let mut execution_complete = false;
-        
+
         while !execution_complete {
             let next_node = {
                 let mut workflows = self.active_workflows.write().await;
-                let workflow = workflows.get_mut(&workflow_id)
-                    .ok_or_else(|| anyhow!("Workflow not found"))?;
-                
+                let workflow =
+                    workflows.get_mut(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
+
                 workflow.execution_state.current_phase = ExecutionPhase::Executing;
                 workflow.execution_state.ready_nodes.pop_front()
             };
@@ -474,7 +467,7 @@ impl WorkflowOrchestrator {
             match next_node {
                 Some(node_id) => {
                     debug!(%node_id, "Executing node sequentially");
-                    
+
                     match self.execute_node(workflow_id, &node_id).await {
                         Ok(_) => {
                             self.update_dependencies_on_completion(workflow_id, &node_id).await?;
@@ -488,14 +481,13 @@ impl WorkflowOrchestrator {
                 None => {
                     // Check if workflow is complete
                     let workflows = self.active_workflows.read().await;
-                    let workflow = workflows.get(&workflow_id)
-                        .ok_or_else(|| anyhow!("Workflow not found"))?;
-                    
-                    execution_complete = workflow.execution_state.ready_nodes.is_empty() 
+                    let workflow =
+                        workflows.get(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
+
+                    execution_complete = workflow.execution_state.ready_nodes.is_empty()
                         && workflow.execution_state.running_nodes.is_empty();
-                    
-                    if !execution_complete && 
-                       workflow.execution_state.failed_nodes.is_empty() {
+
+                    if !execution_complete && workflow.execution_state.failed_nodes.is_empty() {
                         // Possible deadlock or dependency issue
                         warn!("No ready nodes but workflow not complete");
                         return Ok(WorkflowStatus::Failed);
@@ -509,15 +501,19 @@ impl WorkflowOrchestrator {
 
     /// Execute workflow with parallel node execution
     #[instrument(skip(self), fields(workflow_id = %workflow_id, max_concurrency = max_concurrency))]
-    async fn execute_parallel(&self, workflow_id: Uuid, max_concurrency: usize) -> Result<WorkflowStatus> {
+    async fn execute_parallel(
+        &self,
+        workflow_id: Uuid,
+        max_concurrency: usize,
+    ) -> Result<WorkflowStatus> {
         debug!("Starting parallel execution");
 
         let mut execution_complete = false;
 
         {
             let mut workflows = self.active_workflows.write().await;
-            let workflow = workflows.get_mut(&workflow_id)
-                .ok_or_else(|| anyhow!("Workflow not found"))?;
+            let workflow =
+                workflows.get_mut(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
             workflow.execution_state.current_phase = ExecutionPhase::Executing;
         }
 
@@ -525,9 +521,9 @@ impl WorkflowOrchestrator {
             // Start ready nodes up to concurrency limit
             let ready_nodes = {
                 let mut workflows = self.active_workflows.write().await;
-                let workflow = workflows.get_mut(&workflow_id)
-                    .ok_or_else(|| anyhow!("Workflow not found"))?;
-                
+                let workflow =
+                    workflows.get_mut(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
+
                 let mut nodes = Vec::new();
                 while let Some(node_id) = workflow.execution_state.ready_nodes.pop_front() {
                     if workflow.execution_state.running_nodes.len() < max_concurrency {
@@ -545,7 +541,8 @@ impl WorkflowOrchestrator {
             if !ready_nodes.is_empty() {
                 let futures = ready_nodes.into_iter().map(|node_id| async move {
                     debug!(%node_id, "Starting parallel node execution");
-                    let res = self.execute_node(workflow_id, &node_id).await.map(|_| node_id.clone());
+                    let res =
+                        self.execute_node(workflow_id, &node_id).await.map(|_| node_id.clone());
                     if res.is_ok() {
                         let _ = self.update_dependencies_on_completion(workflow_id, &node_id).await;
                     }
@@ -558,14 +555,16 @@ impl WorkflowOrchestrator {
                         Ok(node_id) => {
                             debug!(%node_id, "Node completed successfully");
                             let mut workflows = self.active_workflows.write().await;
-                            let workflow = workflows.get_mut(&workflow_id)
+                            let workflow = workflows
+                                .get_mut(&workflow_id)
                                 .ok_or_else(|| anyhow!("Workflow not found"))?;
                             workflow.execution_state.running_nodes.remove(&node_id);
                         }
                         Err(e) => {
                             error!("Node execution failed: {}", e);
                             let mut workflows = self.active_workflows.write().await;
-                            let workflow = workflows.get_mut(&workflow_id)
+                            let workflow = workflows
+                                .get_mut(&workflow_id)
                                 .ok_or_else(|| anyhow!("Workflow not found"))?;
                             // We cannot know node_id here; leave running_nodes cleanup to dependency update
                             workflow.execution_state.failed_nodes.insert("unknown".to_string());
@@ -577,10 +576,10 @@ impl WorkflowOrchestrator {
 
             // Check completion
             let workflows = self.active_workflows.read().await;
-            let workflow = workflows.get(&workflow_id)
-                .ok_or_else(|| anyhow!("Workflow not found"))?;
-            
-            execution_complete = workflow.execution_state.ready_nodes.is_empty() 
+            let workflow =
+                workflows.get(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
+
+            execution_complete = workflow.execution_state.ready_nodes.is_empty()
                 && workflow.execution_state.running_nodes.is_empty();
         }
 
@@ -597,7 +596,11 @@ impl WorkflowOrchestrator {
     }
 
     /// Execute workflow with custom strategy
-    async fn execute_custom(&self, _workflow_id: Uuid, executor_name: &str) -> Result<WorkflowStatus> {
+    async fn execute_custom(
+        &self,
+        _workflow_id: Uuid,
+        executor_name: &str,
+    ) -> Result<WorkflowStatus> {
         warn!("Custom executor not implemented: {}", executor_name);
         Err(anyhow!("Custom executors not yet supported"))
     }
@@ -606,19 +609,21 @@ impl WorkflowOrchestrator {
     #[instrument(skip(self), fields(workflow_id = %workflow_id, node_id = %node_id))]
     async fn execute_node(&self, workflow_id: Uuid, node_id: &str) -> Result<()> {
         let start_time = Utc::now();
-        
+
         // Get node information
         let (node, context, timeout_ms) = {
             let workflows = self.active_workflows.read().await;
-            let workflow = workflows.get(&workflow_id)
-                .ok_or_else(|| anyhow!("Workflow not found"))?;
-            
-            let node = workflow.graph.nodes.get(node_id)
+            let workflow =
+                workflows.get(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
+
+            let node = workflow
+                .graph
+                .nodes
+                .get(node_id)
                 .ok_or_else(|| anyhow!("Node not found: {}", node_id))?;
-            
-            let timeout_ms = node.timeout_ms
-                .unwrap_or(self.config.default_node_timeout_ms);
-                
+
+            let timeout_ms = node.timeout_ms.unwrap_or(self.config.default_node_timeout_ms);
+
             (node.clone(), workflow.context.clone(), timeout_ms)
         };
 
@@ -632,7 +637,8 @@ impl WorkflowOrchestrator {
         // Execute based on node type
         let execution_result = match &node.node_type {
             NodeType::Task { agent_capability, payload } => {
-                self.execute_task_node(node_id, agent_capability, payload, &context, timeout_ms).await
+                self.execute_task_node(node_id, agent_capability, payload, &context, timeout_ms)
+                    .await
             }
             NodeType::Decision { condition_expr, .. } => {
                 self.execute_decision_node(node_id, condition_expr, &context).await
@@ -643,9 +649,7 @@ impl WorkflowOrchestrator {
             NodeType::Barrier { wait_for } => {
                 self.execute_barrier_node(workflow_id, node_id, wait_for).await
             }
-            NodeType::Start | NodeType::End => {
-                Ok(serde_json::json!({"status": "completed"}))
-            }
+            NodeType::Start | NodeType::End => Ok(serde_json::json!({"status": "completed"})),
         };
 
         let end_time = Utc::now();
@@ -698,8 +702,8 @@ impl WorkflowOrchestrator {
         // Store result
         {
             let mut workflows = self.active_workflows.write().await;
-            let workflow = workflows.get_mut(&workflow_id)
-                .ok_or_else(|| anyhow!("Workflow not found"))?;
+            let workflow =
+                workflows.get_mut(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
             workflow.results.insert(node_id.to_string(), result.clone());
         }
 
@@ -722,14 +726,14 @@ impl WorkflowOrchestrator {
         // Find suitable agent
         let agent = {
             let agents = self.agents.read().await;
-            agents.values()
+            agents
+                .values()
                 .find(|agent| agent.capabilities().features.iter().any(|f| f == agent_capability))
                 .cloned()
         };
 
-        let agent = agent.ok_or_else(|| {
-            anyhow!("No agent available for capability: {}", agent_capability)
-        })?;
+        let agent = agent
+            .ok_or_else(|| anyhow!("No agent available for capability: {}", agent_capability))?;
 
         // Create agent request
         let request = AgentRequest::Command(crate::AiRequest {
@@ -740,21 +744,17 @@ impl WorkflowOrchestrator {
         });
 
         // Execute with timeout
-        let response = timeout(
-            Duration::from_millis(timeout_ms),
-            agent.process(request)
-        ).await
-        .with_context(|| format!("Node {} timed out after {}ms", node_id, timeout_ms))?
-        .with_context(|| format!("Agent execution failed for node {}", node_id))?;
+        let response = timeout(Duration::from_millis(timeout_ms), agent.process(request))
+            .await
+            .with_context(|| format!("Node {} timed out after {}ms", node_id, timeout_ms))?
+            .with_context(|| format!("Agent execution failed for node {}", node_id))?;
 
         // Convert response to JSON
         match response {
-            AgentResponse::Commands(proposals) => {
-                Ok(serde_json::json!({
-                    "type": "commands",
-                    "proposals": proposals
-                }))
-            }
+            AgentResponse::Commands(proposals) => Ok(serde_json::json!({
+                "type": "commands",
+                "proposals": proposals
+            })),
             AgentResponse::Code { generated_code, language, explanation, suggestions } => {
                 Ok(serde_json::json!({
                     "type": "code",
@@ -764,13 +764,11 @@ impl WorkflowOrchestrator {
                     "suggestions": suggestions
                 }))
             }
-            AgentResponse::Context { project_info, suggestions } => {
-                Ok(serde_json::json!({
-                    "type": "context",
-                    "project_info": project_info,
-                    "suggestions": suggestions
-                }))
-            }
+            AgentResponse::Context { project_info, suggestions } => Ok(serde_json::json!({
+                "type": "context",
+                "project_info": project_info,
+                "suggestions": suggestions
+            })),
             AgentResponse::QualityReport { score, issues, suggestions, security_warnings } => {
                 Ok(serde_json::json!({
                     "type": "quality_report",
@@ -825,8 +823,7 @@ impl WorkflowOrchestrator {
     ) -> Result<serde_json::Value> {
         // Check if all waited-for nodes are completed
         let workflows = self.active_workflows.read().await;
-        let workflow = workflows.get(&workflow_id)
-            .ok_or_else(|| anyhow!("Workflow not found"))?;
+        let workflow = workflows.get(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
 
         for waited_node in wait_for {
             if !workflow.execution_state.completed_nodes.contains(waited_node) {
@@ -844,28 +841,34 @@ impl WorkflowOrchestrator {
         completed_node_id: &str,
     ) -> Result<()> {
         let mut workflows = self.active_workflows.write().await;
-        let workflow = workflows.get_mut(&workflow_id)
-            .ok_or_else(|| anyhow!("Workflow not found"))?;
+        let workflow =
+            workflows.get_mut(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
 
         // Mark node as completed
         workflow.execution_state.completed_nodes.insert(completed_node_id.to_string());
         workflow.metrics.completed_nodes += 1;
 
         // Find nodes that were waiting for this one
-        if let Some(dependents) = workflow.execution_state.dependency_graph
-            .dependents.get(completed_node_id) {
-            
+        if let Some(dependents) =
+            workflow.execution_state.dependency_graph.dependents.get(completed_node_id)
+        {
             for dependent in dependents {
                 // Check if all dependencies of the dependent node are satisfied
-                let dependencies = workflow.execution_state.dependency_graph
-                    .dependencies.get(dependent)
+                let dependencies = workflow
+                    .execution_state
+                    .dependency_graph
+                    .dependencies
+                    .get(dependent)
                     .cloned()
                     .unwrap_or_default();
-                
-                let all_deps_satisfied = dependencies.iter()
+
+                let all_deps_satisfied = dependencies
+                    .iter()
                     .all(|dep| workflow.execution_state.completed_nodes.contains(dep));
 
-                if all_deps_satisfied && !workflow.execution_state.completed_nodes.contains(dependent) {
+                if all_deps_satisfied
+                    && !workflow.execution_state.completed_nodes.contains(dependent)
+                {
                     // Node is ready to execute
                     workflow.execution_state.ready_nodes.push_back(dependent.clone());
                 }
@@ -882,8 +885,8 @@ impl WorkflowOrchestrator {
         status: Result<WorkflowStatus>,
     ) -> Result<WorkflowExecutionResult> {
         let mut workflows = self.active_workflows.write().await;
-        let mut workflow = workflows.remove(&workflow_id)
-            .ok_or_else(|| anyhow!("Workflow not found"))?;
+        let mut workflow =
+            workflows.remove(&workflow_id).ok_or_else(|| anyhow!("Workflow not found"))?;
 
         // Update final status and metrics
         let final_status = status.unwrap_or(WorkflowStatus::Failed);
@@ -891,7 +894,9 @@ impl WorkflowOrchestrator {
         workflow.graph.completed_at = Some(Utc::now());
         workflow.metrics.end_time = Some(Utc::now());
 
-        let duration_ms = workflow.metrics.start_time
+        let duration_ms = workflow
+            .metrics
+            .start_time
             .zip(workflow.metrics.end_time)
             .map(|(start, end)| (end - start).num_milliseconds() as u64)
             .unwrap_or_default();
@@ -931,7 +936,7 @@ impl WorkflowOrchestrator {
         if let Some(workflow) = workflows.get_mut(&workflow_id) {
             workflow.graph.status = WorkflowStatus::Cancelled;
             workflow.execution_state.current_phase = ExecutionPhase::Cancelled;
-            
+
             // TODO: Implement proper cancellation of running nodes
             info!(%workflow_id, "Workflow cancelled");
         }
@@ -963,9 +968,7 @@ impl WorkflowExecutionResult {
 
     /// Get all failed nodes
     pub fn failed_nodes(&self) -> Vec<&NodeExecutionResult> {
-        self.results.values()
-            .filter(|r| r.status == NodeStatus::Failed)
-            .collect()
+        self.results.values().filter(|r| r.status == NodeStatus::Failed).collect()
     }
 
     /// Get execution summary
@@ -984,13 +987,14 @@ impl WorkflowExecutionResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::types::ExecutionCondition;
     use tokio;
 
     #[tokio::test]
     async fn test_workflow_orchestrator_creation() {
         let config = OrchestratorConfig::default();
         let orchestrator = WorkflowOrchestrator::new(config);
-        
+
         // Basic smoke test
         assert_eq!(orchestrator.active_workflows.read().await.len(), 0);
     }
@@ -998,32 +1002,33 @@ mod tests {
     #[tokio::test]
     async fn test_dependency_graph_building() {
         let orchestrator = WorkflowOrchestrator::new(OrchestratorConfig::default());
-        
+
         let mut nodes = HashMap::new();
-        nodes.insert("A".to_string(), WorkflowNode {
-            id: "A".to_string(),
-            name: "Node A".to_string(),
-            node_type: NodeType::Start,
-            agent_id: None,
-            dependencies: vec![],
-            status: NodeStatus::Pending,
-            input_schema: None,
-            output_schema: None,
-            timeout_ms: None,
-            retry_count: 0,
-            max_retries: 0,
-            parallel_group: None,
-        });
-        
-        let edges = vec![
-            WorkflowEdge {
-                from: "A".to_string(),
-                to: "B".to_string(),
-                condition: Some(ExecutionCondition::Always),
-                weight: 1.0,
-            }
-        ];
-        
+        nodes.insert(
+            "A".to_string(),
+            WorkflowNode {
+                id: "A".to_string(),
+                name: "Node A".to_string(),
+                node_type: NodeType::Start,
+                agent_id: None,
+                dependencies: vec![],
+                status: NodeStatus::Pending,
+                input_schema: None,
+                output_schema: None,
+                timeout_ms: None,
+                retry_count: 0,
+                max_retries: 0,
+                parallel_group: None,
+            },
+        );
+
+        let edges = vec![WorkflowEdge {
+            from: "A".to_string(),
+            to: "B".to_string(),
+            condition: Some(ExecutionCondition::Always),
+            weight: 1.0,
+        }];
+
         // This should not panic
         let result = orchestrator.build_dependency_graph(&nodes, &edges);
         assert!(result.is_ok());
@@ -1032,21 +1037,17 @@ mod tests {
     #[tokio::test]
     async fn test_cycle_detection() {
         let orchestrator = WorkflowOrchestrator::new(OrchestratorConfig::default());
-        
+
         // Create a simple cycle: A -> B -> A
         let mut dependencies = HashMap::new();
         dependencies.insert("A".to_string(), vec!["B".to_string()].into_iter().collect());
         dependencies.insert("B".to_string(), vec!["A".to_string()].into_iter().collect());
-        
-        let graph = DependencyGraph {
-            dependencies,
-            dependents: HashMap::new(),
-            topo_order: None,
-        };
-        
+
+        let graph = DependencyGraph { dependencies, dependents: HashMap::new(), topo_order: None };
+
         let cycle = orchestrator.detect_cycles(&graph);
         assert!(cycle.is_some());
-        
+
         let cycle = cycle.unwrap();
         assert!(cycle.len() >= 2);
     }

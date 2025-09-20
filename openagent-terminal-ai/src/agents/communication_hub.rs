@@ -1,20 +1,18 @@
 //! Communication hub for AI agent coordination with parallel execution and message routing.
 //! Provides dependency-based scheduling, direct message routing, and comprehensive error handling.
 
-use crate::agents::types::{
-    AgentMessage, MessageType, MessagePriority, ConcurrencyState
-};
-use crate::agents::{AiAgent, AgentRequest, AgentResponse, AgentError};
+use crate::agents::types::{AgentMessage, ConcurrencyState, MessagePriority, MessageType};
+use crate::agents::{AgentError, AgentRequest, AgentResponse, AiAgent};
 
-use anyhow::{Result, anyhow, Context};
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque, BTreeMap};
-use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc, broadcast, Semaphore};
-use tokio::time::{timeout, Duration, Instant};
-use uuid::Uuid;
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use tracing::{info, debug, instrument};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc, RwLock, Semaphore};
+use tokio::time::{timeout, Duration, Instant};
+use tracing::{debug, info, instrument};
+use uuid::Uuid;
 
 /// Communication hub for coordinating agent interactions
 pub struct CommunicationHub {
@@ -181,51 +179,16 @@ enum AgentStatus {
 /// Hub events for coordination
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HubEvent {
-    AgentRegistered {
-        agent_id: String,
-        capabilities: Vec<String>,
-    },
-    AgentUnregistered {
-        agent_id: String,
-    },
-    MessageSent {
-        message_id: Uuid,
-        from: String,
-        to: String,
-        message_type: MessageType,
-    },
-    MessageDelivered {
-        message_id: Uuid,
-        delivery_time_ms: u64,
-    },
-    MessageFailed {
-        message_id: Uuid,
-        error: String,
-        retry_count: u32,
-    },
-    TaskScheduled {
-        task_id: Uuid,
-        agent_id: String,
-        dependencies: Vec<Uuid>,
-    },
-    TaskStarted {
-        task_id: Uuid,
-        agent_id: String,
-    },
-    TaskCompleted {
-        task_id: Uuid,
-        agent_id: String,
-        duration_ms: u64,
-    },
-    TaskFailed {
-        task_id: Uuid,
-        agent_id: String,
-        error: String,
-    },
-    LoadBalanced {
-        agent_id: String,
-        new_load: f64,
-    },
+    AgentRegistered { agent_id: String, capabilities: Vec<String> },
+    AgentUnregistered { agent_id: String },
+    MessageSent { message_id: Uuid, from: String, to: String, message_type: MessageType },
+    MessageDelivered { message_id: Uuid, delivery_time_ms: u64 },
+    MessageFailed { message_id: Uuid, error: String, retry_count: u32 },
+    TaskScheduled { task_id: Uuid, agent_id: String, dependencies: Vec<Uuid> },
+    TaskStarted { task_id: Uuid, agent_id: String },
+    TaskCompleted { task_id: Uuid, agent_id: String, duration_ms: u64 },
+    TaskFailed { task_id: Uuid, agent_id: String, error: String },
+    LoadBalanced { agent_id: String, new_load: f64 },
 }
 
 /// Hub event types for subscriptions
@@ -284,7 +247,7 @@ impl CommunicationHub {
     /// Create a new communication hub
     pub fn new(config: HubConfig) -> Self {
         let (broadcast_tx, _) = broadcast::channel(1000);
-        
+
         Self {
             agents: Arc::new(RwLock::new(HashMap::new())),
             router: Arc::new(RwLock::new(MessageRouter::new())),
@@ -301,7 +264,7 @@ impl CommunicationHub {
     pub async fn register_agent(&self, agent: Arc<dyn AiAgent>) -> Result<()> {
         let agent_id = agent.name().to_string();
         let capabilities = agent.capabilities().features;
-        
+
         info!(agent_id = %agent_id, "Registering agent");
 
         // Add to agent registry
@@ -345,9 +308,7 @@ impl CommunicationHub {
         }
 
         // Broadcast unregistration event
-        let event = HubEvent::AgentUnregistered {
-            agent_id: agent_id.to_string(),
-        };
+        let event = HubEvent::AgentUnregistered { agent_id: agent_id.to_string() };
         self.event_bus.broadcast(event).await;
 
         info!(agent_id = %agent_id, "Agent unregistered successfully");
@@ -402,7 +363,7 @@ impl CommunicationHub {
         priority: TaskPriority,
     ) -> Result<Uuid> {
         let task_id = Uuid::new_v4();
-        
+
         info!(
             task_id = %task_id,
             agent_id = %agent_id,
@@ -440,11 +401,7 @@ impl CommunicationHub {
         }
 
         // Broadcast task scheduled event
-        let event = HubEvent::TaskScheduled {
-            task_id,
-            agent_id,
-            dependencies,
-        };
+        let event = HubEvent::TaskScheduled { task_id, agent_id, dependencies };
         self.event_bus.broadcast(event).await;
 
         // Process scheduling queue
@@ -455,13 +412,17 @@ impl CommunicationHub {
 
     /// Execute parallel tasks with dependency resolution
     #[instrument(skip(self, tasks))]
-    pub async fn execute_parallel_tasks(&self, tasks: Vec<(String, AgentRequest, Vec<Uuid>)>) -> Result<Vec<(Uuid, Result<AgentResponse, AgentError>)>> {
+    pub async fn execute_parallel_tasks(
+        &self,
+        tasks: Vec<(String, AgentRequest, Vec<Uuid>)>,
+    ) -> Result<Vec<(Uuid, Result<AgentResponse, AgentError>)>> {
         info!(task_count = tasks.len(), "Executing parallel tasks");
 
         // Schedule all tasks
         let mut task_ids = Vec::new();
         for (agent_id, request, dependencies) in tasks {
-            let task_id = self.schedule_task(agent_id, request, dependencies, TaskPriority::Normal).await?;
+            let task_id =
+                self.schedule_task(agent_id, request, dependencies, TaskPriority::Normal).await?;
             task_ids.push(task_id);
         }
 
@@ -491,11 +452,13 @@ impl CommunicationHub {
                         return Err(AgentError::ProcessingError(error.clone()));
                     }
                 }
-                
+
                 if scheduler.completed_tasks.contains(&task_id) {
-                    return Err(AgentError::ProcessingError("Task completed without result".to_string()));
+                    return Err(AgentError::ProcessingError(
+                        "Task completed without result".to_string(),
+                    ));
                 }
-                
+
                 if scheduler.failed_tasks.contains(&task_id) {
                     return Err(AgentError::ProcessingError("Task failed".to_string()));
                 }
@@ -520,12 +483,16 @@ impl CommunicationHub {
 
         for agent_id in keys {
             let queue_opt = router.message_queues.get_mut(&agent_id);
-            if queue_opt.is_none() { continue; }
+            if queue_opt.is_none() {
+                continue;
+            }
             let queue = queue_opt.unwrap();
 
             if let Some(agent) = agents.get(&agent_id) {
                 if let Some(agent_state) = agent_states_snapshot.get(&agent_id) {
-                    if agent_state.status == AgentStatus::Available && agent_state.current_tasks < agent_state.max_concurrent {
+                    if agent_state.status == AgentStatus::Available
+                        && agent_state.current_tasks < agent_state.max_concurrent
+                    {
                         if let Some(pending) = queue.pop() {
                             let agent_clone = agent.clone();
                             let message = pending.message.clone();
@@ -535,9 +502,9 @@ impl CommunicationHub {
                             // Spawn delivery task
                             tokio::spawn(async move {
                                 let start_time = Instant::now();
-                                let delivery_result = Self::deliver_message_to_agent(
-                                    agent_clone, message.clone()
-                                ).await;
+                                let delivery_result =
+                                    Self::deliver_message_to_agent(agent_clone, message.clone())
+                                        .await;
 
                                 let delivery_time = start_time.elapsed().as_millis() as u64;
 
@@ -546,7 +513,10 @@ impl CommunicationHub {
                                     let mut metrics = hub_metrics.write().await;
                                     if delivery_result.is_ok() {
                                         metrics.messages_delivered += 1;
-                                        metrics.average_message_delivery_time_ms = (metrics.average_message_delivery_time_ms + delivery_time as f64) / 2.0;
+                                        metrics.average_message_delivery_time_ms = (metrics
+                                            .average_message_delivery_time_ms
+                                            + delivery_time as f64)
+                                            / 2.0;
                                     } else {
                                         metrics.messages_failed += 1;
                                     }
@@ -554,8 +524,15 @@ impl CommunicationHub {
 
                                 // Broadcast delivery event
                                 let event = match delivery_result {
-                                    Ok(_) => HubEvent::MessageDelivered { message_id: message.id, delivery_time_ms: delivery_time },
-                                    Err(e) => HubEvent::MessageFailed { message_id: message.id, error: e.to_string(), retry_count: pending.attempts },
+                                    Ok(_) => HubEvent::MessageDelivered {
+                                        message_id: message.id,
+                                        delivery_time_ms: delivery_time,
+                                    },
+                                    Err(e) => HubEvent::MessageFailed {
+                                        message_id: message.id,
+                                        error: e.to_string(),
+                                        retry_count: pending.attempts,
+                                    },
                                 };
                                 let _ = event_bus.broadcast(event).await;
                             });
@@ -577,7 +554,8 @@ impl CommunicationHub {
         let request = match message.message_type {
             MessageType::Request => {
                 // Extract request from message payload
-                if let Ok(ai_request) = serde_json::from_value::<crate::AiRequest>(message.payload) {
+                if let Ok(ai_request) = serde_json::from_value::<crate::AiRequest>(message.payload)
+                {
                     AgentRequest::Command(ai_request)
                 } else {
                     return Err(anyhow!("Invalid request payload"));
@@ -590,7 +568,9 @@ impl CommunicationHub {
         };
 
         // Execute the request
-        let _response = agent.process(request).await
+        let _response = agent
+            .process(request)
+            .await
             .with_context(|| format!("Failed to process message {}", message.id))?;
 
         Ok(())
@@ -603,11 +583,12 @@ impl CommunicationHub {
         let semaphore = Arc::new(Semaphore::new(self.config.max_concurrent_tasks));
 
         // Check for ready tasks (dependencies satisfied)
-        let ready_tasks: Vec<Uuid> = scheduler.active_tasks
+        let ready_tasks: Vec<Uuid> = scheduler
+            .active_tasks
             .values()
             .filter(|task| {
-                task.started_at.is_none() && 
-                task.dependencies.iter().all(|dep| scheduler.completed_tasks.contains(dep))
+                task.started_at.is_none()
+                    && task.dependencies.iter().all(|dep| scheduler.completed_tasks.contains(dep))
             })
             .map(|task| task.id)
             .collect();
@@ -640,8 +621,9 @@ impl CommunicationHub {
                         // Execute task with timeout
                         let execution_result = timeout(
                             task_clone.timeout,
-                            agent_clone.process(task_clone.request.clone())
-                        ).await;
+                            agent_clone.process(task_clone.request.clone()),
+                        )
+                        .await;
 
                         let execution_time = start_time.elapsed().as_millis() as u64;
 
@@ -650,7 +632,7 @@ impl CommunicationHub {
                             let mut scheduler = scheduler_ref.write().await;
                             if let Some(task) = scheduler.active_tasks.get_mut(&task_clone.id) {
                                 task.completed_at = Some(Utc::now());
-                                
+
                                 match execution_result {
                                     Ok(Ok(ref response)) => {
                                         task.result = Some(response.clone());
@@ -673,8 +655,10 @@ impl CommunicationHub {
                             let mut metrics = metrics_ref.write().await;
                             if execution_result.is_ok() {
                                 metrics.tasks_completed += 1;
-                                metrics.average_task_execution_time_ms = 
-                                    (metrics.average_task_execution_time_ms + execution_time as f64) / 2.0;
+                                metrics.average_task_execution_time_ms = (metrics
+                                    .average_task_execution_time_ms
+                                    + execution_time as f64)
+                                    / 2.0;
                             } else {
                                 metrics.tasks_failed += 1;
                             }
@@ -725,7 +709,7 @@ impl CommunicationHub {
 
         let mut router = self.router.write().await;
         router.balance_agent_loads().await;
-        
+
         Ok(())
     }
 
@@ -739,14 +723,11 @@ impl CommunicationHub {
         HubStatus {
             registered_agents: agents.len(),
             active_tasks: scheduler.active_tasks.len(),
-            pending_messages: router.message_queues.values()
-                .map(|queue| queue.len())
-                .sum(),
+            pending_messages: router.message_queues.values().map(|queue| queue.len()).sum(),
             completed_tasks: scheduler.completed_tasks.len(),
             failed_tasks: scheduler.failed_tasks.len(),
-            average_load: router.agent_states.values()
-                .map(|state| state.load)
-                .sum::<f64>() / router.agent_states.len().max(1) as f64,
+            average_load: router.agent_states.values().map(|state| state.load).sum::<f64>()
+                / router.agent_states.len().max(1) as f64,
             uptime_seconds: 0, // Would need to track start time
             metrics: metrics.clone(),
         }
@@ -780,16 +761,19 @@ impl MessageRouter {
 
     async fn register_agent(&mut self, agent_id: &str, capabilities: Vec<String>) -> Result<()> {
         self.message_queues.insert(agent_id.to_string(), PriorityQueue::new());
-        self.agent_states.insert(agent_id.to_string(), AgentState {
-            id: agent_id.to_string(),
-            status: AgentStatus::Available,
-            load: 0.0,
-            last_activity: Utc::now(),
-            capabilities,
-            max_concurrent: 5, // Default
-            current_tasks: 0,
-        });
-        
+        self.agent_states.insert(
+            agent_id.to_string(),
+            AgentState {
+                id: agent_id.to_string(),
+                status: AgentStatus::Available,
+                load: 0.0,
+                last_activity: Utc::now(),
+                capabilities,
+                max_concurrent: 5, // Default
+                current_tasks: 0,
+            },
+        );
+
         Ok(())
     }
 
@@ -842,17 +826,12 @@ impl MessageRouter {
 
 impl PriorityQueue {
     fn new() -> Self {
-        Self {
-            items: BTreeMap::new(),
-        }
+        Self { items: BTreeMap::new() }
     }
 
     fn push(&mut self, item: PendingMessage) {
         let priority = item.message.priority.clone();
-        self.items
-            .entry(priority)
-            .or_insert_with(VecDeque::new)
-            .push_back(item);
+        self.items.entry(priority).or_default().push_back(item);
     }
 
     fn pop(&mut self) -> Option<PendingMessage> {
@@ -900,7 +879,7 @@ impl EventBus {
     ) -> broadcast::Receiver<HubEvent> {
         let mut subscriptions = self.subscriptions.write().await;
         subscriptions.insert(agent_id, event_types.into_iter().collect());
-        
+
         self.broadcast_tx.subscribe()
     }
 }
@@ -934,7 +913,7 @@ mod tests {
     async fn test_communication_hub_creation() {
         let config = HubConfig::default();
         let hub = CommunicationHub::new(config);
-        
+
         let status = hub.get_status().await;
         assert_eq!(status.registered_agents, 0);
         assert_eq!(status.active_tasks, 0);
@@ -943,7 +922,7 @@ mod tests {
     #[tokio::test]
     async fn test_priority_queue() {
         let mut queue: PriorityQueue = PriorityQueue::new();
-        
+
         // Test basic operations
         assert_eq!(queue.len(), 0);
         assert!(queue.pop().is_none());
@@ -953,14 +932,14 @@ mod tests {
     async fn test_event_bus() {
         let (tx, _rx) = broadcast::channel(100);
         let event_bus = EventBus::new(tx);
-        
+
         let test_event = HubEvent::AgentRegistered {
             agent_id: "test-agent".to_string(),
             capabilities: vec!["test".to_string()],
         };
-        
+
         event_bus.broadcast(test_event).await;
-        
+
         let history = event_bus.event_history.read().await;
         assert_eq!(history.len(), 1);
     }

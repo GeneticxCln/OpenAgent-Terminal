@@ -285,10 +285,7 @@ impl ConversationManager {
         let session = ConversationSession {
             id: session_id,
             title: title.unwrap_or_else(|| {
-                format!(
-                    "Conversation {}",
-                    chrono::Utc::now().format("%Y-%m-%d %H:%M")
-                )
+                format!("Conversation {}", chrono::Utc::now().format("%Y-%m-%d %H:%M"))
             }),
             created_at: Utc::now(),
             last_active: Utc::now(),
@@ -320,8 +317,7 @@ impl ConversationManager {
             Ok(session_id)
         } else {
             drop(default_session);
-            self.create_session(Some("Default Conversation".to_string()))
-                .await
+            self.create_session(Some("Default Conversation".to_string())).await
         }
     }
 
@@ -356,8 +352,7 @@ impl ConversationManager {
         session.last_active = Utc::now();
 
         // Update context with new information
-        self.update_context_from_turn(&mut session.context, &content, &intent, &entities)
-            .await?;
+        self.update_context_from_turn(&mut session.context, &content, &intent, &entities).await?;
 
         // Prune old turns if needed
         if session.turns.len() > self.config.max_turns_per_session {
@@ -365,8 +360,7 @@ impl ConversationManager {
         }
 
         // Update topic memory
-        self.update_topic_memory(&mut session.context, &content, turn_id)
-            .await?;
+        self.update_topic_memory(&mut session.context, &content, turn_id).await?;
 
         // Persist conversations after each turn
         drop(conversations);
@@ -411,11 +405,8 @@ impl ConversationManager {
                 };
 
                 // Update or add file context
-                if let Some(existing) = session
-                    .context
-                    .open_files
-                    .iter_mut()
-                    .find(|f| f.path == file_path)
+                if let Some(existing) =
+                    session.context.open_files.iter_mut().find(|f| f.path == file_path)
                 {
                     *existing = file_context;
                 } else {
@@ -526,10 +517,7 @@ impl ConversationManager {
         if let Some(project_root) = &session.context.project_root {
             context.push_str(&format!("Project: {}\n", project_root));
         }
-        context.push_str(&format!(
-            "Directory: {}\n",
-            session.context.current_directory
-        ));
+        context.push_str(&format!("Directory: {}\n", session.context.current_directory));
 
         if let Some(branch) = &session.context.git_branch {
             context.push_str(&format!("Git branch: {}\n", branch));
@@ -589,16 +577,11 @@ impl ConversationManager {
         }
 
         // Extract file paths mentioned
-        if let Some(file_entity) = entities
-            .iter()
-            .find(|e| matches!(e.entity_type, EntityType::FilePath))
+        if let Some(file_entity) =
+            entities.iter().find(|e| matches!(e.entity_type, EntityType::FilePath))
         {
             // Add to recent files if not already open
-            if !context
-                .open_files
-                .iter()
-                .any(|f| f.path == file_entity.value)
-            {
+            if !context.open_files.iter().any(|f| f.path == file_entity.value) {
                 if let Ok(metadata) = std::fs::metadata(&file_entity.value) {
                     let file_context = FileContext {
                         path: file_entity.value.clone(),
@@ -637,11 +620,8 @@ impl ConversationManager {
     ) -> Result<()> {
         // Simple topic extraction (could be enhanced with NLP)
         let lowercase_content = content.to_lowercase();
-        let words: Vec<&str> = lowercase_content
-            .split_whitespace()
-            .filter(|w| w.len() > 4)
-            .take(10)
-            .collect();
+        let words: Vec<&str> =
+            lowercase_content.split_whitespace().filter(|w| w.len() > 4).take(10).collect();
 
         for word in words {
             let topic = word.to_string();
@@ -688,23 +668,17 @@ impl ConversationManager {
             "code_generation" => {
                 let goal_description = format!(
                     "Generate {} code",
-                    intent
-                        .parameters
-                        .get("language")
-                        .unwrap_or(&"code".to_string())
+                    intent.parameters.get("language").unwrap_or(&"code".to_string())
                 );
-                self.add_or_update_goal(context, goal_description, 0.0)
-                    .await?;
+                self.add_or_update_goal(context, goal_description, 0.0).await?;
             }
             "project_setup" => {
                 let goal_description = "Set up new project".to_string();
-                self.add_or_update_goal(context, goal_description, 0.0)
-                    .await?;
+                self.add_or_update_goal(context, goal_description, 0.0).await?;
             }
             "debugging" => {
                 let goal_description = "Debug and fix issues".to_string();
-                self.add_or_update_goal(context, goal_description, 0.0)
-                    .await?;
+                self.add_or_update_goal(context, goal_description, 0.0).await?;
             }
             _ => {}
         }
@@ -927,10 +901,7 @@ impl Agent for ConversationManager {
             is_busy: active_conversations > 0,
             last_activity: Utc::now(),
             current_task: if active_conversations > 0 {
-                Some(format!(
-                    "Managing {} active conversations",
-                    active_conversations
-                ))
+                Some(format!("Managing {} active conversations", active_conversations))
             } else {
                 None
             },
@@ -1003,10 +974,7 @@ mod tests {
     #[tokio::test]
     async fn test_conversation_session_creation() {
         let manager = ConversationManager::new();
-        let session_id = manager
-            .create_session(Some("Test Session".to_string()))
-            .await
-            .unwrap();
+        let session_id = manager.create_session(Some("Test Session".to_string())).await.unwrap();
 
         let conversations = manager.conversations.read().await;
         let session = conversations.get(&session_id).unwrap();

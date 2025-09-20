@@ -2,13 +2,13 @@ use super::{
     AgentCapabilities, AgentError, AgentRequest, AgentResponse, AiAgent, CollaborationContext,
     PrivacyLevel, ProjectInfo,
 };
-use std::collections::HashMap;
 use futures_util::future;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
-use serde::{Deserialize, Serialize};
 
 /// Agent Manager coordinates multiple AI agents and handles request routing
 pub struct AgentManager {
@@ -33,7 +33,7 @@ pub struct AgentManager {
 pub struct AgentMetrics {
     /// Per-agent performance statistics
     pub agent_stats: HashMap<String, AgentPerformanceStats>,
-    
+
     /// Global statistics
     pub total_requests: u64,
     pub total_successful_requests: u64,
@@ -46,29 +46,29 @@ pub struct AgentMetrics {
 pub struct AgentPerformanceStats {
     /// Total number of requests handled
     pub request_count: u64,
-    
+
     /// Number of successful requests
     pub success_count: u64,
-    
+
     /// Number of failed requests
     pub error_count: u64,
-    
+
     /// Average response time
     pub avg_response_time: Duration,
-    
+
     /// Min/Max response times
     pub min_response_time: Duration,
     pub max_response_time: Duration,
-    
+
     /// Last request timestamp
     pub last_request_time: std::time::SystemTime,
-    
+
     /// User satisfaction scores (if available)
     pub satisfaction_scores: Vec<f32>,
-    
+
     /// Average satisfaction score
     pub avg_satisfaction: f32,
-    
+
     /// Utilization metrics
     pub total_processing_time: Duration,
     pub peak_concurrent_requests: u32,
@@ -234,9 +234,8 @@ impl AgentManager {
 
         // Get the agent
         let agents = self.agents.read().await;
-        let agent = agents
-            .get(&agent_name)
-            .ok_or_else(|| AgentError::AgentNotFound(agent_name.clone()))?;
+        let agent =
+            agents.get(&agent_name).ok_or_else(|| AgentError::AgentNotFound(agent_name.clone()))?;
 
         // Check if agent can handle the request
         if !agent.can_handle(&request) {
@@ -256,12 +255,16 @@ impl AgentManager {
         .map_err(|_| AgentError::ProcessingError("Request timeout".to_string()));
 
         let processing_time = start_time.elapsed();
-        
+
         // Update metrics
         match &result {
             Ok(Ok(_)) => {
                 self.record_success(&agent_name, processing_time).await;
-                info!("Request processed successfully by agent: {} ({}ms)", agent_name, processing_time.as_millis());
+                info!(
+                    "Request processed successfully by agent: {} ({}ms)",
+                    agent_name,
+                    processing_time.as_millis()
+                );
             }
             Ok(Err(e)) => {
                 self.record_error(&agent_name, processing_time).await;
@@ -287,9 +290,7 @@ impl AgentManager {
         goal: String,
     ) -> Result<AgentResponse, AgentError> {
         if !self.config.enable_collaboration {
-            return Err(AgentError::ConfigurationError(
-                "Collaboration is disabled".to_string(),
-            ));
+            return Err(AgentError::ConfigurationError("Collaboration is disabled".to_string()));
         }
 
         if agent_names.len() > self.config.max_concurrent_agents {
@@ -327,8 +328,7 @@ impl AgentManager {
         }
 
         // Wait for all agents to respond
-        let results: Vec<Result<AgentResponse, AgentError>> =
-            future::join_all(tasks).await;
+        let results: Vec<Result<AgentResponse, AgentError>> = future::join_all(tasks).await;
 
         // Combine results from all participating agents
         let mut successful_results = Vec::new();
@@ -349,8 +349,7 @@ impl AgentManager {
         }
 
         // Synthesize collaboration result
-        self.synthesize_collaboration_result(successful_results, goal)
-            .await
+        self.synthesize_collaboration_result(successful_results, goal).await
     }
 
     /// Route a request to the most appropriate agent
@@ -358,19 +357,13 @@ impl AgentManager {
         // Apply routing rules in priority order
         for rule in &self.routing_rules {
             if self.matches_pattern(&rule.pattern, request) {
-                debug!(
-                    "Request routed to {} via rule {:?}",
-                    rule.target_agent, rule.pattern
-                );
+                debug!("Request routed to {} via rule {:?}", rule.target_agent, rule.pattern);
                 return Ok(rule.target_agent.clone());
             }
         }
 
         // Fallback to default agent
-        debug!(
-            "Request routed to default agent: {}",
-            self.config.default_agent
-        );
+        debug!("Request routed to default agent: {}", self.config.default_agent);
         Ok(self.config.default_agent.clone())
     }
 
@@ -387,11 +380,9 @@ impl AgentManager {
             },
             RequestPattern::Keywords(keywords) => {
                 let request_text = self.extract_text_from_request(request);
-                keywords.iter().any(|keyword| {
-                    request_text
-                        .to_lowercase()
-                        .contains(&keyword.to_lowercase())
-                })
+                keywords
+                    .iter()
+                    .any(|keyword| request_text.to_lowercase().contains(&keyword.to_lowercase()))
             }
             RequestPattern::Language(lang) => match request {
                 AgentRequest::CodeGeneration { language, .. } => {
@@ -516,9 +507,11 @@ impl AgentManager {
     /// Increment the current load for an agent
     async fn increment_agent_load(&self, agent_name: &str) {
         let mut metrics = self.metrics.write().await;
-        let stats = metrics.agent_stats.entry(agent_name.to_string())
+        let stats = metrics
+            .agent_stats
+            .entry(agent_name.to_string())
             .or_insert_with(AgentPerformanceStats::default);
-        
+
         stats.current_load += 1;
         if stats.current_load > stats.peak_concurrent_requests {
             stats.peak_concurrent_requests = stats.current_load;
@@ -538,20 +531,22 @@ impl AgentManager {
     /// Record a successful request
     async fn record_success(&self, agent_name: &str, processing_time: Duration) {
         let mut metrics = self.metrics.write().await;
-        
+
         // Update global metrics
         metrics.total_requests += 1;
         metrics.total_successful_requests += 1;
-        
+
         // Update agent-specific metrics
-        let stats = metrics.agent_stats.entry(agent_name.to_string())
+        let stats = metrics
+            .agent_stats
+            .entry(agent_name.to_string())
             .or_insert_with(AgentPerformanceStats::default);
-        
+
         stats.request_count += 1;
         stats.success_count += 1;
         stats.last_request_time = std::time::SystemTime::now();
         stats.total_processing_time += processing_time;
-        
+
         // Update response time statistics
         if processing_time < stats.min_response_time {
             stats.min_response_time = processing_time;
@@ -559,27 +554,30 @@ impl AgentManager {
         if processing_time > stats.max_response_time {
             stats.max_response_time = processing_time;
         }
-        
+
         // Calculate moving average for response time
-        let total_time = stats.avg_response_time * (stats.request_count - 1) as u32 + processing_time;
+        let total_time =
+            stats.avg_response_time * (stats.request_count - 1) as u32 + processing_time;
         stats.avg_response_time = total_time / stats.request_count as u32;
     }
 
     /// Record a failed request
     async fn record_error(&self, agent_name: &str, processing_time: Duration) {
         let mut metrics = self.metrics.write().await;
-        
+
         // Update global metrics
         metrics.total_requests += 1;
-        
+
         // Update agent-specific metrics
-        let stats = metrics.agent_stats.entry(agent_name.to_string())
+        let stats = metrics
+            .agent_stats
+            .entry(agent_name.to_string())
             .or_insert_with(AgentPerformanceStats::default);
-        
+
         stats.request_count += 1;
         stats.error_count += 1;
         stats.last_request_time = std::time::SystemTime::now();
-        
+
         // Still track processing time for failed requests
         if processing_time < stats.min_response_time {
             stats.min_response_time = processing_time;
@@ -614,15 +612,15 @@ impl AgentManager {
             warn!("Invalid satisfaction score: {}. Score should be between 0.0 and 1.0", score);
             return;
         }
-        
+
         let mut metrics = self.metrics.write().await;
         if let Some(stats) = metrics.agent_stats.get_mut(agent_name) {
             stats.satisfaction_scores.push(score);
-            
+
             // Calculate new average satisfaction
             let sum: f32 = stats.satisfaction_scores.iter().sum();
             stats.avg_satisfaction = sum / stats.satisfaction_scores.len() as f32;
-            
+
             // Keep only last 100 satisfaction scores to prevent unbounded growth
             if stats.satisfaction_scores.len() > 100 {
                 stats.satisfaction_scores.remove(0);
@@ -636,20 +634,20 @@ impl AgentManager {
     pub async fn get_routing_recommendations(&self) -> HashMap<String, f32> {
         let metrics = self.metrics.read().await;
         let mut recommendations = HashMap::new();
-        
+
         for (agent_name, stats) in &metrics.agent_stats {
             // Calculate a composite score based on:
             // - Success rate (40%)
             // - Average response time (30%)
             // - User satisfaction (20%)
             // - Current load (10%)
-            
+
             let success_rate = if stats.request_count > 0 {
                 stats.success_count as f32 / stats.request_count as f32
             } else {
                 1.0 // No data yet, assume perfect
             };
-            
+
             // Normalize response time (lower is better, scale to 0-1)
             let response_score = if stats.avg_response_time.is_zero() {
                 1.0
@@ -657,23 +655,22 @@ impl AgentManager {
                 let millis = stats.avg_response_time.as_millis() as f32;
                 (1000.0 - millis.min(1000.0)) / 1000.0 // Cap at 1 second
             };
-            
+
             // Current load penalty (lower load is better)
             let load_score = if stats.current_load == 0 {
                 1.0
             } else {
                 (10.0 - stats.current_load as f32).max(0.0) / 10.0
             };
-            
-            let composite_score = 
-                success_rate * 0.4 +
-                response_score * 0.3 +
-                stats.avg_satisfaction * 0.2 +
-                load_score * 0.1;
-            
+
+            let composite_score = success_rate * 0.4
+                + response_score * 0.3
+                + stats.avg_satisfaction * 0.2
+                + load_score * 0.1;
+
             recommendations.insert(agent_name.clone(), composite_score);
         }
-        
+
         recommendations
     }
 }

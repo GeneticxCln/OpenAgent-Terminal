@@ -7,8 +7,5 @@ where
     T: Send + 'static,
     S: Into<String>,
 {
-    Builder::new()
-        .name(name.into())
-        .spawn(f)
-        .expect("thread spawn works")
+    Builder::new().name(name.into()).spawn(f).expect("thread spawn works")
 }

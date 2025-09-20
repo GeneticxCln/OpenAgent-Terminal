@@ -41,9 +41,7 @@ impl NotebookStorage {
 
     async fn initialize_schema(pool: &SqlitePool) -> Result<()> {
         // Enable foreign keys
-        sqlx::query("PRAGMA foreign_keys = ON;")
-            .execute(pool)
-            .await?;
+        sqlx::query("PRAGMA foreign_keys = ON;").execute(pool).await?;
 
         // Main tables
         sqlx::query(
@@ -90,12 +88,9 @@ impl NotebookStorage {
         let _ = sqlx::query("ALTER TABLE notebooks ADD COLUMN default_directory TEXT")
             .execute(pool)
             .await;
-        let _ = sqlx::query("ALTER TABLE notebooks ADD COLUMN env_overrides TEXT")
-            .execute(pool)
-            .await;
-        let _ = sqlx::query("ALTER TABLE notebooks ADD COLUMN params TEXT")
-            .execute(pool)
-            .await;
+        let _ =
+            sqlx::query("ALTER TABLE notebooks ADD COLUMN env_overrides TEXT").execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE notebooks ADD COLUMN params TEXT").execute(pool).await;
 
         Ok(())
     }
@@ -163,11 +158,7 @@ impl NotebookStorage {
         .bind(cell.idx)
         .bind(cell_type_to_str(cell.cell_type))
         .bind(&cell.content)
-        .bind(
-            cell.directory
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string()),
-        )
+        .bind(cell.directory.as_ref().map(|p| p.to_string_lossy().to_string()))
         .bind(cell.shell.map(|s| s.to_str().to_string()))
         .bind(&cell.output)
         .bind(&cell.error_output)
@@ -195,11 +186,7 @@ impl NotebookStorage {
         .bind(cell.idx)
         .bind(cell_type_to_str(cell.cell_type))
         .bind(&cell.content)
-        .bind(
-            cell.directory
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string()),
-        )
+        .bind(cell.directory.as_ref().map(|p| p.to_string_lossy().to_string()))
         .bind(cell.shell.map(|s| s.to_str().to_string()))
         .bind(&cell.output)
         .bind(&cell.error_output)
@@ -309,9 +296,7 @@ impl CellRow {
             error_output: self.error_output,
             exit_code: self.exit_code,
             duration_ms: self.duration_ms.map(|d| d as u64),
-            block_id: self
-                .block_id
-                .and_then(|s| crate::blocks_v2::BlockId::from_string(&s).ok()),
+            block_id: self.block_id.and_then(|s| crate::blocks_v2::BlockId::from_string(&s).ok()),
             status: parse_status(&self.status),
             created_at: DateTime::parse_from_rfc3339(&self.created_at)?.with_timezone(&Utc),
             updated_at: DateTime::parse_from_rfc3339(&self.updated_at)?.with_timezone(&Utc),

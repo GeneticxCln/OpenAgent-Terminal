@@ -33,7 +33,12 @@ impl IdeManager {
     }
 
     /// Handle command errors with native suggestions (synchronous)
-    pub fn handle_error(&self, command: &str, exit_code: i32, output: &str) -> Vec<ErrorSuggestion> {
+    pub fn handle_error(
+        &self,
+        command: &str,
+        exit_code: i32,
+        output: &str,
+    ) -> Vec<ErrorSuggestion> {
         let mut ide = self.warp_ide.write().unwrap();
         ide.handle_error(command, exit_code, output)
     }
@@ -45,3 +50,8 @@ impl IdeManager {
     }
 }
 
+impl Default for IdeManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

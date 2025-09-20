@@ -57,9 +57,7 @@ impl AiContextProvider for NullContextProvider {
             working_directory: self.get_working_directory()?,
             shell_kind: self.get_shell_kind().unwrap_or(ShellKind::Unknown),
             last_command: self.get_last_command(),
-            shell_executable: self
-                .get_shell_executable()
-                .unwrap_or_else(|| "bash".to_string()),
+            shell_executable: self.get_shell_executable().unwrap_or_else(|| "bash".to_string()),
         })
     }
 
@@ -83,27 +81,19 @@ impl<'a> WarpContextProvider<'a> {
 
 impl<'a> AiContextProvider for WarpContextProvider<'a> {
     fn get_working_directory(&self) -> Option<PathBuf> {
-        self.warp_integration
-            .get_current_ai_context()
-            .map(|ctx| ctx.working_directory)
+        self.warp_integration.get_current_ai_context().map(|ctx| ctx.working_directory)
     }
 
     fn get_shell_kind(&self) -> Option<ShellKind> {
-        self.warp_integration
-            .get_current_ai_context()
-            .map(|ctx| ctx.shell_kind)
+        self.warp_integration.get_current_ai_context().map(|ctx| ctx.shell_kind)
     }
 
     fn get_last_command(&self) -> Option<String> {
-        self.warp_integration
-            .get_current_ai_context()
-            .and_then(|ctx| ctx.last_command)
+        self.warp_integration.get_current_ai_context().and_then(|ctx| ctx.last_command)
     }
 
     fn get_shell_executable(&self) -> Option<String> {
-        self.warp_integration
-            .get_current_ai_context()
-            .map(|ctx| ctx.shell_executable)
+        self.warp_integration.get_current_ai_context().map(|ctx| ctx.shell_executable)
     }
 
     fn get_pty_context(&self) -> Option<PtyAiContext> {
@@ -134,27 +124,19 @@ impl<'a> MutableWarpContextProvider<'a> {
 
 impl<'a> AiContextProvider for MutableWarpContextProvider<'a> {
     fn get_working_directory(&self) -> Option<PathBuf> {
-        self.warp_integration
-            .get_current_ai_context()
-            .map(|ctx| ctx.working_directory)
+        self.warp_integration.get_current_ai_context().map(|ctx| ctx.working_directory)
     }
 
     fn get_shell_kind(&self) -> Option<ShellKind> {
-        self.warp_integration
-            .get_current_ai_context()
-            .map(|ctx| ctx.shell_kind)
+        self.warp_integration.get_current_ai_context().map(|ctx| ctx.shell_kind)
     }
 
     fn get_last_command(&self) -> Option<String> {
-        self.warp_integration
-            .get_current_ai_context()
-            .and_then(|ctx| ctx.last_command)
+        self.warp_integration.get_current_ai_context().and_then(|ctx| ctx.last_command)
     }
 
     fn get_shell_executable(&self) -> Option<String> {
-        self.warp_integration
-            .get_current_ai_context()
-            .map(|ctx| ctx.shell_executable)
+        self.warp_integration.get_current_ai_context().map(|ctx| ctx.shell_executable)
     }
 
     fn get_pty_context(&self) -> Option<PtyAiContext> {

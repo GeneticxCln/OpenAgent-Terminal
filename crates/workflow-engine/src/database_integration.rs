@@ -197,10 +197,7 @@ impl DatabaseIntegration {
 
     pub async fn get_connection(&self, id: Uuid) -> Result<DatabaseConnection> {
         let connections = self.connections.lock().await;
-        connections
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Connection not found"))
+        connections.get(&id).cloned().ok_or_else(|| anyhow!("Connection not found"))
     }
 
     async fn test_connection(&self, connection: &DatabaseConnection) -> Result<()> {
@@ -271,9 +268,8 @@ impl DatabaseIntegration {
         }
 
         let connections = self.connections.lock().await;
-        let connection = connections
-            .get(&connection_id)
-            .ok_or_else(|| anyhow!("Connection not found"))?;
+        let connection =
+            connections.get(&connection_id).ok_or_else(|| anyhow!("Connection not found"))?;
 
         let pool = match connection.database_type {
             DatabaseType::PostgreSQL => {
@@ -339,9 +335,7 @@ impl DatabaseIntegration {
         };
 
         let pools = self.active_pools.lock().await;
-        let pool = pools
-            .get(&connection_id)
-            .ok_or_else(|| anyhow!("Pool not found"))?;
+        let pool = pools.get(&connection_id).ok_or_else(|| anyhow!("Pool not found"))?;
 
         let mut result = QueryResult {
             id: query_id,
@@ -400,11 +394,7 @@ impl DatabaseIntegration {
         &self,
         pool: &sqlx::PgPool,
         query: &str,
-    ) -> Result<(
-        Vec<String>,
-        Vec<HashMap<String, serde_json::Value>>,
-        Option<u64>,
-    )> {
+    ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
         use sqlx::{Column, Row};
 
         if query.trim().to_lowercase().starts_with("select") {
@@ -446,11 +436,7 @@ impl DatabaseIntegration {
         &self,
         pool: &sqlx::MySqlPool,
         query: &str,
-    ) -> Result<(
-        Vec<String>,
-        Vec<HashMap<String, serde_json::Value>>,
-        Option<u64>,
-    )> {
+    ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
         use sqlx::{Column, Row};
 
         if query.trim().to_lowercase().starts_with("select") {
@@ -492,11 +478,7 @@ impl DatabaseIntegration {
         &self,
         pool: &sqlx::SqlitePool,
         query: &str,
-    ) -> Result<(
-        Vec<String>,
-        Vec<HashMap<String, serde_json::Value>>,
-        Option<u64>,
-    )> {
+    ) -> Result<(Vec<String>, Vec<HashMap<String, serde_json::Value>>, Option<u64>)> {
         use sqlx::{Column, Row};
 
         if query.trim().to_lowercase().starts_with("select") {
@@ -685,9 +667,8 @@ impl DatabaseIntegration {
         self.get_or_create_pool(connection_id).await?;
 
         let connections = self.connections.lock().await;
-        let connection = connections
-            .get(&connection_id)
-            .ok_or_else(|| anyhow!("Connection not found"))?;
+        let connection =
+            connections.get(&connection_id).ok_or_else(|| anyhow!("Connection not found"))?;
 
         match connection.database_type {
             DatabaseType::PostgreSQL => self.get_postgres_schema(connection_id).await,
@@ -695,9 +676,7 @@ impl DatabaseIntegration {
                 self.get_mysql_schema(connection_id).await
             }
             DatabaseType::SQLite => self.get_sqlite_schema(connection_id).await,
-            _ => Err(anyhow!(
-                "Schema introspection not supported for this database type"
-            )),
+            _ => Err(anyhow!("Schema introspection not supported for this database type")),
         }
     }
 
@@ -721,12 +700,7 @@ impl DatabaseIntegration {
         let result = self.execute_query(connection_id, tables_query).await?;
         let tables = self.parse_table_info_from_query_result(&result)?;
 
-        Ok(DatabaseSchema {
-            tables,
-            views: Vec::new(),
-            functions: Vec::new(),
-            indexes: Vec::new(),
-        })
+        Ok(DatabaseSchema { tables, views: Vec::new(), functions: Vec::new(), indexes: Vec::new() })
     }
 
     async fn get_mysql_schema(&self, connection_id: Uuid) -> Result<DatabaseSchema> {
@@ -747,12 +721,7 @@ impl DatabaseIntegration {
         let result = self.execute_query(connection_id, tables_query).await?;
         let tables = self.parse_table_info_from_query_result(&result)?;
 
-        Ok(DatabaseSchema {
-            tables,
-            views: Vec::new(),
-            functions: Vec::new(),
-            indexes: Vec::new(),
-        })
+        Ok(DatabaseSchema { tables, views: Vec::new(), functions: Vec::new(), indexes: Vec::new() })
     }
 
     async fn get_sqlite_schema(&self, connection_id: Uuid) -> Result<DatabaseSchema> {
@@ -773,12 +742,7 @@ impl DatabaseIntegration {
         let result = self.execute_query(connection_id, tables_query).await?;
         let tables = self.parse_table_info_from_query_result(&result)?;
 
-        Ok(DatabaseSchema {
-            tables,
-            views: Vec::new(),
-            functions: Vec::new(),
-            indexes: Vec::new(),
-        })
+        Ok(DatabaseSchema { tables, views: Vec::new(), functions: Vec::new(), indexes: Vec::new() })
     }
 
     fn parse_table_info_from_query_result(&self, result: &QueryResult) -> Result<Vec<TableInfo>> {
@@ -791,17 +755,11 @@ impl DatabaseIntegration {
                 .ok_or_else(|| anyhow!("Missing table_name"))?
                 .to_string();
 
-            let column_name = row
-                .get("column_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
+            let column_name =
+                row.get("column_name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
 
-            let data_type = row
-                .get("data_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
+            let data_type =
+                row.get("data_type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
 
             let nullable = row
                 .get("is_nullable")
@@ -809,10 +767,8 @@ impl DatabaseIntegration {
                 .map(|s| s.eq_ignore_ascii_case("yes") || s == "1")
                 .unwrap_or(true);
 
-            let default_value = row
-                .get("column_default")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            let default_value =
+                row.get("column_default").and_then(|v| v.as_str()).map(|s| s.to_string());
 
             let is_primary_key = row
                 .get("is_primary_key")
@@ -882,19 +838,13 @@ impl DatabaseIntegration {
                 )
             }
             DatabaseType::MySQL | DatabaseType::MariaDB => {
-                format!(
-                    "mysql://{}:{}@{}:{}/{}",
-                    username, password, host, port, database_name
-                )
+                format!("mysql://{}:{}@{}:{}/{}", username, password, host, port, database_name)
             }
             DatabaseType::SQLite => {
                 format!("sqlite:{}", database_name)
             }
             DatabaseType::MongoDB => {
-                format!(
-                    "mongodb://{}:{}@{}:{}/{}",
-                    username, password, host, port, database_name
-                )
+                format!("mongodb://{}:{}@{}:{}/{}", username, password, host, port, database_name)
             }
             DatabaseType::Redis => {
                 format!("redis://{}:{}@{}:{}", username, password, host, port)
@@ -924,11 +874,7 @@ impl DatabaseIntegration {
         }
 
         // Check for MySQL/MariaDB
-        if std::process::Command::new("mysql")
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
+        if std::process::Command::new("mysql").arg("--version").output().is_ok() {
             discovered.push(DatabaseConnection {
                 id: Uuid::new_v4(),
                 name: "Local MySQL".to_string(),
@@ -1037,12 +983,7 @@ impl DatabaseIntegration {
                 md.push_str(&format!("| {} |\n", result.columns.join(" | ")));
                 md.push_str(&format!(
                     "| {} |\n",
-                    result
-                        .columns
-                        .iter()
-                        .map(|_| "---")
-                        .collect::<Vec<_>>()
-                        .join(" | ")
+                    result.columns.iter().map(|_| "---").collect::<Vec<_>>().join(" | ")
                 ));
 
                 // Add rows
@@ -1101,10 +1042,7 @@ mod tests {
             &SslMode::Prefer,
         );
 
-        assert_eq!(
-            conn_str,
-            "postgresql://user:pass@localhost:5432/testdb?sslmode=prefer"
-        );
+        assert_eq!(conn_str, "postgresql://user:pass@localhost:5432/testdb?sslmode=prefer");
     }
 
     #[test]

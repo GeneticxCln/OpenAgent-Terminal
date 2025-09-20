@@ -117,8 +117,7 @@ impl ThemeSystem {
         name: &str,
         modifications: &config::ThemeModifications,
     ) -> anyhow::Result<Theme> {
-        self.manager
-            .create_custom_theme(base_theme, name, modifications)
+        self.manager.create_custom_theme(base_theme, name, modifications)
     }
 
     /// Enable theme hot-reloading for development

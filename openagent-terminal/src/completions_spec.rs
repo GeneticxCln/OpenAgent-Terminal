@@ -19,94 +19,37 @@ pub struct CommandSpec {
 }
 
 static GIT_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        flag: "--help",
-        desc: "Show help for git or a subcommand",
-    },
-    FlagSpec {
-        flag: "-C",
-        desc: "Run as if git was started in <path>",
-    },
-    FlagSpec {
-        flag: "-c",
-        desc: "Pass a configuration parameter",
-    },
-    FlagSpec {
-        flag: "--version",
-        desc: "Show version information",
-    },
-    FlagSpec {
-        flag: "--no-pager",
-        desc: "Do not pipe git output into a pager",
-    },
+    FlagSpec { flag: "--help", desc: "Show help for git or a subcommand" },
+    FlagSpec { flag: "-C", desc: "Run as if git was started in <path>" },
+    FlagSpec { flag: "-c", desc: "Pass a configuration parameter" },
+    FlagSpec { flag: "--version", desc: "Show version information" },
+    FlagSpec { flag: "--no-pager", desc: "Do not pipe git output into a pager" },
 ];
 
 static LS_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        flag: "-l",
-        desc: "Use a long listing format",
-    },
-    FlagSpec {
-        flag: "-a",
-        desc: "Do not ignore entries starting with .",
-    },
-    FlagSpec {
-        flag: "-h",
-        desc: "With -l, print sizes in human readable format",
-    },
-    FlagSpec {
-        flag: "-R",
-        desc: "List subdirectories recursively",
-    },
+    FlagSpec { flag: "-l", desc: "Use a long listing format" },
+    FlagSpec { flag: "-a", desc: "Do not ignore entries starting with ." },
+    FlagSpec { flag: "-h", desc: "With -l, print sizes in human readable format" },
+    FlagSpec { flag: "-R", desc: "List subdirectories recursively" },
 ];
 
 static CARGO_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        flag: "--help",
-        desc: "Print this message or the help of the given subcommand(s)",
-    },
-    FlagSpec {
-        flag: "-v",
-        desc: "Use verbose output (-vv very verbose)",
-    },
-    FlagSpec {
-        flag: "-q",
-        desc: "No output printed to stdout",
-    },
+    FlagSpec { flag: "--help", desc: "Print this message or the help of the given subcommand(s)" },
+    FlagSpec { flag: "-v", desc: "Use verbose output (-vv very verbose)" },
+    FlagSpec { flag: "-q", desc: "No output printed to stdout" },
 ];
 
 static DOCKER_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        flag: "--help",
-        desc: "Help for docker or subcommand",
-    },
-    FlagSpec {
-        flag: "-q",
-        desc: "Only display IDs",
-    },
-    FlagSpec {
-        flag: "--rm",
-        desc: "Automatically remove container when it exits",
-    },
+    FlagSpec { flag: "--help", desc: "Help for docker or subcommand" },
+    FlagSpec { flag: "-q", desc: "Only display IDs" },
+    FlagSpec { flag: "--rm", desc: "Automatically remove container when it exits" },
 ];
 
 static KUBECTL_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        flag: "-n",
-        desc: "Namespace scope",
-    },
-    FlagSpec {
-        flag: "--namespace",
-        desc: "Namespace scope",
-    },
-    FlagSpec {
-        flag: "-o",
-        desc: "Output format",
-    },
-    FlagSpec {
-        flag: "-A",
-        desc: "All namespaces",
-    },
+    FlagSpec { flag: "-n", desc: "Namespace scope" },
+    FlagSpec { flag: "--namespace", desc: "Namespace scope" },
+    FlagSpec { flag: "-o", desc: "Output format" },
+    FlagSpec { flag: "-A", desc: "All namespaces" },
 ];
 
 static SPECS: Lazy<HashMap<&'static str, CommandSpec>> = Lazy::new(|| {
@@ -123,14 +66,7 @@ static SPECS: Lazy<HashMap<&'static str, CommandSpec>> = Lazy::new(|| {
             ],
         },
     );
-    m.insert(
-        "ls",
-        CommandSpec {
-            name: "ls",
-            flags: LS_FLAGS,
-            subcommands: &[],
-        },
-    );
+    m.insert("ls", CommandSpec { name: "ls", flags: LS_FLAGS, subcommands: &[] });
     m.insert(
         "cargo",
         CommandSpec {

@@ -70,9 +70,8 @@ async fn main() -> Result<()> {
     println!("==================================");
 
     // Create main session
-    let main_session = conversation_manager
-        .create_session(Some("Main Development Session".to_string()))
-        .await?;
+    let main_session =
+        conversation_manager.create_session(Some("Main Development Session".to_string())).await?;
     println!("📝 Created main session: {}", main_session);
 
     // Add some conversation content
@@ -134,9 +133,7 @@ async fn main() -> Result<()> {
     println!("🌿 Created OAuth branch: {}", oauth_branch);
 
     // Switch to JWT branch and continue conversation
-    advanced_features
-        .switch_branch(main_session, jwt_branch.clone())
-        .await?;
+    advanced_features.switch_branch(main_session, jwt_branch.clone()).await?;
     println!("🔀 Switched to JWT branch");
 
     // Demo 2: Conversation Summarization
@@ -169,24 +166,18 @@ async fn main() -> Result<()> {
     ).await?;
 
     // Generate different types of summaries
-    let brief_summary = advanced_features
-        .generate_summary(main_session, SummaryType::Brief)
-        .await?;
+    let brief_summary =
+        advanced_features.generate_summary(main_session, SummaryType::Brief).await?;
     println!("📋 Brief Summary: {}", brief_summary.content);
     println!("🔑 Key Points: {}", brief_summary.key_points.len());
     println!("✅ Action Items: {}", brief_summary.action_items.len());
 
-    let comprehensive_summary = advanced_features
-        .generate_summary(main_session, SummaryType::Comprehensive)
-        .await?;
-    println!(
-        "📄 Comprehensive Summary: {}",
-        comprehensive_summary.content
-    );
+    let comprehensive_summary =
+        advanced_features.generate_summary(main_session, SummaryType::Comprehensive).await?;
+    println!("📄 Comprehensive Summary: {}", comprehensive_summary.content);
 
-    let action_summary = advanced_features
-        .generate_summary(main_session, SummaryType::ActionFocused)
-        .await?;
+    let action_summary =
+        advanced_features.generate_summary(main_session, SummaryType::ActionFocused).await?;
     println!("🎯 Action-Focused Summary: {}", action_summary.content);
 
     // Demo 3: Goal Automation
@@ -204,14 +195,10 @@ async fn main() -> Result<()> {
     println!("🎯 Started goal tracking: {}", auth_goal);
 
     // Update goal progress
-    advanced_features
-        .update_goal_progress(main_session, auth_goal.clone(), 0.25)
-        .await?;
+    advanced_features.update_goal_progress(main_session, auth_goal.clone(), 0.25).await?;
     println!("📈 Updated goal progress: 25% complete");
 
-    advanced_features
-        .update_goal_progress(main_session, auth_goal.clone(), 0.75)
-        .await?;
+    advanced_features.update_goal_progress(main_session, auth_goal.clone(), 0.75).await?;
     println!("📈 Updated goal progress: 75% complete");
 
     // Create a secondary goal for testing
@@ -229,15 +216,12 @@ async fn main() -> Result<()> {
     println!("====================================");
 
     // Create additional sessions for different aspects of the project
-    let frontend_session = conversation_manager
-        .create_session(Some("Frontend Integration".to_string()))
-        .await?;
-    let testing_session = conversation_manager
-        .create_session(Some("Testing Strategy".to_string()))
-        .await?;
-    let docs_session = conversation_manager
-        .create_session(Some("Documentation".to_string()))
-        .await?;
+    let frontend_session =
+        conversation_manager.create_session(Some("Frontend Integration".to_string())).await?;
+    let testing_session =
+        conversation_manager.create_session(Some("Testing Strategy".to_string())).await?;
+    let docs_session =
+        conversation_manager.create_session(Some("Documentation".to_string())).await?;
 
     println!("🖥️ Created frontend session: {}", frontend_session);
     println!("🧪 Created testing session: {}", testing_session);
@@ -248,12 +232,7 @@ async fn main() -> Result<()> {
         .create_session_group(
             "Authentication Project".to_string(),
             "Coordinated development of user authentication system".to_string(),
-            vec![
-                main_session,
-                frontend_session,
-                testing_session,
-                docs_session,
-            ],
+            vec![main_session, frontend_session, testing_session, docs_session],
         )
         .await?;
     println!("👥 Created session group: {}", auth_group);
@@ -298,9 +277,7 @@ async fn main() -> Result<()> {
     println!("========================");
 
     // Switch back to OAuth branch and add some content
-    advanced_features
-        .switch_branch(main_session, oauth_branch.clone())
-        .await?;
+    advanced_features.switch_branch(main_session, oauth_branch.clone()).await?;
     println!("🔀 Switched to OAuth branch");
 
     conversation_manager.add_turn(
@@ -329,11 +306,7 @@ async fn main() -> Result<()> {
     let status = advanced_features.status().await;
     println!(
         "🏥 Advanced Features Health: {}",
-        if status.is_healthy {
-            "✅ Healthy"
-        } else {
-            "❌ Unhealthy"
-        }
+        if status.is_healthy { "✅ Healthy" } else { "❌ Unhealthy" }
     );
     println!("⏱️  Last Activity: {}", status.last_activity);
     if let Some(task) = status.current_task {
@@ -341,23 +314,17 @@ async fn main() -> Result<()> {
     }
 
     // Complete the main goal
-    advanced_features
-        .update_goal_progress(main_session, auth_goal, 1.0)
-        .await?;
+    advanced_features.update_goal_progress(main_session, auth_goal, 1.0).await?;
     println!("🎉 Main authentication goal completed!");
 
     // Generate final comprehensive summary
     println!("\n📋 FINAL COMPREHENSIVE SUMMARY");
     println!("===============================");
 
-    let final_summary = advanced_features
-        .generate_summary(main_session, SummaryType::GoalOriented)
-        .await?;
+    let final_summary =
+        advanced_features.generate_summary(main_session, SummaryType::GoalOriented).await?;
     println!("Summary: {}", final_summary.content);
-    println!(
-        "Compression Ratio: {:.1}%",
-        final_summary.compression_ratio * 100.0
-    );
+    println!("Compression Ratio: {:.1}%", final_summary.compression_ratio * 100.0);
     println!("Generated At: {}", final_summary.generated_at);
 
     // Cleanup

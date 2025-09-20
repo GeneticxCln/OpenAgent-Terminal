@@ -21,15 +21,7 @@ impl UiRoundedRect {
         color: Rgb,
         alpha: f32,
     ) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-            radius,
-            color,
-            alpha,
-        }
+        Self { x, y, width, height, radius, color, alpha }
     }
 }
 
@@ -66,19 +58,7 @@ impl UiSprite {
         alpha: f32,
         filter_nearest: Option<bool>,
     ) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-            uv_x,
-            uv_y,
-            uv_w,
-            uv_h,
-            tint,
-            alpha,
-            filter_nearest,
-        }
+        Self { x, y, width, height, uv_x, uv_y, uv_w, uv_h, tint, alpha, filter_nearest }
     }
 }
 // in vec2 vUV;

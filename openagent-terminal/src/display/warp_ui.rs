@@ -59,15 +59,9 @@ pub struct WarpTabStyle {
 /// Linear interpolation between two RGB colors
 fn lerp_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
     let t = t.clamp(0.0, 1.0);
-    let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t)
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t)
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t)
-        .round()
-        .clamp(0.0, 255.0) as u8;
+    let r = (a.r as f32 + (b.r as f32 - a.r as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let g = (a.g as f32 + (b.g as f32 - a.g as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let bb = (a.b as f32 + (b.b as f32 - a.b as f32) * t).round().clamp(0.0, 255.0) as u8;
     Rgb::new(r, g, bb)
 }
 
@@ -93,20 +87,13 @@ impl Default for WarpTabStyle {
 impl WarpTabStyle {
     /// Build from current theme tokens and ThemeUi parameters
     pub fn from_theme(config: &UiConfig) -> Self {
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui;
         Self {
             tab_height: ui.tab_bar_height_px.max(16.0),
-            corner_radius: if ui.rounded_corners {
-                ui.tab_bar_corner_radius_px
-            } else {
-                0.0
-            },
+            corner_radius: if ui.rounded_corners { ui.tab_bar_corner_radius_px } else { 0.0 },
             tab_padding: ui.tab_bar_padding_px.max(0.0),
             active_bg: tokens.surface,
             inactive_bg: tokens.surface_muted,
@@ -237,11 +224,8 @@ pub enum WarpEasing {
 impl Display {
     /// Build Warp split indicators from config and theme
     pub fn warp_split_indicators_from_config(&self, config: &UiConfig) -> WarpSplitIndicators {
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let s = &config.workspace.splits;
         let line_color = s.indicator_line_color.unwrap_or(tokens.border);
@@ -343,8 +327,7 @@ impl Display {
                 let close_h = 16.0;
                 let close_x = current_x + tab_width - 25.0;
                 let close_y = start_y + style.tab_height / 2.0 - 8.0;
-                self.close_button_bounds_px
-                    .push((tab_id, close_x, close_y, close_w, close_h));
+                self.close_button_bounds_px.push((tab_id, close_x, close_y, close_w, close_h));
             }
 
             current_x += tab_width + 8.0; // 8px gap between tabs
@@ -364,11 +347,8 @@ impl Display {
         }
 
         // Draw settings gear on far right using sprite atlas, aligned with previous text region
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui;
         let cols = self.size_info.columns;
@@ -377,9 +357,8 @@ impl Display {
             let cw = self.size_info.cell_width();
             let _ch = self.size_info.cell_height();
             let start_col = cols.saturating_sub(gear_cols + 2);
-            let icon_px = ui
-                .tab_bar_settings_icon_px
-                .unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
+            let icon_px =
+                ui.tab_bar_settings_icon_px.unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
             let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
             let iy = start_y + (style.tab_height - icon_px) * 0.5;
             // Cache precise gear button bounds for click-hit testing
@@ -422,12 +401,19 @@ impl Display {
             // Soft fade rectangle near the right edge
             let fade_w = (style.tab_height * 1.2).clamp(24.0, 64.0);
             let fade_x = self.size_info.width() - fade_w - 8.0;
-            let fade = RenderRect::new(fade_x, start_y + 1.0, fade_w, style.tab_height - 2.0, bg, 0.6);
+            let fade =
+                RenderRect::new(fade_x, start_y + 1.0, fade_w, style.tab_height - 2.0, bg, 0.6);
             let size_info = self.size_info;
             let metrics = self.glyph_cache.font_metrics();
             self.renderer_draw_rects(&size_info, &metrics, vec![fade]);
             // Ellipsis text
-            self.draw_warp_tab_text(Point::new(text_line, Column(text_col)), fg, bg, "…", ellipsis_cols);
+            self.draw_warp_tab_text(
+                Point::new(text_line, Column(text_col)),
+                fg,
+                bg,
+                "…",
+                ellipsis_cols,
+            );
         }
 
         // Hover tooltip for tab title/cwd
@@ -512,21 +498,10 @@ impl Display {
         } else {
             0.0
         };
-        let base_bg = if is_active {
-            style.active_bg
-        } else {
-            style.inactive_bg
-        };
-        let bg_color = if is_active {
-            base_bg
-        } else {
-            lerp_rgb(base_bg, style.hover_bg, hover_progress)
-        };
-        let corner_radius = if is_active {
-            style.corner_radius
-        } else {
-            style.corner_radius * 0.5
-        };
+        let base_bg = if is_active { style.active_bg } else { style.inactive_bg };
+        let bg_color =
+            if is_active { base_bg } else { lerp_rgb(base_bg, style.hover_bg, hover_progress) };
+        let corner_radius = if is_active { style.corner_radius } else { style.corner_radius * 0.5 };
 
         let tab_bg = UiRoundedRect::new(x, y, width, height, corner_radius, bg_color, 1.0);
         self.stage_ui_rounded_rect(tab_bg);
@@ -555,11 +530,7 @@ impl Display {
         }
 
         // Tab title (simplified - would need proper text rendering)
-        let text_color = if is_active {
-            style.active_fg
-        } else {
-            style.inactive_fg
-        };
+        let text_color = if is_active { style.active_fg } else { style.inactive_fg };
         let text_y = ((y + height / 2.0) / self.size_info.cell_height()) as usize;
         let text_x = ((x + style.tab_padding) / self.size_info.cell_width()) as usize;
 
@@ -580,13 +551,7 @@ impl Display {
 
         // Draw tab text (placeholder - real implementation would use proper text rendering)
         let text_point = Point::new(text_y, Column(text_x));
-        self.draw_warp_tab_text(
-            text_point,
-            text_color,
-            bg_color,
-            &rendered_title,
-            effective_max,
-        );
+        self.draw_warp_tab_text(text_point, text_color, bg_color, &rendered_title, effective_max);
 
         // Zoom indicator badge (Warp-style) on active tab when zoomed
         if is_active && tab.zoom_saved_layout.is_some() {
@@ -629,40 +594,42 @@ impl Display {
             } else {
                 true
             };
-                if should_show {
-                    let close_x = x + width - 25.0;
-                    let close_y = y + height / 2.0 - 8.0;
-                    let close_w = 16.0;
-                    let close_h = 16.0;
-                    let close_button = UiRoundedRect::new(
-                        close_x,
-                        close_y,
-                        close_w,
-                        close_h,
-                        8.0,
-                        Rgb::new(220, 220, 220),
-                        0.8,
-                    );
-                    self.stage_ui_rounded_rect(close_button);
+            if should_show {
+                let close_x = x + width - 25.0;
+                let close_y = y + height / 2.0 - 8.0;
+                let close_w = 16.0;
+                let close_h = 16.0;
+                let close_button = UiRoundedRect::new(
+                    close_x,
+                    close_y,
+                    close_w,
+                    close_h,
+                    8.0,
+                    Rgb::new(220, 220, 220),
+                    0.8,
+                );
+                self.stage_ui_rounded_rect(close_button);
 
-                    // Draw a simple 'x' using small diagonal squares (approximate)
-                    let stroke = 2.0f32; // thickness of the diagonal
-                    let steps = 6usize;
-                    for i in 0..steps {
-                        let t = i as f32 / steps as f32;
-                        // Diagonal 1: top-left to bottom-right
-                        let dx1 = close_x + 3.0 + t * (close_w - 6.0);
-                        let dy1 = close_y + 3.0 + t * (close_h - 6.0);
-                        let diag1 = RenderRect::new(dx1, dy1, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
-                        // Diagonal 2: bottom-left to top-right
-                        let dx2 = close_x + 3.0 + t * (close_w - 6.0);
-                        let dy2 = close_y + close_h - 3.0 - t * (close_h - 6.0);
-                        let diag2 = RenderRect::new(dx2, dy2, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
-                        let size_info = self.size_info;
-                        let metrics = self.glyph_cache.font_metrics();
-                        self.renderer_draw_rects(&size_info, &metrics, vec![diag1, diag2]);
-                    }
+                // Draw a simple 'x' using small diagonal squares (approximate)
+                let stroke = 2.0f32; // thickness of the diagonal
+                let steps = 6usize;
+                for i in 0..steps {
+                    let t = i as f32 / steps as f32;
+                    // Diagonal 1: top-left to bottom-right
+                    let dx1 = close_x + 3.0 + t * (close_w - 6.0);
+                    let dy1 = close_y + 3.0 + t * (close_h - 6.0);
+                    let diag1 =
+                        RenderRect::new(dx1, dy1, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
+                    // Diagonal 2: bottom-left to top-right
+                    let dx2 = close_x + 3.0 + t * (close_w - 6.0);
+                    let dy2 = close_y + close_h - 3.0 - t * (close_h - 6.0);
+                    let diag2 =
+                        RenderRect::new(dx2, dy2, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
+                    let size_info = self.size_info;
+                    let metrics = self.glyph_cache.font_metrics();
+                    self.renderer_draw_rects(&size_info, &metrics, vec![diag1, diag2]);
                 }
+            }
         }
     }
 
@@ -671,11 +638,7 @@ impl Display {
         let button_size = style.tab_height * 0.8;
         let button_y = y + (style.tab_height - button_size) / 2.0;
 
-        let bg_color = if hovered {
-            style.hover_bg
-        } else {
-            style.inactive_bg
-        };
+        let bg_color = if hovered { style.hover_bg } else { style.inactive_bg };
         let bg_alpha = if hovered { 1.0 } else { 0.9 };
         let button_bg = UiRoundedRect::new(
             x,
@@ -694,11 +657,7 @@ impl Display {
         let icon_y = button_y + (button_size - 2.0) / 2.0;
 
         // Horizontal line
-        let plus_color = if hovered {
-            style.active_fg
-        } else {
-            style.inactive_fg
-        };
+        let plus_color = if hovered { style.active_fg } else { style.inactive_fg };
         let h_line = RenderRect::new(icon_x, icon_y, icon_size, 2.0, plus_color, 1.0);
         // Vertical line
         let v_line = RenderRect::new(
@@ -727,11 +686,8 @@ impl Display {
         }
 
         // Respect reduce motion preference for divider hover animations
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let reduce_motion = theme.ui.reduce_motion || config.theme.reduce_motion;
 
         // Calculate pane boundaries and draw split lines inside the grid content area,
@@ -1029,10 +985,7 @@ impl Display {
     ) {
         // This is similar to existing draw_tab_text but with Warp-style adjustments
         let truncated_text: String = if text.len() > max_width {
-            text.chars()
-                .take(max_width.saturating_sub(3))
-                .collect::<String>()
-                + "..."
+            text.chars().take(max_width.saturating_sub(3)).collect::<String>() + "..."
         } else {
             text.to_string()
         };
@@ -1115,20 +1068,18 @@ impl Display {
         }
         // Precise check: close button rectangle cache
         if config.workspace.tab_bar.show_close_button {
-            if let Some((_tab_id, _bx, _by, _bw, _bh)) = self
-                .close_button_bounds_px
-                .iter()
-                .copied()
-                .find(|(_, bx, by, bw, bh)| x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh)
+            if let Some((_tab_id, _bx, _by, _bw, _bh)) =
+                self.close_button_bounds_px.iter().copied().find(|(_, bx, by, bw, bh)| {
+                    x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh
+                })
             {
                 // Don't return here since this is a generic click handler; press handler handles close
                 // For click handler, we still want to report CloseTab for UI consistency
                 // Find matching tab id
-                if let Some((tab_id, _, _, _, _)) = self
-                    .close_button_bounds_px
-                    .iter()
-                    .copied()
-                    .find(|(_, cbx, cby, cbw, cbh)| x_px >= *cbx && x_px <= *cbx + *cbw && y_px >= *cby && y_px <= *cby + *cbh)
+                if let Some((tab_id, _, _, _, _)) =
+                    self.close_button_bounds_px.iter().copied().find(|(_, cbx, cby, cbw, cbh)| {
+                        x_px >= *cbx && x_px <= *cbx + *cbw && y_px >= *cby && y_px <= *cby + *cbh
+                    })
                 {
                     return Some(TabBarAction::CloseTab(tab_id));
                 }
@@ -1170,11 +1121,10 @@ impl Display {
         }
         // Precise check against cached close button rectangles
         if config.workspace.tab_bar.show_close_button {
-            if let Some((tab_id, _x, _y, _w, _h)) = self
-                .close_button_bounds_px
-                .iter()
-                .copied()
-                .find(|(_, bx, by, bw, bh)| x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh)
+            if let Some((tab_id, _x, _y, _w, _h)) =
+                self.close_button_bounds_px.iter().copied().find(|(_, bx, by, bw, bh)| {
+                    x_px >= *bx && x_px <= *bx + *bw && y_px >= *by && y_px <= *by + *bh
+                })
             {
                 // Start a fade-out animation for this tab before it is removed
                 self.start_tab_close_fade(config, position, tab_manager, tab_id);
@@ -1195,11 +1145,8 @@ impl Display {
             Some(TabBarAction::CloseTab(id)) => return Some(TabBarAction::CloseTab(id)),
             Some(TabBarAction::SelectTab(id)) => {
                 // Begin potential drag on a tab selection
-                if let Some((tab_id, x, w)) = self
-                    .tab_bounds_px
-                    .iter()
-                    .copied()
-                    .find(|(tid, _, _)| *tid == id)
+                if let Some((tab_id, x, w)) =
+                    self.tab_bounds_px.iter().copied().find(|(tid, _, _)| *tid == id)
                 {
                     if config.workspace.tab_bar.show_close_button && x_px >= x + w - 20.0 {
                         // Start fade-out since a close is about to happen via coarse region
@@ -1289,23 +1236,12 @@ impl Display {
                 return Some(TabBarAction::SelectTab(drag.tab_id));
             }
         }
-        // If no drag, treat release as a generic click: if released over gear, open settings
-        if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
-            let cw = self.size_info.cell_width();
-            let ch = self.size_info.cell_height();
-            let mouse = self.size_info; // size_info contains height/width; use last mouse pos is not available here, rely on bounds only on press
-            let _ = mouse; // no-op to silence unused warnings if optimized out
-            // Release handler does not have coordinates; skip here to avoid false positives.
-        }
+        // If no drag, treat release as a generic click. Without release coordinates, skip gear check here.
         None
     }
 
     fn get_tab_position(&self, tab_manager: &TabManager, tab_id: TabId) -> usize {
-        tab_manager
-            .tab_order()
-            .iter()
-            .position(|&id| id == tab_id)
-            .unwrap_or(0)
+        tab_manager.tab_order().iter().position(|&id| id == tab_id).unwrap_or(0)
     }
 }
 
@@ -1354,8 +1290,8 @@ pub fn hit_test_tab_bar_cached(
 #[cfg(test)]
 mod hit_tests {
     use super::*;
-    use crate::workspace::TabId;
     use crate::display::SizeInfo;
+    use crate::workspace::TabId;
 
     #[test]
     fn hit_new_tab_button() {
@@ -1366,7 +1302,15 @@ mod hit_tests {
         let total_height = 600.0f32;
         let tabs = vec![(TabId(1), 10.0, 150.0)];
         let btn = Some((200.0, 4.0, 20.0, 20.0));
-        let hit = hit_test_tab_bar_cached(total_height, &tabs, btn, &cfg, TabBarPosition::Top, 208.0, 10.0);
+        let hit = hit_test_tab_bar_cached(
+            total_height,
+            &tabs,
+            btn,
+            &cfg,
+            TabBarPosition::Top,
+            208.0,
+            10.0,
+        );
         assert!(matches!(hit, Some(TabBarAction::CreateTab)));
     }
 
@@ -1380,10 +1324,26 @@ mod hit_tests {
         let tid = TabId(7);
         let tabs = vec![(tid, 10.0, 150.0)];
         // Select near center
-        let sel = hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 80.0, 8.0);
+        let sel = hit_test_tab_bar_cached(
+            total_height,
+            &tabs,
+            None,
+            &cfg,
+            TabBarPosition::Top,
+            80.0,
+            8.0,
+        );
         assert!(matches!(sel, Some(TabBarAction::SelectTab(id)) if id == tid));
         // Close using coarse right-edge region
-        let close = hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 10.0 + 150.0 - 5.0, 8.0);
+        let close = hit_test_tab_bar_cached(
+            total_height,
+            &tabs,
+            None,
+            &cfg,
+            TabBarPosition::Top,
+            10.0 + 150.0 - 5.0,
+            8.0,
+        );
         assert!(matches!(close, Some(TabBarAction::CloseTab(id)) if id == tid));
     }
 
@@ -1407,7 +1367,10 @@ mod hit_tests {
         let x_px = close_btn.1 + close_btn.3 * 0.5;
         let y_px = close_btn.2 + close_btn.4 * 0.5;
         // Since our pure helper doesn’t see close bounds, emulate Display handler behavior by checking rect containment
-        let in_rect = x_px >= close_btn.1 && x_px <= close_btn.1 + close_btn.3 && y_px >= close_btn.2 && y_px <= close_btn.2 + close_btn.4;
+        let in_rect = x_px >= close_btn.1
+            && x_px <= close_btn.1 + close_btn.3
+            && y_px >= close_btn.2
+            && y_px <= close_btn.2 + close_btn.4;
         assert!(in_rect);
     }
 }
@@ -1463,11 +1426,8 @@ impl Display {
         tab_id: TabId,
     ) {
         // Find tab bounds from the last draw pass
-        if let Some((_, x, w)) = self
-            .tab_bounds_px
-            .iter()
-            .copied()
-            .find(|(tid, _, _)| *tid == tab_id)
+        if let Some((_, x, w)) =
+            self.tab_bounds_px.iter().copied().find(|(tid, _, _)| *tid == tab_id)
         {
             let style = WarpTabStyle::from_theme(config);
             let y = match position {
@@ -1507,7 +1467,7 @@ impl Display {
             }
             let t = (elapsed as f32 / fade.duration_ms as f32).clamp(0.0, 1.0);
             let alpha = 1.0 - (1.0 - t).powi(3); // ease-out for opacity falloff
-            // Rounded pill with diminishing alpha
+                                                 // Rounded pill with diminishing alpha
             let rr = UiRoundedRect::new(
                 fade.x,
                 fade.y,
@@ -1519,14 +1479,8 @@ impl Display {
             );
             pills.push(rr);
             // Subtle dark overlay to reinforce disappearing
-            let overlay = RenderRect::new(
-                fade.x,
-                fade.y,
-                fade.w,
-                fade.h,
-                Rgb::new(0, 0, 0),
-                alpha * 0.06,
-            );
+            let overlay =
+                RenderRect::new(fade.x, fade.y, fade.w, fade.h, Rgb::new(0, 0, 0), alpha * 0.06);
             rects.push(overlay);
             remaining.push(fade.clone());
         }
@@ -1604,17 +1558,16 @@ impl Display {
         };
         let bg_x = (center_x - bg_w * 0.5).clamp(4.0, self.size_info.width() - bg_w - 4.0);
         let bg_y = match position {
-            TabBarPosition::Top => (bar_y + style.tab_height + 6.0).min(self.size_info.height() - bg_h - 4.0),
+            TabBarPosition::Top => {
+                (bar_y + style.tab_height + 6.0).min(self.size_info.height() - bg_h - 4.0)
+            }
             TabBarPosition::Bottom => (bar_y - bg_h - 6.0).max(4.0),
             TabBarPosition::Hidden => 0.0,
         };
 
         // Colors from theme
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let bg_color = tokens.surface;
         let fg_color = tokens.text;

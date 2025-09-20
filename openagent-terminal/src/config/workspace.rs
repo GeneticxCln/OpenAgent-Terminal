@@ -167,11 +167,7 @@ pub struct QuickActionsConfig {
 impl Default for QuickActionsConfig {
     fn default() -> Self {
         // Turn off by default; can be enabled in config
-        Self {
-            show: false,
-            position: QuickActionsPosition::Auto,
-            show_palette: true,
-        }
+        Self { show: false, position: QuickActionsPosition::Auto, show_palette: true }
     }
 }
 
@@ -515,11 +511,7 @@ impl DragConfig {
                 *val = 0.0;
             }
         };
-        sanitize_snap(
-            &mut self.tab_drop_snap_px,
-            "tab_drop_snap_px",
-            defaults.tab_drop_snap_px,
-        );
+        sanitize_snap(&mut self.tab_drop_snap_px, "tab_drop_snap_px", defaults.tab_drop_snap_px);
         sanitize_snap(
             &mut self.new_tab_snap_extra_px,
             "new_tab_snap_extra_px",
@@ -642,14 +634,8 @@ mod tests {
         assert_eq!(cfg.highlight_alpha_hover, def.highlight_alpha_hover);
         assert_eq!(cfg.tab_highlight_alpha_base, def.tab_highlight_alpha_base);
         assert_eq!(cfg.tab_highlight_alpha_hover, def.tab_highlight_alpha_hover);
-        assert_eq!(
-            cfg.new_tab_highlight_alpha_base,
-            def.new_tab_highlight_alpha_base
-        );
-        assert_eq!(
-            cfg.new_tab_highlight_alpha_hover,
-            def.new_tab_highlight_alpha_hover
-        );
+        assert_eq!(cfg.new_tab_highlight_alpha_base, def.new_tab_highlight_alpha_base);
+        assert_eq!(cfg.new_tab_highlight_alpha_hover, def.new_tab_highlight_alpha_hover);
         assert_eq!(cfg.tab_drop_snap_px, def.tab_drop_snap_px);
         assert_eq!(cfg.new_tab_snap_extra_px, def.new_tab_snap_extra_px);
     }

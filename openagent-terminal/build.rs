@@ -69,9 +69,7 @@ impl BuildConfig {
             version = format!("{version} ({hash})");
         }
 
-        let build_timestamp = chrono::Utc::now()
-            .format("%Y-%m-%d %H:%M:%S UTC")
-            .to_string();
+        let build_timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
 
         let optimization_level = env::var("OPT_LEVEL").unwrap_or_else(|_| {
             if is_release {
@@ -103,18 +101,9 @@ impl BuildConfig {
         if !verbose {
             return;
         }
-        println!(
-            "cargo:warning=Building OpenAgent Terminal v{}",
-            self.version
-        );
-        println!(
-            "cargo:warning=Target: {}-{}",
-            self.target_arch, self.target_os
-        );
-        println!(
-            "cargo:warning=Profile: {} (opt-level={})",
-            self.profile, self.optimization_level
-        );
+        println!("cargo:warning=Building OpenAgent Terminal v{}", self.version);
+        println!("cargo:warning=Target: {}-{}", self.target_arch, self.target_os);
+        println!("cargo:warning=Profile: {} (opt-level={})", self.profile, self.optimization_level);
         if !self.features.is_empty() {
             let feature_list: Vec<&String> = self.features.iter().collect();
             println!("cargo:warning=Features: {:?}", feature_list);
@@ -142,55 +131,28 @@ fn generate_version_info(config: &BuildConfig) {
     let mut file = File::create(&version_file).unwrap();
     writeln!(file, "// Auto-generated version information").unwrap();
     writeln!(file, "pub const VERSION: &str = \"{}\";", config.version).unwrap();
-    writeln!(
-        file,
-        "pub const PKG_VERSION: &str = \"{}\";",
-        env!("CARGO_PKG_VERSION")
-    )
-    .unwrap();
+    writeln!(file, "pub const PKG_VERSION: &str = \"{}\";", env!("CARGO_PKG_VERSION")).unwrap();
 
     if let Some(ref hash) = config.commit_hash {
-        writeln!(
-            file,
-            "pub const COMMIT_HASH: Option<&str> = Some(\"{}\");",
-            hash
-        )
-        .unwrap();
+        writeln!(file, "pub const COMMIT_HASH: Option<&str> = Some(\"{}\");", hash).unwrap();
     } else {
         writeln!(file, "pub const COMMIT_HASH: Option<&str> = None;").unwrap();
     }
 
-    writeln!(
-        file,
-        "pub const BUILD_TIMESTAMP: &str = \"{}\";",
-        config.build_timestamp
-    )
-    .unwrap();
+    writeln!(file, "pub const BUILD_TIMESTAMP: &str = \"{}\";", config.build_timestamp).unwrap();
     writeln!(
         file,
         "pub const BUILD_TARGET: &str = \"{}-{}\";",
         config.target_arch, config.target_os
     )
     .unwrap();
-    writeln!(
-        file,
-        "pub const BUILD_PROFILE: &str = \"{}\";",
-        config.profile
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const OPTIMIZATION_LEVEL: &str = \"{}\";",
-        config.optimization_level
-    )
-    .unwrap();
+    writeln!(file, "pub const BUILD_PROFILE: &str = \"{}\";", config.profile).unwrap();
+    writeln!(file, "pub const OPTIMIZATION_LEVEL: &str = \"{}\";", config.optimization_level)
+        .unwrap();
 
     println!("cargo:rustc-env=VERSION={}", config.version);
     println!("cargo:rustc-env=BUILD_TIMESTAMP={}", config.build_timestamp);
-    println!(
-        "cargo:rustc-env=BUILD_TARGET={}-{}",
-        config.target_arch, config.target_os
-    );
+    println!("cargo:rustc-env=BUILD_TARGET={}-{}", config.target_arch, config.target_os);
 }
 
 fn collect_enabled_features() -> HashSet<String> {
@@ -215,42 +177,12 @@ fn generate_feature_config(config: &BuildConfig) {
     writeln!(file).unwrap();
 
     // Core feature flags
-    writeln!(
-        file,
-        "pub const HAS_AI: bool = {};",
-        config.has_feature("ai")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_SYNC: bool = {};",
-        config.has_feature("sync")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_WORKFLOW: bool = {};",
-        config.has_feature("workflow")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_PLUGINS: bool = {};",
-        config.has_feature("plugins")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_BLOCKS: bool = {};",
-        config.has_feature("blocks")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_IDE: bool = {};",
-        config.has_feature("ide")
-    )
-    .unwrap();
+    writeln!(file, "pub const HAS_AI: bool = {};", config.has_feature("ai")).unwrap();
+    writeln!(file, "pub const HAS_SYNC: bool = {};", config.has_feature("sync")).unwrap();
+    writeln!(file, "pub const HAS_WORKFLOW: bool = {};", config.has_feature("workflow")).unwrap();
+    writeln!(file, "pub const HAS_PLUGINS: bool = {};", config.has_feature("plugins")).unwrap();
+    writeln!(file, "pub const HAS_BLOCKS: bool = {};", config.has_feature("blocks")).unwrap();
+    writeln!(file, "pub const HAS_IDE: bool = {};", config.has_feature("ide")).unwrap();
     writeln!(
         file,
         "pub const HAS_WEBVIEW_EDITORS: bool = {};",
@@ -259,35 +191,16 @@ fn generate_feature_config(config: &BuildConfig) {
     .unwrap();
 
     // Rendering backends
-    writeln!(
-        file,
-        "pub const HAS_WGPU: bool = {};",
-        config.has_feature("wgpu")
-    )
-    .unwrap();
+    writeln!(file, "pub const HAS_WGPU: bool = {};", config.has_feature("wgpu")).unwrap();
     writeln!(file, "pub const HAS_OPENGL: bool = false;").unwrap();
 
     // Platform support
-    writeln!(
-        file,
-        "pub const HAS_WAYLAND: bool = {};",
-        config.has_feature("wayland")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_X11: bool = {};",
-        config.has_feature("x11")
-    )
-    .unwrap();
+    writeln!(file, "pub const HAS_WAYLAND: bool = {};", config.has_feature("wayland")).unwrap();
+    writeln!(file, "pub const HAS_X11: bool = {};", config.has_feature("x11")).unwrap();
 
     // Security Lens features
-    writeln!(
-        file,
-        "pub const HAS_SECURITY_LENS: bool = {};",
-        config.has_any_security_lens()
-    )
-    .unwrap();
+    writeln!(file, "pub const HAS_SECURITY_LENS: bool = {};", config.has_any_security_lens())
+        .unwrap();
     writeln!(
         file,
         "pub const HAS_SECURITY_LENS_CORE: bool = {};",
@@ -326,40 +239,17 @@ fn generate_feature_config(config: &BuildConfig) {
     .unwrap();
 
     // AI provider features
-    writeln!(
-        file,
-        "pub const HAS_AI_OLLAMA: bool = {};",
-        config.has_feature("ai-ollama")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_AI_OPENAI: bool = {};",
-        config.has_feature("ai-openai")
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const HAS_AI_ANTHROPIC: bool = {};",
-        config.has_feature("ai-anthropic")
-    )
-    .unwrap();
+    writeln!(file, "pub const HAS_AI_OLLAMA: bool = {};", config.has_feature("ai-ollama")).unwrap();
+    writeln!(file, "pub const HAS_AI_OPENAI: bool = {};", config.has_feature("ai-openai")).unwrap();
+    writeln!(file, "pub const HAS_AI_ANTHROPIC: bool = {};", config.has_feature("ai-anthropic"))
+        .unwrap();
 
     // Text shaping
-    writeln!(
-        file,
-        "pub const HAS_HARFBUZZ: bool = {};",
-        config.has_feature("harfbuzz")
-    )
-    .unwrap();
+    writeln!(file, "pub const HAS_HARFBUZZ: bool = {};", config.has_feature("harfbuzz")).unwrap();
 
     // Generate feature list function
     writeln!(file).unwrap();
-    writeln!(
-        file,
-        "pub fn enabled_features() -> HashSet<&'static str> {{"
-    )
-    .unwrap();
+    writeln!(file, "pub fn enabled_features() -> HashSet<&'static str> {{").unwrap();
     writeln!(file, "    let mut features = HashSet::new();").unwrap();
 
     for feature in &config.features {
@@ -419,11 +309,8 @@ fn bundle_assets(config: &BuildConfig) {
         }
 
         writeln!(file, "    ").unwrap();
-        writeln!(
-            file,
-            "    pub fn get_all_themes() -> HashMap<&'static str, &'static str> {{"
-        )
-        .unwrap();
+        writeln!(file, "    pub fn get_all_themes() -> HashMap<&'static str, &'static str> {{")
+            .unwrap();
         writeln!(file, "        let mut themes = HashMap::new();").unwrap();
 
         if let Ok(themes_dir) = fs::read_dir("extra/themes") {
@@ -452,11 +339,7 @@ fn bundle_assets(config: &BuildConfig) {
     // Bundle fonts if available
     if Path::new("extra/fonts").exists() {
         writeln!(file, "pub mod fonts {{").unwrap();
-        writeln!(
-            file,
-            "    // Font assets would be embedded here for release builds"
-        )
-        .unwrap();
+        writeln!(file, "    // Font assets would be embedded here for release builds").unwrap();
         writeln!(file, "    pub const FONTS_DIR: &str = \"extra/fonts\";").unwrap();
         writeln!(file, "}}").unwrap();
         writeln!(file).unwrap();
@@ -488,18 +371,8 @@ fn generate_platform_config(config: &BuildConfig) {
     writeln!(file, "// Auto-generated platform configuration").unwrap();
     writeln!(file).unwrap();
 
-    writeln!(
-        file,
-        "pub const TARGET_OS: &str = \"{}\";",
-        config.target_os
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const TARGET_ARCH: &str = \"{}\";",
-        config.target_arch
-    )
-    .unwrap();
+    writeln!(file, "pub const TARGET_OS: &str = \"{}\";", config.target_os).unwrap();
+    writeln!(file, "pub const TARGET_ARCH: &str = \"{}\";", config.target_arch).unwrap();
 
     // Platform-specific configuration
     match config.target_os.as_str() {
@@ -510,11 +383,8 @@ fn generate_platform_config(config: &BuildConfig) {
             writeln!(file, "pub const IS_FREEBSD: bool = false;").unwrap();
 
             writeln!(file, "pub const DEFAULT_SHELL: &str = \"/bin/bash\";").unwrap();
-            writeln!(
-                file,
-                "pub const CONFIG_DIR_NAME: &str = \".config/openagent-terminal\";"
-            )
-            .unwrap();
+            writeln!(file, "pub const CONFIG_DIR_NAME: &str = \".config/openagent-terminal\";")
+                .unwrap();
         }
         "macos" => {
             writeln!(file, "pub const IS_LINUX: bool = false;").unwrap();
@@ -550,11 +420,8 @@ fn generate_platform_config(config: &BuildConfig) {
             writeln!(file, "pub const IS_FREEBSD: bool = true;").unwrap();
 
             writeln!(file, "pub const DEFAULT_SHELL: &str = \"/bin/sh\";").unwrap();
-            writeln!(
-                file,
-                "pub const CONFIG_DIR_NAME: &str = \".config/openagent-terminal\";"
-            )
-            .unwrap();
+            writeln!(file, "pub const CONFIG_DIR_NAME: &str = \".config/openagent-terminal\";")
+                .unwrap();
         }
         _ => {
             writeln!(file, "pub const IS_LINUX: bool = false;").unwrap();
@@ -563,11 +430,8 @@ fn generate_platform_config(config: &BuildConfig) {
             writeln!(file, "pub const IS_FREEBSD: bool = false;").unwrap();
 
             writeln!(file, "pub const DEFAULT_SHELL: &str = \"/bin/sh\";").unwrap();
-            writeln!(
-                file,
-                "pub const CONFIG_DIR_NAME: &str = \".config/openagent-terminal\";"
-            )
-            .unwrap();
+            writeln!(file, "pub const CONFIG_DIR_NAME: &str = \".config/openagent-terminal\";")
+                .unwrap();
         }
     }
 
@@ -586,18 +450,8 @@ fn generate_platform_config(config: &BuildConfig) {
         config.has_feature("x11") && (config.target_os == "linux" || config.target_os == "freebsd")
     )
     .unwrap();
-    writeln!(
-        file,
-        "pub const SUPPORTS_WIN32: bool = {};",
-        config.target_os == "windows"
-    )
-    .unwrap();
-    writeln!(
-        file,
-        "pub const SUPPORTS_COCOA: bool = {};",
-        config.target_os == "macos"
-    )
-    .unwrap();
+    writeln!(file, "pub const SUPPORTS_WIN32: bool = {};", config.target_os == "windows").unwrap();
+    writeln!(file, "pub const SUPPORTS_COCOA: bool = {};", config.target_os == "macos").unwrap();
 }
 
 #[cfg(windows)]
@@ -622,20 +476,14 @@ fn generate_runtime_config(config: &BuildConfig) {
         writeln!(file, "pub const PERFORMANCE_MODE: &str = \"release\";").unwrap();
         writeln!(file, "pub const ENABLE_PROFILING: bool = false;").unwrap();
         writeln!(file, "pub const ENABLE_DEBUG_LOGGING: bool = false;").unwrap();
-        writeln!(
-            file,
-            "pub const FRAME_RATE_CAP: Option<u32> = Some(120); // Cap FPS in release"
-        )
-        .unwrap();
+        writeln!(file, "pub const FRAME_RATE_CAP: Option<u32> = Some(120); // Cap FPS in release")
+            .unwrap();
     } else {
         writeln!(file, "pub const PERFORMANCE_MODE: &str = \"debug\";").unwrap();
         writeln!(file, "pub const ENABLE_PROFILING: bool = true;").unwrap();
         writeln!(file, "pub const ENABLE_DEBUG_LOGGING: bool = true;").unwrap();
-        writeln!(
-            file,
-            "pub const FRAME_RATE_CAP: Option<u32> = None; // Unlimited FPS in debug"
-        )
-        .unwrap();
+        writeln!(file, "pub const FRAME_RATE_CAP: Option<u32> = None; // Unlimited FPS in debug")
+            .unwrap();
     }
 
     // Security Lens runtime settings
@@ -667,10 +515,8 @@ fn generate_runtime_config(config: &BuildConfig) {
 fn validate_feature_combinations(config: &BuildConfig) {
     // Validate AI provider combinations
     let ai_providers = ["ai-ollama", "ai-openai", "ai-anthropic"];
-    let enabled_providers: Vec<_> = ai_providers
-        .iter()
-        .filter(|&&provider| config.has_feature(provider))
-        .collect();
+    let enabled_providers: Vec<_> =
+        ai_providers.iter().filter(|&&provider| config.has_feature(provider)).collect();
 
     if enabled_providers.len() > 1 {
         println!(
@@ -727,10 +573,7 @@ fn validate_feature_combinations(config: &BuildConfig) {
             }
         }
         _ => {
-            println!(
-                "cargo:warning=Building for unsupported platform: {}",
-                config.target_os
-            );
+            println!("cargo:warning=Building for unsupported platform: {}", config.target_os);
         }
     }
 }

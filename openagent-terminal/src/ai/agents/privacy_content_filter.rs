@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 // Needed for sha256 digest and base64 encoding helpers
-use sha2::Digest;
 use base64::Engine;
+use sha2::Digest;
 
 use super::advanced_conversation_features::AdvancedConversationFeatures;
 use super::conversation_manager::ConversationManager;
@@ -240,10 +240,7 @@ impl RedactionEngine {
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>()
         );
-        self.anonymization_mappings
-            .write()
-            .await
-            .insert(token.to_string(), anon.clone());
+        self.anonymization_mappings.write().await.insert(token.to_string(), anon.clone());
         anon
     }
 
@@ -293,10 +290,7 @@ pub struct DataClassifier {
 
 impl DataClassifier {
     pub async fn add_model(&self, model: ClassificationModel) {
-        self.classification_models
-            .write()
-            .await
-            .insert(model.model_id.clone(), model);
+        self.classification_models.write().await.insert(model.model_id.clone(), model);
     }
     pub async fn add_extractor(&self, ex: EntityExtractor) {
         self.entity_extractors.write().await.push(ex);
@@ -512,11 +506,8 @@ impl PrivacyContentFilter {
 
         // Run all enabled scanners in parallel
         let scanners_guard = self.content_scanners.read().await;
-        let enabled_scanners: Vec<ContentScanner> = scanners_guard
-            .iter()
-            .filter(|s| s.is_enabled)
-            .cloned()
-            .collect();
+        let enabled_scanners: Vec<ContentScanner> =
+            scanners_guard.iter().filter(|s| s.is_enabled).cloned().collect();
         drop(scanners_guard);
 
         let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> = JoinSet::new();
@@ -607,10 +598,7 @@ impl PrivacyContentFilter {
 
         // Apply redaction rules
         for rule in &policy.redaction_rules {
-            if self
-                .should_apply_redaction(rule, &scan_result, user_context)
-                .await?
-            {
+            if self.should_apply_redaction(rule, &scan_result, user_context).await? {
                 let rule_redactions = self
                     .apply_redaction_rule(&redacted_content, rule, &scan_result.detections)
                     .await?;
@@ -750,9 +738,8 @@ impl PrivacyContentFilter {
                             // Optional simple context window check (use safe slicing on char boundaries)
                             let window_start = mat.start().saturating_sub(64);
                             let window_end = (mat.end() + 64).min(content.len());
-                            let window = content
-                                .get(window_start..window_end)
-                                .unwrap_or(matched_text);
+                            let window =
+                                content.get(window_start..window_end).unwrap_or(matched_text);
                             if !pattern.context_requirements.is_empty() {
                                 let window_lower = window.to_ascii_lowercase();
                                 if !pattern
@@ -950,11 +937,8 @@ impl PrivacyContentFilter {
 
             // Run parallel scanners on this chunk
             let scanners_guard = self.content_scanners.read().await;
-            let enabled_scanners: Vec<ContentScanner> = scanners_guard
-                .iter()
-                .filter(|s| s.is_enabled)
-                .cloned()
-                .collect();
+            let enabled_scanners: Vec<ContentScanner> =
+                scanners_guard.iter().filter(|s| s.is_enabled).cloned().collect();
             drop(scanners_guard);
 
             let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> =
@@ -1013,8 +997,7 @@ impl PrivacyContentFilter {
         let processing_time = start_time.elapsed();
         if self.config.enable_audit_logging {
             let refs: HashSet<&DataClassification> = data_classifications.iter().collect();
-            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs)
-                .await?;
+            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs).await?;
         }
 
         let risk_score = self.calculate_risk_score(&detections);
@@ -1053,11 +1036,8 @@ impl PrivacyContentFilter {
 
             // Parallel scanners per chunk
             let scanners_guard = self.content_scanners.read().await;
-            let enabled_scanners: Vec<ContentScanner> = scanners_guard
-                .iter()
-                .filter(|s| s.is_enabled)
-                .cloned()
-                .collect();
+            let enabled_scanners: Vec<ContentScanner> =
+                scanners_guard.iter().filter(|s| s.is_enabled).cloned().collect();
             drop(scanners_guard);
 
             let mut joinset: JoinSet<(ContentScanner, Vec<SensitiveDataDetection>)> =
@@ -1118,8 +1098,7 @@ impl PrivacyContentFilter {
         let processing_time = start_time.elapsed();
         if self.config.enable_audit_logging {
             let refs: HashSet<&DataClassification> = data_classifications.iter().collect();
-            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs)
-                .await?;
+            self.log_audit_event(AuditEventType::ContentScanned, None, None, &refs).await?;
         }
 
         let risk_score = self.calculate_risk_score(&detections);
@@ -1187,22 +1166,14 @@ impl PrivacyContentFilter {
 
         if text.contains('@') {
             let first_part: String = text.chars().take(2).collect();
-            let last_part: String = text.chars().rev().take(2).collect::<Vec<char>>()
-                .into_iter()
-                .rev()
-                .collect();
+            let last_part: String =
+                text.chars().rev().take(2).collect::<Vec<char>>().into_iter().rev().collect();
             let star_count = char_count.saturating_sub(6).max(1);
             let middle_stars = "*".repeat(star_count);
             format!("{}{}{}", first_part, middle_stars, last_part)
         } else {
-            let last_part: String = text
-                .chars()
-                .rev()
-                .take(3)
-                .collect::<Vec<char>>()
-                .into_iter()
-                .rev()
-                .collect();
+            let last_part: String =
+                text.chars().rev().take(3).collect::<Vec<char>>().into_iter().rev().collect();
             let stars = "*".repeat(char_count.saturating_sub(3));
             format!("{}{}", stars, last_part)
         }
@@ -1381,8 +1352,7 @@ impl PrivacyAuditLog {
 
     pub fn cleanup_old_entries(&mut self) {
         let cutoff_date = Utc::now() - self.retention_period;
-        self.audit_entries
-            .retain(|entry| entry.timestamp > cutoff_date);
+        self.audit_entries.retain(|entry| entry.timestamp > cutoff_date);
     }
 }
 
@@ -1695,14 +1665,9 @@ mod tests {
         filter_mut.initialize(AgentConfig::default()).await.unwrap();
 
         // Test email detection
-        let result = filter_mut
-            .scan_content("Contact us at test@example.com", None)
-            .await
-            .unwrap();
+        let result = filter_mut.scan_content("Contact us at test@example.com", None).await.unwrap();
         assert!(!result.detections.is_empty());
-        assert!(result
-            .data_classifications
-            .contains(&DataClassification::PersonalData));
+        assert!(result.data_classifications.contains(&DataClassification::PersonalData));
     }
 
     #[tokio::test]
@@ -1710,23 +1675,11 @@ mod tests {
         let mut filter = PrivacyContentFilter::new();
         filter.initialize(AgentConfig::default()).await.unwrap();
         // Valid test Visa number 4111 1111 1111 1111
-        let res_valid = filter
-            .scan_content("card 4111-1111-1111-1111", None)
-            .await
-            .unwrap();
-        assert!(res_valid
-            .detections
-            .iter()
-            .any(|d| d.scanner_id == "credit-card-scanner"));
+        let res_valid = filter.scan_content("card 4111-1111-1111-1111", None).await.unwrap();
+        assert!(res_valid.detections.iter().any(|d| d.scanner_id == "credit-card-scanner"));
         // Invalid (fails Luhn)
-        let res_invalid = filter
-            .scan_content("card 4111-1111-1111-1112", None)
-            .await
-            .unwrap();
-        assert!(!res_invalid
-            .detections
-            .iter()
-            .any(|d| d.scanner_id == "credit-card-scanner"));
+        let res_invalid = filter.scan_content("card 4111-1111-1111-1112", None).await.unwrap();
+        assert!(!res_invalid.detections.iter().any(|d| d.scanner_id == "credit-card-scanner"));
     }
 
     #[tokio::test]
@@ -1737,23 +1690,11 @@ mod tests {
             .scan_content("token ghp_abcdefghijklmnopqrstuvwxyz0123456789", None)
             .await
             .unwrap();
-        assert!(res
-            .detections
-            .iter()
-            .any(|d| d.scanner_id == "github-token-scanner"));
-        let res2 = filter
-            .scan_content("AWS key AKIAABCDEFGHIJKLMNOP", None)
-            .await
-            .unwrap();
-        assert!(res2
-            .detections
-            .iter()
-            .any(|d| d.scanner_id == "aws-akid-scanner"));
+        assert!(res.detections.iter().any(|d| d.scanner_id == "github-token-scanner"));
+        let res2 = filter.scan_content("AWS key AKIAABCDEFGHIJKLMNOP", None).await.unwrap();
+        assert!(res2.detections.iter().any(|d| d.scanner_id == "aws-akid-scanner"));
         let res3 = filter.scan_content("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", None).await.unwrap();
-        assert!(res3
-            .detections
-            .iter()
-            .any(|d| d.scanner_id == "jwt-scanner"));
+        assert!(res3.detections.iter().any(|d| d.scanner_id == "jwt-scanner"));
     }
 
     #[tokio::test]
@@ -1762,14 +1703,8 @@ mod tests {
         filter.initialize(AgentConfig::default()).await.unwrap();
         // Construct a  card split across boundary
         let content = format!("{}{}", "4111-1111-1111-", "1111 end");
-        let res = filter
-            .scan_content_chunked(&content, None, 10)
-            .await
-            .unwrap();
-        assert!(res
-            .detections
-            .iter()
-            .any(|d| d.scanner_id == "credit-card-scanner"));
+        let res = filter.scan_content_chunked(&content, None, 10).await.unwrap();
+        assert!(res.detections.iter().any(|d| d.scanner_id == "credit-card-scanner"));
     }
 
     #[test]

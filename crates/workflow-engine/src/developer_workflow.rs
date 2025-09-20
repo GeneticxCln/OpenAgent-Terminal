@@ -246,10 +246,7 @@ impl DeveloperWorkflow {
             return Ok(Some(ProjectType::Java));
         }
 
-        if entries_vec
-            .iter()
-            .any(|f| f.ends_with(".csproj") || f.ends_with(".sln"))
-        {
+        if entries_vec.iter().any(|f| f.ends_with(".csproj") || f.ends_with(".sln")) {
             return Ok(Some(ProjectType::DotNet));
         }
 
@@ -606,10 +603,8 @@ impl DeveloperWorkflow {
         &self,
         inputs: HashMap<String, String>,
     ) -> Result<HashMap<String, String>> {
-        let auto_resolve = inputs
-            .get("auto_resolve")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        let auto_resolve =
+            inputs.get("auto_resolve").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false);
 
         let mut outputs = HashMap::new();
 
@@ -637,10 +632,8 @@ impl DeveloperWorkflow {
                 }
 
                 outputs.insert("conflicts_resolved".to_string(), resolved_count.to_string());
-                outputs.insert(
-                    "total_conflicts".to_string(),
-                    repo_info.conflicts.len().to_string(),
-                );
+                outputs
+                    .insert("total_conflicts".to_string(), repo_info.conflicts.len().to_string());
             }
         }
 
@@ -651,20 +644,14 @@ impl DeveloperWorkflow {
         &self,
         inputs: HashMap<String, String>,
     ) -> Result<HashMap<String, String>> {
-        let max_branches = inputs
-            .get("max_branches")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(20);
+        let max_branches =
+            inputs.get("max_branches").and_then(|v| v.parse::<usize>().ok()).unwrap_or(20);
 
         let mut outputs = HashMap::new();
 
         if let Some(git_integration) = self.git_integration.lock().await.as_ref() {
             let repo_info = git_integration.get_repository_info().await?;
-            let branches = repo_info
-                .branches
-                .into_iter()
-                .take(max_branches)
-                .collect::<Vec<_>>();
+            let branches = repo_info.branches.into_iter().take(max_branches).collect::<Vec<_>>();
 
             let visualization = git_integration.render_branch_visualization(&branches)?;
             outputs.insert("branch_graph".to_string(), visualization);
@@ -692,16 +679,11 @@ impl DeveloperWorkflow {
             .find(|c| c.name == *target_container || c.id == *target_container)
         {
             outputs.insert("context_switched".to_string(), "true".to_string());
-            outputs.insert(
-                "new_context".to_string(),
-                format!("container:{}", target_container),
-            );
+            outputs.insert("new_context".to_string(), format!("container:{}", target_container));
         } else {
             outputs.insert("context_switched".to_string(), "false".to_string());
-            outputs.insert(
-                "error".to_string(),
-                format!("Container '{}' not found", target_container),
-            );
+            outputs
+                .insert("error".to_string(), format!("Container '{}' not found", target_container));
         }
 
         Ok(outputs)
@@ -711,13 +693,10 @@ impl DeveloperWorkflow {
         &self,
         inputs: HashMap<String, String>,
     ) -> Result<HashMap<String, String>> {
-        let connection_name = inputs
-            .get("connection")
-            .ok_or_else(|| anyhow!("connection is required"))?;
+        let connection_name =
+            inputs.get("connection").ok_or_else(|| anyhow!("connection is required"))?;
 
-        let query = inputs
-            .get("query")
-            .ok_or_else(|| anyhow!("query is required"))?;
+        let query = inputs.get("query").ok_or_else(|| anyhow!("query is required"))?;
 
         let mut outputs = HashMap::new();
 
@@ -725,10 +704,7 @@ impl DeveloperWorkflow {
         let connections = database_integration.get_connections().await?;
 
         if let Some(connection) = connections.iter().find(|c| c.name == *connection_name) {
-            match database_integration
-                .execute_query(connection.id, query)
-                .await
-            {
+            match database_integration.execute_query(connection.id, query).await {
                 Ok(result) => {
                     outputs.insert("rows_returned".to_string(), result.rows.len().to_string());
                     outputs.insert(
@@ -742,10 +718,8 @@ impl DeveloperWorkflow {
                 }
             }
         } else {
-            outputs.insert(
-                "error".to_string(),
-                format!("Connection '{}' not found", connection_name),
-            );
+            outputs
+                .insert("error".to_string(), format!("Connection '{}' not found", connection_name));
         }
 
         Ok(outputs)
@@ -755,9 +729,8 @@ impl DeveloperWorkflow {
         &self,
         inputs: HashMap<String, String>,
     ) -> Result<HashMap<String, String>> {
-        let collection_name = inputs
-            .get("collection_name")
-            .ok_or_else(|| anyhow!("collection_name is required"))?;
+        let collection_name =
+            inputs.get("collection_name").ok_or_else(|| anyhow!("collection_name is required"))?;
 
         let mut outputs = HashMap::new();
 
@@ -793,26 +766,15 @@ impl DeveloperWorkflow {
             }
 
             outputs.insert("total_requests".to_string(), total_requests.to_string());
-            outputs.insert(
-                "successful_requests".to_string(),
-                successful_requests.to_string(),
-            );
-            outputs.insert(
-                "total_time_ms".to_string(),
-                total_time.as_millis().to_string(),
-            );
+            outputs.insert("successful_requests".to_string(), successful_requests.to_string());
+            outputs.insert("total_time_ms".to_string(), total_time.as_millis().to_string());
             outputs.insert(
                 "success_rate".to_string(),
-                format!(
-                    "{:.1}%",
-                    (successful_requests as f64 / total_requests as f64) * 100.0
-                ),
+                format!("{:.1}%", (successful_requests as f64 / total_requests as f64) * 100.0),
             );
         } else {
-            outputs.insert(
-                "error".to_string(),
-                format!("Collection '{}' not found", collection_name),
-            );
+            outputs
+                .insert("error".to_string(), format!("Collection '{}' not found", collection_name));
         }
 
         Ok(outputs)
@@ -907,16 +869,11 @@ impl DeveloperWorkflow {
                 prompt.push_str(&format!("  ⚠️  Conflicts: {}\n", git_repo.conflicts.len()));
             }
             if !git_repo.status.modified.is_empty() {
-                prompt.push_str(&format!(
-                    "  Modified files: {}\n",
-                    git_repo.status.modified.len()
-                ));
+                prompt.push_str(&format!("  Modified files: {}\n", git_repo.status.modified.len()));
             }
             if !git_repo.status.untracked.is_empty() {
-                prompt.push_str(&format!(
-                    "  Untracked files: {}\n",
-                    git_repo.status.untracked.len()
-                ));
+                prompt
+                    .push_str(&format!("  Untracked files: {}\n", git_repo.status.untracked.len()));
             }
         }
 
@@ -963,10 +920,7 @@ impl DeveloperWorkflow {
         // Suggested workflows
         let suggestions = self.suggest_workflows().await?;
         if !suggestions.is_empty() {
-            prompt.push_str(&format!(
-                "\n💡 Suggested workflows: {}\n",
-                suggestions.join(", ")
-            ));
+            prompt.push_str(&format!("\n💡 Suggested workflows: {}\n", suggestions.join(", ")));
         }
 
         prompt.push_str(

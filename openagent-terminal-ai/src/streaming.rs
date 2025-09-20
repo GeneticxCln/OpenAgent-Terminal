@@ -176,7 +176,7 @@ impl RetryConfig {
 
         // Add jitter, then clamp to [0, max_delay]
         let jitter_range = capped_delay * self.jitter;
-        let jitter = rand::thread_rng().gen_range(-jitter_range..=jitter_range);
+        let jitter = rand::rng().random_range(-jitter_range..=jitter_range);
         let jittered = (capped_delay + jitter).max(0.0);
         let clamped = jittered.min(self.max_delay.as_millis() as f64) as u64;
 
@@ -273,20 +273,11 @@ pub enum RetryStrategy {
     /// Standard exponential backoff
     Standard(RetryConfig),
     /// OpenAI-specific (respects rate limit headers)
-    OpenAI {
-        config: RetryConfig,
-        respect_retry_after: bool,
-    },
+    OpenAI { config: RetryConfig, respect_retry_after: bool },
     /// Anthropic-specific (handles overload responses)
-    Anthropic {
-        config: RetryConfig,
-        overload_backoff: Duration,
-    },
+    Anthropic { config: RetryConfig, overload_backoff: Duration },
     /// Ollama-specific (handles local resource constraints)
-    Ollama {
-        config: RetryConfig,
-        resource_wait: Duration,
-    },
+    Ollama { config: RetryConfig, resource_wait: Duration },
 }
 
 impl RetryStrategy {
@@ -312,10 +303,7 @@ impl RetryStrategy {
     pub fn delay_for_attempt(&self, attempt: usize, error: &str) -> Duration {
         match self {
             Self::Standard(config) => config.delay_for_attempt(attempt),
-            Self::OpenAI {
-                config,
-                respect_retry_after,
-            } => {
+            Self::OpenAI { config, respect_retry_after } => {
                 if *respect_retry_after {
                     if let Some(d) = Self::parse_retry_after(error) {
                         return d;
@@ -323,20 +311,14 @@ impl RetryStrategy {
                 }
                 config.delay_for_attempt(attempt)
             }
-            Self::Anthropic {
-                config,
-                overload_backoff,
-            } => {
+            Self::Anthropic { config, overload_backoff } => {
                 if error.contains("overloaded") {
                     *overload_backoff
                 } else {
                     config.delay_for_attempt(attempt)
                 }
             }
-            Self::Ollama {
-                config,
-                resource_wait,
-            } => {
+            Self::Ollama { config, resource_wait } => {
                 if error.contains("resource") || error.contains("memory") {
                     *resource_wait
                 } else {
@@ -352,11 +334,7 @@ impl RetryStrategy {
 /// Providers pass an extractor which can return zero or more text fragments for a
 /// given SSE data payload. Cancellation is checked periodically. A small timeout
 /// keeps the loop responsive for cancellation and backpressure.
-#[cfg(any(
-    feature = "ai-openai",
-    feature = "ai-anthropic",
-    feature = "ai-openrouter"
-))]
+#[cfg(any(feature = "ai-openai", feature = "ai-anthropic", feature = "ai-openrouter"))]
 pub async fn consume_eventsource_response(
     response: reqwest::Response,
     cancel: &AtomicBool,
@@ -440,9 +418,7 @@ impl RetryStrategy {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         fn parse_relative(val: &str) -> Option<Duration> {
-            let v = val
-                .trim()
-                .trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
+            let v = val.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
             // integer seconds
             if let Ok(secs) = v.parse::<u64>() {
                 return Some(Duration::from_secs(secs));
@@ -470,9 +446,7 @@ impl RetryStrategy {
         }
 
         fn parse_absolute(val: &str) -> Option<Duration> {
-            let v = val
-                .trim()
-                .trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
+            let v = val.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ' ');
             let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
             // Try epoch (seconds or milliseconds) or float epoch
             if let Ok(n) = v.parse::<u128>() {
@@ -481,11 +455,7 @@ impl RetryStrategy {
                 } else {
                     Duration::from_secs(n as u64)
                 };
-                return Some(if target > now {
-                    target - now
-                } else {
-                    Duration::from_secs(0)
-                });
+                return Some(if target > now { target - now } else { Duration::from_secs(0) });
             }
             if let Ok(f) = v.parse::<f64>() {
                 if f.is_finite() && f >= 0.0 {
@@ -495,21 +465,13 @@ impl RetryStrategy {
                     } else {
                         Duration::from_secs(f.round() as u64)
                     };
-                    return Some(if target > now {
-                        target - now
-                    } else {
-                        Duration::from_secs(0)
-                    });
+                    return Some(if target > now { target - now } else { Duration::from_secs(0) });
                 }
             }
             // HTTP-date absolute
             if let Ok(when) = httpdate::parse_http_date(v) {
                 if let Ok(target) = when.duration_since(UNIX_EPOCH) {
-                    return Some(if target > now {
-                        target - now
-                    } else {
-                        Duration::from_secs(0)
-                    });
+                    return Some(if target > now { target - now } else { Duration::from_secs(0) });
                 }
             }
             None
@@ -519,11 +481,8 @@ impl RetryStrategy {
         let lower = error.to_lowercase();
 
         // Priority: Retry-After, then Reset-After, then Reset
-        let relative_keys = [
-            "retry-after:",
-            "x-ratelimit-reset-after:",
-            "x-rate-limit-reset-after:",
-        ];
+        let relative_keys =
+            ["retry-after:", "x-ratelimit-reset-after:", "x-rate-limit-reset-after:"];
         for key in &relative_keys {
             if let Some(idx) = lower.find(key) {
                 let start = idx + key.len();
@@ -578,11 +537,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(
             events[0].data,
-            vec![
-                "line1".to_string(),
-                "line2".to_string(),
-                "line3".to_string(),
-            ]
+            vec!["line1".to_string(), "line2".to_string(), "line3".to_string(),]
         );
     }
 
@@ -637,10 +592,7 @@ mod tests {
             max_delay: Duration::from_secs(10),
             ..Default::default()
         };
-        let strat = RetryStrategy::OpenAI {
-            config: cfg.clone(),
-            respect_retry_after: true,
-        };
+        let strat = RetryStrategy::OpenAI { config: cfg.clone(), respect_retry_after: true };
 
         // With retry-after present, strategy should return the header value (seconds)
         let d_with = strat.delay_for_attempt(0, "API error 429; retry-after: 60");
@@ -667,10 +619,7 @@ mod tests {
             ..Default::default()
         };
         let backoff = Duration::from_secs(3);
-        let strat = RetryStrategy::Anthropic {
-            config: cfg.clone(),
-            overload_backoff: backoff,
-        };
+        let strat = RetryStrategy::Anthropic { config: cfg.clone(), overload_backoff: backoff };
 
         // Overload error should use overload_backoff delay
         let d_over = strat.delay_for_attempt(0, "server overloaded, please retry");
@@ -689,10 +638,7 @@ mod tests {
             ..Default::default()
         };
         let wait = Duration::from_secs(2);
-        let strat = RetryStrategy::Ollama {
-            config: cfg.clone(),
-            resource_wait: wait,
-        };
+        let strat = RetryStrategy::Ollama { config: cfg.clone(), resource_wait: wait };
 
         // Resource error should use resource_wait delay
         let d_res = strat.delay_for_attempt(0, "resource busy: GPU memory");
@@ -708,20 +654,13 @@ mod tests {
         use httpdate::fmt_http_date;
         use std::time::{Duration, SystemTime};
         let cfg = RetryConfig::default();
-        let strat = RetryStrategy::OpenAI {
-            config: cfg.clone(),
-            respect_retry_after: true,
-        };
+        let strat = RetryStrategy::OpenAI { config: cfg.clone(), respect_retry_after: true };
         // Build a future HTTP-date 5 seconds from now
         let future = SystemTime::now() + Duration::from_secs(5);
         let hdr = fmt_http_date(future);
         let msg = format!("API error 429; retry-after: {}", hdr);
         let d = strat.delay_for_attempt(0, &msg);
-        assert!(
-            d.as_secs() <= 6 && d.as_secs() >= 4,
-            "unexpected delay: {:?}",
-            d
-        );
+        assert!(d.as_secs() <= 6 && d.as_secs() >= 4, "unexpected delay: {:?}", d);
 
         // x-ratelimit-reset-after seconds
         let msg_reset_after = "API error 429; X-RateLimit-Reset-After: 7";
@@ -729,10 +668,8 @@ mod tests {
         assert_eq!(d2, Duration::from_secs(7));
 
         // x-ratelimit-reset epoch seconds (5 seconds ahead)
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let msg_reset = format!("429; x-ratelimit-reset: {}", now + 5);
         let d3 = strat.delay_for_attempt(0, &msg_reset);
         assert!(d3.as_secs() <= 6 && d3.as_secs() >= 4);

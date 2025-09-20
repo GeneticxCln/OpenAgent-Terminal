@@ -82,13 +82,13 @@ impl SecurityConfig {
                 .custom_patterns
                 .iter()
                 .filter_map(|pattern| {
-                    self.parse_risk_level(&pattern.risk_level)
-                        .ok()
-                        .map(|level| crate::security::CustomPattern {
+                    self.parse_risk_level(&pattern.risk_level).ok().map(|level| {
+                        crate::security::CustomPattern {
                             pattern: pattern.pattern.clone(),
                             risk_level: level,
                             message: pattern.message.clone(),
-                        })
+                        }
+                    })
                 })
                 .collect();
 
@@ -129,20 +129,13 @@ impl SecurityConfig {
 
     /// Get a preset configuration for different security levels
     pub fn preset_conservative() -> Self {
-        SecurityConfig {
-            block_critical: true,
-            ..Default::default()
-        }
+        SecurityConfig { block_critical: true, ..Default::default() }
     }
 
     pub fn preset_permissive() -> Self {
         let mut require_confirmation = SecurityConfig::default().require_confirmation;
         require_confirmation.insert("Caution".to_string(), false);
-        SecurityConfig {
-            block_critical: false,
-            require_confirmation,
-            ..Default::default()
-        }
+        SecurityConfig { block_critical: false, require_confirmation, ..Default::default() }
     }
 
     pub fn preset_disabled() -> Self {
@@ -171,10 +164,7 @@ impl SecurityConfig {
         // Validate risk level mappings
         for level_str in self.require_confirmation.keys() {
             if self.parse_risk_level(level_str).is_err() {
-                return Err(format!(
-                    "Invalid risk level in confirmation settings: {}",
-                    level_str
-                ));
+                return Err(format!("Invalid risk level in confirmation settings: {}", level_str));
             }
         }
 
@@ -289,10 +279,7 @@ mod tests {
         assert!(config.enabled);
         assert!(!config.block_critical);
         assert!(config.gate_paste_events);
-        assert!(config
-            .require_confirmation
-            .get("Critical")
-            .unwrap_or(&false));
+        assert!(config.require_confirmation.get("Critical").unwrap_or(&false));
     }
 
     #[test]

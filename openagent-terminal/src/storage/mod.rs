@@ -42,10 +42,7 @@ impl Storage {
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
+        let pool = SqlitePoolOptions::new().max_connections(5).connect_with(options).await?;
 
         let storage = Self { pool };
 

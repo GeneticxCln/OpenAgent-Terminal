@@ -15,12 +15,7 @@ fn benchmark_terminal_creation(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(10));
 
     // Test terminal creation with different sizes
-    let sizes = vec![
-        ("small", 40, 12),
-        ("standard", 80, 24),
-        ("large", 120, 40),
-        ("xl", 200, 60),
-    ];
+    let sizes = vec![("small", 40, 12), ("standard", 80, 24), ("large", 120, 40), ("xl", 200, 60)];
 
     for (name, cols, rows) in sizes {
         let size = SizeInfo::new(12.0, 24.0, 3.0, 3.0, cols as f32, rows as f32, false);

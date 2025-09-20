@@ -19,6 +19,7 @@ pub mod cursor;
 pub mod debug;
 pub mod font;
 pub mod general;
+pub mod ide;
 pub mod monitor;
 pub mod scrolling;
 pub mod selection;
@@ -309,9 +310,8 @@ pub fn imports(
     base_path: &Path,
     recursion_limit: usize,
 ) -> StdResult<Vec<StdResult<PathBuf, String>>, String> {
-    let imports = config
-        .get("import")
-        .or_else(|| config.get("general").and_then(|g| g.get("import")));
+    let imports =
+        config.get("import").or_else(|| config.get("general").and_then(|g| g.get("import")));
     let imports = match imports {
         Some(Value::Array(imports)) => imports,
         Some(_) => return Err("Invalid import type: expected a sequence".into()),
@@ -329,9 +329,7 @@ pub fn imports(
         let path = match import {
             Value::String(path) => PathBuf::from(path),
             _ => {
-                import_paths.push(Err(
-                    "Invalid import element type: expected path string".into()
-                ));
+                import_paths.push(Err("Invalid import element type: expected path string".into()));
                 continue;
             }
         };
@@ -417,9 +415,7 @@ pub fn installed_config(suffix: &str) -> Option<PathBuf> {
 
     // Fallback to common home locations for the new name.
     if let Ok(home) = env::var("HOME") {
-        let cfg_dir = PathBuf::from(&home)
-            .join(".config/openagent-terminal")
-            .join(&new_file_name);
+        let cfg_dir = PathBuf::from(&home).join(".config/openagent-terminal").join(&new_file_name);
         if cfg_dir.exists() {
             return Some(cfg_dir);
         }

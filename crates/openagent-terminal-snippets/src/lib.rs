@@ -37,11 +37,7 @@ impl SnippetSystem {
         let engine = SnippetEngine::new();
         let context = SnippetContext::new()?;
 
-        Ok(Self {
-            manager,
-            engine,
-            context,
-        })
+        Ok(Self { manager, engine, context })
     }
 
     /// Register a new snippet
@@ -185,10 +181,7 @@ pub mod utils {
             total_count: snippets.len(),
             trigger_count: snippets.iter().map(|s| s.triggers.len()).sum(),
             template_count: snippets.iter().filter(|s| s.is_template).count(),
-            shell_specific_count: snippets
-                .iter()
-                .filter(|s| s.shell_specific.is_some())
-                .count(),
+            shell_specific_count: snippets.iter().filter(|s| s.shell_specific.is_some()).count(),
         }
     }
 }

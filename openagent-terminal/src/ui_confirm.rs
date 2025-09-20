@@ -131,13 +131,7 @@ pub fn request_confirm(
     let maybe_proxy = proxy_opt;
     if let Some(proxy) = maybe_proxy {
         let evt = Event::new(
-            EventType::ConfirmOpen {
-                id: id.clone(),
-                title,
-                body,
-                confirm_label,
-                cancel_label,
-            },
+            EventType::ConfirmOpen { id: id.clone(), title, body, confirm_label, cancel_label },
             window_opt,
         );
         let _ = proxy.send_event(evt);
@@ -178,10 +172,7 @@ pub fn request_confirm(
                     if let Some(proxy) = state.proxy.clone() {
                         // Inform UI to close overlay (not accepted)
                         let _ = proxy.send_event(Event::new(
-                            EventType::ConfirmResolved {
-                                id: id.clone(),
-                                accepted: false,
-                            },
+                            EventType::ConfirmResolved { id: id.clone(), accepted: false },
                             None,
                         ));
                         #[cfg(test)]
@@ -213,9 +204,7 @@ pub fn request_confirm(
                 Err("confirmation timed out".to_string())
             }
         },
-        None => rx
-            .recv()
-            .map_err(|_| "confirmation channel closed".to_string()),
+        None => rx.recv().map_err(|_| "confirmation channel closed".to_string()),
     }
 }
 
@@ -289,10 +278,7 @@ mod tests {
             .expect("ConfirmOpen not recorded");
         assert!(evs.iter().any(|e| matches!(
             e,
-            crate::event::EventType::ConfirmResolved {
-                accepted: false,
-                ..
-            }
+            crate::event::EventType::ConfirmResolved { accepted: false, .. }
         )));
         // Ensure the specific pending request created by this call was cleaned up
         assert!(!th::has_pending(&open_id));
@@ -420,11 +406,8 @@ mod tests {
             if lens.should_block(&risk) {
                 return Ok(None);
             }
-            let requires_confirmation = policy
-                .require_confirmation
-                .get(&risk.level)
-                .copied()
-                .unwrap_or(false);
+            let requires_confirmation =
+                policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
             if requires_confirmation && risk.level != RiskLevel::Safe {
                 // Spawn resolver thread to accept/deny if requested
                 let _resolver = accept.map(|decision| {
@@ -478,10 +461,7 @@ mod tests {
         let policy = build_policy(true, true);
         let result = simulate_execute_command_policy("rm -rf /", policy, 100, None)
             .expect("policy evaluation should not error");
-        assert!(
-            result.is_none(),
-            "Critical command should be blocked without prompt"
-        );
+        assert!(result.is_none(), "Critical command should be blocked without prompt");
         // No pending confirmations should remain
         assert_eq!(th::pending_len(), 0);
     }

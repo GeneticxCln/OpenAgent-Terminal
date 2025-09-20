@@ -2,18 +2,18 @@
 //! Provides advanced NLP capabilities for CLI patterns, intent classification, and context understanding.
 
 use crate::agents::types::{
-    NlpConfig, EntityType, EntityExtractionConfig, IntentClassificationConfig, IntentModelType,
-    ParameterExtractionConfig, CliPatterns, PathResolutionConfig, ShellKind
+    CliPatterns, EntityExtractionConfig, EntityType, IntentClassificationConfig, IntentModelType,
+    NlpConfig, ParameterExtractionConfig, PathResolutionConfig, ShellKind,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 use std::env;
-use chrono::{DateTime, Utc};
-use tracing::{debug};
-use regex::Regex;
+use std::path::{Path, PathBuf};
+use tracing::debug;
 
 /// Enhanced natural language processing agent
 #[derive(Debug)]
@@ -37,7 +37,9 @@ struct ConfidenceScorer {
 trait ConfidenceHeuristic: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &'static str;
     fn score(&self, input: &ProcessedInput, context: &NlContext) -> f64;
-    fn weight(&self) -> f64 { 1.0 }
+    fn weight(&self) -> f64 {
+        1.0
+    }
 }
 
 /// Entity extraction with advanced pattern matching
@@ -56,7 +58,12 @@ struct IntentClassifier {
 
 /// Intent classification model trait
 trait IntentModel: std::fmt::Debug + Send + Sync {
-    fn classify(&self, input: &str, entities: &[ExtractedEntity], context: &NlContext) -> Result<ClassifiedIntent>;
+    fn classify(
+        &self,
+        input: &str,
+        entities: &[ExtractedEntity],
+        context: &NlContext,
+    ) -> Result<ClassifiedIntent>;
     fn train(&mut self, examples: &[IntentExample]) -> Result<()>;
     fn confidence(&self) -> f64;
 }
@@ -313,28 +320,29 @@ impl NaturalLanguageAgent {
     /// Process natural language input with comprehensive analysis
     pub async fn process_input(&mut self, input: &str) -> Result<ProcessedInput> {
         let start_time = std::time::Instant::now();
-        
+
         debug!("Processing input: {}", input);
 
         // Create context
         let context = self.context_manager.get_current_context();
-        
+
         // Normalize input
         let normalized_text = self.normalize_input(input);
 
         // Extract entities
         let entities = self.entity_extractor.extract(&normalized_text, &context)?;
-        
+
         // Classify intent
         let intent = self.intent_classifier.classify(&normalized_text, &entities, &context)?;
-        
+
         // Extract parameters
         let parameters = self.parameter_extractor.extract(&normalized_text, &entities, &context)?;
-        
+
         // Generate context hints and completions
         let context_hints = self.generate_context_hints(&normalized_text, &entities, &context);
-        let suggested_completions = self.generate_completions(&normalized_text, &entities, &context);
-        
+        let suggested_completions =
+            self.generate_completions(&normalized_text, &entities, &context);
+
         // Calculate overall confidence
         let mut processed = ProcessedInput {
             original_text: input.to_string(),
@@ -355,7 +363,7 @@ impl NaturalLanguageAgent {
 
         // Score confidence
         processed.confidence = self.confidence_scorer.score(&processed, &context);
-        
+
         // Update context and history
         self.context_manager.update_with_input(&processed);
 
@@ -366,11 +374,7 @@ impl NaturalLanguageAgent {
     /// Normalize input text
     fn normalize_input(&self, input: &str) -> String {
         // Basic normalization
-        input.trim()
-            .replace('\t', " ")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
+        input.trim().replace('\t', " ").split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     /// Generate context hints
@@ -381,15 +385,18 @@ impl NaturalLanguageAgent {
         context: &NlContext,
     ) -> Vec<String> {
         let mut hints = Vec::new();
-        
+
         // Add environment-based hints
         if !context.environment.working_directory.as_os_str().is_empty() {
-            hints.push(format!("Working directory: {}", context.environment.working_directory.display()));
+            hints.push(format!(
+                "Working directory: {}",
+                context.environment.working_directory.display()
+            ));
         }
-        
+
         // Add shell-specific hints
         hints.push(format!("Shell: {:?}", context.environment.shell_kind));
-        
+
         hints
     }
 
@@ -401,14 +408,14 @@ impl NaturalLanguageAgent {
         context: &NlContext,
     ) -> Vec<String> {
         let mut completions = Vec::new();
-        
+
         // Basic command completions
         for command in &context.environment.available_commands {
             if command.starts_with(text) {
                 completions.push(command.clone());
             }
         }
-        
+
         // Limit completions
         completions.truncate(10);
         completions
@@ -444,21 +451,21 @@ impl NaturalLanguageAgent {
 impl ConfidenceScorer {
     fn new(_config: &NlpConfig) -> Self {
         let mut heuristics: Vec<Box<dyn ConfidenceHeuristic>> = Vec::new();
-        
+
         // Add default heuristics
         heuristics.push(Box::new(EntityConfidenceHeuristic::new()));
         heuristics.push(Box::new(IntentConfidenceHeuristic::new()));
         heuristics.push(Box::new(ContextMatchHeuristic::new()));
         heuristics.push(Box::new(PatternMatchHeuristic::new()));
         heuristics.push(Box::new(TextLengthHeuristic::new()));
-        
+
         let mut weights = HashMap::new();
         weights.insert("entity".to_string(), 0.28);
         weights.insert("intent".to_string(), 0.38);
         weights.insert("context".to_string(), 0.2);
         weights.insert("pattern".to_string(), 0.1);
         weights.insert("length".to_string(), 0.04);
-        
+
         Self { heuristics, weights }
     }
 
@@ -469,7 +476,7 @@ impl ConfidenceScorer {
         for heuristic in &self.heuristics {
             let score = heuristic.score(input, context);
             let weight = self.weights.get(heuristic.name()).copied().unwrap_or(1.0);
-            
+
             total_score += score * weight;
             total_weight += weight;
         }
@@ -487,21 +494,24 @@ impl ConfidenceScorer {
 struct EntityConfidenceHeuristic;
 
 impl EntityConfidenceHeuristic {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl ConfidenceHeuristic for EntityConfidenceHeuristic {
-    fn name(&self) -> &'static str { "entity" }
+    fn name(&self) -> &'static str {
+        "entity"
+    }
 
     fn score(&self, input: &ProcessedInput, _context: &NlContext) -> f64 {
         if input.entities.is_empty() {
             return 0.5; // Neutral score for no entities
         }
 
-        let avg_confidence = input.entities.iter()
-            .map(|e| e.confidence)
-            .sum::<f64>() / input.entities.len() as f64;
-        
+        let avg_confidence =
+            input.entities.iter().map(|e| e.confidence).sum::<f64>() / input.entities.len() as f64;
+
         avg_confidence
     }
 }
@@ -510,16 +520,18 @@ impl ConfidenceHeuristic for EntityConfidenceHeuristic {
 struct IntentConfidenceHeuristic;
 
 impl IntentConfidenceHeuristic {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl ConfidenceHeuristic for IntentConfidenceHeuristic {
-    fn name(&self) -> &'static str { "intent" }
+    fn name(&self) -> &'static str {
+        "intent"
+    }
 
     fn score(&self, input: &ProcessedInput, _context: &NlContext) -> f64 {
-        input.intent.as_ref()
-            .map(|intent| intent.confidence)
-            .unwrap_or(0.0)
+        input.intent.as_ref().map(|intent| intent.confidence).unwrap_or(0.0)
     }
 }
 
@@ -527,16 +539,20 @@ impl ConfidenceHeuristic for IntentConfidenceHeuristic {
 struct ContextMatchHeuristic;
 
 impl ContextMatchHeuristic {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl ConfidenceHeuristic for ContextMatchHeuristic {
-    fn name(&self) -> &'static str { "context" }
+    fn name(&self) -> &'static str {
+        "context"
+    }
 
     fn score(&self, input: &ProcessedInput, context: &NlContext) -> f64 {
         // Score based on context relevance
         let mut score: f64 = 0.5; // Base score
-        
+
         // Check if entities match environment context
         for entity in &input.entities {
             match entity.entity_type {
@@ -553,7 +569,7 @@ impl ConfidenceHeuristic for ContextMatchHeuristic {
                 _ => {}
             }
         }
-        
+
         score.min(1.0)
     }
 }
@@ -565,47 +581,57 @@ struct PatternMatchHeuristic;
 struct TextLengthHeuristic;
 
 impl PatternMatchHeuristic {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl TextLengthHeuristic {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl ConfidenceHeuristic for TextLengthHeuristic {
-    fn name(&self) -> &'static str { "length" }
+    fn name(&self) -> &'static str {
+        "length"
+    }
 
     fn score(&self, input: &ProcessedInput, _context: &NlContext) -> f64 {
         let len = input.normalized_text.len();
-        if len == 0 { return 0.0; }
+        if len == 0 {
+            return 0.0;
+        }
         // Saturates at 1.0 around 120 characters
         (len as f64 / 120.0).min(1.0)
     }
 }
 
 impl ConfidenceHeuristic for PatternMatchHeuristic {
-    fn name(&self) -> &'static str { "pattern" }
+    fn name(&self) -> &'static str {
+        "pattern"
+    }
 
     fn score(&self, input: &ProcessedInput, _context: &NlContext) -> f64 {
         // Score based on recognized patterns
         let text = &input.normalized_text;
         let mut score: f64 = 0.0;
-        
+
         // Common command patterns
         if Regex::new(r"^[a-zA-Z][\w-]*\s").unwrap().is_match(text) {
             score += 0.3; // Looks like a command
         }
-        
+
         // File path patterns
         if Regex::new(r"[~/\.][\w/.-]*").unwrap().is_match(text) {
             score += 0.2; // Contains path-like strings
         }
-        
+
         // Flag patterns
         if Regex::new(r"--?\w+").unwrap().is_match(text) {
             score += 0.2; // Contains flags
         }
-        
+
         score.min(1.0)
     }
 }
@@ -613,17 +639,14 @@ impl ConfidenceHeuristic for PatternMatchHeuristic {
 impl EntityExtractor {
     fn new(config: &EntityExtractionConfig) -> Self {
         let mut patterns = HashMap::new();
-        
+
         // Build patterns for each enabled entity type
         for entity_type in &config.enabled_types {
             let entity_patterns = Self::create_patterns_for_type(entity_type);
             patterns.insert(entity_type.clone(), entity_patterns);
         }
-        
-        Self {
-            config: config.clone(),
-            patterns,
-        }
+
+        Self { config: config.clone(), patterns }
     }
 
     fn create_patterns_for_type(entity_type: &EntityType) -> Vec<EntityPattern> {
@@ -640,41 +663,31 @@ impl EntityExtractor {
                     metadata_extractors: vec![],
                 },
             ],
-            EntityType::Command => vec![
-                EntityPattern {
-                    pattern: Regex::new(r"^([a-zA-Z][\w\-]*)(?:\s|$)").unwrap(),
-                    confidence_base: 0.7,
-                    metadata_extractors: vec![],
-                },
-            ],
-            EntityType::Flag => vec![
-                EntityPattern {
-                    pattern: Regex::new(r"(--[a-zA-Z][\w\-]*|-[a-zA-Z])").unwrap(),
-                    confidence_base: 0.9,
-                    metadata_extractors: vec![],
-                },
-            ],
-            EntityType::Option => vec![
-                EntityPattern {
-                    pattern: Regex::new(r"(--[a-zA-Z][\w\-]*[=\s]+\S+|-[a-zA-Z]\s+\S+)").unwrap(),
-                    confidence_base: 0.8,
-                    metadata_extractors: vec![],
-                },
-            ],
-            EntityType::Number => vec![
-                EntityPattern {
-                    pattern: Regex::new(r"(\d+\.?\d*)").unwrap(),
-                    confidence_base: 0.9,
-                    metadata_extractors: vec![],
-                },
-            ],
-            EntityType::Variable => vec![
-                EntityPattern {
-                    pattern: Regex::new(r"(\$\{?\w+\}?)").unwrap(),
-                    confidence_base: 0.8,
-                    metadata_extractors: vec![],
-                },
-            ],
+            EntityType::Command => vec![EntityPattern {
+                pattern: Regex::new(r"^([a-zA-Z][\w\-]*)(?:\s|$)").unwrap(),
+                confidence_base: 0.7,
+                metadata_extractors: vec![],
+            }],
+            EntityType::Flag => vec![EntityPattern {
+                pattern: Regex::new(r"(--[a-zA-Z][\w\-]*|-[a-zA-Z])").unwrap(),
+                confidence_base: 0.9,
+                metadata_extractors: vec![],
+            }],
+            EntityType::Option => vec![EntityPattern {
+                pattern: Regex::new(r"(--[a-zA-Z][\w\-]*[=\s]+\S+|-[a-zA-Z]\s+\S+)").unwrap(),
+                confidence_base: 0.8,
+                metadata_extractors: vec![],
+            }],
+            EntityType::Number => vec![EntityPattern {
+                pattern: Regex::new(r"(\d+\.?\d*)").unwrap(),
+                confidence_base: 0.9,
+                metadata_extractors: vec![],
+            }],
+            EntityType::Variable => vec![EntityPattern {
+                pattern: Regex::new(r"(\$\{?\w+\}?)").unwrap(),
+                confidence_base: 0.8,
+                metadata_extractors: vec![],
+            }],
             _ => vec![],
         }
     }
@@ -687,7 +700,7 @@ impl EntityExtractor {
                 for mat in pattern.pattern.find_iter(text) {
                     let value = mat.as_str().to_string();
                     let normalized_value = self.normalize_entity_value(&value, entity_type);
-                    
+
                     entities.push(ExtractedEntity {
                         entity_type: entity_type.clone(),
                         value: value.clone(),
@@ -702,10 +715,10 @@ impl EntityExtractor {
 
         // Filter by minimum confidence
         entities.retain(|e| e.confidence >= self.config.min_confidence);
-        
+
         // Remove overlapping entities (keep highest confidence)
         entities = self.resolve_overlapping_entities(entities);
-        
+
         Ok(entities)
     }
 
@@ -730,19 +743,24 @@ impl EntityExtractor {
         }
     }
 
-    fn resolve_overlapping_entities(&self, mut entities: Vec<ExtractedEntity>) -> Vec<ExtractedEntity> {
-        entities.sort_by(|a, b| a.span.0.cmp(&b.span.0).then(b.confidence.partial_cmp(&a.confidence).unwrap()));
-        
+    fn resolve_overlapping_entities(
+        &self,
+        mut entities: Vec<ExtractedEntity>,
+    ) -> Vec<ExtractedEntity> {
+        entities.sort_by(|a, b| {
+            a.span.0.cmp(&b.span.0).then(b.confidence.partial_cmp(&a.confidence).unwrap())
+        });
+
         let mut result = Vec::new();
         let mut last_end = 0;
-        
+
         for entity in entities {
             if entity.span.0 >= last_end {
                 last_end = entity.span.1;
                 result.push(entity);
             }
         }
-        
+
         result
     }
 }
@@ -755,14 +773,16 @@ impl IntentClassifier {
             IntentModelType::Hybrid => Box::new(HybridModel::new()),
             _ => Box::new(RuleBasedModel::new()),
         };
-        
-        Self {
-            config: config.clone(),
-            model,
-        }
+
+        Self { config: config.clone(), model }
     }
 
-    fn classify(&self, text: &str, entities: &[ExtractedEntity], context: &NlContext) -> Result<ClassifiedIntent> {
+    fn classify(
+        &self,
+        text: &str,
+        entities: &[ExtractedEntity],
+        context: &NlContext,
+    ) -> Result<ClassifiedIntent> {
         self.model.classify(text, entities, context)
     }
 }
@@ -786,56 +806,55 @@ impl RuleBasedModel {
         let rules = vec![
             IntentRule {
                 intent: "file_operation".to_string(),
-                patterns: vec![
-                    Regex::new(r"(?i)(copy|move|delete|remove|rm|cp|mv)").unwrap(),
-                ],
+                patterns: vec![Regex::new(r"(?i)(copy|move|delete|remove|rm|cp|mv)").unwrap()],
                 required_entities: vec![EntityType::FilePath],
                 confidence: 0.8,
             },
             IntentRule {
                 intent: "directory_navigation".to_string(),
-                patterns: vec![
-                    Regex::new(r"(?i)(cd|change|directory|go\s+to)").unwrap(),
-                ],
+                patterns: vec![Regex::new(r"(?i)(cd|change|directory|go\s+to)").unwrap()],
                 required_entities: vec![EntityType::DirectoryPath],
                 confidence: 0.9,
             },
             IntentRule {
                 intent: "command_execution".to_string(),
-                patterns: vec![
-                    Regex::new(r"^[a-zA-Z][\w\-]*").unwrap(),
-                ],
+                patterns: vec![Regex::new(r"^[a-zA-Z][\w\-]*").unwrap()],
                 required_entities: vec![EntityType::Command],
                 confidence: 0.7,
             },
         ];
-        
+
         Self { rules }
     }
 }
 
 impl IntentModel for RuleBasedModel {
-    fn classify(&self, text: &str, entities: &[ExtractedEntity], _context: &NlContext) -> Result<ClassifiedIntent> {
+    fn classify(
+        &self,
+        text: &str,
+        entities: &[ExtractedEntity],
+        _context: &NlContext,
+    ) -> Result<ClassifiedIntent> {
         let mut best_match: Option<ClassifiedIntent> = None;
         let mut best_score = 0.0;
 
         for rule in &self.rules {
             let mut score = 0.0;
-            
+
             // Check pattern matches
             for pattern in &rule.patterns {
                 if pattern.is_match(text) {
                     score += rule.confidence * 0.7;
                 }
             }
-            
+
             // Check required entities
             for required_entity in &rule.required_entities {
                 if entities.iter().any(|e| &e.entity_type == required_entity) {
                     score += rule.confidence * 0.3;
                 }
             }
-            
+
             if score > best_score {
                 best_score = score;
                 best_match = Some(ClassifiedIntent {
@@ -866,11 +885,18 @@ impl IntentModel for RuleBasedModel {
 struct NaiveBayesModel;
 
 impl NaiveBayesModel {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl IntentModel for NaiveBayesModel {
-    fn classify(&self, _text: &str, _entities: &[ExtractedEntity], _context: &NlContext) -> Result<ClassifiedIntent> {
+    fn classify(
+        &self,
+        _text: &str,
+        _entities: &[ExtractedEntity],
+        _context: &NlContext,
+    ) -> Result<ClassifiedIntent> {
         // TODO: Implement Naive Bayes classification
         Ok(ClassifiedIntent {
             name: "unknown".to_string(),
@@ -895,11 +921,18 @@ impl IntentModel for NaiveBayesModel {
 struct HybridModel;
 
 impl HybridModel {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl IntentModel for HybridModel {
-    fn classify(&self, _text: &str, _entities: &[ExtractedEntity], _context: &NlContext) -> Result<ClassifiedIntent> {
+    fn classify(
+        &self,
+        _text: &str,
+        _entities: &[ExtractedEntity],
+        _context: &NlContext,
+    ) -> Result<ClassifiedIntent> {
         // TODO: Implement hybrid classification
         Ok(ClassifiedIntent {
             name: "unknown".to_string(),
@@ -977,9 +1010,7 @@ impl ParameterExtractor {
 
 impl CliParser {
     fn new(patterns: &CliPatterns) -> Self {
-        Self {
-            patterns: patterns.clone(),
-        }
+        Self { patterns: patterns.clone() }
     }
 
     fn parse(&self, text: &str) -> Result<ExtractedParameters> {
@@ -1005,14 +1036,14 @@ impl CliParser {
         let mut i = 1;
         while i < parts.len() {
             let part = parts[i];
-            
+
             if part.starts_with("--") {
                 // Long option
                 if let Some(eq_pos) = part.find('=') {
                     // Option with value in same argument
                     let name = part[2..eq_pos].to_string();
                     let value = part[eq_pos + 1..].to_string();
-parameters.options.push(CliOption {
+                    parameters.options.push(CliOption {
                         name,
                         value,
                         short_form: None,
@@ -1022,7 +1053,7 @@ parameters.options.push(CliOption {
                     // Option with separate value
                     let name = part[2..].to_string();
                     let value = parts[i + 1].to_string();
-parameters.options.push(CliOption {
+                    parameters.options.push(CliOption {
                         name,
                         value,
                         short_form: None,
@@ -1044,7 +1075,7 @@ parameters.options.push(CliOption {
                     // Option with value
                     let name = part[1..].to_string();
                     let value = parts[i + 1].to_string();
-parameters.options.push(CliOption {
+                    parameters.options.push(CliOption {
                         name: name.clone(),
                         value,
                         short_form: Some(name),
@@ -1066,7 +1097,7 @@ parameters.options.push(CliOption {
                 // Regular argument
                 parameters.arguments.push(part.to_string());
             }
-            
+
             i += 1;
         }
 
@@ -1076,28 +1107,27 @@ parameters.options.push(CliOption {
 
 impl PathResolver {
     fn new(config: &PathResolutionConfig) -> Self {
-        Self {
-            config: config.clone(),
-        }
+        Self { config: config.clone() }
     }
 
     fn resolve(&self, path_str: &str) -> Result<PathInfo> {
         let mut path = PathBuf::from(path_str);
-        
+
         // Expand home directory
         if self.config.expand_home && path_str.starts_with('~') {
             if let Some(home) = env::var_os("HOME") {
-                path = PathBuf::from(home).join(path_str.strip_prefix("~/").unwrap_or(&path_str[1..]));
+                path =
+                    PathBuf::from(home).join(path_str.strip_prefix("~/").unwrap_or(&path_str[1..]));
             }
         }
-        
+
         // Resolve relative paths
         if self.config.resolve_relative && path.is_relative() {
             if let Ok(cwd) = env::current_dir() {
                 path = cwd.join(path);
             }
         }
-        
+
         // Follow symlinks
         if self.config.follow_symlinks {
             if let Ok(canonical) = path.canonicalize() {
@@ -1106,7 +1136,7 @@ impl PathResolver {
         }
 
         let exists = self.config.validate_existence && path.exists();
-        
+
         let path_type = if path.is_file() {
             PathType::File
         } else if path.is_dir() {
@@ -1182,10 +1212,14 @@ impl ContextManager {
             },
             environment: self.environment_context.clone(),
             conversation_state: ConversationState {
-                last_command: self.conversation_history.last()
+                last_command: self
+                    .conversation_history
+                    .last()
                     .map(|turn| turn.processed.parameters.command.clone())
                     .flatten(),
-                command_history: self.conversation_history.iter()
+                command_history: self
+                    .conversation_history
+                    .iter()
                     .filter_map(|turn| turn.processed.parameters.command.clone())
                     .collect(),
                 context_stack: Vec::new(),
@@ -1203,7 +1237,7 @@ impl ContextManager {
         };
 
         self.conversation_history.push(turn);
-        
+
         // Keep history manageable
         if self.conversation_history.len() > 100 {
             self.conversation_history.remove(0);
@@ -1212,19 +1246,19 @@ impl ContextManager {
 
     fn detect_available_commands() -> HashSet<String> {
         let mut commands = HashSet::new();
-        
+
         // Add some common commands
         let common_commands = [
-            "ls", "cd", "pwd", "mkdir", "rmdir", "rm", "cp", "mv", "cat", "less", "more",
-            "grep", "find", "which", "whereis", "man", "help", "history", "ps", "top",
-            "kill", "jobs", "bg", "fg", "nohup", "screen", "tmux", "ssh", "scp", "rsync",
-            "git", "svn", "hg", "make", "cmake", "cargo", "npm", "pip", "docker", "kubectl"
+            "ls", "cd", "pwd", "mkdir", "rmdir", "rm", "cp", "mv", "cat", "less", "more", "grep",
+            "find", "which", "whereis", "man", "help", "history", "ps", "top", "kill", "jobs",
+            "bg", "fg", "nohup", "screen", "tmux", "ssh", "scp", "rsync", "git", "svn", "hg",
+            "make", "cmake", "cargo", "npm", "pip", "docker", "kubectl",
         ];
-        
+
         for cmd in &common_commands {
             commands.insert(cmd.to_string());
         }
-        
+
         commands
     }
 }
@@ -1237,18 +1271,17 @@ mod tests {
     async fn test_natural_language_agent_creation() {
         let config = NlpConfig::default();
         let _agent = NaturalLanguageAgent::new(config);
-        
+
         // Should not panic
-        assert!(true);
     }
 
     #[tokio::test]
     async fn test_input_processing() {
         let config = NlpConfig::default();
         let mut agent = NaturalLanguageAgent::new(config);
-        
+
         let result = agent.process_input("ls -la /home").await.unwrap();
-        
+
         assert!(!result.original_text.is_empty());
         assert!(result.confidence > 0.0);
         assert!(!result.entities.is_empty());
@@ -1258,7 +1291,7 @@ mod tests {
     fn test_confidence_scoring() {
         let config = NlpConfig::default();
         let scorer = ConfidenceScorer::new(&config);
-        
+
         let input = ProcessedInput {
             original_text: "test".to_string(),
             normalized_text: "test".to_string(),
@@ -1289,7 +1322,7 @@ mod tests {
                 debug_info: HashMap::new(),
             },
         };
-        
+
         let context = NlContext {
             session_id: None,
             user_preferences: UserPreferences {
@@ -1312,7 +1345,7 @@ mod tests {
                 active_tasks: HashSet::new(),
             },
         };
-        
+
         let score = scorer.score(&input, &context);
         assert!(score > 0.0);
         assert!(score <= 1.0);
@@ -1326,10 +1359,10 @@ mod tests {
             positional_patterns: vec![r"\w+".to_string()],
             subcommand_patterns: vec![r"\w+".to_string()],
         };
-        
+
         let parser = CliParser::new(&patterns);
         let result = parser.parse("ls -la --color=auto /home").unwrap();
-        
+
         assert_eq!(result.command, Some("ls".to_string()));
         assert!(!result.flags.is_empty());
         assert!(!result.arguments.is_empty());
@@ -1339,12 +1372,14 @@ mod tests {
     fn test_entity_extraction() {
         let config = EntityExtractionConfig {
             enabled_types: [EntityType::FilePath, EntityType::Command, EntityType::Flag]
-                .iter().cloned().collect(),
+                .iter()
+                .cloned()
+                .collect(),
             custom_patterns: HashMap::new(),
             case_sensitive: false,
             min_confidence: 0.5,
         };
-        
+
         let extractor = EntityExtractor::new(&config);
         let context = NlContext {
             session_id: None,
@@ -1368,10 +1403,10 @@ mod tests {
                 active_tasks: HashSet::new(),
             },
         };
-        
+
         let entities = extractor.extract("ls -la /home/user", &context).unwrap();
         assert!(!entities.is_empty());
-        
+
         // Should find file path entity
         assert!(entities.iter().any(|e| matches!(e.entity_type, EntityType::FilePath)));
     }

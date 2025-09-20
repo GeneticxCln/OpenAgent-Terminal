@@ -12,10 +12,11 @@ struct Migration {
 }
 
 /// All database migrations in order
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_blocks_schema",
-    up_sql: r#"
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_blocks_schema",
+        up_sql: r#"
             -- Table for storing terminal command blocks
             CREATE TABLE IF NOT EXISTS blocks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,10 +75,11 @@ const MIGRATIONS: &[Migration] = &[Migration {
                 UPDATE blocks SET updated_at = strftime('%s', 'now') * 1000 WHERE id = new.id;
             END;
         "#,
-}, Migration {
-    version: 2,
-    name: "plugin_kv_docs_and_ai_transcripts",
-    up_sql: r#"
+    },
+    Migration {
+        version: 2,
+        name: "plugin_kv_docs_and_ai_transcripts",
+        up_sql: r#"
             -- Namespaces for plugins (optional but useful for indexing)
             CREATE TABLE IF NOT EXISTS plugin_namespaces (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +154,8 @@ const MIGRATIONS: &[Migration] = &[Migration {
             );
             CREATE INDEX IF NOT EXISTS idx_ai_turns_session_ts ON ai_turns(session_id, timestamp);
         "#,
-}];
+    },
+];
 
 /// Get current schema version from database
 async fn get_schema_version(pool: &Pool<Sqlite>) -> StorageResult<i32> {
@@ -169,9 +172,8 @@ async fn get_schema_version(pool: &Pool<Sqlite>) -> StorageResult<i32> {
     .await?;
 
     // Get current version
-    let row = sqlx::query("SELECT MAX(version) as version FROM schema_version")
-        .fetch_one(pool)
-        .await?;
+    let row =
+        sqlx::query("SELECT MAX(version) as version FROM schema_version").fetch_one(pool).await?;
 
     Ok(row.get::<Option<i32>, _>("version").unwrap_or(0))
 }
@@ -195,25 +197,15 @@ pub async fn run_migrations(pool: &Pool<Sqlite>) -> StorageResult<()> {
 
     // Apply migrations that are newer than current version
     for migration in MIGRATIONS.iter().filter(|m| m.version > current_version) {
-        log::info!(
-            "Applying migration {}: {}",
-            migration.version,
-            migration.name
-        );
+        log::info!("Applying migration {}: {}", migration.version, migration.name);
 
         // Start a transaction for the migration
         let mut tx = pool.begin().await?;
 
         // Execute migration SQL
-        sqlx::query(migration.up_sql)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                StorageError::Migration(format!(
-                    "Failed to apply migration {}: {}",
-                    migration.name, e
-                ))
-            })?;
+        sqlx::query(migration.up_sql).execute(&mut *tx).await.map_err(|e| {
+            StorageError::Migration(format!("Failed to apply migration {}: {}", migration.name, e))
+        })?;
 
         // Update schema version
         sqlx::query("INSERT OR REPLACE INTO schema_version (version) VALUES (?)")
@@ -228,10 +220,7 @@ pub async fn run_migrations(pool: &Pool<Sqlite>) -> StorageResult<()> {
     }
 
     if current_version < CURRENT_VERSION {
-        log::info!(
-            "Database migrations completed. Schema version: {}",
-            CURRENT_VERSION
-        );
+        log::info!("Database migrations completed. Schema version: {}", CURRENT_VERSION);
     } else {
         log::debug!("Database schema is up to date");
     }

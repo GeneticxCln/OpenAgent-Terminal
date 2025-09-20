@@ -83,9 +83,7 @@ fn ai_stream_success_emits_finished() {
     rt.start_propose_stream(None, None, proxy.clone(), win);
 
     let events = Arc::new(Mutex::new(Vec::<EventType>::new()));
-    let mut app = CaptureApp {
-        events: events.clone(),
-    };
+    let mut app = CaptureApp { events: events.clone() };
     let _ = el.run_app(&mut app);
 
     let evs = events.lock().unwrap();

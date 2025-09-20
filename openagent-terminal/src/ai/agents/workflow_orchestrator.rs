@@ -429,9 +429,7 @@ impl WorkflowOrchestrator {
         for (name, var_def) in &template.variables {
             if !workflow_context.variables.contains_key(name) {
                 if let Some(default_value) = &var_def.default_value {
-                    workflow_context
-                        .variables
-                        .insert(name.clone(), default_value.clone());
+                    workflow_context.variables.insert(name.clone(), default_value.clone());
                 } else if var_def.required {
                     return Err(anyhow!("Required variable '{}' not provided", name));
                 }
@@ -483,11 +481,7 @@ impl WorkflowOrchestrator {
         // Start execution
         self.start_workflow_execution(workflow_id).await?;
 
-        tracing::info!(
-            "Created and started workflow: {} (template: {})",
-            workflow_id,
-            template_id
-        );
+        tracing::info!("Created and started workflow: {} (template: {})", workflow_id, template_id);
         Ok(workflow_id)
     }
 
@@ -589,9 +583,7 @@ impl WorkflowOrchestrator {
 
         // Wait for all steps to complete
         for handle in handles {
-            handle
-                .await
-                .map_err(|e| anyhow!("Task join error: {}", e))??;
+            handle.await.map_err(|e| anyhow!("Task join error: {}", e))??;
         }
 
         Ok(())
@@ -620,16 +612,11 @@ impl WorkflowOrchestrator {
         };
 
         // Update step status to running
-        self.update_step_status(workflow_id, step_id, StepExecutionStatus::Running)
-            .await?;
+        self.update_step_status(workflow_id, step_id, StepExecutionStatus::Running).await?;
 
         // Evaluate step conditions
-        if !self
-            .evaluate_step_conditions(&step, &workflow_context)
-            .await?
-        {
-            self.update_step_status(workflow_id, step_id, StepExecutionStatus::Skipped)
-                .await?;
+        if !self.evaluate_step_conditions(&step, &workflow_context).await? {
+            self.update_step_status(workflow_id, step_id, StepExecutionStatus::Skipped).await?;
             return Ok(());
         }
 
@@ -637,9 +624,7 @@ impl WorkflowOrchestrator {
         let inputs = self.prepare_step_inputs(&step, &workflow_context).await?;
 
         // Execute step with retry logic
-        let result = self
-            .execute_step_with_retry(&step, inputs, &template.retry_config)
-            .await;
+        let result = self.execute_step_with_retry(&step, inputs, &template.retry_config).await;
 
         match result {
             Ok(response) => {
@@ -647,12 +632,10 @@ impl WorkflowOrchestrator {
                 let outputs = self.process_step_outputs(&step, &response).await?;
 
                 // Update workflow context with outputs
-                self.update_workflow_context(workflow_id, &step.output_mapping, &outputs)
-                    .await?;
+                self.update_workflow_context(workflow_id, &step.output_mapping, &outputs).await?;
 
                 // Mark step as completed
-                self.complete_step(workflow_id, step_id, response, outputs)
-                    .await?;
+                self.complete_step(workflow_id, step_id, response, outputs).await?;
             }
             Err(e) => {
                 match step.error_handling {
@@ -706,15 +689,13 @@ impl WorkflowOrchestrator {
             let result = match &step.step_type {
                 WorkflowStepType::AgentRequest => {
                     if let Some(agent_id) = &step.agent_id {
-                        self.execute_agent_request(agent_id, &step.request_template, &inputs)
-                            .await
+                        self.execute_agent_request(agent_id, &step.request_template, &inputs).await
                     } else {
                         Err(anyhow!("Agent ID required for AgentRequest step"))
                     }
                 }
                 WorkflowStepType::Command => {
-                    self.execute_command_step(&step.request_template, &inputs)
-                        .await
+                    self.execute_command_step(&step.request_template, &inputs).await
                 }
                 _ => Err(anyhow!("Step type not implemented: {:?}", step.step_type)),
             };
@@ -752,9 +733,8 @@ impl WorkflowOrchestrator {
         inputs: &HashMap<String, serde_json::Value>,
     ) -> Result<AgentResponse> {
         let registry = self.agent_registry.read().await;
-        let agent = registry
-            .get(agent_id)
-            .ok_or_else(|| anyhow!("Agent not found: {}", agent_id))?;
+        let agent =
+            registry.get(agent_id).ok_or_else(|| anyhow!("Agent not found: {}", agent_id))?;
 
         // Build agent request from template and inputs
         let request = self.build_agent_request(request_template, inputs)?;
@@ -967,10 +947,7 @@ impl WorkflowOrchestrator {
     ) -> Result<HashMap<String, serde_json::Value>> {
         // Extract outputs from agent response
         Ok(HashMap::from([
-            (
-                "success".to_string(),
-                serde_json::Value::Bool(response.success),
-            ),
+            ("success".to_string(), serde_json::Value::Bool(response.success)),
             ("payload".to_string(), response.payload.clone()),
         ]))
     }
@@ -985,10 +962,7 @@ impl WorkflowOrchestrator {
         if let Some(workflow) = workflows.get_mut(&workflow_id) {
             for (output_key, variable_name) in output_mapping {
                 if let Some(value) = outputs.get(output_key) {
-                    workflow
-                        .context
-                        .variables
-                        .insert(variable_name.clone(), value.clone());
+                    workflow.context.variables.insert(variable_name.clone(), value.clone());
                 }
             }
         }
@@ -1168,10 +1142,8 @@ impl Agent for WorkflowOrchestrator {
 
     async fn status(&self) -> AgentStatus {
         let workflows = self.workflows.read().await;
-        let active_workflows = workflows
-            .values()
-            .filter(|w| matches!(w.status, WorkflowStatus::Running))
-            .count();
+        let active_workflows =
+            workflows.values().filter(|w| matches!(w.status, WorkflowStatus::Running)).count();
 
         AgentStatus {
             is_healthy: self.is_initialized,

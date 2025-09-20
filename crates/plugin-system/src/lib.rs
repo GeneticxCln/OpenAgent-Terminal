@@ -21,16 +21,16 @@ pub use api::{
     CommandOutput, Completion, CompletionKind, Context, ContextRequest, HookEvent, HookResponse,
     HookType, PluginConfig, PluginError, SensitivityLevel,
 };
-pub use host::{HostInterface, LogLevel, TerminalState, Notification};
+pub use host::{HostInterface, LogLevel, Notification, TerminalState};
 pub use permissions::{PluginPermissions, SecurityPolicy};
 pub use runtime::{PluginManager, PluginRuntime};
 
 pub mod api;
+#[cfg(feature = "wasm-runtime")]
+pub mod default_host;
 pub mod host;
 pub mod permissions;
 pub mod runtime;
-#[cfg(feature = "wasm-runtime")]
-pub mod default_host;
 
 /// Alias to simplify complex wasmtime typed function signatures in the public API
 #[cfg(feature = "wasm-runtime")]
@@ -180,33 +180,23 @@ impl PluginAbi {
             cleanup: instance.get_typed_func(&mut *store, "plugin_cleanup").ok(),
 
             // Metadata
-            get_metadata: instance
-                .get_typed_func(&mut *store, "plugin_get_metadata")
-                .ok(),
-            get_capabilities: instance
-                .get_typed_func(&mut *store, "plugin_get_capabilities")
-                .ok(),
+            get_metadata: instance.get_typed_func(&mut *store, "plugin_get_metadata").ok(),
+            get_capabilities: instance.get_typed_func(&mut *store, "plugin_get_capabilities").ok(),
 
             // Commands
-            execute_command: instance
-                .get_typed_func(&mut *store, "plugin_execute_command")
-                .ok(),
+            execute_command: instance.get_typed_func(&mut *store, "plugin_execute_command").ok(),
             execute_command_ex: instance
                 .get_typed_func(&mut *store, "plugin_execute_command_ex")
                 .ok(),
 
             // Events
-            handle_event: instance
-                .get_typed_func(&mut *store, "plugin_handle_event")
-                .ok(),
+            handle_event: instance.get_typed_func(&mut *store, "plugin_handle_event").ok(),
 
             // Context and completions
             provide_completions: instance
                 .get_typed_func(&mut *store, "plugin_provide_completions")
                 .ok(),
-            collect_context: instance
-                .get_typed_func(&mut *store, "plugin_collect_context")
-                .ok(),
+            collect_context: instance.get_typed_func(&mut *store, "plugin_collect_context").ok(),
 
             // Response retrieval
             get_last_response: instance
@@ -355,9 +345,12 @@ impl UnifiedPluginManager {
         self.host_interface = Some(interface);
     }
 
-/// Convenience: set a default host from permissions
+    /// Convenience: set a default host from permissions
     #[cfg(feature = "wasm-runtime")]
-    pub fn set_default_host_from_permissions(&mut self, permissions: &permissions::PluginPermissions) {
+    pub fn set_default_host_from_permissions(
+        &mut self,
+        permissions: &permissions::PluginPermissions,
+    ) {
         let policy = permissions::SecurityPolicy::from_permissions(permissions);
         match crate::default_host::DefaultHost::new(policy) {
             Ok(h) => self.set_host_interface(Arc::new(h)),
@@ -398,10 +391,7 @@ impl UnifiedPluginManager {
             return Ok(plugin_id);
         }
 
-        Err(PluginSystemError::InvalidFormat(format!(
-            "Unsupported plugin type: {}",
-            extension
-        )))
+        Err(PluginSystemError::InvalidFormat(format!("Unsupported plugin type: {}", extension)))
     }
 
     /// Load WASM plugin
@@ -422,9 +412,7 @@ impl UnifiedPluginManager {
         // Build a minimal WASI context (no preopened dirs by default). We inherit stdio
         // to allow plugins to print logs; file and env access should be done via host functions
         // which enforce SecurityPolicy.
-        let wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new()
-            .inherit_stdio()
-            .build_p1();
+        let wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new().inherit_stdio().build_p1();
 
         let context = WasmPluginContext {
             permissions: permissions.clone(),
@@ -481,10 +469,7 @@ impl UnifiedPluginManager {
         Ok(LoadedPlugin {
             metadata,
             state: PluginState::Ready,
-            wasm_data: Some(WasmPluginData {
-                instance,
-                store: tokio::sync::Mutex::new(store),
-            }),
+            wasm_data: Some(WasmPluginData { instance, store: tokio::sync::Mutex::new(store) }),
             #[cfg(feature = "host-integration")]
             host_data: None,
             abi,
@@ -502,9 +487,7 @@ impl UnifiedPluginManager {
     ) -> Result<LoadedPlugin, PluginSystemError> {
         // This would load native plugins using libloading
         // For now, return an error as it's not implemented
-        Err(PluginSystemError::Runtime(
-            "Native plugin loading not yet implemented".to_string(),
-        ))
+        Err(PluginSystemError::Runtime("Native plugin loading not yet implemented".to_string()))
     }
 
     /// Load plugin permissions from manifest
@@ -563,24 +546,19 @@ impl UnifiedPluginManager {
                 .get_export(&mut *store, "memory")
                 .and_then(|e| e.into_memory())
                 .ok_or_else(|| {
-                    PluginSystemError::Runtime("Plugin missing memory export".to_string())
-                })?;
+                PluginSystemError::Runtime("Plugin missing memory export".to_string())
+            })?;
 
             let mut buffer = vec![0u8; len as usize];
-            memory
-                .read(&mut *store, ptr as usize, &mut buffer)
-                .map_err(|_| {
-                    PluginSystemError::Runtime("Failed to read plugin metadata".to_string())
-                })?;
+            memory.read(&mut *store, ptr as usize, &mut buffer).map_err(|_| {
+                PluginSystemError::Runtime("Failed to read plugin metadata".to_string())
+            })?;
 
             let metadata: PluginMetadata = serde_json::from_slice(&buffer)?;
             Ok(metadata)
         } else {
             // Return default metadata if function not available
-            Ok(PluginMetadata {
-                name: "Unknown Plugin".to_string(),
-                ..Default::default()
-            })
+            Ok(PluginMetadata { name: "Unknown Plugin".to_string(), ..Default::default() })
         }
     }
 
@@ -602,15 +580,10 @@ impl UnifiedPluginManager {
         match plugin.state {
             PluginState::Ready => {}
             PluginState::Error(ref e) => {
-                return Err(PluginSystemError::Runtime(format!(
-                    "Plugin in error state: {}",
-                    e
-                )));
+                return Err(PluginSystemError::Runtime(format!("Plugin in error state: {}", e)));
             }
             _ => {
-                return Err(PluginSystemError::Runtime(
-                    "Plugin not in ready state".to_string(),
-                ));
+                return Err(PluginSystemError::Runtime("Plugin not in ready state".to_string()));
             }
         }
 
@@ -623,14 +596,10 @@ impl UnifiedPluginManager {
 
         #[cfg(feature = "host-integration")]
         if let Some(host_data) = &plugin.host_data {
-            return self
-                .execute_host_command(plugin_id, command, args, host_data)
-                .await;
+            return self.execute_host_command(plugin_id, command, args, host_data).await;
         }
 
-        Err(PluginSystemError::Runtime(
-            "No execution context available".to_string(),
-        ))
+        Err(PluginSystemError::Runtime("No execution context available".to_string()))
     }
 
     /// Execute command on WASM plugin
@@ -715,9 +684,7 @@ impl UnifiedPluginManager {
         _host_data: &HostPluginData,
     ) -> Result<CommandOutput, PluginSystemError> {
         // This would implement native plugin command execution
-        Err(PluginSystemError::Runtime(
-            "Native plugin execution not implemented".to_string(),
-        ))
+        Err(PluginSystemError::Runtime("Native plugin execution not implemented".to_string()))
     }
 
     /// List all loaded plugins
@@ -786,40 +753,38 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_plugin_manager_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = UnifiedPluginManager::new(temp_dir.path()).unwrap();
+    async fn test_plugin_manager_creation() -> AnyResult<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = UnifiedPluginManager::new(temp_dir.path())?;
 
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 0);
+        Ok(())
     }
 
     #[tokio::test]
     #[cfg(feature = "wasm-runtime")]
-    async fn test_load_minimal_wasm_plugin() {
+    async fn test_load_minimal_wasm_plugin() -> AnyResult<()> {
         // Build a minimal WASM module with just an exported memory. This exercises
         // the WASM runtime path without requiring full plugin ABI.
         // The manager should load it and fall back to default metadata when
         // plugin_get_metadata is not present.
         let wat_src = r#"(module (memory (export "memory") 1))"#;
-        let wasm_bytes = wat::parse_str(wat_src).expect("wat to wasm parse failed");
+        let wasm_bytes = wat::parse_str(wat_src)?;
 
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new()?;
         let wasm_path = temp_dir.path().join("minimal.wasm");
-        std::fs::write(&wasm_path, wasm_bytes).expect("write wasm");
+        std::fs::write(&wasm_path, wasm_bytes)?;
 
-        let manager = UnifiedPluginManager::new(temp_dir.path()).expect("manager");
+        let manager = UnifiedPluginManager::new(temp_dir.path())?;
         let load_res = manager.load_plugin(&wasm_path).await;
-        assert!(
-            load_res.is_ok(),
-            "failed to load minimal wasm plugin: {:?}",
-            load_res
-        );
+        assert!(load_res.is_ok(), "failed to load minimal wasm plugin: {:?}", load_res);
 
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 1, "expected one loaded plugin");
         // When metadata export is missing, name defaults to "Unknown Plugin".
         assert_eq!(plugins[0].name, "Unknown Plugin");
+        Ok(())
     }
 
     #[cfg(feature = "wasm-runtime")]
@@ -830,38 +795,82 @@ mod tests {
     #[cfg(feature = "wasm-runtime")]
     impl crate::host::HostInterface for CaptureHost {
         fn log(&self, level: crate::host::LogLevel, message: &str) {
-            self.logs.lock().unwrap().push((level, message.to_string()));
+            self.logs
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((level, message.to_string()));
         }
-        fn read_file(&self, _path: &str) -> Result<Vec<u8>, crate::api::PluginError> { Ok(Vec::new()) }
-        fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), crate::api::PluginError> { Ok(()) }
-        fn execute_command(&self, _command: &str) -> Result<crate::api::CommandOutput, crate::api::PluginError> {
-            Ok(crate::api::CommandOutput { stdout: String::new(), stderr: String::new(), exit_code: 0, execution_time_ms: 0 })
+        fn read_file(&self, _path: &str) -> Result<Vec<u8>, crate::api::PluginError> {
+            Ok(Vec::new())
         }
-        fn spawn(&self, _cmd: &str, _args: &[String], _cwd: Option<&str>) -> Result<crate::api::CommandOutput, crate::api::PluginError> {
-            Ok(crate::api::CommandOutput { stdout: String::new(), stderr: String::new(), exit_code: 0, execution_time_ms: 0 })
+        fn write_file(&self, _path: &str, _data: &[u8]) -> Result<(), crate::api::PluginError> {
+            Ok(())
         }
-        fn net_fetch(&self, _req: crate::host::NetRequest) -> Result<crate::host::NetResponse, crate::api::PluginError> {
+        fn execute_command(
+            &self,
+            _command: &str,
+        ) -> Result<crate::api::CommandOutput, crate::api::PluginError> {
+            Ok(crate::api::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+                execution_time_ms: 0,
+            })
+        }
+        fn spawn(
+            &self,
+            _cmd: &str,
+            _args: &[String],
+            _cwd: Option<&str>,
+        ) -> Result<crate::api::CommandOutput, crate::api::PluginError> {
+            Ok(crate::api::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+                execution_time_ms: 0,
+            })
+        }
+        fn net_fetch(
+            &self,
+            _req: crate::host::NetRequest,
+        ) -> Result<crate::host::NetResponse, crate::api::PluginError> {
             Ok(crate::host::NetResponse { status: 200, headers: Vec::new(), body: Vec::new() })
         }
         fn get_terminal_state(&self) -> crate::host::TerminalState {
-            crate::host::TerminalState { current_dir: String::new(), environment: Default::default(), shell: String::new(), terminal_size: (80, 24), is_interactive: true, command_history: vec![] }
+            crate::host::TerminalState {
+                current_dir: String::new(),
+                environment: Default::default(),
+                shell: String::new(),
+                terminal_size: (80, 24),
+                is_interactive: true,
+                command_history: vec![],
+            }
         }
-        fn show_notification(&self, _notification: crate::host::Notification) -> Result<(), crate::api::PluginError> { Ok(()) }
-        fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), crate::api::PluginError> { Ok(()) }
-        fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, crate::api::PluginError> { Ok(None) }
+        fn show_notification(
+            &self,
+            _notification: crate::host::Notification,
+        ) -> Result<(), crate::api::PluginError> {
+            Ok(())
+        }
+        fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), crate::api::PluginError> {
+            Ok(())
+        }
+        fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, crate::api::PluginError> {
+            Ok(None)
+        }
     }
 
     #[tokio::test]
     #[ignore]
-    async fn test_wasm_plugin_calls_host_log_on_init() {
+    async fn test_wasm_plugin_calls_host_log_on_init() -> AnyResult<()> {
         // This test relies on host_log import being wired; if wasmtime or host imports differ, skip.
         if std::env::var("CI").is_ok() {
-            return; // avoid flakiness in CI
+            return Ok(()); // avoid flakiness in CI
         }
         #[cfg(not(feature = "wasm-runtime"))]
         {
             // Skip when runtime is not available
-            return;
+            return Ok(());
         }
         #[cfg(feature = "wasm-runtime")]
         {
@@ -875,26 +884,25 @@ mod tests {
                     (i32.const 0)
                 )
             )"#;
-            let wasm_bytes = wat::parse_str(wat_src).expect("wat to wasm parse failed");
-            let temp_dir = TempDir::new().unwrap();
+            let wasm_bytes = wat::parse_str(wat_src)?;
+            let temp_dir = TempDir::new()?;
             let wasm_path = temp_dir.path().join("hostlog.wasm");
-            std::fs::write(&wasm_path, wasm_bytes).expect("write wasm");
+            std::fs::write(&wasm_path, wasm_bytes)?;
 
-            let mut manager = UnifiedPluginManager::new(temp_dir.path()).expect("manager");
+            let mut manager = UnifiedPluginManager::new(temp_dir.path())?;
             let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
             manager.set_host_interface(std::sync::Arc::new(CaptureHost { logs: logs.clone() }));
             let load_res = manager.load_plugin(&wasm_path).await;
             assert!(load_res.is_ok(), "failed to load plugin: {:?}", load_res);
 
             // Validate that host_log was invoked
-            let captured = logs.lock().unwrap().clone();
+            let captured = logs.lock().unwrap_or_else(|e| e.into_inner()).clone();
             assert!(
-                captured
-                    .iter()
-                    .any(|(_, msg)| msg.contains("hello from plugin")),
+                captured.iter().any(|(_, msg)| msg.contains("hello from plugin")),
                 "expected host_log to receive message, got {:?}",
                 captured
             );
+            Ok(())
         }
     }
 }

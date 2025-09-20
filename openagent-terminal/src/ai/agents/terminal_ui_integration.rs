@@ -727,11 +727,7 @@ impl TerminalUIIntegration {
         // Update layout
         self.layout_manager.update_layout(&mut components).await?;
 
-        tracing::info!(
-            "Created UI component: {} ({:?})",
-            component_id,
-            component_type
-        );
+        tracing::info!("Created UI component: {} ({:?})", component_id, component_type);
         Ok(component_id)
     }
 
@@ -863,8 +859,7 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content)
-                .await?;
+            self.update_component_content(&component_id, content).await?;
         }
 
         Ok(())
@@ -876,9 +871,7 @@ impl TerminalUIIntegration {
             // Create tree visualization of conversation branches
             let tree_data = self.build_branch_tree_data(session_id).await?;
 
-            let component_id = self
-                .find_or_create_component(ComponentType::BranchTree)
-                .await?;
+            let component_id = self.find_or_create_component(ComponentType::BranchTree).await?;
 
             let content = ComponentContent {
                 title: "Conversation Branches".to_string(),
@@ -888,8 +881,7 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content)
-                .await?;
+            self.update_component_content(&component_id, content).await?;
         }
 
         Ok(())
@@ -901,9 +893,7 @@ impl TerminalUIIntegration {
             // Get goal tracking data
             let goals_data = self.build_goals_data(session_id).await?;
 
-            let component_id = self
-                .find_or_create_component(ComponentType::GoalTracker)
-                .await?;
+            let component_id = self.find_or_create_component(ComponentType::GoalTracker).await?;
 
             let content = ComponentContent {
                 title: "Goal Progress".to_string(),
@@ -913,8 +903,7 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content)
-                .await?;
+            self.update_component_content(&component_id, content).await?;
         }
 
         Ok(())
@@ -925,17 +914,12 @@ impl TerminalUIIntegration {
         if let Some(privacy_filter) = &self.privacy_filter {
             let status = privacy_filter.status().await;
 
-            let component_id = self
-                .find_or_create_component(ComponentType::PrivacyIndicator)
-                .await?;
+            let component_id =
+                self.find_or_create_component(ComponentType::PrivacyIndicator).await?;
 
             let privacy_info = format!(
                 "Privacy Status: {}\nLast Activity: {}\nTask: {}",
-                if status.is_healthy {
-                    "✅ Protected"
-                } else {
-                    "❌ Issue"
-                },
+                if status.is_healthy { "✅ Protected" } else { "❌ Issue" },
                 status.last_activity.format("%H:%M:%S"),
                 status.current_task.unwrap_or_default()
             );
@@ -948,8 +932,7 @@ impl TerminalUIIntegration {
                 scroll_position: 0,
             };
 
-            self.update_component_content(&component_id, content)
-                .await?;
+            self.update_component_content(&component_id, content).await?;
         }
 
         Ok(())
@@ -1025,12 +1008,7 @@ impl TerminalUIIntegration {
             background_color: Some(Color::Black),
             foreground_color: Some(Color::White),
             highlight_color: Some(Color::Blue),
-            padding: Padding {
-                top: 1,
-                right: 1,
-                bottom: 1,
-                left: 1,
-            },
+            padding: Padding { top: 1, right: 1, bottom: 1, left: 1 },
             font_style: FontStyle {
                 bold: false,
                 italic: false,
@@ -1066,10 +1044,7 @@ impl TerminalUIIntegration {
 
     async fn get_focused_component_id(&self) -> Option<String> {
         let components = self.ui_components.read().await;
-        components
-            .values()
-            .find(|c| c.is_focused)
-            .map(|c| c.id.clone())
+        components.values().find(|c| c.is_focused).map(|c| c.id.clone())
     }
 
     async fn execute_action(&self, action: &Action) -> Result<bool> {
@@ -1119,27 +1094,17 @@ impl TerminalUIIntegration {
         let mut components = self.ui_components.write().await;
 
         // Collect visible component IDs to avoid borrow checker issues
-        let visible_component_ids: Vec<String> = components
-            .values()
-            .filter(|c| c.is_visible)
-            .map(|c| c.id.clone())
-            .collect();
+        let visible_component_ids: Vec<String> =
+            components.values().filter(|c| c.is_visible).map(|c| c.id.clone()).collect();
 
-        if let Some(focused_id) = components
-            .values()
-            .find(|c| c.is_focused)
-            .map(|c| c.id.clone())
-        {
+        if let Some(focused_id) = components.values().find(|c| c.is_focused).map(|c| c.id.clone()) {
             // Clear current focus
             if let Some(focused) = components.get_mut(&focused_id) {
                 focused.is_focused = false;
             }
 
             // Find next component
-            if let Some(pos) = visible_component_ids
-                .iter()
-                .position(|id| id == &focused_id)
-            {
+            if let Some(pos) = visible_component_ids.iter().position(|id| id == &focused_id) {
                 let next_pos = (pos + 1) % visible_component_ids.len();
                 let next_id = &visible_component_ids[next_pos];
                 if let Some(next_component) = components.get_mut(next_id) {
@@ -1161,32 +1126,18 @@ impl TerminalUIIntegration {
         let mut components = self.ui_components.write().await;
 
         // Collect visible component IDs to avoid borrow checker issues
-        let visible_component_ids: Vec<String> = components
-            .values()
-            .filter(|c| c.is_visible)
-            .map(|c| c.id.clone())
-            .collect();
+        let visible_component_ids: Vec<String> =
+            components.values().filter(|c| c.is_visible).map(|c| c.id.clone()).collect();
 
-        if let Some(focused_id) = components
-            .values()
-            .find(|c| c.is_focused)
-            .map(|c| c.id.clone())
-        {
+        if let Some(focused_id) = components.values().find(|c| c.is_focused).map(|c| c.id.clone()) {
             // Clear current focus
             if let Some(focused) = components.get_mut(&focused_id) {
                 focused.is_focused = false;
             }
 
             // Find previous component
-            if let Some(pos) = visible_component_ids
-                .iter()
-                .position(|id| id == &focused_id)
-            {
-                let prev_pos = if pos == 0 {
-                    visible_component_ids.len() - 1
-                } else {
-                    pos - 1
-                };
+            if let Some(pos) = visible_component_ids.iter().position(|id| id == &focused_id) {
+                let prev_pos = if pos == 0 { visible_component_ids.len() - 1 } else { pos - 1 };
                 let prev_id = &visible_component_ids[prev_pos];
                 if let Some(prev_component) = components.get_mut(prev_id) {
                     prev_component.is_focused = true;
@@ -1199,9 +1150,8 @@ impl TerminalUIIntegration {
 
     async fn scroll_focused_component(&self, delta: i32) -> Result<()> {
         let mut components = self.ui_components.write().await;
-        if let Some(focused) = components
-            .values_mut()
-            .find(|c| c.is_focused && c.content.scrollable)
+        if let Some(focused) =
+            components.values_mut().find(|c| c.is_focused && c.content.scrollable)
         {
             let new_position = (focused.content.scroll_position as i32 + delta).max(0) as u16;
             focused.content.scroll_position = new_position;
@@ -1211,8 +1161,7 @@ impl TerminalUIIntegration {
     }
 
     async fn find_or_create_conversation_view(&self) -> Result<String> {
-        self.find_or_create_component(ComponentType::ConversationView)
-            .await
+        self.find_or_create_component(ComponentType::ConversationView).await
     }
 
     async fn find_or_create_component(&self, component_type: ComponentType) -> Result<String> {
@@ -1238,8 +1187,7 @@ impl TerminalUIIntegration {
             max_height: None,
         };
 
-        self.create_component(component_type, position, dimensions)
-            .await
+        self.create_component(component_type, position, dimensions).await
     }
 
     async fn build_branch_tree_data(&self, _session_id: Uuid) -> Result<TreeNode> {
@@ -1284,21 +1232,13 @@ impl TerminalUIIntegration {
             data_series: vec![
                 DataSeries {
                     name: "Authentication Goal".to_string(),
-                    data: vec![DataPoint {
-                        x: 1.0,
-                        y: 75.0,
-                        label: Some("Auth".to_string()),
-                    }],
+                    data: vec![DataPoint { x: 1.0, y: 75.0, label: Some("Auth".to_string()) }],
                     color: Color::Green,
                     style: LineStyle::Solid,
                 },
                 DataSeries {
                     name: "Testing Goal".to_string(),
-                    data: vec![DataPoint {
-                        x: 2.0,
-                        y: 25.0,
-                        label: Some("Tests".to_string()),
-                    }],
+                    data: vec![DataPoint { x: 2.0, y: 25.0, label: Some("Tests".to_string()) }],
                     color: Color::Blue,
                     style: LineStyle::Solid,
                 },
@@ -1427,12 +1367,7 @@ impl ThemeManager {
                         thickness: 1,
                         rounded_corners: false,
                     },
-                    default_padding: Padding {
-                        top: 1,
-                        right: 1,
-                        bottom: 1,
-                        left: 1,
-                    },
+                    default_padding: Padding { top: 1, right: 1, bottom: 1, left: 1 },
                     animation_speed: Duration::milliseconds(200),
                     cursor_blink_rate: Duration::milliseconds(500),
                 },
@@ -1453,24 +1388,15 @@ impl InputHandler {
 
         // Default key bindings
         key_bindings.insert(
-            KeyCombination {
-                key: Key::Char('q'),
-                modifiers: vec![Modifier::Ctrl],
-            },
+            KeyCombination { key: Key::Char('q'), modifiers: vec![Modifier::Ctrl] },
             Action::System(SystemAction::Quit),
         );
         key_bindings.insert(
-            KeyCombination {
-                key: Key::Char('r'),
-                modifiers: vec![Modifier::Ctrl],
-            },
+            KeyCombination { key: Key::Char('r'), modifiers: vec![Modifier::Ctrl] },
             Action::System(SystemAction::Refresh),
         );
         key_bindings.insert(
-            KeyCombination {
-                key: Key::Tab,
-                modifiers: Vec::new(),
-            },
+            KeyCombination { key: Key::Tab, modifiers: Vec::new() },
             Action::Navigate(NavigationAction::FocusNext),
         );
 
@@ -1560,12 +1486,7 @@ impl Default for Cell {
             character: ' ',
             foreground_color: Color::White,
             background_color: Color::Black,
-            style: FontStyle {
-                bold: false,
-                italic: false,
-                underline: false,
-                strikethrough: false,
-            },
+            style: FontStyle { bold: false, italic: false, underline: false, strikethrough: false },
         }
     }
 }
@@ -1816,14 +1737,8 @@ mod tests {
 
     #[test]
     fn test_key_combination_hash() {
-        let key1 = KeyCombination {
-            key: Key::Char('q'),
-            modifiers: vec![Modifier::Ctrl],
-        };
-        let key2 = KeyCombination {
-            key: Key::Char('q'),
-            modifiers: vec![Modifier::Ctrl],
-        };
+        let key1 = KeyCombination { key: Key::Char('q'), modifiers: vec![Modifier::Ctrl] };
+        let key2 = KeyCombination { key: Key::Char('q'), modifiers: vec![Modifier::Ctrl] };
 
         assert_eq!(key1, key2);
     }

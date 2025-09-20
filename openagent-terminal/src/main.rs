@@ -37,10 +37,10 @@ mod ai_runtime;
 mod cli;
 #[cfg(feature = "ai")]
 mod cli_ai;
-#[cfg(feature = "security-lens")]
-mod cli_security;
 #[cfg(feature = "plugins")]
 mod cli_plugins;
+#[cfg(feature = "security-lens")]
+mod cli_security;
 #[cfg(feature = "sync")]
 mod cli_sync;
 mod clipboard;
@@ -48,11 +48,11 @@ mod config;
 mod daemon;
 mod display;
 mod event;
+mod ide;
 mod input;
 #[cfg(unix)]
 mod ipc;
 mod logging;
-mod ide;
 mod logging_v2;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -88,12 +88,12 @@ pub use security::security_lens;
 pub use security::stub as security_lens;
 #[cfg(feature = "completions")]
 mod completions_spec;
+#[cfg(feature = "blocks")]
+mod storage;
 mod text_shaping;
 mod ui_confirm;
 mod utils;
 mod workspace;
-#[cfg(feature = "blocks")]
-mod storage;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;
@@ -164,9 +164,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(feature = "blocks")]
         Some(Subcommands::Notebook(ref nb_opts)) => {
             // Run notebooks CLI in a lightweight runtime
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
             let code = rt.block_on(crate::notebooks::run_cli(nb_opts))?;
             // Return the code by exiting early
             if code != 0 {
@@ -178,18 +176,142 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(feature = "plugins")]
         Some(Subcommands::Plugins(ref plugin_opts)) => {
             // Lightweight current-thread runtime for CLI-only operations
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
             let code = rt.block_on(crate::cli_plugins::run_plugins_cli(plugin_opts))?;
             if code != 0 {
                 std::process::exit(code)
             };
         }
+        #[cfg(feature = "web-editors")]
+        Some(Subcommands::WebEdit(ref opts)) => {
+            let code = web_edit_run(opts)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
+        #[cfg(feature = "ide-indexer")]
+        Some(Subcommands::IdeIndex(ref opts)) => {
+            let code = ide_index_run(opts)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
+        #[cfg(feature = "ide-lsp")]
+        Some(Subcommands::IdeLspHover(ref opts)) => {
+            let code = ide_lsp_hover_run(opts)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
         None => run_openagent_terminal(options)?,
     }
 
     Ok(())
+}
+
+#[cfg(feature = "web-editors")]
+fn web_edit_run(opts: &crate::cli::WebEditOptions) -> Result<i32, Box<dyn Error>> {
+    use openagent_terminal_web_editors as webedit;
+    let cfg = webedit::WebEditorConfig {
+        file_path: opts.file.clone(),
+        title: opts.title.clone(),
+        prefer_monaco: true,
+    };
+    webedit::open_editor_blocking(cfg)?;
+    Ok(0)
+}
+
+#[cfg(feature = "ide-indexer")]
+fn ide_index_run(opts: &crate::cli::IdeIndexOptions) -> Result<i32, Box<dyn Error>> {
+    use openagent_terminal_ide_indexer as ide_indexer;
+    let cfg = ide_indexer::ProjectIndexConfig::new(opts.root.clone());
+    let index = ide_indexer::ProjectIndex::build(&cfg)?;
+    if opts.json {
+        let tree = index.snapshot_tree();
+        println!("{}", serde_json::to_string_pretty(&tree)?);
+    } else {
+        let files = index.snapshot_files();
+        println!("Indexed {} items under {}", files.len(), index.root.display());
+        for f in files {
+            let marker = if f.is_dir { "[D]" } else { "[F]" };
+            println!("{} {}", marker, f.path.display());
+        }
+    }
+    Ok(0)
+}
+
+#[cfg(feature = "ide-lsp")]
+fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<dyn Error>> {
+    use lsp_types as lsp;
+    use openagent_terminal_ide_lsp as ide_lsp;
+    use std::fs;
+
+    // Guess language if not provided
+    fn guess_language_from_path(path: &std::path::Path) -> String {
+        match path.extension().and_then(|s| s.to_str()).unwrap_or("") {
+            "rs" => "rust",
+            "ts" => "typescript",
+            "tsx" => "typescript",
+            "js" => "javascript",
+            "jsx" => "javascript",
+            "json" => "json",
+            "md" => "markdown",
+            "py" => "python",
+            "go" => "go",
+            "c" | "h" => "c",
+            "cpp" | "cc" | "hpp" => "cpp",
+            other => {
+                if other.is_empty() {
+                    "plaintext"
+                } else {
+                    other
+                }
+            }
+        }
+        .into()
+    }
+
+    let lang = opts.language.clone().unwrap_or_else(|| guess_language_from_path(&opts.file));
+
+    // Use default IDE config mapping for language servers
+    let ide_cfg = crate::config::ide::IdeConfig::default();
+    let server = ide_cfg
+        .language_servers
+        .get(&lang)
+        .ok_or_else(|| format!("No language server configured for language '{lang}'"))?;
+
+    let server_cfg = ide_lsp::ServerConfig {
+        command: server.command.clone(),
+        args: server.args.clone(),
+        initialization_options: server.initialization_options.clone(),
+    };
+
+    let root_uri = opts.file.parent().map(|p| lsp::Url::from_file_path(p).unwrap());
+    let client = ide_lsp::LspClient::start(&server_cfg, root_uri)?;
+
+    let uri = lsp::Url::from_file_path(&opts.file).map_err(|_| "invalid file path for LSP URI")?;
+    let text = fs::read_to_string(&opts.file).unwrap_or_default();
+    client.open_document(uri.clone(), &lang, &text)?;
+
+    // Convert 1-based -> 0-based
+    let pos = lsp::Position {
+        line: opts.line.saturating_sub(1),
+        character: opts.character.saturating_sub(1),
+    };
+    let params = lsp::TextDocumentPositionParams {
+        text_document: lsp::TextDocumentIdentifier { uri },
+        position: pos,
+    };
+
+    match client.hover(params)? {
+        Some(hover) => {
+            println!("{}", serde_json::to_string_pretty(&hover)?);
+        }
+        None => {
+            println!("No hover information available at this position");
+        }
+    }
+    Ok(0)
 }
 
 /// `msg` subcommand entrypoint.
@@ -198,9 +320,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn msg(mut options: MessageOptions) -> Result<(), Box<dyn Error>> {
     #[cfg(not(any(target_os = "macos", windows)))]
     if let SocketMessage::CreateWindow(window_options) = &mut options.message {
-        window_options.activation_token = env::var("XDG_ACTIVATION_TOKEN")
-            .or_else(|_| env::var("DESKTOP_STARTUP_ID"))
-            .ok();
+        window_options.activation_token =
+            env::var("XDG_ACTIVATION_TOKEN").or_else(|_| env::var("DESKTOP_STARTUP_ID")).ok();
     }
     ipc::send_message(options.socket, options.message).map_err(|err| err.into())
 }
@@ -225,11 +346,7 @@ impl Drop for TemporaryFiles {
         // Clean up logfile.
         if let Some(log_file) = &self.log_file {
             if fs::remove_file(log_file).is_ok() {
-                let _ = writeln!(
-                    io::stdout(),
-                    "Deleted log file at \"{}\"",
-                    log_file.display()
-                );
+                let _ = writeln!(io::stdout(), "Deleted log file at \"{}\"", log_file.display());
             }
         }
     }

@@ -19,18 +19,10 @@ pub enum SplitLayout {
     Single(PaneId),
 
     /// Horizontal split (left | right)
-    Horizontal {
-        left: Box<SplitLayout>,
-        right: Box<SplitLayout>,
-        ratio: f32,
-    },
+    Horizontal { left: Box<SplitLayout>, right: Box<SplitLayout>, ratio: f32 },
 
     /// Vertical split (top / bottom)
-    Vertical {
-        top: Box<SplitLayout>,
-        bottom: Box<SplitLayout>,
-        ratio: f32,
-    },
+    Vertical { top: Box<SplitLayout>, bottom: Box<SplitLayout>, ratio: f32 },
 }
 
 impl SplitLayout {
@@ -429,11 +421,7 @@ impl SplitLayout {
 
 impl SplitHistory {
     pub fn new(max_history: usize) -> Self {
-        Self {
-            snapshots: Vec::new(),
-            current_index: 0,
-            max_history,
-        }
+        Self { snapshots: Vec::new(), current_index: 0, max_history }
     }
 
     pub fn save_snapshot(&mut self, layout: &SplitLayout) {
@@ -554,11 +542,8 @@ impl SplitManager {
                     *ratio = Self::clamp_ratio(*ratio);
 
                     // Case 1: Top child is also Vertical => rotate top child up
-                    if let SplitLayout::Vertical {
-                        top: t_top,
-                        bottom: t_bottom,
-                        ratio: t_ratio,
-                    } = top.as_ref()
+                    if let SplitLayout::Vertical { top: t_top, bottom: t_bottom, ratio: t_ratio } =
+                        top.as_ref()
                     {
                         // Only rotate when the bottom child is not a simple leaf to preserve
                         // adjacency semantics
@@ -642,14 +627,7 @@ impl SplitManager {
                 _ => false,
             }
         }
-        insert_recursive(
-            layout,
-            target,
-            moving,
-            axis,
-            before,
-            self.default_split_ratio,
-        )
+        insert_recursive(layout, target, moving, axis, before, self.default_split_ratio)
     }
 
     /// Move an existing pane to a location next to `target` by re-parenting inside the tree.
@@ -849,11 +827,7 @@ impl SplitManager {
 
             // Emit immediate events
             self.emit_event(SplitEvent::PaneCreated(new_pane_id));
-            self.emit_event(SplitEvent::SplitCreated(
-                pane_id,
-                new_pane_id,
-                SplitAxis::Horizontal,
-            ));
+            self.emit_event(SplitEvent::SplitCreated(pane_id, new_pane_id, SplitAxis::Horizontal));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
             true
         } else {
@@ -879,11 +853,7 @@ impl SplitManager {
 
             // Emit immediate events
             self.emit_event(SplitEvent::PaneCreated(new_pane_id));
-            self.emit_event(SplitEvent::SplitCreated(
-                pane_id,
-                new_pane_id,
-                SplitAxis::Vertical,
-            ));
+            self.emit_event(SplitEvent::SplitCreated(pane_id, new_pane_id, SplitAxis::Vertical));
             self.emit_event(SplitEvent::LayoutChanged(layout.collect_pane_ids()));
             true
         } else {
@@ -1007,8 +977,7 @@ impl SplitManager {
                 }
 
                 // Recursively search in children
-                self.remove_pane(left, pane_id)
-                    .or_else(|| self.remove_pane(right, pane_id))
+                self.remove_pane(left, pane_id).or_else(|| self.remove_pane(right, pane_id))
             }
             SplitLayout::Vertical { top, bottom, .. } => {
                 if let SplitLayout::Single(id) = top.as_ref() {
@@ -1027,8 +996,7 @@ impl SplitManager {
                 }
 
                 // Recursively search in children
-                self.remove_pane(top, pane_id)
-                    .or_else(|| self.remove_pane(bottom, pane_id))
+                self.remove_pane(top, pane_id).or_else(|| self.remove_pane(bottom, pane_id))
             }
             _ => None,
         }
@@ -1061,11 +1029,7 @@ impl SplitManager {
     pub fn focus_previous_pane(&mut self, layout: &SplitLayout, current_pane: &mut PaneId) -> bool {
         let panes = layout.collect_pane_ids();
         if let Some(current_index) = panes.iter().position(|&id| id == *current_pane) {
-            let prev_index = if current_index == 0 {
-                panes.len() - 1
-            } else {
-                current_index - 1
-            };
+            let prev_index = if current_index == 0 { panes.len() - 1 } else { current_index - 1 };
             let new_pane = panes[prev_index];
 
             // Start focus animation immediately
@@ -1154,8 +1118,12 @@ impl SplitManager {
             // Determine current ratio at path
             if let Some((axis, ratio)) = layout.ratio_at_path(&hit.path) {
                 let new_ratio = match axis {
-                    SplitAxis::Horizontal => Self::clamp_ratio(ratio + delta_pixels / hit.rect.width),
-                    SplitAxis::Vertical => Self::clamp_ratio(ratio + delta_pixels / hit.rect.height),
+                    SplitAxis::Horizontal => {
+                        Self::clamp_ratio(ratio + delta_pixels / hit.rect.width)
+                    }
+                    SplitAxis::Vertical => {
+                        Self::clamp_ratio(ratio + delta_pixels / hit.rect.height)
+                    }
                 };
                 let updated = layout.set_ratio_at_path_internal(&hit.path, axis, new_ratio);
                 if updated {
@@ -1199,12 +1167,19 @@ impl SplitManager {
     }
 
     /// Swap two adjacent leaf panes if they are siblings under a split node.
-    pub fn swap_adjacent_panes(&self, layout: &mut SplitLayout, pane1: PaneId, pane2: PaneId) -> bool {
+    pub fn swap_adjacent_panes(
+        &self,
+        layout: &mut SplitLayout,
+        pane1: PaneId,
+        pane2: PaneId,
+    ) -> bool {
         fn rec(node: &mut SplitLayout, a: PaneId, b: PaneId) -> bool {
             match node {
                 SplitLayout::Horizontal { left, right, .. } => {
                     // Check direct children first
-                    if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) = (left.as_ref(), right.as_ref()) {
+                    if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) =
+                        (left.as_ref(), right.as_ref())
+                    {
                         if (*id1 == a && *id2 == b) || (*id1 == b && *id2 == a) {
                             std::mem::swap(left, right);
                             return true;
@@ -1214,7 +1189,9 @@ impl SplitManager {
                     rec(left, a, b) || rec(right, a, b)
                 }
                 SplitLayout::Vertical { top, bottom, .. } => {
-                    if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) = (top.as_ref(), bottom.as_ref()) {
+                    if let (SplitLayout::Single(id1), SplitLayout::Single(id2)) =
+                        (top.as_ref(), bottom.as_ref())
+                    {
                         if (*id1 == a && *id2 == b) || (*id1 == b && *id2 == a) {
                             std::mem::swap(top, bottom);
                             return true;
@@ -1352,17 +1329,9 @@ mod tests {
             right: Box::new(SplitLayout::Single(PaneId(2))),
             ratio: 0.5,
         };
-        let ok = sm.move_pane_to_split(
-            &mut layout,
-            PaneId(1),
-            PaneId(1),
-            SplitAxis::Horizontal,
-            true,
-        );
-        assert!(
-            !ok,
-            "moving a pane next to itself should be a no-op and return false"
-        );
+        let ok =
+            sm.move_pane_to_split(&mut layout, PaneId(1), PaneId(1), SplitAxis::Horizontal, true);
+        assert!(!ok, "moving a pane next to itself should be a no-op and return false");
     }
 
     #[test]
@@ -1455,10 +1424,7 @@ mod tests {
                 SplitLayout::Single(_) => false,
             }
         }
-        assert!(
-            has_pair(&layout, b, n),
-            "expected (B,N) adjacency after insert-after"
-        );
+        assert!(has_pair(&layout, b, n), "expected (B,N) adjacency after insert-after");
     }
 
     #[test]
@@ -1544,11 +1510,7 @@ mod tests {
             .collect();
 
         for id in [a, b, c] {
-            assert!(
-                approx_eq(before[&id], after[&id], 1e-3),
-                "width mismatch for {:?}",
-                id
-            );
+            assert!(approx_eq(before[&id], after[&id], 1e-3), "width mismatch for {:?}", id);
         }
 
         // Basic structure sanity: still a horizontal root
@@ -1588,11 +1550,7 @@ mod tests {
             .collect();
 
         for id in [a, b, c] {
-            assert!(
-                approx_eq(before[&id], after[&id], 1e-3),
-                "width mismatch for {:?}",
-                id
-            );
+            assert!(approx_eq(before[&id], after[&id], 1e-3), "width mismatch for {:?}", id);
         }
 
         // Basic structure sanity: still a horizontal root
@@ -1632,11 +1590,7 @@ mod tests {
             .collect();
 
         for id in [a, b, c] {
-            assert!(
-                approx_eq(before[&id], after[&id], 1e-3),
-                "height mismatch for {:?}",
-                id
-            );
+            assert!(approx_eq(before[&id], after[&id], 1e-3), "height mismatch for {:?}", id);
         }
 
         // Basic structure sanity: still a vertical root
@@ -1710,4 +1664,4 @@ mod tests {
                 assert!(matches!(layout, SplitLayout::Horizontal { .. }));
         }
         }
-    }
+}

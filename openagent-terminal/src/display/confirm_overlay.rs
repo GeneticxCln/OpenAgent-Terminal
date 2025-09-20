@@ -139,22 +139,13 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Backdrop dim
-        let backdrop = RenderRect::new(
-            0.0,
-            0.0,
-            size_info.width(),
-            size_info.height(),
-            tokens.overlay,
-            0.25,
-        );
+        let backdrop =
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.25);
 
         // Modal sizing: 60% width, min 40 cols; height fits content up to 40% of screen
         let cols = size_info.columns();
@@ -230,10 +221,8 @@ impl Display {
         }
 
         // Draw footer with instructions
-        let footer = format!(
-            "Enter = {}    Esc = {}    (Y/N)",
-            state.confirm_label, state.cancel_label
-        );
+        let footer =
+            format!("Enter = {}    Esc = {}    (Y/N)", state.confirm_label, state.cancel_label);
         self.draw_ai_text(
             Point::new(y_line + modal_lines - 2, Column(x_col + 2)),
             tokens.text_muted,
@@ -255,22 +244,13 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Backdrop dim
-        let backdrop = RenderRect::new(
-            0.0,
-            0.0,
-            size_info.width(),
-            size_info.height(),
-            tokens.overlay,
-            0.35,
-        );
+        let backdrop =
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.35);
 
         // Modal sizing: 70% width for detailed risk display
         let cols = size_info.columns();

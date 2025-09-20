@@ -110,16 +110,8 @@ fn redact_line(mut line: String) -> String {
     let extended_cfg = crate::event::Processor::privacy_extended_flag();
     let extended = extended_cfg.unwrap_or(extended_env);
     let lower = line.to_lowercase();
-    let keywords = [
-        "api_key",
-        "apikey",
-        "token",
-        "secret",
-        "password",
-        "passwd",
-        "authorization",
-        "auth",
-    ];
+    let keywords =
+        ["api_key", "apikey", "token", "secret", "password", "passwd", "authorization", "auth"];
 
     // Authorization: Bearer ...
     if let Some(pos) = lower.find("bearer ") {
@@ -443,7 +435,9 @@ pub trait ActionContext<T: EventListener> {
     fn blocks_search_cancel(&mut self) {}
 
     // Completions overlay controls
-    fn completions_active(&self) -> bool { false }
+    fn completions_active(&self) -> bool {
+        false
+    }
     fn completions_move_selection(&mut self, _delta: isize) {}
     fn completions_confirm(&mut self) {}
     fn completions_clear(&mut self) {}
@@ -857,10 +851,7 @@ impl<T: EventListener> Execute<T> for Action {
             }
             Action::Vi(ViAction::SearchStart) => {
                 let terminal = ctx.terminal();
-                let origin = terminal
-                    .vi_mode_cursor
-                    .point
-                    .sub(terminal, Boundary::None, 1);
+                let origin = terminal.vi_mode_cursor.point.sub(terminal, Boundary::None, 1);
 
                 if let Some(regex_match) = ctx.search_next(origin, Direction::Left, Side::Left) {
                     ctx.terminal_mut().vi_goto_point(*regex_match.start());
@@ -886,10 +877,7 @@ impl<T: EventListener> Execute<T> for Action {
             }
             Action::Vi(ViAction::SearchEnd) => {
                 let terminal = ctx.terminal();
-                let origin = terminal
-                    .vi_mode_cursor
-                    .point
-                    .add(terminal, Boundary::None, 1);
+                let origin = terminal.vi_mode_cursor.point.add(terminal, Boundary::None, 1);
 
                 if let Some(regex_match) = ctx.search_next(origin, Direction::Right, Side::Right) {
                     ctx.terminal_mut().vi_goto_point(*regex_match.end());
@@ -1085,11 +1073,8 @@ impl<T: EventListener> Execute<T> for Action {
                         }
 
                         // Require confirmation if policy says so
-                        let requires_confirmation = policy
-                            .require_confirmation
-                            .get(&risk.level)
-                            .copied()
-                            .unwrap_or(false);
+                        let requires_confirmation =
+                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
 
                         if requires_confirmation {
                             // Prepare confirmation body
@@ -1202,11 +1187,8 @@ impl<T: EventListener> Execute<T> for Action {
                             ctx.send_user_event(crate::event::EventType::Message(message));
                             return;
                         }
-                        let requires_confirmation = policy
-                            .require_confirmation
-                            .get(&risk.level)
-                            .copied()
-                            .unwrap_or(false);
+                        let requires_confirmation =
+                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
                         if requires_confirmation {
                             let mut body = String::new();
                             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -1299,11 +1281,8 @@ impl<T: EventListener> Execute<T> for Action {
                             ctx.send_user_event(crate::event::EventType::Message(message));
                             return;
                         }
-                        let requires_confirmation = policy
-                            .require_confirmation
-                            .get(&risk.level)
-                            .copied()
-                            .unwrap_or(false);
+                        let requires_confirmation =
+                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
                         if requires_confirmation {
                             let mut body = String::new();
                             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -1534,9 +1513,7 @@ impl<T: EventListener> Execute<T> for Action {
                         // Compute display offset without holding the display borrow.
                         let display_offset = { ctx.terminal().grid().display_offset() };
                         let display = ctx.display();
-                        display
-                            .blocks
-                            .toggle_fold_at_viewport_point(display_offset, viewport_point)
+                        display.blocks.toggle_fold_at_viewport_point(display_offset, viewport_point)
                     };
 
                     if toggled {
@@ -1624,10 +1601,7 @@ impl<T: EventListener> Execute<T> for Action {
 
 impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     pub fn new(ctx: A) -> Self {
-        Self {
-            ctx,
-            _phantom: Default::default(),
-        }
+        Self { ctx, _phantom: Default::default() }
     }
 
     /// Handle clicks on the tab bar (top or bottom)
@@ -1785,10 +1759,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // Switch provider
                         #[cfg(feature = "ai")]
                         {
-                            self.ctx
-                                .send_user_event(crate::event::EventType::AiSwitchProvider(
-                                    (*_pid).to_string(),
-                                ));
+                            self.ctx.send_user_event(crate::event::EventType::AiSwitchProvider(
+                                (*_pid).to_string(),
+                            ));
                         }
                         self.ctx.display().ai_provider_dropdown_open = false;
                         // brief press flash for feedback
@@ -2001,10 +1974,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // In instant mode we open AI panel on click; commit mode will just focus
             #[cfg(feature = "ai")]
             {
-                if matches!(
-                    ui.composer_open_mode,
-                    crate::config::theme::ComposerOpenMode::Instant
-                ) {
+                if matches!(ui.composer_open_mode, crate::config::theme::ComposerOpenMode::Instant)
+                {
                     self.ctx.open_ai_panel();
                     return true;
                 }
@@ -2049,17 +2020,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         };
         let reserve_top = tab_cfg.show
             && !cfg.workspace.warp_overlay_only
-            && matches!(
-                effective_visibility,
-                crate::config::workspace::TabBarVisibility::Always
-            )
+            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
             && tab_cfg.position == crate::workspace::TabBarPosition::Top;
         let reserve_bottom = tab_cfg.show
             && !cfg.workspace.warp_overlay_only
-            && matches!(
-                effective_visibility,
-                crate::config::workspace::TabBarVisibility::Always
-            )
+            && matches!(effective_visibility, crate::config::workspace::TabBarVisibility::Always)
             && tab_cfg.position == crate::workspace::TabBarPosition::Bottom;
 
         let mut line = match cfg.workspace.quick_actions.position {
@@ -2158,15 +2123,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 // Mirror draw_quick_actions_bar geometry
                 let cw = size_info.cell_width();
                 let ch = size_info.cell_height();
-                let theme = cfg
-                    .resolved_theme
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| cfg.theme.resolve());
-                let icon_px = theme
-                    .ui
-                    .quick_actions_settings_icon_px
-                    .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
+                let theme =
+                    cfg.resolved_theme.as_ref().cloned().unwrap_or_else(|| cfg.theme.resolve());
+                let icon_px =
+                    theme.ui.quick_actions_settings_icon_px.unwrap_or((ch * 0.9).clamp(12.0, 18.0));
                 let start_col = cols.saturating_sub(gear_cols + 2);
                 let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
                 let y_px = (line as f32) * ch;
@@ -2266,11 +2226,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 };
                 let min_px = min_units * unit_px;
                 // Convert to ratio, clamp to sane range leaving room for both sides
-                let mut rmin = if dim_px > 0.0 {
-                    (min_px / dim_px).clamp(0.05, 0.45)
-                } else {
-                    0.1
-                };
+                let mut rmin = if dim_px > 0.0 { (min_px / dim_px).clamp(0.05, 0.45) } else { 0.1 };
                 let mut rmax = 1.0 - rmin;
                 if rmax <= rmin {
                     // Fallback if container is too small to satisfy constraints
@@ -2279,8 +2235,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 }
                 ratio = ratio.clamp(rmin, rmax);
 
-                self.ctx
-                    .workspace_set_split_ratio_at_path(hit.path.clone(), hit.axis, ratio);
+                self.ctx.workspace_set_split_ratio_at_path(hit.path.clone(), hit.axis, ratio);
                 // Set appropriate cursor while dragging
                 match hit.axis {
                     crate::workspace::split_manager::SplitAxis::Horizontal => {
@@ -2295,13 +2250,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // If a pane drag is active, update drag and short-circuit other hover logic
-        if self
-            .ctx
-            .display()
-            .pane_drag_manager
-            .current_drag()
-            .is_some()
-        {
+        if self.ctx.display().pane_drag_manager.current_drag().is_some() {
             let handled = self.ctx.workspace_pane_drag_move(x as f32, y as f32);
             if handled {
                 return;
@@ -2318,19 +2267,13 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             {
                 let header = {
                     let display = self.ctx.display();
-                    display
-                        .blocks
-                        .header_at_viewport_line(display_offset, view.line)
+                    display.blocks.header_at_viewport_line(display_offset, view.line)
                 };
                 let prev = self.ctx.display().blocks_header_hover_line;
                 let new_hover = header.map(|_| view.line);
                 if prev != new_hover {
                     self.ctx.display().blocks_header_hover_line = new_hover;
-                    self.ctx
-                        .display()
-                        .damage_tracker
-                        .frame()
-                        .mark_fully_damaged();
+                    self.ctx.display().damage_tracker.frame().mark_fully_damaged();
                     self.ctx.mark_dirty();
                 }
                 // Detect hover over status pill area (first few columns on the header line)
@@ -2343,11 +2286,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 }
                 if self.ctx.display().blocks_header_hover_status != status_hover {
                     self.ctx.display().blocks_header_hover_status = status_hover;
-                    self.ctx
-                        .display()
-                        .damage_tracker
-                        .frame()
-                        .mark_fully_damaged();
+                    self.ctx.display().damage_tracker.frame().mark_fully_damaged();
                     self.ctx.mark_dirty();
                 }
             }
@@ -2360,7 +2299,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let dragging_pane = display.pane_drag_manager.current_drag().is_some();
             let selecting = {
                 let m = self.ctx.mouse();
-                (m.left_button_state == ElementState::Pressed || m.right_button_state == ElementState::Pressed)
+                (m.left_button_state == ElementState::Pressed
+                    || m.right_button_state == ElementState::Pressed)
                     && !self.ctx.selection_is_empty()
             };
             if !dragging_divider && !dragging_pane && !selecting {
@@ -2387,19 +2327,24 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             #[cfg(feature = "completions")]
             {
                 let cfg = self.ctx.config();
-                if cfg.workspace.warp_style && cfg.workspace.completions_enabled && self.ctx.display().completions_active() {
+                if cfg.workspace.warp_style
+                    && cfg.workspace.completions_enabled
+                    && self.ctx.display().completions_active()
+                {
                     let display_offset = self.ctx.terminal().grid().display_offset();
                     let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
-                    if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+                    if let Some(view) =
+                        openagent_terminal_core::term::point_to_viewport(display_offset, point)
+                    {
                         let bounds_opt = { self.ctx.display().completions_overlay_bounds };
                         if let Some((start_line, end_line, start_col, end_col)) = bounds_opt {
-                            let inside_cols = point.column.0 >= start_col && point.column.0 < end_col;
+                            let inside_cols =
+                                point.column.0 >= start_col && point.column.0 < end_col;
                             if view.line >= start_line && view.line <= end_line && inside_cols {
                                 // Try to map to an item row (use short immutable borrow scope)
                                 let hovered_idx_opt: Option<usize> = {
                                     let dref = self.ctx.display();
-                                    dref
-                                        .completions_overlay_item_lines
+                                    dref.completions_overlay_item_lines
                                         .iter()
                                         .find(|(l, _)| *l == view.line)
                                         .map(|(_, i)| *i)
@@ -2594,26 +2539,16 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Derive hover tolerance from configuration so users can tune indicator/handle sizes.
         let splits = &self.ctx.config().workspace.splits;
         let base_line = splits.indicator_line_width.max(1.0);
-        let base_handle = if splits.show_resize_handles {
-            splits.handle_size.max(1.0)
-        } else {
-            0.0
-        };
+        let base_handle =
+            if splits.show_resize_handles { splits.handle_size.max(1.0) } else { 0.0 };
         // Use half of the larger visual element as tolerance, with sane bounds.
         let mut tol = (base_line.max(base_handle)) * 0.5;
         // Slightly increase tolerance to ease hover acquisition, but clamp to reasonable range.
         tol = (tol + 2.0).clamp(3.0, 12.0);
 
         let split_hover_new = self.ctx.workspace_split_hit(x as f32, y as f32, tol);
-        if self
-            .ctx
-            .display()
-            .split_hover
-            .as_ref()
-            .map(|h| (h.axis, h.rect.x, h.rect.y))
-            != split_hover_new
-                .as_ref()
-                .map(|h| (h.axis, h.rect.x, h.rect.y))
+        if self.ctx.display().split_hover.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
+            != split_hover_new.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
         {
             self.ctx.display().split_hover = split_hover_new;
             // Start hover animation timestamp for split indicators
@@ -2626,9 +2561,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let size_info = self.ctx.size_info();
             let display_offset = self.ctx.terminal().grid().display_offset();
             let p = self.ctx.mouse().point(&size_info, display_offset);
-            let _ = self
-                .ctx
-                .workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
+            let _ = self.ctx.workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
         }
 
         // Compute hover over block header action chips for pointer cursor
@@ -2641,9 +2574,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             {
                 let header = {
                     let display = self.ctx.display();
-                    display
-                        .blocks
-                        .header_at_viewport_line(display_offset, view.line)
+                    display.blocks.header_at_viewport_line(display_offset, view.line)
                 };
                 let mut new_chip_hover: Option<usize> = None;
                 if let Some(header) = header {
@@ -2685,11 +2616,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 }
                 if self.ctx.display().blocks_header_hover_chip != new_chip_hover {
                     self.ctx.display().blocks_header_hover_chip = new_chip_hover;
-                    self.ctx
-                        .display()
-                        .damage_tracker
-                        .frame()
-                        .mark_fully_damaged();
+                    self.ctx.display().damage_tracker.frame().mark_fully_damaged();
                     self.ctx.mark_dirty();
                 }
             }
@@ -2735,9 +2662,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 crate::workspace::TabBarPosition::Hidden => 0,
             };
             let cols = self.ctx.size_info().columns();
-            self.ctx.display().damage_tracker.frame().damage_line(
-                openagent_terminal_core::term::LineDamageBounds::new(line, 0, cols),
-            );
+            self.ctx
+                .display()
+                .damage_tracker
+                .frame()
+                .damage_line(openagent_terminal_core::term::LineDamageBounds::new(line, 0, cols));
             self.ctx.mark_dirty();
         }
 
@@ -2752,11 +2681,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         {
             self.ctx.update_selection(point, cell_side);
         } else if cell_changed
-            && self
-                .ctx
-                .terminal()
-                .mode()
-                .intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
+            && self.ctx.terminal().mode().intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
         {
             if lmb_pressed {
                 self.mouse_report(32, ElementState::Pressed);
@@ -2794,10 +2719,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
     fn mouse_report(&mut self, button: u8, state: ElementState) {
         let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self
-            .ctx
-            .mouse()
-            .point(&self.ctx.size_info(), display_offset);
+        let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
 
         // Assure the mouse point is not in the scrollback.
         if point.line < 0 {
@@ -2867,13 +2789,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             ElementState::Released => 'm',
         };
 
-        let msg = format!(
-            "\x1b[<{};{};{}{}",
-            button,
-            point.column + 1,
-            point.line + 1,
-            c
-        );
+        let msg = format!("\x1b[<{};{};{}{}", button, point.column + 1, point.line + 1, c);
         self.ctx.write_to_pty(msg.into_bytes());
     }
 
@@ -2911,10 +2827,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
             // Load mouse point, treating message bar and padding as the closest cell.
             let display_offset = self.ctx.terminal().grid().display_offset();
-            let point = self
-                .ctx
-                .mouse()
-                .point(&self.ctx.size_info(), display_offset);
+            let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
 
             // Handle AI panel header controls first (stop, regenerate, close).
             #[cfg(feature = "ai")]
@@ -2932,28 +2845,35 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     #[cfg(feature = "completions")]
                     {
                         let cfg = self.ctx.config();
-                        if cfg.workspace.warp_style && cfg.workspace.completions_enabled && self.ctx.display().completions_active() {
+                        if cfg.workspace.warp_style
+                            && cfg.workspace.completions_enabled
+                            && self.ctx.display().completions_active()
+                        {
                             let display_offset = self.ctx.terminal().grid().display_offset();
-                            let point = self
-                                .ctx
-                                .mouse()
-                                .point(&self.ctx.size_info(), display_offset);
-                            if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+                            let point =
+                                self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                            if let Some(view) = openagent_terminal_core::term::point_to_viewport(
+                                display_offset,
+                                point,
+                            ) {
                                 let bounds_opt = { self.ctx.display().completions_overlay_bounds };
-                                if let Some((start_line, end_line, start_col, end_col)) = bounds_opt {
-                                    let inside_cols = point.column.0 >= start_col && point.column.0 < end_col;
-                                    let inside_lines = view.line >= start_line && view.line <= end_line;
+                                if let Some((start_line, end_line, start_col, end_col)) = bounds_opt
+                                {
+                                    let inside_cols =
+                                        point.column.0 >= start_col && point.column.0 < end_col;
+                                    let inside_lines =
+                                        view.line >= start_line && view.line <= end_line;
                                     if inside_lines && inside_cols {
                                         let hovered_idx_opt: Option<usize> = {
                                             let dref = self.ctx.display();
-                                            dref
-                                                .completions_overlay_item_lines
+                                            dref.completions_overlay_item_lines
                                                 .iter()
                                                 .find(|(l, _)| *l == view.line)
                                                 .map(|(_, i)| *i)
                                         };
                                         if let Some(idx) = hovered_idx_opt {
-                                            if self.ctx.display().completions.selected_index != idx {
+                                            if self.ctx.display().completions.selected_index != idx
+                                            {
                                                 self.ctx.display().completions.selected_index = idx;
                                             }
                                             self.ctx.completions_confirm();
@@ -2986,11 +2906,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         };
                         if toggled {
                             // Fully damage and mark dirty; skip normal selection behavior.
-                            self.ctx
-                                .display()
-                                .damage_tracker
-                                .frame()
-                                .mark_fully_damaged();
+                            self.ctx.display().damage_tracker.frame().mark_fully_damaged();
                             self.ctx.mark_dirty();
                             return;
                         }
@@ -2998,9 +2914,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // 2) If not toggled, check if clicking on block header action chips
                         let header = {
                             let display = self.ctx.display();
-                            display
-                                .blocks
-                                .header_at_viewport_line(display_offset, view.line)
+                            display.blocks.header_at_viewport_line(display_offset, view.line)
                         };
                         if let Some(header) = header {
                             use crate::display::blocks::Blocks;
@@ -3020,21 +2934,26 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                         let mods = self.ctx.modifiers().state();
                                         if mods.alt_key() {
                                             // Pre-fill composer with command under cursor and focus composer
-                                            let display_offset = self.ctx.terminal().grid().display_offset();
+                                            let display_offset =
+                                                self.ctx.terminal().grid().display_offset();
                                             let cmd_opt = {
                                                 let display = self.ctx.display();
                                                 display
                                                     .blocks
-                                                    .block_at_header_viewport_line(display_offset, view.line)
+                                                    .block_at_header_viewport_line(
+                                                        display_offset,
+                                                        view.line,
+                                                    )
                                                     .and_then(|b| b.cmd.clone())
                                             };
-                                                if let Some(cmd) = cmd_opt {
-                                                    self.ctx.display().composer_text = cmd;
-                                                    self.ctx.display().composer_cursor = self.ctx.display().composer_text.len();
-                                                    self.ctx.display().composer_sel_anchor = None;
-                                                    self.ctx.display().composer_view_col_offset = 0;
-                                                    self.ctx.display().composer_focused = true;
-                                                }
+                                            if let Some(cmd) = cmd_opt {
+                                                self.ctx.display().composer_text = cmd;
+                                                self.ctx.display().composer_cursor =
+                                                    self.ctx.display().composer_text.len();
+                                                self.ctx.display().composer_sel_anchor = None;
+                                                self.ctx.display().composer_view_col_offset = 0;
+                                                self.ctx.display().composer_focused = true;
+                                            }
                                         } else {
                                             // Immediate rerun
                                             self.ctx.send_user_event(
@@ -3092,8 +3011,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
             ClickState::DoubleClick if !control => {
                 self.ctx.mouse_mut().block_hint_launcher = true;
-                self.ctx
-                    .start_selection(SelectionType::Semantic, point, side);
+                self.ctx.start_selection(SelectionType::Semantic, point, side);
             }
             ClickState::TripleClick if !control => {
                 self.ctx.mouse_mut().block_hint_launcher = true;
@@ -3200,22 +3118,14 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             self.ctx.mouse_mut().accumulated_scroll.x += new_scroll_x_px;
             self.ctx.mouse_mut().accumulated_scroll.y += new_scroll_y_px;
 
-            let code = if new_scroll_y_px > 0. {
-                MOUSE_WHEEL_UP
-            } else {
-                MOUSE_WHEEL_DOWN
-            };
+            let code = if new_scroll_y_px > 0. { MOUSE_WHEEL_UP } else { MOUSE_WHEEL_DOWN };
             let lines = (self.ctx.mouse().accumulated_scroll.y / height).abs() as i32;
 
             for _ in 0..lines {
                 self.mouse_report(code, ElementState::Pressed);
             }
 
-            let code = if new_scroll_x_px > 0. {
-                MOUSE_WHEEL_LEFT
-            } else {
-                MOUSE_WHEEL_RIGHT
-            };
+            let code = if new_scroll_x_px > 0. { MOUSE_WHEEL_LEFT } else { MOUSE_WHEEL_RIGHT };
             let columns = (self.ctx.mouse().accumulated_scroll.x / width).abs() as i32;
 
             for _ in 0..columns {
@@ -3377,11 +3287,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // Transition zoom to pending state once a finger was released.
             TouchPurpose::Zoom(zoom) => {
                 let slots = zoom.slots();
-                let remaining = if slots.0.id == touch.id {
-                    slots.1
-                } else {
-                    slots.0
-                };
+                let remaining = if slots.0.id == touch.id { slots.1 } else { slots.0 };
                 *touch_purpose = TouchPurpose::ZoomPendingSlot(remaining);
             }
             TouchPurpose::ZoomPendingSlot(_) => *touch_purpose = Default::default(),
@@ -3515,10 +3421,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         let point = self.ctx.mouse().point(&size_info, display_offset);
                         let mouse_x = point.column.0;
                         let mouse_y = point.line.0 as usize;
-                        if self
-                            .ctx
-                            .workspace_tab_bar_drag_press(mouse_x, mouse_y, button)
-                        {
+                        if self.ctx.workspace_tab_bar_drag_press(mouse_x, mouse_y, button) {
                             return;
                         }
                         // Bottom composer click handling (opens AI panel)
@@ -3590,10 +3493,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         let mouse = self.ctx.mouse();
         let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self
-            .ctx
-            .mouse()
-            .point(&self.ctx.size_info(), display_offset);
+        let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
 
         if self.ctx.message().is_none() || (mouse.y <= terminal_end) {
             None
@@ -3609,10 +3509,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     /// Icon state of the cursor.
     fn cursor_state(&mut self) -> CursorIcon {
         let display_offset = self.ctx.terminal().grid().display_offset();
-        let point = self
-            .ctx
-            .mouse()
-            .point(&self.ctx.size_info(), display_offset);
+        let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
         let hyperlink = self.ctx.terminal().grid()[point].hyperlink();
 
         // Function to check if mouse is on top of a hint.
@@ -3621,12 +3518,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if let Some(mouse_state) = self.message_bar_cursor_state() {
             mouse_state
         } else if cfg!(not(test))
-            && self
-                .ctx
-                .display()
-                .highlighted_hint
-                .as_ref()
-                .is_some_and(hint_highlighted)
+            && self.ctx.display().highlighted_hint.as_ref().is_some_and(hint_highlighted)
         {
             CursorIcon::Pointer
         } else if !self.ctx.modifiers().state().shift_key() && self.ctx.mouse_mode() {
@@ -3663,10 +3555,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         };
 
         // Scale number of lines scrolled based on distance to boundary.
-        let event = Event::new(
-            EventType::Scroll(Scroll::Delta(delta / step)),
-            Some(window_id),
-        );
+        let event = Event::new(EventType::Scroll(Scroll::Delta(delta / step)), Some(window_id));
 
         // Schedule event.
         let timer_id = TimerId::new(Topic::SelectionScrolling, window_id);

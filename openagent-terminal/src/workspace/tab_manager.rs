@@ -177,11 +177,7 @@ impl Default for TabManagerState {
 
 impl TabHistory {
     pub fn new(max_history: usize) -> Self {
-        Self {
-            visited_tabs: Vec::new(),
-            current_index: 0,
-            max_history,
-        }
+        Self { visited_tabs: Vec::new(), current_index: 0, max_history }
     }
 
     pub fn visit(&mut self, tab_id: TabId) {
@@ -249,11 +245,7 @@ impl TabManager {
         self.cached_state = TabManagerState {
             tab_count: self.tabs.len(),
             active_tab: self.active_tab_id,
-            tab_titles: self
-                .tabs
-                .iter()
-                .map(|(&id, ctx)| (id, ctx.title.clone()))
-                .collect(),
+            tab_titles: self.tabs.iter().map(|(&id, ctx)| (id, ctx.title.clone())).collect(),
             modified_tabs: self
                 .tabs
                 .iter()
@@ -443,11 +435,7 @@ impl TabManager {
     pub fn previous_tab(&mut self) -> bool {
         if let Some(current_id) = self.active_tab_id {
             if let Some(pos) = self.tab_order.iter().position(|&id| id == current_id) {
-                let prev_pos = if pos == 0 {
-                    self.tab_order.len() - 1
-                } else {
-                    pos - 1
-                };
+                let prev_pos = if pos == 0 { self.tab_order.len() - 1 } else { pos - 1 };
                 self.active_tab_id = Some(self.tab_order[prev_pos]);
                 return true;
             }
@@ -467,10 +455,7 @@ impl TabManager {
 
     /// Return whether the given tab is zoomed (has a saved layout)
     pub fn is_tab_zoomed(&self, tab_id: TabId) -> bool {
-        self.tabs
-            .get(&tab_id)
-            .map(|t| t.zoom_saved_layout.is_some())
-            .unwrap_or(false)
+        self.tabs.get(&tab_id).map(|t| t.zoom_saved_layout.is_some()).unwrap_or(false)
     }
 
     /// Get a tab by ID
@@ -644,10 +629,7 @@ impl TabManager {
 
     /// Get all pane IDs for a specific tab
     pub fn get_tab_pane_ids(&self, tab_id: TabId) -> Vec<PaneId> {
-        self.tabs
-            .get(&tab_id)
-            .map(|tab| tab.split_layout.collect_pane_ids())
-            .unwrap_or_default()
+        self.tabs.get(&tab_id).map(|tab| tab.split_layout.collect_pane_ids()).unwrap_or_default()
     }
 
     /// Move a PaneContext from one tab to another.

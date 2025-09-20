@@ -26,12 +26,7 @@ pub struct FileNode {
 
 impl FileNode {
     pub fn new(name: String, path: PathBuf, is_dir: bool) -> Self {
-        Self {
-            name,
-            path,
-            is_dir,
-            children: BTreeMap::new(),
-        }
+        Self { name, path, is_dir, children: BTreeMap::new() }
     }
 }
 
@@ -44,11 +39,7 @@ pub struct ProjectIndexConfig {
 
 impl ProjectIndexConfig {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            root: root.into(),
-            follow_symlinks: false,
-            max_depth: None,
-        }
+        Self { root: root.into(), follow_symlinks: false, max_depth: None }
     }
 }
 
@@ -61,15 +52,10 @@ pub struct ProjectIndex {
 
 impl ProjectIndex {
     pub fn build(config: &ProjectIndexConfig) -> Result<Self> {
-        let root = config
-            .root
-            .canonicalize()
-            .unwrap_or_else(|_| config.root.clone());
+        let root = config.root.canonicalize().unwrap_or_else(|_| config.root.clone());
         let mut files = Vec::new();
         let mut root_node = FileNode::new(
-            root.file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "/".into()),
+            root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "/".into()),
             root.clone(),
             true,
         );
@@ -88,10 +74,7 @@ impl ProjectIndex {
             }
             let path = entry.path().to_path_buf();
             let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            files.push(ProjectFile {
-                path: path.clone(),
-                is_dir,
-            });
+            files.push(ProjectFile { path: path.clone(), is_dir });
             insert_into_tree(&mut root_node, &root, &path, is_dir)?;
         }
 
@@ -154,9 +137,7 @@ impl ProjectIndex {
             }
         });
 
-        Ok(WatcherHandle {
-            watcher: Some(watcher),
-        })
+        Ok(WatcherHandle { watcher: Some(watcher) })
     }
 }
 
@@ -172,9 +153,7 @@ impl Drop for WatcherHandle {
 }
 
 fn insert_into_tree(root: &mut FileNode, base: &Path, path: &Path, is_dir: bool) -> Result<()> {
-    let rel = path
-        .strip_prefix(base)
-        .map_err(|_| anyhow!("failed to strip prefix"))?;
+    let rel = path.strip_prefix(base).map_err(|_| anyhow!("failed to strip prefix"))?;
     let mut curr = root;
     let mut accum = base.to_path_buf();
 

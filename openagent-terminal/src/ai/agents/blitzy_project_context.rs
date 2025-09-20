@@ -303,11 +303,7 @@ impl BlitzyProjectContextAgent {
             PathBuf::from(path)
         };
 
-        let project_name = root_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+        let project_name = root_path.file_name().unwrap_or_default().to_string_lossy().to_string();
 
         let mut project = ProjectInfo {
             root_path: root_path.to_string_lossy().to_string(),
@@ -360,11 +356,7 @@ impl BlitzyProjectContextAgent {
         // Optionally generate summaries
         if self.config.generate_file_summaries {
             let mut summaries: Vec<FileSummary> = Vec::new();
-            for f in project
-                .files
-                .iter()
-                .filter(|f| f.size <= self.config.max_file_size_bytes)
-            {
+            for f in project.files.iter().filter(|f| f.size <= self.config.max_file_size_bytes) {
                 if let Ok(content) = std::fs::read_to_string(&f.path) {
                     let summary = self.generate_file_summary(&f.path, &content);
                     summaries.push(summary);
@@ -385,9 +377,7 @@ impl BlitzyProjectContextAgent {
         // Cache the project
         {
             let mut cache = self.project_cache.write().await;
-            cache
-                .projects
-                .insert(project.root_path.clone(), project.clone());
+            cache.projects.insert(project.root_path.clone(), project.clone());
             cache.last_updated = Utc::now();
         }
 
@@ -423,11 +413,7 @@ impl BlitzyProjectContextAgent {
         .to_string();
         FileSummary {
             path: path.to_string(),
-            summary: if preview.is_empty() {
-                "(empty/undetermined)".to_string()
-            } else {
-                preview
-            },
+            summary: if preview.is_empty() { "(empty/undetermined)".to_string() } else { preview },
             purpose,
             key_functions: Vec::new(),
             dependencies: Vec::new(),
@@ -487,20 +473,16 @@ impl BlitzyProjectContextAgent {
                             .get("description")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
-                        project.metadata.version = package
-                            .get("version")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+                        project.metadata.version =
+                            package.get("version").and_then(|v| v.as_str()).map(|s| s.to_string());
                         project.metadata.author = package
                             .get("authors")
                             .and_then(|v| v.as_array())
                             .and_then(|arr| arr.first())
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
-                        project.metadata.license = package
-                            .get("license")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+                        project.metadata.license =
+                            package.get("license").and_then(|v| v.as_str()).map(|s| s.to_string());
                     }
                 }
             }
@@ -513,12 +495,7 @@ impl BlitzyProjectContextAgent {
                 || std::fs::read_dir(root_path)
                     .unwrap_or_else(|_| std::fs::read_dir(".").unwrap())
                     .any(|entry| {
-                        entry
-                            .unwrap()
-                            .path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            == Some("ts")
+                        entry.unwrap().path().extension().and_then(|ext| ext.to_str()) == Some("ts")
                     })
             {
                 project.project_type = ProjectType::TypeScript;
@@ -534,18 +511,12 @@ impl BlitzyProjectContextAgent {
                         .get("description")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
-                    project.metadata.version = package_json
-                        .get("version")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    project.metadata.author = package_json
-                        .get("author")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    project.metadata.license = package_json
-                        .get("license")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+                    project.metadata.version =
+                        package_json.get("version").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    project.metadata.author =
+                        package_json.get("author").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    project.metadata.license =
+                        package_json.get("license").and_then(|v| v.as_str()).map(|s| s.to_string());
                     project.metadata.homepage = package_json
                         .get("homepage")
                         .and_then(|v| v.as_str())
@@ -587,11 +558,8 @@ impl BlitzyProjectContextAgent {
         };
 
         // Get current branch
-        if let Ok(output) = Command::new("git")
-            .arg("branch")
-            .arg("--show-current")
-            .current_dir(root_path)
-            .output()
+        if let Ok(output) =
+            Command::new("git").arg("branch").arg("--show-current").current_dir(root_path).output()
         {
             git_info.current_branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
         }
@@ -611,11 +579,8 @@ impl BlitzyProjectContextAgent {
         }
 
         // Get status
-        if let Ok(output) = Command::new("git")
-            .arg("status")
-            .arg("--porcelain")
-            .current_dir(root_path)
-            .output()
+        if let Ok(output) =
+            Command::new("git").arg("status").arg("--porcelain").current_dir(root_path).output()
         {
             let status_lines = String::from_utf8_lossy(&output.stdout);
 
@@ -675,16 +640,10 @@ impl BlitzyProjectContextAgent {
         }
 
         // Get tags
-        if let Ok(output) = Command::new("git")
-            .arg("tag")
-            .arg("-l")
-            .current_dir(root_path)
-            .output()
+        if let Ok(output) = Command::new("git").arg("tag").arg("-l").current_dir(root_path).output()
         {
-            git_info.tags = String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(|s| s.to_string())
-                .collect();
+            git_info.tags =
+                String::from_utf8_lossy(&output.stdout).lines().map(|s| s.to_string()).collect();
         }
 
         Ok(git_info)
@@ -708,9 +667,8 @@ impl BlitzyProjectContextAgent {
                     }
                 }
 
-                if let Some(dev_deps) = cargo_toml
-                    .get("dev-dependencies")
-                    .and_then(|v| v.as_table())
+                if let Some(dev_deps) =
+                    cargo_toml.get("dev-dependencies").and_then(|v| v.as_table())
                 {
                     for (name, version) in dev_deps {
                         dependencies.push(Dependency {
@@ -738,9 +696,8 @@ impl BlitzyProjectContextAgent {
                     }
                 }
 
-                if let Some(dev_deps) = package_json
-                    .get("devDependencies")
-                    .and_then(|v| v.as_object())
+                if let Some(dev_deps) =
+                    package_json.get("devDependencies").and_then(|v| v.as_object())
                 {
                     for (name, version) in dev_deps {
                         dependencies.push(Dependency {
@@ -774,11 +731,8 @@ impl BlitzyProjectContextAgent {
                 let relative_path = path.strip_prefix(root_path).unwrap_or(&path);
 
                 if path.is_dir() {
-                    let dir_name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
+                    let dir_name =
+                        path.file_name().unwrap_or_default().to_string_lossy().to_string();
 
                     // Skip excluded directories
                     if self.config.excluded_dirs.contains(&dir_name) {
@@ -786,10 +740,8 @@ impl BlitzyProjectContextAgent {
                     }
 
                     let purpose = self.determine_directory_purpose(&dir_name);
-                    let (file_count, size_bytes) = self
-                        .calculate_directory_stats(&path)
-                        .await
-                        .unwrap_or((0, 0));
+                    let (file_count, size_bytes) =
+                        self.calculate_directory_stats(&path).await.unwrap_or((0, 0));
 
                     structure.directories.push(DirectoryInfo {
                         path: relative_path.to_string_lossy().to_string(),
@@ -798,11 +750,8 @@ impl BlitzyProjectContextAgent {
                         size_bytes,
                     });
                 } else if path.is_file() {
-                    let file_name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
+                    let file_name =
+                        path.file_name().unwrap_or_default().to_string_lossy().to_string();
                     let path_str = relative_path.to_string_lossy().to_string();
 
                     // Categorize files
@@ -832,8 +781,7 @@ impl BlitzyProjectContextAgent {
     async fn scan_project_files(&self, root_path: &Path) -> Result<Vec<ProjectFile>> {
         let mut files = Vec::new();
 
-        self.scan_files_recursive(root_path, root_path, &mut files)
-            .await?;
+        self.scan_files_recursive(root_path, root_path, &mut files).await?;
 
         // Sort by importance and limit count
         files.sort_by(|a, b| {
@@ -863,11 +811,8 @@ impl BlitzyProjectContextAgent {
                 let path = entry.path();
 
                 if path.is_dir() {
-                    let dir_name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
+                    let dir_name =
+                        path.file_name().unwrap_or_default().to_string_lossy().to_string();
 
                     // Skip excluded directories
                     if !self.config.excluded_dirs.contains(&dir_name) {
@@ -897,31 +842,18 @@ impl BlitzyProjectContextAgent {
             return Ok(None);
         }
 
-        let file_name = file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let extension = file_path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("");
+        let file_name = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
 
         // Check if extension is included
         if !extension.is_empty()
-            && !self
-                .config
-                .included_extensions
-                .contains(&extension.to_string())
+            && !self.config.included_extensions.contains(&extension.to_string())
         {
             return Ok(None);
         }
 
-        let relative_path = file_path
-            .strip_prefix(root_path)
-            .unwrap_or(file_path)
-            .to_string_lossy()
-            .to_string();
+        let relative_path =
+            file_path.strip_prefix(root_path).unwrap_or(file_path).to_string_lossy().to_string();
 
         let importance = self.determine_file_importance(&file_name, &relative_path);
 
@@ -1241,11 +1173,7 @@ impl Agent for BlitzyProjectContextAgent {
 
 impl ProjectCache {
     pub fn new() -> Self {
-        Self {
-            projects: HashMap::new(),
-            file_summaries: HashMap::new(),
-            last_updated: Utc::now(),
-        }
+        Self { projects: HashMap::new(), file_summaries: HashMap::new(), last_updated: Utc::now() }
     }
 }
 

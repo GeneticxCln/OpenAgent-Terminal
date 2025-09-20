@@ -223,8 +223,7 @@ impl PaneDragManager {
     /// Cancel the current drag operation
     pub fn cancel_drag(&mut self) {
         if let Some(drag_state) = self.active_drag.take() {
-            self.animation_manager
-                .stop_tab_animation(drag_state.source_tab);
+            self.animation_manager.stop_tab_animation(drag_state.source_tab);
         }
     }
 
@@ -243,11 +242,7 @@ impl PaneDragManager {
                 let elapsed = drag_state.start_time.elapsed().as_millis() as f32;
 
                 // Animate drag preview alpha
-                let target_alpha = if drag_state.current_drop_zone.is_some() {
-                    0.9
-                } else {
-                    0.7
-                };
+                let target_alpha = if drag_state.current_drop_zone.is_some() { 0.9 } else { 0.7 };
                 let alpha_speed = 0.01;
                 let alpha_diff = target_alpha - drag_state.drag_preview_alpha;
                 drag_state.drag_preview_alpha += alpha_diff * alpha_speed;
@@ -257,11 +252,8 @@ impl PaneDragManager {
                     (self.ghost_alpha * (1.0 + (elapsed * 0.003).sin() * 0.1)).clamp(0.3, 0.7);
 
                 // Animate drop zone highlight
-                let target_highlight = if drag_state.current_drop_zone.is_some() {
-                    1.0
-                } else {
-                    0.0
-                };
+                let target_highlight =
+                    if drag_state.current_drop_zone.is_some() { 1.0 } else { 0.0 };
                 let highlight_speed = 0.02;
                 let highlight_diff = target_highlight - drag_state.drop_zone_highlight_alpha;
                 drag_state.drop_zone_highlight_alpha += highlight_diff * highlight_speed;
@@ -335,14 +327,9 @@ impl PaneDragManager {
         }
 
         // Check for new tab creation (empty space in tab bar)
-        let max_tab_x = tab_positions
-            .iter()
-            .map(|(_, x, w)| x + w)
-            .fold(0.0, f32::max);
+        let max_tab_x = tab_positions.iter().map(|(_, x, w)| x + w).fold(0.0, f32::max);
         if mouse_y < 50.0 && mouse_x > max_tab_x {
-            return Some(PaneDropZone::NewTab {
-                position: tab_positions.len(),
-            });
+            return Some(PaneDropZone::NewTab { position: tab_positions.len() });
         }
 
         None
@@ -446,20 +433,11 @@ mod tests {
         // Test tab drop zone
         let drop_zone = manager.calculate_drop_zone((50.0, 10.0), &tab_positions, &[]);
 
-        assert!(matches!(
-            drop_zone,
-            Some(PaneDropZone::Tab {
-                tab_id: TabId(1),
-                position: 0
-            })
-        ));
+        assert!(matches!(drop_zone, Some(PaneDropZone::Tab { tab_id: TabId(1), position: 0 })));
 
         // Test new tab creation
         let drop_zone = manager.calculate_drop_zone((250.0, 10.0), &tab_positions, &[]);
 
-        assert!(matches!(
-            drop_zone,
-            Some(PaneDropZone::NewTab { position: 2 })
-        ));
+        assert!(matches!(drop_zone, Some(PaneDropZone::NewTab { position: 2 })));
     }
 }

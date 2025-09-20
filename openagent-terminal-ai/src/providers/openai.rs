@@ -25,12 +25,7 @@ impl OpenAiProvider {
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        Ok(Self {
-            api_key,
-            endpoint,
-            model,
-            client,
-        })
+        Ok(Self { api_key, endpoint, model, client })
     }
 
     pub fn from_env() -> Result<Self, String> {
@@ -98,10 +93,7 @@ struct StreamDelta {
 fn ai_log_verbose() -> bool {
     static FLAG: OnceLock<bool> = OnceLock::new();
     *FLAG.get_or_init(|| {
-        matches!(
-            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
-            Some("verbose")
-        )
+        matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose"))
     })
 }
 fn ai_log_summary() -> bool {
@@ -121,10 +113,7 @@ impl AiProvider for OpenAiProvider {
 
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
         if ai_log_summary() {
-            info!(
-                "openai_propose_start model={} endpoint={}",
-                self.model, self.endpoint
-            );
+            info!("openai_propose_start model={} endpoint={}", self.model, self.endpoint);
         }
         // Build the prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
@@ -149,14 +138,8 @@ impl AiProvider for OpenAiProvider {
         }
 
         let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_prompt,
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: req.scratch_text.clone(),
-            },
+            ChatMessage { role: "system".to_string(), content: system_prompt },
+            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
         ];
 
         let request_body = ChatCompletionRequest {
@@ -170,10 +153,8 @@ impl AiProvider for OpenAiProvider {
         debug!("Sending request to OpenAI API");
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let retry = RetryStrategy::OpenAI {
-            config: RetryConfig::default(),
-            respect_retry_after: true,
-        };
+        let retry =
+            RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
         let completion: ChatCompletionResponse = loop {
             let send = self
@@ -210,9 +191,7 @@ impl AiProvider for OpenAiProvider {
                 let status = response.status();
                 // Capture rate-limit headers to feed into backoff parsing
                 let headers = response.headers().clone();
-                let error_text = response
-                    .text()
-                    .unwrap_or_else(|_| "Unknown error".to_string());
+                let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
                 let mut msg = format!("API error {}: {}", status, error_text);
                 if let Some(hv) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
                     msg.push_str(&format!("; retry-after: {}", hv));
@@ -250,10 +229,7 @@ impl AiProvider for OpenAiProvider {
             }
 
             if ai_log_summary() {
-                debug!(
-                    "openai_propose_response_status status={}",
-                    response.status()
-                );
+                debug!("openai_propose_response_status status={}", response.status());
             }
             match response.json() {
                 Ok(json) => break json,
@@ -311,10 +287,7 @@ impl AiProvider for OpenAiProvider {
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
         if ai_log_summary() {
-            info!(
-                "openai_stream_start model={} endpoint={}",
-                self.model, self.endpoint
-            );
+            info!("openai_stream_start model={} endpoint={}", self.model, self.endpoint);
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
 
@@ -337,14 +310,8 @@ impl AiProvider for OpenAiProvider {
         }
 
         let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_prompt,
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: req.scratch_text.clone(),
-            },
+            ChatMessage { role: "system".to_string(), content: system_prompt },
+            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
         ];
 
         let request_body = ChatCompletionRequest {
@@ -356,10 +323,8 @@ impl AiProvider for OpenAiProvider {
         };
 
         let url = format!("{}/chat/completions", self.endpoint);
-        let retry = RetryStrategy::OpenAI {
-            config: RetryConfig::default(),
-            respect_retry_after: true,
-        };
+        let retry =
+            RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
 
         // Use a small, single-threaded Tokio runtime for responsive streaming/cancellation

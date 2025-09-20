@@ -4,10 +4,10 @@ use log::debug;
 use std::borrow::Cow;
 use std::cell::Cell;
 
+use crate::renderer::rects::RectKind;
 use crate::renderer::wgpu_rect_transfer::WgpuRectTransfer;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
-use crate::renderer::rects::RectKind;
 
 use crossfont::{BitmapBuffer, GlyphKey, Metrics, RasterizedGlyph};
 
@@ -505,12 +505,7 @@ struct ProjParams {
 fn projection_from_size(size: PhysicalSize<u32>) -> ProjParams {
     let w = size.width.max(1) as f32;
     let h = size.height.max(1) as f32;
-    ProjParams {
-        offset_x: -1.0,
-        offset_y: 1.0,
-        scale_x: 2.0 / w,
-        scale_y: -2.0 / h,
-    }
+    ProjParams { offset_x: -1.0, offset_y: 1.0, scale_x: 2.0 / w, scale_y: -2.0 / h }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -648,29 +643,17 @@ impl WgpuRenderer {
         let is_srgb_surface = false;
 
         // Prefer vsync-capable present modes when available to avoid tearing.
-        let present_mode = if surface_caps
-            .present_modes
-            .contains(&wgpu::PresentMode::AutoVsync)
-        {
+        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
             wgpu::PresentMode::AutoVsync
-        } else if surface_caps
-            .present_modes
-            .contains(&wgpu::PresentMode::Fifo)
-        {
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
             wgpu::PresentMode::Fifo
         } else {
             surface_caps.present_modes[0]
         };
         // Prefer opaque alpha mode to avoid compositor blending artifacts.
-        let alpha_mode = if surface_caps
-            .alpha_modes
-            .contains(&wgpu::CompositeAlphaMode::Opaque)
-        {
+        let alpha_mode = if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
             wgpu::CompositeAlphaMode::Opaque
-        } else if surface_caps
-            .alpha_modes
-            .contains(&wgpu::CompositeAlphaMode::Auto)
-        {
+        } else if surface_caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Auto) {
             wgpu::CompositeAlphaMode::Auto
         } else {
             surface_caps.alpha_modes[0]
@@ -931,10 +914,7 @@ fragment: Some(wgpu::FragmentState {
             label: Some("text-bind-group"),
             layout: &text_bgl,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: proj_buffer.as_entire_binding(),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: proj_buffer.as_entire_binding() },
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&atlas_view),
@@ -943,14 +923,8 @@ fragment: Some(wgpu::FragmentState {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&atlas_sampler),
                 },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: cursor_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: selection_buffer.as_entire_binding(),
-                },
+                wgpu::BindGroupEntry { binding: 3, resource: cursor_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: selection_buffer.as_entire_binding() },
             ],
         });
 
@@ -1105,31 +1079,63 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
             // Helpers implemented as functions to avoid borrow conflicts.
             fn put(
-                pixels: &mut [u8], atlas_w: usize, slots: usize, tile: usize,
-                tx: usize, x: usize, y: usize, rgba: [u8; 4],
+                pixels: &mut [u8],
+                atlas_w: usize,
+                slots: usize,
+                tile: usize,
+                tx: usize,
+                x: usize,
+                y: usize,
+                rgba: [u8; 4],
             ) {
-                if tx >= slots || x >= tile || y >= tile { return; }
+                if tx >= slots || x >= tile || y >= tile {
+                    return;
+                }
                 let ax = tx * tile + x;
                 let idx = (y * atlas_w + ax) * 4;
                 pixels[idx..idx + 4].copy_from_slice(&rgba);
             }
             fn draw_rect(
-                pixels: &mut [u8], atlas_w: usize, slots: usize, tile: usize,
-                tx: usize, x0: usize, y0: usize, w: usize, h: usize, rgba: [u8; 4],
+                pixels: &mut [u8],
+                atlas_w: usize,
+                slots: usize,
+                tile: usize,
+                tx: usize,
+                x0: usize,
+                y0: usize,
+                w: usize,
+                h: usize,
+                rgba: [u8; 4],
             ) {
                 let x1 = (x0 + w).min(tile);
                 let y1 = (y0 + h).min(tile);
-                for yy in y0..y1 { for xx in x0..x1 { put(pixels, atlas_w, slots, tile, tx, xx, yy, rgba); } }
+                for yy in y0..y1 {
+                    for xx in x0..x1 {
+                        put(pixels, atlas_w, slots, tile, tx, xx, yy, rgba);
+                    }
+                }
             }
             fn draw_circle(
-                pixels: &mut [u8], atlas_w: usize, slots: usize, tile: usize,
-                tx: usize, cx: f32, cy: f32, r: f32, rgba: [u8; 4],
+                pixels: &mut [u8],
+                atlas_w: usize,
+                slots: usize,
+                tile: usize,
+                tx: usize,
+                cx: f32,
+                cy: f32,
+                r: f32,
+                rgba: [u8; 4],
             ) {
                 let r2 = r * r;
-                for y in 0..tile { for x in 0..tile {
-                    let dx = x as f32 - cx; let dy = y as f32 - cy;
-                    if dx*dx + dy*dy <= r2 { put(pixels, atlas_w, slots, tile, tx, x, y, rgba); }
-                }}
+                for y in 0..tile {
+                    for x in 0..tile {
+                        let dx = x as f32 - cx;
+                        let dy = y as f32 - cy;
+                        if dx * dx + dy * dy <= r2 {
+                            put(pixels, atlas_w, slots, tile, tx, x, y, rgba);
+                        }
+                    }
+                }
             }
 
             // Colors
@@ -1138,8 +1144,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             // 0: action (magnifier)
             draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 0, 7.0, 7.0, 5.0, white);
             for t in 0..5 {
-                let x = 10 + t; let y = 10 + t;
-                if x < TILE && y < TILE { put(&mut pixels, atlas_w, SLOTS, TILE, 0, x, y, white); }
+                let x = 10 + t;
+                let y = 10 + t;
+                if x < TILE && y < TILE {
+                    put(&mut pixels, atlas_w, SLOTS, TILE, 0, x, y, white);
+                }
             }
 
             // 1: workflow (three nodes + connectors)
@@ -1171,15 +1180,36 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 6, 11, 3, 2, 10, white);
 
             // 7: blocks (3x3 grid)
-            for by in 0..3 { for bx in 0..3 { draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 7, 3 + bx*4, 3 + by*4, 2, 2, white); } }
+            for by in 0..3 {
+                for bx in 0..3 {
+                    draw_rect(
+                        &mut pixels,
+                        atlas_w,
+                        SLOTS,
+                        TILE,
+                        7,
+                        3 + bx * 4,
+                        3 + by * 4,
+                        2,
+                        2,
+                        white,
+                    );
+                }
+            }
 
             // 8: gear (simple)
             draw_circle(&mut pixels, atlas_w, SLOTS, TILE, 8, 8.0, 8.0, 6.5, white);
             // inner dim hole
-            for y in 0..TILE { for x in 0..TILE {
-                let dx = x as f32 - 8.0; let dy = y as f32 - 8.0; let r2 = dx*dx + dy*dy;
-                if r2 <= 3.5*3.5 { put(&mut pixels, atlas_w, SLOTS, TILE, 8, x, y, [255,255,255,32]); }
-            }}
+            for y in 0..TILE {
+                for x in 0..TILE {
+                    let dx = x as f32 - 8.0;
+                    let dy = y as f32 - 8.0;
+                    let r2 = dx * dx + dy * dy;
+                    if r2 <= 3.5 * 3.5 {
+                        put(&mut pixels, atlas_w, SLOTS, TILE, 8, x, y, [255, 255, 255, 32]);
+                    }
+                }
+            }
             // teeth
             draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 7, 0, 2, 3, white);
             draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 7, 13, 2, 3, white);
@@ -1187,17 +1217,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             draw_rect(&mut pixels, atlas_w, SLOTS, TILE, 8, 13, 7, 3, 2, white);
             for t in 0..3 {
                 let a = t as usize;
-                if 2 + a < TILE { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 2 + a, 2 + a, white); }
-                if 12 >= a && 2 + a < TILE { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 12 - a, 2 + a, white); }
-                if 2 + a < TILE && 12 >= a { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 2 + a, 12 - a, white); }
-                if 12 >= a { put(&mut pixels, atlas_w, SLOTS, TILE, 8, 12 - a, 12 - a, white); }
+                if 2 + a < TILE {
+                    put(&mut pixels, atlas_w, SLOTS, TILE, 8, 2 + a, 2 + a, white);
+                }
+                if 12 >= a && 2 + a < TILE {
+                    put(&mut pixels, atlas_w, SLOTS, TILE, 8, 12 - a, 2 + a, white);
+                }
+                if 2 + a < TILE && 12 >= a {
+                    put(&mut pixels, atlas_w, SLOTS, TILE, 8, 2 + a, 12 - a, white);
+                }
+                if 12 >= a {
+                    put(&mut pixels, atlas_w, SLOTS, TILE, 8, 12 - a, 12 - a, white);
+                }
             }
 
             (pixels, atlas_w as u32, atlas_h as u32)
         }
 
         let (sprite_pixels, sprite_w, sprite_h) = build_ui_sprite_atlas();
-        let sprite_tex_size = wgpu::Extent3d { width: sprite_w, height: sprite_h, depth_or_array_layers: 1 };
+        let sprite_tex_size =
+            wgpu::Extent3d { width: sprite_w, height: sprite_h, depth_or_array_layers: 1 };
         let sprite_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sprite-texture"),
             size: sprite_tex_size,
@@ -1233,21 +1272,38 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             label: Some("sprite-bg-linear"),
             layout: &sprite_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&sprite_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sprite_sampler_linear) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&sprite_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sprite_sampler_linear),
+                },
             ],
         });
         let sprite_bind_group_nearest = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sprite-bg-nearest"),
             layout: &sprite_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&sprite_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sprite_sampler_nearest) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&sprite_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sprite_sampler_nearest),
+                },
             ],
         });
         // Upload atlas pixels
         queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: &sprite_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo {
+                texture: &sprite_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &sprite_pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
@@ -1280,12 +1336,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             atlas_texture,
             atlas_view,
             atlas_sampler,
-            atlas_pages: (0..NUM_ATLAS_PAGES)
-                .map(|_| WgpuAtlas::new(ATLAS_SIZE))
-                .collect(),
-            page_meta: (0..NUM_ATLAS_PAGES)
-                .map(|_| AtlasPageMeta { last_use: 0 })
-                .collect(),
+            atlas_pages: (0..NUM_ATLAS_PAGES).map(|_| WgpuAtlas::new(ATLAS_SIZE)).collect(),
+            page_meta: (0..NUM_ATLAS_PAGES).map(|_| AtlasPageMeta { last_use: 0 }).collect(),
             current_page: 0,
             use_clock: 1,
             pending_eviction: None,
@@ -1354,8 +1406,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let r = (color.r as f32 / 255.0).min(1.0);
         let g = (color.g as f32 / 255.0).min(1.0);
         let b = (color.b as f32 / 255.0).min(1.0);
-        self.pending_clear
-            .set(Some([r as f64, g as f64, b as f64, 1.0]));
+        self.pending_clear.set(Some([r as f64, g as f64, b as f64, 1.0]));
     }
 
     pub fn finish(&self) {
@@ -1461,46 +1512,23 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let color = [rect.color.r, rect.color.g, rect.color.b, a];
             let kind = rect.kind as u32;
 
-            let v0 = RectVertex {
-                pos: [x, y],
-                color,
-                kind,
-            };
-            let v1 = RectVertex {
-                pos: [x, y - h],
-                color,
-                kind,
-            };
-            let v2 = RectVertex {
-                pos: [x + w, y],
-                color,
-                kind,
-            };
-            let v3 = RectVertex {
-                pos: [x + w, y - h],
-                color,
-                kind,
-            };
+            let v0 = RectVertex { pos: [x, y], color, kind };
+            let v1 = RectVertex { pos: [x, y - h], color, kind };
+            let v2 = RectVertex { pos: [x + w, y], color, kind };
+            let v3 = RectVertex { pos: [x + w, y - h], color, kind };
 
             // Two triangles: (0,1,2) and (2,3,1)
             vertices.extend_from_slice(&[v0, v1, v2, v2, v3, v1]);
         }
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("rects-encoder"),
-            });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rects-encoder"),
+        });
 
         // Clear color from pending state if present.
         let clear = if let Some(c) = self.pending_clear.get() {
             self.pending_clear.set(None);
-            wgpu::Color {
-                r: c[0],
-                g: c[1],
-                b: c[2],
-                a: c[3],
-            }
+            wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] }
         } else {
             wgpu::Color::TRANSPARENT
         };
@@ -1509,37 +1537,32 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         self.rect_transfer.begin_frame();
         if !self.rect_vertices_cpu.is_empty() {
             // Use the typed path by default, but we could also append_raw if we had &[u8]
-            self.rect_transfer
-                .append_vertices(&self.device, &self.rect_vertices_cpu);
+            self.rect_transfer.append_vertices(&self.device, &self.rect_vertices_cpu);
         }
-
 
         // Prepare UI vertex buffer outside the pass to satisfy borrow checker.
         let ui_buf_opt = (!self.pending_ui.is_empty()).then(|| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ui-vertex-buffer"),
-                    contents: bytemuck::cast_slice(&self.pending_ui),
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ui-vertex-buffer"),
+                contents: bytemuck::cast_slice(&self.pending_ui),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
         });
 
         // Prepare sprite vertex buffers
         let spr_buf_linear_opt = (!self.pending_sprites_linear.is_empty()).then(|| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("sprite-vertex-buffer-linear"),
-                    contents: bytemuck::cast_slice(&self.pending_sprites_linear),
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sprite-vertex-buffer-linear"),
+                contents: bytemuck::cast_slice(&self.pending_sprites_linear),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
         });
         let spr_buf_nearest_opt = (!self.pending_sprites_nearest.is_empty()).then(|| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("sprite-vertex-buffer-nearest"),
-                    contents: bytemuck::cast_slice(&self.pending_sprites_nearest),
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sprite-vertex-buffer-nearest"),
+                contents: bytemuck::cast_slice(&self.pending_sprites_nearest),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
         });
 
         {
@@ -1601,10 +1624,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 pass.set_vertex_buffer(0, ui_buf.slice(..));
                 pass.draw(0..self.pending_ui.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self
-                    .metrics
-                    .vertices_submitted
-                    .saturating_add(self.pending_ui.len() as u32);
+                self.metrics.vertices_submitted =
+                    self.metrics.vertices_submitted.saturating_add(self.pending_ui.len() as u32);
             }
 
             // Draw sprites (linear then nearest) for proper filter usage
@@ -1646,13 +1667,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         // Draw staged text after rects, if any.
         if !self.pending_text.is_empty() {
-            let text_vbuf = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("text-vertex-buffer"),
-                    contents: bytemuck::cast_slice(&self.pending_text),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
+            let text_vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("text-vertex-buffer"),
+                contents: bytemuck::cast_slice(&self.pending_text),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1675,10 +1694,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 pass.set_vertex_buffer(0, text_vbuf.slice(..));
                 pass.draw(0..self.pending_text.len() as u32, 0..1);
                 self.metrics.draw_calls += 1;
-                self.metrics.vertices_submitted = self
-                    .metrics
-                    .vertices_submitted
-                    .saturating_add(self.pending_text.len() as u32);
+                self.metrics.vertices_submitted =
+                    self.metrics.vertices_submitted.saturating_add(self.pending_text.len() as u32);
             }
 
             self.pending_text.clear();
@@ -1720,7 +1737,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         self.metrics.rect_flush_count = 0;
         self.metrics.primitives_batched = 0;
 
-
         // Periodic atlas reporting.
         if self.report_interval_frames > 0 {
             self.frame_counter = self.frame_counter.wrapping_add(1);
@@ -1755,41 +1771,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         // Two triangles
         let verts = [
-            SpriteVertex {
-                pos: [x_ndc, y_ndc],
-                uv: [u0, v0],
-                tint,
-            },
-            SpriteVertex {
-                pos: [x_ndc, y_ndc - h_ndc],
-                uv: [u0, v1],
-                tint,
-            },
-            SpriteVertex {
-                pos: [x_ndc + w_ndc, y_ndc],
-                uv: [u1, v0],
-                tint,
-            },
-            SpriteVertex {
-                pos: [x_ndc + w_ndc, y_ndc],
-                uv: [u1, v0],
-                tint,
-            },
-            SpriteVertex {
-                pos: [x_ndc, y_ndc - h_ndc],
-                uv: [u0, v1],
-                tint,
-            },
-            SpriteVertex {
-                pos: [x_ndc + w_ndc, y_ndc - h_ndc],
-                uv: [u1, v1],
-                tint,
-            },
+            SpriteVertex { pos: [x_ndc, y_ndc], uv: [u0, v0], tint },
+            SpriteVertex { pos: [x_ndc, y_ndc - h_ndc], uv: [u0, v1], tint },
+            SpriteVertex { pos: [x_ndc + w_ndc, y_ndc], uv: [u1, v0], tint },
+            SpriteVertex { pos: [x_ndc + w_ndc, y_ndc], uv: [u1, v0], tint },
+            SpriteVertex { pos: [x_ndc, y_ndc - h_ndc], uv: [u0, v1], tint },
+            SpriteVertex { pos: [x_ndc + w_ndc, y_ndc - h_ndc], uv: [u1, v1], tint },
         ];
 
-        let use_nearest = sprite
-            .filter_nearest
-            .unwrap_or(self.sprite_default_filter_nearest);
+        let use_nearest = sprite.filter_nearest.unwrap_or(self.sprite_default_filter_nearest);
         if use_nearest {
             self.pending_sprites_nearest.extend_from_slice(&verts);
         } else {
@@ -1899,7 +1889,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     /// Update cursor overlay uniforms for the text shader.
     /// shape: 0=block, 1=beam, 2=underline, 3=hollow-block. thickness_px used for beam/underline/hollow.
-    pub fn set_cursor_overlay(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgb, alpha: f32, shape: u32, thickness_px: f32) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_cursor_overlay(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        color: Rgb,
+        alpha: f32,
+        shape: u32,
+        thickness_px: f32,
+    ) {
         let pos_size = [x, y, w, h];
         let color_rgba = [
             (color.r as f32) / 255.0,
@@ -1984,30 +1985,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                     Some(r_prev) => {
                         // Flush previous run and start a new one.
                         flush_run(&mut staged_bg, r_prev);
-                        run = Some(BgRun {
-                            line,
-                            start_col: col,
-                            end_col: col,
-                            color,
-                            alpha,
-                        });
+                        run = Some(BgRun { line, start_col: col, end_col: col, color, alpha });
                     }
                     None => {
-                        run = Some(BgRun {
-                            line,
-                            start_col: col,
-                            end_col: col,
-                            color,
-                            alpha,
-                        });
+                        run = Some(BgRun { line, start_col: col, end_col: col, color, alpha });
                     }
                 }
             }
 
             // Skip hidden or tab cells by rendering as space.
-            let hidden = cell
-                .flags
-                .contains(openagent_terminal_core::term::cell::Flags::HIDDEN);
+            let hidden = cell.flags.contains(openagent_terminal_core::term::cell::Flags::HIDDEN);
             if cell.character == '\t' || hidden {
                 cell.character = ' ';
             }
@@ -2024,19 +2011,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 };
 
             // Primary glyph.
-            let glyph_key = GlyphKey {
-                font_key,
-                size: glyph_cache.font_size,
-                character: cell.character,
-            };
+            let glyph_key =
+                GlyphKey { font_key, size: glyph_cache.font_size, character: cell.character };
             let g = glyph_cache.get(glyph_key, &mut loader, true);
             staged.extend_from_slice(&build_text_vertices(size_info, &cell, &g, subpixel, bgr));
 
             // Zero-width characters.
-            if let Some(zw) = cell
-                .extra
-                .as_mut()
-                .and_then(|extra| extra.zerowidth.take().filter(|_| !hidden))
+            if let Some(zw) =
+                cell.extra.as_mut().and_then(|extra| extra.zerowidth.take().filter(|_| !hidden))
             {
                 let mut key = glyph_key;
                 for ch in zw {
@@ -2144,11 +2126,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let page = &self.atlas_pages[layer as usize];
             let capacity = (page.width as u64) * (page.height as u64);
             let used = page.used_area.min(capacity);
-            let pct = if capacity > 0 {
-                (used as f64 / capacity as f64) * 100.0
-            } else {
-                0.0
-            };
+            let pct = if capacity > 0 { (used as f64 / capacity as f64) * 100.0 } else { 0.0 };
             debug!(
                 "WGPU atlas eviction: layer={} used={} / {} ({:.1}%), policy={:?}, counters: \
                  inserts={}, misses={}, evictions={}",
@@ -2174,20 +2152,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if self.zero_evicted_layer {
                 let width = self.atlas_pages[0].width;
                 let height = self.atlas_pages[0].height;
-                let extent = wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                };
+                let extent = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
                 self.queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &self.atlas_texture,
                         mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: layer,
-                        },
+                        origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
                         aspect: wgpu::TextureAspect::All,
                     },
                     &self.zero_scratch,
@@ -2222,11 +2192,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let used = page.used_area.min(cap);
             total_used += used;
             total_capacity += cap;
-            let pct = if cap > 0 {
-                (used as f64 / cap as f64) * 100.0
-            } else {
-                0.0
-            };
+            let pct = if cap > 0 { (used as f64 / cap as f64) * 100.0 } else { 0.0 };
             let ts = self.page_meta[i].last_use;
             lines.push(format!(
                 "layer={} used={} / {} ({:.1}%), last_use={}",
@@ -2285,55 +2251,15 @@ fn build_text_vertices(
         flags |= 4u32;
     }
 
-    let layer = if glyph.tex_id > 0 {
-        glyph.tex_id - 1
-    } else {
-        0
-    };
+    let layer = if glyph.tex_id > 0 { glyph.tex_id - 1 } else { 0 };
 
     [
-        TextVertex {
-            pos: [x0, y0],
-            uv: [u0, v0],
-            color,
-            flags,
-            layer,
-        },
-        TextVertex {
-            pos: [x0, y1],
-            uv: [u0, v1],
-            color,
-            flags,
-            layer,
-        },
-        TextVertex {
-            pos: [x1, y0],
-            uv: [u1, v0],
-            color,
-            flags,
-            layer,
-        },
-        TextVertex {
-            pos: [x1, y0],
-            uv: [u1, v0],
-            color,
-            flags,
-            layer,
-        },
-        TextVertex {
-            pos: [x1, y1],
-            uv: [u1, v1],
-            color,
-            flags,
-            layer,
-        },
-        TextVertex {
-            pos: [x0, y1],
-            uv: [u0, v1],
-            color,
-            flags,
-            layer,
-        },
+        TextVertex { pos: [x0, y0], uv: [u0, v0], color, flags, layer },
+        TextVertex { pos: [x0, y1], uv: [u0, v1], color, flags, layer },
+        TextVertex { pos: [x1, y0], uv: [u1, v0], color, flags, layer },
+        TextVertex { pos: [x1, y0], uv: [u1, v0], color, flags, layer },
+        TextVertex { pos: [x1, y1], uv: [u1, v1], color, flags, layer },
+        TextVertex { pos: [x0, y1], uv: [u0, v1], color, flags, layer },
     ]
 }
 
@@ -2342,6 +2268,7 @@ struct WgpuGlyphLoader<'a> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod shader_sync_tests {
     use super::*;
     #[test]
@@ -2445,11 +2372,7 @@ impl LoadGlyph for WgpuGlyphLoader<'_> {
             wgpu::TexelCopyTextureInfo {
                 texture: &self.renderer.atlas_texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: ox as u32,
-                    y: oy as u32,
-                    z: page_idx,
-                },
+                origin: wgpu::Origin3d { x: ox as u32, y: oy as u32, z: page_idx },
                 aspect: wgpu::TextureAspect::All,
             },
             &rgba,

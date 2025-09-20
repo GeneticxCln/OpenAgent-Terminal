@@ -10,10 +10,7 @@ pub struct AiPrivacyOptions {
 
 impl Default for AiPrivacyOptions {
     fn default() -> Self {
-        Self {
-            strip_sensitive: true,
-            strip_cwd: true,
-        }
+        Self { strip_sensitive: true, strip_cwd: true }
     }
 }
 
@@ -22,18 +19,11 @@ impl AiPrivacyOptions {
     /// OPENAGENT_AI_STRIP_SENSITIVE: default "1"
     /// OPENAGENT_AI_STRIP_CWD: default "1"
     pub fn from_env() -> Self {
-        let strip_sensitive = std::env::var("OPENAGENT_AI_STRIP_SENSITIVE")
-            .ok()
-            .map(|v| v != "0")
-            .unwrap_or(true);
-        let strip_cwd = std::env::var("OPENAGENT_AI_STRIP_CWD")
-            .ok()
-            .map(|v| v != "0")
-            .unwrap_or(true);
-        Self {
-            strip_sensitive,
-            strip_cwd,
-        }
+        let strip_sensitive =
+            std::env::var("OPENAGENT_AI_STRIP_SENSITIVE").ok().map(|v| v != "0").unwrap_or(true);
+        let strip_cwd =
+            std::env::var("OPENAGENT_AI_STRIP_CWD").ok().map(|v| v != "0").unwrap_or(true);
+        Self { strip_sensitive, strip_cwd }
     }
 }
 
@@ -51,7 +41,8 @@ pub fn sanitize_request(req: &AiRequest, opts: AiPrivacyOptions) -> AiRequest {
             // Replace common home path in text if present.
             if let Ok(home) = std::env::var("HOME") {
                 if !home.is_empty() {
-                    sanitized.scratch_text = sanitized.scratch_text.replace(&home, placeholder_path);
+                    sanitized.scratch_text =
+                        sanitized.scratch_text.replace(&home, placeholder_path);
                 }
             }
             // Replace the precise working directory field with a generic redaction marker
@@ -107,18 +98,9 @@ pub fn sanitize_request(req: &AiRequest, opts: AiPrivacyOptions) -> AiRequest {
 
 fn is_sensitive_key(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
-    [
-        "key",
-        "token",
-        "secret",
-        "password",
-        "apikey",
-        "api_key",
-        "auth",
-        "credential",
-    ]
-    .iter()
-    .any(|kw| lower.contains(kw))
+    ["key", "token", "secret", "password", "apikey", "api_key", "auth", "credential"]
+        .iter()
+        .any(|kw| lower.contains(kw))
 }
 
 /// Comprehensive secret redaction function
@@ -138,31 +120,19 @@ pub fn redact_secrets(text: &str) -> String {
         (r#"\b(ghs_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_SERVER]"),
         (r#"\b(ghr_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_REFRESH]"),
         // Env-var style API keys (e.g., OPENAI_API_KEY=...)
-        (
-            r#"(?i)\b([A-Z_]*api[_-]?key)\s*[:=]\s*\S+"#,
-            "$1: [REDACTED]",
-        ),
+        (r#"(?i)\b([A-Z_]*api[_-]?key)\s*[:=]\s*\S+"#, "$1: [REDACTED]"),
         // API keys and tokens (generic) — only when preceded by start or whitespace
         (
             r#"(?i)(^|\s)(api[_-]?key|token|secret|password|auth|credential)\s*[:=]\s*(?:[\"']?)[^\s\"'\[][^\s\"']*(?:[\"']?)"#,
             "$1$2: [REDACTED]",
         ),
         // JWT tokens (xxx.yyy.zzz format)
-        (
-            r#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#,
-            "[REDACTED_JWT]",
-        ),
+        (r#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[REDACTED_JWT]"),
         // AWS credentials
         (r#"\b(AKIA[0-9A-Z]{16})\b"#, "[REDACTED_AWS_ACCESS_KEY]"),
         (r#"\b([A-Za-z0-9/+=]{40})\b"#, "[REDACTED_AWS_SECRET_KEY]"),
-        (
-            r#"aws_access_key_id\s*=\s*([^\s]+)"#,
-            "aws_access_key_id = [REDACTED]",
-        ),
-        (
-            r#"aws_secret_access_key\s*=\s*([^\s]+)"#,
-            "aws_secret_access_key = [REDACTED]",
-        ),
+        (r#"aws_access_key_id\s*=\s*([^\s]+)"#, "aws_access_key_id = [REDACTED]"),
+        (r#"aws_secret_access_key\s*=\s*([^\s]+)"#, "aws_secret_access_key = [REDACTED]"),
         // GitHub tokens
         (r#"\b(ghp_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_TOKEN]"),
         (r#"\b(gho_[a-zA-Z0-9]{36})\b"#, "[REDACTED_GITHUB_OAUTH]"),
@@ -184,10 +154,7 @@ pub fn redact_secrets(text: &str) -> String {
             "[REDACTED_SSH_PRIVATE_KEY]",
         ),
         // Bearer tokens in headers
-        (
-            r#"(?i)authorization:\s*bearer\s+([^\s]+)"#,
-            "Authorization: Bearer [REDACTED]",
-        ),
+        (r#"(?i)authorization:\s*bearer\s+([^\s]+)"#, "Authorization: Bearer [REDACTED]"),
         (r#"(?i)x-api-key:\s*([^\s]+)"#, "X-API-Key: [REDACTED]"),
         // Database connection strings
         (
@@ -200,10 +167,7 @@ pub fn redact_secrets(text: &str) -> String {
             "export $1=[REDACTED]",
         ),
         // Slack tokens
-        (
-            r#"xox[baprs]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24,}"#,
-            "[REDACTED_SLACK_TOKEN]",
-        ),
+        (r#"xox[baprs]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24,}"#, "[REDACTED_SLACK_TOKEN]"),
         // Generic UUIDs that might be sensitive
         (
             r#"(?i)(session[_-]?id|csrf[_-]?token)\s*[:=]\s*(?:[\"']?)[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:[\"']?)"#,
@@ -303,10 +267,7 @@ mysql -u root -p hunter2
         // Working directory field should be redacted
         assert_eq!(out.working_directory.as_deref(), Some("[REDACTED]"));
         // Context secret redacted
-        assert!(out
-            .context
-            .iter()
-            .any(|(k, v)| k == "OPENAI_API_KEY" && v == "[REDACTED]"));
+        assert!(out.context.iter().any(|(k, v)| k == "OPENAI_API_KEY" && v == "[REDACTED]"));
     }
 
     #[test]
@@ -332,34 +293,20 @@ mysqldump -p hunter2 \
             context: vec![
                 ("cwd".into(), "/home/alice/projects/demo".into()),
                 ("env.HOME".into(), "/home/alice".into()),
-                (
-                    "note".into(),
-                    "Path inside value: /home/alice/projects/demo and $HOME".into(),
-                ),
+                ("note".into(), "Path inside value: /home/alice/projects/demo and $HOME".into()),
             ],
         };
         std::env::set_var("HOME", "/home/alice");
         let out = sanitize_request(&req, AiPrivacyOptions::default());
         assert_eq!(
-            out.context
-                .iter()
-                .find(|(k, _)| k == "cwd")
-                .map(|(_, v)| v.as_str()),
+            out.context.iter().find(|(k, _)| k == "cwd").map(|(_, v)| v.as_str()),
             Some("[REDACTED]")
         );
         assert_eq!(
-            out.context
-                .iter()
-                .find(|(k, _)| k == "env.HOME")
-                .map(|(_, v)| v.as_str()),
+            out.context.iter().find(|(k, _)| k == "env.HOME").map(|(_, v)| v.as_str()),
             Some("[REDACTED]")
         );
-        let note = out
-            .context
-            .iter()
-            .find(|(k, _)| k == "note")
-            .map(|(_, v)| v.clone())
-            .unwrap();
+        let note = out.context.iter().find(|(k, _)| k == "note").map(|(_, v)| v.clone()).unwrap();
         assert!(!note.contains("/home/alice"));
         assert!(note.contains("[REDACTED_PATH]"));
     }

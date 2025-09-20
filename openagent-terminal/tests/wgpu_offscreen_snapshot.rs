@@ -13,9 +13,7 @@ fn wgpu_offscreen_snapshot_solid_color() {
     };
 
     // Run the example to generate the snapshot
-    let output = Command::new(&bin)
-        .output()
-        .expect("failed to run wgpu_snapshot example");
+    let output = Command::new(&bin).output().expect("failed to run wgpu_snapshot example");
     assert!(
         output.status.success(),
         "wgpu_snapshot example failed: status={:?} stdout={} stderr={}",
@@ -51,10 +49,15 @@ fn wgpu_offscreen_snapshot_solid_color() {
     for p in img.pixels() {
         let mut ok = true;
         for c in 0..3 {
-            let d = if p[c] > exp[c] { p[c] - exp[c] } else { exp[c] - p[c] };
-            if d > tol { ok = false; break; }
+            let d = p[c].abs_diff(exp[c]);
+            if d > tol {
+                ok = false;
+                break;
+            }
         }
-        if ok { within_tolerance += 1; }
+        if ok {
+            within_tolerance += 1;
+        }
     }
 
     // Require at least 99% of pixels within tolerance

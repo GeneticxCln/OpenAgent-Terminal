@@ -205,15 +205,9 @@ pub struct PluginsPaths {
 impl Default for PluginsPaths {
     fn default() -> Self {
         Self {
-            system: PluginsPathPolicy {
-                require_signatures: true,
-            },
-            user: PluginsPathPolicy {
-                require_signatures: false,
-            },
-            project: PluginsPathPolicy {
-                require_signatures: false,
-            },
+            system: PluginsPathPolicy { require_signatures: true },
+            user: PluginsPathPolicy { require_signatures: false },
+            project: PluginsPathPolicy { require_signatures: false },
         }
     }
 }
@@ -251,10 +245,7 @@ impl FeatureBannerConfig {
 
 impl Default for FeatureBannerConfig {
     fn default() -> Self {
-        Self {
-            show: true,
-            level: None,
-        }
+        Self { show: true, level: None }
     }
 }
 
@@ -292,16 +283,9 @@ impl UiConfig {
 
     /// Derive [`PtyOptions`] from the config.
     pub fn pty_config(&self) -> PtyOptions {
-        let shell = self
-            .terminal
-            .shell
-            .clone()
-            .or_else(|| self.shell.clone())
-            .map(Into::into);
-        let working_directory = self
-            .working_directory
-            .clone()
-            .or_else(|| self.general.working_directory.clone());
+        let shell = self.terminal.shell.clone().or_else(|| self.shell.clone()).map(Into::into);
+        let working_directory =
+            self.working_directory.clone().or_else(|| self.general.working_directory.clone());
         PtyOptions {
             working_directory,
             shell,
@@ -329,8 +313,7 @@ impl UiConfig {
 
     #[inline]
     pub fn live_config_reload(&self) -> bool {
-        self.live_config_reload
-            .unwrap_or(self.general.live_config_reload)
+        self.live_config_reload.unwrap_or(self.general.live_config_reload)
     }
 
     #[cfg(unix)]
@@ -440,10 +423,7 @@ impl Default for Hints {
                 action,
                 persist: false,
                 post_processing: true,
-                mouse: Some(HintMouse {
-                    enabled: true,
-                    mods: Default::default(),
-                }),
+                mouse: Some(HintMouse { enabled: true, mods: Default::default() }),
                 binding: Some(HintBinding {
                     key: BindingKey::Keycode {
                         key: Key::Character("o".into()),

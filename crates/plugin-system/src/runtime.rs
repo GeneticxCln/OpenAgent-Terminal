@@ -43,10 +43,7 @@ pub struct WasmInstanceRuntime {
 impl WasmInstanceRuntime {
     /// Create a runtime handle for a loaded plugin
     pub fn new(plugin_id: impl Into<String>, plugin: Arc<LoadedPlugin>) -> Self {
-        Self {
-            _plugin_id: plugin_id.into(),
-            plugin,
-        }
+        Self { _plugin_id: plugin_id.into(), plugin }
     }
 
     /// Initialize the plugin via ABI (if available)
@@ -228,9 +225,7 @@ pub async fn execute_wasm_command_internal(
         if args_ptr != 0 {
             dealloc_if_available(abi, &mut store, args_ptr, args_json.len() as u32);
         }
-        return Err(PluginSystemError::Abi(
-            "Plugin missing execute_command(_ex) export".into(),
-        ));
+        return Err(PluginSystemError::Abi("Plugin missing execute_command(_ex) export".into()));
     }
 
     // Free input buffers if dealloc is available
@@ -269,9 +264,7 @@ pub async fn execute_wasm_command_internal(
             .map_err(|e| PluginSystemError::Runtime(e.to_string()))?;
         let (ptr, len) = unpack_ptr_len(packed);
         if ptr == 0 || len == 0 {
-            return Err(PluginSystemError::Runtime(
-                "Invalid response pointer/length".into(),
-            ));
+            return Err(PluginSystemError::Runtime("Invalid response pointer/length".into()));
         }
         let bytes = read_from_memory(instance, &mut store, ptr, len)?;
         // Try best-effort to free response buffer
@@ -284,12 +277,7 @@ pub async fn execute_wasm_command_internal(
     }
 
     // If no response function, return a generic success
-    Ok(CommandOutput {
-        stdout: "".into(),
-        stderr: "".into(),
-        exit_code: 0,
-        execution_time_ms: 0,
-    })
+    Ok(CommandOutput { stdout: "".into(), stderr: "".into(), exit_code: 0, execution_time_ms: 0 })
 }
 
 #[cfg(feature = "wasm-runtime")]
@@ -432,9 +420,5 @@ pub async fn handle_event_internal(
         return Ok(resp);
     }
 
-    Ok(HookResponse {
-        modified_command: None,
-        prevent_execution: false,
-        messages: vec![],
-    })
+    Ok(HookResponse { modified_command: None, prevent_execution: false, messages: vec![] })
 }

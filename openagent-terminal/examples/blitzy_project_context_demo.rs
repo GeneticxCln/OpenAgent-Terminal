@@ -20,14 +20,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Create and configure the conversation manager
     let mut conversation_manager = ConversationManager::new();
-    conversation_manager
-        .initialize(AgentConfig::default())
-        .await?;
+    conversation_manager.initialize(AgentConfig::default()).await?;
 
     // Create a conversation session
-    let session_id = conversation_manager
-        .create_session(Some("project-analysis".to_string()))
-        .await?;
+    let session_id =
+        conversation_manager.create_session(Some("project-analysis".to_string())).await?;
 
     // Add initial context about what we're doing
     conversation_manager
@@ -257,10 +254,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
         // Project structure
         println!("\n📁 Project Structure:");
         if !project.structure.entry_points.is_empty() {
-            println!(
-                "  • Entry Points: {}",
-                project.structure.entry_points.join(", ")
-            );
+            println!("  • Entry Points: {}", project.structure.entry_points.join(", "));
         }
 
         if !project.structure.config_files.is_empty() {
@@ -268,10 +262,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
         }
 
         if !project.structure.documentation.is_empty() {
-            println!(
-                "  • Documentation: {}",
-                project.structure.documentation.len()
-            );
+            println!("  • Documentation: {}", project.structure.documentation.len());
         }
 
         if !project.structure.tests.is_empty() {
@@ -288,9 +279,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
             let mut total_size = 0u64;
 
             for file in &project.files {
-                *by_importance
-                    .entry(format!("{:?}", file.importance))
-                    .or_insert(0) += 1;
+                *by_importance.entry(format!("{:?}", file.importance)).or_insert(0) += 1;
                 if let Some(lines) = file.lines {
                     total_lines += lines;
                 }
@@ -304,10 +293,7 @@ fn display_project_analysis(response: ProjectContextResponse) {
             if total_lines > 0 {
                 println!("  • Total Lines: {}", total_lines);
             }
-            println!(
-                "  • Total Size: {:.2} MB",
-                total_size as f64 / 1024.0 / 1024.0
-            );
+            println!("  • Total Size: {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
         }
     }
 
@@ -332,10 +318,7 @@ fn display_detailed_project_info(project: ProjectInfo) {
     println!("\n🔬 Detailed Project Information:");
     println!("════════════════════════════════");
 
-    println!(
-        "📊 Analysis completed at: {}",
-        project.last_analyzed.format("%Y-%m-%d %H:%M:%S")
-    );
+    println!("📊 Analysis completed at: {}", project.last_analyzed.format("%Y-%m-%d %H:%M:%S"));
 
     // Directory analysis
     if !project.structure.directories.is_empty() {
@@ -373,9 +356,6 @@ fn display_detailed_project_info(project: ProjectInfo) {
     for file in critical_files {
         let size_kb = file.size as f64 / 1024.0;
         let lines_str = file.lines.map_or("?".to_string(), |l| l.to_string());
-        println!(
-            "  📄 {} ({} lines, {:.1} KB)",
-            file.relative_path, lines_str, size_kb
-        );
+        println!("  📄 {} ({} lines, {:.1} KB)", file.relative_path, lines_str, size_kb);
     }
 }

@@ -1,5 +1,5 @@
-use sqlx::{Pool, Row, Sqlite};
 use sqlx::SqlitePool;
+use sqlx::{Pool, Row, Sqlite};
 
 #[derive(Clone)]
 pub struct PluginStorage {
@@ -19,13 +19,7 @@ mod tests {
         let storage = Storage::new(&db_path).await.expect("storage");
         let pool = storage.pool.clone();
         // Tables should exist
-        for t in [
-            "plugin_kv",
-            "plugin_docs",
-            "plugin_quotas",
-            "ai_conversations",
-            "ai_turns",
-        ] {
+        for t in ["plugin_kv", "plugin_docs", "plugin_quotas", "ai_conversations", "ai_turns"] {
             let exists: (i64,) = sqlx::query_as(
                 "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = ?",
             )
@@ -60,12 +54,12 @@ mod tests {
         .unwrap();
 
         // Two small keys OK
-        ps.put_kv(plugin, ns, "k1", &vec![0u8; 200]).await.unwrap();
-        ps.put_kv(plugin, ns, "k2", &vec![0u8; 200]).await.unwrap();
+        ps.put_kv(plugin, ns, "k1", &[0u8; 200]).await.unwrap();
+        ps.put_kv(plugin, ns, "k2", &[0u8; 200]).await.unwrap();
         // Third should fail due to max_keys
-        assert!(ps.put_kv(plugin, ns, "k3", &vec![0u8; 100]).await.is_err());
+        assert!(ps.put_kv(plugin, ns, "k3", &[0u8; 100]).await.is_err());
         // Oversized value should fail
-        assert!(ps.put_kv(plugin, ns, "k2", &vec![0u8; 300]).await.is_err());
+        assert!(ps.put_kv(plugin, ns, "k2", &[0u8; 300]).await.is_err());
 
         // Docs
         ps.put_doc(plugin, ns, "doc1", &"{}".repeat(50)).await.unwrap();
@@ -93,7 +87,7 @@ impl PluginStorage {
     fn default_quota() -> QuotaConfig {
         QuotaConfig {
             max_total_bytes: Some(50 * 1024 * 1024), // 50 MiB
-            max_value_bytes: Some(1 * 1024 * 1024),  // 1 MiB per entry/doc
+            max_value_bytes: Some(1024 * 1024),  // 1 MiB per entry/doc
             max_keys: Some(5000),
             max_docs: Some(5000),
         }
@@ -127,7 +121,11 @@ impl PluginStorage {
         Ok(())
     }
 
-    async fn get_quota(&self, plugin_id: &str, namespace: Option<&str>) -> Result<QuotaConfig, sqlx::Error> {
+    async fn get_quota(
+        &self,
+        plugin_id: &str,
+        namespace: Option<&str>,
+    ) -> Result<QuotaConfig, sqlx::Error> {
         let row = sqlx::query(
             r#"
             SELECT max_total_bytes, max_value_bytes, max_keys, max_docs
@@ -150,7 +148,12 @@ impl PluginStorage {
                 max_keys: row.get::<Option<i64>, _>("max_keys"),
                 max_docs: row.get::<Option<i64>, _>("max_docs"),
             },
-            None => QuotaConfig { max_total_bytes: None, max_value_bytes: None, max_keys: None, max_docs: None },
+            None => QuotaConfig {
+                max_total_bytes: None,
+                max_value_bytes: None,
+                max_keys: None,
+                max_docs: None,
+            },
         })
     }
 
@@ -174,7 +177,9 @@ impl PluginStorage {
             }
         };
         if let Some(max_val) = quota.max_value_bytes {
-            if (value.len() as i64) > max_val { return Err(sqlx::Error::Protocol("value exceeds max_value_bytes".into())); }
+            if (value.len() as i64) > max_val {
+                return Err(sqlx::Error::Protocol("value exceeds max_value_bytes".into()));
+            }
         }
         let mut tx = self.pool.begin().await?;
 
@@ -270,7 +275,9 @@ impl PluginStorage {
             }
         };
         if let Some(max_val) = quota.max_value_bytes {
-            if (doc_json.len() as i64) > max_val { return Err(sqlx::Error::Protocol("document exceeds max_value_bytes".into())); }
+            if (doc_json.len() as i64) > max_val {
+                return Err(sqlx::Error::Protocol("document exceeds max_value_bytes".into()));
+            }
         }
         let mut tx = self.pool.begin().await?;
 

@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use openagent_terminal::config::UiConfig;
 use openagent_terminal::display::SizeInfo;
@@ -16,10 +16,14 @@ fn parse_max_ms() -> f64 {
     while let Some(arg) = args.next() {
         if arg == "--max-ms" {
             if let Some(v) = args.next() {
-                if let Ok(n) = v.parse::<f64>() { max_ms = n; }
+                if let Ok(n) = v.parse::<f64>() {
+                    max_ms = n;
+                }
             }
         } else if let Some(rest) = arg.strip_prefix("--max-ms=") {
-            if let Ok(n) = rest.parse::<f64>() { max_ms = n; }
+            if let Ok(n) = rest.parse::<f64>() {
+                max_ms = n;
+            }
         }
     }
     max_ms
@@ -44,7 +48,7 @@ fn main() {
         // Perform a tiny state touch that would be present in render paths.
         term.vi_motion(ViMotion::FirstOccupied);
         let dt = t0.elapsed();
-        total_ms += (dt.as_secs_f64() * 1000.0);
+        total_ms += dt.as_secs_f64() * 1000.0;
     }
 
     let avg_ms = total_ms / (iters as f64);

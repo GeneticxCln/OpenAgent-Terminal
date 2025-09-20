@@ -50,26 +50,18 @@ struct ProviderEntry {
 
 impl ContextManager {
     pub fn new() -> Self {
-        Self {
-            providers: Vec::new(),
-            per_provider_timeout_ms: None,
-            overall_deadline_ms: None,
-        }
+        Self { providers: Vec::new(), per_provider_timeout_ms: None, overall_deadline_ms: None }
     }
 
     pub fn with_provider(mut self, provider: Box<dyn ContextProvider>) -> Self {
-        self.providers.push(ProviderEntry {
-            provider: std::sync::Arc::from(provider),
-            timeout_ms: None,
-        });
+        self.providers
+            .push(ProviderEntry { provider: std::sync::Arc::from(provider), timeout_ms: None });
         self
     }
 
     pub fn add_provider(&mut self, provider: Box<dyn ContextProvider>) {
-        self.providers.push(ProviderEntry {
-            provider: std::sync::Arc::from(provider),
-            timeout_ms: None,
-        });
+        self.providers
+            .push(ProviderEntry { provider: std::sync::Arc::from(provider), timeout_ms: None });
     }
 
     pub fn add_provider_with_timeout(
@@ -77,10 +69,7 @@ impl ContextManager {
         provider: Box<dyn ContextProvider>,
         timeout_ms: Option<u64>,
     ) {
-        self.providers.push(ProviderEntry {
-            provider: std::sync::Arc::from(provider),
-            timeout_ms,
-        });
+        self.providers.push(ProviderEntry { provider: std::sync::Arc::from(provider), timeout_ms });
     }
 
     /// Configure default timeouts for provider collection. Per-provider overrides take precedence.
@@ -137,9 +126,7 @@ impl ContextManager {
         drop(tx); // We will only receive from now on
 
         let start = Instant::now();
-        let overall_deadline = self
-            .overall_deadline_ms
-            .map(|ms| start + Duration::from_millis(ms));
+        let overall_deadline = self.overall_deadline_ms.map(|ms| start + Duration::from_millis(ms));
         // Build individual deadlines for each provider
         let mut deadlines: Vec<Option<Instant>> = self
             .providers
@@ -275,18 +262,12 @@ pub struct GitProvider {
 
 impl Default for GitProvider {
     fn default() -> Self {
-        Self {
-            include_branch: true,
-            include_status: true,
-        }
+        Self { include_branch: true, include_status: true }
     }
 }
 impl GitProvider {
     pub fn new(include_branch: bool, include_status: bool) -> Self {
-        Self {
-            include_branch,
-            include_status,
-        }
+        Self { include_branch, include_status }
     }
 }
 
@@ -304,36 +285,21 @@ pub enum FileTreeRootStrategy {
 
 impl Default for FileTreeProvider {
     fn default() -> Self {
-        Self {
-            max_entries: 500,
-            root_strategy: FileTreeRootStrategy::RepoRoot,
-        }
+        Self { max_entries: 500, root_strategy: FileTreeRootStrategy::RepoRoot }
     }
 }
 impl FileTreeProvider {
     pub fn new(max_entries: usize, root_strategy: FileTreeRootStrategy) -> Self {
-        Self {
-            max_entries,
-            root_strategy,
-        }
+        Self { max_entries, root_strategy }
     }
 }
 
 impl BasicEnvProvider {
     fn env_is_sensitive(key: &str) -> bool {
         let lower = key.to_ascii_lowercase();
-        [
-            "key",
-            "token",
-            "secret",
-            "password",
-            "apikey",
-            "api_key",
-            "auth",
-            "credential",
-        ]
-        .iter()
-        .any(|kw| lower.contains(kw))
+        ["key", "token", "secret", "password", "apikey", "api_key", "auth", "credential"]
+            .iter()
+            .any(|kw| lower.contains(kw))
     }
 }
 
@@ -445,11 +411,7 @@ impl ContextProvider for FileTreeProvider {
         };
         let mut ctx = Context::default();
         let mut walker = WalkBuilder::new(&root);
-        walker
-            .hidden(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true);
+        walker.hidden(true).git_ignore(true).git_global(true).git_exclude(true);
         // Limit number of files scanned to avoid worst-case walks
         let mut count = 0usize;
         let max_entries = self.max_entries.min(5000); // Safety cap
@@ -525,9 +487,6 @@ mod tests {
         mgr.add_provider(Box::new(SlowProv));
         mgr.set_timeouts(Some(10), Some(20)); // 10ms per provider, 20ms overall
         let items = mgr.collect_all(4);
-        assert!(
-            items.is_empty(),
-            "slow provider should time out and yield no items"
-        );
+        assert!(items.is_empty(), "slow provider should time out and yield no items");
     }
 }

@@ -251,30 +251,19 @@ impl UnifiedConfig {
         // Check font size range
         if let Some(size) = self.font.size {
             if size <= 0.0 || size > 72.0 {
-                return Err(format!(
-                    "Font size {} is out of reasonable range (0-72)",
-                    size
-                ));
+                return Err(format!("Font size {} is out of reasonable range (0-72)", size));
             }
         }
 
         // Check opacity range
         if let Some(opacity) = self.window.opacity {
             if !(0.0..=1.0).contains(&opacity) {
-                return Err(format!(
-                    "Window opacity {} is out of range (0.0-1.0)",
-                    opacity
-                ));
+                return Err(format!("Window opacity {} is out of range (0.0-1.0)", opacity));
             }
         }
 
         // Validate color format (basic check for hex colors)
-        if let Some(bg) = &self
-            .colors
-            .primary
-            .as_ref()
-            .and_then(|p| p.background.as_ref())
-        {
+        if let Some(bg) = &self.colors.primary.as_ref().and_then(|p| p.background.as_ref()) {
             if !bg.starts_with('#') || bg.len() != 7 {
                 return Err(format!(
                     "Background color '{}' doesn't appear to be a valid hex color",

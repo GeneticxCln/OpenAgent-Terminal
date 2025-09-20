@@ -22,11 +22,11 @@ pub mod config;
 pub mod daemon;
 pub mod display;
 pub mod event;
+pub mod ide;
 pub mod input;
 #[cfg(unix)]
 pub mod ipc;
 pub mod logging;
-pub mod ide;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod message_bar;

@@ -118,16 +118,8 @@ fn migrate_toml(toml: String) -> Result<DocumentMut, String> {
     move_value(&mut document, &["mouse_bindings"], &["mouse", "bindings"])?;
 
     // Avoid warnings due to introduction of the new `general` section.
-    move_value(
-        &mut document,
-        &["live_config_reload"],
-        &["general", "live_config_reload"],
-    )?;
-    move_value(
-        &mut document,
-        &["working_directory"],
-        &["general", "working_directory"],
-    )?;
+    move_value(&mut document, &["live_config_reload"], &["general", "live_config_reload"])?;
+    move_value(&mut document, &["working_directory"], &["general", "working_directory"])?;
     move_value(&mut document, &["ipc_socket"], &["general", "ipc_socket"])?;
     move_value(&mut document, &["import"], &["general", "import"])?;
     move_value(&mut document, &["shell"], &["terminal", "shell"])?;
@@ -163,10 +155,7 @@ fn migrate_imports(
 
         if !normalized_path.exists() {
             if options.dry_run {
-                println!(
-                    "Skipping migration for nonexistent path: {}",
-                    normalized_path.display()
-                );
+                println!("Skipping migration for nonexistent path: {}", normalized_path.display());
             }
             continue;
         }
@@ -251,8 +240,7 @@ where
         let tmp = NamedTempFile::new_in(path.parent().unwrap())
             .map_err(|err| format!("could not create temporary file: {err}"))?;
         fs::write(tmp.path(), toml).map_err(|err| format!("filesystem error: {err}"))?;
-        tmp.persist(path)
-            .map_err(|err| format!("atomic replacement failed: {err}"))?;
+        tmp.persist(path).map_err(|err| format!("atomic replacement failed: {err}"))?;
     }
     Ok(())
 }

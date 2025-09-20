@@ -1897,62 +1897,24 @@ pub struct NativeInput {
 #[derive(Debug, Clone)]
 pub enum InputEvent {
     // Keyboard events
-    KeyPressed {
-        key: Key,
-        modifiers: ModifiersState,
-        context: InputContext,
-    },
-    KeyReleased {
-        key: Key,
-        modifiers: ModifiersState,
-    },
-    HotkeyTriggered {
-        hotkey: HotkeyCombo,
-        action: InputAction,
-    },
+    KeyPressed { key: Key, modifiers: ModifiersState, context: InputContext },
+    KeyReleased { key: Key, modifiers: ModifiersState },
+    HotkeyTriggered { hotkey: HotkeyCombo, action: InputAction },
 
     // Mouse events
-    MousePressed {
-        button: MouseButton,
-        position: (f64, f64),
-        context: MouseContext,
-    },
-    MouseReleased {
-        button: MouseButton,
-        position: (f64, f64),
-    },
-    MouseMoved {
-        position: (f64, f64),
-        delta: (f64, f64),
-    },
-    MouseWheel {
-        delta: (f64, f64),
-        position: (f64, f64),
-    },
+    MousePressed { button: MouseButton, position: (f64, f64), context: MouseContext },
+    MouseReleased { button: MouseButton, position: (f64, f64) },
+    MouseMoved { position: (f64, f64), delta: (f64, f64) },
+    MouseWheel { delta: (f64, f64), position: (f64, f64) },
 
     // Gesture events
-    GestureStarted {
-        gesture: Gesture,
-        position: (f64, f64),
-    },
-    GestureUpdated {
-        gesture: Gesture,
-        position: (f64, f64),
-        progress: f32,
-    },
-    GestureCompleted {
-        gesture: Gesture,
-        position: (f64, f64),
-    },
-    GestureCancelled {
-        gesture: Gesture,
-    },
+    GestureStarted { gesture: Gesture, position: (f64, f64) },
+    GestureUpdated { gesture: Gesture, position: (f64, f64), progress: f32 },
+    GestureCompleted { gesture: Gesture, position: (f64, f64) },
+    GestureCancelled { gesture: Gesture },
 
     // Focus events
-    FocusChanged {
-        from: Option<FocusTarget>,
-        to: FocusTarget,
-    },
+    FocusChanged { from: Option<FocusTarget>, to: FocusTarget },
     FocusLost,
 }
 
@@ -2190,9 +2152,7 @@ impl NativeInput {
 
         match event.state {
             ElementState::Pressed => {
-                self.keyboard_state
-                    .pressed_keys
-                    .insert(event.logical_key.clone());
+                self.keyboard_state.pressed_keys.insert(event.logical_key.clone());
 
                 // Check for key repeat
                 if Some(&event.logical_key) == self.keyboard_state.repeat_key.as_ref() {
@@ -2212,10 +2172,7 @@ impl NativeInput {
                 };
 
                 if let Some(action) = self.hotkey_bindings.get(&hotkey) {
-                    self.emit_event(InputEvent::HotkeyTriggered {
-                        hotkey,
-                        action: action.clone(),
-                    });
+                    self.emit_event(InputEvent::HotkeyTriggered { hotkey, action: action.clone() });
 
                     // Execute action immediately
                     self.execute_action(action.clone())?;
@@ -2237,10 +2194,7 @@ impl NativeInput {
                     self.keyboard_state.repeat_count = 0;
                 }
 
-                self.emit_event(InputEvent::KeyReleased {
-                    key: event.logical_key,
-                    modifiers,
-                });
+                self.emit_event(InputEvent::KeyReleased { key: event.logical_key, modifiers });
             }
         }
 
@@ -2299,11 +2253,7 @@ impl NativeInput {
                 // Determine mouse context
                 let context = self.determine_mouse_context(position);
 
-                self.emit_event(InputEvent::MousePressed {
-                    button,
-                    position,
-                    context,
-                });
+                self.emit_event(InputEvent::MousePressed { button, position, context });
             }
             ElementState::Released => {
                 self.mouse_state.pressed_buttons.remove(&button);
@@ -2311,10 +2261,8 @@ impl NativeInput {
                 // End drag if active
                 if button == MouseButton::Left {
                     if let Some(drag_start) = self.mouse_state.drag_start.take() {
-                        let drag_distance = (
-                            (position.0 - drag_start.0).abs(),
-                            (position.1 - drag_start.1).abs(),
-                        );
+                        let drag_distance =
+                            ((position.0 - drag_start.0).abs(), (position.1 - drag_start.1).abs());
 
                         if drag_distance.0 > self.mouse_state.drag_threshold
                             || drag_distance.1 > self.mouse_state.drag_threshold
@@ -2340,10 +2288,8 @@ impl NativeInput {
 
         // Update active drag gesture
         if let Some(drag_start) = self.mouse_state.drag_start {
-            let drag_distance = (
-                (position.0 - drag_start.0).abs(),
-                (position.1 - drag_start.1).abs(),
-            );
+            let drag_distance =
+                ((position.0 - drag_start.0).abs(), (position.1 - drag_start.1).abs());
 
             if drag_distance.0 > self.mouse_state.drag_threshold
                 || drag_distance.1 > self.mouse_state.drag_threshold
@@ -2406,11 +2352,7 @@ impl NativeInput {
                 ((position.0 - start_pos.0).powi(2) + (position.1 - start_pos.1).powi(2)).sqrt();
             let progress = ((distance / 100.0).clamp(0.0, 1.0)) as f32; // Normalize to 0-1
 
-            self.emit_event(InputEvent::GestureUpdated {
-                gesture,
-                position,
-                progress,
-            });
+            self.emit_event(InputEvent::GestureUpdated { gesture, position, progress });
         }
     }
 
@@ -2584,10 +2526,7 @@ impl NativeInput {
             FocusTarget::Settings => InputContext::Settings,
         };
 
-        self.emit_event(InputEvent::FocusChanged {
-            from: old_focus,
-            to: target,
-        });
+        self.emit_event(InputEvent::FocusChanged { from: old_focus, to: target });
     }
 
     /// Get current focus
@@ -2679,10 +2618,7 @@ mod tests {
 
         // Update gesture
         input.update_gesture(Gesture::Drag, (20.0, 20.0));
-        assert_eq!(
-            input.gesture_recognizer.gesture_current_position,
-            (20.0, 20.0)
-        );
+        assert_eq!(input.gesture_recognizer.gesture_current_position, (20.0, 20.0));
 
         // Complete gesture
         input.complete_gesture(Gesture::Drag, (30.0, 30.0));

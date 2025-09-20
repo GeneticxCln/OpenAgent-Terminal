@@ -84,11 +84,8 @@ pub fn run_security_cli(opts: &SecurityCliOptions, config: &UiConfig) -> Result<
                 println!("Command: {}", command);
                 println!("Level: {:?}", risk.level);
                 println!("Explanation: {}", risk.explanation);
-                let req = policy_obj
-                    .require_confirmation
-                    .get(&risk.level)
-                    .copied()
-                    .unwrap_or(false);
+                let req =
+                    policy_obj.require_confirmation.get(&risk.level).copied().unwrap_or(false);
                 println!("Requires confirmation: {}", req);
                 if !risk.mitigations.is_empty() {
                     println!("Mitigations:");
@@ -124,8 +121,8 @@ pub fn run_security_cli(opts: &SecurityCliOptions, config: &UiConfig) -> Result<
                 println!("Active patterns ({}):", patterns.len());
                 for p in patterns {
                     println!(
-                        "  - [{}] ({}) {}",
-                        format!("{:?}", p.risk_level),
+                        "  - [{:?}] ({}) {}",
+                        p.risk_level,
                         if p.platform_specific { "platform" } else { "global" },
                         p.pattern
                     );

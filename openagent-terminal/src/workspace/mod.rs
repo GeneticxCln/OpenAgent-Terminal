@@ -210,19 +210,15 @@ impl WorkspaceManager {
         // Extract the current layout and active pane, then release the borrow on `self`
         let (mut layout, active_pane) = if let Some(tab) = self.active_tab_mut() {
             let ap = tab.active_pane;
-            let old_layout = std::mem::replace(
-                &mut tab.split_layout,
-                split_manager::SplitLayout::Single(ap),
-            );
+            let old_layout =
+                std::mem::replace(&mut tab.split_layout, split_manager::SplitLayout::Single(ap));
             (old_layout, ap)
         } else {
             return None;
         };
 
         // Perform the split using the SplitManager while no borrow to `tab` is held
-        let ok = self
-            .splits
-            .split_horizontal_with_id(&mut layout, active_pane, ratio, new_id);
+        let ok = self.splits.split_horizontal_with_id(&mut layout, active_pane, ratio, new_id);
 
         // Write the possibly-updated layout back to the active tab
         if let Some(tab) = self.active_tab_mut() {
@@ -244,19 +240,15 @@ impl WorkspaceManager {
         // Extract the current layout and active pane, then release the borrow on `self`
         let (mut layout, active_pane) = if let Some(tab) = self.active_tab_mut() {
             let ap = tab.active_pane;
-            let old_layout = std::mem::replace(
-                &mut tab.split_layout,
-                split_manager::SplitLayout::Single(ap),
-            );
+            let old_layout =
+                std::mem::replace(&mut tab.split_layout, split_manager::SplitLayout::Single(ap));
             (old_layout, ap)
         } else {
             return None;
         };
 
         // Perform the split using the SplitManager while no borrow to `tab` is held
-        let ok = self
-            .splits
-            .split_vertical_with_id(&mut layout, active_pane, ratio, new_id);
+        let ok = self.splits.split_vertical_with_id(&mut layout, active_pane, ratio, new_id);
 
         // Write the possibly-updated layout back to the active tab
         if let Some(tab) = self.active_tab_mut() {
@@ -289,7 +281,10 @@ impl WorkspaceManager {
     }
 
     /// Focus pane in a direction using geometry; returns true if focus changed
-    pub fn focus_pane_direction(&mut self, dir: crate::workspace::warp_split_manager::WarpNavDirection) -> bool {
+    pub fn focus_pane_direction(
+        &mut self,
+        dir: crate::workspace::warp_split_manager::WarpNavDirection,
+    ) -> bool {
         // Compute content container rect similar to hit_test_split_divider using read-only borrows
         let si = self.size_info;
         let x0 = si.padding_x();
@@ -375,7 +370,9 @@ impl WorkspaceManager {
                 D::Up => py < cy,
                 D::Down => py > cy,
             };
-            if !valid { continue; }
+            if !valid {
+                continue;
+            }
             let dist = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
             let align = match dir {
                 D::Left | D::Right => 1.0 / (1.0 + (py - cy).abs()),
@@ -383,8 +380,11 @@ impl WorkspaceManager {
             };
             candidates.push((id, dist, align));
         }
-        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)));
+        candidates.sort_by(|a, b| {
+            b.2.partial_cmp(&a.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        });
         candidates.first().map(|(id, _, _)| *id)
     }
 
@@ -471,10 +471,7 @@ impl WorkspaceManager {
 
     /// Check if the active tab is currently zoomed
     pub fn active_tab_zoomed(&self) -> bool {
-        self.tabs
-            .active_tab_id()
-            .map(|id| self.tabs.is_tab_zoomed(id))
-            .unwrap_or(false)
+        self.tabs.active_tab_id().map(|id| self.tabs.is_tab_zoomed(id)).unwrap_or(false)
     }
 
     /// Mark active tab as having last command error (non-zero exit)
@@ -549,8 +546,7 @@ impl WorkspaceManager {
         new_ratio: f32,
     ) -> bool {
         if let Some(tab) = self.active_tab_mut() {
-            tab.split_layout
-                .set_ratio_at_path_internal(path, axis, new_ratio)
+            tab.split_layout.set_ratio_at_path_internal(path, axis, new_ratio)
         } else {
             false
         }
@@ -577,13 +573,10 @@ impl WorkspaceManager {
         command: String,
         dry_run: bool,
     ) {
-        let confirmation = PendingSecurityConfirmation {
-            command,
-            dry_run,
-            timestamp: std::time::Instant::now(),
-        };
+        let confirmation =
+            PendingSecurityConfirmation { command, dry_run, timestamp: std::time::Instant::now() };
         self.pending_security_confirmations.insert(confirmation_id, confirmation);
-        
+
         // Clean up old confirmations (older than 5 minutes)
         self.cleanup_expired_confirmations();
     }
@@ -605,10 +598,9 @@ impl WorkspaceManager {
     fn cleanup_expired_confirmations(&mut self) {
         let expiry_duration = std::time::Duration::from_secs(300); // 5 minutes
         let now = std::time::Instant::now();
-        
-        self.pending_security_confirmations.retain(|_, confirmation| {
-            now.duration_since(confirmation.timestamp) < expiry_duration
-        });
+
+        self.pending_security_confirmations
+            .retain(|_, confirmation| now.duration_since(confirmation.timestamp) < expiry_duration);
     }
 
     /// Get the number of pending security confirmations
@@ -697,10 +689,7 @@ mod tests {
         let tol = 2.0;
 
         let hit = wm.hit_test_split_divider(split_x, y_inside, tol);
-        assert!(
-            hit.is_some(),
-            "divider should be hittable at correct x considering padding"
-        );
+        assert!(hit.is_some(), "divider should be hittable at correct x considering padding");
         assert_eq!(hit.unwrap().axis, split_manager::SplitAxis::Horizontal);
     }
 
@@ -709,65 +698,61 @@ mod tests {
         // When workspace.enabled = true, is_enabled() returns true
         let mut cfg_true = UiConfig::default();
         cfg_true.workspace.enabled = true;
-        let wm_true = make_workspace(
-            cfg_true,
-            make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0),
-        );
+        let wm_true =
+            make_workspace(cfg_true, make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0));
         assert!(wm_true.is_enabled(), "expected workspace to be enabled");
 
         // When workspace.enabled = false, is_enabled() returns false
         let mut cfg_false = UiConfig::default();
         cfg_false.workspace.enabled = false;
-        let wm_false = make_workspace(
-            cfg_false,
-            make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0),
-        );
+        let wm_false =
+            make_workspace(cfg_false, make_size_info(640.0, 480.0, 10.0, 20.0, 30.0, 40.0));
         assert!(
             !wm_false.is_enabled(),
             "expected workspace to be disabled when config flag is false"
         );
     }
-    
+
     #[test]
     fn test_security_confirmation_management() {
         let config = UiConfig::default();
         let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
         let mut wm = make_workspace(config, si);
-        
+
         // Test storing and retrieving confirmations
         let confirm_id = "test_confirmation_123".to_string();
         let command = "rm -rf /important/data".to_string();
-        
+
         // Initially no confirmations
         assert_eq!(wm.pending_security_confirmations_count(), 0);
         assert!(!wm.has_pending_security_confirmation(&confirm_id));
-        
+
         // Store a confirmation
         wm.store_pending_security_confirmation(confirm_id.clone(), command.clone(), false);
-        
+
         // Verify it was stored
         assert_eq!(wm.pending_security_confirmations_count(), 1);
         assert!(wm.has_pending_security_confirmation(&confirm_id));
-        
+
         // Consume the confirmation
         let confirmation = wm.consume_pending_security_confirmation(&confirm_id).unwrap();
         assert_eq!(confirmation.command, command);
         assert!(!confirmation.dry_run);
-        
+
         // Verify it was removed
         assert_eq!(wm.pending_security_confirmations_count(), 0);
         assert!(!wm.has_pending_security_confirmation(&confirm_id));
-        
+
         // Consuming again should return None
         assert!(wm.consume_pending_security_confirmation(&confirm_id).is_none());
     }
-    
+
     #[test]
     fn test_security_confirmation_dry_run_flag() {
         let config = UiConfig::default();
         let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
         let mut wm = make_workspace(config, si);
-        
+
         // Store a dry-run confirmation
         let confirm_id = "dry_run_test".to_string();
         wm.store_pending_security_confirmation(
@@ -775,77 +760,77 @@ mod tests {
             "test command".to_string(),
             true, // dry_run = true
         );
-        
+
         let confirmation = wm.consume_pending_security_confirmation(&confirm_id).unwrap();
         assert!(confirmation.dry_run);
     }
-    
+
     #[test]
     fn test_multiple_security_confirmations() {
         let config = UiConfig::default();
         let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
         let mut wm = make_workspace(config, si);
-        
+
         // Store multiple confirmations
         wm.store_pending_security_confirmation("id1".to_string(), "cmd1".to_string(), false);
         wm.store_pending_security_confirmation("id2".to_string(), "cmd2".to_string(), true);
         wm.store_pending_security_confirmation("id3".to_string(), "cmd3".to_string(), false);
-        
+
         assert_eq!(wm.pending_security_confirmations_count(), 3);
-        
+
         // Consume one by one
         let conf1 = wm.consume_pending_security_confirmation("id1").unwrap();
         assert_eq!(conf1.command, "cmd1");
         assert_eq!(wm.pending_security_confirmations_count(), 2);
-        
+
         let conf3 = wm.consume_pending_security_confirmation("id3").unwrap();
         assert_eq!(conf3.command, "cmd3");
         assert_eq!(wm.pending_security_confirmations_count(), 1);
-        
+
         let conf2 = wm.consume_pending_security_confirmation("id2").unwrap();
         assert_eq!(conf2.command, "cmd2");
         assert!(conf2.dry_run);
         assert_eq!(wm.pending_security_confirmations_count(), 0);
     }
-    
+
     #[test]
     fn test_security_confirmation_timestamp() {
         let config = UiConfig::default();
         let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
         let mut wm = make_workspace(config, si);
-        
+
         let before = std::time::Instant::now();
-        
+
         wm.store_pending_security_confirmation(
             "timestamp_test".to_string(),
             "test command".to_string(),
             false,
         );
-        
+
         let after = std::time::Instant::now();
-        
+
         let confirmation = wm.consume_pending_security_confirmation("timestamp_test").unwrap();
-        
+
         // Timestamp should be between before and after
         assert!(confirmation.timestamp >= before);
         assert!(confirmation.timestamp <= after);
     }
-    
+
     #[test]
     fn test_security_confirmation_cleanup_on_store() {
         let config = UiConfig::default();
         let si = make_size_info(800.0, 600.0, 8.0, 16.0, 10.0, 10.0);
         let mut wm = make_workspace(config, si);
-        
+
         // Store a confirmation
         wm.store_pending_security_confirmation(
             "normal_test".to_string(),
             "normal command".to_string(),
             false,
         );
-        
+
         assert_eq!(wm.pending_security_confirmations_count(), 1);
-        
+
         // The cleanup is called internally, but we can't easily test expiration
         // without manipulating time, so we just verify the call doesn't break anything
         wm.store_pending_security_confirmation(
@@ -853,7 +838,7 @@ mod tests {
             "another command".to_string(),
             true,
         );
-        
+
         assert_eq!(wm.pending_security_confirmations_count(), 2);
     }
 }

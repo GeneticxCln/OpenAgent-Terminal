@@ -49,11 +49,7 @@ pub struct ShapedRenderConfig {
 
 impl Default for ShapedRenderConfig {
     fn default() -> Self {
-        Self {
-            max_vertices_per_batch: 16384,
-            enable_subpixel: true,
-            enable_colored_glyphs: true,
-        }
+        Self { max_vertices_per_batch: 16384, enable_subpixel: true, enable_colored_glyphs: true }
     }
 }
 
@@ -216,11 +212,7 @@ impl WgpuShapedTextRenderer {
         }
 
         let flags = if glyph.multicolor { 1 } else { 0 }
-            | if self.render_config.enable_subpixel {
-                2
-            } else {
-                0
-            };
+            | if self.render_config.enable_subpixel { 2 } else { 0 };
 
         // Glyph dimensions
         let glyph_width = glyph.width as f32;
@@ -294,12 +286,10 @@ impl WgpuShapedTextRenderer {
         }
 
         // Update vertex buffer
-        self.queue
-            .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
+        self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
 
         // Update index buffer
-        self.queue
-            .write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
+        self.queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
 
         // Clear staging data
         self.vertices.clear();

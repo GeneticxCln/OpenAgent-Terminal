@@ -1,28 +1,29 @@
 #[cfg(feature = "ai")]
 mod integration_tests {
     use anyhow::Result;
+    use chrono::Utc;
     use openagent_terminal::ai::agents::{
         advanced_conversation_features::{AdvancedConversationFeatures, BranchReason},
         blitzy_project_context::{BlitzyProjectContextAgent, ProjectContextConfig},
         conversation_manager::ConversationManager,
         natural_language::NaturalLanguageAgent,
         privacy_content_filter::{
-            AccessControl, ComplianceStandard, DataClassification, PrivacyContentFilter,
-            PrivacyFilterConfig, PrivacyPolicy, RedactionMethod, RedactionRule, ScannerType,
-            ScanPattern, SensitivityLevel, PatternType,
+            AccessControl, ComplianceStandard, DataClassification, PatternType,
+            PrivacyContentFilter, PrivacyFilterConfig, PrivacyPolicy, RedactionMethod,
+            RedactionRule, ScanPattern, ScannerType, SensitivityLevel,
         },
         terminal_ui_integration::TerminalUIIntegration,
         workflow_orchestrator::{
-            RetryConfig, StepErrorHandling, WorkflowConfig, WorkflowContext, WorkflowOrchestrator,
-            WorkflowStep, WorkflowStepType, WorkflowTemplate, WorkflowCategory, ConditionType,
+            ConditionType, RetryConfig, StepErrorHandling, WorkflowCategory, WorkflowConfig,
+            WorkflowContext, WorkflowOrchestrator, WorkflowStep, WorkflowStepType,
+            WorkflowTemplate,
         },
-        Agent, AgentConfig, AgentRequest, AgentRequestType, AgentContext,
+        Agent, AgentConfig, AgentContext, AgentRequest, AgentRequestType,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio;
-    use chrono::Utc;
 
     async fn setup_integrated_system() -> Result<(
         Arc<ConversationManager>,
@@ -57,38 +58,42 @@ mod integration_tests {
 
             // Register basic scanners (email and credit card)
             filter
-                .add_content_scanner(openagent_terminal::ai::agents::privacy_content_filter::ContentScanner {
-                    id: "email-scanner".to_string(),
-                    name: "Email Scanner".to_string(),
-                    scanner_type: ScannerType::RegexPattern,
-                    patterns: vec![ScanPattern {
-                        pattern: r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}".to_string(),
-                        pattern_type: PatternType::Regex,
-                        sensitivity: SensitivityLevel::Medium,
-                        context_requirements: vec![],
-                        false_positive_filters: vec![],
-                    }],
-                    confidence_threshold: 0.5,
-                    data_classification: DataClassification::PersonalData,
-                    is_enabled: true,
-                })
+                .add_content_scanner(
+                    openagent_terminal::ai::agents::privacy_content_filter::ContentScanner {
+                        id: "email-scanner".to_string(),
+                        name: "Email Scanner".to_string(),
+                        scanner_type: ScannerType::RegexPattern,
+                        patterns: vec![ScanPattern {
+                            pattern: r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}".to_string(),
+                            pattern_type: PatternType::Regex,
+                            sensitivity: SensitivityLevel::Medium,
+                            context_requirements: vec![],
+                            false_positive_filters: vec![],
+                        }],
+                        confidence_threshold: 0.5,
+                        data_classification: DataClassification::PersonalData,
+                        is_enabled: true,
+                    },
+                )
                 .await?;
             filter
-                .add_content_scanner(openagent_terminal::ai::agents::privacy_content_filter::ContentScanner {
-                    id: "credit-card-scanner".to_string(),
-                    name: "Credit Card Scanner".to_string(),
-                    scanner_type: ScannerType::RegexPattern,
-                    patterns: vec![ScanPattern {
-                        pattern: r"\b(?:\d[ -]*?){13,19}\b".to_string(),
-                        pattern_type: PatternType::Regex,
-                        sensitivity: SensitivityLevel::High,
-                        context_requirements: vec![],
-                        false_positive_filters: vec![],
-                    }],
-                    confidence_threshold: 0.5,
-                    data_classification: DataClassification::FinancialData,
-                    is_enabled: true,
-                })
+                .add_content_scanner(
+                    openagent_terminal::ai::agents::privacy_content_filter::ContentScanner {
+                        id: "credit-card-scanner".to_string(),
+                        name: "Credit Card Scanner".to_string(),
+                        scanner_type: ScannerType::RegexPattern,
+                        patterns: vec![ScanPattern {
+                            pattern: r"\b(?:\d[ -]*?){13,19}\b".to_string(),
+                            pattern_type: PatternType::Regex,
+                            sensitivity: SensitivityLevel::High,
+                            context_requirements: vec![],
+                            false_positive_filters: vec![],
+                        }],
+                        confidence_threshold: 0.5,
+                        data_classification: DataClassification::FinancialData,
+                        is_enabled: true,
+                    },
+                )
                 .await?;
 
             // Create a default GDPR-like policy used in tests
@@ -270,9 +275,8 @@ mod integration_tests {
         assert!(scan_result.overall_risk_score > 0.0);
 
         // Apply redaction
-        let redaction_result = privacy_filter
-            .redact_content(sensitive_message, "gdpr-policy", None)
-            .await?;
+        let redaction_result =
+            privacy_filter.redact_content(sensitive_message, "gdpr-policy", None).await?;
         assert!(redaction_result.redacted_content != sensitive_message);
         assert!(!redaction_result.redactions_applied.is_empty());
 
@@ -288,9 +292,8 @@ mod integration_tests {
             .await?;
 
         // Verify conversation summary contains redacted content indication (not equal to original)
-        let conversation_summary = conversation_manager
-            .get_conversation_summary(session_id, 10)
-            .await?;
+        let conversation_summary =
+            conversation_manager.get_conversation_summary(session_id, 10).await?;
         assert!(!conversation_summary.is_empty());
         assert!(conversation_summary.contains("Conversation:"));
 
@@ -309,9 +312,8 @@ mod integration_tests {
             _project_context,
         ) = setup_integrated_system().await?;
 
-        let session_id = conversation_manager
-            .create_session(Some("Advanced Features Test".to_string()))
-            .await?;
+        let session_id =
+            conversation_manager.create_session(Some("Advanced Features Test".to_string())).await?;
 
         // Test goal creation and management
         let goal_id = advanced_features
@@ -324,22 +326,13 @@ mod integration_tests {
 
         // Test conversation branching and switching
         let branch_id = advanced_features
-            .create_branch(
-                session_id,
-                "Test Branch".to_string(),
-                BranchReason::UserInitiated,
-                None,
-            )
+            .create_branch(session_id, "Test Branch".to_string(), BranchReason::UserInitiated, None)
             .await?;
 
-        advanced_features
-            .switch_branch(session_id, branch_id)
-            .await?;
+        advanced_features.switch_branch(session_id, branch_id).await?;
 
         // Update goal progress
-        advanced_features
-            .update_goal_progress(session_id, goal_id.clone(), 0.5)
-            .await?;
+        advanced_features.update_goal_progress(session_id, goal_id.clone(), 0.5).await?;
 
         Ok(())
     }
@@ -436,9 +429,7 @@ mod integration_tests {
         tokio::time::sleep(Duration::from_millis(150)).await;
 
         // Check execution status
-        let status = workflow_orchestrator
-            .get_workflow_status(execution_id)
-            .await?;
+        let status = workflow_orchestrator.get_workflow_status(execution_id).await?;
         assert_eq!(status.id, execution_id);
 
         Ok(())
@@ -458,9 +449,7 @@ mod integration_tests {
 
         // Test project discovery (using current directory)
         let current_dir = std::env::current_dir()?;
-        let project_info = project_context
-            .analyze_project(current_dir.to_str().unwrap())
-            .await?;
+        let project_info = project_context.analyze_project(current_dir.to_str().unwrap()).await?;
 
         assert!(!project_info.name.is_empty());
         assert!(!project_info.root_path.is_empty());
@@ -489,9 +478,8 @@ mod integration_tests {
             _project_context,
         ) = setup_integrated_system().await?;
 
-        let session_id = conversation_manager
-            .create_session(Some("NLP Test Session".to_string()))
-            .await?;
+        let session_id =
+            conversation_manager.create_session(Some("NLP Test Session".to_string())).await?;
 
         // Test natural language processing with privacy filtering
         let user_input =
@@ -502,9 +490,8 @@ mod integration_tests {
 
         let processed_input = if !scan_result.detections.is_empty() {
             // Apply redaction if sensitive content detected
-            let redaction_result = privacy_filter
-                .redact_content(user_input, "gdpr-policy", None)
-                .await?;
+            let redaction_result =
+                privacy_filter.redact_content(user_input, "gdpr-policy", None).await?;
             redaction_result.redacted_content
         } else {
             user_input.to_string()
@@ -553,9 +540,7 @@ mod integration_tests {
             .await?;
 
         // Verify conversation summary (since history accessor is summary-based)
-        let summary = conversation_manager
-            .get_conversation_summary(session_id, 10)
-            .await?;
+        let summary = conversation_manager.get_conversation_summary(session_id, 10).await?;
         assert!(summary.contains("Conversation:"));
 
         Ok(())
@@ -592,9 +577,7 @@ mod integration_tests {
 
         // 4. Analyze current project context
         let current_dir = std::env::current_dir()?;
-        let _project_info = project_context
-            .analyze_project(current_dir.to_str().unwrap())
-            .await?;
+        let _project_info = project_context.analyze_project(current_dir.to_str().unwrap()).await?;
 
         // 5. Process a message with sensitive content through the full pipeline
         let sensitive_input = "I need help with the project at /home/user. My API key is sk_test_123 and email is user@company.com";
@@ -604,9 +587,8 @@ mod integration_tests {
         assert!(!scan_result.detections.is_empty());
 
         // b) Apply redaction
-        let redaction_result = privacy_filter
-            .redact_content(sensitive_input, "gdpr-policy", None)
-            .await?;
+        let redaction_result =
+            privacy_filter.redact_content(sensitive_input, "gdpr-policy", None).await?;
 
         // c) Process through natural language agent
         let nl_response = natural_language
@@ -660,7 +642,7 @@ mod integration_tests {
 
         // 6. Create and execute a workflow
         use openagent_terminal::ai::agents::workflow_orchestrator::{
-            WorkflowStepType, WorkflowTemplate, WorkflowStep,
+            WorkflowStep, WorkflowStepType, WorkflowTemplate,
         };
 
         let template = WorkflowTemplate {
@@ -714,18 +696,12 @@ mod integration_tests {
             .await?;
 
         // 7. Update goal progress
-        advanced_features
-            .update_goal_progress(session_id, goal_id.clone(), 0.8)
-            .await?;
+        advanced_features.update_goal_progress(session_id, goal_id.clone(), 0.8).await?;
 
         // 8. Generate compliance report
-        let date_range = (
-            chrono::Utc::now() - chrono::Duration::hours(1),
-            chrono::Utc::now(),
-        );
-        let _compliance_report = privacy_filter
-            .generate_compliance_report(ComplianceStandard::GDPR, date_range)
-            .await?;
+        let date_range = (chrono::Utc::now() - chrono::Duration::hours(1), chrono::Utc::now());
+        let _compliance_report =
+            privacy_filter.generate_compliance_report(ComplianceStandard::GDPR, date_range).await?;
 
         // 9. Verify all systems are still healthy
         assert!(conversation_manager.status().await.is_healthy);
@@ -737,15 +713,12 @@ mod integration_tests {
         assert!(project_context.status().await.is_healthy);
 
         // 10. Verify data integrity via summary
-        let conversation_summary = conversation_manager
-            .get_conversation_summary(session_id, 10)
-            .await?;
+        let conversation_summary =
+            conversation_manager.get_conversation_summary(session_id, 10).await?;
         assert!(conversation_summary.contains("Conversation:"));
 
         // Update goal progress again to simulate completion
-        advanced_features
-            .update_goal_progress(session_id, goal_id.clone(), 0.8)
-            .await?;
+        advanced_features.update_goal_progress(session_id, goal_id.clone(), 0.8).await?;
 
         println!("✅ Comprehensive integration test completed successfully!");
 
@@ -767,9 +740,7 @@ mod integration_tests {
         // Test invalid session handling
         // Use a random UUID that won't exist
         let invalid_session = uuid::Uuid::new_v4();
-        let result = conversation_manager
-            .get_conversation_summary(invalid_session, 10)
-            .await;
+        let result = conversation_manager.get_conversation_summary(invalid_session, 10).await;
         assert!(result.is_err());
 
         // Test empty content scanning
@@ -783,9 +754,8 @@ mod integration_tests {
         assert!(large_scan_result.is_ok() || large_scan_result.is_err());
 
         // Test invalid privacy policy
-        let redaction_result = privacy_filter
-            .redact_content("test content", "nonexistent-policy", None)
-            .await;
+        let redaction_result =
+            privacy_filter.redact_content("test content", "nonexistent-policy", None).await;
         // Should handle gracefully
         assert!(redaction_result.is_ok() || redaction_result.is_err());
 

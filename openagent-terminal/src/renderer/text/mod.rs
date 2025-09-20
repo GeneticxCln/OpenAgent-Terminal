@@ -17,9 +17,7 @@ pub struct LoaderApi<'a> {
 
 impl<'a> LoaderApi<'a> {
     pub fn new() -> Self {
-        Self {
-            _phantom: std::marker::PhantomData,
-        }
+        Self { _phantom: std::marker::PhantomData }
     }
 }
 

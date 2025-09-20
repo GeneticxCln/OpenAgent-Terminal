@@ -423,11 +423,8 @@ impl BlockManager {
                     }
 
                     let dur = start.elapsed().as_millis() as u64;
-                    let output = output_stream_clone
-                        .lock()
-                        .ok()
-                        .map(|m| m.clone())
-                        .unwrap_or_default();
+                    let output =
+                        output_stream_clone.lock().ok().map(|m| m.clone()).unwrap_or_default();
                     let code = local_exit.unwrap_or(0);
                     let _ = done_tx.send((output, code, dur));
                 });
@@ -454,17 +451,12 @@ impl BlockManager {
         let (program, args): (String, Vec<String>) = match shell {
             ShellType::Bash => ("bash".to_string(), vec!["-lc".to_string(), command.clone()]),
             ShellType::Zsh => ("zsh".to_string(), vec!["-lc".to_string(), command.clone()]),
-            ShellType::Fish => (
-                "fish".to_string(),
-                vec!["-l".to_string(), "-c".to_string(), command.clone()],
-            ),
+            ShellType::Fish => {
+                ("fish".to_string(), vec!["-l".to_string(), "-c".to_string(), command.clone()])
+            }
             ShellType::PowerShell => (
                 "pwsh".to_string(),
-                vec![
-                    "-NoProfile".to_string(),
-                    "-Command".to_string(),
-                    command.clone(),
-                ],
+                vec!["-NoProfile".to_string(), "-Command".to_string(), command.clone()],
             ),
             ShellType::Nushell => ("nu".to_string(), vec!["-c".to_string(), command.clone()]),
             ShellType::Custom(_) => (
@@ -499,21 +491,14 @@ impl BlockManager {
             };
 
             // Provide sane defaults for PTY size (detached from UI)
-            let window_size = WindowSize {
-                num_lines: 24,
-                num_cols: 80,
-                cell_width: 8,
-                cell_height: 16,
-            };
+            let window_size =
+                WindowSize { num_lines: 24, num_cols: 80, cell_width: 8, cell_height: 16 };
 
             // Create PTY
             let mut pty = match openagent_terminal_core::tty::new(&options, window_size, 0) {
                 Ok(pty) => pty,
                 Err(e) => {
-                    error!(
-                        "Blocks v2: failed to spawn PTY for block {}: {}",
-                        block_id_clone, e
-                    );
+                    error!("Blocks v2: failed to spawn PTY for block {}: {}", block_id_clone, e);
                     return;
                 }
             };
@@ -583,11 +568,7 @@ impl BlockManager {
 
             // Report completion back to async context
             let (final_output, code) = {
-                let s = output_stream_clone
-                    .lock()
-                    .ok()
-                    .map(|m| m.clone())
-                    .unwrap_or_default();
+                let s = output_stream_clone.lock().ok().map(|m| m.clone()).unwrap_or_default();
                 (s, exit_code)
             };
             let _ = done_tx.send((final_output, code, duration.as_millis() as u64));
@@ -602,16 +583,12 @@ impl BlockManager {
 
         // Await completion and persist results (emits BlockEvent::Updated via update_block_output)
         if let Ok((final_output, exit_code, duration_ms)) = done_rx.await {
-            self.update_block_output(block_id, final_output, exit_code, duration_ms)
-                .await?;
+            self.update_block_output(block_id, final_output, exit_code, duration_ms).await?;
             // Keep the execution handle available briefly so subscribers can still attach
             // and receive any final messages; just update status instead of removing.
             if let Some(h) = self.executing_blocks.get_mut(&block_id) {
-                h.status = if exit_code == 0 {
-                    ExecutionStatus::Success
-                } else {
-                    ExecutionStatus::Failed
-                };
+                h.status =
+                    if exit_code == 0 { ExecutionStatus::Success } else { ExecutionStatus::Failed };
             }
         }
 
@@ -623,9 +600,7 @@ impl BlockManager {
         &self,
         block_id: BlockId,
     ) -> Option<tokio::sync::broadcast::Receiver<String>> {
-        self.executing_blocks
-            .get(&block_id)
-            .map(|h| h.tx.subscribe())
+        self.executing_blocks.get(&block_id).map(|h| h.tx.subscribe())
     }
 
     /// Append output to a running block and notify subscribers immediately
@@ -688,9 +663,7 @@ impl BlockManager {
             progress: 0.0,
         };
 
-        self.render_state
-            .animation_states
-            .insert(block_id, animation);
+        self.render_state.animation_states.insert(block_id, animation);
     }
 
     /// Update animation progress and return blocks that need rerendering
@@ -726,9 +699,8 @@ impl BlockManager {
         let now = Utc::now();
 
         // Capture current environment if not provided
-        let environment = params
-            .environment
-            .unwrap_or_else(|| self.environment_manager.capture_current());
+        let environment =
+            params.environment.unwrap_or_else(|| self.environment_manager.capture_current());
 
         let block = Block {
             id: block_id,
@@ -789,11 +761,8 @@ impl BlockManager {
             owned.output = output;
             owned.exit_code = Some(exit_code);
             owned.duration_ms = Some(duration_ms);
-            owned.status = if exit_code == 0 {
-                ExecutionStatus::Success
-            } else {
-                ExecutionStatus::Failed
-            };
+            owned.status =
+                if exit_code == 0 { ExecutionStatus::Success } else { ExecutionStatus::Failed };
             owned.modified_at = Utc::now();
             let arc_new = Arc::new(owned.clone());
             *entry = arc_new.clone();
@@ -952,9 +921,7 @@ impl BlockManager {
             self.active_blocks.insert(block_id, block);
         }
 
-        self.active_blocks
-            .get_mut(&block_id)
-            .context("Block not found in cache")
+        self.active_blocks.get_mut(&block_id).context("Block not found in cache")
     }
 
     /// Add child to parent block
@@ -978,8 +945,7 @@ impl BlockManager {
         let deleted = self.storage.delete_before(cutoff).await?;
 
         // Clear from cache
-        self.active_blocks
-            .retain(|_, block| block.created_at > cutoff);
+        self.active_blocks.retain(|_, block| block.created_at > cutoff);
 
         info!("Deleted {} old blocks", deleted);
 

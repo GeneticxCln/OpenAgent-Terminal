@@ -192,9 +192,8 @@ impl SecureSyncProvider {
         let base_dir = if let Some(ref dir) = config.data_dir {
             dir.clone()
         } else {
-            let state_dir = std::env::var("XDG_STATE_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| {
+            let state_dir =
+                std::env::var("XDG_STATE_HOME").map(PathBuf::from).unwrap_or_else(|_| {
                     let home = std::env::var("HOME")
                         .map(PathBuf::from)
                         .unwrap_or_else(|_| PathBuf::from("."));
@@ -327,9 +326,7 @@ impl SecureSyncProvider {
                         })?,
                     );
                     if verifier.verify(&bytes, &store.signature).is_err() {
-                        return Err(SyncError::Other(
-                            "Trust store signature invalid".to_string(),
-                        ));
+                        return Err(SyncError::Other("Trust store signature invalid".to_string()));
                     }
                 } else {
                     warn!("Trust store signed_by does not match this installation; skipping signature verification");
@@ -714,10 +711,7 @@ impl SecureSyncProvider {
 
     /// Get the current Unix timestamp
     fn current_timestamp() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
     }
 
     /// Get the encrypted data directory for a scope
@@ -761,9 +755,8 @@ impl SecureSyncProvider {
     fn source_dir(&self, scope: SyncScope) -> PathBuf {
         match scope {
             SyncScope::Settings => {
-                let config_dir = std::env::var("XDG_CONFIG_HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| {
+                let config_dir =
+                    std::env::var("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|_| {
                         let home = std::env::var("HOME")
                             .map(PathBuf::from)
                             .unwrap_or_else(|_| PathBuf::from("."));
@@ -772,9 +765,8 @@ impl SecureSyncProvider {
                 config_dir.join("openagent-terminal")
             }
             SyncScope::History => {
-                let data_dir = std::env::var("XDG_DATA_HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| {
+                let data_dir =
+                    std::env::var("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|_| {
                         let home = std::env::var("HOME")
                             .map(PathBuf::from)
                             .unwrap_or_else(|_| PathBuf::from("."));
@@ -796,9 +788,7 @@ impl SecureSyncProvider {
             revoked: false,
             key_history: Vec::new(),
         };
-        self.trust_store
-            .peers
-            .insert(record.info.installation_id.clone(), record);
+        self.trust_store.peers.insert(record.info.installation_id.clone(), record);
         self.save_trust_store()
     }
 
@@ -849,21 +839,12 @@ impl SecureSyncProvider {
 
     /// Get a peer by installation id (only non-revoked)
     pub fn get_peer(&self, installation_id: &str) -> Option<&PeerInfo> {
-        self.trust_store
-            .peers
-            .get(installation_id)
-            .filter(|r| !r.revoked)
-            .map(|r| &r.info)
+        self.trust_store.peers.get(installation_id).filter(|r| !r.revoked).map(|r| &r.info)
     }
 
     /// List all known, non-revoked peers
     pub fn list_peers(&self) -> Vec<&PeerInfo> {
-        self.trust_store
-            .peers
-            .values()
-            .filter(|r| !r.revoked)
-            .map(|r| &r.info)
-            .collect()
+        self.trust_store.peers.values().filter(|r| !r.revoked).map(|r| &r.info).collect()
     }
 
     /// Get full peer record (including revoked and history)
@@ -955,9 +936,8 @@ impl SyncProvider for SecureSyncProvider {
 
         entries.sort_by_key(|e| e.file_name());
 
-        let latest_file = entries
-            .last()
-            .ok_or_else(|| SyncError::Other("No payload files found".to_string()))?;
+        let latest_file =
+            entries.last().ok_or_else(|| SyncError::Other("No payload files found".to_string()))?;
 
         // Load and decrypt payload
         let payload_content = fs::read_to_string(latest_file.path())?;
@@ -986,10 +966,7 @@ impl SyncProvider for SecureSyncProvider {
         let mut status = match self.read_status() {
             Ok(s) => s,
             Err(e) => {
-                warn!(
-                    "Failed to read secure sync status (pull); defaulting: {:?}",
-                    e
-                );
+                warn!("Failed to read secure sync status (pull); defaulting: {:?}", e);
                 SyncStatus::default()
             }
         };
@@ -1054,11 +1031,7 @@ mod tests {
         assert_eq!(metadata.kdf_params.algorithm, "PBKDF2-SHA256");
         assert_eq!(metadata.kdf_params.iterations, 100_000);
         // public key should be present
-        assert!(metadata
-            .public_key
-            .as_ref()
-            .map(|v| !v.is_empty())
-            .unwrap_or(false));
+        assert!(metadata.public_key.as_ref().map(|v| !v.is_empty()).unwrap_or(false));
 
         // Keys should exist on disk
         let base_dir = provider.base_dir.clone();
@@ -1082,9 +1055,7 @@ mod tests {
         let test_data = b"Hello, secure sync!";
         let password = b"test-password-123";
 
-        let encrypted = provider
-            .encrypt_data(test_data, password, SyncScope::Settings)
-            .unwrap();
+        let encrypted = provider.encrypt_data(test_data, password, SyncScope::Settings).unwrap();
         let decrypted = provider.decrypt_data(&encrypted, password).unwrap();
 
         assert_eq!(test_data, &decrypted[..]);
@@ -1138,9 +1109,7 @@ mod tests {
         };
 
         // A -> B: challenge
-        let challenge = provider_a
-            .create_handshake_challenge(&peer_b.installation_id)
-            .unwrap();
+        let challenge = provider_a.create_handshake_challenge(&peer_b.installation_id).unwrap();
 
         // B -> A: response
         let response = provider_b
@@ -1178,9 +1147,7 @@ mod tests {
         assert_eq!(provider.list_peers().len(), 1);
 
         // Rotate key
-        let rotated = provider
-            .rotate_peer_key("peer-1", vec![9, 9, 9, 9])
-            .unwrap();
+        let rotated = provider.rotate_peer_key("peer-1", vec![9, 9, 9, 9]).unwrap();
         assert!(rotated);
         let listed = provider.list_peers();
         assert_eq!(listed.len(), 1);

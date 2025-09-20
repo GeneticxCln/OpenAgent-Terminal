@@ -34,19 +34,13 @@ pub struct TimerId {
 
 impl TimerId {
     pub fn new(topic: Topic, window_id: WindowId) -> Self {
-        Self {
-            topic,
-            window_id: Some(window_id),
-        }
+        Self { topic, window_id: Some(window_id) }
     }
 
     /// Create a TimerId without associating it to a specific window (useful in tests)
     #[cfg(test)]
     pub fn new_anonymous(topic: Topic) -> Self {
-        Self {
-            topic,
-            window_id: None,
-        }
+        Self { topic, window_id: None }
     }
 }
 
@@ -88,10 +82,7 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(event_proxy: EventLoopProxy<Event>) -> Self {
-        Self {
-            timers: VecDeque::new(),
-            event_proxy,
-        }
+        Self { timers: VecDeque::new(), event_proxy }
     }
 
     #[cfg(test)]
@@ -138,15 +129,7 @@ impl Scheduler {
         // Set the automatic event repeat rate.
         let interval = if repeat { Some(interval) } else { None };
 
-        self.timers.insert(
-            index,
-            Timer {
-                interval,
-                deadline,
-                event,
-                id: timer_id,
-            },
-        );
+        self.timers.insert(index, Timer { interval, deadline, event, id: timer_id });
     }
 
     /// Cancel a scheduled event.
@@ -165,8 +148,7 @@ impl Scheduler {
     /// This must be called when a window is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
     pub fn unschedule_window(&mut self, window_id: WindowId) {
-        self.timers
-            .retain(|timer| timer.id.window_id != Some(window_id));
+        self.timers.retain(|timer| timer.id.window_id != Some(window_id));
     }
 }
 
@@ -270,10 +252,7 @@ mod tests {
                 }
             }
         }
-        assert!(
-            !seen_first,
-            "debounced (first) event should have been canceled"
-        );
+        assert!(!seen_first, "debounced (first) event should have been canceled");
         assert!(seen_second, "latest event should have fired");
         assert_eq!(events.len(), 1, "only latest event should be dispatched");
 
@@ -331,14 +310,7 @@ mod frame_tests {
         sleep(StdDuration::from_millis(120));
         scheduler.update();
         let events = super::test_take_events();
-        assert_eq!(
-            events.len(),
-            1,
-            "only the latest coalesced frame should fire"
-        );
-        assert!(matches!(
-            events[0].payload(),
-            crate::event::EventType::Frame
-        ));
+        assert_eq!(events.len(), 1, "only the latest coalesced frame should fire");
+        assert!(matches!(events[0].payload(), crate::event::EventType::Frame));
     }
 }

@@ -17,11 +17,8 @@ pub mod conversation_manager;
 pub mod enhanced_plugin_system;
 pub mod natural_language;
 pub mod privacy_content_filter;
-pub mod project_context;
-pub mod quality_validation;
 pub mod security_lens;
 pub mod terminal_ui_integration;
-pub mod workflow_orchestration;
 pub mod workflow_orchestrator;
 
 /// Core trait for all AI agents in the system
@@ -220,10 +217,7 @@ pub struct AgentManager {
 
 impl AgentManager {
     pub fn new(config: AgentConfig) -> Self {
-        Self {
-            agents: Arc::new(RwLock::new(HashMap::new())),
-            config,
-        }
+        Self { agents: Arc::new(RwLock::new(HashMap::new())), config }
     }
 
     /// Register a new agent
@@ -265,10 +259,7 @@ impl AgentManager {
             }
         }
 
-        Err(anyhow!(
-            "No agent available to handle request type: {:?}",
-            request.request_type
-        ))
+        Err(anyhow!("No agent available to handle request type: {:?}", request.request_type))
     }
 
     /// Get all available agents
@@ -381,10 +372,7 @@ mod tests {
     async fn test_agent_manager() {
         let manager = AgentManager::new(AgentConfig::default());
 
-        let agent = MockAgent {
-            id: "test-agent".to_string(),
-            name: "Test Agent".to_string(),
-        };
+        let agent = MockAgent { id: "test-agent".to_string(), name: "Test Agent".to_string() };
 
         manager.register_agent(Box::new(agent)).await.unwrap();
 

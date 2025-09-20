@@ -32,11 +32,7 @@ pub enum MessageType {
 impl Message {
     /// Create a new message.
     pub fn new(text: String, ty: MessageType) -> Message {
-        Message {
-            text,
-            ty,
-            target: None,
-        }
+        Message { text, ty, target: None }
     }
 
     /// Formatted message text lines.
@@ -270,10 +266,7 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec![
-                String::from("hahahahahahahahaha [X]"),
-                String::from("[MESSAGE TRUNCATED]   ")
-            ]
+            vec![String::from("hahahahahahahahaha [X]"), String::from("[MESSAGE TRUNCATED]   ")]
         );
     }
 
@@ -362,11 +355,7 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec![
-                String::from("a [X]"),
-                String::from("bc   "),
-                String::from("defg ")
-            ]
+            vec![String::from("a [X]"), String::from("bc   "), String::from("defg ")]
         );
     }
 
@@ -381,11 +370,7 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec![
-                String::from("ab  [X]"),
-                String::from("c 👩 d  "),
-                String::from("fgh    ")
-            ]
+            vec![String::from("ab  [X]"), String::from("c 👩 d  "), String::from("fgh    ")]
         );
     }
 
@@ -398,14 +383,7 @@ mod tests {
 
         let lines = message_buffer.message().unwrap().text(&size);
 
-        assert_eq!(
-            lines,
-            vec![
-                String::from("[X]"),
-                String::from("0 1"),
-                String::from("2 3"),
-            ]
-        );
+        assert_eq!(lines, vec![String::from("[X]"), String::from("0 1"), String::from("2 3"),]);
     }
 
     #[test]

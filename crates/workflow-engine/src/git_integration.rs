@@ -117,11 +117,7 @@ Their Changes ({{ their_changes | length }} lines):
             "#,
         )?;
 
-        Ok(Self {
-            repo_path,
-            signing_key: Self::detect_signing_key()?,
-            templates,
-        })
+        Ok(Self { repo_path, signing_key: Self::detect_signing_key()?, templates })
     }
 
     fn detect_signing_key() -> Result<Option<String>> {
@@ -168,10 +164,7 @@ Their Changes ({{ their_changes | length }} lines):
             .map_err(|e| anyhow!("Failed to get branches: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Git command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Git command failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         let mut branches = Vec::new();
@@ -200,11 +193,7 @@ Their Changes ({{ their_changes | length }} lines):
         }
 
         let name = parts[0].to_string();
-        let upstream = if parts[1].is_empty() {
-            None
-        } else {
-            Some(parts[1].to_string())
-        };
+        let upstream = if parts[1].is_empty() { None } else { Some(parts[1].to_string()) };
         let current = parts[2] == "*";
         let date_str = parts[3];
         let hash = parts[4].to_string();
@@ -219,15 +208,7 @@ Their Changes ({{ their_changes | length }} lines):
 
         let signed = self.is_commit_signed(&hash).await?;
 
-        let last_commit = GitCommit {
-            hash,
-            short_hash,
-            author,
-            email,
-            date,
-            message,
-            signed,
-        };
+        let last_commit = GitCommit { hash, short_hash, author, email, date, message, signed };
 
         Ok(Some(GitBranch {
             name,
@@ -243,12 +224,7 @@ Their Changes ({{ their_changes | length }} lines):
     async fn get_ahead_behind(&self, branch: &str, upstream: &str) -> Result<(i32, i32)> {
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args([
-                "rev-list",
-                "--left-right",
-                "--count",
-                &format!("{}...{}", branch, upstream),
-            ])
+            .args(["rev-list", "--left-right", "--count", &format!("{}...{}", branch, upstream)])
             .output()
             .map_err(|e| anyhow!("Failed to get ahead/behind: {}", e))?;
 
@@ -349,10 +325,7 @@ Their Changes ({{ their_changes | length }} lines):
             .map_err(|e| anyhow!("Failed to get git status: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Git status failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Git status failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         let mut staged = Vec::new();
@@ -379,13 +352,7 @@ Their Changes ({{ their_changes | length }} lines):
             }
         }
 
-        Ok(GitStatus {
-            staged,
-            modified,
-            untracked,
-            deleted,
-            renamed,
-        })
+        Ok(GitStatus { staged, modified, untracked, deleted, renamed })
     }
 
     pub async fn resolve_conflict(
@@ -422,10 +389,7 @@ Their Changes ({{ their_changes | length }} lines):
     pub async fn create_signed_commit(&self, message: &str, files: &[String]) -> Result<String> {
         // Add files
         for file in files {
-            Command::new("git")
-                .current_dir(&self.repo_path)
-                .args(["add", file])
-                .output()?;
+            Command::new("git").current_dir(&self.repo_path).args(["add", file]).output()?;
         }
 
         // Create signed commit
@@ -441,10 +405,7 @@ Their Changes ({{ their_changes | length }} lines):
             .map_err(|e| anyhow!("Failed to create commit: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Commit failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Commit failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         // Get the commit hash
@@ -471,10 +432,7 @@ Their Changes ({{ their_changes | length }} lines):
         context.insert("conflict_type", &format!("{:?}", conflict.conflict_type));
         context.insert("our_changes", &conflict.our_changes);
         context.insert("their_changes", &conflict.their_changes);
-        context.insert(
-            "base_content",
-            &conflict.base_content.as_deref().unwrap_or(""),
-        );
+        context.insert("base_content", &conflict.base_content.as_deref().unwrap_or(""));
 
         self.templates
             .render("conflict_resolution", &context)
@@ -493,10 +451,7 @@ Their Changes ({{ their_changes | length }} lines):
             .map_err(|e| anyhow!("Failed to get commit graph: {}", e))?;
 
         if !output.status.success() {
-            return Err(anyhow!(
-                "Git log failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            return Err(anyhow!("Git log failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         let mut commits = Vec::new();
@@ -529,15 +484,7 @@ Their Changes ({{ their_changes | length }} lines):
 
         let signed = signature_status == "G" || signature_status == "U";
 
-        Ok(Some(GitCommit {
-            hash,
-            short_hash,
-            author,
-            email,
-            date,
-            message,
-            signed,
-        }))
+        Ok(Some(GitCommit { hash, short_hash, author, email, date, message, signed }))
     }
 }
 
@@ -558,10 +505,7 @@ mod tests {
         let repo_path = temp_dir.path().to_path_buf();
 
         // Initialize git repo
-        Command::new("git")
-            .current_dir(&repo_path)
-            .args(["init"])
-            .output()?;
+        Command::new("git").current_dir(&repo_path).args(["init"]).output()?;
 
         Command::new("git")
             .current_dir(&repo_path)

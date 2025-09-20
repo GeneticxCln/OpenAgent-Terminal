@@ -7,28 +7,12 @@ use crossfont::{BitmapBuffer, Metrics, RasterizedGlyph};
 use crate::config::ui_config::Delta;
 
 // Colors which are used for filling shade variants.
-const COLOR_FILL_ALPHA_STEP_1: Pixel = Pixel {
-    _r: 192,
-    _g: 192,
-    _b: 192,
-};
-const COLOR_FILL_ALPHA_STEP_2: Pixel = Pixel {
-    _r: 128,
-    _g: 128,
-    _b: 128,
-};
-const COLOR_FILL_ALPHA_STEP_3: Pixel = Pixel {
-    _r: 64,
-    _g: 64,
-    _b: 64,
-};
+const COLOR_FILL_ALPHA_STEP_1: Pixel = Pixel { _r: 192, _g: 192, _b: 192 };
+const COLOR_FILL_ALPHA_STEP_2: Pixel = Pixel { _r: 128, _g: 128, _b: 128 };
+const COLOR_FILL_ALPHA_STEP_3: Pixel = Pixel { _r: 64, _g: 64, _b: 64 };
 
 /// Default color used for filling.
-const COLOR_FILL: Pixel = Pixel {
-    _r: 255,
-    _g: 255,
-    _b: 255,
-};
+const COLOR_FILL: Pixel = Pixel { _r: 255, _g: 255, _b: 255 };
 
 const POWERLINE_TRIANGLE_LTR: char = '\u{e0b0}';
 const POWERLINE_ARROW_LTR: char = '\u{e0b1}';
@@ -137,10 +121,8 @@ fn box_drawing(character: char, metrics: &Metrics, offset: &Delta<i8>) -> Raster
             };
 
             let dash_gap_len = cmp::max(width / 8, 1);
-            let dash_len = cmp::max(
-                width.saturating_sub(dash_gap_len * num_gaps) / (num_gaps + 1),
-                1,
-            );
+            let dash_len =
+                cmp::max(width.saturating_sub(dash_gap_len * num_gaps) / (num_gaps + 1), 1);
             let y = canvas.y_center();
             for gap in 0..=num_gaps {
                 let x = cmp::min(gap * (dash_len + dash_gap_len), width);
@@ -160,10 +142,8 @@ fn box_drawing(character: char, metrics: &Metrics, offset: &Delta<i8>) -> Raster
             };
 
             let dash_gap_len = cmp::max(height / 8, 1);
-            let dash_len = cmp::max(
-                height.saturating_sub(dash_gap_len * num_gaps) / (num_gaps + 1),
-                1,
-            );
+            let dash_len =
+                cmp::max(height.saturating_sub(dash_gap_len * num_gaps) / (num_gaps + 1), 1);
             let x = canvas.x_center();
             for gap in 0..=num_gaps {
                 let y = cmp::min(gap * (dash_len + dash_gap_len), height);
@@ -589,13 +569,7 @@ fn box_drawing(character: char, metrics: &Metrics, offset: &Delta<i8>) -> Raster
             canvas.draw_rect(0., y_third, w_mid_left, h_mid_left, COLOR_FILL);
             canvas.draw_rect(x_center, y_third, w_mid_right, h_mid_right, COLOR_FILL);
             canvas.draw_rect(0., y_third * 2., w_bottom_left, h_bottom_left, COLOR_FILL);
-            canvas.draw_rect(
-                x_center,
-                y_third * 2.,
-                w_bottom_right,
-                h_bottom_right,
-                COLOR_FILL,
-            );
+            canvas.draw_rect(x_center, y_third * 2., w_bottom_right, h_bottom_right, COLOR_FILL);
         }
         _ => unreachable!(),
     }
@@ -696,11 +670,7 @@ struct Pixel {
 
 impl Pixel {
     fn gray(color: u8) -> Self {
-        Self {
-            _r: color,
-            _g: color,
-            _b: color,
-        }
+        Self { _r: color, _g: color, _b: color }
     }
 }
 
@@ -754,11 +724,7 @@ impl Canvas {
     /// Builds new `Canvas` for line drawing with the given `width` and `height` with default color.
     fn new(width: usize, height: usize) -> Self {
         let buffer = vec![Pixel::default(); width * height];
-        Self {
-            width,
-            height,
-            buffer,
-        }
+        Self { width, height, buffer }
     }
 
     /// Vertical center of the `Canvas`.
@@ -853,11 +819,7 @@ impl Canvas {
 
         let delta_x = to_x - from_x;
         let delta_y = to_y - from_y;
-        let gradient = if delta_x.abs() <= f32::EPSILON {
-            1.
-        } else {
-            delta_y / delta_x
-        };
+        let gradient = if delta_x.abs() <= f32::EPSILON { 1. } else { delta_y / delta_x };
 
         let x_end = f32::round(from_x);
         let y_end = from_y + gradient * (x_end - from_x);
@@ -927,11 +889,7 @@ impl Canvas {
         } else {
             (&self.width, &self.height, &mut x_offset)
         };
-        let distance_bias = if short_side % 2 == stroke_size % 2 {
-            0.
-        } else {
-            0.5
-        };
+        let distance_bias = if short_side % 2 == stroke_size % 2 { 0. } else { 0.5 };
         *offset = *long_side as f32 / 2. - radius + stroke_size_f / 2.;
         if (self.width % 2 != self.height % 2) && (long_side % 2 == stroke_size % 2) {
             *offset += 1.;

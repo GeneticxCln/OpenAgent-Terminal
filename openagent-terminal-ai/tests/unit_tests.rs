@@ -1,7 +1,6 @@
 //! Unit tests for core AI agent functionality
 //! Focuses on individual components that can be tested in isolation
 
-use tempfile;
 
 // Test only if the agents feature is enabled
 #[cfg(feature = "agents")]
@@ -27,10 +26,7 @@ mod agent_tests {
         let json = serde_json::to_string(&capabilities).unwrap();
         let deserialized: AgentCapabilities = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(
-            capabilities.supported_languages,
-            deserialized.supported_languages
-        );
+        assert_eq!(capabilities.supported_languages, deserialized.supported_languages);
         // PrivacyLevel doesn't implement PartialEq; assert exact variant
         match deserialized.privacy_level {
             PrivacyLevel::Local => {}
@@ -95,7 +91,7 @@ mod agent_tests {
     fn test_quality_issue_creation() {
         use openagent_terminal_ai::agents::QualityIssue;
         use openagent_terminal_ai::agents::Severity as AgentSeverity;
-        
+
         let issue = QualityIssue {
             severity: AgentSeverity::Warning,
             category: "Security".to_string(),
@@ -134,7 +130,6 @@ mod agent_tests {
 
     #[test]
     fn test_quality_config() {
-
         let config = openagent_terminal_ai::agents::types::QualityConfig::default();
 
         // Test that default config is reasonable
@@ -183,7 +178,10 @@ mod agent_tests {
 
         // Basic checks that should always pass
         assert!(!context.working_directory.is_empty());
-        assert_ne!(context.shell_kind, openagent_terminal_ai::agents::types::ShellKind::Unknown("".to_string()));
+        assert_ne!(
+            context.shell_kind,
+            openagent_terminal_ai::agents::types::ShellKind::Unknown("".to_string())
+        );
     }
 
     #[tokio::test]
@@ -258,10 +256,7 @@ fn main() {
         };
 
         assert_eq!(workflow.name, "Test Workflow");
-        assert!(matches!(
-            workflow.execution_strategy,
-            ExecutionStrategy::Sequential
-        ));
+        assert!(matches!(workflow.execution_strategy, ExecutionStrategy::Sequential));
         assert!(matches!(workflow.status, WorkflowStatus::Pending));
         assert_eq!(workflow.nodes.len(), 1);
         assert!(workflow.nodes.contains_key("start"));
@@ -321,11 +316,8 @@ fn main() {
         assert_eq!(workflow_statuses.len(), 6);
 
         // Test PrivacyLevel variants
-        let privacy_levels = vec![
-            PrivacyLevel::Local,
-            PrivacyLevel::CloudSafe,
-            PrivacyLevel::CloudFull,
-        ];
+        let privacy_levels =
+            vec![PrivacyLevel::Local, PrivacyLevel::CloudSafe, PrivacyLevel::CloudFull];
 
         assert_eq!(privacy_levels.len(), 3);
     }
@@ -334,21 +326,20 @@ fn main() {
     fn test_concurrency_state() {
         use openagent_terminal_ai::agents::types::*;
         use std::sync::Arc;
-        use tokio::sync::{RwLock, Mutex};
-        
+        use tokio::sync::{Mutex, RwLock};
+
         let concurrency_state = ConcurrencyState {
             active_operations: Arc::new(RwLock::new(std::collections::HashMap::new())),
             operation_locks: Arc::new(Mutex::new(std::collections::HashMap::new())),
             resource_usage: Arc::new(RwLock::new(ResourceUsage::default())),
             max_concurrent_ops: 5,
         };
-        
+
         assert_eq!(concurrency_state.max_concurrent_ops, 5);
     }
 
     #[test]
     fn test_security_issue_creation() {
-
         use openagent_terminal_ai::agents::Severity as AgentSeverity;
         let security_issue = openagent_terminal_ai::agents::SecurityIssue {
             vulnerability_type: "SQL Injection".to_string(),
@@ -481,10 +472,7 @@ fn test_anyhow_error_handling() {
 
     let failure = might_fail(true);
     assert!(failure.is_err());
-    assert!(failure
-        .unwrap_err()
-        .to_string()
-        .contains("Something went wrong"));
+    assert!(failure.unwrap_err().to_string().contains("Something went wrong"));
 }
 
 #[test]

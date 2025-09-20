@@ -1,8 +1,8 @@
 use crate::cli::TerminalType;
 use crate::config::{MigrationConfig, UnifiedConfig};
+use crate::parsers::wezterm::WezTermParser;
 use anyhow::{anyhow, Result};
 use std::fs;
-use crate::parsers::wezterm::WezTermParser;
 
 mod alacritty;
 mod iterm2;
@@ -21,11 +21,7 @@ pub fn system_has_font_family(family: &str) -> bool {
     // Collect faces into a local Vec to make drop order explicit and avoid borrow issues
     let faces: Vec<_> = db.faces().collect();
     for face in faces {
-        if face
-            .families
-            .iter()
-            .any(|pair| pair.0.to_lowercase().contains(&family_lower))
-        {
+        if face.families.iter().any(|pair| pair.0.to_lowercase().contains(&family_lower)) {
             return true;
         }
     }
@@ -36,11 +32,7 @@ pub use windows_terminal::WindowsTerminalParser;
 /// Parse a configuration file based on the terminal type
 pub fn parse_config(migration_config: &MigrationConfig) -> Result<UnifiedConfig> {
     let content = fs::read_to_string(&migration_config.config_path).map_err(|e| {
-        anyhow!(
-            "Failed to read config file {}: {}",
-            migration_config.config_path.display(),
-            e
-        )
+        anyhow!("Failed to read config file {}: {}", migration_config.config_path.display(), e)
     })?;
 
     match migration_config.terminal_type {
@@ -52,10 +44,7 @@ pub fn parse_config(migration_config: &MigrationConfig) -> Result<UnifiedConfig>
         TerminalType::Hyper => parse_hyper_config(&content),
         TerminalType::Warp => parse_warp_config(&content),
         TerminalType::Tabby => parse_tabby_config(&content),
-        _ => Err(anyhow!(
-            "Parser for {} is not yet implemented",
-            migration_config.terminal_type
-        )),
+        _ => Err(anyhow!("Parser for {} is not yet implemented", migration_config.terminal_type)),
     }
 }
 
@@ -130,10 +119,9 @@ fn parse_warp_config(content: &str) -> Result<UnifiedConfig> {
     if let Some(theme) = warp_config.get("theme") {
         if let Some(theme_name) = theme.as_str() {
             // Store theme name in custom config for later processing
-            config.custom.insert(
-                "theme".to_string(),
-                serde_json::Value::String(theme_name.to_string()),
-            );
+            config
+                .custom
+                .insert("theme".to_string(), serde_json::Value::String(theme_name.to_string()));
         }
     }
 
@@ -337,9 +325,6 @@ window:
     fn test_unsupported_extension() {
         let result = parse_by_extension("unknown", "content");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported file extension"));
+        assert!(result.unwrap_err().to_string().contains("Unsupported file extension"));
     }
 }

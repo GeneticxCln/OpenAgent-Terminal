@@ -32,10 +32,8 @@ impl ConfigParser for KittyParser {
                         }
                     }
                     "font_family" => {
-                        config.font.normal = Some(FontFaceConfig {
-                            family: Some(value.to_string()),
-                            style: None,
-                        });
+                        config.font.normal =
+                            Some(FontFaceConfig { family: Some(value.to_string()), style: None });
                     }
                     "background_opacity" => {
                         if let Ok(opacity) = value.parse::<f32>() {

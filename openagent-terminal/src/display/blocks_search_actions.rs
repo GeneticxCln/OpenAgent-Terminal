@@ -256,15 +256,8 @@ impl ActionsMenuState {
         let menu_height = self.actions.len() + 2; // +2 for header and border
 
         // Calculate menu position (near the selected item but within bounds)
-        let menu_x = self
-            .position
-            .column
-            .0
-            .min(size_info.columns.saturating_sub(menu_width));
-        let menu_y = self
-            .position
-            .line
-            .min(size_info.screen_lines.saturating_sub(menu_height));
+        let menu_x = self.position.column.0.min(size_info.columns.saturating_sub(menu_width));
+        let menu_y = self.position.line.min(size_info.screen_lines.saturating_sub(menu_height));
 
         // Draw header
         let header = "Actions";
@@ -346,11 +339,7 @@ impl Default for HelpOverlayState {
 
 impl HelpOverlayState {
     pub fn new() -> Self {
-        Self {
-            active: false,
-            section: HelpSection::Overview,
-            scroll: 0,
-        }
+        Self { active: false, section: HelpSection::Overview, scroll: 0 }
     }
 
     pub fn open(&mut self) {
@@ -430,12 +419,7 @@ impl HelpOverlayState {
         let content_height = panel_height.saturating_sub(4); // Reserve space for navigation
         let start_line = self.scroll;
 
-        for (idx, line) in content
-            .iter()
-            .skip(start_line)
-            .take(content_height)
-            .enumerate()
-        {
+        for (idx, line) in content.iter().skip(start_line).take(content_height).enumerate() {
             let y = panel_y + 2 + idx;
             let color = if idx == 0 && !line.is_empty() {
                 tokens.accent // Header color
@@ -655,13 +639,7 @@ pub fn generate_heredoc(output: &str) -> String {
 /// Generate here-doc with custom command prefix
 pub fn generate_heredoc_with_command(output: &str, command_prefix: &str) -> String {
     let delimiter = generate_delimiter(output);
-    format!(
-        "{} << '{}'\n{}\n{}",
-        command_prefix,
-        delimiter,
-        output.trim(),
-        delimiter
-    )
+    format!("{} << '{}'\n{}\n{}", command_prefix, delimiter, output.trim(), delimiter)
 }
 
 /// Generate here-doc delimiter that doesn't conflict with content
@@ -721,12 +699,7 @@ pub fn format_as_pipe_input(output: &str) -> String {
 /// Format as JSON here-doc for jq processing
 pub fn format_as_json_heredoc(output: &str) -> String {
     let delimiter = generate_delimiter(output);
-    format!(
-        "jq '.' << '{}'\n{}\n{}",
-        delimiter,
-        output.trim(),
-        delimiter
-    )
+    format!("jq '.' << '{}'\n{}\n{}", delimiter, output.trim(), delimiter)
 }
 
 /// Format as base64 encoded here-doc
@@ -798,11 +771,8 @@ mod tests {
         assert!(BlockAction::InsertAsHereDoc.is_available_for(&block));
         assert!(BlockAction::RerunCommand.is_available_for(&block));
 
-        let empty_block = BlocksSearchItem {
-            command: "".to_string(),
-            output: "".to_string(),
-            ..block
-        };
+        let empty_block =
+            BlocksSearchItem { command: "".to_string(), output: "".to_string(), ..block };
 
         assert!(!BlockAction::CopyCommand.is_available_for(&empty_block));
         assert!(!BlockAction::CopyOutput.is_available_for(&empty_block));

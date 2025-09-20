@@ -92,17 +92,18 @@ impl super::Display {
         score / (candidate.len().max(1) as f32)
     }
 
-    fn compute_completions_for_prefix(&self, prefix: &str, cwd: Option<PathBuf>) -> Vec<CompletionItem> {
+    fn compute_completions_for_prefix(
+        &self,
+        prefix: &str,
+        cwd: Option<PathBuf>,
+    ) -> Vec<CompletionItem> {
         let mut out: Vec<CompletionItem> = Vec::new();
 
         // Tokenize to get current token and first word (command)
         let tokens: Vec<&str> = prefix.split_whitespace().collect();
         let first = tokens.first().copied().unwrap_or("");
-        let cur_token = if prefix.ends_with(' ') {
-            ""
-        } else {
-            tokens.last().copied().unwrap_or("")
-        };
+        let cur_token =
+            if prefix.ends_with(' ') { "" } else { tokens.last().copied().unwrap_or("") };
         let is_flag_context = cur_token.starts_with('-');
 
         // 1) Flags: minimal spec for a few common commands, else generic
@@ -161,7 +162,11 @@ impl super::Display {
                         if score > 0.0 {
                             out.push(CompletionItem {
                                 label,
-                                kind: if is_dir { CompletionKind::Dir } else { CompletionKind::File },
+                                kind: if is_dir {
+                                    CompletionKind::Dir
+                                } else {
+                                    CompletionKind::File
+                                },
                                 details: None,
                                 icon: if is_dir { "📁" } else { "📄" },
                                 score,
@@ -240,13 +245,19 @@ impl super::Display {
             let consider = 200usize; // cap work per keystroke
             for (idx, entry) in self.composer_history.iter().take(consider).enumerate() {
                 let first_tok = entry.split_whitespace().next().unwrap_or("");
-                if first_tok.is_empty() { continue; }
+                if first_tok.is_empty() {
+                    continue;
+                }
                 // Track only first token commands
                 let key = first_tok.to_string();
                 *freq.entry(key.clone()).or_insert(0) += 1;
                 best_recency
                     .entry(key.clone())
-                    .and_modify(|r| { if idx < *r { *r = idx } })
+                    .and_modify(|r| {
+                        if idx < *r {
+                            *r = idx
+                        }
+                    })
                     .or_insert(idx);
                 seen_cmds.insert(key);
             }
@@ -258,7 +269,8 @@ impl super::Display {
                     if matches!(it.kind, CompletionKind::Command) {
                         if let Some(f) = freq.get(&it.label) {
                             let rec = *best_recency.get(&it.label).unwrap_or(&usize::MAX);
-                            let recency_score = if rec == usize::MAX { 0.0 } else { 1.0 / (1.0 + rec as f32) };
+                            let recency_score =
+                                if rec == usize::MAX { 0.0 } else { 1.0 / (1.0 + rec as f32) };
                             let freq_score = (*f as f32) / max_freq.max(1.0);
                             // Keep boost modest so fuzzy/type context still dominates
                             let boost = 1.0 + (0.35 * recency_score + 0.35 * freq_score);
@@ -280,11 +292,18 @@ impl super::Display {
                 let mut added = 0usize;
                 let max_add = 4usize;
                 for (name, rec, f) in mru.into_iter() {
-                    if added >= max_add { break; }
-                    if existing.contains(&name) { continue; }
+                    if added >= max_add {
+                        break;
+                    }
+                    if existing.contains(&name) {
+                        continue;
+                    }
                     let base = Self::fuzzy_score(cur_token, &name);
-                    if base <= 0.0 { continue; }
-                    let recency_score = if rec == usize::MAX { 0.0 } else { 1.0 / (1.0 + rec as f32) };
+                    if base <= 0.0 {
+                        continue;
+                    }
+                    let recency_score =
+                        if rec == usize::MAX { 0.0 } else { 1.0 / (1.0 + rec as f32) };
                     let freq_score = (f as f32) / max_freq.max(1.0);
                     let score = base * (1.0 + 0.45 * recency_score + 0.45 * freq_score);
                     out.push(CompletionItem {
@@ -335,11 +354,7 @@ impl super::Display {
         }
 
         // Sort by score desc and truncate
-        out.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         out.truncate(12);
         out
     }
@@ -360,10 +375,7 @@ impl super::Display {
                 ("-R", "List subdirectories recursively"),
             ],
             "cargo" => vec![
-                (
-                    "--help",
-                    "Print this message or the help of the given subcommand(s)",
-                ),
+                ("--help", "Print this message or the help of the given subcommand(s)"),
                 ("-v", "Use verbose output (-vv very verbose)"),
                 ("-q", "No output printed to stdout"),
             ],
@@ -439,14 +451,18 @@ impl super::Display {
             // Remove duplicates across sources; prefer external items
             let mut seen: HashSet<String> = HashSet::new();
             let mut ext_sorted: Vec<_> = ext_by_label.into_values().collect();
-            ext_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-            for it in &ext_sorted { seen.insert(it.label.clone()); }
+            ext_sorted
+                .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            for it in &ext_sorted {
+                seen.insert(it.label.clone());
+            }
             let mut loc_sorted: Vec<_> = local_by_label
                 .into_iter()
                 .filter(|(k, _)| !seen.contains(k))
                 .map(|(_, v)| v)
                 .collect();
-            loc_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            loc_sorted
+                .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
             // Interleave starting with external (Warp-like bias for smarter suggestions)
             let mut interleaved: Vec<CompletionItem> = Vec::new();
             let mut i = 0usize;
@@ -482,11 +498,8 @@ impl super::Display {
         };
 
         // Theme tokens
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let fg = tokens.text;
         let muted = tokens.text_muted;
@@ -501,7 +514,9 @@ impl super::Display {
         let distinct_kinds = {
             use std::collections::HashSet;
             let mut s = HashSet::new();
-            for it in &self.completions.items { s.insert(it.kind.clone()); }
+            for it in &self.completions.items {
+                s.insert(it.kind.clone());
+            }
             s.len()
         };
         let needed_rows = (self.completions.items.len() + distinct_kinds).min(max_rows);
@@ -549,20 +564,24 @@ impl super::Display {
         // Items with Warp-like section headers per category as they first appear
         // Cache overlay bounds for hit testing
         let end_line = start_line + needed_rows;
-        self.completions_overlay_bounds = Some((start_line, end_line, start_col, start_col + box_width_cols));
+        self.completions_overlay_bounds =
+            Some((start_line, end_line, start_col, start_col + box_width_cols));
 
         let mut line = start_line + 1;
         use std::collections::HashSet;
         let mut seen_kinds: HashSet<CompletionKind> = HashSet::new();
         let mut rows_used = 0usize;
-        let mut item_idx = 0usize; // index into items only (exclude headers)
         self.completions_overlay_item_lines.clear();
         let items_snapshot = self.completions.items.clone();
-        for item in items_snapshot.into_iter() {
+        for (current_item_display_idx, item) in items_snapshot.into_iter().enumerate() {
             // Stop when reaching max rows (accounting for headers)
-            if rows_used >= max_rows { break; }
+            if rows_used >= max_rows {
+                break;
+            }
             // Determine section header if first time we see this kind
-            let header_opt = if !seen_kinds.contains(&item.kind) {
+            let header_opt = if seen_kinds.contains(&item.kind) {
+                None
+            } else {
                 seen_kinds.insert(item.kind.clone());
                 match item.kind {
                     CompletionKind::Command => Some("Commands".to_string()),
@@ -571,21 +590,25 @@ impl super::Display {
                     CompletionKind::Flag => Some("Flags".to_string()),
                     CompletionKind::Argument => Some("Arguments".to_string()),
                 }
-            } else { None };
+            };
 
             if let Some(header) = header_opt {
-                if rows_used >= max_rows { break; }
+                if rows_used >= max_rows {
+                    break;
+                }
                 // Draw header row in muted color
                 self.draw_ai_text(
                     Point::new(line, Column(start_col)),
                     muted,
                     tokens.surface,
-                    &format!("{}", header),
+                    &header.to_string(),
                     box_width_cols,
                 );
                 line += 1;
                 rows_used += 1;
-                if rows_used >= max_rows { break; }
+                if rows_used >= max_rows {
+                    break;
+                }
             }
 
             // Draw item row
@@ -596,7 +619,7 @@ impl super::Display {
             row.push_str(&item.label);
             let avail = box_width_cols;
             // Highlight selected item using item index (headers excluded)
-            let color = if self.completions.selected_index == item_idx { accent } else { fg };
+            let color = if self.completions.selected_index == current_item_display_idx { accent } else { fg };
             self.draw_ai_text(
                 Point::new(line, Column(start_col)),
                 color,
@@ -605,11 +628,12 @@ impl super::Display {
                 avail,
             );
             // Record mapping for hover/click hit-testing (viewport line -> item index)
-            self.completions_overlay_item_lines.push((line, item_idx));
+            self.completions_overlay_item_lines.push((line, current_item_display_idx));
             line += 1;
             rows_used += 1;
-            item_idx += 1;
-            if rows_used >= max_rows { break; }
+            if rows_used >= max_rows {
+                break;
+            }
         }
 
         // Simple flag inspector: if current token matches a known flag, show a tooltip to the right
@@ -666,10 +690,7 @@ impl super::Display {
     }
 
     pub fn completions_selected_label(&self) -> Option<String> {
-        self.completions
-            .items
-            .get(self.completions.selected_index)
-            .map(|it| it.label.clone())
+        self.completions.items.get(self.completions.selected_index).map(|it| it.label.clone())
     }
 
     pub fn completions_clear(&mut self) {
@@ -694,7 +715,9 @@ fn path_commands() -> &'static Vec<String> {
                     for ent in rd.flatten() {
                         if let Some(name) = ent.file_name().to_str() {
                             // Skip names with path separators or obvious non-commands
-                            if name.is_empty() || name.contains('/') { continue; }
+                            if name.is_empty() || name.contains('/') {
+                                continue;
+                            }
                             // De-duplicate across PATH entries
                             if seen.insert(name.to_string()) {
                                 out.push(name.to_string());

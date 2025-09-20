@@ -50,39 +50,14 @@ pub struct WorkflowCoordinator {
 /// Events that can be broadcast to agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentEvent {
-    AgentRegistered {
-        agent_id: String,
-        capabilities: Vec<AgentCapability>,
-    },
-    AgentUnregistered {
-        agent_id: String,
-    },
-    TaskCompleted {
-        workflow_id: Uuid,
-        task_id: String,
-        result: TaskResult,
-    },
-    TaskFailed {
-        workflow_id: Uuid,
-        task_id: String,
-        error: String,
-    },
-    WorkflowStarted {
-        workflow_id: Uuid,
-        template_name: String,
-    },
-    WorkflowCompleted {
-        workflow_id: Uuid,
-        success: bool,
-    },
-    ContextUpdated {
-        context_type: String,
-        data: serde_json::Value,
-    },
-    Custom {
-        event_type: String,
-        data: serde_json::Value,
-    },
+    AgentRegistered { agent_id: String, capabilities: Vec<AgentCapability> },
+    AgentUnregistered { agent_id: String },
+    TaskCompleted { workflow_id: Uuid, task_id: String, result: TaskResult },
+    TaskFailed { workflow_id: Uuid, task_id: String, error: String },
+    WorkflowStarted { workflow_id: Uuid, template_name: String },
+    WorkflowCompleted { workflow_id: Uuid, success: bool },
+    ContextUpdated { context_type: String, data: serde_json::Value },
+    Custom { event_type: String, data: serde_json::Value },
 }
 
 /// Direct messages between agents
@@ -220,16 +195,11 @@ impl AgentCommunicationHub {
         // Update routing table
         {
             let mut router = self.message_router.write().await;
-            router
-                .update_routing_for_agent(&agent_id, &capabilities)
-                .await;
+            router.update_routing_for_agent(&agent_id, &capabilities).await;
         }
 
         // Broadcast registration event
-        let event = AgentEvent::AgentRegistered {
-            agent_id: agent_id.clone(),
-            capabilities,
-        };
+        let event = AgentEvent::AgentRegistered { agent_id: agent_id.clone(), capabilities };
         let _ = self.event_bus.broadcast(event).await;
 
         info!("Registered agent '{}' with communication hub", agent_id);
@@ -250,9 +220,7 @@ impl AgentCommunicationHub {
         }
 
         // Broadcast unregistration event
-        let event = AgentEvent::AgentUnregistered {
-            agent_id: agent_id.to_string(),
-        };
+        let event = AgentEvent::AgentUnregistered { agent_id: agent_id.to_string() };
         let _ = self.event_bus.broadcast(event).await;
 
         info!("Unregistered agent '{}' from communication hub", agent_id);
@@ -270,10 +238,7 @@ impl AgentCommunicationHub {
         // Get the agent and execute the request
         let agents = self.agents.read().await;
         if let Some(agent) = agents.get(&target_agent_id) {
-            info!(
-                "Routing request {} to agent '{}'",
-                request.id, target_agent_id
-            );
+            info!("Routing request {} to agent '{}'", request.id, target_agent_id);
             agent.handle_request(request).await
         } else {
             Err(anyhow!("Agent '{}' not found in registry", target_agent_id))
@@ -297,16 +262,11 @@ impl AgentCommunicationHub {
         };
 
         // Broadcast workflow started event
-        let event = AgentEvent::WorkflowStarted {
-            workflow_id,
-            template_name: template_name.to_string(),
-        };
+        let event =
+            AgentEvent::WorkflowStarted { workflow_id, template_name: template_name.to_string() };
         let _ = self.event_bus.broadcast(event).await;
 
-        info!(
-            "Started workflow '{}' with ID {}",
-            template_name, workflow_id
-        );
+        info!("Started workflow '{}' with ID {}", template_name, workflow_id);
 
         // Begin executing the workflow
         self.execute_workflow(workflow_id).await?;
@@ -361,10 +321,7 @@ impl AgentCommunicationHub {
                         // Broadcast task completion
                         let task_result = {
                             let coordinator = self.workflow_coordinator.read().await;
-                            coordinator
-                                .get_task_result(workflow_id, task_id)
-                                .await?
-                                .unwrap()
+                            coordinator.get_task_result(workflow_id, task_id).await?.unwrap()
                         };
                         let event = AgentEvent::TaskCompleted {
                             workflow_id,
@@ -374,10 +331,7 @@ impl AgentCommunicationHub {
                         let _ = self.event_bus.broadcast(event).await;
                     }
                     Err(e) => {
-                        error!(
-                            "Task '{}' in workflow {} failed: {}",
-                            task_id, workflow_id, e
-                        );
+                        error!("Task '{}' in workflow {} failed: {}", task_id, workflow_id, e);
 
                         // Broadcast task failure
                         let event = AgentEvent::TaskFailed {
@@ -405,10 +359,7 @@ impl AgentCommunicationHub {
         }
 
         // Broadcast workflow completion
-        let event = AgentEvent::WorkflowCompleted {
-            workflow_id,
-            success: true,
-        };
+        let event = AgentEvent::WorkflowCompleted { workflow_id, success: true };
         let _ = self.event_bus.broadcast(event).await;
 
         Ok(())
@@ -423,9 +374,7 @@ impl AgentCommunicationHub {
     /// Execute workflow based on dependency graph
     async fn execute_dependency_workflow(&self, _workflow_id: Uuid) -> Result<()> {
         // TODO: Implement dependency-based execution using topological sort
-        Err(anyhow!(
-            "Dependency-based workflow execution not yet implemented"
-        ))
+        Err(anyhow!("Dependency-based workflow execution not yet implemented"))
     }
 
     /// Execute a single task by routing to an appropriate agent
@@ -435,9 +384,7 @@ impl AgentCommunicationHub {
         // Find an agent capable of handling this task
         let agent_id = {
             let router = self.message_router.read().await;
-            router
-                .find_agent_by_capability(&task.template.required_capability)
-                .await?
+            router.find_agent_by_capability(&task.template.required_capability).await?
         };
 
         // Create agent request from task template
@@ -476,17 +423,10 @@ impl AgentCommunicationHub {
                 data: response.payload,
                 artifacts: response.artifacts,
                 execution_time_ms: execution_time,
-                error: if response.success {
-                    None
-                } else {
-                    Some("Task failed".to_string())
-                },
+                error: if response.success { None } else { Some("Task failed".to_string()) },
             })
         } else {
-            Err(anyhow!(
-                "No agent found with capability {:?}",
-                task.template.required_capability
-            ))
+            Err(anyhow!("No agent found with capability {:?}", task.template.required_capability))
         }
     }
 
@@ -704,10 +644,7 @@ pub struct RouteRequest {
 // Implementations for helper structs
 impl MessageRouter {
     pub fn new() -> Self {
-        Self {
-            routing_table: HashMap::new(),
-            agent_loads: HashMap::new(),
-        }
+        Self { routing_table: HashMap::new(), agent_loads: HashMap::new() }
     }
 
     pub async fn update_routing_for_agent(
@@ -716,10 +653,7 @@ impl MessageRouter {
         capabilities: &[AgentCapability],
     ) {
         for capability in capabilities {
-            self.routing_table
-                .entry(capability.clone())
-                .or_insert_with(Vec::new)
-                .push(agent_id.to_string());
+            self.routing_table.entry(capability.clone()).or_default().push(agent_id.to_string());
         }
         self.agent_loads.insert(agent_id.to_string(), 0.0);
     }
@@ -739,10 +673,7 @@ impl MessageRouter {
     pub async fn find_agent_by_capability(&self, capability: &AgentCapability) -> Result<String> {
         if let Some(agents) = self.routing_table.get(capability) {
             if agents.is_empty() {
-                return Err(anyhow!(
-                    "No agents available for capability: {:?}",
-                    capability
-                ));
+                return Err(anyhow!("No agents available for capability: {:?}", capability));
             }
 
             // Simple load balancing - choose agent with lowest load
@@ -751,18 +682,13 @@ impl MessageRouter {
                 .min_by(|a, b| {
                     let load_a = self.agent_loads.get(*a).unwrap_or(&0.0);
                     let load_b = self.agent_loads.get(*b).unwrap_or(&0.0);
-                    load_a
-                        .partial_cmp(load_b)
-                        .unwrap_or(std::cmp::Ordering::Equal)
+                    load_a.partial_cmp(load_b).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap();
 
             Ok(best_agent.clone())
         } else {
-            Err(anyhow!(
-                "No agents registered for capability: {:?}",
-                capability
-            ))
+            Err(anyhow!("No agents registered for capability: {:?}", capability))
         }
     }
 
@@ -786,10 +712,7 @@ impl MessageRouter {
 
 impl EventBus {
     pub fn new(broadcast_tx: broadcast::Sender<AgentEvent>) -> Self {
-        Self {
-            broadcast_tx,
-            direct_channels: HashMap::new(),
-        }
+        Self { broadcast_tx, direct_channels: HashMap::new() }
     }
 
     pub async fn broadcast(&self, event: AgentEvent) -> Result<()> {
@@ -809,10 +732,7 @@ impl EventBus {
 
 impl WorkflowCoordinator {
     pub fn new() -> Self {
-        Self {
-            active_workflows: HashMap::new(),
-            workflow_templates: HashMap::new(),
-        }
+        Self { active_workflows: HashMap::new(), workflow_templates: HashMap::new() }
     }
 
     pub async fn register_default_templates(&mut self) -> Result<()> {
@@ -852,8 +772,7 @@ impl WorkflowCoordinator {
             dependencies: HashMap::new(),
         };
 
-        self.workflow_templates
-            .insert("code_generation_workflow".to_string(), code_gen_template);
+        self.workflow_templates.insert("code_generation_workflow".to_string(), code_gen_template);
         Ok(())
     }
 
@@ -986,14 +905,10 @@ mod tests {
         let mut router = MessageRouter::new();
         let capabilities = vec![AgentCapability::CodeGeneration];
 
-        router
-            .update_routing_for_agent("test-agent", &capabilities)
-            .await;
+        router.update_routing_for_agent("test-agent", &capabilities).await;
 
-        let agent_id = router
-            .find_agent_by_capability(&AgentCapability::CodeGeneration)
-            .await
-            .unwrap();
+        let agent_id =
+            router.find_agent_by_capability(&AgentCapability::CodeGeneration).await.unwrap();
         assert_eq!(agent_id, "test-agent");
     }
 
@@ -1003,10 +918,8 @@ mod tests {
         coordinator.register_default_templates().await.unwrap();
 
         let context = serde_json::json!({"language": "rust"});
-        let workflow_id = coordinator
-            .start_workflow("code_generation_workflow", context)
-            .await
-            .unwrap();
+        let workflow_id =
+            coordinator.start_workflow("code_generation_workflow", context).await.unwrap();
 
         let status = coordinator.get_workflow_status(workflow_id).await.unwrap();
         assert_eq!(status, WorkflowStatus::Pending);
