@@ -7,6 +7,10 @@ on:
         description: "New version (e.g., 0.17.0)"
         required: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   bump-and-pr:
     runs-on: ubuntu-latest

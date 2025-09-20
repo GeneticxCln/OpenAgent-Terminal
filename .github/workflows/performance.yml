@@ -9,6 +9,10 @@ on:
     # Run nightly performance regression checks
     - cron: '0 2 * * *'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -33,22 +37,9 @@ jobs:
           key: perf-benchmarks-${{ runner.os }}
 
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            jq \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
+        with:
+          extra-packages: jq
 
       # Performance smoke tests (existing)
       - name: Performance smoke tests
@@ -188,22 +179,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            jq
+        uses: ./.github/actions/install-ubuntu-deps
+        with:
+          extra-packages: jq
 
       - name: Run comprehensive benchmarks
         run: |
@@ -270,20 +248,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            valgrind \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
+        with:
+          extra-packages: valgrind
 
       - name: Memory leak detection
         run: |
@@ -320,10 +287,8 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libegl1-mesa-dev libgl1-mesa-dev
+      - name: Install system dependencies (Ubuntu)
+        uses: ./.github/actions/install-ubuntu-deps
 
       - name: AI integration performance
         run: |

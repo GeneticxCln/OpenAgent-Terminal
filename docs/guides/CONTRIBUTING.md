@@ -42,14 +42,30 @@ and
 [easy](https://github.com/GeneticxCln/OpenAgent-Terminal/issues?q=is%3Aopen+is%3Aissue+label%3A%22D+-+easy%22)
 issues.
 
-You can find the minimum supported Rust version in OpenAgent Terminal's manifest file
-(`cat openagent-terminal/Cargo.toml | grep "rust-version"). OpenAgent Terminal **must** always
-build with the MSRV and bumping it should be avoided if possible.
+You can find the minimum supported Rust version (MSRV) in the root workspace manifest's
+`[workspace.package]` section (Cargo.toml). OpenAgent Terminal **must** always build with the MSRV
+and bumping it should be avoided if possible.
+
+If a crate opts into a newer edition (e.g., `edition = "2024"`) or otherwise requires a newer
+compiler, set a crate-specific `rust-version` in that crate's Cargo.toml (do not silently rely on
+the workspace MSRV). CI checks will verify that edition 2024 crates declare `rust-version`.
 
 Since `openagent-terminal-core`'s version always tracks the next release, make sure that the version is
 bumped according to semver when necessary.
 
 ### Local pre-submit checklist
+
+### Pre-commit hooks (optional but recommended)
+
+The repository includes a pre-commit configuration at `.dev/.pre-commit-config.yaml`.
+
+- Install: `pip install pre-commit` (or use your package manager)
+- Enable hooks for this repo:
+  - `pre-commit install -c .dev/.pre-commit-config.yaml`
+- Run on all files:
+  - `pre-commit run --all-files -c .dev/.pre-commit-config.yaml`
+
+Hooks include Rust formatting/lints and basic hygiene checks. They mirror the CI checks to give you faster feedback locally.
 
 Before opening a pull request, please run these checks locally to catch issues early:
 
