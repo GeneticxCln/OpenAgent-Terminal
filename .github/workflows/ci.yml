@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0) with rustfmt
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable) with rustfmt
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: Format (rustfmt)
@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0) with clippy
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable) with clippy
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - name: Cache cargo
@@ -37,8 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: cargo check (default features)
@@ -51,8 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: cargo test (all features)
@@ -63,8 +63,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -77,8 +77,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install cargo-hack
@@ -102,8 +102,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (1.79.0) with components
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable) with components
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
@@ -153,8 +153,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install target
         run: rustup target add x86_64-apple-darwin
@@ -168,8 +168,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -309,8 +309,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run AI feature tests
@@ -337,8 +337,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run shader sync unit test
@@ -400,8 +400,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Build snapshot example

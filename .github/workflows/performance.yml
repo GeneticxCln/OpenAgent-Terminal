@@ -24,8 +24,8 @@ jobs:
           # Fetch enough history for baseline comparison
           fetch-depth: 50
 
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -163,8 +163,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
