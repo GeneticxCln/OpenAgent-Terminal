@@ -4,6 +4,10 @@ on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   CARGO_TERM_COLOR: always
@@ -120,10 +124,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libfreetype6-dev libfontconfig1-dev \
-            libxcb-xfixes0-dev libxkbcommon-dev python3 scdoc curl file
+        uses: ./.github/actions/install-ubuntu-deps
+        with:
+          extra-packages: "cmake python3 scdoc curl file"
       - name: Test
         run: cargo test --release
       - name: Regenerate shell completions

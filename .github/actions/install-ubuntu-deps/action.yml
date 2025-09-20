@@ -1,0 +1,31 @@
+name: Install Ubuntu dependencies
+description: Install base system packages for OpenAgent Terminal CI with optional extra packages
+inputs:
+  extra-packages:
+    description: Space-separated list of extra packages to install
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install system dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y \
+          pkg-config \
+          build-essential \
+          xvfb \
+          libegl1-mesa-dev \
+          libgl1-mesa-dev \
+          libxcb-shape0-dev \
+          libxcb-xfixes0-dev \
+          libxkbcommon-dev \
+          libfontconfig1-dev \
+          libfreetype6-dev
+        if [ -n "${{ inputs.extra-packages }}" ]; then
+          echo "Installing extra packages: ${{ inputs.extra-packages }}"
+          sudo apt-get install -y ${{ inputs.extra-packages }}
+        fi

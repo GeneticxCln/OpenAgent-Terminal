@@ -2,6 +2,10 @@ name: CI
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -18,6 +22,48 @@ jobs:
       - name: Format (rustfmt)
         run: cargo fmt --all -- --check
 
+  msrv:
+    name: MSRV check (1.79.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (1.79.0)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.79.0
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Ubuntu)
+        uses: ./.github/actions/install-ubuntu-deps
+      - name: cargo check (MSRV, default features)
+        run: cargo check --workspace --all-targets
+
+  rust-policy:
+    name: Rust policy checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate edition 2024 crates have rust-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=$(git ls-files '**/Cargo.toml' | tr '\n' ' ')
+          failures=0
+          for f in $files; do
+            if grep -qE '^edition\s*=\s*"2024"' "$f"; then
+              if ! grep -qE '^(rust-version\s*=|rust-version\.workspace\s*=\s*true)' "$f"; then
+                echo "Missing rust-version in $f (edition=2024)"
+                failures=$((failures+1))
+              fi
+            fi
+          done
+          if [ "$failures" -gt 0 ]; then
+            exit 1
+          fi
+      - name: Summarize
+        if: always()
+        run: echo "Rust policy checks completed" >> $GITHUB_STEP_SUMMARY
+
   clippy-all:
     name: Clippy (all targets, all features, deny warnings)
     runs-on: ubuntu-latest
@@ -30,21 +76,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Run clippy (workspace, all-targets, all-features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -58,21 +90,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: cargo check (default features)
         run: cargo check --workspace --all-targets
       - name: cargo check (all features)
@@ -88,21 +106,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: cargo test (all features)
         run: cargo test --workspace --all-features -- --nocapture
 
@@ -116,21 +120,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Install cargo-nextest
         run: cargo install cargo-nextest --locked
       - name: Run nextest (all features)
@@ -146,21 +136,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Install cargo-hack
         run: cargo install cargo-hack --locked
       - name: Check each feature individually (workspace)
@@ -191,20 +167,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
 
       - name: Format (rustfmt)
         run: cargo fmt --all -- --check
@@ -270,21 +233,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
@@ -326,8 +275,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Install shellcheck and deps
+        uses: ./.github/actions/install-ubuntu-deps
+        with:
+          extra-packages: shellcheck
       - name: Run shellcheck
         shell: bash
         run: |
@@ -361,20 +312,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
         if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
 
       - name: Build release (core)
         run: cargo build -p openagent-terminal --release
@@ -442,21 +380,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Run AI feature tests
         run: cargo test -p openagent-terminal -F ai -- --nocapture
 
@@ -486,21 +410,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Run shader sync unit test
         run: cargo test -p openagent-terminal --lib rect_kind_count_embedded_in_wgsl -- --nocapture
 
@@ -514,21 +424,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Build with WGPU feature
         run: cargo build -p openagent-terminal -F wgpu --release
       - name: Smoke test render_smoke (wgpu)
@@ -581,21 +477,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            xvfb \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
+        uses: ./.github/actions/install-ubuntu-deps
       - name: Build snapshot example
         run: cargo build -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture
       - name: Run snapshots at multiple DPI scales (wgpu)
@@ -623,6 +505,33 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           RUST_BACKTRACE: 1
         run: |
           cargo test -p openagent-terminal-core --test windows_pty_repro -- --nocapture --test-threads=1
+
+  deps-machete:
+    name: Dependency pruning (cargo-machete)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Ubuntu)
+        uses: ./.github/actions/install-ubuntu-deps
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+      - name: Run cargo-machete
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo machete --with-versions | tee machete.txt || true
+          echo "## 🧹 cargo-machete (unused dependencies)" >> $GITHUB_STEP_SUMMARY
+          sed -n '1,200p' machete.txt >> $GITHUB_STEP_SUMMARY || true
+      - name: Upload machete report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: machete-report-${{ github.run_number }}
+          path: machete.txt
 
   coverage:
     name: Coverage (llvm-cov)

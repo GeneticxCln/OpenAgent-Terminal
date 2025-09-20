@@ -201,6 +201,33 @@ Notes:
 - Secrets must be supplied via environment variables; never hardcode API keys.
 - Renderer is WGPU-only by default; X11/Wayland features are included via defaults.
 
+## Dev Tools (Node/TypeScript)
+
+- Location: ./.dev
+- Node.js: >= 20.x (CI uses Node 20)
+- Typical workflow:
+
+```bash
+cd .dev
+npm ci
+npm run type-check
+npm run lint
+npm run build
+npm run test
+```
+
+Notes:
+- The GitHub Actions workflow runs these with working-directory set to ./.dev.
+- The ESLint config lives at .dev/eslint.config.js and targets src/**/*.ts at the repo root via scripts.
+
+## Rust version policy (MSRV)
+
+- MSRV: 1.79.0 (declared in [workspace.package.rust-version] in Cargo.toml)
+- Policy:
+  - Crates inherit rust-version from the workspace by default (rust-version.workspace = true).
+  - If a crate explicitly opts into a newer edition (e.g., edition = "2024") or uses language features that need a higher compiler, set a crate-specific rust-version in that Cargo.toml.
+  - CI enforces MSRV builds and validates that any edition = "2024" crate has a rust-version set.
+
 ## Installation
 
 **From Source:**
