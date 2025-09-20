@@ -171,8 +171,7 @@ impl NaturalLanguageAgent {
         let intent = self.intent_classifier.classify(input, &entities, context)?;
 
         // Update context manager
-        self.context_manager
-            .update_from_input(input, &entities, &intent);
+        self.context_manager.update_from_input(input, &entities, &intent);
 
         let intent_conf = intent.confidence;
         let conf = Self::compute_confidence(intent_conf, entities.len());
@@ -193,10 +192,7 @@ impl NaturalLanguageAgent {
         // TODO: Replace with more sophisticated NLP
 
         // File paths
-        if let Some(captures) = regex::Regex::new(r"([~/][\w\-./]+)")
-            .unwrap()
-            .captures(text)
-        {
+        if let Some(captures) = regex::Regex::new(r"([~/][\w\-./]+)").unwrap().captures(text) {
             if let Some(matched) = captures.get(1) {
                 entities.push(Entity {
                     entity_type: EntityType::FilePath,
@@ -208,15 +204,7 @@ impl NaturalLanguageAgent {
         }
 
         // Programming languages
-        let languages = [
-            "rust",
-            "python",
-            "javascript",
-            "typescript",
-            "go",
-            "java",
-            "c++",
-        ];
+        let languages = ["rust", "python", "javascript", "typescript", "go", "java", "c++"];
         for lang in &languages {
             if text.to_lowercase().contains(lang) {
                 entities.push(Entity {
@@ -229,9 +217,7 @@ impl NaturalLanguageAgent {
         }
 
         // Commands (words that look like shell commands)
-        let command_patterns = [
-            "git", "npm", "cargo", "docker", "kubectl", "ls", "cd", "mkdir",
-        ];
+        let command_patterns = ["git", "npm", "cargo", "docker", "kubectl", "ls", "cd", "mkdir"];
         for cmd in &command_patterns {
             if text.contains(cmd) {
                 entities.push(Entity {
@@ -265,9 +251,8 @@ impl NaturalLanguageAgent {
                 ],
             };
 
-            let proposals = provider
-                .propose(ai_request)
-                .map_err(|e| anyhow!("AI provider error: {}", e))?;
+            let proposals =
+                provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?;
 
             if let Some(proposal) = proposals.first() {
                 if !proposal.proposed_commands.is_empty() {
@@ -294,10 +279,7 @@ impl NaturalLanguageAgent {
         prompt.push_str("Respond naturally and provide actionable advice.\n\n");
 
         // Add context
-        prompt.push_str(&format!(
-            "Current directory: {}\n",
-            context.current_directory
-        ));
+        prompt.push_str(&format!("Current directory: {}\n", context.current_directory));
         if let Some(branch) = &context.current_branch {
             prompt.push_str(&format!("Git branch: {}\n", branch));
         }
@@ -403,9 +385,8 @@ impl Agent for NaturalLanguageAgent {
 
                     match temp_agent.process_input(&input_text, &request.context) {
                         Ok(processed) => {
-                            let response_text = temp_agent
-                                .generate_response(&processed, &request.context)
-                                .await?;
+                            let response_text =
+                                temp_agent.generate_response(&processed, &request.context).await?;
 
                             response.success = true;
                             response.payload = serde_json::json!({
@@ -590,11 +571,7 @@ impl IntentClassifier {
         patterns.insert(
             "file_operations".to_string(),
             vec![IntentPattern {
-                keywords: vec![
-                    "file".to_string(),
-                    "directory".to_string(),
-                    "folder".to_string(),
-                ],
+                keywords: vec!["file".to_string(), "directory".to_string(), "folder".to_string()],
                 required_entities: vec![EntityType::FilePath],
                 weight: 0.9,
                 target_agent: None,
@@ -638,13 +615,7 @@ impl IntentClassifier {
                 let keyword_matches: f64 = pattern
                     .keywords
                     .iter()
-                    .map(|keyword| {
-                        if text_lower.contains(keyword) {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    })
+                    .map(|keyword| if text_lower.contains(keyword) { 1.0 } else { 0.0 })
                     .sum();
                 score += keyword_matches * pattern.weight;
 
@@ -688,7 +659,9 @@ impl IntentClassifier {
                             let key = &tok[2..];
                             if !key.is_empty() && !key.contains('=') {
                                 if i + 1 < tokens.len() && !tokens[i + 1].starts_with('-') {
-                                    params.entry(key.to_string()).or_insert(tokens[i + 1].to_string());
+                                    params
+                                        .entry(key.to_string())
+                                        .or_insert(tokens[i + 1].to_string());
                                     i += 1;
                                 } else {
                                     params.entry(key.to_string()).or_insert("true".to_string());
@@ -743,8 +716,7 @@ impl ConversationContextManager {
     pub fn update_from_input(&mut self, _input: &str, entities: &[Entity], intent: &Intent) {
         // Update active entities
         for entity in entities {
-            self.active_entities
-                .insert(format!("{:?}", entity.entity_type), entity.clone());
+            self.active_entities.insert(format!("{:?}", entity.entity_type), entity.clone());
         }
 
         // Update current topic based on intent
@@ -788,9 +760,7 @@ mod tests {
             span: (0, 4),
         }];
 
-        let intent = classifier
-            .classify("generate rust code", &entities, &context)
-            .unwrap();
+        let intent = classifier.classify("generate rust code", &entities, &context).unwrap();
         assert_eq!(intent.name, "code_generation");
         assert!(intent.confidence > 0.0);
     }
@@ -802,12 +772,8 @@ mod tests {
 
         assert!(!entities.is_empty());
 
-        let has_language = entities
-            .iter()
-            .any(|e| matches!(e.entity_type, EntityType::Language));
-        let has_filepath = entities
-            .iter()
-            .any(|e| matches!(e.entity_type, EntityType::FilePath));
+        let has_language = entities.iter().any(|e| matches!(e.entity_type, EntityType::Language));
+        let has_filepath = entities.iter().any(|e| matches!(e.entity_type, EntityType::FilePath));
 
         assert!(has_language);
         assert!(has_filepath);

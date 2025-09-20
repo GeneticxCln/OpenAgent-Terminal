@@ -327,16 +327,12 @@ impl SecurityLensAgent {
                 shell_kind: None,
                 context: vec![
                     ("mode".to_string(), "security_analysis".to_string()),
-                    (
-                        "content_type".to_string(),
-                        format!("{:?}", request.content_type),
-                    ),
+                    ("content_type".to_string(), format!("{:?}", request.content_type)),
                 ],
             };
 
-            let proposals = provider
-                .propose(ai_request)
-                .map_err(|e| anyhow!("AI provider error: {}", e))?;
+            let proposals =
+                provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?;
             proposals
                 .first()
                 .ok_or_else(|| anyhow!("No response from AI provider"))?
@@ -384,25 +380,14 @@ impl SecurityLensAgent {
         }
 
         // Determine overall risk level
-        let overall_risk = if all_risks
-            .iter()
-            .any(|r| r.risk_level == SecurityRiskLevel::Critical)
+        let overall_risk = if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Critical)
         {
             SecurityRiskLevel::Critical
-        } else if all_risks
-            .iter()
-            .any(|r| r.risk_level == SecurityRiskLevel::High)
-        {
+        } else if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::High) {
             SecurityRiskLevel::High
-        } else if all_risks
-            .iter()
-            .any(|r| r.risk_level == SecurityRiskLevel::Medium)
-        {
+        } else if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Medium) {
             SecurityRiskLevel::Medium
-        } else if all_risks
-            .iter()
-            .any(|r| r.risk_level == SecurityRiskLevel::Low)
-        {
+        } else if all_risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Low) {
             SecurityRiskLevel::Low
         } else {
             SecurityRiskLevel::Info
@@ -481,10 +466,7 @@ impl Agent for SecurityLensAgent {
     }
 
     fn capabilities(&self) -> Vec<AgentCapability> {
-        vec![
-            AgentCapability::SecurityAnalysis,
-            AgentCapability::CodeAnalysis,
-        ]
+        vec![AgentCapability::SecurityAnalysis, AgentCapability::CodeAnalysis]
     }
 
     async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
@@ -552,10 +534,7 @@ impl Agent for SecurityLensAgent {
                     metadata: HashMap::new(),
                 })
             }
-            _ => Err(anyhow!(
-                "Unsupported request type: {:?}",
-                request.request_type
-            )),
+            _ => Err(anyhow!("Unsupported request type: {:?}", request.request_type)),
         }
     }
 
@@ -584,8 +563,7 @@ impl Agent for SecurityLensAgent {
         }
 
         // Load custom patterns
-        self.risk_patterns
-            .extend(self.config.custom_patterns.clone());
+        self.risk_patterns.extend(self.config.custom_patterns.clone());
 
         self.is_initialized = true;
         self.last_activity = chrono::Utc::now();
@@ -614,9 +592,7 @@ mod tests {
 
         assert_eq!(agent.id(), "security-lens");
         assert_eq!(agent.name(), "Security Lens Agent");
-        assert!(agent
-            .capabilities()
-            .contains(&AgentCapability::SecurityAnalysis));
+        assert!(agent.capabilities().contains(&AgentCapability::SecurityAnalysis));
         assert!(agent.can_handle(&AgentRequestType::CheckSecurity));
         assert!(!agent.can_handle(&AgentRequestType::GenerateCode));
     }
@@ -632,9 +608,7 @@ mod tests {
         assert!(!risks.is_empty());
         assert!(risks.iter().any(|r| r.category == "sudo_command"));
         assert!(risks.iter().any(|r| r.category == "rm_recursive"));
-        assert!(risks
-            .iter()
-            .any(|r| r.risk_level == SecurityRiskLevel::Critical));
+        assert!(risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Critical));
     }
 
     #[test]
@@ -646,9 +620,7 @@ mod tests {
 
         assert!(!risks.is_empty());
         assert!(risks.iter().any(|r| r.category == "exposed_api_key"));
-        assert!(risks
-            .iter()
-            .any(|r| r.risk_level == SecurityRiskLevel::Critical));
+        assert!(risks.iter().any(|r| r.risk_level == SecurityRiskLevel::Critical));
     }
 
     #[test]

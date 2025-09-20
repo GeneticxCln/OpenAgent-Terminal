@@ -268,11 +268,8 @@ impl SummarizationEngine {
         text: &str,
     ) -> Result<ConversationSummary> {
         // Select strategy and target compression
-        let strategy = self
-            .summary_strategies
-            .get(&summary_type)
-            .cloned()
-            .unwrap_or(SummaryStrategy {
+        let strategy =
+            self.summary_strategies.get(&summary_type).cloned().unwrap_or(SummaryStrategy {
                 max_length: 400,
                 key_point_threshold: 0.6,
                 entity_preservation: true,
@@ -327,10 +324,7 @@ impl SummarizationEngine {
             compression_ratio: target_ratio,
         };
 
-        self.summaries
-            .write()
-            .await
-            .insert(session_id, conversation_summary.clone());
+        self.summaries.write().await.insert(session_id, conversation_summary.clone());
         Ok(conversation_summary)
     }
 
@@ -408,10 +402,7 @@ impl GoalAutomation {
         self.automation_rules.write().await.push(rule);
     }
     pub async fn add_template(&self, tpl: GoalTemplate) {
-        self.goal_templates
-            .write()
-            .await
-            .insert(tpl.id.clone(), tpl);
+        self.goal_templates.write().await.insert(tpl.id.clone(), tpl);
     }
     pub async fn add_detector(&self, id: String, det: CompletionDetector) {
         self.completion_detectors.write().await.insert(id, det);
@@ -799,8 +790,7 @@ impl AdvancedConversationFeatures {
             .await?;
 
         // Copy context from parent session if needed
-        self.copy_session_context(session_id, branch_session_id)
-            .await?;
+        self.copy_session_context(session_id, branch_session_id).await?;
 
         let branch_id = format!("branch-{}", Uuid::new_v4());
         let branch = ConversationBranch {
@@ -837,11 +827,7 @@ impl AdvancedConversationFeatures {
         tree.branches.insert(branch_id.clone(), branch);
         tree.last_updated = Utc::now();
 
-        tracing::info!(
-            "Created conversation branch: {} for session {}",
-            branch_name,
-            session_id
-        );
+        tracing::info!("Created conversation branch: {} for session {}", branch_name, session_id);
         Ok(branch_id)
     }
 
@@ -870,11 +856,7 @@ impl AdvancedConversationFeatures {
         tree.active_branch = branch_id;
         tree.last_updated = Utc::now();
 
-        tracing::info!(
-            "Switched to branch {} for session {}",
-            tree.active_branch,
-            session_id
-        );
+        tracing::info!("Switched to branch {} for session {}", tree.active_branch, session_id);
         Ok(())
     }
 
@@ -907,9 +889,8 @@ impl AdvancedConversationFeatures {
         drop(trees);
 
         // Perform merge based on strategy
-        let conflicts_resolved = self
-            .resolve_merge_conflicts(&source_branches, &target_branch, &strategy)
-            .await?;
+        let conflicts_resolved =
+            self.resolve_merge_conflicts(&source_branches, &target_branch, &strategy).await?;
 
         // Create merge point
         let merge_point = MergePoint {
@@ -935,11 +916,7 @@ impl AdvancedConversationFeatures {
 
         tree.last_updated = Utc::now();
 
-        tracing::info!(
-            "Merged branches into {} for session {}",
-            target_branch,
-            session_id
-        );
+        tracing::info!("Merged branches into {} for session {}", target_branch, session_id);
         Ok(merge_id)
     }
 
@@ -954,10 +931,8 @@ impl AdvancedConversationFeatures {
         }
 
         // Get conversation content
-        let conversation_content = self
-            .conversation_manager
-            .get_conversation_summary(session_id, 50)
-            .await?;
+        let conversation_content =
+            self.conversation_manager.get_conversation_summary(session_id, 50).await?;
 
         // Generate key points
         let key_points = self.extract_key_points(&conversation_content).await?;
@@ -966,9 +941,7 @@ impl AdvancedConversationFeatures {
         let action_items = self.extract_action_items(&conversation_content).await?;
 
         // Find unresolved questions
-        let unresolved_questions = self
-            .extract_unresolved_questions(&conversation_content)
-            .await?;
+        let unresolved_questions = self.extract_unresolved_questions(&conversation_content).await?;
 
         // Create context preservation strategy
         let context_preservation = self.create_context_preservation(session_id).await?;
@@ -976,9 +949,7 @@ impl AdvancedConversationFeatures {
         let summary = ConversationSummary {
             session_id,
             summary_type: summary_type.clone(),
-            content: self
-                .generate_summary_content(&conversation_content, &summary_type)
-                .await?,
+            content: self.generate_summary_content(&conversation_content, &summary_type).await?,
             key_points,
             action_items,
             unresolved_questions,
@@ -991,11 +962,7 @@ impl AdvancedConversationFeatures {
         let mut summaries = self.summarization_engine.summaries.write().await;
         summaries.insert(session_id, summary.clone());
 
-        tracing::info!(
-            "Generated {:?} summary for session {}",
-            summary_type,
-            session_id
-        );
+        tracing::info!("Generated {:?} summary for session {}", summary_type, session_id);
         Ok(summary)
     }
 
@@ -1031,11 +998,7 @@ impl AdvancedConversationFeatures {
         let mut trackers = self.goal_automation.goal_tracker.write().await;
         trackers.insert(session_id, goal_tracker);
 
-        tracing::info!(
-            "Started goal tracking: {} for session {}",
-            goal_description,
-            session_id
-        );
+        tracing::info!("Started goal tracking: {} for session {}", goal_description, session_id);
         Ok(goal_id)
     }
 
@@ -1059,8 +1022,7 @@ impl AdvancedConversationFeatures {
         tracker.progress = progress.clamp(0.0, 1.0);
 
         // Check for milestone completions
-        self.check_milestone_completions(tracker, old_progress)
-            .await?;
+        self.check_milestone_completions(tracker, old_progress).await?;
 
         // Trigger automation rules if needed
         self.check_automation_triggers(tracker).await?;
@@ -1071,11 +1033,7 @@ impl AdvancedConversationFeatures {
             tracker.actual_completion = Some(Utc::now());
         }
 
-        tracing::info!(
-            "Updated goal {} progress to {:.1}%",
-            goal_id,
-            progress * 100.0
-        );
+        tracing::info!("Updated goal {} progress to {:.1}%", goal_id, progress * 100.0);
         Ok(())
     }
 
@@ -1103,17 +1061,12 @@ impl AdvancedConversationFeatures {
                 cross_session_memory: HashMap::new(),
                 project_context: None,
             },
-            coordination_rules: vec![
-                CoordinationRule::ShareGoals,
-                CoordinationRule::ShareEntities,
-            ],
+            coordination_rules: vec![CoordinationRule::ShareGoals, CoordinationRule::ShareEntities],
             created_at: Utc::now(),
         };
 
         let mut coordinator = self.session_coordinator.write().await;
-        coordinator
-            .session_groups
-            .insert(group_id.clone(), session_group);
+        coordinator.session_groups.insert(group_id.clone(), session_group);
 
         tracing::info!("Created session group: {}", group_id);
         Ok(group_id)
@@ -1187,11 +1140,7 @@ impl AdvancedConversationFeatures {
         // Simple implementation - would use more sophisticated NLP in production
         let words: Vec<&str> = content.split_whitespace().collect();
         let summary_length = (words.len() as f32 * self.config.summary_compression_target) as usize;
-        Ok(words
-            .into_iter()
-            .take(summary_length)
-            .collect::<Vec<_>>()
-            .join(" "))
+        Ok(words.into_iter().take(summary_length).collect::<Vec<_>>().join(" "))
     }
 
     async fn generate_milestones_for_goal(&self, _goal_type: &str) -> Result<Vec<Milestone>> {
@@ -1420,11 +1369,7 @@ impl SummarizationEngine {
         compression_ratios.insert(ContentType::Technical, 0.4);
         compression_ratios.insert(ContentType::Planning, 0.25);
 
-        Self {
-            summaries: RwLock::new(HashMap::new()),
-            summary_strategies,
-            compression_ratios,
-        }
+        Self { summaries: RwLock::new(HashMap::new()), summary_strategies, compression_ratios }
     }
 }
 

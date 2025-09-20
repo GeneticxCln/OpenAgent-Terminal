@@ -20,11 +20,7 @@ fn example_bin() -> String {
     p.push("target");
     p.push("debug");
     p.push("examples");
-    p.push(if cfg!(windows) {
-        "render_smoke.exe"
-    } else {
-        "render_smoke"
-    });
+    p.push(if cfg!(windows) { "render_smoke.exe" } else { "render_smoke" });
     p.to_string_lossy().into_owned()
 }
 
@@ -55,11 +51,7 @@ fn idle_memory_usage_under_targets() {
     // - Idle core (no full GUI): < 50 MB
     // Give some headroom for CI variance.
     let rss_mb = rss_kb as f64 / 1024.0;
-    assert!(
-        rss_mb < 150.0,
-        "Idle RSS exceeded target (<150MB): {:.1}MB",
-        rss_mb
-    );
+    assert!(rss_mb < 150.0, "Idle RSS exceeded target (<150MB): {:.1}MB", rss_mb);
 }
 
 #[test]
@@ -95,9 +87,7 @@ fn render_smoke_runs_quickly() {
         return;
     }
     let start = Instant::now();
-    let output = Command::new(&bin)
-        .output()
-        .expect("failed to run render_smoke example");
+    let output = Command::new(&bin).output().expect("failed to run render_smoke example");
     let elapsed = start.elapsed();
 
     assert!(

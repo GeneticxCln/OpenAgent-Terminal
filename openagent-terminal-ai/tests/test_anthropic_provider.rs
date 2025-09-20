@@ -65,7 +65,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
-        
+
         // Use std::thread::spawn to avoid any Tokio runtime context
         std::thread::spawn(move || {
             let provider = AnthropicProvider::new(
@@ -74,7 +74,7 @@ mod anthropic_provider_tests {
                 "claude-3-opus".to_string(),
             )
             .unwrap();
-            
+
             let mut collected = String::new();
             let cancel = AtomicBool::new(false);
             let mut on_chunk = |chunk: &str| {
@@ -84,7 +84,7 @@ mod anthropic_provider_tests {
             let result = provider.propose_stream(create_test_request(), &mut on_chunk, &cancel);
             tx.send((result, collected)).ok();
         });
-        
+
         let (result, collected) = rx.recv().unwrap();
         assert!(result.is_ok());
         assert_eq!(collected, "find . -type f -size +100M");
@@ -125,7 +125,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
-        
+
         std::thread::spawn(move || {
             let provider = AnthropicProvider::new(
                 "test_key".to_string(),
@@ -174,7 +174,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<bool, String>>(1);
-        
+
         std::thread::spawn(move || {
             let provider = AnthropicProvider::new(
                 "invalid_key".to_string(),
@@ -215,7 +215,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<bool, String>>(1);
-        
+
         std::thread::spawn(move || {
             let provider =
                 AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
@@ -265,7 +265,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
-        
+
         std::thread::spawn(move || {
             let provider =
                 AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
@@ -293,7 +293,11 @@ mod anthropic_provider_tests {
         if result.is_err() {
             // If it's an error, it should be a cancellation error
             let err = result.unwrap_err();
-            assert!(err.contains("Cancelled") || err.contains("cancelled"), "Unexpected error: {}", err);
+            assert!(
+                err.contains("Cancelled") || err.contains("cancelled"),
+                "Unexpected error: {}",
+                err
+            );
         }
         assert!(!collected.is_empty());
         // Should not have all the content due to cancellation
@@ -313,7 +317,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<bool, String>>(1);
-        
+
         std::thread::spawn(move || {
             let provider =
                 AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())
@@ -363,7 +367,7 @@ mod anthropic_provider_tests {
 
         let server_uri = server.uri();
         let (tx, rx) = std::sync::mpsc::sync_channel::<(Result<bool, String>, String)>(1);
-        
+
         std::thread::spawn(move || {
             let provider =
                 AnthropicProvider::new("test_key".to_string(), server_uri, "claude-3".to_string())

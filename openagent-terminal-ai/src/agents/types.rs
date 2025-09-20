@@ -1,12 +1,12 @@
 //! Shared types for AI agents in the openagent-terminal-ai crate.
 //! Core types, enums, and structures used across all agents.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// Workflow execution graph for sequential and parallel task coordination
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,25 +52,13 @@ pub struct WorkflowEdge {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NodeType {
     /// Execute a task with an agent
-    Task {
-        agent_capability: String,
-        payload: serde_json::Value,
-    },
+    Task { agent_capability: String, payload: serde_json::Value },
     /// Decision point in workflow
-    Decision {
-        condition_expr: String,
-        true_branch: String,
-        false_branch: String,
-    },
+    Decision { condition_expr: String, true_branch: String, false_branch: String },
     /// Parallel execution group
-    ParallelGroup {
-        nodes: Vec<String>,
-        join_strategy: JoinStrategy,
-    },
+    ParallelGroup { nodes: Vec<String>, join_strategy: JoinStrategy },
     /// Synchronization point
-    Barrier {
-        wait_for: Vec<String>,
-    },
+    Barrier { wait_for: Vec<String> },
     /// Start node
     Start,
     /// End node
@@ -403,8 +391,8 @@ pub struct ParameterExtractionConfig {
 /// CLI parameter patterns
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliPatterns {
-    pub flag_patterns: Vec<String>, // regex patterns for flags
-    pub option_patterns: Vec<String>, // regex patterns for options
+    pub flag_patterns: Vec<String>,       // regex patterns for flags
+    pub option_patterns: Vec<String>,     // regex patterns for options
     pub positional_patterns: Vec<String>, // regex patterns for positional args
     pub subcommand_patterns: Vec<String>,
 }
@@ -546,7 +534,7 @@ impl Default for QualityConfig {
         enabled_checks.insert(QualityCheck::Security);
         enabled_checks.insert(QualityCheck::Style);
         enabled_checks.insert(QualityCheck::Performance);
-        
+
         Self {
             enabled_checks,
             security_level: SecurityLevel::Standard,
@@ -573,7 +561,9 @@ impl Default for NlpConfig {
             confidence_threshold: 0.7,
             entity_extraction: EntityExtractionConfig {
                 enabled_types: [EntityType::FilePath, EntityType::Command, EntityType::Flag]
-                    .iter().cloned().collect(),
+                    .iter()
+                    .cloned()
+                    .collect(),
                 custom_patterns: HashMap::new(),
                 case_sensitive: false,
                 min_confidence: 0.6,
@@ -594,12 +584,8 @@ impl Default for NlpConfig {
                         r"--[a-zA-Z][a-zA-Z0-9-]*[=\s]+\S+".to_string(),
                         r"-[a-zA-Z]\s+\S+".to_string(),
                     ],
-                    positional_patterns: vec![
-                        r"[^-]\S*".to_string(),
-                    ],
-                    subcommand_patterns: vec![
-                        r"^[a-zA-Z][a-zA-Z0-9-]*".to_string(),
-                    ],
+                    positional_patterns: vec![r"[^-]\S*".to_string()],
+                    subcommand_patterns: vec![r"^[a-zA-Z][a-zA-Z0-9-]*".to_string()],
                 },
                 path_resolution: PathResolutionConfig {
                     resolve_relative: true,

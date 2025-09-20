@@ -228,9 +228,7 @@ impl BlockStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.into_iter()
-            .map(|row| row.into_block().map(Arc::new))
-            .collect()
+        rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
     }
 
     /// Get blocks by tag
@@ -247,9 +245,7 @@ impl BlockStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.into_iter()
-            .map(|row| row.into_block().map(Arc::new))
-            .collect()
+        rows.into_iter().map(|row| row.into_block().map(Arc::new)).collect()
     }
 
     /// Advanced search with FTS and comprehensive filters
@@ -539,10 +535,7 @@ mod tests {
         assert!(!r2.is_empty());
 
         // Search starred only
-        let q3 = crate::blocks_v2::SearchQuery {
-            starred_only: true,
-            ..Default::default()
-        };
+        let q3 = crate::blocks_v2::SearchQuery { starred_only: true, ..Default::default() };
         let r3 = storage.search(&q3).await.unwrap();
         assert!(!r3.is_empty());
     }

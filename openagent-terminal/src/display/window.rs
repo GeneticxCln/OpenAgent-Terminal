@@ -219,10 +219,7 @@ impl Window {
 
         let scale_factor = window.scale_factor();
         log::info!("Window scale factor: {scale_factor}");
-        let is_x11 = matches!(
-            window.window_handle().unwrap().as_raw(),
-            RawWindowHandle::Xlib(_)
-        );
+        let is_x11 = matches!(window.window_handle().unwrap().as_raw(), RawWindowHandle::Xlib(_));
 
         Ok(Self {
             hold: options.terminal_options.hold,
@@ -317,13 +314,10 @@ impl Window {
             let mut decoder = Decoder::new(Cursor::new(WINDOW_ICON));
             decoder.set_transformations(png::Transformations::normalize_to_color8());
             let mut reader = decoder.read_info().expect("invalid embedded icon");
-            let buf_size = reader
-                .output_buffer_size()
-                .expect("unknown output buffer size for embedded icon");
+            let buf_size =
+                reader.output_buffer_size().expect("unknown output buffer size for embedded icon");
             let mut buf = vec![0; buf_size];
-            let info = reader
-                .next_frame(&mut buf)
-                .expect("invalid embedded icon frame");
+            let info = reader.next_frame(&mut buf).expect("invalid embedded icon frame");
             let rgba = &buf[..info.buffer_size()];
             Icon::from_rgba(rgba.to_vec(), info.width, info.height)
                 .expect("invalid embedded icon format")
@@ -378,11 +372,7 @@ impl Window {
     }
 
     pub fn set_urgent(&self, is_urgent: bool) {
-        let attention = if is_urgent {
-            Some(UserAttentionType::Critical)
-        } else {
-            None
-        };
+        let attention = if is_urgent { Some(UserAttentionType::Critical) } else { None };
 
         self.window.request_user_attention(attention);
     }
@@ -443,8 +433,7 @@ impl Window {
 
     pub fn set_fullscreen(&self, fullscreen: bool) {
         if fullscreen {
-            self.window
-                .set_fullscreen(Some(Fullscreen::Borderless(None)));
+            self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
         } else {
             self.window.set_fullscreen(None);
         }
@@ -544,8 +533,6 @@ fn use_srgb_color_space(window: &WinitWindow) {
     };
 
     unsafe {
-        view.window()
-            .unwrap()
-            .setColorSpace(Some(&NSColorSpace::sRGBColorSpace()));
+        view.window().unwrap().setColorSpace(Some(&NSColorSpace::sRGBColorSpace()));
     }
 }

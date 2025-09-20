@@ -16,9 +16,7 @@ impl Default for EnvironmentManager {
 
 impl EnvironmentManager {
     pub fn new() -> Self {
-        Self {
-            base_environment: std::env::vars().collect(),
-        }
+        Self { base_environment: std::env::vars().collect() }
     }
 
     pub fn capture_current(&self) -> HashMap<String, String> {

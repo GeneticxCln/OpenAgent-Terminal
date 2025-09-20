@@ -74,20 +74,14 @@ async fn main() -> Result<()> {
         Ok(response) => {
             println!("📝 Natural Language Processing Result:");
             if let Some(intent) = response.payload.get("intent") {
-                println!(
-                    "   Intent: {}",
-                    intent.get("name").unwrap_or(&serde_json::Value::Null)
-                );
+                println!("   Intent: {}", intent.get("name").unwrap_or(&serde_json::Value::Null));
                 println!(
                     "   Confidence: {}",
                     intent.get("confidence").unwrap_or(&serde_json::Value::Null)
                 );
             }
             if let Some(response_text) = response.payload.get("response") {
-                println!(
-                    "   Response: {}",
-                    response_text.as_str().unwrap_or("No response")
-                );
+                println!("   Response: {}", response_text.as_str().unwrap_or("No response"));
             }
 
             if !response.next_actions.is_empty() {
@@ -111,10 +105,7 @@ async fn main() -> Result<()> {
         "security_level": "high"
     });
 
-    match hub
-        .start_workflow("code_generation_workflow", workflow_context)
-        .await
-    {
+    match hub.start_workflow("code_generation_workflow", workflow_context).await {
         Ok(workflow_id) => {
             println!("🚀 Started workflow: {}", workflow_id);
 
@@ -162,10 +153,7 @@ async fn main() -> Result<()> {
         "task": "demo event generation"
     });
 
-    if let Ok(workflow_id) = hub
-        .start_workflow("code_generation_workflow", simple_context)
-        .await
-    {
+    if let Ok(workflow_id) = hub.start_workflow("code_generation_workflow", simple_context).await {
         println!("🎬 Started demo workflow: {}", workflow_id);
 
         // Listen for events (with timeout)

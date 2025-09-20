@@ -65,14 +65,8 @@ async fn main() -> Result<()> {
             "Email Content",
             "Please contact us at john.doe@company.com or call 555-123-4567 for assistance.",
         ),
-        (
-            "Financial Data",
-            "My credit card number is 4532-1234-5678-9012 and the CVV is 123.",
-        ),
-        (
-            "Personal Info",
-            "SSN: 123-45-6789, DOB: 01/15/1985, Phone: (555) 987-6543",
-        ),
+        ("Financial Data", "My credit card number is 4532-1234-5678-9012 and the CVV is 123."),
+        ("Personal Info", "SSN: 123-45-6789, DOB: 01/15/1985, Phone: (555) 987-6543"),
         (
             "Health Data",
             "Patient ID: 12345, Diagnosis: Diabetes Type 2, Insurance: Blue Cross 987654321",
@@ -92,10 +86,7 @@ async fn main() -> Result<()> {
         println!("🔍 Scan Results:");
         println!("  - Detections: {}", scan_result.detections.len());
         println!("  - Risk Score: {:.2}", scan_result.overall_risk_score);
-        println!(
-            "  - Data Classifications: {:?}",
-            scan_result.data_classifications
-        );
+        println!("  - Data Classifications: {:?}", scan_result.data_classifications);
         println!("  - Processing Time: {}ms", scan_result.processing_time_ms);
 
         for detection in &scan_result.detections {
@@ -131,15 +122,11 @@ async fn main() -> Result<()> {
         println!("\n📝 Original: \"{}\"", sample);
 
         // Apply redaction using GDPR policy
-        let redaction_result = privacy_filter
-            .redact_content(sample, "gdpr-policy", Some(&user_context))
-            .await?;
+        let redaction_result =
+            privacy_filter.redact_content(sample, "gdpr-policy", Some(&user_context)).await?;
 
         println!("🔒 Redacted: \"{}\"", redaction_result.redacted_content);
-        println!(
-            "📊 Applied {} redaction(s)",
-            redaction_result.redactions_applied.len()
-        );
+        println!("📊 Applied {} redaction(s)", redaction_result.redactions_applied.len());
 
         for redaction in &redaction_result.redactions_applied {
             println!(
@@ -196,9 +183,7 @@ async fn main() -> Result<()> {
     };
 
     // Add the custom policy
-    privacy_filter
-        .create_privacy_policy(healthcare_policy)
-        .await?;
+    privacy_filter.create_privacy_policy(healthcare_policy).await?;
     println!("✅ Created healthcare privacy policy");
 
     // Test with healthcare content
@@ -210,10 +195,7 @@ async fn main() -> Result<()> {
         .redact_content(healthcare_content, "healthcare-policy", Some(&user_context))
         .await?;
 
-    println!(
-        "🔒 Healthcare Redacted: \"{}\"",
-        healthcare_result.redacted_content
-    );
+    println!("🔒 Healthcare Redacted: \"{}\"", healthcare_result.redacted_content);
 
     // Demo 4: Compliance Reporting
     println!("\n📊 DEMO 4: Compliance Reporting");
@@ -222,19 +204,13 @@ async fn main() -> Result<()> {
     let date_range = (Utc::now() - Duration::hours(1), Utc::now());
 
     // Generate compliance reports for different standards
-    let compliance_standards = vec![
-        ComplianceStandard::GDPR,
-        ComplianceStandard::CCPA,
-        ComplianceStandard::HIPAA,
-    ];
+    let compliance_standards =
+        vec![ComplianceStandard::GDPR, ComplianceStandard::CCPA, ComplianceStandard::HIPAA];
 
     for standard in compliance_standards {
         println!("\n📋 Generating {:?} compliance report...", standard);
 
-        match privacy_filter
-            .generate_compliance_report(standard.clone(), date_range)
-            .await
-        {
+        match privacy_filter.generate_compliance_report(standard.clone(), date_range).await {
             Ok(report) => {
                 println!("✅ {:?} Compliance Report:", report.standard);
                 println!(
@@ -245,10 +221,7 @@ async fn main() -> Result<()> {
                 println!("  📊 Total Events: {}", report.total_events);
                 println!("  ⚠️ Violations: {}", report.violations);
                 println!("  🔴 High Risk Events: {}", report.high_risk_events);
-                println!(
-                    "  💯 Compliance Score: {:.1}%",
-                    report.compliance_score * 100.0
-                );
+                println!("  💯 Compliance Score: {:.1}%", report.compliance_score * 100.0);
                 println!("  📝 Recommendations:");
                 for recommendation in &report.recommendations {
                     println!("    - {}", recommendation);
@@ -263,9 +236,8 @@ async fn main() -> Result<()> {
     println!("==========================================");
 
     // Create a conversation session
-    let session_id = conversation_manager
-        .create_session(Some("Privacy Demo Session".to_string()))
-        .await?;
+    let session_id =
+        conversation_manager.create_session(Some("Privacy Demo Session".to_string())).await?;
 
     println!("📝 Created conversation session: {}", session_id);
 
@@ -290,9 +262,8 @@ async fn main() -> Result<()> {
             );
 
             // Apply redaction
-            let redaction_result = privacy_filter
-                .redact_content(message, "gdpr-policy", Some(&user_context))
-                .await?;
+            let redaction_result =
+                privacy_filter.redact_content(message, "gdpr-policy", Some(&user_context)).await?;
 
             println!("🔒 Safe version: \"{}\"", redaction_result.redacted_content);
 
@@ -328,34 +299,16 @@ async fn main() -> Result<()> {
 
     let status = privacy_filter.status().await;
     println!("🏥 Privacy Filter Status:");
-    println!(
-        "  Health: {}",
-        if status.is_healthy {
-            "✅ Healthy"
-        } else {
-            "❌ Unhealthy"
-        }
-    );
-    println!(
-        "  Busy: {}",
-        if status.is_busy {
-            "🔄 Processing"
-        } else {
-            "⏸️ Idle"
-        }
-    );
-    println!(
-        "  Last Activity: {}",
-        status.last_activity.format("%H:%M:%S UTC")
-    );
+    println!("  Health: {}", if status.is_healthy { "✅ Healthy" } else { "❌ Unhealthy" });
+    println!("  Busy: {}", if status.is_busy { "🔄 Processing" } else { "⏸️ Idle" });
+    println!("  Last Activity: {}", status.last_activity.format("%H:%M:%S UTC"));
     if let Some(task) = &status.current_task {
         println!("  Current Task: {}", task);
     }
 
     // Show final conversation summary with privacy applied
-    let conversation_summary = conversation_manager
-        .get_conversation_summary(session_id, 10)
-        .await?;
+    let conversation_summary =
+        conversation_manager.get_conversation_summary(session_id, 10).await?;
 
     println!("\n📋 Final Conversation Summary (Privacy Protected):");
     println!("{}", conversation_summary);

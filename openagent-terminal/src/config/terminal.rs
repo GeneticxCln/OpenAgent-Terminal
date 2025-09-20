@@ -23,8 +23,6 @@ impl<'de> Deserialize<'de> for SerdeOsc52 {
         D: Deserializer<'de>,
     {
         let value = deserializer.deserialize_str(StringVisitor)?;
-        Osc52::deserialize(Value::String(value))
-            .map(SerdeOsc52)
-            .map_err(de::Error::custom)
+        Osc52::deserialize(Value::String(value)).map(SerdeOsc52).map_err(de::Error::custom)
     }
 }

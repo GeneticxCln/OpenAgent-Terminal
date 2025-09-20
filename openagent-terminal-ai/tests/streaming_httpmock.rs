@@ -44,9 +44,7 @@ mod tests {
             let mut on_chunk = |c: &str| {
                 collected.push_str(c);
             };
-            let ok = provider
-                .propose_stream(base_req(), &mut on_chunk, &cancel)
-                .unwrap();
+            let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
             tx.send((ok, collected)).ok();
         });
         let (ok, collected) = rx.recv().unwrap();
@@ -86,9 +84,7 @@ mod tests {
             let mut on_chunk = |c: &str| {
                 collected.push_str(c);
             };
-            let ok = provider
-                .propose_stream(base_req(), &mut on_chunk, &cancel)
-                .unwrap();
+            let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
             tx.send((ok, collected)).ok();
         });
         let (ok, collected) = rx.recv().unwrap();
@@ -122,9 +118,7 @@ mod tests {
             let mut on_chunk = |c: &str| {
                 collected.push_str(c);
             };
-            let ok = provider
-                .propose_stream(base_req(), &mut on_chunk, &cancel)
-                .unwrap();
+            let ok = provider.propose_stream(base_req(), &mut on_chunk, &cancel).unwrap();
             tx.send((ok, collected)).ok();
         });
         let (ok, _collected) = rx.recv().unwrap();

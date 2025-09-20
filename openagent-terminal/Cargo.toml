@@ -55,6 +55,12 @@ optional = true
 
 
 [dependencies]
+openagent-terminal-ide-editor = { path = "../crates/openagent-terminal-ide-editor", version = "0.1.0", optional = true }
+openagent-terminal-ide-lsp = { path = "../crates/openagent-terminal-ide-lsp", version = "0.1.0", optional = true }
+openagent-terminal-ide-indexer = { path = "../crates/openagent-terminal-ide-indexer", version = "0.1.0", optional = true }
+openagent-terminal-ide-dap = { path = "../crates/openagent-terminal-ide-dap", version = "0.1.0", optional = true }
+openagent-terminal-web-editors = { path = "../crates/openagent-terminal-web-editors", version = "0.1.0", optional = true }
+lsp-types = { version = "0.95.1", optional = true }
 ahash = { version = "0.8.6", features = ["no-rng"] }
 wat = "1.238.1"
 bitflags = "2.2.1"
@@ -187,6 +193,24 @@ renderer-wgpu = ["wgpu"]
 # Experimental always-on completions overlay (gated until stable)
 completions = []
 # IDE features
+# Umbrella to enable editor + LSP + indexer + DAP
+ide = [
+    "ide-editor",
+    "ide-lsp",
+    "ide-indexer",
+    "ide-dap",
+]
+# Individual toggles
+ide-editor = ["dep:openagent-terminal-ide-editor"]
+ide-lsp = ["dep:openagent-terminal-ide-lsp", "dep:lsp-types"]
+ide-indexer = ["dep:openagent-terminal-ide-indexer"]
+ide-dap = ["dep:openagent-terminal-ide-dap"]
+# Optional native WebView editors (Monaco)
+web-editors = ["dep:openagent-terminal-web-editors"]
+# Convenience: web editors with LSP bridge enabled in that crate
+web-editors-lsp = ["web-editers-fwd-lsp", "web-editors", "ide-lsp"]
+# Forward feature to sub-crate so it compiles with LSP support
+web-editers-fwd-lsp = ["openagent-terminal-web-editors/lsp"]
 
 x11 = [
     "copypasta/x11",
@@ -203,7 +227,8 @@ nightly = []
 # Optional AI integration for command assistance
 ai = [
     "dep:openagent-terminal-ai",
-    # Forward provider features so the providers module is available
+    # Enable agents subsystem and provider backends
+    "openagent-terminal-ai/agents",
     "openagent-terminal-ai/ai-openai",
     "openagent-terminal-ai/ai-anthropic",
     "openagent-terminal-ai/ai-ollama",

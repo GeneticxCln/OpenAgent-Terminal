@@ -66,19 +66,13 @@ impl CommandHistory {
                 None
             };
 
-            Self {
-                block_manager,
-                current_command: None,
-            }
+            Self { block_manager, current_command: None }
         }
 
         #[cfg(not(feature = "blocks"))]
         {
             info!("Command history initialized with simple fallback (blocks feature disabled)");
-            Self {
-                simple_history: Vec::new(),
-                current_command: None,
-            }
+            Self { simple_history: Vec::new(), current_command: None }
         }
     }
 
@@ -156,10 +150,7 @@ impl CommandHistory {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(active) = self.current_command.take() {
             let duration = active.start_time.elapsed();
-            debug!(
-                "Completing command with exit_code={}, duration={:?}",
-                exit_code, duration
-            );
+            debug!("Completing command with exit_code={}, duration={:?}", exit_code, duration);
 
             #[cfg(feature = "blocks")]
             if let (Some(ref block_manager), Some(block_id)) =
@@ -347,16 +338,10 @@ mod tests {
         let mut history = CommandHistory::new(Some(temp_dir.path().to_path_buf())).await;
 
         // Start a command
-        history
-            .start_command("echo hello".to_string(), None)
-            .await
-            .unwrap();
+        history.start_command("echo hello".to_string(), None).await.unwrap();
 
         // Complete it
-        history
-            .complete_command(0, "hello\n".to_string())
-            .await
-            .unwrap();
+        history.complete_command(0, "hello\n".to_string()).await.unwrap();
 
         // Search for it
         let results = history.search("echo", 10).await;
@@ -372,14 +357,8 @@ mod tests {
 
         // Add a few commands
         for i in 0..5 {
-            history
-                .start_command(format!("command{}", i), None)
-                .await
-                .unwrap();
-            history
-                .complete_command(0, format!("output{}\n", i))
-                .await
-                .unwrap();
+            history.start_command(format!("command{}", i), None).await.unwrap();
+            history.complete_command(0, format!("output{}\n", i)).await.unwrap();
         }
 
         // Get recent

@@ -191,9 +191,8 @@ fn test_session_migration() {
     let mut old_session = create_test_session();
     old_session.version = "0.9.0".to_string();
 
-    let migrated = manager
-        .migrate_session_format(old_session)
-        .expect("Should migrate old session format");
+    let migrated =
+        manager.migrate_session_format(old_session).expect("Should migrate old session format");
 
     assert_eq!(migrated.version, "1.0.0");
 }
@@ -236,10 +235,7 @@ fn test_working_directory_fallback() {
 
     // Validation should succeed but with warnings
     let validation_result = manager.validate_session(&session);
-    assert!(
-        validation_result.is_ok(),
-        "Should pass validation despite inaccessible directory"
-    );
+    assert!(validation_result.is_ok(), "Should pass validation despite inaccessible directory");
 }
 
 #[test]
@@ -326,9 +322,7 @@ fn test_corrupted_session_handling() {
     std::fs::write(&session_path, "{ invalid json }").expect("Should write corrupted file");
 
     let mut manager = WarpTabManager::with_session_file(&session_path);
-    let result = manager
-        .load_session()
-        .expect("Should handle corrupted session gracefully");
+    let result = manager.load_session().expect("Should handle corrupted session gracefully");
 
     // Should return false (not loaded) but not error
     assert!(!result);

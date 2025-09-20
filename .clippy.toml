@@ -2,6 +2,5 @@
 # This complements CI's `-D warnings` by ensuring we at least warn locally for all clippy lints.
 # Developers can run `cargo clippy --workspace --all-targets -D warnings` to match CI behavior.
 
-warns = [
-  "clippy::all",
-]
+# Clippy configuration - set minimum lint level
+# Use 'disallowed-names' for custom restrictions instead of 'warns'

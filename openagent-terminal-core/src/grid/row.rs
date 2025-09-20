@@ -78,10 +78,7 @@ impl<T: Default> Row<T> {
 
         // Split off cells for a new row.
         let mut new_row = self.inner.split_off(columns);
-        let index = new_row
-            .iter()
-            .rposition(|c| !c.is_empty())
-            .map_or(0, |i| i + 1);
+        let index = new_row.iter().rposition(|c| !c.is_empty()).map_or(0, |i| i + 1);
         new_row.truncate(index);
 
         self.occ = min(self.occ, columns);

@@ -15,9 +15,7 @@ impl Default for SnippetEngine {
 
 impl SnippetEngine {
     pub fn new() -> Self {
-        Self {
-            _template_engine: tera::Tera::new("templates/**/*").unwrap_or_default(),
-        }
+        Self { _template_engine: tera::Tera::new("templates/**/*").unwrap_or_default() }
     }
 
     pub fn expand(
@@ -45,14 +43,8 @@ impl SnippetEngine {
             context.working_directory.to_string_lossy().to_string(),
         );
         variables.insert("shell".to_string(), context.shell_type.clone());
-        variables.insert(
-            "date".to_string(),
-            context.current_time.format("%Y-%m-%d").to_string(),
-        );
-        variables.insert(
-            "time".to_string(),
-            context.current_time.format("%H:%M:%S").to_string(),
-        );
+        variables.insert("date".to_string(), context.current_time.format("%Y-%m-%d").to_string());
+        variables.insert("time".to_string(), context.current_time.format("%H:%M:%S").to_string());
 
         if let Some(git_info) = &context.git_info {
             variables.insert("git_branch".to_string(), git_info.branch.clone());

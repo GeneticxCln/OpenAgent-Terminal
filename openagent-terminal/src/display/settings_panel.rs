@@ -9,6 +9,21 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
+#[cfg(feature = "ai")]
+use crate::config::ai::{AiRoutingMode, AiApplyJoinStrategy};
+#[cfg(not(feature = "ai"))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AiRoutingMode {
+    Auto,
+    Agent,
+    Provider,
+}
+#[cfg(not(feature = "ai"))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AiApplyJoinStrategy {
+    AndThen,
+    Lines,
+}
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
@@ -51,10 +66,12 @@ impl SettingsCategory {
 pub struct SettingsPanelState {
     pub active: bool,
     pub category: SettingsCategory,
-    // AI page
+// AI page
     pub provider: String,
     pub selected_field: Field,
     pub ai_enabled: bool,
+    pub routing: AiRoutingMode,
+    pub apply_joiner: AiApplyJoinStrategy,
     pub privacy_strip_sensitive: bool,
     pub privacy_strip_cwd: bool,
     // Context toggles
@@ -123,6 +140,8 @@ pub enum Field {
     CtxEnv,
     CtxGit,
     CtxFileTree,
+    Routing,
+    ApplyJoiner,
     ApiKey,
     Model,
     Endpoint,
@@ -136,6 +155,8 @@ impl Default for SettingsPanelState {
             provider: "openrouter".into(),
             selected_field: Field::Provider,
             ai_enabled: false,
+            routing: AiRoutingMode::Auto,
+            apply_joiner: AiApplyJoinStrategy::AndThen,
             privacy_strip_sensitive: true,
             privacy_strip_cwd: true,
             ctx_enabled: true,
@@ -175,10 +196,7 @@ impl Default for SettingsPanelState {
 
 impl SettingsPanelState {
     pub fn new() -> Self {
-        Self {
-            category: SettingsCategory::Ai,
-            ..Default::default()
-        }
+        Self { category: SettingsCategory::Ai, ..Default::default() }
     }
 
     pub fn open(&mut self, config: &UiConfig) {
@@ -191,6 +209,8 @@ impl SettingsPanelState {
         #[cfg(feature = "ai")]
         {
             self.ai_enabled = config.ai.enabled;
+            self.routing = config.ai.routing;
+            self.apply_joiner = config.ai.apply_joiner;
             // Context toggles from config
             self.ctx_enabled = config.ai.context.enabled;
             let providers = &config.ai.context.providers;
@@ -204,14 +224,10 @@ impl SettingsPanelState {
         }
         // Read privacy opts from secrets/env, default to true
         let secrets = read_secrets_file();
-        self.privacy_strip_sensitive = secrets
-            .get("OPENAGENT_AI_STRIP_SENSITIVE")
-            .map(|v| v != "0")
-            .unwrap_or(true);
-        self.privacy_strip_cwd = secrets
-            .get("OPENAGENT_AI_STRIP_CWD")
-            .map(|v| v != "0")
-            .unwrap_or(true);
+        self.privacy_strip_sensitive =
+            secrets.get("OPENAGENT_AI_STRIP_SENSITIVE").map(|v| v != "0").unwrap_or(true);
+        self.privacy_strip_cwd =
+            secrets.get("OPENAGENT_AI_STRIP_CWD").map(|v| v != "0").unwrap_or(true);
         // Theme
         self.theme_name = config.theme.name.clone().unwrap_or_else(|| "dark".into());
         self.theme_reduce_motion = config.theme.reduce_motion;
@@ -291,6 +307,27 @@ impl SettingsPanelState {
         }
     }
 
+    pub fn cycle_apply_joiner(&mut self, forward: bool) {
+        let options = [AiApplyJoinStrategy::AndThen, AiApplyJoinStrategy::Lines];
+        let idx = options.iter().position(|m| *m == self.apply_joiner).unwrap_or(0);
+        let next = if forward { (idx + 1) % options.len() } else { (idx + options.len() - 1) % options.len() };
+        self.apply_joiner = options[next];
+    }
+
+    pub fn cycle_routing(&mut self, forward: bool) {
+        let options = [AiRoutingMode::Auto, AiRoutingMode::Agent, AiRoutingMode::Provider];
+        let idx = options
+            .iter()
+            .position(|m| *m == self.routing)
+            .unwrap_or(0);
+        let next = if forward {
+            (idx + 1) % options.len()
+        } else {
+            (idx + options.len() - 1) % options.len()
+        };
+        self.routing = options[next];
+    }
+
     pub fn close(&mut self) {
         self.active = false;
         self.message = None;
@@ -314,17 +351,19 @@ impl SettingsPanelState {
         match self.category {
             SettingsCategory::Ai => {
                 self.selected_field = match self.selected_field {
-                    Field::Provider => Field::AiEnabled,
                     Field::AiEnabled => Field::PrivacyStripSensitive,
                     Field::PrivacyStripSensitive => Field::PrivacyStripCwd,
                     Field::PrivacyStripCwd => Field::CtxEnabled,
                     Field::CtxEnabled => Field::CtxEnv,
                     Field::CtxEnv => Field::CtxGit,
                     Field::CtxGit => Field::CtxFileTree,
-                    Field::CtxFileTree => Field::ApiKey,
+                    Field::CtxFileTree => Field::Routing,
+                    Field::Routing => Field::ApplyJoiner,
+                    Field::ApplyJoiner => Field::Provider,
+                    Field::Provider => Field::ApiKey,
                     Field::ApiKey => Field::Model,
                     Field::Model => Field::Endpoint,
-                    Field::Endpoint => Field::Provider,
+                    Field::Endpoint => Field::AiEnabled,
                 };
             }
             SettingsCategory::General => {
@@ -346,15 +385,17 @@ impl SettingsPanelState {
         match self.category {
             SettingsCategory::Ai => {
                 self.selected_field = match self.selected_field {
-                    Field::Provider => Field::Endpoint,
-                    Field::AiEnabled => Field::Provider,
+Field::Provider => Field::ApplyJoiner,
+                    Field::ApplyJoiner => Field::Routing,
+                    Field::Routing => Field::CtxFileTree,
+                    Field::AiEnabled => Field::Endpoint,
                     Field::PrivacyStripSensitive => Field::AiEnabled,
                     Field::PrivacyStripCwd => Field::PrivacyStripSensitive,
                     Field::CtxEnabled => Field::PrivacyStripCwd,
                     Field::CtxEnv => Field::CtxEnabled,
                     Field::CtxGit => Field::CtxEnv,
                     Field::CtxFileTree => Field::CtxGit,
-                    Field::ApiKey => Field::CtxFileTree,
+                    Field::ApiKey => Field::Provider,
                     Field::Model => Field::ApiKey,
                     Field::Endpoint => Field::Model,
                 };
@@ -529,7 +570,10 @@ impl SettingsPanelState {
                 | Field::CtxEnabled
                 | Field::CtxEnv
                 | Field::CtxGit
-                | Field::CtxFileTree => {}
+                | Field::CtxFileTree
+                | Field::Routing
+                | Field::ApplyJoiner
+                => {}
             }
         } else if self.category == SettingsCategory::Theme {
             self.theme_name.pop();
@@ -569,19 +613,11 @@ impl SettingsPanelState {
                 // Privacy toggles as env flags
                 map.insert(
                     "OPENAGENT_AI_STRIP_SENSITIVE".to_string(),
-                    if self.privacy_strip_sensitive {
-                        "1".into()
-                    } else {
-                        "0".into()
-                    },
+                    if self.privacy_strip_sensitive { "1".into() } else { "0".into() },
                 );
                 map.insert(
                     "OPENAGENT_AI_STRIP_CWD".to_string(),
-                    if self.privacy_strip_cwd {
-                        "1".into()
-                    } else {
-                        "0".into()
-                    },
+                    if self.privacy_strip_cwd { "1".into() } else { "0".into() },
                 );
                 write_secrets_file(&map).map_err(|e| format!("Failed to save secrets: {}", e))?;
                 // Write chosen provider, ai.enabled and ai.context providers into main config
@@ -596,6 +632,10 @@ impl SettingsPanelState {
                     self.ctx_file_tree,
                 )
                 .map_err(|e| format!("Failed to save AI context: {}", e))?;
+                save_ai_routing_to_config(self.routing)
+                    .map_err(|e| format!("Failed to save AI routing: {}", e))?;
+                save_ai_apply_joiner_to_config(self.apply_joiner)
+                    .map_err(|e| format!("Failed to save AI apply joiner: {}", e))?;
                 self.message = Some("Saved successfully".to_string());
                 Ok(())
             }
@@ -626,33 +666,28 @@ impl SettingsPanelState {
                 self.message = Some("Saved".to_string());
                 Ok(())
             }
-            SettingsCategory::Workspace => {
-                save_workspace_drag_to_config(
-                    self.ws_highlight_color.map(|c| (c[0], c[1], c[2])),
-                    self.ws_highlight_alpha_base,
-                    self.ws_highlight_alpha_hover,
-                    self.ws_tab_highlight_alpha_base,
-                    self.ws_tab_highlight_alpha_hover,
-                    self.ws_new_tab_highlight_alpha_base,
-                    self.ws_new_tab_highlight_alpha_hover,
-                    self.ws_tab_drop_snap_px,
-                    self.ws_new_tab_snap_extra_px,
-                )
-                .and_then(|_| save_workspace_completions_to_config(self.ws_completions_enabled))
-                .map(|_| self.message = Some("Saved workspace settings".into()))
-                .map_err(|e| format!("Failed to save workspace: {}", e))
-            }
+            SettingsCategory::Workspace => save_workspace_drag_to_config(
+                self.ws_highlight_color.map(|c| (c[0], c[1], c[2])),
+                self.ws_highlight_alpha_base,
+                self.ws_highlight_alpha_hover,
+                self.ws_tab_highlight_alpha_base,
+                self.ws_tab_highlight_alpha_hover,
+                self.ws_new_tab_highlight_alpha_base,
+                self.ws_new_tab_highlight_alpha_hover,
+                self.ws_tab_drop_snap_px,
+                self.ws_new_tab_snap_extra_px,
+            )
+            .and_then(|_| save_workspace_completions_to_config(self.ws_completions_enabled))
+            .map(|_| self.message = Some("Saved workspace settings".into()))
+            .map_err(|e| format!("Failed to save workspace: {}", e)),
         }
     }
 
     pub fn switch_category(&mut self, forward: bool) {
         let cats = SettingsCategory::all();
         if let Some(idx) = cats.iter().position(|c| *c == self.category) {
-            let next = if forward {
-                (idx + 1) % cats.len()
-            } else {
-                (idx + cats.len() - 1) % cats.len()
-            };
+            let next =
+                if forward { (idx + 1) % cats.len() } else { (idx + cats.len() - 1) % cats.len() };
             self.category = cats[next];
         }
     }
@@ -663,17 +698,12 @@ impl SettingsPanelState {
         let provider = self.provider.to_ascii_lowercase();
         #[cfg(feature = "ai")]
         {
-            let prov_cfg = _config
-                .ai
-                .providers
-                .get(&provider)
-                .cloned()
-                .unwrap_or_else(|| {
-                    // Fallback to defaults if not present
-                    crate::config::ai_providers::get_default_provider_configs()
-                        .remove(&provider)
-                        .unwrap_or_default()
-                });
+            let prov_cfg = _config.ai.providers.get(&provider).cloned().unwrap_or_else(|| {
+                // Fallback to defaults if not present
+                crate::config::ai_providers::get_default_provider_configs()
+                    .remove(&provider)
+                    .unwrap_or_default()
+            });
             match crate::config::ai_providers::ProviderCredentials::from_config(
                 &provider, &prov_cfg,
             ) {
@@ -755,8 +785,7 @@ fn config_path() -> PathBuf {
         return path;
     }
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("openagent-terminal")
-        .join("openagent-terminal.toml")
+    base.join("openagent-terminal").join("openagent-terminal.toml")
 }
 
 fn secrets_path() -> PathBuf {
@@ -827,23 +856,13 @@ fn save_theme_to_config(
         root = toml::Value::Table(toml::value::Table::new());
     }
     let tbl = root.as_table_mut().unwrap();
-    let theme_tbl = tbl
-        .entry("theme")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let theme_tbl =
+        tbl.entry("theme").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let theme = theme_tbl.as_table_mut().unwrap();
     theme.insert("name".to_string(), toml::Value::String(name.to_string()));
-    theme.insert(
-        "reduce_motion".to_string(),
-        toml::Value::Boolean(reduce_motion),
-    );
-    theme.insert(
-        "rounded_corners".to_string(),
-        toml::Value::Boolean(rounded_corners),
-    );
-    theme.insert(
-        "corner_radius_px".to_string(),
-        toml::Value::Float(corner_radius_px as f64),
-    );
+    theme.insert("reduce_motion".to_string(), toml::Value::Boolean(reduce_motion));
+    theme.insert("rounded_corners".to_string(), toml::Value::Boolean(rounded_corners));
+    theme.insert("corner_radius_px".to_string(), toml::Value::Float(corner_radius_px as f64));
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -863,14 +882,62 @@ fn save_ai_provider_to_config(provider: &str) -> std::io::Result<()> {
         root = toml::Value::Table(toml::value::Table::new());
     }
     let tbl = root.as_table_mut().unwrap();
-    let ai_tbl = tbl
-        .entry("ai")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ai = ai_tbl.as_table_mut().unwrap();
-    ai.insert(
-        "provider".to_string(),
-        toml::Value::String(provider.to_string()),
-    );
+    ai.insert("provider".to_string(), toml::Value::String(provider.to_string()));
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let s = toml::to_string_pretty(&root).unwrap_or_default();
+    fs::write(&path, s)
+}
+
+fn save_ai_routing_to_config(mode: AiRoutingMode) -> std::io::Result<()> {
+    let path = config_path();
+    let mut root = if let Ok(text) = fs::read_to_string(&path) {
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
+    } else {
+        toml::Value::Table(toml::value::Table::new())
+    };
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
+    let tbl = root.as_table_mut().unwrap();
+    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai = ai_tbl.as_table_mut().unwrap();
+    let val = match mode {
+        AiRoutingMode::Auto => "auto",
+        AiRoutingMode::Agent => "agent",
+        AiRoutingMode::Provider => "provider",
+    };
+    ai.insert("routing".to_string(), toml::Value::String(val.to_string()));
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let s = toml::to_string_pretty(&root).unwrap_or_default();
+    fs::write(&path, s)
+}
+
+fn save_ai_apply_joiner_to_config(mode: AiApplyJoinStrategy) -> std::io::Result<()> {
+    let path = config_path();
+    let mut root = if let Ok(text) = fs::read_to_string(&path) {
+        toml::from_str::<toml::Value>(&text)
+            .unwrap_or(toml::Value::Table(toml::value::Table::new()))
+    } else {
+        toml::Value::Table(toml::value::Table::new())
+    };
+    if !root.is_table() {
+        root = toml::Value::Table(toml::value::Table::new());
+    }
+    let tbl = root.as_table_mut().unwrap();
+    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai = ai_tbl.as_table_mut().unwrap();
+    let val = match mode {
+        AiApplyJoinStrategy::AndThen => "andthen",
+        AiApplyJoinStrategy::Lines => "lines",
+    };
+    ai.insert("apply_joiner".to_string(), toml::Value::String(val.to_string()));
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -890,9 +957,7 @@ fn save_ai_enabled_to_config(enabled: bool) -> std::io::Result<()> {
         root = toml::Value::Table(toml::value::Table::new());
     }
     let tbl = root.as_table_mut().unwrap();
-    let ai_tbl = tbl
-        .entry("ai")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ai = ai_tbl.as_table_mut().unwrap();
     ai.insert("enabled".to_string(), toml::Value::Boolean(enabled));
     if let Some(dir) = path.parent() {
@@ -920,14 +985,11 @@ fn save_ai_context_to_config(
     }
     let tbl = root.as_table_mut().unwrap();
 
-    let ai_tbl = tbl
-        .entry("ai")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ai_tbl = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ai = ai_tbl.as_table_mut().unwrap();
 
-    let ctx_tbl = ai
-        .entry("context")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ctx_tbl =
+        ai.entry("context").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ctx = ctx_tbl.as_table_mut().unwrap();
     ctx.insert("enabled".into(), toml::Value::Boolean(ctx_enabled));
 
@@ -969,14 +1031,10 @@ fn save_general_to_config(
     let tbl = root.as_table_mut().unwrap();
 
     // general table
-    let general_tbl = tbl
-        .entry("general")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let general_tbl =
+        tbl.entry("general").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let general = general_tbl.as_table_mut().unwrap();
-    general.insert(
-        "live_config_reload".to_string(),
-        toml::Value::Boolean(live_reload),
-    );
+    general.insert("live_config_reload".to_string(), toml::Value::Boolean(live_reload));
     match working_directory {
         Some(dir) if !dir.trim().is_empty() => {
             general.insert("working_directory".to_string(), toml::Value::String(dir));
@@ -988,9 +1046,8 @@ fn save_general_to_config(
 
     // terminal.shell
     if let Some(shell) = default_shell.filter(|s| !s.trim().is_empty()) {
-        let term_tbl = tbl
-            .entry("terminal")
-            .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+        let term_tbl =
+            tbl.entry("terminal").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
         let term = term_tbl.as_table_mut().unwrap();
         // Store as simple string for Program::Just
         term.insert("shell".to_string(), toml::Value::String(shell));
@@ -1006,12 +1063,7 @@ fn save_general_to_config(
 fn current_provider_from_config(_config: &UiConfig) -> String {
     #[cfg(feature = "ai")]
     {
-        _config
-            .ai
-            .provider
-            .as_deref()
-            .unwrap_or("openrouter")
-            .to_string()
+        _config.ai.provider.as_deref().unwrap_or("openrouter").to_string()
     }
     #[cfg(not(feature = "ai"))]
     {
@@ -1104,10 +1156,7 @@ impl SettingsPanelState {
             .map_err(|e| format!("Failed to save keybinding: {}", e))?;
 
         self.kb_capture_mode = false;
-        self.message = Some(format!(
-            "Added binding {} {} for {}",
-            mods_str, key_str, target
-        ));
+        self.message = Some(format!("Added binding {} {} for {}", mods_str, key_str, target));
         Ok(())
     }
 }
@@ -1118,11 +1167,8 @@ impl Display {
             return;
         }
         let size_info = self.size_info;
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 40% of viewport height, min 8 lines
@@ -1134,22 +1180,8 @@ impl Display {
 
         // Backdrop + panel
         let rects = vec![
-            RenderRect::new(
-                0.0,
-                0.0,
-                size_info.width(),
-                size_info.height(),
-                tokens.overlay,
-                0.18,
-            ),
-            RenderRect::new(
-                0.0,
-                panel_y,
-                size_info.width(),
-                panel_h,
-                tokens.surface_muted,
-                0.96,
-            ),
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.18),
+            RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.96),
         ];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
@@ -1168,16 +1200,8 @@ impl Display {
         let mut ccol = 2 + header.width() + 2;
         for cat in SettingsCategory::all() {
             let name = cat.as_str();
-            let label = if *cat == st.category {
-                format!("[{}]", name)
-            } else {
-                name.to_string()
-            };
-            let color = if *cat == st.category {
-                tokens.accent
-            } else {
-                tokens.text_muted
-            };
+            let label = if *cat == st.category { format!("[{}]", name) } else { name.to_string() };
+            let color = if *cat == st.category { tokens.accent } else { tokens.text_muted };
             if ccol < num_cols {
                 self.draw_ai_text(
                     Point::new(line, Column(ccol)),
@@ -1197,13 +1221,7 @@ impl Display {
                 let enabled_lbl = "AI enabled: ";
                 let enabled_val = if st.ai_enabled { "on" } else { "off" };
                 let enabled_row = format!("{}{} (Space to toggle)", enabled_lbl, enabled_val);
-                self.draw_ai_text(
-                    Point::new(line, Column(2)),
-                    fg,
-                    bg,
-                    &enabled_row,
-                    num_cols - 2,
-                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &enabled_row, num_cols - 2);
                 if st.selected_field == Field::AiEnabled {
                     let cur_col = 2 + enabled_lbl.width();
                     self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
@@ -1212,11 +1230,7 @@ impl Display {
 
                 // Privacy toggles
                 let ps_lbl = "Privacy: strip sensitive: ";
-                let ps_val = if st.privacy_strip_sensitive {
-                    "on"
-                } else {
-                    "off"
-                };
+                let ps_val = if st.privacy_strip_sensitive { "on" } else { "off" };
                 let ps_row = format!("{}{} (Space)", ps_lbl, ps_val);
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &ps_row, num_cols - 2);
                 if st.selected_field == Field::PrivacyStripSensitive {
@@ -1239,13 +1253,7 @@ impl Display {
                 let ctx_en_lbl = "Context: enabled: ";
                 let ctx_en_val = if st.ctx_enabled { "on" } else { "off" };
                 let ctx_en_row = format!("{}{} (Space)", ctx_en_lbl, ctx_en_val);
-                self.draw_ai_text(
-                    Point::new(line, Column(2)),
-                    fg,
-                    bg,
-                    &ctx_en_row,
-                    num_cols - 2,
-                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &ctx_en_row, num_cols - 2);
                 if st.selected_field == Field::CtxEnabled {
                     let cur_col = 2 + ctx_en_lbl.width();
                     self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
@@ -1258,18 +1266,9 @@ impl Display {
                     if st.ctx_git { "x" } else { " " },
                     if st.ctx_file_tree { "x" } else { " " }
                 );
-                self.draw_ai_text(
-                    Point::new(line, Column(2)),
-                    fg,
-                    bg,
-                    &provs_row,
-                    num_cols - 2,
-                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &provs_row, num_cols - 2);
                 // Cursor for the first of provider toggles when selected
-                if matches!(
-                    st.selected_field,
-                    Field::CtxEnv | Field::CtxGit | Field::CtxFileTree
-                ) {
+                if matches!(st.selected_field, Field::CtxEnv | Field::CtxGit | Field::CtxFileTree) {
                     self.draw_ai_text(
                         Point::new(line, Column(2 + "Providers: env [".width())),
                         bg,
@@ -1278,17 +1277,40 @@ impl Display {
                         1,
                     );
                 }
-                line += 2;
+                line += 1;
+
+                // Routing mode row
+                let routing_lbl = "Routing: ";
+                let routing_val = match st.routing {
+                    AiRoutingMode::Auto => "auto",
+                    AiRoutingMode::Agent => "agent",
+                    AiRoutingMode::Provider => "provider",
+                };
+                let routing_row = format!("{}[{}] (Left/Right)", routing_lbl, routing_val);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &routing_row, num_cols - 2);
+                if st.selected_field == Field::Routing {
+                    let cur_col = 2 + routing_lbl.width();
+                    self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
+                }
+                line += 1;
+
+                // Apply multi-command joiner
+                let join_lbl = "Apply multi-command: ";
+                let join_val = match st.apply_joiner {
+                    AiApplyJoinStrategy::AndThen => "and_then",
+                    AiApplyJoinStrategy::Lines => "lines",
+                };
+                let join_row = format!("{}[{}] (Left/Right)", join_lbl, join_val);
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &join_row, num_cols - 2);
+                if st.selected_field == Field::ApplyJoiner {
+                    let cur_col = 2 + join_lbl.width();
+                    self.draw_ai_text(Point::new(line, Column(cur_col)), bg, fg, " ", 1);
+                }
+                line += 1;
 
                 // Provider selection row
                 let provider_row = format!("Provider: [{}]", st.provider);
-                self.draw_ai_text(
-                    Point::new(line, Column(2)),
-                    fg,
-                    bg,
-                    &provider_row,
-                    num_cols - 2,
-                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &provider_row, num_cols - 2);
                 if st.selected_field == Field::Provider {
                     // simple cursor box
                     let cur_col = 2 + "Provider: [".width();
@@ -1384,11 +1406,7 @@ impl Display {
                 line += 1;
                 // Rounded corners
                 let rc_lbl = "Rounded corners: ";
-                let rc_val = if st.theme_rounded_corners {
-                    "on"
-                } else {
-                    "off"
-                };
+                let rc_val = if st.theme_rounded_corners { "on" } else { "off" };
                 let rc_row = format!("{}{} (Space to toggle)", rc_lbl, rc_val);
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &rc_row, num_cols - 2);
                 line += 1;
@@ -1519,10 +1537,8 @@ impl Display {
                 let s1 = format!("Tab bar vertical snap px: {:.1}", st.ws_tab_drop_snap_px);
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &s1, num_cols - 2);
                 line += 1;
-                let s2 = format!(
-                    "New Tab extra right-edge snap px: {:.1}",
-                    st.ws_new_tab_snap_extra_px
-                );
+                let s2 =
+                    format!("New Tab extra right-edge snap px: {:.1}", st.ws_new_tab_snap_extra_px);
                 self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &s2, num_cols - 2);
                 line += 2;
 
@@ -1547,13 +1563,7 @@ impl Display {
                 // Filter input
                 let filter_lbl = "Filter: ";
                 let filter_row = format!("{}{}", filter_lbl, st.kb_filter);
-                self.draw_ai_text(
-                    Point::new(line, Column(2)),
-                    fg,
-                    bg,
-                    &filter_row,
-                    num_cols - 2,
-                );
+                self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &filter_row, num_cols - 2);
                 line += 1;
 
                 // List entries (filtered)
@@ -1724,13 +1734,10 @@ fn save_keybinding_override_to_config(action: &str, key: &str, mods: &str) -> st
         root = toml::Value::Table(toml::value::Table::new());
     }
     let tbl = root.as_table_mut().unwrap();
-    let keyboard_tbl = tbl
-        .entry("keyboard")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let keyboard_tbl =
+        tbl.entry("keyboard").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let kb = keyboard_tbl.as_table_mut().unwrap();
-    let arr = kb
-        .entry("bindings")
-        .or_insert_with(|| toml::Value::Array(Vec::new()));
+    let arr = kb.entry("bindings").or_insert_with(|| toml::Value::Array(Vec::new()));
     let arr_mut = arr.as_array_mut().unwrap();
     let mut entry = toml::value::Table::new();
     entry.insert("key".into(), toml::Value::String(key.into()));
@@ -1760,13 +1767,11 @@ fn workspace_drag_write_to_toml(
     snap_new: f32,
 ) {
     let tbl = root.as_table_mut().unwrap();
-    let ws_tbl = tbl
-        .entry("workspace")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ws_tbl =
+        tbl.entry("workspace").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ws = ws_tbl.as_table_mut().unwrap();
-    let drag_tbl = ws
-        .entry("drag")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let drag_tbl =
+        ws.entry("drag").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let drag = drag_tbl.as_table_mut().unwrap();
     if let Some((r, g, b)) = color_rgb {
         drag.insert(
@@ -1780,35 +1785,14 @@ fn workspace_drag_write_to_toml(
     } else {
         drag.remove("highlight_color");
     }
-    drag.insert(
-        "highlight_alpha_base".into(),
-        toml::Value::Float(hl_base as f64),
-    );
-    drag.insert(
-        "highlight_alpha_hover".into(),
-        toml::Value::Float(hl_hover as f64),
-    );
-    drag.insert(
-        "tab_highlight_alpha_base".into(),
-        toml::Value::Float(tab_base as f64),
-    );
-    drag.insert(
-        "tab_highlight_alpha_hover".into(),
-        toml::Value::Float(tab_hover as f64),
-    );
-    drag.insert(
-        "new_tab_highlight_alpha_base".into(),
-        toml::Value::Float(new_base as f64),
-    );
-    drag.insert(
-        "new_tab_highlight_alpha_hover".into(),
-        toml::Value::Float(new_hover as f64),
-    );
+    drag.insert("highlight_alpha_base".into(), toml::Value::Float(hl_base as f64));
+    drag.insert("highlight_alpha_hover".into(), toml::Value::Float(hl_hover as f64));
+    drag.insert("tab_highlight_alpha_base".into(), toml::Value::Float(tab_base as f64));
+    drag.insert("tab_highlight_alpha_hover".into(), toml::Value::Float(tab_hover as f64));
+    drag.insert("new_tab_highlight_alpha_base".into(), toml::Value::Float(new_base as f64));
+    drag.insert("new_tab_highlight_alpha_hover".into(), toml::Value::Float(new_hover as f64));
     drag.insert("tab_drop_snap_px".into(), toml::Value::Float(snap_v as f64));
-    drag.insert(
-        "new_tab_snap_extra_px".into(),
-        toml::Value::Float(snap_new as f64),
-    );
+    drag.insert("new_tab_snap_extra_px".into(), toml::Value::Float(snap_new as f64));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1856,14 +1840,10 @@ fn save_workspace_completions_to_config(enabled: bool) -> std::io::Result<()> {
         root = toml::Value::Table(toml::value::Table::new());
     }
     let tbl = root.as_table_mut().unwrap();
-    let ws_tbl = tbl
-        .entry("workspace")
-        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    let ws_tbl =
+        tbl.entry("workspace").or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     let ws = ws_tbl.as_table_mut().unwrap();
-    ws.insert(
-        "completions_enabled".into(),
-        toml::Value::Boolean(enabled),
-    );
+    ws.insert("completions_enabled".into(), toml::Value::Boolean(enabled));
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }

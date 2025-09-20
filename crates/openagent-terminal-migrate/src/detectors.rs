@@ -20,11 +20,7 @@ pub fn auto_detect_configs() -> Result<Vec<MigrationConfig>> {
     }
 
     // Sort by terminal type for consistent output
-    detected.sort_by(|a, b| {
-        a.terminal_type
-            .to_string()
-            .cmp(&b.terminal_type.to_string())
-    });
+    detected.sort_by(|a, b| a.terminal_type.to_string().cmp(&b.terminal_type.to_string()));
 
     Ok(detected)
 }
@@ -301,11 +297,7 @@ pub fn search_configs_by_pattern(terminal_type: &TerminalType) -> Result<Vec<Pat
         }
 
         // Use walkdir for recursive search with depth limit
-        for entry in WalkDir::new(&search_dir)
-            .max_depth(3)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in WalkDir::new(&search_dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
 
             // Skip if it's not a file
@@ -390,15 +382,11 @@ mod tests {
         assert!(!locations.is_empty());
 
         // Should contain both .config/alacritty/* and ~/.alacritty.* patterns
-        let has_config_dir = locations
+        let has_config_dir =
+            locations.iter().any(|p| p.to_string_lossy().contains("alacritty/alacritty"));
+        let has_home_file = locations
             .iter()
-            .any(|p| p.to_string_lossy().contains("alacritty/alacritty"));
-        let has_home_file = locations.iter().any(|p| {
-            p.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with(".alacritty")
-        });
+            .any(|p| p.file_name().unwrap().to_string_lossy().starts_with(".alacritty"));
 
         assert!(has_config_dir || has_home_file);
     }
@@ -409,11 +397,7 @@ mod tests {
         for terminal in TerminalType::all() {
             if terminal.is_platform_compatible() {
                 let result = get_default_config_path(&terminal);
-                assert!(
-                    result.is_ok(),
-                    "Failed to get default path for {}",
-                    terminal
-                );
+                assert!(result.is_ok(), "Failed to get default path for {}", terminal);
             }
         }
     }

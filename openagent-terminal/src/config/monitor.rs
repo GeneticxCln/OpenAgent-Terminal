@@ -42,8 +42,7 @@ impl ConfigMonitor {
         // a regular file.
         paths.retain(|path| {
             // Call `metadata` to resolve symbolic links.
-            path.metadata()
-                .is_ok_and(|metadata| metadata.file_type().is_file())
+            path.metadata().is_ok_and(|metadata| metadata.file_type().is_file())
         });
 
         // Canonicalize paths, keeping the base paths for symlinks.
@@ -146,11 +145,7 @@ impl ConfigMonitor {
             }
         });
 
-        Some(Self {
-            watched_hash,
-            thread: join_handle,
-            shutdown_tx: tx,
-        })
+        Some(Self { watched_hash, thread: join_handle, shutdown_tx: tx })
     }
 
     /// Synchronously shut down the monitor.

@@ -12,11 +12,7 @@ use rusqlite::Connection;
 
 pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
     match &opts.command {
-        AiCommand::Validate {
-            provider,
-            include_defaults,
-            json,
-        } => {
+        AiCommand::Validate { provider, include_defaults, json } => {
             let mut provider_map: HashMap<String, ProviderCfg> = HashMap::new();
             // Include configured providers
             for (k, v) in &config.ai.providers {
@@ -84,11 +80,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             let ok = results.iter().all(|r| r.is_ok());
             Ok(if ok { 0 } else { 1 })
         }
-        AiCommand::Migrate {
-            config_out,
-            apply,
-            write_env_snippet,
-        } => {
+        AiCommand::Migrate { config_out, apply, write_env_snippet } => {
             // Detect legacy envs without revealing secrets
             let legacy_to_secure: Vec<(&str, &str)> = vec![
                 ("OPENAI_API_KEY", "OPENAGENT_OPENAI_API_KEY"),
@@ -150,22 +142,26 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 .join("openagent-terminal")
                 .join("ai_history");
             let db_path = base.join("history.db");
-            
+
             eprintln!("🔍 Looking for AI history at: {}", base.display());
-            
+
             // Validate output format
             if !matches!(format.as_str(), "json" | "csv" | "jsonl") {
-                return Err(anyhow!("Unsupported export format: '{}'. Supported formats: json, csv, jsonl", format));
+                return Err(anyhow!(
+                    "Unsupported export format: '{}'. Supported formats: json, csv, jsonl",
+                    format
+                ));
             }
-            
+
             // Ensure output directory exists
             if let Some(parent) = to.parent() {
                 if !parent.exists() {
-                    std::fs::create_dir_all(parent)
-                        .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create output directory: {}", parent.display())
+                    })?;
                 }
             }
-            
+
             let conn = match Connection::open(&db_path) {
                 Ok(c) => {
                     eprintln!("📊 Found SQLite database, reading history...");
@@ -178,7 +174,10 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     // Fallback to JSONL line-by-line export
                     let jsonl = base.join("history.jsonl");
                     if !jsonl.exists() {
-                        eprintln!("❌ No JSONL history found at {}. Nothing to export.", jsonl.display());
+                        eprintln!(
+                            "❌ No JSONL history found at {}. Nothing to export.",
+                            jsonl.display()
+                        );
                         eprintln!("💡 Tip: AI history is created after using the AI features in the terminal.");
                         return Ok(2);
                     }
@@ -190,29 +189,35 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     let mut records: Vec<serde_json::Value> = Vec::new();
                     let mut line_count = 0;
                     let mut skipped_lines = 0;
-                    
+
                     eprintln!("⏳ Reading JSONL records...");
-                    
+
                     for line in reader.lines() {
                         if let Ok(l) = line {
                             line_count += 1;
                             if line_count % 1000 == 0 {
                                 eprintln!("   Read {} lines...", line_count);
                             }
-                            
-                            if l.trim().is_empty() { continue; }
+
+                            if l.trim().is_empty() {
+                                continue;
+                            }
                             match serde_json::from_str::<serde_json::Value>(&l) {
                                 Ok(v) => records.push(v),
                                 Err(parse_err) => {
                                     skipped_lines += 1;
-                                    if skipped_lines <= 5 {  // Only warn about first 5 errors
-                                        eprintln!("⚠️  Skipping invalid JSONL line {}: {}", line_count, parse_err);
+                                    if skipped_lines <= 5 {
+                                        // Only warn about first 5 errors
+                                        eprintln!(
+                                            "⚠️  Skipping invalid JSONL line {}: {}",
+                                            line_count, parse_err
+                                        );
                                     }
                                 }
                             }
                         }
                     }
-                    
+
                     if skipped_lines > 0 {
                         eprintln!("⚠️  Skipped {} invalid lines total", skipped_lines);
                     }
@@ -220,11 +225,11 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                         eprintln!("❌ JSONL history is empty. Nothing to export.");
                         return Ok(2);
                     }
-                    
+
                     eprintln!("✅ Loaded {} history records", records.len());
                     // Write output from JSONL
                     eprintln!("💾 Writing {} format to: {}", format.to_uppercase(), to.display());
-                    
+
                     match format.as_str() {
                         "json" => {
                             eprintln!("   Serializing to JSON...");
@@ -257,9 +262,10 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                         }
                         "csv" => {
                             eprintln!("   Creating CSV writer...");
-                            let mut wtr = csv::Writer::from_path(&to)
-                                .with_context(|| format!("Failed to open {} for CSV", to.display()))?;
-                            
+                            let mut wtr = csv::Writer::from_path(&to).with_context(|| {
+                                format!("Failed to open {} for CSV", to.display())
+                            })?;
+
                             eprintln!("   Writing CSV header...");
                             wtr.write_record([
                                 "timestamp",
@@ -269,24 +275,26 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                                 "input",
                                 "output",
                             ])?;
-                            
+
                             eprintln!("   Writing {} records to CSV...", records.len());
                             let mut written_records = 0;
                             for (i, rec) in records.iter().enumerate() {
                                 if i > 0 && i % 500 == 0 {
                                     eprintln!("   Processed {} records...", i);
                                 }
-                                
+
                                 let ts = rec.get("ts").and_then(|v| v.as_str()).unwrap_or("");
                                 let mode = rec.get("mode").and_then(|v| v.as_str()).unwrap_or("");
                                 let wd = rec
                                     .get("working_directory")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
-                                let sh = rec.get("shell_kind").and_then(|v| v.as_str()).unwrap_or("");
+                                let sh =
+                                    rec.get("shell_kind").and_then(|v| v.as_str()).unwrap_or("");
                                 let input = rec.get("input").and_then(|v| v.as_str()).unwrap_or("");
-                                let output = rec.get("output").and_then(|v| v.as_str()).unwrap_or("");
-                                
+                                let output =
+                                    rec.get("output").and_then(|v| v.as_str()).unwrap_or("");
+
                                 match wtr.write_record([ts, mode, wd, sh, input, output]) {
                                     Ok(_) => written_records += 1,
                                     Err(e) => {
@@ -301,7 +309,10 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                                 to.display()
                             );
                             if written_records != records.len() {
-                                eprintln!("⚠️  Note: {} records failed to write", records.len() - written_records);
+                                eprintln!(
+                                    "⚠️  Note: {} records failed to write",
+                                    records.len() - written_records
+                                );
                             }
                         }
                         other => {
@@ -441,10 +452,8 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     for rec in &records {
                         let ts = rec.get("ts").and_then(|v| v.as_str()).unwrap_or("");
                         let mode = rec.get("mode").and_then(|v| v.as_str()).unwrap_or("");
-                        let wd = rec
-                            .get("working_directory")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
+                        let wd =
+                            rec.get("working_directory").and_then(|v| v.as_str()).unwrap_or("");
                         let sh = rec.get("shell_kind").and_then(|v| v.as_str()).unwrap_or("");
                         let input = rec.get("input").and_then(|v| v.as_str()).unwrap_or("");
                         let output = rec.get("output").and_then(|v| v.as_str()).unwrap_or("");
@@ -463,8 +472,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             }
             Ok(0)
         }
-        
-        
+
         AiCommand::HistoryPurge { keep_last } => {
             let base = dirs::data_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -488,11 +496,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     println!("Purged AI history, kept last {} entries", keep_last);
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "No SQLite AI history found at {} ({}).",
-                        db_path.display(),
-                        e
-                    );
+                    tracing::warn!("No SQLite AI history found at {} ({}).", db_path.display(), e);
                     return Ok(2);
                 }
             }
@@ -523,20 +527,14 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
 mod tests {
     use super::*;
     use crate::config::UiConfig;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     fn write_jsonl_entry(dir: &std::path::Path) {
-        let ai_dir = dir
-            .join("openagent-terminal")
-            .join("ai_history");
+        let ai_dir = dir.join("openagent-terminal").join("ai_history");
         fs::create_dir_all(&ai_dir).unwrap();
         let jsonl = ai_dir.join("history.jsonl");
-        let mut f = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(jsonl)
-            .unwrap();
+        let mut f = fs::OpenOptions::new().create(true).append(true).open(jsonl).unwrap();
         writeln!(
             f,
             "{}",

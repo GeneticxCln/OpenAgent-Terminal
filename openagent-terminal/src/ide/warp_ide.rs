@@ -9,29 +9,27 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-
 /// Warp-style inline IDE manager
 pub struct WarpIde {
     /// Configuration
     config: WarpIdeConfig,
 }
 
-
 /// Individual completion item
 #[derive(Debug, Clone)]
 pub struct CompletionItem {
     /// Completion text
     pub text: String,
-    
+
     /// Type of completion
     pub kind: CompletionKind,
-    
+
     /// Confidence score
     pub confidence: f32,
-    
+
     /// Description
     pub description: Option<String>,
-    
+
     /// Icon/symbol
     pub icon: &'static str,
 }
@@ -41,10 +39,10 @@ pub struct CompletionItem {
 pub enum CompletionKind {
     /// File path
     FilePath,
-    
+
     /// Command name
     Command,
-    
+
     /// Git branch/ref
     GitRef,
 }
@@ -54,19 +52,13 @@ pub enum CompletionKind {
 pub enum CompletionTrigger {
     /// File path context
     FilePath(String),
-    
+
     /// Command context
     Command(String),
-    
+
     /// Git context
     Git(String),
 }
-
-
-
-
-
-
 
 /// Error suggestions (minimal, used for inline messaging)
 #[derive(Debug, Clone)]
@@ -75,26 +67,15 @@ pub struct ErrorSuggestion {
     pub text: String,
 }
 
-
-
-
-
-
-
-
-
-
-
-
 /// Warp IDE configuration
 #[derive(Debug, Clone)]
 pub struct WarpIdeConfig {
     /// Enable inline completions
     pub completions_enabled: bool,
-    
+
     /// Enable error detection
     pub error_detection_enabled: bool,
-    
+
     /// Completion settings
     pub completion_settings: CompletionSettings,
 }
@@ -104,18 +85,17 @@ pub struct WarpIdeConfig {
 pub struct CompletionSettings {
     /// Maximum suggestions
     pub max_suggestions: usize,
-    
+
     /// Minimum confidence
     pub min_confidence: f32,
 }
-
 
 impl WarpIde {
     /// Create new Warp IDE
     pub fn new(config: WarpIdeConfig) -> Self {
         Self { config }
     }
-    
+
     /// Handle terminal input for completions
     pub fn handle_input(&mut self, input: &str, cursor_pos: usize) -> Vec<CompletionItem> {
         if !self.config.completions_enabled {
@@ -139,26 +119,30 @@ impl WarpIde {
         let min_conf = self.config.completion_settings.min_confidence;
         let max_suggestions = self.config.completion_settings.max_suggestions;
 
-        let filtered: Vec<CompletionItem> = all.into_iter()
-            .filter(|i| i.confidence >= min_conf)
-            .collect();
+        let filtered: Vec<CompletionItem> =
+            all.into_iter().filter(|i| i.confidence >= min_conf).collect();
 
         let interleaved = self.interleave_suggestions(filtered);
 
         interleaved.into_iter().take(max_suggestions).collect()
     }
-    
+
     /// Handle command errors
-    pub fn handle_error(&mut self, command: &str, exit_code: i32, output: &str) -> Vec<ErrorSuggestion> {
+    pub fn handle_error(
+        &mut self,
+        command: &str,
+        exit_code: i32,
+        output: &str,
+    ) -> Vec<ErrorSuggestion> {
         if !self.config.error_detection_enabled {
             return Vec::new();
         }
-        
+
         self.analyze_error(command, exit_code, output)
     }
-    
+
     // Private helper methods
-    
+
     // Interleave suggestions by category (CompletionKind) in a round-robin fashion
     fn interleave_suggestions(&self, items: Vec<CompletionItem>) -> Vec<CompletionItem> {
         use std::collections::VecDeque;
@@ -166,15 +150,11 @@ impl WarpIde {
 
         // Group by kind
         for item in items.into_iter() {
-            by_kind.entry(item.kind).or_insert_with(VecDeque::new).push_back(item);
+            by_kind.entry(item.kind).or_default().push_back(item);
         }
 
         // Stable category order similar to Warp sections
-        let order = [
-            CompletionKind::Command,
-            CompletionKind::FilePath,
-            CompletionKind::GitRef,
-        ];
+        let order = [CompletionKind::Command, CompletionKind::FilePath, CompletionKind::GitRef];
 
         let mut out = Vec::new();
         let mut total_remaining: usize = by_kind.values().map(|q| q.len()).sum();
@@ -228,7 +208,7 @@ impl WarpIde {
             }
 
             // Git command completion
-            if parts.get(0) == Some(&"git") && parts.len() >= 2 {
+            if parts.first() == Some(&"git") && parts.len() >= 2 {
                 triggers.push(CompletionTrigger::Git(last_part.to_string()));
             }
         }
@@ -249,10 +229,10 @@ impl WarpIde {
 
         Vec::new()
     }
-    
+
     fn get_file_completions(&self, partial: &str) -> Vec<CompletionItem> {
         let mut completions = Vec::new();
-        
+
         // Expand path
         let path = if partial.starts_with('~') {
             dirs::home_dir().unwrap_or_default().join(&partial[2..])
@@ -261,10 +241,11 @@ impl WarpIde {
         } else {
             PathBuf::from(partial)
         };
-        
+
         let parent = path.parent().unwrap_or(&path);
-        let filename = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        
+        let filename =
+            path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+
         if let Ok(entries) = std::fs::read_dir(parent) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -280,13 +261,13 @@ impl WarpIde {
                 }
             }
         }
-        
+
         completions
     }
-    
+
     fn get_command_completions(&self, partial: &str) -> Vec<CompletionItem> {
         let mut completions = Vec::new();
-        
+
         // Common commands
         let common_commands = [
             ("git", "Version control"),
@@ -306,7 +287,7 @@ impl WarpIde {
             ("python", "Python interpreter"),
             ("node", "Node.js runtime"),
         ];
-        
+
         for (cmd, desc) in common_commands.iter() {
             if cmd.starts_with(partial) {
                 completions.push(CompletionItem {
@@ -318,13 +299,13 @@ impl WarpIde {
                 });
             }
         }
-        
+
         completions
     }
-    
+
     fn get_git_completions(&self, partial: &str) -> Vec<CompletionItem> {
         let mut completions = Vec::new();
-        
+
         let git_commands = [
             ("add", "Stage changes"),
             ("commit", "Create commit"),
@@ -339,7 +320,7 @@ impl WarpIde {
             ("rebase", "Rebase commits"),
             ("stash", "Stash changes"),
         ];
-        
+
         for (cmd, desc) in git_commands.iter() {
             if cmd.starts_with(partial) {
                 completions.push(CompletionItem {
@@ -351,25 +332,17 @@ impl WarpIde {
                 });
             }
         }
-        
+
         completions
     }
-    
 }
-
-
-
-
 
 impl Default for WarpIdeConfig {
     fn default() -> Self {
         Self {
             completions_enabled: true,
             error_detection_enabled: true,
-            completion_settings: CompletionSettings {
-                max_suggestions: 10,
-                min_confidence: 0.5,
-            },
+            completion_settings: CompletionSettings { max_suggestions: 10, min_confidence: 0.5 },
         }
     }
 }
@@ -391,13 +364,14 @@ mod tests {
         let mut ide = WarpIde::new(WarpIdeConfig::default());
         let input = "git ch";
         let items = ide.handle_input(input, input.len());
-        assert!(items.iter().any(|i| i.text == "checkout" && matches!(i.kind, CompletionKind::GitRef)));
+        assert!(items
+            .iter()
+            .any(|i| i.text == "checkout" && matches!(i.kind, CompletionKind::GitRef)));
     }
 
     #[test]
     fn completions_disabled_returns_empty() {
-        let mut cfg = WarpIdeConfig::default();
-        cfg.completions_enabled = false;
+        let cfg = WarpIdeConfig { completions_enabled: false, ..Default::default() };
         let mut ide = WarpIde::new(cfg);
         let items = ide.handle_input("gi", 2);
         assert!(items.is_empty());
@@ -419,8 +393,7 @@ mod tests {
 
     #[test]
     fn error_detection_disabled_returns_empty() {
-        let mut cfg = WarpIdeConfig::default();
-        cfg.error_detection_enabled = false;
+        let cfg = WarpIdeConfig { error_detection_enabled: false, ..Default::default() };
         let mut ide = WarpIde::new(cfg);
         let suggestions = ide.handle_error("git", 127, "");
         assert!(suggestions.is_empty());

@@ -531,10 +531,7 @@ impl EnhancedPluginSystem {
         };
 
         // Initialize the plugin
-        loaded_plugin
-            .instance
-            .initialize(loaded_plugin.context.clone())
-            .await?;
+        loaded_plugin.instance.initialize(loaded_plugin.context.clone()).await?;
         loaded_plugin.status = PluginStatus::Running;
 
         // Store plugin
@@ -558,9 +555,7 @@ impl EnhancedPluginSystem {
         plugin.last_used = Some(Utc::now());
 
         // Check permissions
-        self.security_manager
-            .check_permissions(&request, &plugin.context)
-            .await?;
+        self.security_manager.check_permissions(&request, &plugin.context).await?;
 
         // Execute plugin
         let start_time = std::time::Instant::now();
@@ -614,9 +609,7 @@ impl EnhancedPluginSystem {
         // Update registry
         let mut registry = self.plugin_registry.write().await;
         for manifest in &discovered_plugins {
-            registry
-                .available_plugins
-                .insert(manifest.metadata.id.clone(), manifest.clone());
+            registry.available_plugins.insert(manifest.metadata.id.clone(), manifest.clone());
         }
 
         tracing::info!("Discovered {} plugins", discovered_plugins.len());
@@ -636,8 +629,7 @@ impl EnhancedPluginSystem {
         tokio::fs::create_dir_all(&install_path).await?;
 
         // Download/copy plugin files (simplified implementation)
-        self.download_plugin(manifest, &install_path, source)
-            .await?;
+        self.download_plugin(manifest, &install_path, source).await?;
 
         // Create installation record
         let installation = PluginInstallation {
@@ -652,9 +644,7 @@ impl EnhancedPluginSystem {
 
         drop(registry);
         let mut registry = self.plugin_registry.write().await;
-        registry
-            .installed_plugins
-            .insert(plugin_id.to_string(), installation);
+        registry.installed_plugins.insert(plugin_id.to_string(), installation);
 
         tracing::info!("Installed plugin: {}", plugin_id);
         Ok(())
@@ -703,9 +693,8 @@ impl EnhancedPluginSystem {
     /// Get plugin information
     pub async fn get_plugin_info(&self, plugin_id: &str) -> Result<PluginInfo> {
         let plugins = self.plugins.read().await;
-        let plugin = plugins
-            .get(plugin_id)
-            .ok_or_else(|| anyhow!("Plugin not found: {}", plugin_id))?;
+        let plugin =
+            plugins.get(plugin_id).ok_or_else(|| anyhow!("Plugin not found: {}", plugin_id))?;
 
         Ok(PluginInfo {
             id: plugin.metadata.id.clone(),
@@ -738,11 +727,7 @@ impl EnhancedPluginSystem {
                 }
             }
 
-            tracing::info!(
-                "Plugin {} {}",
-                plugin_id,
-                if enabled { "enabled" } else { "disabled" }
-            );
+            tracing::info!("Plugin {} {}", plugin_id, if enabled { "enabled" } else { "disabled" });
         }
 
         Ok(())
@@ -786,10 +771,7 @@ impl EnhancedPluginSystem {
             user_preferences: HashMap::new(), // Would be loaded from user settings
             environment_variables: HashMap::new(), // Filtered environment variables
             accessible_agents: self.get_accessible_agents(metadata).await,
-            granted_permissions: self
-                .security_manager
-                .get_granted_permissions(&metadata.id)
-                .await,
+            granted_permissions: self.security_manager.get_granted_permissions(&metadata.id).await,
         };
 
         Ok(context)
@@ -924,20 +906,15 @@ impl Agent for EnhancedPluginSystem {
     async fn status(&self) -> AgentStatus {
         let plugins = self.plugins.read().await;
         let loaded_plugins = plugins.len();
-        let running_plugins = plugins
-            .values()
-            .filter(|p| matches!(p.status, PluginStatus::Running))
-            .count();
+        let running_plugins =
+            plugins.values().filter(|p| matches!(p.status, PluginStatus::Running)).count();
 
         AgentStatus {
             is_healthy: self.is_initialized,
             is_busy: running_plugins > 0,
             last_activity: Utc::now(),
             current_task: if loaded_plugins > 0 {
-                Some(format!(
-                    "Managing {} plugins ({} running)",
-                    loaded_plugins, running_plugins
-                ))
+                Some(format!("Managing {} plugins ({} running)", loaded_plugins, running_plugins))
             } else {
                 None
             },
@@ -1026,20 +1003,13 @@ impl PluginSecurityManager {
     }
 
     async fn get_granted_permissions(&self, plugin_id: &str) -> Vec<PluginPermission> {
-        self.permission_manager
-            .granted_permissions
-            .get(plugin_id)
-            .cloned()
-            .unwrap_or_default()
+        self.permission_manager.granted_permissions.get(plugin_id).cloned().unwrap_or_default()
     }
 }
 
 impl PermissionManager {
     pub fn new() -> Self {
-        Self {
-            granted_permissions: HashMap::new(),
-            permission_policies: HashMap::new(),
-        }
+        Self { granted_permissions: HashMap::new(), permission_policies: HashMap::new() }
     }
 }
 

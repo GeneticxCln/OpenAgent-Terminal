@@ -119,10 +119,7 @@ impl Options {
             config.ipc_socket = Some(true);
         }
 
-        config.window.embed = self
-            .embed
-            .as_ref()
-            .and_then(|embed| parse_hex_or_decimal(embed));
+        config.window.embed = self.embed.as_ref().and_then(|embed| parse_hex_or_decimal(embed));
         config.debug.print_events |= self.print_events;
         config.debug.log_level = max(config.debug.log_level, self.log_level());
         config.debug.ref_test |= self.ref_test;
@@ -208,10 +205,7 @@ impl TerminalOptions {
     /// Shell override passed through the CLI.
     pub fn command(&self) -> Option<Program> {
         let (program, args) = self.command.split_first()?;
-        Some(Program::WithArgs {
-            program: program.clone(),
-            args: args.to_vec(),
-        })
+        Some(Program::WithArgs { program: program.clone(), args: args.to_vec() })
     }
 
     /// Override the [`PtyOptions`]'s fields with the [`TerminalOptions`].
@@ -290,6 +284,15 @@ pub enum Subcommands {
     /// Command notebooks (create/list/add/run)
     #[cfg(feature = "blocks")]
     Notebook(crate::notebooks::NotebookOptions),
+    /// Open file in Web Editor (Monaco)
+    #[cfg(feature = "web-editors")]
+    WebEdit(WebEditOptions),
+    /// Build a project index and optionally print as JSON
+    #[cfg(feature = "ide-indexer")]
+    IdeIndex(IdeIndexOptions),
+    /// Query hover information via LSP for a given file position
+    #[cfg(feature = "ide-lsp")]
+    IdeLspHover(IdeLspHoverOptions),
 }
 
 /// Send a message to the OpenAgent Terminal socket.
@@ -386,6 +389,46 @@ impl WindowOptions {
     pub fn config_overrides(&self) -> ParsedOptions {
         ParsedOptions::from_options(&self.option)
     }
+}
+
+// === IDE CLI ===
+#[cfg(feature = "web-editors")]
+#[derive(Args, Debug, Clone)]
+pub struct WebEditOptions {
+    /// File to open in web editor
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub file: PathBuf,
+    /// Optional editor title
+    #[clap(long)]
+    pub title: Option<String>,
+}
+
+#[cfg(feature = "ide-indexer")]
+#[derive(Args, Debug, Clone)]
+pub struct IdeIndexOptions {
+    /// Project root directory to index
+    #[clap(long, value_hint = ValueHint::DirPath)]
+    pub root: PathBuf,
+    /// Output JSON tree to stdout
+    #[clap(long, action = ArgAction::SetTrue)]
+    pub json: bool,
+}
+
+#[cfg(feature = "ide-lsp")]
+#[derive(Args, Debug, Clone)]
+pub struct IdeLspHoverOptions {
+    /// Source file path
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub file: PathBuf,
+    /// 1-based line number
+    #[clap(long)]
+    pub line: u32,
+    /// 1-based character offset
+    #[clap(long)]
+    pub character: u32,
+    /// Optional language id override (e.g., rust, typescript)
+    #[clap(long)]
+    pub language: Option<String>,
 }
 
 // === AI CLI ===
@@ -559,7 +602,6 @@ pub enum SecurityCommand {
     },
 }
 
-
 /// Parameters to the `config` IPC subcommand.
 #[cfg(unix)]
 #[derive(Args, Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
@@ -571,12 +613,7 @@ pub struct IpcConfig {
     /// Window ID for the new config.
     ///
     /// Use `-1` to apply this change to all windows.
-    #[clap(
-        short,
-        long,
-        allow_hyphen_values = true,
-        env = "OPENAGENT_TERMINAL_WINDOW_ID"
-    )]
+    #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
     pub window_id: Option<i128>,
 
     /// Clear all runtime configuration changes.
@@ -591,12 +628,7 @@ pub struct IpcGetConfig {
     /// Window ID for the config request.
     ///
     /// Use `-1` to get the global config.
-    #[clap(
-        short,
-        long,
-        allow_hyphen_values = true,
-        env = "OPENAGENT_TERMINAL_WINDOW_ID"
-    )]
+    #[clap(short, long, allow_hyphen_values = true, env = "OPENAGENT_TERMINAL_WINDOW_ID")]
     pub window_id: Option<i128>,
 }
 
@@ -811,11 +843,7 @@ mod tests {
             // Temporarily skip strict equality with checked-in completion snapshots until new ones
             // are provided. This test now only asserts that completions are generated
             // without panicking and are non-empty.
-            assert!(
-                !_generated.is_empty(),
-                "Generated completion for {} is empty",
-                file
-            );
+            assert!(!_generated.is_empty(), "Generated completion for {} is empty", file);
         }
 
         // Optionally write new completion files when requested.

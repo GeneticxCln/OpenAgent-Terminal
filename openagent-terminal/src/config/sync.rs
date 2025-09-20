@@ -6,6 +6,7 @@ use openagent_terminal_config_derive::ConfigDeserialize;
 
 /// Settings/history sync configuration (build- and run-time opt-in).
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct SyncConfig {
     /// Enable sync at runtime. Defaults to false.
     pub enabled: bool,

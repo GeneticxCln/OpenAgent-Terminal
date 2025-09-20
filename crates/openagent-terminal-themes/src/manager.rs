@@ -20,11 +20,7 @@ impl ThemeManager {
 
         std::fs::create_dir_all(&user_themes_dir)?;
 
-        let mut manager = Self {
-            themes: HashMap::new(),
-            active_theme: None,
-            user_themes_dir,
-        };
+        let mut manager = Self { themes: HashMap::new(), active_theme: None, user_themes_dir };
 
         manager.load_built_in_themes()?;
         manager.load_user_themes()?;
@@ -58,11 +54,8 @@ impl ThemeManager {
     }
 
     pub fn list_themes(&self) -> Result<Vec<ThemeMetadata>> {
-        let mut themes: Vec<ThemeMetadata> = self
-            .themes
-            .values()
-            .map(|theme| theme.metadata.clone())
-            .collect();
+        let mut themes: Vec<ThemeMetadata> =
+            self.themes.values().map(|theme| theme.metadata.clone()).collect();
 
         themes.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(themes)

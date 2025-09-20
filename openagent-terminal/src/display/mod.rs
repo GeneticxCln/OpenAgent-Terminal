@@ -427,6 +427,7 @@ impl DisplayUpdate {
 /// Runtime-only fade animation for a tab that was just closed.
 #[derive(Debug, Clone)]
 pub struct TabCloseFade {
+    #[allow(dead_code)]
     pub tab_id: crate::workspace::TabId,
     pub start_time: Instant,
     pub duration_ms: u32,
@@ -669,9 +670,7 @@ pub struct Display {
 }
 
 enum Backend {
-    Wgpu {
-        renderer: crate::renderer::wgpu::WgpuRenderer,
-    },
+    Wgpu { renderer: crate::renderer::wgpu::WgpuRenderer },
 }
 
 impl Display {
@@ -763,11 +762,8 @@ impl Display {
         if lines == 0 {
             return;
         }
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         let line = 0usize;
@@ -779,14 +775,7 @@ impl Display {
         let rects = vec![
             RenderRect::new(0.0, y, size_info.width(), h, bg, 0.98),
             // Shadow below
-            RenderRect::new(
-                0.0,
-                y + h,
-                size_info.width(),
-                2.0,
-                tokens.surface_muted,
-                0.15,
-            ),
+            RenderRect::new(0.0, y + h, size_info.width(), 2.0, tokens.surface_muted, 0.15),
         ];
         let metrics = self.glyph_cache.font_metrics();
         let size_copy = self.size_info;
@@ -823,11 +812,8 @@ impl Display {
         }
 
         // Theme tokens
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Determine reserved rows for tab bar using effective visibility
@@ -925,9 +911,7 @@ impl Display {
             }
         }
         let now = Instant::now();
-        let press_flash = self
-            .quick_actions_press_flash_until
-            .is_some_and(|t| now < t);
+        let press_flash = self.quick_actions_press_flash_until.is_some_and(|t| now < t);
 
         let mut col = 1usize;
         for label in labels.iter() {
@@ -1006,10 +990,8 @@ impl Display {
             let start_col = cols.saturating_sub(gear_cols + 2);
             let cw = size_info.cell_width();
             let ch = size_info.cell_height();
-            let icon_px = theme
-                .ui
-                .quick_actions_settings_icon_px
-                .unwrap_or((ch * 0.9).clamp(12.0, 18.0));
+            let icon_px =
+                theme.ui.quick_actions_settings_icon_px.unwrap_or((ch * 0.9).clamp(12.0, 18.0));
             let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
             let iy = y + (h - icon_px) * 0.5;
             // Atlas slot 8 = gear
@@ -1141,16 +1123,8 @@ impl Display {
         );
 
         info!("Cell size: {cell_width} x {cell_height}");
-        info!(
-            "Padding: {} x {}",
-            size_info.padding_x(),
-            size_info.padding_y()
-        );
-        info!(
-            "Width: {}, Height: {}",
-            size_info.width(),
-            size_info.height()
-        );
+        info!("Padding: {} x {}", size_info.padding_x(), size_info.padding_y());
+        info!("Width: {}, Height: {}", size_info.width(), size_info.height());
 
         // Clear screen.
         let background_color = config.colors.primary.background;
@@ -1195,9 +1169,7 @@ impl Display {
         blocks.enabled = config.debug.blocks;
 
         Ok(Self {
-            backend: Backend::Wgpu {
-                renderer: wgpu_renderer,
-            },
+            backend: Backend::Wgpu { renderer: wgpu_renderer },
             visual_bell: VisualBell::from(&config.bell),
             colors: List::from(&config.colors),
             frame_timer: FrameTimer::new(),
@@ -1228,12 +1200,8 @@ impl Display {
             ai_current_provider: {
                 #[cfg(feature = "ai")]
                 {
-                    config
-                        .ai
-                        .provider
-                        .as_deref()
-                        .unwrap_or("openrouter")
-                        .to_string()
+                    // Align UI default with runtime/config default
+                    config.ai.provider.as_deref().unwrap_or("null").to_string()
                 }
                 #[cfg(not(feature = "ai"))]
                 {
@@ -1385,11 +1353,8 @@ impl Display {
     ) {
         use crate::renderer::ui::UiRoundedRect;
         if let Some(effects) = self.pane_drag_manager.get_visual_effects() {
-            let theme = config
-                .resolved_theme
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| config.theme.resolve());
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
             let tokens = theme.tokens;
 
             // Compute content container rect (padding + reserved tab row)
@@ -1521,11 +1486,8 @@ impl Display {
                         // Highlight hovered tab region in the overlay for feedback
                         let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
                         // Find tab bounds
-                        if let Some((_, x, w)) = self
-                            .tab_bounds_px
-                            .iter()
-                            .copied()
-                            .find(|(tid, _, _)| *tid == tab_id)
+                        if let Some((_, x, w)) =
+                            self.tab_bounds_px.iter().copied().find(|(tid, _, _)| *tid == tab_id)
                         {
                             let bar_y = match config.workspace.tab_bar.position {
                                 crate::workspace::TabBarPosition::Top => 0.0,
@@ -1571,11 +1533,8 @@ impl Display {
                             }
                             crate::workspace::TabBarPosition::Hidden => 0.0,
                         };
-                        let max_tab_x = self
-                            .tab_bounds_px
-                            .iter()
-                            .map(|(_, x, w)| x + w)
-                            .fold(0.0, f32::max);
+                        let max_tab_x =
+                            self.tab_bounds_px.iter().map(|(_, x, w)| x + w).fold(0.0, f32::max);
                         let start_x = max_tab_x.min(self.size_info.width());
                         let w = (self.size_info.width() - start_x).max(0.0);
                         if w > 3.0 {
@@ -1677,9 +1636,7 @@ impl Display {
             (self.size_info.cell_width(), self.size_info.cell_height());
 
         if pending_update.font().is_some() || pending_update.cursor_dirty() {
-            let renderer_update = self
-                .pending_renderer_update
-                .get_or_insert(Default::default());
+            let renderer_update = self.pending_renderer_update.get_or_insert(Default::default());
             renderer_update.clear_font_cache = true
         }
 
@@ -1716,16 +1673,13 @@ impl Display {
 
         // Update number of column/lines in the viewport.
         let search_active = search_state.history_index.is_some();
-        let message_bar_lines = message_buffer
-            .message()
-            .map_or(0, |m| m.text(&new_size).len());
+        let message_bar_lines = message_buffer.message().map_or(0, |m| m.text(&new_size).len());
         let search_lines = usize::from(search_active);
         new_size.reserve_lines(message_bar_lines + search_lines);
 
         // Update resize increments.
         if config.window.resize_increments {
-            self.window
-                .set_resize_increments(PhysicalSize::new(cell_width, cell_height));
+            self.window.set_resize_increments(PhysicalSize::new(cell_width, cell_height));
         }
 
         // Resize when terminal when its dimensions have changed.
@@ -1739,16 +1693,13 @@ impl Display {
             terminal.resize(new_size);
 
             // Resize damage tracking.
-            self.damage_tracker
-                .resize(new_size.screen_lines(), new_size.columns());
+            self.damage_tracker.resize(new_size.screen_lines(), new_size.columns());
         }
 
         // Check if dimensions have changed.
         if new_size != self.size_info {
             // Queue renderer update.
-            let renderer_update = self
-                .pending_renderer_update
-                .get_or_insert(Default::default());
+            let renderer_update = self.pending_renderer_update.get_or_insert(Default::default());
             renderer_update.resize = true;
 
             // Clear focused search match.
@@ -1791,16 +1742,8 @@ impl Display {
 
         self.renderer_resize();
 
-        info!(
-            "Padding: {} x {}",
-            self.size_info.padding_x(),
-            self.size_info.padding_y()
-        );
-        info!(
-            "Width: {}, Height: {}",
-            self.size_info.width(),
-            self.size_info.height()
-        );
+        info!("Padding: {} x {}", self.size_info.padding_x(), self.size_info.padding_y());
+        info!("Width: {}, Height: {}", self.size_info.width(), self.size_info.height());
     }
 
     /// Draw performance HUD text using the text pipeline (WGPU backend only)
@@ -1820,9 +1763,7 @@ impl Display {
         // Optionally compute damage metrics for the HUD
         let mut damage_suffix = String::new();
         if config.debug.renderer_perf_hud_damage_metrics {
-            let rects = self
-                .damage_tracker
-                .shape_frame_damage(self.size_info.into());
+            let rects = self.damage_tracker.shape_frame_damage(self.size_info.into());
             let mut total_px: i64 = 0;
             for r in &rects {
                 total_px += (r.width.max(0) as i64) * (r.height.max(0) as i64);
@@ -1843,22 +1784,15 @@ impl Display {
         };
 
         // Theme-aware colors
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let (bg_color, fg_color, alpha) = match config.debug.render_timer_style {
-            crate::config::debug::RenderTimerStyle::LowContrast => (
-                theme.tokens.surface_muted,
-                theme.tokens.text,
-                0.65,
-            ),
-            crate::config::debug::RenderTimerStyle::Warning => (
-                theme.tokens.warning,
-                theme.tokens.surface,
-                0.80,
-            ),
+            crate::config::debug::RenderTimerStyle::LowContrast => {
+                (theme.tokens.surface_muted, theme.tokens.text, 0.65)
+            }
+            crate::config::debug::RenderTimerStyle::Warning => {
+                (theme.tokens.warning, theme.tokens.surface, 0.80)
+            }
         };
 
         // DPI-friendly sizing using cell metrics
@@ -1874,7 +1808,8 @@ impl Display {
         let bg_y = self.size_info.padding_y();
 
         // Stage rounded background before drawing text
-        let pill = crate::renderer::ui::UiRoundedRect::new(bg_x, bg_y, bg_w, bg_h, 6.0, bg_color, alpha);
+        let pill =
+            crate::renderer::ui::UiRoundedRect::new(bg_x, bg_y, bg_w, bg_h, 6.0, bg_color, alpha);
         let size_info_copy = self.size_info;
         renderer.stage_ui_rounded_rect(&size_info_copy, pill);
 
@@ -2023,11 +1958,7 @@ impl Display {
         let size_info = self.size_info;
 
         let vi_mode = terminal.mode().contains(TermMode::VI);
-        let vi_cursor_point = if vi_mode {
-            Some(terminal.vi_mode_cursor.point)
-        } else {
-            None
-        };
+        let vi_cursor_point = if vi_mode { Some(terminal.vi_mode_cursor.point) } else { None };
 
         // Add damage from the terminal.
         match terminal.damage() {
@@ -2061,19 +1992,14 @@ impl Display {
 
         let vi_cursor_viewport_point =
             vi_cursor_point.and_then(|cursor| term::point_to_viewport(display_offset, cursor));
-        self.damage_tracker
-            .damage_vi_cursor(vi_cursor_viewport_point);
-        self.damage_tracker
-            .damage_selection(selection_range, display_offset);
+        self.damage_tracker.damage_vi_cursor(vi_cursor_viewport_point);
+        self.damage_tracker.damage_selection(selection_range, display_offset);
 
         // Update selection overlay uniform via renderer (single rect approximation per frame)
         if let Some(sel) = selection_range {
             // Build per-line spans in pixel space (Warp parity)
-            let theme = config
-                .resolved_theme
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| config.theme.resolve());
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
             let sel_color = if config.debug.theme_selection {
                 theme.tokens.selection
             } else {
@@ -2085,20 +2011,30 @@ impl Display {
             let mut spans: Vec<[f32; 4]> = Vec::new();
             // Iterate viewport rows intersecting the selection
             let start_line = sel.start.line.0.max(-(display_offset as i32));
-            let end_line = sel.end.line.0.min(self.size_info.bottommost_line().0 as i32 - (display_offset as i32));
+            let end_line =
+                sel.end.line.0.min(self.size_info.bottommost_line().0 - (display_offset as i32));
             if start_line <= end_line {
                 for line_i in start_line..=end_line {
-                    if line_i < 0 || (line_i as usize) >= self.size_info.screen_lines() { continue; }
+                    if line_i < 0 || (line_i as usize) >= self.size_info.screen_lines() {
+                        continue;
+                    }
                     let vp_line = line_i as usize;
                     // Compute start/end columns for this row within selection
-                    let row_start_col = if sel.is_block {
+                    let row_start_col = if sel.is_block || line_i == sel.start.line.0 {
                         sel.start.column.0
-                    } else if line_i == sel.start.line.0 { sel.start.column.0 } else { 0 };
-                    let row_end_col = if sel.is_block {
+                    } else {
+                        0
+                    };
+                    let row_end_col = if sel.is_block || line_i == sel.end.line.0 {
                         sel.end.column.0
-                    } else if line_i == sel.end.line.0 { sel.end.column.0 } else { self.size_info.columns().saturating_sub(1) };
-                    if row_end_col < row_start_col { continue; }
-                    let x0 = (row_start_col as f32) * size_info.cell_width() + size_info.padding_x();
+                    } else {
+                        self.size_info.columns().saturating_sub(1)
+                    };
+                    if row_end_col < row_start_col {
+                        continue;
+                    }
+                    let x0 =
+                        (row_start_col as f32) * size_info.cell_width() + size_info.padding_x();
                     let y0 = (vp_line as f32) * size_info.cell_height() + size_info.padding_y();
                     let w = ((row_end_col + 1 - row_start_col) as f32) * size_info.cell_width();
                     let h = size_info.cell_height();
@@ -2108,7 +2044,12 @@ impl Display {
             // Write header (count) and color, then spans to storage buffer
             let count = (spans.len().min(256)) as u32;
             let header: [f32; 4] = [count as f32, 0.0, 0.0, 0.0];
-            let color: [f32; 4] = [sel_color.r as f32 / 255.0, sel_color.g as f32 / 255.0, sel_color.b as f32 / 255.0, 0.85];
+            let color: [f32; 4] = [
+                sel_color.r as f32 / 255.0,
+                sel_color.g as f32 / 255.0,
+                sel_color.b as f32 / 255.0,
+                0.85,
+            ];
             let mut bytes: Vec<u8> = Vec::with_capacity(16 + 16 + (count as usize) * 16);
             bytes.extend_from_slice(bytemuck::cast_slice(&header));
             bytes.extend_from_slice(bytemuck::cast_slice(&color));
@@ -2159,162 +2100,189 @@ impl Display {
             {
                 let _render_sampler = meter.sampler();
 
-            // Dim inactive panes if enabled (draw before grid text or after depending on desired effect)
-            if config.workspace.dim_inactive_panes {
-                if let Some(tm) = tab_manager {
-                    if let Some(active_tab) = tm.active_tab() {
-                        // Compute container rect like elsewhere
-                        let si = self.size_info;
-                        let x0 = si.padding_x();
-                        let mut y0 = si.padding_y();
-                        let w = si.width() - 2.0 * si.padding_x();
-                        let mut h = si.height() - 2.0 * si.padding_y();
-                        let tab_cfg = &config.workspace.tab_bar;
-                        let is_fs = self.window.is_fullscreen();
-                        let eff_vis = match tab_cfg.visibility {
-                            crate::config::workspace::TabBarVisibility::Always => crate::config::workspace::TabBarVisibility::Always,
-                            crate::config::workspace::TabBarVisibility::Hover => crate::config::workspace::TabBarVisibility::Hover,
-                            crate::config::workspace::TabBarVisibility::Auto => {
-                                if is_fs { crate::config::workspace::TabBarVisibility::Hover } else { crate::config::workspace::TabBarVisibility::Always }
+                // Dim inactive panes if enabled (draw before grid text or after depending on desired effect)
+                if config.workspace.dim_inactive_panes {
+                    if let Some(tm) = tab_manager {
+                        if let Some(active_tab) = tm.active_tab() {
+                            // Compute container rect like elsewhere
+                            let si = self.size_info;
+                            let x0 = si.padding_x();
+                            let mut y0 = si.padding_y();
+                            let w = si.width() - 2.0 * si.padding_x();
+                            let mut h = si.height() - 2.0 * si.padding_y();
+                            let tab_cfg = &config.workspace.tab_bar;
+                            let is_fs = self.window.is_fullscreen();
+                            let eff_vis = match tab_cfg.visibility {
+                                crate::config::workspace::TabBarVisibility::Always => {
+                                    crate::config::workspace::TabBarVisibility::Always
+                                }
+                                crate::config::workspace::TabBarVisibility::Hover => {
+                                    crate::config::workspace::TabBarVisibility::Hover
+                                }
+                                crate::config::workspace::TabBarVisibility::Auto => {
+                                    if is_fs {
+                                        crate::config::workspace::TabBarVisibility::Hover
+                                    } else {
+                                        crate::config::workspace::TabBarVisibility::Always
+                                    }
+                                }
+                            };
+                            if tab_cfg.show
+                                && tab_cfg.position != crate::workspace::TabBarPosition::Hidden
+                                && matches!(
+                                    eff_vis,
+                                    crate::config::workspace::TabBarVisibility::Always
+                                )
+                            {
+                                let ch = si.cell_height();
+                                match tab_cfg.position {
+                                    crate::workspace::TabBarPosition::Top => {
+                                        y0 += ch;
+                                        h = (h - ch).max(0.0);
+                                    }
+                                    crate::workspace::TabBarPosition::Bottom => {
+                                        h = (h - ch).max(0.0);
+                                    }
+                                    _ => {}
+                                }
                             }
-                        };
-                        if tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden && matches!(eff_vis, crate::config::workspace::TabBarVisibility::Always) {
-                            let ch = si.cell_height();
-                            match tab_cfg.position {
-                                crate::workspace::TabBarPosition::Top => { y0 += ch; h = (h - ch).max(0.0); }
-                                crate::workspace::TabBarPosition::Bottom => { h = (h - ch).max(0.0); }
-                                _ => {}
+                            let container =
+                                crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
+                            let _keep_borrow = &self.workspace_animations; // keep borrow local; actual rects computed below
+                                                                           // Fetch pane rects from SplitManager via the workspace manager; we do not have direct access here, so replicate logic using active_tab
+                            let pane_rects = crate::workspace::SplitManager::new()
+                                .calculate_pane_rects(&active_tab.split_layout, container);
+                            // Build overlay rects: all panes except active
+                            let theme = config
+                                .resolved_theme
+                                .as_ref()
+                                .cloned()
+                                .unwrap_or_else(|| config.theme.resolve());
+                            let overlay_color = config
+                                .workspace
+                                .splits
+                                .overlay_color
+                                .unwrap_or(theme.tokens.overlay);
+                            let alpha = config.workspace.dim_inactive_alpha.clamp(0.0, 1.0);
+                            let mut rects: Vec<RenderRect> = Vec::new();
+                            for (pid, r) in pane_rects.iter().copied() {
+                                if pid != active_tab.active_pane {
+                                    rects.push(RenderRect::new(
+                                        r.x,
+                                        r.y,
+                                        r.width,
+                                        r.height,
+                                        overlay_color,
+                                        alpha,
+                                    ));
+                                }
                             }
-                        }
-                        let container = crate::workspace::split_manager::PaneRect::new(x0, y0, w, h);
-                        let _keep_borrow = &self.workspace_animations; // keep borrow local; actual rects computed below
-                        // Fetch pane rects from SplitManager via the workspace manager; we do not have direct access here, so replicate logic using active_tab
-                        let pane_rects = crate::workspace::SplitManager::new()
-                            .calculate_pane_rects(&active_tab.split_layout, container);
-                        // Build overlay rects: all panes except active
-                        let theme = config
-                            .resolved_theme
-                            .as_ref()
-                            .cloned()
-                            .unwrap_or_else(|| config.theme.resolve());
-                        let overlay_color = config.workspace.splits.overlay_color.unwrap_or(theme.tokens.overlay);
-                        let alpha = config.workspace.dim_inactive_alpha.clamp(0.0, 1.0);
-                        let mut rects: Vec<RenderRect> = Vec::new();
-                        for (pid, r) in pane_rects.iter().copied() {
-                            if pid != active_tab.active_pane {
-                                rects.push(RenderRect::new(r.x, r.y, r.width, r.height, overlay_color, alpha));
+                            if !rects.is_empty() {
+                                let metrics = self.glyph_cache.font_metrics();
+                                let size_copy = self.size_info;
+                                self.renderer_draw_rects(&size_copy, &metrics, rects);
                             }
-                        }
-                        if !rects.is_empty() {
-                            let metrics = self.glyph_cache.font_metrics();
-                            let size_copy = self.size_info;
-                            self.renderer_draw_rects(&size_copy, &metrics, rects);
                         }
                     }
                 }
-            }
 
-            // Ensure macOS hasn't reset our viewport.
-            #[cfg(target_os = "macos")]
-            self.renderer_set_viewport(&size_info);
+                // Ensure macOS hasn't reset our viewport.
+                #[cfg(target_os = "macos")]
+                self.renderer_set_viewport(&size_info);
 
-            let highlighted_hint = &self.highlighted_hint;
-            let vi_highlighted_hint = &self.vi_highlighted_hint;
-            let damage_tracker = &mut self.damage_tracker;
+                let highlighted_hint = &self.highlighted_hint;
+                let vi_highlighted_hint = &self.vi_highlighted_hint;
+                let damage_tracker = &mut self.damage_tracker;
 
-            // Determine reserved rows for tab bar (hide grid content beneath)
-            // Determine reserved rows for tab bar using effective visibility
-            let tab_cfg = &config.workspace.tab_bar;
-            let is_fs = self.window.is_fullscreen();
-            let effective_visibility = match tab_cfg.visibility {
-                crate::config::workspace::TabBarVisibility::Always => {
-                    crate::config::workspace::TabBarVisibility::Always
-                }
-                crate::config::workspace::TabBarVisibility::Hover => {
-                    crate::config::workspace::TabBarVisibility::Hover
-                }
-                crate::config::workspace::TabBarVisibility::Auto => {
-                    if is_fs {
-                        crate::config::workspace::TabBarVisibility::Hover
-                    } else {
+                // Determine reserved rows for tab bar (hide grid content beneath)
+                // Determine reserved rows for tab bar using effective visibility
+                let tab_cfg = &config.workspace.tab_bar;
+                let is_fs = self.window.is_fullscreen();
+                let effective_visibility = match tab_cfg.visibility {
+                    crate::config::workspace::TabBarVisibility::Always => {
                         crate::config::workspace::TabBarVisibility::Always
                     }
-                }
-            };
-            // Suppress reserving rows during clean startup to avoid a template-like top/bottom
-            // band.
-            let (reserve_top, reserve_bottom) = if suppress_reserve {
-                (0usize, 0usize)
-            } else if tab_cfg.show
-                && tab_cfg.position != crate::config::workspace::TabBarPosition::Hidden
-                && matches!(
-                    effective_visibility,
-                    crate::config::workspace::TabBarVisibility::Always
-                )
-            {
-                match tab_cfg.position {
-                    crate::config::workspace::TabBarPosition::Top => (1usize, 0usize),
-                    crate::config::workspace::TabBarPosition::Bottom => (0usize, 1usize),
-                    crate::config::workspace::TabBarPosition::Hidden => (0, 0),
-                }
-            } else {
-                (0, 0)
-            };
-
-            // Filter out cells belonging to folded regions or reserved tab bar rows.
-            let elide = self.blocks.enabled;
-            let total_lines_vp = self.size_info.screen_lines();
-            let cells = grid_cells
-                .into_iter()
-                .filter(|cell| {
-                    // Hide reserved top rows
-                    if reserve_top > 0 && cell.point.line < reserve_top {
-                        return false;
+                    crate::config::workspace::TabBarVisibility::Hover => {
+                        crate::config::workspace::TabBarVisibility::Hover
                     }
-                    // Hide reserved bottom rows
-                    if reserve_bottom > 0
-                        && cell.point.line >= total_lines_vp.saturating_sub(reserve_bottom)
-                    {
-                        return false;
-                    }
-                    if elide
-                        && self
-                            .blocks
-                            .is_viewport_line_elided(display_offset, cell.point.line)
-                    {
-                        // Entire folded region is hidden from rendering (including header content).
-                        return false;
-                    }
-                    true
-                })
-                .map(|mut cell| {
-                    // Underline hints hovered by mouse or vi mode cursor.
-                    if has_highlighted_hint {
-                        let point = term::viewport_to_point(display_offset, cell.point);
-                        let hyperlink = cell
-                            .extra
-                            .as_ref()
-                            .and_then(|extra| extra.hyperlink.as_ref());
-
-                        let should_highlight = |hint: &Option<HintMatch>| {
-                            hint.as_ref()
-                                .is_some_and(|hint| hint.should_highlight(point, hyperlink))
-                        };
-                        if should_highlight(highlighted_hint)
-                            || should_highlight(vi_highlighted_hint)
-                        {
-                            damage_tracker.frame().damage_point(cell.point);
-                            cell.flags.insert(Flags::UNDERLINE);
+                    crate::config::workspace::TabBarVisibility::Auto => {
+                        if is_fs {
+                            crate::config::workspace::TabBarVisibility::Hover
+                        } else {
+                            crate::config::workspace::TabBarVisibility::Always
                         }
                     }
+                };
+                // Suppress reserving rows during clean startup to avoid a template-like top/bottom
+                // band.
+                let (reserve_top, reserve_bottom) = if suppress_reserve {
+                    (0usize, 0usize)
+                } else if tab_cfg.show
+                    && tab_cfg.position != crate::config::workspace::TabBarPosition::Hidden
+                    && matches!(
+                        effective_visibility,
+                        crate::config::workspace::TabBarVisibility::Always
+                    )
+                {
+                    match tab_cfg.position {
+                        crate::config::workspace::TabBarPosition::Top => (1usize, 0usize),
+                        crate::config::workspace::TabBarPosition::Bottom => (0usize, 1usize),
+                        crate::config::workspace::TabBarPosition::Hidden => (0, 0),
+                    }
+                } else {
+                    (0, 0)
+                };
 
-                    // Update underline/strikeout.
-                    lines.update(&cell);
+                // Filter out cells belonging to folded regions or reserved tab bar rows.
+                let elide = self.blocks.enabled;
+                let total_lines_vp = self.size_info.screen_lines();
+                let cells = grid_cells
+                    .into_iter()
+                    .filter(|cell| {
+                        // Hide reserved top rows
+                        if reserve_top > 0 && cell.point.line < reserve_top {
+                            return false;
+                        }
+                        // Hide reserved bottom rows
+                        if reserve_bottom > 0
+                            && cell.point.line >= total_lines_vp.saturating_sub(reserve_bottom)
+                        {
+                            return false;
+                        }
+                        if elide
+                            && self.blocks.is_viewport_line_elided(display_offset, cell.point.line)
+                        {
+                            // Entire folded region is hidden from rendering (including header content).
+                            return false;
+                        }
+                        true
+                    })
+                    .map(|mut cell| {
+                        // Underline hints hovered by mouse or vi mode cursor.
+                        if has_highlighted_hint {
+                            let point = term::viewport_to_point(display_offset, cell.point);
+                            let hyperlink =
+                                cell.extra.as_ref().and_then(|extra| extra.hyperlink.as_ref());
 
-                    cell
-                });
-            let Backend::Wgpu { renderer } = &mut self.backend;
-            renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
+                            let should_highlight = |hint: &Option<HintMatch>| {
+                                hint.as_ref()
+                                    .is_some_and(|hint| hint.should_highlight(point, hyperlink))
+                            };
+                            if should_highlight(highlighted_hint)
+                                || should_highlight(vi_highlighted_hint)
+                            {
+                                damage_tracker.frame().damage_point(cell.point);
+                                cell.flags.insert(Flags::UNDERLINE);
+                            }
+                        }
+
+                        // Update underline/strikeout.
+                        lines.update(&cell);
+
+                        cell
+                    });
+                let Backend::Wgpu { renderer } = &mut self.backend;
+                renderer.draw_cells(&size_info, &mut self.glyph_cache, cells);
             }
             // Move meter back after sampling is finished.
             self.meter = meter;
@@ -2326,11 +2294,8 @@ impl Display {
         if self.blocks.enabled {
             let now = Instant::now();
             let bg_cover = background_color; // cover uses terminal background to mask text
-            let theme = config
-                .resolved_theme
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| config.theme.resolve());
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
             for b in &mut self.blocks.blocks {
                 if let Some(start) = b.anim_start {
                     // Respect reduce_motion: end animation immediately
@@ -2425,9 +2390,7 @@ impl Display {
 
         // Draw cursor via text shader overlay using cursor uniforms.
         let cursor_elided = self.blocks.enabled
-            && self
-                .blocks
-                .is_viewport_line_elided(display_offset, cursor.point().line);
+            && self.blocks.is_viewport_line_elided(display_offset, cursor.point().line);
         // Compute pixel-space parameters for the cursor
         let cw = size_info.cell_width();
         let ch = size_info.cell_height();
@@ -2532,15 +2495,10 @@ impl Display {
 
             // Create a new rectangle for the background.
             let start_line = size_info.screen_lines() + search_offset;
-            let y = size_info
-                .cell_height()
-                .mul_add(start_line as f32, size_info.padding_y());
+            let y = size_info.cell_height().mul_add(start_line as f32, size_info.padding_y());
 
-            let theme = config
-                .resolved_theme
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| config.theme.resolve());
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
             let bg = match message.ty() {
                 MessageType::Error => theme.tokens.error,
                 MessageType::Warning => theme.tokens.warning,
@@ -2556,20 +2514,15 @@ impl Display {
             rects.push(message_bar_rect);
 
             // Always damage message bar, since it could have messages of the same size in it.
-            self.damage_tracker
-                .frame()
-                .add_viewport_rect(&size_info, x, y as i32, width, height);
+            self.damage_tracker.frame().add_viewport_rect(&size_info, x, y as i32, width, height);
 
             // Draw rectangles and HUD text (if enabled).
             self.draw_perf_hud_text(config);
             self.renderer_draw_rects(&size_info, &metrics, rects);
 
             // Relay messages to the user.
-            let theme = config
-                .resolved_theme
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| config.theme.resolve());
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
             let fg = theme.tokens.surface;
             for (i, message_text) in text.iter().enumerate() {
                 let point = Point::new(start_line + i, Column(0));
@@ -2641,7 +2594,10 @@ impl Display {
         #[cfg(feature = "completions")]
         {
             // Show completions overlay whenever there are suggestions available in Warp-style UI.
-            if self.completions_active() && config.workspace.warp_style && config.workspace.completions_enabled {
+            if self.completions_active()
+                && config.workspace.warp_style
+                && config.workspace.completions_enabled
+            {
                 let cursor_point_usize =
                     Point::new(cursor_point.line.0 as usize, cursor_point.column);
                 self.draw_completions_overlay_with_context(
@@ -2700,7 +2656,7 @@ impl Display {
 
         // Warp-like bottom composer bar (visual only) — always draw for Warp-style UI
         if config.workspace.warp_style {
-            self.draw_warp_bottom_composer(config);
+            self.draw_warp_bottom_composer(config, ai_active_flag, tab_manager);
         }
 
         // Transient overlays: draw last, after tab bar, quick actions, and composer.
@@ -2778,14 +2734,7 @@ impl Display {
                     // Top / bottom split
                     let top_h = (h - gap) * 0.5;
                     let bottom_h = h - gap - top_h;
-                    rects.push(RenderRect::new(
-                        0.0,
-                        0.0,
-                        w,
-                        top_h,
-                        tokens.surface_muted,
-                        0.96,
-                    ));
+                    rects.push(RenderRect::new(0.0, 0.0, w, top_h, tokens.surface_muted, 0.96));
                     rects.push(RenderRect::new(
                         0.0,
                         top_h + gap,
@@ -2798,14 +2747,7 @@ impl Display {
                     // Left / right split
                     let left_w = (w - gap) * 0.5;
                     let right_w = w - gap - left_w;
-                    rects.push(RenderRect::new(
-                        0.0,
-                        0.0,
-                        left_w,
-                        h,
-                        tokens.surface_muted,
-                        0.96,
-                    ));
+                    rects.push(RenderRect::new(0.0, 0.0, left_w, h, tokens.surface_muted, 0.96));
                     rects.push(RenderRect::new(
                         left_w + gap,
                         0.0,
@@ -2838,9 +2780,8 @@ impl Display {
                 let bg = theme.tokens.surface_muted;
                 for line in 0..num_lines {
                     // Folded overlay.
-                    if let Some(label) = self
-                        .blocks
-                        .folded_label_at_viewport_line(display_offset, line)
+                    if let Some(label) =
+                        self.blocks.folded_label_at_viewport_line(display_offset, line)
                     {
                         let damage = LineDamageBounds::new(line, 0, self.size_info.columns());
                         self.damage_tracker.frame().damage_line(damage);
@@ -2877,13 +2818,10 @@ impl Display {
                             .unwrap_or_else(|| config.theme.resolve());
                         let tokens = theme.tokens;
 
-
                         // Draw status pill, left-aligned command text, and right-aligned duration.
                         let cols = self.size_info.columns();
                         let cw = self.size_info.cell_width();
                         let ch = self.size_info.cell_height();
-                        let pad_x = self.size_info.padding_x();
-                        let pad_y = self.size_info.padding_y();
 
                         // Attempt to fetch the block for richer UI (status/cwd/time)
                         let block_opt = self
@@ -2908,10 +2846,18 @@ impl Display {
                         };
                         let mut bg_alpha = 0.12 * anim_p
                             + if self.blocks_header_hover_line == Some(line) { 0.06 } else { 0.0 };
-                        if bg_alpha > 0.6 { bg_alpha = 0.6; }
+                        if bg_alpha > 0.6 {
+                            bg_alpha = 0.6;
+                        }
                         let radius = (row_h * 0.4).min(14.0);
                         let row_bg = UiRoundedRect::new(
-                            row_x, row_y, row_w, row_h, radius, tokens.surface_muted, bg_alpha,
+                            row_x,
+                            row_y,
+                            row_w,
+                            row_h,
+                            radius,
+                            tokens.surface_muted,
+                            bg_alpha,
                         );
                         self.stage_ui_rounded_rect(row_bg);
 
@@ -2930,9 +2876,8 @@ impl Display {
                                 Some(_) => ("✗".to_string(), tokens.error),
                                 None => {
                                     // Spinner frames
-                                    const FRAMES: [&str; 10] = [
-                                        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
-                                    ];
+                                    const FRAMES: [&str; 10] =
+                                        ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                                     let ms = Instant::now().duration_since(b.started_at).as_millis()
                                         as usize;
                                     let idx = (ms / 120) % FRAMES.len();
@@ -2945,8 +2890,18 @@ impl Display {
 
                         // Status pill background
                         let mut pill_radius = pill_h / 2.0;
-                        if pill_radius > 22.0 { pill_radius = 22.0; }
-                        let pill_rect = UiRoundedRect::new(pill_x, pill_y, pill_w, pill_h, pill_radius, status_color, 0.24);
+                        if pill_radius > 22.0 {
+                            pill_radius = 22.0;
+                        }
+                        let pill_rect = UiRoundedRect::new(
+                            pill_x,
+                            pill_y,
+                            pill_w,
+                            pill_h,
+                            pill_radius,
+                            status_color,
+                            0.24,
+                        );
                         self.stage_ui_rounded_rect(pill_rect);
                         // Status glyph centered within pill
                         let glyph_col = pill_start_col + 1; // center in 3-col pill
@@ -3005,7 +2960,11 @@ impl Display {
 
                         // Draw command text and cwd between status pill and time area
                         let mut col_left = pill_start_col + pill_w_cols + 1; // space after pill
-                        let right_guard = if time_cols > 0 { cols.saturating_sub(time_cols + 1) } else { cols.saturating_sub(1) };
+                        let right_guard = if time_cols > 0 {
+                            cols.saturating_sub(time_cols + 1)
+                        } else {
+                            cols.saturating_sub(1)
+                        };
                         if let Some(ref b) = block_opt {
                             // Draw "▶ " prefix
                             if col_left + 2 < right_guard {
@@ -3013,12 +2972,19 @@ impl Display {
                                 let p = Point::new(line, Column(col_left));
                                 let size_info_copy = self.size_info;
                                 let Backend::Wgpu { renderer } = &mut self.backend;
-                                renderer.draw_string(p, fg, bg, pfx.chars(), &size_info_copy, &mut self.glyph_cache);
+                                renderer.draw_string(
+                                    p,
+                                    fg,
+                                    bg,
+                                    pfx.chars(),
+                                    &size_info_copy,
+                                    &mut self.glyph_cache,
+                                );
                                 col_left += pfx.width();
                             }
                             // Draw command and truncated cwd
                             let cmd = b.cmd.clone().unwrap_or_else(|| String::from("(command)"));
-                            let mut budget = right_guard.saturating_sub(col_left);
+                            let budget = right_guard.saturating_sub(col_left);
                             if budget > 0 {
                                 // Reserve some space for cwd separator if possible
                                 let mut text = String::new();
@@ -3030,9 +2996,10 @@ impl Display {
                                     let cwd_full = cwd.clone();
                                     let mut cwd_show = cwd_full.clone();
                                     // Simple clamp for cwd to fit remaining budget after sep
-                                    if cwd_show.width() + sep_w > budget.saturating_sub(cmd.width()) {
+                                    if cwd_show.width() + sep_w > budget.saturating_sub(cmd.width())
+                                    {
                                         // Ensure some room for cwd tail
-                                        let mut remaining = budget
+                                        let remaining = budget
                                             .saturating_sub(cmd.width())
                                             .saturating_sub(sep_w);
                                         if remaining > 1 {
@@ -3042,11 +3009,18 @@ impl Display {
                                             // Take last chars up to remaining-1 (for ellipsis)
                                             for ch in cwd_full.chars().rev() {
                                                 let w = ch.width().unwrap_or(1);
-                                                if acc + w >= remaining.saturating_sub(1) { break; }
+                                                if acc + w >= remaining.saturating_sub(1) {
+                                                    break;
+                                                }
                                                 out.push(ch);
                                                 acc += w;
                                             }
-                                            let rev: String = out.chars().collect::<Vec<_>>().into_iter().rev().collect();
+                                            let rev: String = out
+                                                .chars()
+                                                .collect::<Vec<_>>()
+                                                .into_iter()
+                                                .rev()
+                                                .collect();
                                             cwd_show = rev;
                                         } else {
                                             cwd_show.clear();
@@ -3063,15 +3037,27 @@ impl Display {
                                     let p = Point::new(line, Column(col_left));
                                     let size_info_copy = self.size_info;
                                     let Backend::Wgpu { renderer } = &mut self.backend;
-                                    renderer.draw_string(p, fg, bg, draw_text.chars(), &size_info_copy, &mut self.glyph_cache);
-                                    col_left += draw_text.width();
+                                    renderer.draw_string(
+                                        p,
+                                        fg,
+                                        bg,
+                                        draw_text.chars(),
+                                        &size_info_copy,
+                                        &mut self.glyph_cache,
+                                    );
                                 } else {
                                     // Only command
                                     let p = Point::new(line, Column(col_left));
                                     let size_info_copy = self.size_info;
                                     let Backend::Wgpu { renderer } = &mut self.backend;
-                                    renderer.draw_string(p, fg, bg, cmd.chars(), &size_info_copy, &mut self.glyph_cache);
-                                    col_left += cmd.width();
+                                    renderer.draw_string(
+                                        p,
+                                        fg,
+                                        bg,
+                                        cmd.chars(),
+                                        &size_info_copy,
+                                        &mut self.glyph_cache,
+                                    );
                                 }
                             }
                         } else {
@@ -3079,27 +3065,31 @@ impl Display {
                             let point = Point::new(line, Column(0));
                             let size_info_copy = self.size_info;
                             let Backend::Wgpu { renderer } = &mut self.backend;
-                            renderer.draw_string(point, fg, bg, header.chars(), &size_info_copy, &mut self.glyph_cache);
-                            col_left = header.width() + 2;
+                            renderer.draw_string(
+                                point,
+                                fg,
+                                bg,
+                                header.chars(),
+                                &size_info_copy,
+                                &mut self.glyph_cache,
+                            );
                         }
 
                         // Compute chip starting column based on the legacy header width to stay in-sync with hit-testing
-                        use unicode_width::UnicodeWidthStr as _;
                         let mut col = header.width() + 2;
 
                         // Draw action chips: [Copy] [Rerun] [Export], ensuring they don't overlap the right-aligned time
                         let chips = ["[Copy]", "[Rerun]", "[Export]"];
                         let hover_line = self.blocks_header_hover_line;
                         let hover_chip = self.blocks_header_hover_chip;
-                        let press_chip = if self
-                            .blocks_press_flash_until
-                            .is_some_and(|t| t > Instant::now())
-                        {
-                            self.blocks_press_flash_chip
-                        } else {
-                            None
-                        };
-                        let time_guard = if time_cols > 0 { cols.saturating_sub(time_cols + 1) } else { cols };
+                        let press_chip =
+                            if self.blocks_press_flash_until.is_some_and(|t| t > Instant::now()) {
+                                self.blocks_press_flash_chip
+                            } else {
+                                None
+                            };
+                        let time_guard =
+                            if time_cols > 0 { cols.saturating_sub(time_cols + 1) } else { cols };
                         for (i, chip) in chips.iter().enumerate() {
                             if col < self.size_info.columns() && col + chip.width() < time_guard {
                                 // Optional hover highlight/press flash with pill background
@@ -3111,10 +3101,20 @@ impl Display {
                                     let hl = tokens.accent;
                                     let is_hover = hover_chip == Some(i);
                                     let is_press = press_chip == Some(i);
-                                    let alpha = if is_press { 0.42 } else if is_hover { 0.28 } else { 0.18 };
+                                    let alpha = if is_press {
+                                        0.42
+                                    } else if is_hover {
+                                        0.28
+                                    } else {
+                                        0.18
+                                    };
                                     let mut radius = h_px / 2.0;
-                                    if radius > 22.0 { radius = 22.0; }
-                                    let pill = UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, hl, alpha);
+                                    if radius > 22.0 {
+                                        radius = 22.0;
+                                    }
+                                    let pill = UiRoundedRect::new(
+                                        x_px, y_px, w_px, h_px, radius, hl, alpha,
+                                    );
                                     self.stage_ui_rounded_rect(pill);
                                 }
 
@@ -3137,18 +3137,53 @@ impl Display {
                         if self.blocks_header_hover_status == Some(line) {
                             // Build tooltip text using available block info
                             let tip = if let Some(ref b) = block_opt {
-                                let status = match b.exit { Some(0) => "success", Some(code) => { if code != 0 { "error" } else { "success" } }, None => "running" };
-                                let exit_s = match b.exit { Some(code) => format!("exit {}", code), None => "no exit yet".to_string() };
+                                let status = match b.exit {
+                                    Some(0) => "success",
+                                    Some(code) => {
+                                        if code != 0 {
+                                            "error"
+                                        } else {
+                                            "success"
+                                        }
+                                    }
+                                    None => "running",
+                                };
+                                let exit_s = match b.exit {
+                                    Some(code) => format!("exit {}", code),
+                                    None => "no exit yet".to_string(),
+                                };
                                 let cwd_s = b.cwd.clone().unwrap_or_else(|| "~".to_string());
-                                let elapsed = if let Some(ended_at) = b.ended_at { ended_at.duration_since(b.started_at) } else { Instant::now().duration_since(b.started_at) };
+                                let elapsed = if let Some(ended_at) = b.ended_at {
+                                    ended_at.duration_since(b.started_at)
+                                } else {
+                                    Instant::now().duration_since(b.started_at)
+                                };
                                 let t = if elapsed.as_secs() < 60 {
                                     format!("{:.1}s", elapsed.as_secs_f32())
                                 } else if elapsed.as_secs() < 3600 {
-                                    format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                                    format!(
+                                        "{}m{}s",
+                                        elapsed.as_secs() / 60,
+                                        elapsed.as_secs() % 60
+                                    )
                                 } else {
-                                    format!("{}h{}m", elapsed.as_secs() / 3600, (elapsed.as_secs() % 3600) / 60)
+                                    format!(
+                                        "{}h{}m",
+                                        elapsed.as_secs() / 3600,
+                                        (elapsed.as_secs() % 3600) / 60
+                                    )
                                 };
-                                format!("{} • {} • cwd {} • {}", status, exit_s, cwd_s, if b.ended_at.is_some() { format!("took {}", t) } else { format!("elapsed {}", t) })
+                                format!(
+                                    "{} • {} • cwd {} • {}",
+                                    status,
+                                    exit_s,
+                                    cwd_s,
+                                    if b.ended_at.is_some() {
+                                        format!("took {}", t)
+                                    } else {
+                                        format!("elapsed {}", t)
+                                    }
+                                )
                             } else {
                                 "Command details unavailable".to_string()
                             };
@@ -3161,12 +3196,27 @@ impl Display {
                             let ty = (tip_line as f32) * ch + (ch * 0.05);
                             let tw = (tcols as f32) * cw + 8.0;
                             let th = (ch * 0.90).max(12.0);
-                            let pill = UiRoundedRect::new(tx, ty, tw, th, (th * 0.5).min(18.0), tokens.surface, 0.95);
+                            let pill = UiRoundedRect::new(
+                                tx,
+                                ty,
+                                tw,
+                                th,
+                                (th * 0.5).min(18.0),
+                                tokens.surface,
+                                0.95,
+                            );
                             self.stage_ui_rounded_rect(pill);
                             let p = Point::new(tip_line, Column(tip_col));
                             let size_info_copy = self.size_info;
                             let Backend::Wgpu { renderer } = &mut self.backend;
-                            renderer.draw_string(p, tokens.text, tokens.surface, tip.chars(), &size_info_copy, &mut self.glyph_cache);
+                            renderer.draw_string(
+                                p,
+                                tokens.text,
+                                tokens.surface,
+                                tip.chars(),
+                                &size_info_copy,
+                                &mut self.glyph_cache,
+                            );
                         }
 
                         continue;
@@ -3183,10 +3233,7 @@ impl Display {
 
         // Frame end timing
         let elapsed = frame_t0.elapsed();
-        tracing::info!(
-            elapsed_ms = elapsed.as_millis() as u64,
-            "render.frame_complete"
-        );
+        tracing::info!(elapsed_ms = elapsed.as_millis() as u64, "render.frame_complete");
 
         // Feed perf history for HUD smoothing (keep last 120)
         let Backend::Wgpu { renderer } = &mut self.backend;
@@ -3194,9 +3241,7 @@ impl Display {
 
         // Highlight damage for debugging.
         if self.damage_tracker.debug {
-            let damage = self
-                .damage_tracker
-                .shape_frame_damage(self.size_info.into());
+            let damage = self.damage_tracker.shape_frame_damage(self.size_info.into());
             let mut rects = Vec::with_capacity(damage.len());
             self.highlight_damage(&mut rects);
             let size_info_copy = self.size_info;
@@ -3342,12 +3387,14 @@ impl Display {
         renderer.set_sprite_filter_nearest(nearest)
     }
 
-    fn draw_warp_bottom_composer(&mut self, config: &UiConfig) {
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+    fn draw_warp_bottom_composer(
+        &mut self,
+        config: &UiConfig,
+        ai_active: bool,
+        tab_manager: Option<&crate::workspace::TabManager>,
+    ) {
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let ui = theme.ui.clone();
         let cw = self.size_info.cell_width();
@@ -3396,9 +3443,7 @@ impl Display {
                 y - 1.0,
                 w + 2.0,
                 h + 2.0,
-                ui.composer_pill_radius_px
-                    .unwrap_or(ui.palette_pill_radius_px)
-                    + 1.0,
+                ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px) + 1.0,
                 tokens.accent,
                 ui.composer_focus_ring_alpha,
             );
@@ -3414,8 +3459,7 @@ impl Display {
             y,
             w,
             h,
-            ui.composer_pill_radius_px
-                .unwrap_or(ui.palette_pill_radius_px),
+            ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px),
             tokens.surface,
             bg_alpha,
         );
@@ -3463,10 +3507,7 @@ impl Display {
             use unicode_width::UnicodeWidthStr as _;
             let wcols = provider_chip.width();
             // Capsule background
-            let pad = ui
-                .composer_chip_pad_px
-                .unwrap_or(ui.palette_chip_pad_px)
-                .max(1.0);
+            let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
             let x_px = (start_col as f32) * cw - pad;
             let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
             let h_px = ch * 0.8;
@@ -3490,11 +3531,7 @@ impl Display {
                 UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, tokens.surface_muted, alpha);
             self.stage_ui_rounded_rect(pill);
             // Chip text
-            let text_color = if is_hovered {
-                tokens.accent
-            } else {
-                tokens.text
-            };
+            let text_color = if is_hovered { tokens.accent } else { tokens.text };
             self.draw_ai_text(
                 Point::new(lines.saturating_sub(1), Column(start_col)),
                 text_color,
@@ -3518,10 +3555,7 @@ impl Display {
             };
             let model_chip = format!("[{}]", model_text);
             let wcols = model_chip.width();
-            let pad = ui
-                .composer_chip_pad_px
-                .unwrap_or(ui.palette_chip_pad_px)
-                .max(1.0);
+            let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
             let x_px = (start_col as f32) * cw - pad;
             let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
             let h_px = ch * 0.8;
@@ -3543,11 +3577,7 @@ impl Display {
             let pill =
                 UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, tokens.surface_muted, alpha);
             self.stage_ui_rounded_rect(pill);
-            let text_color = if is_hovered {
-                tokens.accent
-            } else {
-                tokens.text
-            };
+            let text_color = if is_hovered { tokens.accent } else { tokens.text };
             self.draw_ai_text(
                 Point::new(lines.saturating_sub(1), Column(start_col)),
                 text_color,
@@ -3556,6 +3586,40 @@ impl Display {
                 wcols,
             );
             start_col += wcols + 2; // extra space after model chip
+        }
+
+        // Minimal inline indicator: current dir · shell when AI panel is active (Warp parity)
+        if ai_active {
+            use std::path::Path;
+            // Try active tab working directory
+            let cwd_label = tab_manager
+                .and_then(|tm| tm.active_tab())
+                .map(|t| t.working_directory.clone())
+                .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
+                .unwrap_or_else(|| {
+                    std::env::current_dir()
+                        .ok()
+                        .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
+                        .unwrap_or_else(|| "~".to_string())
+                });
+            // Shell name from env
+            let shell_label = std::env::var("SHELL")
+                .ok()
+                .and_then(|s| Path::new(&s).file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "sh".to_string());
+            let hint = format!("{} · {}", cwd_label, shell_label);
+            use unicode_width::UnicodeWidthStr as _;
+            let wcols = hint.width();
+            let hint_color = tokens.text_muted;
+            // Draw hint before user text (consumes columns)
+            self.draw_ai_text(
+                Point::new(lines.saturating_sub(1), Column(start_col)),
+                hint_color,
+                tokens.surface_muted,
+                &hint,
+                cols.saturating_sub(start_col),
+            );
+            start_col += wcols + 2; // gap after hint
         }
 
         let available = cols.saturating_sub(start_col + 2);
@@ -3606,10 +3670,8 @@ impl Display {
                         }
                         let start = col_end.saturating_sub(wcols);
                         // Capsule background
-                        let pad = ui
-                            .composer_chip_pad_px
-                            .unwrap_or(ui.palette_chip_pad_px)
-                            .max(1.0);
+                        let pad =
+                            ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
                         let x_px = (start as f32) * cw - pad;
                         let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
                         let h_px = ch * 0.8; // slightly inset vertically
@@ -3640,11 +3702,8 @@ impl Display {
                         self.stage_ui_rounded_rect(pill);
                         // Label text
                         let run_active = *label == "[Run]" && !self.composer_text.is_empty();
-                        let text_color = if is_hovered || run_active {
-                            tokens.accent
-                        } else {
-                            tokens.text
-                        };
+                        let text_color =
+                            if is_hovered || run_active { tokens.accent } else { tokens.text };
                         self.draw_ai_text(
                             Point::new(lines.saturating_sub(1), Column(start)),
                             text_color,
@@ -3866,10 +3925,7 @@ impl Display {
                     }
                     let start = col_end.saturating_sub(wcols);
                     // Capsule background
-                    let pad = ui
-                        .composer_chip_pad_px
-                        .unwrap_or(ui.palette_chip_pad_px)
-                        .max(1.0);
+                    let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
                     let x_px = (start as f32) * cw - pad;
                     let y_px = (lines.saturating_sub(1) as f32) * ch + (ch - (ch * 0.8)) * 0.5;
                     let h_px = ch * 0.8; // slightly inset vertically
@@ -3900,11 +3956,8 @@ impl Display {
                     self.stage_ui_rounded_rect(pill);
                     // Label text
                     let run_active = *label == "[Run]" && !self.composer_text.is_empty();
-                    let text_color = if is_hovered || run_active {
-                        tokens.accent
-                    } else {
-                        tokens.text
-                    };
+                    let text_color =
+                        if is_hovered || run_active { tokens.accent } else { tokens.text };
                     self.draw_ai_text(
                         Point::new(lines.saturating_sub(1), Column(start)),
                         text_color,
@@ -3938,10 +3991,7 @@ impl Display {
                 if col + wcols + 2 >= cols {
                     break;
                 }
-                let pad = ui
-                    .composer_chip_pad_px
-                    .unwrap_or(ui.palette_chip_pad_px)
-                    .max(1.0);
+                let pad = ui.composer_chip_pad_px.unwrap_or(ui.palette_chip_pad_px).max(1.0);
                 let x_px = (col as f32) * cw - pad;
                 let h_px = ch * 0.8;
                 let w_px = (wcols as f32) * cw + pad * 2.0;
@@ -3966,11 +4016,7 @@ impl Display {
                 let pill =
                     UiRoundedRect::new(x_px, y_px, w_px, h_px, radius, tokens.surface, alpha);
                 self.stage_ui_rounded_rect(pill);
-                let text_color = if is_selected {
-                    tokens.accent
-                } else {
-                    tokens.text
-                };
+                let text_color = if is_selected { tokens.accent } else { tokens.text };
                 self.draw_ai_text(
                     Point::new(lines.saturating_sub(2), Column(col)),
                     text_color,
@@ -4065,12 +4111,9 @@ impl Display {
                 ShortenDirection::Right,
                 Some(SHORTENER),
             ),
-            _ => StrShortener::new(
-                &preedit.text,
-                num_cols,
-                ShortenDirection::Left,
-                Some(SHORTENER),
-            ),
+            _ => {
+                StrShortener::new(&preedit.text, num_cols, ShortenDirection::Left, Some(SHORTENER))
+            }
         }
         .collect();
 
@@ -4106,11 +4149,7 @@ impl Display {
         }
 
         // Add underline for preedit text.
-        let underline = RenderLine {
-            start,
-            end,
-            color: fg,
-        };
+        let underline = RenderLine { start, end, color: fg };
         rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
 
         let ime_popup_point = match preedit.cursor_end_offset {
@@ -4135,8 +4174,7 @@ impl Display {
             _ => end,
         };
 
-        self.window
-            .update_ime_position(ime_popup_point, &self.size_info);
+        self.window.update_ime_position(ime_popup_point, &self.size_info);
     }
 
     /// Format search regex to account for the cursor and fullwidth characters.
@@ -4213,11 +4251,8 @@ impl Display {
             .take(uris.len())
             .flat_map(|line| term::point_to_viewport(display_offset, Point::new(line, Column(0))));
 
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
         let bg = theme.tokens.surface_muted;
         for (uri, point) in uris.into_iter().zip(uri_lines) {
@@ -4253,11 +4288,8 @@ impl Display {
 
         let point = Point::new(self.size_info.screen_lines(), Column(0));
 
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let (fg, bg) = match config.debug.render_timer_style {
             crate::config::debug::RenderTimerStyle::LowContrast => {
                 (theme.tokens.text, theme.tokens.surface_muted)
@@ -4291,11 +4323,8 @@ impl Display {
         let timing = format!("{:.3} usec", self.meter.average());
         let point = Point::new(self.size_info.screen_lines().saturating_sub(2), Column(0));
 
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
         let bg = theme.tokens.surface_muted;
 
@@ -4337,11 +4366,8 @@ impl Display {
         self.damage_tracker.frame().damage_line(damage);
         self.damage_tracker.next_frame().damage_line(damage);
 
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let fg = theme.tokens.text;
         let bg = theme.tokens.surface_muted;
 
@@ -4366,10 +4392,7 @@ impl Display {
     ///
     /// This function is for debug purposes only.
     fn highlight_damage(&self, render_rects: &mut Vec<RenderRect>) {
-        for damage_rect in &self
-            .damage_tracker
-            .shape_frame_damage(self.size_info.into())
-        {
+        for damage_rect in &self.damage_tracker.shape_frame_damage(self.size_info.into()) {
             let x = damage_rect.x as f32;
             let height = damage_rect.height as f32;
             let width = damage_rect.width as f32;
@@ -4384,16 +4407,8 @@ impl Display {
     fn validate_hint_highlights(&mut self, display_offset: usize) {
         let frame = self.damage_tracker.frame();
         let hints = [
-            (
-                &mut self.highlighted_hint,
-                &mut self.highlighted_hint_age,
-                true,
-            ),
-            (
-                &mut self.vi_highlighted_hint,
-                &mut self.vi_highlighted_hint_age,
-                false,
-            ),
+            (&mut self.highlighted_hint, &mut self.highlighted_hint_age, true),
+            (&mut self.vi_highlighted_hint, &mut self.vi_highlighted_hint_age, false),
         ];
 
         let num_lines = self.size_info.screen_lines();
@@ -4453,11 +4468,7 @@ impl Display {
 
         // Coalesce any previously scheduled frame for this window before scheduling a new one.
         let coalesced = scheduler.unschedule(timer_id).is_some();
-        log::debug!(
-            "request_frame: coalesced={} delay_ms={}",
-            coalesced,
-            swap_timeout.as_millis()
-        );
+        log::debug!("request_frame: coalesced={} delay_ms={}", coalesced, swap_timeout.as_millis());
         scheduler.schedule(event, swap_timeout, false, timer_id);
     }
 }
@@ -4469,9 +4480,11 @@ mod tests {
     #[test]
     fn tab_bar_overlay_visibility_always() {
         let si = SizeInfo::new(800.0, 600.0, 8.0, 16.0, 0.0, 0.0, false);
-        let mut cfg = crate::config::workspace::TabBarConfig::default();
-        cfg.position = crate::workspace::TabBarPosition::Top;
-        cfg.visibility = crate::config::workspace::TabBarVisibility::Always;
+        let cfg = crate::config::workspace::TabBarConfig {
+            position: crate::workspace::TabBarPosition::Top,
+            visibility: crate::config::workspace::TabBarVisibility::Always,
+            ..Default::default()
+        };
         let style = crate::display::warp_ui::WarpTabStyle::default();
         // Far from the top; should still show because Always
         assert!(should_show_tab_bar_overlay(si, 400, &cfg, false, &style));
@@ -4502,9 +4515,11 @@ mod tests {
     #[test]
     fn tab_bar_overlay_visibility_auto_respects_fullscreen() {
         let si = SizeInfo::new(900.0, 600.0, 9.0, 18.0, 0.0, 0.0, false);
-        let mut cfg = crate::config::workspace::TabBarConfig::default();
-        cfg.position = crate::workspace::TabBarPosition::Top;
-        cfg.visibility = crate::config::workspace::TabBarVisibility::Auto;
+        let cfg = crate::config::workspace::TabBarConfig {
+            position: crate::workspace::TabBarPosition::Top,
+            visibility: crate::config::workspace::TabBarVisibility::Auto,
+            ..Default::default()
+        };
         let style = crate::display::warp_ui::WarpTabStyle::default();
 
         // Not fullscreen -> treated as Always
@@ -4580,23 +4595,17 @@ impl Preedit {
     pub fn new(text: String, cursor_byte_offset: Option<(usize, usize)>) -> Self {
         let cursor_end_offset = if let Some(byte_offset) = cursor_byte_offset {
             // Convert byte offset into char offset.
-            let start_to_end_offset = text[byte_offset.0..]
-                .chars()
-                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
-            let end_to_end_offset = text[byte_offset.1..]
-                .chars()
-                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
+            let start_to_end_offset =
+                text[byte_offset.0..].chars().fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
+            let end_to_end_offset =
+                text[byte_offset.1..].chars().fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
 
             Some((start_to_end_offset, end_to_end_offset))
         } else {
             None
         };
 
-        Self {
-            text,
-            cursor_byte_offset,
-            cursor_end_offset,
-        }
+        Self { text, cursor_byte_offset, cursor_end_offset }
     }
 }
 
@@ -4634,11 +4643,7 @@ impl Default for FrameTimer {
 impl FrameTimer {
     pub fn new() -> Self {
         let now = Instant::now();
-        Self {
-            base: now,
-            last_synced_timestamp: now,
-            refresh_interval: Duration::ZERO,
-        }
+        Self { base: now, last_synced_timestamp: now, refresh_interval: Duration::ZERO }
     }
 
     /// Compute the delay that we should use to achieve the target frame

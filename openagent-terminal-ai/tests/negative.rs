@@ -12,18 +12,12 @@ fn privacy_sanitizes_paths_and_secrets() {
             ("MY_SECRET_TOKEN".to_string(), "abc123".to_string()),
         ],
     };
-    let opts = AiPrivacyOptions {
-        strip_sensitive: true,
-        strip_cwd: true,
-    };
+    let opts = AiPrivacyOptions { strip_sensitive: true, strip_cwd: true };
     let out = sanitize_request(&req, opts);
 
     assert!(out.scratch_text.contains("[REDACTED]"));
     assert!(out.working_directory.unwrap().contains("[REDACTED]"));
-    assert!(out
-        .context
-        .iter()
-        .any(|(k, v)| k == "MY_SECRET_TOKEN" && v == "[REDACTED]"));
+    assert!(out.context.iter().any(|(k, v)| k == "MY_SECRET_TOKEN" && v == "[REDACTED]"));
 }
 
 #[cfg(feature = "ai-openai")]
@@ -67,12 +61,9 @@ mod http_tests {
         let base_url = server.uri();
         // Run provider creation and blocking call on a dedicated OS thread to avoid nested runtime shutdown within tokio
         let handle = std::thread::spawn(move || {
-            let provider = OpenAiProvider::new(
-                "test_key".to_string(),
-                base_url,
-                "gpt-3.5-turbo".to_string(),
-            )
-            .unwrap();
+            let provider =
+                OpenAiProvider::new("test_key".to_string(), base_url, "gpt-3.5-turbo".to_string())
+                    .unwrap();
             provider.propose(base_req())
         });
         let res = handle.join().expect("thread panicked");
@@ -94,12 +85,9 @@ mod http_tests {
 
         let base_url = server.uri();
         let handle = std::thread::spawn(move || {
-            let provider = OpenAiProvider::new(
-                "test_key".to_string(),
-                base_url,
-                "gpt-3.5-turbo".to_string(),
-            )
-            .unwrap();
+            let provider =
+                OpenAiProvider::new("test_key".to_string(), base_url, "gpt-3.5-turbo".to_string())
+                    .unwrap();
             provider.propose(base_req())
         });
         let res = handle.join().expect("thread panicked");

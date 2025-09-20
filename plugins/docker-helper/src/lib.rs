@@ -306,12 +306,8 @@ impl Plugin for DockerHelperPlugin {
                                 kind: CompletionKind::Argument,
                                 score: 0.9,
                                 icon: Some(
-                                    if container.status.contains("Up") {
-                                        "🟢"
-                                    } else {
-                                        "🔴"
-                                    }
-                                    .to_string(),
+                                    if container.status.contains("Up") { "🟢" } else { "🔴" }
+                                        .to_string(),
                                 ),
                             });
                         }
@@ -445,10 +441,7 @@ impl Plugin for DockerHelperPlugin {
                     "container_count".to_string(),
                     self.cached_containers.len().to_string(),
                 );
-                meta.insert(
-                    "image_count".to_string(),
-                    self.cached_images.len().to_string(),
-                );
+                meta.insert("image_count".to_string(), self.cached_images.len().to_string());
                 meta
             },
             sensitivity: SensitivityLevel::Internal,
@@ -474,11 +467,8 @@ impl Plugin for DockerHelperPlugin {
                 }
 
                 // Running containers
-                let running: Vec<_> = self
-                    .cached_containers
-                    .iter()
-                    .filter(|c| c.status.contains("Up"))
-                    .collect();
+                let running: Vec<_> =
+                    self.cached_containers.iter().filter(|c| c.status.contains("Up")).collect();
 
                 output.push_str(&format!("🟢 Running Containers: {}\n", running.len()));
                 for container in running.iter().take(5) {
@@ -606,10 +596,7 @@ impl Plugin for DockerHelperPlugin {
                 })
             }
 
-            _ => Err(PluginError::CommandError(format!(
-                "Unknown command: {}",
-                cmd
-            ))),
+            _ => Err(PluginError::CommandError(format!("Unknown command: {}", cmd))),
         }
     }
 

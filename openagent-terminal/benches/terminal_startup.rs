@@ -31,18 +31,14 @@ fn benchmark_terminal_startup(c: &mut Criterion) {
             false, // dynamic_title
         );
 
-        group.bench_with_input(
-            BenchmarkId::new("core_term_creation", name),
-            &size,
-            |b, size| {
-                b.iter(|| {
-                    let config = UiConfig::default();
-                    let mut term = Term::new(config.term_options(), size, MockEventProxy);
-                    // Exercise a small operation to ensure initialization is complete
-                    term.vi_motion(ViMotion::FirstOccupied);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("core_term_creation", name), &size, |b, size| {
+            b.iter(|| {
+                let config = UiConfig::default();
+                let mut term = Term::new(config.term_options(), size, MockEventProxy);
+                // Exercise a small operation to ensure initialization is complete
+                term.vi_motion(ViMotion::FirstOccupied);
+            });
+        });
     }
 
     group.finish();

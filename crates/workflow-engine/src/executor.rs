@@ -70,22 +70,11 @@ pub struct StepExecutionResult {
 #[derive(Debug, Clone)]
 pub enum StepError {
     /// Command execution failed
-    CommandFailed {
-        command: String,
-        exit_code: i32,
-        stderr: String,
-    },
+    CommandFailed { command: String, exit_code: i32, stderr: String },
     /// Step timed out
-    Timeout {
-        duration: Duration,
-        partial_output: String,
-    },
+    Timeout { duration: Duration, partial_output: String },
     /// Resource limit exceeded
-    ResourceLimit {
-        limit_type: String,
-        limit_value: usize,
-        actual_value: usize,
-    },
+    ResourceLimit { limit_type: String, limit_value: usize, actual_value: usize },
     /// Internal error
     Internal { message: String, source: String },
     /// Permission denied
@@ -95,32 +84,13 @@ pub enum StepError {
 impl std::fmt::Display for StepError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StepError::CommandFailed {
-                command,
-                exit_code,
-                stderr,
-            } => {
-                write!(
-                    f,
-                    "Command '{}' failed with exit code {}: {}",
-                    command, exit_code, stderr
-                )
+            StepError::CommandFailed { command, exit_code, stderr } => {
+                write!(f, "Command '{}' failed with exit code {}: {}", command, exit_code, stderr)
             }
-            StepError::Timeout {
-                duration,
-                partial_output,
-            } => {
-                write!(
-                    f,
-                    "Step timed out after {:?}. Partial output: {}",
-                    duration, partial_output
-                )
+            StepError::Timeout { duration, partial_output } => {
+                write!(f, "Step timed out after {:?}. Partial output: {}", duration, partial_output)
             }
-            StepError::ResourceLimit {
-                limit_type,
-                limit_value,
-                actual_value,
-            } => {
+            StepError::ResourceLimit { limit_type, limit_value, actual_value } => {
                 write!(
                     f,
                     "Resource limit exceeded: {} limit {} < actual {}",
@@ -130,10 +100,7 @@ impl std::fmt::Display for StepError {
             StepError::Internal { message, source } => {
                 write!(f, "Internal error: {} (source: {})", message, source)
             }
-            StepError::PermissionDenied {
-                operation,
-                resource,
-            } => {
+            StepError::PermissionDenied { operation, resource } => {
                 write!(
                     f,
                     "Permission denied for operation '{}' on resource '{}'",
@@ -391,9 +358,8 @@ impl EnhancedWorkflowExecutor {
 
         if self.output_limits.truncate_at_word_boundary {
             // Find the last word boundary before the limit
-            let truncate_point = text[..max_bytes]
-                .rfind(|c: char| c.is_whitespace())
-                .unwrap_or(max_bytes);
+            let truncate_point =
+                text[..max_bytes].rfind(|c: char| c.is_whitespace()).unwrap_or(max_bytes);
             format!(
                 "{}\n[truncated: {}/{} bytes]",
                 &text[..truncate_point],
@@ -401,12 +367,7 @@ impl EnhancedWorkflowExecutor {
                 text.len()
             )
         } else {
-            format!(
-                "{}\n[truncated: {}/{} bytes]",
-                &text[..max_bytes],
-                max_bytes,
-                text.len()
-            )
+            format!("{}\n[truncated: {}/{} bytes]", &text[..max_bytes], max_bytes, text.len())
         }
     }
 }
@@ -452,13 +413,7 @@ impl WorkflowExecutor {
         Ok(result
             .step_results
             .into_iter()
-            .map(|r| {
-                if r.success {
-                    Ok(())
-                } else {
-                    Err(anyhow!("Step failed: {:?}", r.error))
-                }
-            })
+            .map(|r| if r.success { Ok(()) } else { Err(anyhow!("Step failed: {:?}", r.error)) })
             .collect())
     }
 }

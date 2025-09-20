@@ -9,10 +9,7 @@ fn shell_type_from_str_mappings() {
     assert_eq!("zsh".parse::<ShellType>().unwrap(), ShellType::Zsh);
     assert_eq!("fish".parse::<ShellType>().unwrap(), ShellType::Fish);
     assert_eq!("pwsh".parse::<ShellType>().unwrap(), ShellType::PowerShell);
-    assert_eq!(
-        "powershell".parse::<ShellType>().unwrap(),
-        ShellType::PowerShell
-    );
+    assert_eq!("powershell".parse::<ShellType>().unwrap(), ShellType::PowerShell);
     assert_eq!("nu".parse::<ShellType>().unwrap(), ShellType::Nushell);
     assert_eq!("nushell".parse::<ShellType>().unwrap(), ShellType::Nushell);
 

@@ -44,24 +44,16 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
         .map_err(|e| anyhow::anyhow!("failed to init secure sync provider: {:?}", e))?;
 
     match &t.command {
-        TrustSubcommand::Add {
-            installation_id,
-            display_name,
-            public_key_hex,
-        } => {
+        TrustSubcommand::Add { installation_id, display_name, public_key_hex } => {
             let public_key = hex_to_bytes(public_key_hex)?;
             let info = PeerInfo {
                 installation_id: installation_id.clone(),
-                display_name: display_name
-                    .clone()
-                    .unwrap_or_else(|| installation_id.clone()),
+                display_name: display_name.clone().unwrap_or_else(|| installation_id.clone()),
                 last_seen: 0,
                 public_key,
                 capabilities: vec![],
             };
-            provider
-                .add_peer(info)
-                .map_err(|e| anyhow::anyhow!("failed to add peer: {:?}", e))?;
+            provider.add_peer(info).map_err(|e| anyhow::anyhow!("failed to add peer: {:?}", e))?;
             println!("Added peer: {}", installation_id);
             Ok(0)
         }
@@ -106,10 +98,7 @@ fn run_trust_cmd(t: &SyncTrustOptions) -> Result<i32> {
             }
             Ok(0)
         }
-        TrustSubcommand::Rotate {
-            installation_id,
-            new_public_key_hex,
-        } => {
+        TrustSubcommand::Rotate { installation_id, new_public_key_hex } => {
             let new_key = hex_to_bytes(new_public_key_hex)?;
             let ok = provider
                 .rotate_peer_key(installation_id, new_key)
@@ -175,11 +164,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             fs::copy(&src_path, &dst_path).with_context(|| {
-                format!(
-                    "Failed to copy {} -> {}",
-                    src_path.display(),
-                    dst_path.display()
-                )
+                format!("Failed to copy {} -> {}", src_path.display(), dst_path.display())
             })?;
         }
     }

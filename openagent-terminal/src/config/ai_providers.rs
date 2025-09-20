@@ -106,10 +106,7 @@ impl ProviderCredentials {
         let model = if let Some(env_name) = &config.model_env {
             match std::env::var(env_name) {
                 Ok(model) => {
-                    debug!(
-                        "Found model for provider '{}' from env '{}'",
-                        provider_name, env_name
-                    );
+                    debug!("Found model for provider '{}' from env '{}'", provider_name, env_name);
                     Some(model)
                 }
                 Err(_) => {
@@ -120,10 +117,7 @@ impl ProviderCredentials {
                         );
                         Some(val)
                     } else if let Some(default) = &config.default_model {
-                        debug!(
-                            "Using default model for provider '{}': {}",
-                            provider_name, default
-                        );
+                        debug!("Using default model for provider '{}': {}", provider_name, default);
                         Some(default.clone())
                     } else {
                         return Err(format!(
@@ -143,12 +137,7 @@ impl ProviderCredentials {
             extra.insert(key.clone(), value.clone());
         }
 
-        Ok(Self {
-            api_key,
-            endpoint,
-            model,
-            extra,
-        })
+        Ok(Self { api_key, endpoint, model, extra })
     }
 
     /// Get API key with validation

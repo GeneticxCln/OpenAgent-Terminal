@@ -83,10 +83,8 @@ pub fn spawn_ipc_socket(
                     let _ = event_proxy.send_event(event);
                 }
                 SocketMessage::GetConfig(config) => {
-                    let window_id = config
-                        .window_id
-                        .and_then(|id| u64::try_from(id).ok())
-                        .map(WindowId::from);
+                    let window_id =
+                        config.window_id.and_then(|id| u64::try_from(id).ok()).map(WindowId::from);
                     let event = Event::new(EventType::IpcGetConfig(Arc::new(stream)), window_id);
                     let _ = event_proxy.send_event(event);
                 }
@@ -281,9 +279,7 @@ fn find_socket(socket_path: Option<PathBuf>) -> IoResult<UnixStream> {
 /// display servers running for the same user.
 #[cfg(not(target_os = "macos"))]
 fn socket_prefix() -> String {
-    let display = env::var("WAYLAND_DISPLAY")
-        .or_else(|_| env::var("DISPLAY"))
-        .unwrap_or_default();
+    let display = env::var("WAYLAND_DISPLAY").or_else(|_| env::var("DISPLAY")).unwrap_or_default();
     format!("OpenAgentTerminal-{}", display.replace('/', "-"))
 }
 

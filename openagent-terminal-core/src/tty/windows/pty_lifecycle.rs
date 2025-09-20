@@ -38,12 +38,7 @@ impl PtyBuilder {
         conin: WritePipe,
         child_watcher: ChildExitWatcher,
     ) -> Self {
-        Self {
-            backend,
-            conout,
-            conin,
-            child_watcher,
-        }
+        Self { backend, conout, conin, child_watcher }
     }
 
     /// Activate the PTY, transitioning to the active state

@@ -43,13 +43,11 @@ pub struct ComponentConfig {
 
 impl Default for ComponentConfig {
     fn default() -> Self {
-        let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("openagent-terminal");
+        let data_dir =
+            dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
 
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("openagent-terminal");
+        let config_dir =
+            dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openagent-terminal");
 
         Self {
             enable_wgpu: true,
@@ -89,24 +87,15 @@ impl std::fmt::Debug for InitializedComponents {
         }
         #[cfg(feature = "blocks")]
         {
-            let _ = ds.field(
-                "block_manager",
-                &self.block_manager.as_ref().map(|_| "Some"),
-            );
+            let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some"));
         }
         #[cfg(feature = "workflow")]
         {
-            let _ = ds.field(
-                "workflow_engine",
-                &self.workflow_engine.as_ref().map(|_| "Some"),
-            );
+            let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some"));
         }
         #[cfg(feature = "plugins")]
         {
-            let _ = ds.field(
-                "plugin_manager",
-                &self.plugin_manager.as_ref().map(|_| "Some"),
-            );
+            let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some"));
         }
         #[cfg(feature = "blocks")]
         {
@@ -117,17 +106,12 @@ impl std::fmt::Debug for InitializedComponents {
 }
 
 /// Initialize all components
-pub async fn initialize_components(
-    config: &ComponentConfig,
-) -> Result<InitializedComponents> {
+pub async fn initialize_components(config: &ComponentConfig) -> Result<InitializedComponents> {
     info!("Initializing OpenAgent Terminal components...");
 
     // Create async runtime for components
     let runtime = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4)
-            .enable_all()
-            .build()?,
+        tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build()?,
     );
 
     // Create directories
@@ -248,8 +232,8 @@ pub async fn initialize_components(
         // Plugin policy toggles (Warp-like defaults with env overrides for releases)
         let enforce_signatures = true;
         // Default to strict in release builds: require signatures for all, disable hot reload.
-        let require_all_default = if cfg!(debug_assertions) { false } else { true };
-        let hot_reload_default = if cfg!(debug_assertions) { true } else { false };
+        let require_all_default = !cfg!(debug_assertions);
+        let hot_reload_default = cfg!(debug_assertions);
         let require_all = std::env::var("OPENAGENT_PLUGINS_REQUIRE_ALL")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -317,7 +301,7 @@ pub async fn initialize_components(
         #[cfg(feature = "workflow")]
         workflow_engine,
         #[cfg(feature = "plugins")]
-        plugin_manager: plugin_mgr,
+        plugin_manager,
         #[cfg(feature = "blocks")]
         storage,
         runtime,
@@ -424,11 +408,7 @@ steps:
   - run: pip install -r requirements.txt
   - run: ruff check .
 "#;
-    let files = [
-        ("rust.yaml", rust),
-        ("node.yaml", node),
-        ("python.yaml", python),
-    ];
+    let files = [("rust.yaml", rust), ("node.yaml", node), ("python.yaml", python)];
     for (name, content) in files {
         let path = dir.join(name);
         if !path.exists() {
@@ -478,9 +458,7 @@ pub(crate) async fn initialize_plugin_manager(
 
     // Create plugin host with storage dir
     let storage_dir = if let Some(data) = dirs::data_dir() {
-        data.join("openagent-terminal")
-            .join("plugins")
-            .join("storage")
+        data.join("openagent-terminal").join("plugins").join("storage")
     } else {
         PathBuf::from("./.openagent-terminal/plugins/storage")
     };
@@ -586,10 +564,7 @@ impl PluginHost for TerminalPluginHost {
             )));
         }
         // Interactive confirmation if required by policy
-        let require_confirm = *policy
-            .require_confirmation
-            .get(&risk.level)
-            .unwrap_or(&false);
+        let require_confirm = *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
         if require_confirm {
             let mut body = String::new();
             body.push_str(&format!("{}\n\n", risk.explanation));
@@ -625,10 +600,7 @@ impl PluginHost for TerminalPluginHost {
                     return Err(PluginError::CommandFailed("User canceled command".into()));
                 }
                 Err(e) => {
-                    return Err(PluginError::CommandFailed(format!(
-                        "Confirmation failed: {}",
-                        e
-                    )));
+                    return Err(PluginError::CommandFailed(format!("Confirmation failed: {}", e)));
                 }
             }
         }
@@ -831,9 +803,14 @@ async fn install_bundled_plugins(dir: &PathBuf) -> Result<(), anyhow::Error> {
     use tokio::fs;
     fs::create_dir_all(dir).await.ok();
 
-    struct Builtin<'a> { stem: &'a str, manifest: &'a str }
-    const BUILTINS: &[Builtin] = &[
-        Builtin{ stem: "dev-tools-bundled", manifest: r#"[permissions]
+    struct Builtin<'a> {
+        stem: &'a str,
+        manifest: &'a str,
+    }
+    const BUILTINS: &[Builtin<'_>] = &[
+        Builtin {
+            stem: "dev-tools-bundled",
+            manifest: r#"[permissions]
 read_files=[]
 write_files=[]
 environment_variables=[]
@@ -841,8 +818,11 @@ network=false
 execute_commands=false
 max_memory_mb=50
 timeout_ms=5000
-"# },
-        Builtin{ stem: "docker-helper-bundled", manifest: r#"[permissions]
+"#,
+        },
+        Builtin {
+            stem: "docker-helper-bundled",
+            manifest: r#"[permissions]
 read_files=[]
 write_files=[]
 environment_variables=[]
@@ -850,8 +830,11 @@ network=false
 execute_commands=false
 max_memory_mb=50
 timeout_ms=5000
-"# },
-        Builtin{ stem: "git-context-bundled", manifest: r#"[permissions]
+"#,
+        },
+        Builtin {
+            stem: "git-context-bundled",
+            manifest: r#"[permissions]
 read_files=[]
 write_files=[]
 environment_variables=[]
@@ -859,13 +842,17 @@ network=false
 execute_commands=false
 max_memory_mb=50
 timeout_ms=5000
-"# },
+"#,
+        },
     ];
 
     // Try copying real WASM artifacts from target/wasm32-wasi if available; otherwise fall back to a minimal stub.
     // Helper to locate built .wasm files (release/debug; with/without lib prefix; snake/hyphen variants).
     fn locate_wasm_artifact(crate_snake: &str) -> Option<PathBuf> {
-        let target_dir = std::env::var("CARGO_TARGET_DIR").ok().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("target"));
+        let target_dir = std::env::var("CARGO_TARGET_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("target"));
         let mut names: Vec<String> = vec![
             format!("{}.wasm", crate_snake),
             format!("lib{}.wasm", crate_snake),
@@ -879,7 +866,9 @@ timeout_ms=5000
         for prof in ["release", "debug"] {
             for n in &names {
                 let p = target_dir.join("wasm32-wasi").join(prof).join(n);
-                if p.exists() { return Some(p); }
+                if p.exists() {
+                    return Some(p);
+                }
             }
         }
         None
@@ -975,10 +964,8 @@ fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
             tokio::spawn(async move {
                 if p.extension().and_then(|s| s.to_str()) == Some("wasm") {
                     // Unload if already loaded (by name) to trigger cleanup
-                    if let Some(name) = p
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .map(|s| s.to_string())
+                    if let Some(name) =
+                        p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
                     {
                         let loaded = mgr.loaded_names_and_paths().await;
                         if loaded.iter().any(|(n, _)| n == &name) {

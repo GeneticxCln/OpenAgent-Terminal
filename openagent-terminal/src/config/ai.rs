@@ -1,7 +1,36 @@
 use clap::ValueEnum;
+use std::fmt;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Routing mode for AI requests
+#[derive(ConfigDeserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AiRoutingMode {
+    Auto,
+    Agent,
+    Provider,
+}
+
+impl Default for AiRoutingMode {
+    fn default() -> Self {
+        AiRoutingMode::Auto
+    }
+}
+
+#[derive(ValueEnum, SerdeReplace, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AiApplyJoinStrategy {
+    AndThen,
+    Lines,
+}
+
+impl Default for AiApplyJoinStrategy {
+    fn default() -> Self {
+        Self::AndThen
+    }
+}
 
 /// AI integration configuration (build- and run-time opt-in).
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
@@ -9,9 +38,17 @@ pub struct AiConfig {
     /// Enable AI interface at runtime. Defaults to false.
     pub enabled: bool,
 
+    /// Routing mode: auto (try agents then fallback), agent, or provider.
+    #[serde(default)]
+    pub routing: AiRoutingMode,
+
     /// Context collection settings for enriching AI requests.
     #[serde(default)]
     pub context: AiContextConfig,
+
+    /// Strategy to join multiple commands when applying.
+    #[serde(default)]
+    pub apply_joiner: AiApplyJoinStrategy,
 
     /// Visual height of the AI panel as a fraction of the viewport (0.2..0.6 typical).
     #[serde(default)]
@@ -93,6 +130,7 @@ impl Default for AiConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            routing: AiRoutingMode::Auto,
             panel_height_fraction: 0.40,
             backdrop_alpha: 0.25,
             shadow: true,
@@ -115,6 +153,7 @@ impl Default for AiConfig {
             animation_speed: 1.0,
             providers: HashMap::new(),
             context: AiContextConfig::default(),
+            apply_joiner: AiApplyJoinStrategy::AndThen,
         }
     }
 }
@@ -170,7 +209,7 @@ impl Default for AiLogVerbosity {
     }
 }
 
-impl std::fmt::Display for AiLogVerbosity {
+impl fmt::Display for AiLogVerbosity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AiLogVerbosity::Off => write!(f, "off"),
@@ -275,10 +314,7 @@ pub struct AiFileTreeConfig {
 
 impl Default for AiFileTreeConfig {
     fn default() -> Self {
-        Self {
-            max_entries: 500,
-            root_strategy: AiRootStrategy::Git,
-        }
+        Self { max_entries: 500, root_strategy: AiRootStrategy::Git }
     }
 }
 
@@ -292,10 +328,7 @@ pub struct AiGitConfig {
 
 impl Default for AiGitConfig {
     fn default() -> Self {
-        Self {
-            include_branch: true,
-            include_status: true,
-        }
+        Self { include_branch: true, include_status: true }
     }
 }
 

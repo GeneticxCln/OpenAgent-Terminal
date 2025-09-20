@@ -1,8 +1,6 @@
-#![cfg(feature = "wasm-runtime")]
-
 use crate::api::{CommandOutput, PluginError};
-use crate::permissions::SecurityPolicy;
 use crate::host::{HostInterface, LogLevel, NetRequest, NetResponse, Notification, TerminalState};
+use crate::permissions::SecurityPolicy;
 use regex::Regex;
 use reqwest::blocking::Client as HttpClient;
 use std::fs;
@@ -38,7 +36,7 @@ impl DefaultHost {
             return Err(PluginError::PermissionDenied("read not allowed".into()));
         }
         if let Some(rules) = (!self.policy.permissions.file_read_allow.is_empty())
-            .then(|| &self.policy.permissions.file_read_allow)
+            .then_some(&self.policy.permissions.file_read_allow)
         {
             // At least one rule must match the path
             let mut matched = false;
@@ -73,7 +71,12 @@ impl DefaultHost {
         Ok(())
     }
 
-    fn exec_allowed(&self, cmd: &str, args: &[String], cwd: Option<&str>) -> Result<(u64, usize), PluginError> {
+    fn exec_allowed(
+        &self,
+        cmd: &str,
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> Result<(u64, usize), PluginError> {
         if !self.policy.permissions.execute_commands {
             return Err(PluginError::PermissionDenied("exec disabled".into()));
         }
@@ -85,7 +88,8 @@ impl DefaultHost {
                 continue;
             }
             if let Some(ref pat) = rule.args_pattern {
-                let re = Regex::new(pat).map_err(|e| PluginError::InvalidInput(format!("bad args_pattern: {e}")))?;
+                let re = Regex::new(pat)
+                    .map_err(|e| PluginError::InvalidInput(format!("bad args_pattern: {e}")))?;
                 let joined = args.join(" ");
                 if !re.is_match(&joined) {
                     continue;
@@ -95,14 +99,22 @@ impl DefaultHost {
                 if !rule.cwd_allow.is_empty() {
                     let mut ok = false;
                     for allow in &rule.cwd_allow {
-                        if let (Ok(c), Ok(a)) = (dunce::canonicalize(cwd_str), dunce::canonicalize(allow)) {
-                            if c.starts_with(a) { ok = true; break; }
+                        if let (Ok(c), Ok(a)) =
+                            (dunce::canonicalize(cwd_str), dunce::canonicalize(allow))
+                        {
+                            if c.starts_with(a) {
+                                ok = true;
+                                break;
+                            }
                         }
                     }
-                    if !ok { continue; }
+                    if !ok {
+                        continue;
+                    }
                 }
             }
-            let timeout = rule.timeout_ms.or(Some(self.policy.permissions.timeout_ms)).unwrap_or(5000) as u64;
+            let timeout =
+                rule.timeout_ms.or(Some(self.policy.permissions.timeout_ms)).unwrap_or(5000);
             let max_out = rule.max_output_bytes.unwrap_or(256 * 1024) as usize;
             return Ok((timeout, max_out));
         }
@@ -122,22 +134,16 @@ impl HostInterface for DefaultHost {
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>, PluginError> {
         // Enforce path policy
-        let max = self
-            .policy
-            .permissions
-            .file_read_allow
-            .iter()
-            .filter_map(|p| p.max_bytes)
-            .min();
+        let max = self.policy.permissions.file_read_allow.iter().filter_map(|p| p.max_bytes).min();
         self.ensure_read_allowed(path, max)?;
 
-        let mut f = fs::File::open(path).map_err(|e| PluginError::IoError(e))?;
+        let mut f = fs::File::open(path).map_err(PluginError::IoError)?;
         let mut buf = Vec::new();
         if let Some(limit) = max {
             let mut take = f.by_ref().take(limit);
-            take.read_to_end(&mut buf).map_err(|e| PluginError::IoError(e))?;
+            take.read_to_end(&mut buf).map_err(PluginError::IoError)?;
         } else {
-            f.read_to_end(&mut buf).map_err(|e| PluginError::IoError(e))?;
+            f.read_to_end(&mut buf).map_err(PluginError::IoError)?;
         }
         Ok(buf)
     }
@@ -151,14 +157,22 @@ impl HostInterface for DefaultHost {
         self.spawn(command, &[], None)
     }
 
-    fn spawn(&self, cmd: &str, args: &[String], cwd: Option<&str>) -> Result<CommandOutput, PluginError> {
+    fn spawn(
+        &self,
+        cmd: &str,
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> Result<CommandOutput, PluginError> {
         let (timeout_ms, max_output) = self.exec_allowed(cmd, args, cwd)?;
         let start = Instant::now();
         let mut command = Command::new(cmd);
         command.args(args);
-        if let Some(c) = cwd { command.current_dir(c); }
+        if let Some(c) = cwd {
+            command.current_dir(c);
+        }
         command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        let mut child = command.spawn().map_err(|e| PluginError::CommandFailed(format!("spawn: {e}")))?;
+        let mut child =
+            command.spawn().map_err(|e| PluginError::CommandFailed(format!("spawn: {e}")))?;
         // Simple blocking wait with timeout
         let timeout = Duration::from_millis(timeout_ms);
         let end_time = start + timeout;
@@ -167,11 +181,24 @@ impl HostInterface for DefaultHost {
                 Ok(Some(status)) => {
                     let mut out = String::new();
                     let mut err = String::new();
-                    if let Some(mut so) = child.stdout.take() { let _ = so.read_to_string(&mut out); }
-                    if let Some(mut se) = child.stderr.take() { let _ = se.read_to_string(&mut err); }
-                    if out.len() > max_output { out.truncate(max_output); }
-                    if err.len() > max_output { err.truncate(max_output); }
-                    return Ok(CommandOutput { stdout: out, stderr: err, exit_code: status.code().unwrap_or(-1), execution_time_ms: start.elapsed().as_millis() as u64 });
+                    if let Some(mut so) = child.stdout.take() {
+                        let _ = so.read_to_string(&mut out);
+                    }
+                    if let Some(mut se) = child.stderr.take() {
+                        let _ = se.read_to_string(&mut err);
+                    }
+                    if out.len() > max_output {
+                        out.truncate(max_output);
+                    }
+                    if err.len() > max_output {
+                        err.truncate(max_output);
+                    }
+                    return Ok(CommandOutput {
+                        stdout: out,
+                        stderr: err,
+                        exit_code: status.code().unwrap_or(-1),
+                        execution_time_ms: start.elapsed().as_millis() as u64,
+                    });
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(10)),
                 Err(e) => return Err(PluginError::CommandFailed(format!("wait: {e}"))),
@@ -187,16 +214,29 @@ impl HostInterface for DefaultHost {
             return Err(PluginError::PermissionDenied("network disabled".into()));
         }
         // Basic URL parse and domain allowlist check
-        let url = req.url.parse::<reqwest::Url>().map_err(|e| PluginError::InvalidInput(format!("bad url: {e}")))?;
+        let url = req
+            .url
+            .parse::<reqwest::Url>()
+            .map_err(|e| PluginError::InvalidInput(format!("bad url: {e}")))?;
         let domain = url.host_str().unwrap_or("");
         if !self.policy.permissions.net_allow_domains.is_empty()
-            && !self.policy.permissions.net_allow_domains.iter().any(|d| d.eq_ignore_ascii_case(domain))
+            && !self
+                .policy
+                .permissions
+                .net_allow_domains
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(domain))
         {
             return Err(PluginError::PermissionDenied("domain not allowed".into()));
         }
         let method = req.method.to_uppercase();
         if !self.policy.permissions.net_methods_allow.is_empty()
-            && !self.policy.permissions.net_methods_allow.iter().any(|m| m.eq_ignore_ascii_case(&method))
+            && !self
+                .policy
+                .permissions
+                .net_methods_allow
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&method))
         {
             return Err(PluginError::PermissionDenied("method not allowed".into()));
         }
@@ -204,9 +244,7 @@ impl HostInterface for DefaultHost {
             .timeout_ms
             .or(self.policy.permissions.net_timeout_ms)
             .unwrap_or(self.policy.permissions.timeout_ms);
-        let client = self
-            .http
-            .clone();
+        let client = self.http.clone();
         let mut builder = match method.as_str() {
             "GET" => client.get(url.clone()),
             "POST" => client.post(url.clone()),
@@ -214,12 +252,16 @@ impl HostInterface for DefaultHost {
             "DELETE" => client.delete(url.clone()),
             _ => return Err(PluginError::InvalidInput("unsupported method".into())),
         };
-        for (k, v) in &req.headers { builder = builder.header(k, v); }
-        if let Some(body) = &req.body { builder = builder.body(body.clone()); }
+        for (k, v) in &req.headers {
+            builder = builder.header(k, v);
+        }
+        if let Some(body) = &req.body {
+            builder = builder.body(body.clone());
+        }
         let resp = builder
             .timeout(Duration::from_millis(timeout_ms))
             .send()
-            .map_err(|e| PluginError::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("http: {e}"))))?;
+            .map_err(|e| PluginError::IoError(std::io::Error::other(format!("http: {e}"))))?;
         let status = resp.status().as_u16();
         let mut headers = Vec::new();
         for (k, v) in resp.headers().iter() {
@@ -234,7 +276,7 @@ impl HostInterface for DefaultHost {
         let mut take = reader.take(max_bytes);
         use std::io::Read as _;
         take.read_to_end(&mut body)
-            .map_err(|e| PluginError::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("http read: {e}"))))?;
+            .map_err(|e| PluginError::IoError(std::io::Error::other(format!("http read: {e}"))))?;
         Ok(NetResponse { status, headers, body })
     }
 
@@ -249,9 +291,15 @@ impl HostInterface for DefaultHost {
         }
     }
 
-    fn show_notification(&self, _notification: Notification) -> Result<(), PluginError> { Ok(()) }
+    fn show_notification(&self, _notification: Notification) -> Result<(), PluginError> {
+        Ok(())
+    }
 
-    fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), PluginError> { Ok(()) }
+    fn store_data(&self, _key: &str, _value: &[u8]) -> Result<(), PluginError> {
+        Ok(())
+    }
 
-    fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, PluginError> { Ok(None) }
+    fn retrieve_data(&self, _key: &str) -> Result<Option<Vec<u8>>, PluginError> {
+        Ok(None)
+    }
 }

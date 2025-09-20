@@ -22,7 +22,9 @@ use crate::shell_integration::CommandId;
 /// Parse human-friendly sizes like "10KB", "2MB", "1GB" (case-insensitive). Base 1024.
 fn parse_human_size(s: &str) -> Option<u64> {
     let s = s.trim();
-    if s.is_empty() { return None; }
+    if s.is_empty() {
+        return None;
+    }
     let split_idx = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let (num_part, unit_part) = s.split_at(split_idx);
     let val: u64 = num_part.parse().ok()?;
@@ -269,8 +271,12 @@ pub enum SearchFilter {
         to: Option<Instant>,
     },
     /// Filter by creation time when available on the result
-    CreatedAfter { at: Instant },
-    CreatedBefore { at: Instant },
+    CreatedAfter {
+        at: Instant,
+    },
+    CreatedBefore {
+        at: Instant,
+    },
     TypeFilter {
         types: HashSet<String>,
     },
@@ -285,13 +291,21 @@ pub enum SearchFilter {
         contexts: HashSet<SearchContext>,
     },
     /// Match when the result has a tag equal to `tag` (case-insensitive).
-    HasTag { tag: String },
+    HasTag {
+        tag: String,
+    },
     /// Match command results by exit codes. Non-command results will not match.
-    ExitCode { codes: HashSet<i32> },
+    ExitCode {
+        codes: HashSet<i32>,
+    },
     /// Match command results by success (exit_code == 0) or failure (exit_code != 0).
-    StatusFilter { success: bool },
+    StatusFilter {
+        success: bool,
+    },
     /// Match command results by shell kind (e.g., "bash", "zsh", "fish"). Case-insensitive.
-    Shell { kinds: HashSet<String> },
+    Shell {
+        kinds: HashSet<String>,
+    },
     Custom {
         name: String,
         predicate: Arc<dyn Fn(&SearchResult) -> bool + Send + Sync>,
@@ -301,10 +315,7 @@ pub enum SearchFilter {
 impl fmt::Debug for SearchFilter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SearchFilter::TextFilter {
-                pattern,
-                case_sensitive,
-            } => f
+            SearchFilter::TextFilter { pattern, case_sensitive } => f
                 .debug_struct("TextFilter")
                 .field("pattern", pattern)
                 .field("case_sensitive", case_sensitive)
@@ -331,7 +342,9 @@ impl fmt::Debug for SearchFilter {
             }
             SearchFilter::HasTag { tag } => f.debug_tuple("HasTag").field(tag).finish(),
             SearchFilter::ExitCode { codes } => f.debug_tuple("ExitCode").field(codes).finish(),
-            SearchFilter::StatusFilter { success } => f.debug_tuple("StatusFilter").field(success).finish(),
+            SearchFilter::StatusFilter { success } => {
+                f.debug_tuple("StatusFilter").field(success).finish()
+            }
             SearchFilter::Shell { kinds } => f.debug_tuple("Shell").field(kinds).finish(),
             SearchFilter::Custom { name, .. } => f.debug_tuple("Custom").field(name).finish(),
         }
@@ -967,10 +980,7 @@ impl SearchIntegration {
             filter_system: FilterSystem::new(),
             index_manager: SearchIndexManager::new(),
             event_callbacks: Vec::new(),
-            stats: SearchStats {
-                last_reset: Instant::now(),
-                ..Default::default()
-            },
+            stats: SearchStats { last_reset: Instant::now(), ..Default::default() },
         };
 
         // Initialize indices immediately
@@ -1102,14 +1112,8 @@ impl SearchIntegration {
         // Convert command matches to search results
         for cmd_match in command_matches {
             let mut md = HashMap::from([
-                (
-                    "exit_code".to_string(),
-                    cmd_match.metadata.exit_code.to_string(),
-                ),
-                (
-                    "duration".to_string(),
-                    format!("{:?}", cmd_match.metadata.duration),
-                ),
+                ("exit_code".to_string(), cmd_match.metadata.exit_code.to_string()),
+                ("duration".to_string(), format!("{:?}", cmd_match.metadata.duration)),
                 ("working_dir".to_string(), cmd_match.metadata.working_dir.clone()),
             ]);
             if !cmd_match.metadata.tags.is_empty() {
@@ -1149,12 +1153,7 @@ impl SearchIntegration {
         let block_matches = self.block_search.search_content(query);
 
         for (block_id, matches) in block_matches {
-            if let Some(metadata) = self
-                .block_search
-                .content_index
-                .block_metadata
-                .get(&block_id)
-            {
+            if let Some(metadata) = self.block_search.content_index.block_metadata.get(&block_id) {
                 let result = SearchResult {
                     id: format!("block_{:?}", block_id),
                     title: metadata.title.clone(),
@@ -1196,10 +1195,7 @@ impl SearchIntegration {
                     ("path".to_string(), file_entry.path),
                     ("size".to_string(), file_entry.size.to_string()),
                     ("type".to_string(), format!("{:?}", file_entry.file_type)),
-                    (
-                        "extension".to_string(),
-                        file_entry.extension.unwrap_or_default(),
-                    ),
+                    ("extension".to_string(), file_entry.extension.unwrap_or_default()),
                 ]),
                 timestamp: file_entry.modified,
                 created_at: None,
@@ -1216,11 +1212,7 @@ impl SearchIntegration {
                 {
                     let result = SearchResult {
                         id: format!("file_content_{}", file_path),
-                        title: file_path
-                            .split('/')
-                            .last()
-                            .unwrap_or(&file_path)
-                            .to_string(),
+                        title: file_path.split('/').last().unwrap_or(&file_path).to_string(),
                         content: matches.join("\n"),
                         context: SearchContext::FileSystem,
                         relevance_score: self.calculate_content_relevance(&matches, query),
@@ -1261,15 +1253,13 @@ impl SearchIntegration {
             let output_count = results.len();
 
             // Record filter application
-            self.filter_system
-                .filter_history
-                .push_back(FilterApplication {
-                    filter: filter.clone(),
-                    input_count,
-                    output_count,
-                    duration,
-                    timestamp: start_time,
-                });
+            self.filter_system.filter_history.push_back(FilterApplication {
+                filter: filter.clone(),
+                input_count,
+                output_count,
+                duration,
+                timestamp: start_time,
+            });
 
             // Limit filter history
             if self.filter_system.filter_history.len() > 1000 {
@@ -1299,20 +1289,14 @@ impl SearchIntegration {
             .into_iter()
             .filter(|result| {
                 match filter {
-                    SearchFilter::TextFilter {
-                        pattern,
-                        case_sensitive,
-                    } => {
+                    SearchFilter::TextFilter { pattern, case_sensitive } => {
                         let content = if *case_sensitive {
                             result.content.clone()
                         } else {
                             result.content.to_lowercase()
                         };
-                        let search_pattern = if *case_sensitive {
-                            pattern.clone()
-                        } else {
-                            pattern.to_lowercase()
-                        };
+                        let search_pattern =
+                            if *case_sensitive { pattern.clone() } else { pattern.to_lowercase() };
                         content.contains(&search_pattern)
                     }
                     SearchFilter::RegexFilter { regex } => regex.is_match(&result.content),
@@ -1363,10 +1347,14 @@ impl SearchIntegration {
                     SearchFilter::DateFilter { from, to } => {
                         let ts = result.timestamp;
                         if let Some(f) = from {
-                            if ts < *f { return false; }
+                            if ts < *f {
+                                return false;
+                            }
                         }
                         if let Some(t) = to {
-                            if ts > *t { return false; }
+                            if ts > *t {
+                                return false;
+                            }
                         }
                         true
                     }
@@ -1390,13 +1378,19 @@ impl SearchIntegration {
                             .metadata
                             .get("size")
                             .and_then(|s| s.parse::<u64>().ok())
-                            .or_else(|| result.metadata.get("size").and_then(|s| parse_human_size(s)));
+                            .or_else(|| {
+                                result.metadata.get("size").and_then(|s| parse_human_size(s))
+                            });
                         if let Some(bytes) = meta_size {
                             if let Some(minb) = min_size.map(|v| v as u64) {
-                                if bytes < minb { return false; }
+                                if bytes < minb {
+                                    return false;
+                                }
                             }
                             if let Some(maxb) = max_size.map(|v| v as u64) {
-                                if bytes > maxb { return false; }
+                                if bytes > maxb {
+                                    return false;
+                                }
                             }
                             true
                         } else {
@@ -1410,12 +1404,9 @@ impl SearchIntegration {
 
         Ok(filtered)
     }
-
 }
 
-
 impl SearchIntegration {
-
     /// Add search filter immediately
     pub fn add_filter(&mut self, filter: SearchFilter) {
         self.filter_system.active_filters.push(filter);
@@ -1442,11 +1433,8 @@ impl SearchIntegration {
         item_id: &str,
         content: Option<String>,
     ) -> Result<()> {
-        let operation = if content.is_some() {
-            UpdateOperation::Update
-        } else {
-            UpdateOperation::Remove
-        };
+        let operation =
+            if content.is_some() { UpdateOperation::Update } else { UpdateOperation::Remove };
 
         let update = IndexUpdate {
             index_name: index_name.to_string(),
@@ -1499,15 +1487,11 @@ impl SearchIntegration {
             "text" => match update.operation {
                 UpdateOperation::Add | UpdateOperation::Update => {
                     if let Some(content) = &update.content {
-                        self.text_search
-                            .inverted_index
-                            .add_document(&update.item_id, content);
+                        self.text_search.inverted_index.add_document(&update.item_id, content);
                     }
                 }
                 UpdateOperation::Remove => {
-                    self.text_search
-                        .inverted_index
-                        .remove_document(&update.item_id);
+                    self.text_search.inverted_index.remove_document(&update.item_id);
                 }
                 UpdateOperation::Clear => {
                     self.text_search.inverted_index = InvertedIndex::default();
@@ -1551,14 +1535,8 @@ impl SearchIntegration {
 
     /// Calculate filename relevance score
     fn calculate_filename_relevance(&self, file_entry: &FileEntry, query: &str) -> f64 {
-        let name_match = file_entry
-            .name
-            .to_lowercase()
-            .contains(&query.to_lowercase());
-        let path_match = file_entry
-            .path
-            .to_lowercase()
-            .contains(&query.to_lowercase());
+        let name_match = file_entry.name.to_lowercase().contains(&query.to_lowercase());
+        let path_match = file_entry.path.to_lowercase().contains(&query.to_lowercase());
 
         if name_match {
             1.0
@@ -1572,10 +1550,8 @@ impl SearchIntegration {
     /// Calculate content relevance score
     fn calculate_content_relevance(&self, matches: &[String], query: &str) -> f64 {
         let match_count = matches.len() as f64;
-        let total_occurrences = matches
-            .iter()
-            .map(|m| m.matches(query).count())
-            .sum::<usize>() as f64;
+        let total_occurrences =
+            matches.iter().map(|m| m.matches(query).count()).sum::<usize>() as f64;
 
         (match_count + total_occurrences) / 10.0
     }
@@ -1753,11 +1729,7 @@ impl BlockSearchEngine {
     }
 
     fn extract_matching_lines(&self, content: &str, query: &str) -> Vec<String> {
-        content
-            .lines()
-            .filter(|line| line.contains(query))
-            .map(|line| line.to_string())
-            .collect()
+        content.lines().filter(|line| line.contains(query)).map(|line| line.to_string()).collect()
     }
 }
 
@@ -1836,11 +1808,8 @@ impl SearchIndexManager {
 
 impl InvertedIndex {
     fn add_document(&mut self, doc_id: &str, content: &str) {
-        let terms: HashSet<String> = content
-            .to_lowercase()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        let terms: HashSet<String> =
+            content.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
 
         // Update term-to-document mapping
         for term in &terms {
@@ -1888,11 +1857,8 @@ impl InvertedIndex {
     }
 
     fn search_exact(&self, query: &str) -> Vec<SearchResult> {
-        let query_terms: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        let query_terms: Vec<String> =
+            query.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
 
         let mut doc_scores: HashMap<String, f64> = HashMap::new();
 
@@ -1991,12 +1957,7 @@ impl Default for FuzzyWeights {
 
 impl Default for Bm25Ranker {
     fn default() -> Self {
-        Self {
-            k1: 1.2,
-            b: 0.75,
-            average_doc_length: 100.0,
-            doc_lengths: HashMap::new(),
-        }
+        Self { k1: 1.2, b: 0.75, average_doc_length: 100.0, doc_lengths: HashMap::new() }
     }
 }
 
@@ -2016,7 +1977,6 @@ impl Default for SearchAlgorithms {
             vector_search: VectorSpaceSearch::default(),
         }
     }
-
 }
 
 impl Default for SearchIntegration {
@@ -2047,10 +2007,8 @@ mod tests {
 
     #[test]
     fn test_search_filter() {
-        let _filter = SearchFilter::TextFilter {
-            pattern: "test".to_string(),
-            case_sensitive: false,
-        };
+        let _filter =
+            SearchFilter::TextFilter { pattern: "test".to_string(), case_sensitive: false };
 
         let result = SearchResult {
             id: "test1".to_string(),
@@ -2126,12 +2084,18 @@ mod tests_native_filters {
         let engine = SearchIntegration::new();
         // case-insensitive matches
         let out = engine
-            .apply_single_filter(vec![res.clone()], &SearchFilter::TextFilter { pattern: "hello".into(), case_sensitive: false })
+            .apply_single_filter(
+                vec![res.clone()],
+                &SearchFilter::TextFilter { pattern: "hello".into(), case_sensitive: false },
+            )
             .unwrap();
         assert_eq!(out.len(), 1);
         // case-sensitive does not match
         let out2 = engine
-            .apply_single_filter(vec![res], &SearchFilter::TextFilter { pattern: "hello".into(), case_sensitive: true })
+            .apply_single_filter(
+                vec![res],
+                &SearchFilter::TextFilter { pattern: "hello".into(), case_sensitive: true },
+            )
             .unwrap();
         assert_eq!(out2.len(), 0);
     }
@@ -2216,7 +2180,10 @@ mod tests_native_filters {
         assert_eq!(only_zero[0].id, "ok");
         // StatusFilter success picks only code==0
         let success = engine
-            .apply_single_filter(vec![a.clone(), b.clone()], &SearchFilter::StatusFilter { success: true })
+            .apply_single_filter(
+                vec![a.clone(), b.clone()],
+                &SearchFilter::StatusFilter { success: true },
+            )
             .unwrap();
         assert_eq!(success.len(), 1);
         assert_eq!(success[0].id, "ok");
@@ -2338,12 +2305,16 @@ mod tests_native_filters {
             timestamp: now,
             created_at: Some(now),
         };
-        let r2 = SearchResult { context: SearchContext::CommandHistory, id: "b".into(), ..r1.clone() };
+        let r2 =
+            SearchResult { context: SearchContext::CommandHistory, id: "b".into(), ..r1.clone() };
         let engine = SearchIntegration::new();
         let mut ctxs = HashSet::new();
         ctxs.insert(SearchContext::CommandHistory);
         let out = engine
-            .apply_single_filter(vec![r1, r2.clone()], &SearchFilter::ContextFilter { contexts: ctxs })
+            .apply_single_filter(
+                vec![r1, r2.clone()],
+                &SearchFilter::ContextFilter { contexts: ctxs },
+            )
             .unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].id, r2.id);
@@ -2364,11 +2335,15 @@ mod tests_native_filters {
             created_at: Some(now),
         };
         file_res.metadata.insert("type".into(), "Regular".into());
-        let other_res = SearchResult { id: "other".into(), metadata: HashMap::new(), ..file_res.clone() };
+        let other_res =
+            SearchResult { id: "other".into(), metadata: HashMap::new(), ..file_res.clone() };
         let engine = SearchIntegration::new();
         let types: HashSet<String> = ["Regular".into()].into_iter().collect();
         let out = engine
-            .apply_single_filter(vec![file_res.clone(), other_res], &SearchFilter::TypeFilter { types })
+            .apply_single_filter(
+                vec![file_res.clone(), other_res],
+                &SearchFilter::TypeFilter { types },
+            )
             .unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].id, file_res.id);
@@ -2391,7 +2366,10 @@ mod tests_native_filters {
         let res_high = SearchResult { id: "high".into(), relevance_score: 0.8, ..res_low.clone() };
         let engine = SearchIntegration::new();
         let out = engine
-            .apply_single_filter(vec![res_low, res_high.clone()], &SearchFilter::ScoreFilter { min_score: 0.5 })
+            .apply_single_filter(
+                vec![res_low, res_high.clone()],
+                &SearchFilter::ScoreFilter { min_score: 0.5 },
+            )
             .unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].id, res_high.id);

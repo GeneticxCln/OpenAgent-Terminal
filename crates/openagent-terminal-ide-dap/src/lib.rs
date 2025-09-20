@@ -39,11 +39,7 @@ pub struct DapClient {
 }
 
 enum ClientMessage {
-    Request {
-        id: i64,
-        command: String,
-        arguments: Value,
-    },
+    Request { id: i64, command: String, arguments: Value },
 }
 
 #[derive(Debug, Clone)]
@@ -60,10 +56,7 @@ pub enum DapEvent {
 impl DapClient {
     pub fn start(config: &AdapterConfig) -> Result<Self> {
         let mut cmd = Command::new(&config.command);
-        cmd.args(&config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        cmd.args(&config.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
         let mut child = cmd.spawn()?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
@@ -162,10 +155,7 @@ impl DapClient {
     }
 
     pub fn variables(&self, variables_reference: i64) -> Result<Value> {
-        self.request(
-            "variables",
-            serde_json::json!({"variablesReference": variables_reference}),
-        )
+        self.request("variables", serde_json::json!({"variablesReference": variables_reference}))
     }
 
     pub fn evaluate(&self, expr: &str, frame_id: Option<i64>) -> Result<Value> {
@@ -189,11 +179,7 @@ impl DapClient {
         let (tx_resp, rx_resp) = mpsc::channel();
         self.pending.lock().insert(id, tx_resp);
         self.tx
-            .send(ClientMessage::Request {
-                id,
-                command: command.to_string(),
-                arguments,
-            })
+            .send(ClientMessage::Request { id, command: command.to_string(), arguments })
             .map_err(|_| anyhow!("tx closed"))?;
 
         let val = rx_resp.recv().map_err(|_| anyhow!("rx closed"))??;
@@ -217,13 +203,7 @@ impl DapPump {
         write: Arc<Mutex<ChildStdin>>,
         events_tx: mpsc::Sender<DapEvent>,
     ) -> Result<Self> {
-        Ok(Self {
-            stdout: Some(stdout),
-            rx,
-            pending,
-            write,
-            events_tx,
-        })
+        Ok(Self { stdout: Some(stdout), rx, pending, write, events_tx })
     }
 
     fn run(&mut self) {
@@ -306,11 +286,7 @@ impl DapPump {
         loop {
             while let Ok((id, json)) = resp_rx.try_recv() {
                 if let Some(chan) = self.pending.lock().remove(&id) {
-                    let result = if json
-                        .get("success")
-                        .and_then(|b| b.as_bool())
-                        .unwrap_or(false)
-                    {
+                    let result = if json.get("success").and_then(|b| b.as_bool()).unwrap_or(false) {
                         Ok(json)
                     } else {
                         Err(anyhow!(json.to_string()))
@@ -319,11 +295,7 @@ impl DapPump {
                 }
             }
             match self.rx.recv() {
-                Ok(ClientMessage::Request {
-                    id,
-                    command,
-                    arguments,
-                }) => {
+                Ok(ClientMessage::Request { id, command, arguments }) => {
                     let json = serde_json::json!({"seq": id, "type": "request", "command": command, "arguments": arguments});
                     let bytes = serde_json::to_vec(&json).unwrap();
                     let header = format!("Content-Length: {}\r\n\r\n", bytes.len());

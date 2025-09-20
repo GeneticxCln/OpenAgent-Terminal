@@ -11,11 +11,7 @@ use crate::term::Term;
 
 /// Possible vi mode motion movements.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "lowercase")
-)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase"))]
 pub enum ViMotion {
     /// Move up.
     Up,
@@ -121,25 +117,19 @@ impl ViModeCursor {
             ViMotion::FirstOccupied => self.point = first_occupied(term, self.point),
             ViMotion::High => {
                 let line = Line(-(term.grid().display_offset() as i32));
-                let col = first_occupied_in_line(term, line)
-                    .unwrap_or_default()
-                    .column;
+                let col = first_occupied_in_line(term, line).unwrap_or_default().column;
                 self.point = Point::new(line, col);
             }
             ViMotion::Middle => {
                 let display_offset = term.grid().display_offset() as i32;
                 let line = Line(-display_offset + term.screen_lines() as i32 / 2 - 1);
-                let col = first_occupied_in_line(term, line)
-                    .unwrap_or_default()
-                    .column;
+                let col = first_occupied_in_line(term, line).unwrap_or_default().column;
                 self.point = Point::new(line, col);
             }
             ViMotion::Low => {
                 let display_offset = term.grid().display_offset() as i32;
                 let line = Line(-display_offset + term.screen_lines() as i32 - 1);
-                let col = first_occupied_in_line(term, line)
-                    .unwrap_or_default()
-                    .column;
+                let col = first_occupied_in_line(term, line).unwrap_or_default().column;
                 self.point = Point::new(line, col);
             }
             ViMotion::SemanticLeft => {
@@ -202,9 +192,7 @@ impl ViModeCursor {
         let line = (self.point.line - lines).grid_clamp(term, Boundary::Grid);
 
         // Find the first occupied cell after scrolling has been performed.
-        let column = first_occupied_in_line(term, line)
-            .unwrap_or_default()
-            .column;
+        let column = first_occupied_in_line(term, line).unwrap_or_default().column;
 
         // Move cursor.
         self.point = Point::new(line, column);
@@ -292,9 +280,7 @@ fn semantic<T: EventListener>(
         // Do not expand when currently on a semantic escape char.
         let cell = &term.grid()[point];
         if term.semantic_escape_chars().contains(cell.c)
-            && !cell
-                .flags
-                .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+            && !cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
         {
             point
         } else if direction == Direction::Left {
@@ -404,9 +390,7 @@ fn advance<T>(term: &Term<T>, point: Point, direction: Direction) -> Point {
 /// Check if cell at point contains whitespace.
 fn is_space<T>(term: &Term<T>, point: Point) -> bool {
     let cell = &term.grid()[point.line][point.column];
-    !cell
-        .flags()
-        .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+    !cell.flags().intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
         && (cell.c == ' ' || cell.c == '\t')
 }
 
@@ -462,13 +446,9 @@ mod tests {
         let mut term = term();
         term.grid_mut()[Line(0)][Column(0)].c = 'a';
         term.grid_mut()[Line(0)][Column(1)].c = '汉';
-        term.grid_mut()[Line(0)][Column(1)]
-            .flags
-            .insert(Flags::WIDE_CHAR);
+        term.grid_mut()[Line(0)][Column(1)].flags.insert(Flags::WIDE_CHAR);
         term.grid_mut()[Line(0)][Column(2)].c = ' ';
-        term.grid_mut()[Line(0)][Column(2)]
-            .flags
-            .insert(Flags::WIDE_CHAR_SPACER);
+        term.grid_mut()[Line(0)][Column(2)].flags.insert(Flags::WIDE_CHAR_SPACER);
         term.grid_mut()[Line(0)][Column(3)].c = 'a';
 
         let mut cursor = ViModeCursor::new(Point::new(Line(0), Column(1)));
@@ -500,12 +480,8 @@ mod tests {
         term.grid_mut()[Line(0)][Column(1)].c = 'x';
         term.grid_mut()[Line(0)][Column(2)].c = ' ';
         term.grid_mut()[Line(0)][Column(3)].c = 'y';
-        term.grid_mut()[Line(0)][Column(19)]
-            .flags
-            .insert(Flags::WRAPLINE);
-        term.grid_mut()[Line(1)][Column(19)]
-            .flags
-            .insert(Flags::WRAPLINE);
+        term.grid_mut()[Line(0)][Column(19)].flags.insert(Flags::WRAPLINE);
+        term.grid_mut()[Line(1)][Column(19)].flags.insert(Flags::WRAPLINE);
         term.grid_mut()[Line(2)][Column(0)].c = 'z';
         term.grid_mut()[Line(2)][Column(1)].c = ' ';
 
@@ -715,13 +691,9 @@ mod tests {
         term.grid_mut()[Line(0)][Column(0)].c = 'a';
         term.grid_mut()[Line(0)][Column(1)].c = ' ';
         term.grid_mut()[Line(0)][Column(2)].c = '汉';
-        term.grid_mut()[Line(0)][Column(2)]
-            .flags
-            .insert(Flags::WIDE_CHAR);
+        term.grid_mut()[Line(0)][Column(2)].flags.insert(Flags::WIDE_CHAR);
         term.grid_mut()[Line(0)][Column(3)].c = ' ';
-        term.grid_mut()[Line(0)][Column(3)]
-            .flags
-            .insert(Flags::WIDE_CHAR_SPACER);
+        term.grid_mut()[Line(0)][Column(3)].flags.insert(Flags::WIDE_CHAR_SPACER);
         term.grid_mut()[Line(0)][Column(4)].c = ' ';
         term.grid_mut()[Line(0)][Column(5)].c = 'a';
 
@@ -795,13 +767,9 @@ mod tests {
         term.grid_mut()[Line(0)][Column(0)].c = 'a';
         term.grid_mut()[Line(0)][Column(1)].c = ' ';
         term.grid_mut()[Line(0)][Column(2)].c = '汉';
-        term.grid_mut()[Line(0)][Column(2)]
-            .flags
-            .insert(Flags::WIDE_CHAR);
+        term.grid_mut()[Line(0)][Column(2)].flags.insert(Flags::WIDE_CHAR);
         term.grid_mut()[Line(0)][Column(3)].c = ' ';
-        term.grid_mut()[Line(0)][Column(3)]
-            .flags
-            .insert(Flags::WIDE_CHAR_SPACER);
+        term.grid_mut()[Line(0)][Column(3)].flags.insert(Flags::WIDE_CHAR_SPACER);
         term.grid_mut()[Line(0)][Column(4)].c = ' ';
         term.grid_mut()[Line(0)][Column(5)].c = 'a';
 
@@ -890,13 +858,9 @@ mod tests {
         term.grid_mut()[Line(0)][Column(0)].c = 'x';
         term.grid_mut()[Line(0)][Column(1)].c = 'x';
         term.grid_mut()[Line(0)][Column(2)].c = '－';
-        term.grid_mut()[Line(0)][Column(2)]
-            .flags
-            .insert(Flags::WIDE_CHAR);
+        term.grid_mut()[Line(0)][Column(2)].flags.insert(Flags::WIDE_CHAR);
         term.grid_mut()[Line(0)][Column(3)].c = ' ';
-        term.grid_mut()[Line(0)][Column(3)]
-            .flags
-            .insert(Flags::WIDE_CHAR_SPACER);
+        term.grid_mut()[Line(0)][Column(3)].flags.insert(Flags::WIDE_CHAR_SPACER);
         term.grid_mut()[Line(0)][Column(4)].c = 'x';
         term.grid_mut()[Line(0)][Column(5)].c = 'x';
 

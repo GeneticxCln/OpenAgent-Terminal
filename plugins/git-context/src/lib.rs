@@ -39,9 +39,7 @@ impl GitContextPlugin {
 
     fn is_git_repo(&self, path: &Path) -> bool {
         path.join(".git").exists()
-            || self
-                .run_git_command(&["rev-parse", "--git-dir"], path)
-                .is_ok()
+            || self.run_git_command(&["rev-parse", "--git-dir"], path).is_ok()
     }
 
     fn run_git_command(&self, args: &[&str], cwd: &Path) -> Result<String, PluginError> {
@@ -73,8 +71,7 @@ impl GitContextPlugin {
             .filter(|b| !b.is_empty())
             .or_else(|| {
                 // Fallback for detached HEAD
-                self.run_git_command(&["describe", "--tags", "--always"], path)
-                    .ok()
+                self.run_git_command(&["describe", "--tags", "--always"], path).ok()
             });
 
         self.cache.current_branch = branch.clone();
@@ -370,10 +367,7 @@ impl Plugin for GitContextPlugin {
                 // Status
                 let status = self.get_status_summary(path);
                 output.push_str("📊 Status:\n");
-                output.push_str(&format!(
-                    "  ✅ Staged: {}\n",
-                    status.get("staged").unwrap_or(&0)
-                ));
+                output.push_str(&format!("  ✅ Staged: {}\n", status.get("staged").unwrap_or(&0)));
                 output.push_str(&format!(
                     "  ✏️  Modified: {}\n",
                     status.get("modified").unwrap_or(&0)
@@ -454,10 +448,7 @@ impl Plugin for GitContextPlugin {
                 })
             }
 
-            _ => Err(PluginError::CommandError(format!(
-                "Unknown command: {}",
-                cmd
-            ))),
+            _ => Err(PluginError::CommandError(format!("Unknown command: {}", cmd))),
         }
     }
 

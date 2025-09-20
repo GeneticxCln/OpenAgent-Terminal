@@ -179,11 +179,7 @@ impl Snippet {
 
             // Check working directory
             if let Some(required_dir) = &requirements.working_directory {
-                if !context
-                    .working_directory
-                    .to_string_lossy()
-                    .contains(required_dir)
-                {
+                if !context.working_directory.to_string_lossy().contains(required_dir) {
                     return false;
                 }
             }
@@ -254,12 +250,7 @@ impl SnippetTrigger {
     }
 
     pub fn tab_completion(pattern: String) -> Self {
-        Self {
-            pattern,
-            trigger_type: TriggerType::Tab,
-            case_sensitive: false,
-            word_boundary: true,
-        }
+        Self { pattern, trigger_type: TriggerType::Tab, case_sensitive: false, word_boundary: true }
     }
 
     pub fn matches(&self, input: &str) -> bool {
@@ -415,11 +406,8 @@ mod tests {
 
         let mut context = SnippetContext::new().unwrap();
         context.shell_type = "bash".to_string();
-        context.git_info = Some(GitInfo {
-            branch: "main".to_string(),
-            has_changes: false,
-            remote_url: None,
-        });
+        context.git_info =
+            Some(GitInfo { branch: "main".to_string(), has_changes: false, remote_url: None });
 
         assert!(snippet.matches_context(&context));
     }

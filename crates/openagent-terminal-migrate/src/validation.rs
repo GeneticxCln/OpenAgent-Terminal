@@ -4,16 +4,10 @@ use std::path::Path;
 
 /// Validate an OpenAgent Terminal configuration file
 pub fn validate_config(config_path: &Path) -> Result<()> {
-    println!(
-        "{}",
-        format!("🔍 Validating configuration: {}", config_path.display()).cyan()
-    );
+    println!("{}", format!("🔍 Validating configuration: {}", config_path.display()).cyan());
 
     if !config_path.exists() {
-        return Err(anyhow!(
-            "Configuration file does not exist: {}",
-            config_path.display()
-        ));
+        return Err(anyhow!("Configuration file does not exist: {}", config_path.display()));
     }
 
     let content = std::fs::read_to_string(config_path)?;
@@ -100,20 +94,13 @@ fn validate_sections(config: &toml::Value) -> Result<()> {
     }
 
     if !errors.is_empty() {
-        return Err(anyhow!(
-            "Configuration validation failed with {} error(s)",
-            errors.len()
-        ));
+        return Err(anyhow!("Configuration validation failed with {} error(s)", errors.len()));
     }
 
     if !warnings.is_empty() {
         println!(
             "{}",
-            format!(
-                "Configuration is valid but has {} warning(s)",
-                warnings.len()
-            )
-            .yellow()
+            format!("Configuration is valid but has {} warning(s)", warnings.len()).yellow()
         );
     }
 
@@ -124,10 +111,7 @@ fn validate_font_section(font: &toml::Value) -> Result<()> {
     if let Some(size) = font.get("size") {
         if let Some(size_val) = size.as_float() {
             if size_val <= 0.0 || size_val > 144.0 {
-                return Err(anyhow!(
-                    "Font size {} is outside reasonable range (0-144)",
-                    size_val
-                ));
+                return Err(anyhow!("Font size {} is outside reasonable range (0-144)", size_val));
             }
         }
     }
@@ -151,10 +135,7 @@ fn validate_window_section(window: &toml::Value) -> Result<()> {
     if let Some(opacity) = window.get("opacity") {
         if let Some(opacity_val) = opacity.as_float() {
             if !(0.0..=1.0).contains(&opacity_val) {
-                return Err(anyhow!(
-                    "Window opacity {} must be between 0.0 and 1.0",
-                    opacity_val
-                ));
+                return Err(anyhow!("Window opacity {} must be between 0.0 and 1.0", opacity_val));
             }
         }
     }

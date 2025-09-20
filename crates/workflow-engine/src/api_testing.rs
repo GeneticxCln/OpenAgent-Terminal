@@ -124,28 +124,14 @@ pub struct ApiTest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Assertion {
     StatusCode(u16),
-    StatusCodeRange {
-        min: u16,
-        max: u16,
-    },
+    StatusCodeRange { min: u16, max: u16 },
     HeaderExists(String),
-    HeaderEquals {
-        header: String,
-        value: String,
-    },
-    HeaderContains {
-        header: String,
-        substring: String,
-    },
+    HeaderEquals { header: String, value: String },
+    HeaderContains { header: String, substring: String },
     BodyContains(String),
     BodyEquals(String),
-    BodyJsonPath {
-        path: String,
-        expected: serde_json::Value,
-    },
-    ResponseTime {
-        max_ms: u64,
-    },
+    BodyJsonPath { path: String, expected: serde_json::Value },
+    ResponseTime { max_ms: u64 },
     ContentType(String),
 }
 
@@ -216,9 +202,8 @@ impl ApiTester {
         request.updated_at = request.created_at;
 
         let mut collections = self.collections.lock().await;
-        let collection = collections
-            .get_mut(&collection_id)
-            .ok_or_else(|| anyhow!("Collection not found"))?;
+        let collection =
+            collections.get_mut(&collection_id).ok_or_else(|| anyhow!("Collection not found"))?;
 
         let request_id = request.id;
         collection.requests.push(request);
@@ -231,9 +216,7 @@ impl ApiTester {
         let start_time = Instant::now();
 
         // Build the request
-        let mut req_builder = self
-            .client
-            .request(request.method.clone().into(), &request.url);
+        let mut req_builder = self.client.request(request.method.clone().into(), &request.url);
 
         // Add headers
         for (key, value) in &request.headers {
@@ -271,20 +254,13 @@ impl ApiTester {
         req_builder = req_builder.timeout(request.timeout);
 
         // Execute the request
-        let response = req_builder
-            .send()
-            .await
-            .map_err(|e| anyhow!("Request failed: {}", e))?;
+        let response = req_builder.send().await.map_err(|e| anyhow!("Request failed: {}", e))?;
 
         let response_time = start_time.elapsed();
 
         // Process response
         let status_code = response.status().as_u16();
-        let status_text = response
-            .status()
-            .canonical_reason()
-            .unwrap_or("Unknown")
-            .to_string();
+        let status_text = response.status().canonical_reason().unwrap_or("Unknown").to_string();
         let http_version = format!("{:?}", response.version());
 
         let mut headers = HashMap::new();
@@ -292,10 +268,8 @@ impl ApiTester {
             headers.insert(name.to_string(), value.to_str().unwrap_or("").to_string());
         }
 
-        let body_bytes = response
-            .bytes()
-            .await
-            .map_err(|e| anyhow!("Failed to read response body: {}", e))?;
+        let body_bytes =
+            response.bytes().await.map_err(|e| anyhow!("Failed to read response body: {}", e))?;
 
         let size_bytes = body_bytes.len();
 
@@ -407,11 +381,7 @@ impl ApiTester {
 
         // Run setup requests
         for setup_request_id in &test_suite.setup_requests {
-            if let Some(request) = collection
-                .requests
-                .iter()
-                .find(|r| r.id == *setup_request_id)
-            {
+            if let Some(request) = collection.requests.iter().find(|r| r.id == *setup_request_id) {
                 let _response = self.execute_request(request).await?;
             }
         }
@@ -424,9 +394,7 @@ impl ApiTester {
 
             if let Some(request) = collection.requests.iter().find(|r| r.id == test.request_id) {
                 let response = self.execute_request(request).await?;
-                let test_result = self
-                    .evaluate_assertions(&test.assertions, &response)
-                    .await?;
+                let test_result = self.evaluate_assertions(&test.assertions, &response).await?;
 
                 let result = TestResult {
                     test_id: test.id,
@@ -442,10 +410,7 @@ impl ApiTester {
 
         // Run teardown requests
         for teardown_request_id in &test_suite.teardown_requests {
-            if let Some(request) = collection
-                .requests
-                .iter()
-                .find(|r| r.id == *teardown_request_id)
+            if let Some(request) = collection.requests.iter().find(|r| r.id == *teardown_request_id)
             {
                 let _response = self.execute_request(request).await?;
             }
@@ -659,22 +624,17 @@ impl ApiTester {
 
             if let Some(array_start) = part.find('[') {
                 let field_name = &part[..array_start];
-                let array_end = part
-                    .find(']')
-                    .ok_or_else(|| anyhow!("Invalid array syntax"))?;
+                let array_end = part.find(']').ok_or_else(|| anyhow!("Invalid array syntax"))?;
                 let index_str = &part[array_start + 1..array_end];
-                let index: usize = index_str
-                    .parse()
-                    .map_err(|_| anyhow!("Invalid array index: {}", index_str))?;
+                let index: usize =
+                    index_str.parse().map_err(|_| anyhow!("Invalid array index: {}", index_str))?;
 
                 current = current
                     .get(field_name)
                     .and_then(|v| v.get(index))
                     .ok_or_else(|| anyhow!("Path not found: {}", path))?;
             } else {
-                current = current
-                    .get(part)
-                    .ok_or_else(|| anyhow!("Path not found: {}", path))?;
+                current = current.get(part).ok_or_else(|| anyhow!("Path not found: {}", path))?;
             }
         }
 
@@ -685,14 +645,10 @@ impl ApiTester {
         let postman_data: serde_json::Value = serde_json::from_str(postman_json)
             .map_err(|e| anyhow!("Failed to parse Postman collection: {}", e))?;
 
-        let collection_name = postman_data["info"]["name"]
-            .as_str()
-            .unwrap_or("Imported Collection")
-            .to_string();
+        let collection_name =
+            postman_data["info"]["name"].as_str().unwrap_or("Imported Collection").to_string();
 
-        let description = postman_data["info"]["description"]
-            .as_str()
-            .map(|s| s.to_string());
+        let description = postman_data["info"]["description"].as_str().map(|s| s.to_string());
 
         let mut api_collection = ApiCollection {
             id: Uuid::new_v4(),
@@ -710,9 +666,7 @@ impl ApiTester {
         if let Some(variables) = postman_data["variable"].as_array() {
             for var in variables {
                 if let (Some(key), Some(value)) = (var["key"].as_str(), var["value"].as_str()) {
-                    api_collection
-                        .variables
-                        .insert(key.to_string(), value.to_string());
+                    api_collection.variables.insert(key.to_string(), value.to_string());
                 }
             }
         }
@@ -730,10 +684,7 @@ impl ApiTester {
     }
 
     fn parse_postman_item(&self, item: &serde_json::Value) -> Result<Option<ApiRequest>> {
-        let name = item["name"]
-            .as_str()
-            .unwrap_or("Unnamed Request")
-            .to_string();
+        let name = item["name"].as_str().unwrap_or("Unnamed Request").to_string();
 
         let request_data = &item["request"];
         if request_data.is_null() {
@@ -812,9 +763,8 @@ impl ApiTester {
 
     pub async fn export_collection_as_postman(&self, collection_id: Uuid) -> Result<String> {
         let collections = self.collections.lock().await;
-        let collection = collections
-            .get(&collection_id)
-            .ok_or_else(|| anyhow!("Collection not found"))?;
+        let collection =
+            collections.get(&collection_id).ok_or_else(|| anyhow!("Collection not found"))?;
 
         let mut postman_collection = serde_json::json!({
             "info": {
@@ -828,13 +778,10 @@ impl ApiTester {
 
         // Add variables
         for (key, value) in &collection.variables {
-            postman_collection["variable"]
-                .as_array_mut()
-                .unwrap()
-                .push(serde_json::json!({
-                    "key": key,
-                    "value": value
-                }));
+            postman_collection["variable"].as_array_mut().unwrap().push(serde_json::json!({
+                "key": key,
+                "value": value
+            }));
         }
 
         // Add requests
@@ -858,13 +805,12 @@ impl ApiTester {
 
             // Add headers
             for (key, value) in &request.headers {
-                postman_request["request"]["header"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(serde_json::json!({
+                postman_request["request"]["header"].as_array_mut().unwrap().push(
+                    serde_json::json!({
                         "key": key,
                         "value": value
-                    }));
+                    }),
+                );
             }
 
             // Add body
@@ -900,10 +846,7 @@ impl ApiTester {
                 }
             }
 
-            postman_collection["item"]
-                .as_array_mut()
-                .unwrap()
-                .push(postman_request);
+            postman_collection["item"].as_array_mut().unwrap().push(postman_request);
         }
 
         Ok(serde_json::to_string_pretty(&postman_collection)?)
@@ -991,10 +934,7 @@ impl ApiTester {
 
     pub async fn get_collection(&self, id: Uuid) -> Result<ApiCollection> {
         let collections = self.collections.lock().await;
-        collections
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Collection not found"))
+        collections.get(&id).cloned().ok_or_else(|| anyhow!("Collection not found"))
     }
 
     pub fn format_response_summary(&self, response: &ApiResponse) -> String {
@@ -1036,9 +976,7 @@ mod tests {
         let headers = HashMap::from([("content-type".to_string(), "application/json".to_string())]);
 
         let json_body = b"{\"message\": \"hello\"}";
-        let result = api_tester
-            .parse_response_body(&headers, json_body.to_vec())
-            .unwrap();
+        let result = api_tester.parse_response_body(&headers, json_body.to_vec()).unwrap();
 
         match result {
             ResponseBody::JSON(json) => {

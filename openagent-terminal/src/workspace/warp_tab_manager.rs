@@ -55,16 +55,8 @@ pub struct WarpTabSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WarpSplitLayoutSession {
     Single(PaneId),
-    Horizontal {
-        left: Box<WarpSplitLayoutSession>,
-        right: Box<WarpSplitLayoutSession>,
-        ratio: f32,
-    },
-    Vertical {
-        top: Box<WarpSplitLayoutSession>,
-        bottom: Box<WarpSplitLayoutSession>,
-        ratio: f32,
-    },
+    Horizontal { left: Box<WarpSplitLayoutSession>, right: Box<WarpSplitLayoutSession>, ratio: f32 },
+    Vertical { top: Box<WarpSplitLayoutSession>, bottom: Box<WarpSplitLayoutSession>, ratio: f32 },
 }
 
 /// Serializable pane session data
@@ -193,10 +185,7 @@ impl WarpTabManager {
             }
         }
 
-        let dir_name = working_dir
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("~");
+        let dir_name = working_dir.file_name().and_then(|name| name.to_str()).unwrap_or("~");
 
         let smart_name = if let Some(cmd) = current_command {
             // Format: "command in directory"
@@ -204,15 +193,13 @@ impl WarpTabManager {
             format!("{} in {}", cmd_name, dir_name)
         } else if self.is_project_directory(working_dir) {
             // Use project name for recognized project directories
-            self.get_project_name(working_dir)
-                .unwrap_or_else(|| dir_name.to_string())
+            self.get_project_name(working_dir).unwrap_or_else(|| dir_name.to_string())
         } else {
             dir_name.to_string()
         };
 
         // Cache the result
-        self.directory_cache
-            .insert(working_dir.to_path_buf(), smart_name.clone());
+        self.directory_cache.insert(working_dir.to_path_buf(), smart_name.clone());
         smart_name
     }
 
@@ -248,12 +235,7 @@ impl WarpTabManager {
         if let Ok(cargo_toml) = std::fs::read_to_string(dir.join("Cargo.toml")) {
             for line in cargo_toml.lines() {
                 if line.starts_with("name = ") {
-                    let name = line
-                        .split('=')
-                        .nth(1)?
-                        .trim()
-                        .trim_matches('"')
-                        .trim_matches('\'');
+                    let name = line.split('=').nth(1)?.trim().trim_matches('"').trim_matches('\'');
                     return Some(name.to_string());
                 }
             }
@@ -379,11 +361,7 @@ impl WarpTabManager {
                 }
             }
             Err(e) => {
-                eprintln!(
-                    "Failed to parse session file {}: {}",
-                    session_path.display(),
-                    e
-                );
+                eprintln!("Failed to parse session file {}: {}", session_path.display(), e);
 
                 // Try to create backup and return false
                 if let Err(backup_err) = self.backup_corrupted_session(session_path) {
@@ -406,10 +384,7 @@ impl WarpTabManager {
 
     fn generate_session_id() -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
         format!("sess-{}", nanos)
     }
 
@@ -447,11 +422,7 @@ impl WarpTabManager {
                 .map(|(&id, pane)| (id, self.pane_to_session(id, pane)))
                 .collect(),
             shell_command: tab.shell_command.clone(),
-            last_command: self
-                .command_history
-                .get(&tab.id)
-                .and_then(|hist| hist.last())
-                .cloned(),
+            last_command: self.command_history.get(&tab.id).and_then(|hist| hist.last()).cloned(),
             created_at: SystemTime::now(),
         }
     }
@@ -523,8 +494,7 @@ impl WarpTabManager {
 
         // Restore command history
         if let Some(last_command) = tab_session.last_command {
-            self.command_history
-                .insert(tab_session.id, vec![last_command]);
+            self.command_history.insert(tab_session.id, vec![last_command]);
         }
 
         // Update ID counters
@@ -660,11 +630,7 @@ impl WarpTabManager {
     pub fn previous_tab(&mut self) -> bool {
         if let Some(current_id) = self.active_tab_id {
             if let Some(pos) = self.tab_order.iter().position(|&id| id == current_id) {
-                let prev_pos = if pos == 0 {
-                    self.tab_order.len() - 1
-                } else {
-                    pos - 1
-                };
+                let prev_pos = if pos == 0 { self.tab_order.len() - 1 } else { pos - 1 };
                 self.active_tab_id = Some(self.tab_order[prev_pos]);
                 return true;
             }
@@ -685,11 +651,8 @@ impl WarpTabManager {
 
             // Update active tab
             if self.active_tab_id == Some(tab_id) {
-                self.active_tab_id = if self.tab_order.is_empty() {
-                    None
-                } else {
-                    Some(self.tab_order[0])
-                };
+                self.active_tab_id =
+                    if self.tab_order.is_empty() { None } else { Some(self.tab_order[0]) };
             }
 
             self.schedule_session_save();

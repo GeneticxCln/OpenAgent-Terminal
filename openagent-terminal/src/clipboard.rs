@@ -30,10 +30,7 @@ impl Clipboard {
                 let (selection, clipboard) = unsafe {
                     wayland_clipboard::create_clipboards_from_external(display.display.as_ptr())
                 };
-                Self {
-                    clipboard: Box::new(clipboard),
-                    selection: Some(Box::new(selection)),
-                }
+                Self { clipboard: Box::new(clipboard), selection: Some(Box::new(selection)) }
             }
             _ => Self::default(),
         }
@@ -42,10 +39,7 @@ impl Clipboard {
     /// Used for tests, to handle missing clipboard provider when built without the `x11`
     /// feature, and as default clipboard value.
     pub fn new_nop() -> Self {
-        Self {
-            clipboard: Box::new(NopClipboardContext::new().unwrap()),
-            selection: None,
-        }
+        Self { clipboard: Box::new(NopClipboardContext::new().unwrap()), selection: None }
     }
 }
 
@@ -54,10 +48,7 @@ impl Default for Clipboard {
         #[cfg(any(target_os = "macos", windows))]
         {
             match ClipboardContext::new() {
-                Ok(ctx) => Self {
-                    clipboard: Box::new(ctx),
-                    selection: None,
-                },
+                Ok(ctx) => Self { clipboard: Box::new(ctx), selection: None },
                 Err(err) => {
                     warn!("Clipboard unavailable on this platform: {err}; falling back to Nop");
                     return Self::new_nop();
@@ -83,10 +74,7 @@ impl Default for Clipboard {
                     None
                 }
             };
-            Self {
-                clipboard,
-                selection,
-            }
+            Self { clipboard, selection }
         }
 
         #[cfg(not(any(feature = "x11", target_os = "macos", windows)))]

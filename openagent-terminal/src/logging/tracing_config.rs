@@ -60,14 +60,11 @@ impl TracingConfig {
             .unwrap_or(false);
 
         let ai_debug_log_path = if ai_debug_log {
-            env::var(OPENAGENT_AI_DEBUG_LOG_PATH_ENV)
-                .ok()
-                .map(PathBuf::from)
-                .or_else(|| {
-                    let mut path = env::temp_dir();
-                    path.push(format!("openagent_ai_debug_{}.log", process::id()));
-                    Some(path)
-                })
+            env::var(OPENAGENT_AI_DEBUG_LOG_PATH_ENV).ok().map(PathBuf::from).or_else(|| {
+                let mut path = env::temp_dir();
+                path.push(format!("openagent_ai_debug_{}.log", process::id()));
+                Some(path)
+            })
         } else {
             None
         };
@@ -90,12 +87,7 @@ impl TracingConfig {
             "notify=warn".to_string(),
         ];
 
-        TracingConfig {
-            base_level: Level::INFO,
-            ai_debug_log,
-            ai_debug_log_path,
-            module_filters,
-        }
+        TracingConfig { base_level: Level::INFO, ai_debug_log, ai_debug_log_path, module_filters }
     }
 
     /// Build the environment filter string.
@@ -118,11 +110,7 @@ struct ConditionalFileWriter {
 
 impl ConditionalFileWriter {
     fn new(path: PathBuf, enabled: bool) -> Self {
-        Self {
-            path,
-            file: None,
-            enabled: Arc::new(AtomicBool::new(enabled)),
-        }
+        Self { path, file: None, enabled: Arc::new(AtomicBool::new(enabled)) }
     }
 
     #[allow(dead_code)]
@@ -143,12 +131,7 @@ impl Write for ConditionalFileWriter {
         }
 
         if self.file.is_none() {
-            self.file = Some(
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&self.path)?,
-            );
+            self.file = Some(OpenOptions::new().create(true).append(true).open(&self.path)?);
             eprintln!("Created AI debug log at: {}", self.path.display());
         }
 
@@ -310,9 +293,6 @@ mod tests {
             SensitiveFieldRedactor::redact_if_sensitive("api_key", "sk-12345"),
             "[REDACTED]"
         );
-        assert_eq!(
-            SensitiveFieldRedactor::redact_if_sensitive("username", "john_doe"),
-            "john_doe"
-        );
+        assert_eq!(SensitiveFieldRedactor::redact_if_sensitive("username", "john_doe"), "john_doe");
     }
 }

@@ -135,10 +135,7 @@ impl IntegratedTextShaper {
         let cells_vec: Vec<RenderableCell> = cells.collect();
 
         // Extract text content from cells
-        let text = cells_vec
-            .iter()
-            .map(|cell| cell.character)
-            .collect::<String>();
+        let text = cells_vec.iter().map(|cell| cell.character).collect::<String>();
 
         // Check cache if enabled
         let cache_key = if self.config.cache_shaped_lines {
@@ -170,10 +167,7 @@ impl IntegratedTextShaper {
         let font_size = glyph_cache.font_size.as_pt();
 
         let shaped_text = if self.should_use_harfbuzz_shaping(&text) {
-            match self
-                .harfbuzz_shaper
-                .shape_text_with_fallback(&text, &font_name, font_size)
-            {
+            match self.harfbuzz_shaper.shape_text_with_fallback(&text, &font_name, font_size) {
                 Ok(shaped) => shaped,
                 Err(_) if self.config.fallback_to_basic_rendering => {
                     // Fall back to basic shaping
@@ -245,11 +239,7 @@ impl IntegratedTextShaper {
                 vec![self.create_basic_cell_glyph(cell, glyph_cache)?]
             };
 
-            shaped_cells.push(ShapedCell {
-                cell_index,
-                shaped_glyphs,
-                cell_width,
-            });
+            shaped_cells.push(ShapedCell { cell_index, shaped_glyphs, cell_width });
         }
 
         Ok(ShapedLine {

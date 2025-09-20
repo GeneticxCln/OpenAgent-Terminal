@@ -14,15 +14,25 @@ fn tab_bar_hit_test_integration() {
     let tabs = vec![(tid, 10.0, 150.0)];
 
     // Center click -> select
-    let sel = hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 80.0, 10.0);
+    let sel =
+        hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 80.0, 10.0);
     assert!(matches!(sel, Some(TabBarAction::SelectTab(id)) if id == tid));
 
     // Right edge -> close
-    let close = hit_test_tab_bar_cached(total_height, &tabs, None, &cfg, TabBarPosition::Top, 10.0 + 150.0 - 3.0, 10.0);
+    let close = hit_test_tab_bar_cached(
+        total_height,
+        &tabs,
+        None,
+        &cfg,
+        TabBarPosition::Top,
+        10.0 + 150.0 - 3.0,
+        10.0,
+    );
     assert!(matches!(close, Some(TabBarAction::CloseTab(id)) if id == tid));
 
     // New tab button -> create
     let btn = Some((200.0, 4.0, 20.0, 20.0));
-    let create = hit_test_tab_bar_cached(total_height, &tabs, btn, &cfg, TabBarPosition::Top, 208.0, 10.0);
+    let create =
+        hit_test_tab_bar_cached(total_height, &tabs, btn, &cfg, TabBarPosition::Top, 208.0, 10.0);
     assert!(matches!(create, Some(TabBarAction::CreateTab)));
 }

@@ -50,9 +50,8 @@ async fn run_demo() -> Result<()> {
     terminal_ui.set_theme("default").await?;
 
     // Create a conversation session using ConversationManager and add a couple of turns
-    let session_id = conversation_manager
-        .create_session(Some("Terminal UI Demo Session".to_string()))
-        .await?;
+    let session_id =
+        conversation_manager.create_session(Some("Terminal UI Demo Session".to_string())).await?;
     conversation_manager
         .add_turn(
             session_id,

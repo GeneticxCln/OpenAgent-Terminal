@@ -90,17 +90,11 @@ mod blocks_tests {
         let mut history = CommandHistory::new(Some(temp_dir.path().to_path_buf())).await;
 
         // Test command lifecycle
-        history
-            .start_command("ls -la".to_string(), None)
-            .await
-            .unwrap();
+        history.start_command("ls -la".to_string(), None).await.unwrap();
         assert!(history.get_current_command().is_some());
         assert_eq!(history.get_current_command().unwrap().command, "ls -la");
 
-        history
-            .complete_command(0, "total 10\nfile1.txt\nfile2.txt\n".to_string())
-            .await
-            .unwrap();
+        history.complete_command(0, "total 10\nfile1.txt\nfile2.txt\n".to_string()).await.unwrap();
         assert!(history.get_current_command().is_none());
 
         // Test search functionality
@@ -124,10 +118,7 @@ mod blocks_tests {
         let commands = vec!["pwd", "ls", "cat file.txt", "grep test *.txt"];
         for cmd in &commands {
             history.start_command(cmd.to_string(), None).await.unwrap();
-            history
-                .complete_command(0, format!("output for {}", cmd))
-                .await
-                .unwrap();
+            history.complete_command(0, format!("output for {}", cmd)).await.unwrap();
         }
 
         // Test search finds multiple results
@@ -147,10 +138,7 @@ mod blocks_tests {
         let mut history = CommandHistory::new(Some(temp_dir.path().to_path_buf())).await;
 
         // Start a command and cancel it
-        history
-            .start_command("long-running-command".to_string(), None)
-            .await
-            .unwrap();
+        history.start_command("long-running-command".to_string(), None).await.unwrap();
         assert!(history.get_current_command().is_some());
 
         history.cancel_current_command();
@@ -173,14 +161,8 @@ mod blocks_fallback_tests {
         // Should work without blocks feature using simple history
         let mut history = CommandHistory::new(None).await;
 
-        history
-            .start_command("echo test".to_string(), None)
-            .await
-            .unwrap();
-        history
-            .complete_command(0, "test\n".to_string())
-            .await
-            .unwrap();
+        history.start_command("echo test".to_string(), None).await.unwrap();
+        history.complete_command(0, "test\n".to_string()).await.unwrap();
 
         let results = history.search("echo", 10).await;
         assert_eq!(results.len(), 1);
@@ -262,9 +244,7 @@ mod security_tests {
         // Test the custom pattern triggers
         let result = SecurityLensFactory::test_command(&config, "deploy myapp prod").unwrap();
         assert_eq!(result.risk_level, "Critical");
-        assert!(result
-            .explanation
-            .contains("Production deployment detected"));
+        assert!(result.explanation.contains("Production deployment detected"));
     }
 
     #[test]
@@ -278,10 +258,7 @@ mod security_tests {
         // Permissive preset
         let permissive = SecurityConfig::preset_permissive();
         assert!(!permissive.block_critical);
-        assert!(!permissive
-            .require_confirmation
-            .get("Caution")
-            .unwrap_or(&true));
+        assert!(!permissive.require_confirmation.get("Caution").unwrap_or(&true));
 
         // Disabled preset
         let disabled = SecurityConfig::preset_disabled();
@@ -356,18 +333,12 @@ mod integration_tests {
         assert!(!security_result.requires_confirmation);
 
         // 2. Start tracking in command history
-        history
-            .start_command(command.to_string(), None)
-            .await
-            .unwrap();
+        history.start_command(command.to_string(), None).await.unwrap();
         assert!(history.get_current_command().is_some());
 
         // 3. Complete the command
         let output = "total 10\nfile1.txt\nfile2.txt\n";
-        history
-            .complete_command(0, output.to_string())
-            .await
-            .unwrap();
+        history.complete_command(0, output.to_string()).await.unwrap();
 
         // 4. Verify it's in history
         let results = history.search("ls", 10).await;
@@ -392,14 +363,8 @@ mod integration_tests {
         assert!(security_result.requires_confirmation);
 
         // 2. If user confirms and runs the command, it still gets tracked
-        history
-            .start_command(dangerous_command.to_string(), None)
-            .await
-            .unwrap();
-        history
-            .complete_command(0, "removed files".to_string())
-            .await
-            .unwrap();
+        history.start_command(dangerous_command.to_string(), None).await.unwrap();
+        history.complete_command(0, "removed files".to_string()).await.unwrap();
 
         // 3. Command appears in history for audit purposes
         let results = history.search("rm", 10).await;
@@ -436,19 +401,11 @@ mod performance_tests {
         let duration = start.elapsed();
 
         // Should analyze 5 commands in well under 1 second
-        assert!(
-            duration.as_millis() < 1000,
-            "Security analysis took {}ms",
-            duration.as_millis()
-        );
+        assert!(duration.as_millis() < 1000, "Security analysis took {}ms", duration.as_millis());
 
         // Per-command should be very fast
         let per_command = duration.as_millis() / commands.len() as u128;
-        assert!(
-            per_command < 200,
-            "Per-command analysis took {}ms",
-            per_command
-        );
+        assert!(per_command < 200, "Per-command analysis took {}ms", per_command);
     }
 
     #[tokio::test]
@@ -462,20 +419,13 @@ mod performance_tests {
         for i in 0..100 {
             let cmd = format!("echo command_{}", i);
             history.start_command(cmd, None).await.unwrap();
-            history
-                .complete_command(0, format!("output_{}", i))
-                .await
-                .unwrap();
+            history.complete_command(0, format!("output_{}", i)).await.unwrap();
         }
 
         let duration = start.elapsed();
 
         // Should handle 100 commands in under 10 seconds
-        assert!(
-            duration.as_secs() < 10,
-            "Storing 100 commands took {}s",
-            duration.as_secs()
-        );
+        assert!(duration.as_secs() < 10, "Storing 100 commands took {}s", duration.as_secs());
 
         // Search should also be fast
         let search_start = Instant::now();

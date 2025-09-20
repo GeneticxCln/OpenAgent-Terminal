@@ -25,10 +25,7 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_title(
-            cfg.title
-                .unwrap_or_else(|| format!("Editor - {}", cfg.file_path.display())),
-        )
+        .with_title(cfg.title.unwrap_or_else(|| format!("Editor - {}", cfg.file_path.display())))
         .with_inner_size(tao::dpi::PhysicalSize::new(1000, 700))
         .build(&event_loop)?;
 
@@ -56,11 +53,7 @@ pub fn open_editor_blocking(cfg: WebEditorConfig) -> Result<()> {
     use tao::event_loop::ControlFlow;
     event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
-        if let Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } = event
-        {
+        if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
             *control_flow = ControlFlow::Exit;
         }
     });

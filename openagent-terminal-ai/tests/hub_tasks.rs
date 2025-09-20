@@ -1,33 +1,43 @@
 #![cfg(feature = "agents")]
-use std::sync::Arc;
 use async_trait::async_trait;
-use openagent_terminal_ai::agents::{AiAgent, AgentRequest, AgentResponse, AgentError, AgentCapabilities, PrivacyLevel};
 use openagent_terminal_ai::agents::communication_hub::{CommunicationHub, HubConfig};
+use openagent_terminal_ai::agents::{
+    AgentCapabilities, AgentError, AgentRequest, AgentResponse, AiAgent, PrivacyLevel,
+};
 use openagent_terminal_ai::AiRequest;
+use std::sync::Arc;
 
 #[derive(Debug)]
 struct EchoAgent;
 
 #[async_trait]
 impl AiAgent for EchoAgent {
-    fn name(&self) -> &'static str { "echo" }
-    fn version(&self) -> &'static str { "0.1.0" }
+    fn name(&self) -> &'static str {
+        "echo"
+    }
+    fn version(&self) -> &'static str {
+        "0.1.0"
+    }
 
     async fn process(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
         match request {
-            AgentRequest::Command(req) => Ok(AgentResponse::Commands(vec![openagent_terminal_ai::AiProposal{
-                title: "echo".into(),
-                description: Some("echo back".into()),
-                proposed_commands: vec![format!("echo {}", req.scratch_text)],
-            }])),
-            _ => Err(AgentError::NotSupported("unsupported".into()))
+            AgentRequest::Command(req) => {
+                Ok(AgentResponse::Commands(vec![openagent_terminal_ai::AiProposal {
+                    title: "echo".into(),
+                    description: Some("echo back".into()),
+                    proposed_commands: vec![format!("echo {}", req.scratch_text)],
+                }]))
+            }
+            _ => Err(AgentError::NotSupported("unsupported".into())),
         }
     }
 
-    fn can_handle(&self, _request: &AgentRequest) -> bool { true }
+    fn can_handle(&self, _request: &AgentRequest) -> bool {
+        true
+    }
 
     fn capabilities(&self) -> AgentCapabilities {
-        AgentCapabilities{
+        AgentCapabilities {
             supported_languages: vec![],
             supported_frameworks: vec![],
             features: vec!["echo".into()],
@@ -42,9 +52,14 @@ async fn execute_parallel_single_task_completes_and_metrics_increment() {
     let hub = CommunicationHub::new(HubConfig::default());
     hub.register_agent(Arc::new(EchoAgent)).await.unwrap();
 
-    let req = AiRequest { scratch_text: "hi".into(), working_directory: None, shell_kind: None, context: vec![] };
+    let req = AiRequest {
+        scratch_text: "hi".into(),
+        working_directory: None,
+        shell_kind: None,
+        context: vec![],
+    };
     let payload = serde_json::to_value(&req).unwrap();
-    let msg = openagent_terminal_ai::agents::types::AgentMessage{
+    let msg = openagent_terminal_ai::agents::types::AgentMessage {
         id: uuid::Uuid::new_v4(),
         from_agent: "tester".into(),
         to_agent: "echo".into(),

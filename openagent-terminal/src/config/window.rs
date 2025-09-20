@@ -166,10 +166,7 @@ pub struct Identity {
 
 impl Default for Identity {
     fn default() -> Self {
-        Self {
-            title: DEFAULT_NAME.into(),
-            class: Default::default(),
-        }
+        Self { title: DEFAULT_NAME.into(), class: Default::default() }
     }
 }
 
@@ -212,10 +209,7 @@ pub struct Class {
 
 impl Class {
     pub fn new(general: impl ToString, instance: impl ToString) -> Self {
-        Self {
-            general: general.to_string(),
-            instance: instance.to_string(),
-        }
+        Self { general: general.to_string(), instance: instance.to_string() }
     }
 }
 
@@ -243,10 +237,7 @@ impl<'de> Deserialize<'de> for Class {
             where
                 E: de::Error,
             {
-                Ok(Self::Value {
-                    instance: value.into(),
-                    ..Self::Value::default()
-                })
+                Ok(Self::Value { instance: value.into(), ..Self::Value::default() })
             }
 
             fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>

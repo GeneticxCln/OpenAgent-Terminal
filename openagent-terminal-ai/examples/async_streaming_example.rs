@@ -815,15 +815,9 @@ mod tests {
         let config = StreamConfig::default();
 
         // Add clients
-        manager.add_client(Box::new(OpenAIClient::new(
-            "test_key".to_string(),
-            config.clone(),
-        )));
+        manager.add_client(Box::new(OpenAIClient::new("test_key".to_string(), config.clone())));
 
-        manager.add_client(Box::new(AnthropicClient::new(
-            "test_key".to_string(),
-            config.clone(),
-        )));
+        manager.add_client(Box::new(AnthropicClient::new("test_key".to_string(), config.clone())));
 
         // Create request
         let request = StreamRequest {

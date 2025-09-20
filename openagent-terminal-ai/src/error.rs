@@ -6,11 +6,7 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum AiError {
     /// Network-related errors
-    Network {
-        message: String,
-        retryable: bool,
-        retry_after: Option<std::time::Duration>,
-    },
+    Network { message: String, retryable: bool, retry_after: Option<std::time::Duration> },
     /// Authentication/authorization errors
     Auth { message: String, provider: String },
     /// Rate limiting errors
@@ -22,11 +18,7 @@ pub enum AiError {
         reset: Option<std::time::SystemTime>,
     },
     /// Invalid request errors
-    InvalidRequest {
-        message: String,
-        field: Option<String>,
-        suggestion: Option<String>,
-    },
+    InvalidRequest { message: String, field: Option<String>, suggestion: Option<String> },
     /// Provider-specific errors
     Provider {
         provider: String,
@@ -35,22 +27,11 @@ pub enum AiError {
         context: Vec<(String, String)>,
     },
     /// Resource constraints (e.g., local Ollama)
-    ResourceConstraint {
-        resource: String,
-        message: String,
-        suggestion: Option<String>,
-    },
+    ResourceConstraint { resource: String, message: String, suggestion: Option<String> },
     /// Configuration errors
-    Configuration {
-        setting: String,
-        message: String,
-        suggestion: Option<String>,
-    },
+    Configuration { setting: String, message: String, suggestion: Option<String> },
     /// Timeout errors
-    Timeout {
-        operation: String,
-        duration: std::time::Duration,
-    },
+    Timeout { operation: String, duration: std::time::Duration },
     /// Cancellation by user
     Cancelled,
     /// Generic/unknown errors
@@ -90,66 +71,37 @@ impl AiError {
             Self::Auth { message, provider } => {
                 format!("{} authentication failed: {}", provider, message)
             }
-            Self::RateLimit {
-                message,
-                retry_after,
-                ..
-            } => {
+            Self::RateLimit { message, retry_after, .. } => {
                 if let Some(duration) = retry_after {
-                    format!(
-                        "Rate limited: {}. Retry in {} seconds",
-                        message,
-                        duration.as_secs()
-                    )
+                    format!("Rate limited: {}. Retry in {} seconds", message, duration.as_secs())
                 } else {
                     format!("Rate limited: {}", message)
                 }
             }
-            Self::InvalidRequest {
-                message,
-                suggestion,
-                ..
-            } => {
+            Self::InvalidRequest { message, suggestion, .. } => {
                 if let Some(sugg) = suggestion {
                     format!("Invalid request: {}. {}", message, sugg)
                 } else {
                     format!("Invalid request: {}", message)
                 }
             }
-            Self::Provider {
-                provider, message, ..
-            } => format!("{} error: {}", provider, message),
-            Self::ResourceConstraint {
-                resource,
-                message,
-                suggestion,
-            } => {
+            Self::Provider { provider, message, .. } => format!("{} error: {}", provider, message),
+            Self::ResourceConstraint { resource, message, suggestion } => {
                 if let Some(sugg) = suggestion {
                     format!("{} constraint: {}. {}", resource, message, sugg)
                 } else {
                     format!("{} constraint: {}", resource, message)
                 }
             }
-            Self::Configuration {
-                setting,
-                message,
-                suggestion,
-            } => {
+            Self::Configuration { setting, message, suggestion } => {
                 if let Some(sugg) = suggestion {
                     format!("Configuration error ({}): {}. {}", setting, message, sugg)
                 } else {
                     format!("Configuration error ({}): {}", setting, message)
                 }
             }
-            Self::Timeout {
-                operation,
-                duration,
-            } => {
-                format!(
-                    "{} timed out after {} seconds",
-                    operation,
-                    duration.as_secs()
-                )
+            Self::Timeout { operation, duration } => {
+                format!("{} timed out after {} seconds", operation, duration.as_secs())
             }
             Self::Cancelled => "Operation cancelled by user".to_string(),
             Self::Unknown(msg) => msg.clone(),
@@ -185,22 +137,11 @@ impl From<String> for AiError {
                 reset: None,
             }
         } else if lower.contains("unauthorized") || lower.contains("401") || lower.contains("403") {
-            Self::Auth {
-                message: msg.clone(),
-                provider: "Unknown".to_string(),
-            }
+            Self::Auth { message: msg.clone(), provider: "Unknown".to_string() }
         } else if lower.contains("invalid") || lower.contains("400") {
-            Self::InvalidRequest {
-                message: msg,
-                field: None,
-                suggestion: None,
-            }
+            Self::InvalidRequest { message: msg, field: None, suggestion: None }
         } else if lower.contains("connection") || lower.contains("network") {
-            Self::Network {
-                message: msg,
-                retryable: true,
-                retry_after: None,
-            }
+            Self::Network { message: msg, retryable: true, retry_after: None }
         } else {
             Self::Unknown(msg)
         }
@@ -220,10 +161,7 @@ impl IntoAiError for String {
         let mut err: AiError = self.into();
         // Update provider name if it's an auth error
         if let AiError::Auth { message, .. } = err {
-            err = AiError::Auth {
-                message,
-                provider: provider.to_string(),
-            };
+            err = AiError::Auth { message, provider: provider.to_string() };
         }
         err
     }
@@ -245,10 +183,9 @@ impl IntoAiError for reqwest::Error {
             }
         } else if let Some(status) = self.status() {
             match status.as_u16() {
-                401 | 403 => AiError::Auth {
-                    message: self.to_string(),
-                    provider: provider.to_string(),
-                },
+                401 | 403 => {
+                    AiError::Auth { message: self.to_string(), provider: provider.to_string() }
+                }
                 429 => AiError::RateLimit {
                     message: self.to_string(),
                     retry_after: None,

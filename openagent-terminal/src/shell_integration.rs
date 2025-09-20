@@ -186,10 +186,7 @@ pub struct CommandId(u64);
 
 impl CommandId {
     pub fn new() -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64;
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
         Self(timestamp)
     }
 }
@@ -459,10 +456,7 @@ impl ShellIntegration {
             enhanced_history: EnhancedHistory::new(),
             shell_hooks: ShellHooks::new(),
             event_callbacks: Vec::new(),
-            stats: ShellStats {
-                last_reset: Instant::now(),
-                ..Default::default()
-            },
+            stats: ShellStats { last_reset: Instant::now(), ..Default::default() },
         };
 
         // Initialize shell hooks immediately
@@ -505,9 +499,7 @@ impl ShellIntegration {
             category,
         };
 
-        self.command_tracker
-            .active_commands
-            .insert(id, active_command);
+        self.command_tracker.active_commands.insert(id, active_command);
         self.command_tracker.total_commands += 1;
         self.stats.commands_tracked += 1;
 
@@ -556,9 +548,7 @@ impl ShellIntegration {
         };
 
         // Update timing history immediately
-        self.command_tracker
-            .timing_history
-            .push_back(timing.clone());
+        self.command_tracker.timing_history.push_back(timing.clone());
         if self.command_tracker.timing_history.len() > 1000 {
             self.command_tracker.timing_history.pop_front();
         }
@@ -626,12 +616,7 @@ impl ShellIntegration {
         self.stats.success_rate = self.exit_monitor.success_count as f64 / total_completed as f64;
 
         // Emit command completed event immediately
-        self.emit_event(ShellEvent::CommandCompleted {
-            id,
-            exit_code,
-            duration,
-            output_size,
-        });
+        self.emit_event(ShellEvent::CommandCompleted { id, exit_code, duration, output_size });
 
         Ok(())
     }
@@ -656,23 +641,20 @@ impl ShellIntegration {
             self.directory_tracker.current_dir = new_dir.clone();
 
             // Detect project type immediately
-            if let Ok(project_info) = self
-                .directory_tracker
-                .project_detector
-                .detect_project(&new_dir)
+            if let Ok(project_info) =
+                self.directory_tracker.project_detector.detect_project(&new_dir)
             {
                 if let Some(info) = project_info {
                     // Update directory pattern
-                    let pattern = self
-                        .directory_tracker
-                        .dir_patterns
-                        .entry(new_dir.clone())
-                        .or_insert_with(|| DirectoryPattern {
-                            common_commands: Vec::new(),
-                            project_type: Some(info.project_type),
-                            frequency_map: HashMap::new(),
-                            last_updated: Utc::now(),
-                        });
+                    let pattern =
+                        self.directory_tracker.dir_patterns.entry(new_dir.clone()).or_insert_with(
+                            || DirectoryPattern {
+                                common_commands: Vec::new(),
+                                project_type: Some(info.project_type),
+                                frequency_map: HashMap::new(),
+                                last_updated: Utc::now(),
+                            },
+                        );
                     pattern.project_type = Some(info.project_type);
                     pattern.last_updated = Utc::now();
                 }
@@ -720,11 +702,7 @@ impl ShellIntegration {
 
     /// Get command timing statistics
     pub fn get_timing_stats(&self) -> Vec<CommandTiming> {
-        self.command_tracker
-            .timing_history
-            .iter()
-            .cloned()
-            .collect()
+        self.command_tracker.timing_history.iter().cloned().collect()
     }
 
     /// Get current shell statistics
@@ -927,10 +905,7 @@ impl DirectoryTracker {
 
 impl ProjectDetector {
     fn new() -> Self {
-        let mut detector = Self {
-            detection_rules: Vec::new(),
-            cache: HashMap::new(),
-        };
+        let mut detector = Self { detection_rules: Vec::new(), cache: HashMap::new() };
 
         detector.setup_detection_rules();
         detector
@@ -997,10 +972,7 @@ impl ProjectDetector {
                     }
                 }
                 ProjectIndicator::CommandAvailable(cmd) => {
-                    if Command::new("which")
-                        .arg(cmd)
-                        .output()
-                        .map_or(true, |o| !o.status.success())
+                    if Command::new("which").arg(cmd).output().map_or(true, |o| !o.status.success())
                     {
                         return false;
                     }
@@ -1072,8 +1044,7 @@ impl CommandCategorizer {
         // Apply rules
         for rule in &self.category_rules {
             if rule.pattern.is_match(command) {
-                self.pattern_cache
-                    .insert(command.to_string(), rule.category);
+                self.pattern_cache.insert(command.to_string(), rule.category);
                 return Some(rule.category);
             }
         }
@@ -1098,11 +1069,8 @@ impl EnhancedHistory {
         let entry_index = self.entries.len();
 
         // Update search indices immediately
-        let command_tokens: Vec<String> = entry
-            .command
-            .split_whitespace()
-            .map(|s| s.to_lowercase())
-            .collect();
+        let command_tokens: Vec<String> =
+            entry.command.split_whitespace().map(|s| s.to_lowercase()).collect();
 
         for token in &command_tokens {
             self.search_index
@@ -1145,11 +1113,8 @@ impl EnhancedHistory {
 
     fn cleanup_indices(&mut self, removed_entry: &HistoryEntry, removed_index: usize) {
         // Remove from indices - simplified implementation
-        let command_tokens: Vec<String> = removed_entry
-            .command
-            .split_whitespace()
-            .map(|s| s.to_lowercase())
-            .collect();
+        let command_tokens: Vec<String> =
+            removed_entry.command.split_whitespace().map(|s| s.to_lowercase()).collect();
 
         for token in &command_tokens {
             if let Some(indices) = self.search_index.command_index.get_mut(token) {
@@ -1258,9 +1223,7 @@ mod tests {
         let id = shell.start_command("echo test".to_string(), None); // ensure used
 
         std::thread::sleep(Duration::from_millis(10));
-        shell
-            .complete_command(id, 0, Some("test".to_string()))
-            .unwrap();
+        shell.complete_command(id, 0, Some("test".to_string())).unwrap();
 
         assert!(!shell.command_tracker.timing_history.is_empty());
     }
@@ -1269,18 +1232,9 @@ mod tests {
     fn test_command_categorization() {
         let mut categorizer = CommandCategorizer::new();
 
-        assert_eq!(
-            categorizer.categorize_command("git status"),
-            Some(CommandCategory::Git)
-        );
-        assert_eq!(
-            categorizer.categorize_command("docker ps"),
-            Some(CommandCategory::Docker)
-        );
-        assert_eq!(
-            categorizer.categorize_command("ls -la"),
-            Some(CommandCategory::FileSystem)
-        );
+        assert_eq!(categorizer.categorize_command("git status"), Some(CommandCategory::Git));
+        assert_eq!(categorizer.categorize_command("docker ps"), Some(CommandCategory::Docker));
+        assert_eq!(categorizer.categorize_command("ls -la"), Some(CommandCategory::FileSystem));
     }
 
     #[test]

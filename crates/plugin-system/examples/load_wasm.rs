@@ -1,9 +1,9 @@
-use plugin_system::{UnifiedPluginManager, PluginPermissions};
 use plugin_system::permissions::ExecRule;
+use plugin_system::{PluginPermissions, UnifiedPluginManager};
 
 fn main() -> anyhow::Result<()> {
     // Create the manager
-    let mut manager = UnifiedPluginManager::new(".")?;
+    let manager = UnifiedPluginManager::new(".")?;
 
     // Union permissions for the three demo plugins
     let _perms = PluginPermissions {
@@ -13,8 +13,11 @@ fn main() -> anyhow::Result<()> {
         net_methods_allow: vec!["GET".into()],
         execute_commands: true,
         exec_allow: vec![ExecRule {
-            cmd: "echo".into(), args_pattern: None, cwd_allow: vec!["/".into()],
-            timeout_ms: Some(2000), max_output_bytes: Some(65536),
+            cmd: "echo".into(),
+            args_pattern: None,
+            cwd_allow: vec!["/".into()],
+            timeout_ms: Some(2000),
+            max_output_bytes: Some(65536),
         }],
         ..Default::default()
     };
@@ -22,8 +25,9 @@ fn main() -> anyhow::Result<()> {
     manager.set_default_host_from_permissions(&_perms);
 
     // Choose which demo to run
-    let wasm_path = std::env::args().nth(1).unwrap_or_else(||
-        "examples/plugins/wasm/read_file_demo.wasm".to_string());
+    let wasm_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "examples/plugins/wasm/read_file_demo.wasm".to_string());
 
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     rt.block_on(async move {

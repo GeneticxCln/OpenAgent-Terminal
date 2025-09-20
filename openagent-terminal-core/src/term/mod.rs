@@ -123,9 +123,7 @@ impl Default for TermMode {
 #[inline]
 pub fn point_to_viewport(display_offset: usize, point: Point) -> Option<Point<usize>> {
     let viewport_line = point.line.0 + display_offset as i32;
-    usize::try_from(viewport_line)
-        .ok()
-        .map(|line| Point::new(line, point.column))
+    usize::try_from(viewport_line).ok().map(|line| Point::new(line, point.column))
 }
 
 /// Convert a viewport relative point to a terminal point.
@@ -155,11 +153,7 @@ impl LineDamageBounds {
 
     #[inline]
     pub fn undamaged(line: usize, num_cols: usize) -> Self {
-        Self {
-            line,
-            left: num_cols,
-            right: 0,
-        }
+        Self { line, left: num_cols, right: 0 }
     }
 
     #[inline]
@@ -201,10 +195,7 @@ impl<'a> TermDamageIterator<'a> {
         let num_lines = line_damage.len();
         // Filter out invisible damage.
         let line_damage = &line_damage[..num_lines.saturating_sub(display_offset)];
-        Self {
-            display_offset,
-            line_damage: line_damage.iter(),
-        }
+        Self { display_offset, line_damage: line_damage.iter() }
     }
 }
 
@@ -236,15 +227,10 @@ struct TermDamageState {
 
 impl TermDamageState {
     fn new(num_cols: usize, num_lines: usize) -> Self {
-        let lines = (0..num_lines)
-            .map(|line| LineDamageBounds::undamaged(line, num_cols))
-            .collect();
+        let lines =
+            (0..num_lines).map(|line| LineDamageBounds::undamaged(line, num_cols)).collect();
 
-        Self {
-            full: true,
-            lines,
-            last_cursor: Default::default(),
-        }
+        Self { full: true, lines, last_cursor: Default::default() }
     }
 
     #[inline]
@@ -388,11 +374,7 @@ impl Default for Config {
 
 /// OSC 52 behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "lowercase")
-)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase"))]
 pub enum Osc52 {
     /// The handling of the escape sequence is disabled.
     Disabled,
@@ -536,8 +518,7 @@ impl<T> Term<T> {
         self.event_proxy.send_event(title_event);
 
         if self.mode.contains(TermMode::ALT_SCREEN) {
-            self.inactive_grid
-                .update_history(self.config.scrolling_history);
+            self.inactive_grid.update_history(self.config.scrolling_history);
         } else {
             self.grid.update_history(self.config.scrolling_history);
         }
@@ -560,10 +541,7 @@ impl<T> Term<T> {
         let mut res = String::new();
 
         match self.selection.as_ref() {
-            Some(Selection {
-                ty: SelectionType::Block,
-                ..
-            }) => {
+            Some(Selection { ty: SelectionType::Block, .. }) => {
                 for line in (start.line.0..end.line.0).map(Line::from) {
                     res += self
                         .line_to_string(line, start.column..end.column, start.column.0 != 0)
@@ -571,14 +549,9 @@ impl<T> Term<T> {
                     res += "\n";
                 }
 
-                res += self
-                    .line_to_string(end.line, start.column..end.column, true)
-                    .trim_end();
+                res += self.line_to_string(end.line, start.column..end.column, true).trim_end();
             }
-            Some(Selection {
-                ty: SelectionType::Lines,
-                ..
-            }) => {
+            Some(Selection { ty: SelectionType::Lines, .. }) => {
                 res = self.bounds_to_string(start, end) + "\n";
             }
             _ => {
@@ -594,16 +567,8 @@ impl<T> Term<T> {
         let mut res = String::new();
 
         for line in (start.line.0..=end.line.0).map(Line::from) {
-            let start_col = if line == start.line {
-                start.column
-            } else {
-                Column(0)
-            };
-            let end_col = if line == end.line {
-                end.column
-            } else {
-                self.last_column()
-            };
+            let start_col = if line == start.line { start.column } else { Column(0) };
+            let end_col = if line == end.line { end.column } else { self.last_column() };
 
             res += &self.line_to_string(line, start_col..end_col, line == end.line);
         }
@@ -624,10 +589,7 @@ impl<T> Term<T> {
         let line_length = cmp::min(grid_line.line_length(), cols.end + 1);
 
         // Include wide char when trailing spacer is selected.
-        if grid_line[cols.start]
-            .flags
-            .contains(Flags::WIDE_CHAR_SPACER)
-        {
+        if grid_line[cols.start].flags.contains(Flags::WIDE_CHAR_SPACER) {
             cols.start -= 1;
         }
 
@@ -648,10 +610,7 @@ impl<T> Term<T> {
                 tab_mode = true;
             }
 
-            if !cell
-                .flags
-                .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-            {
+            if !cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
                 // Push cells primary character.
                 text.push(cell.c);
 
@@ -664,9 +623,7 @@ impl<T> Term<T> {
 
         if cols.end >= self.columns() - 1
             && (line_length.0 == 0
-                || !self.grid[line][line_length - 1]
-                    .flags
-                    .contains(Flags::WRAPLINE))
+                || !self.grid[line][line_length - 1].flags.contains(Flags::WRAPLINE))
         {
             text.push('\n');
         }
@@ -674,9 +631,7 @@ impl<T> Term<T> {
         // If wide char is not part of the selection, but leading spacer is, include it.
         if line_length == self.columns()
             && line_length.0 >= 2
-            && grid_line[line_length - 1]
-                .flags
-                .contains(Flags::LEADING_WIDE_CHAR_SPACER)
+            && grid_line[line_length - 1].flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
             && include_wrapped_wide
         {
             text.push(self.grid[line - 1i32][Column(0)].c);
@@ -776,16 +731,9 @@ impl<T> Term<T> {
             self.inactive_grid.reset_region(..);
         }
 
-        mem::swap(
-            &mut self.keyboard_mode_stack,
-            &mut self.inactive_keyboard_mode_stack,
-        );
-        let keyboard_mode = self
-            .keyboard_mode_stack
-            .last()
-            .copied()
-            .unwrap_or(KeyboardModes::NO_MODE)
-            .into();
+        mem::swap(&mut self.keyboard_mode_stack, &mut self.inactive_keyboard_mode_stack);
+        let keyboard_mode =
+            self.keyboard_mode_stack.last().copied().unwrap_or(KeyboardModes::NO_MODE).into();
         self.set_keyboard_mode(keyboard_mode, KeyboardModesApplyBehavior::Replace);
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
@@ -802,19 +750,14 @@ impl<T> Term<T> {
     fn scroll_down_relative(&mut self, origin: Line, mut lines: usize) {
         trace!("Scrolling down relative: origin={origin}, lines={lines}");
 
-        lines = cmp::min(
-            lines,
-            (self.scroll_region.end - self.scroll_region.start).0 as usize,
-        );
+        lines = cmp::min(lines, (self.scroll_region.end - self.scroll_region.start).0 as usize);
         lines = cmp::min(lines, (self.scroll_region.end - origin).0 as usize);
 
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        self.selection = self
-            .selection
-            .take()
-            .and_then(|s| s.rotate(self, &region, -(lines as i32)));
+        self.selection =
+            self.selection.take().and_then(|s| s.rotate(self, &region, -(lines as i32)));
 
         // Scroll vi mode cursor.
         let line = &mut self.vi_mode_cursor.point.line;
@@ -835,28 +778,18 @@ impl<T> Term<T> {
     fn scroll_up_relative(&mut self, origin: Line, mut lines: usize) {
         trace!("Scrolling up relative: origin={origin}, lines={lines}");
 
-        lines = cmp::min(
-            lines,
-            (self.scroll_region.end - self.scroll_region.start).0 as usize,
-        );
+        lines = cmp::min(lines, (self.scroll_region.end - self.scroll_region.start).0 as usize);
 
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        self.selection = self
-            .selection
-            .take()
-            .and_then(|s| s.rotate(self, &region, lines as i32));
+        self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
 
         self.grid.scroll_up(&region, lines);
 
         // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
-        let top = if region.start == 0 {
-            viewport_top
-        } else {
-            region.start
-        };
+        let top = if region.start == 0 { viewport_top } else { region.start };
         let line = &mut self.vi_mode_cursor.point.line;
         if (top <= *line) && region.end > *line {
             *line = cmp::max(*line - lines, top);
@@ -988,10 +921,7 @@ impl<T> Term<T> {
                 }
 
                 let prev = point.sub(self, Boundary::Grid, 1);
-                if self.grid[prev]
-                    .flags
-                    .contains(Flags::LEADING_WIDE_CHAR_SPACER)
-                {
+                if self.grid[prev].flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
                     point = prev;
                 }
             }
@@ -1040,9 +970,7 @@ impl<T> Term<T> {
     /// While vi mode is active, this will automatically return the vi mode cursor style.
     #[inline]
     pub fn cursor_style(&self) -> CursorStyle {
-        let cursor_style = self
-            .cursor_style
-            .unwrap_or(self.config.default_cursor_style);
+        let cursor_style = self.cursor_style.unwrap_or(self.config.default_cursor_style);
 
         if self.mode.contains(TermMode::VI) {
             self.config.vi_mode_cursor_style.unwrap_or(cursor_style)
@@ -1093,17 +1021,12 @@ impl<T> Term<T> {
         let mut cursor_cell = self.grid.cursor_cell();
 
         // Clear all related cells when overwriting a fullwidth cell.
-        if cursor_cell
-            .flags
-            .intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER)
-        {
+        if cursor_cell.flags.intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER) {
             // Remove wide char and spacer.
             let wide = cursor_cell.flags.contains(Flags::WIDE_CHAR);
             let point = self.grid.cursor.point;
             if wide && point.column < self.last_column() {
-                self.grid[point.line][point.column + 1]
-                    .flags
-                    .remove(Flags::WIDE_CHAR_SPACER);
+                self.grid[point.line][point.column + 1].flags.remove(Flags::WIDE_CHAR_SPACER);
             } else if point.column > 0 {
                 self.grid[point.line][point.column - 1].clear_wide();
             }
@@ -1111,9 +1034,7 @@ impl<T> Term<T> {
             // Remove leading spacers.
             if point.column <= 1 && point.line != self.topmost_line() {
                 let column = self.last_column();
-                self.grid[point.line - 1i32][column]
-                    .flags
-                    .remove(Flags::LEADING_WIDE_CHAR_SPACER);
+                self.grid[point.line - 1i32][column].flags.remove(Flags::LEADING_WIDE_CHAR_SPACER);
             }
 
             cursor_cell = self.grid.cursor_cell();
@@ -1129,10 +1050,8 @@ impl<T> Term<T> {
     #[inline]
     fn damage_cursor(&mut self) {
         // The normal cursor coordinates are always in viewport.
-        let point = Point::new(
-            self.grid.cursor.point.line.0 as usize,
-            self.grid.cursor.point.column,
-        );
+        let point =
+            Point::new(self.grid.cursor.point.line.0 as usize, self.grid.cursor.point.column);
         self.damage.damage_point(point);
     }
 
@@ -1187,10 +1106,7 @@ impl<T: EventListener> Handler for Term<T> {
 
             // Put zerowidth characters over first fullwidth character cell.
             let line = self.grid.cursor.point.line;
-            if self.grid[line][column]
-                .flags
-                .contains(Flags::WIDE_CHAR_SPACER)
-            {
+            if self.grid[line][column].flags.contains(Flags::WIDE_CHAR_SPACER) {
                 column.0 = column.saturating_sub(1);
             }
 
@@ -1221,17 +1137,9 @@ impl<T: EventListener> Handler for Term<T> {
             if self.grid.cursor.point.column + 1 >= columns {
                 if self.mode.contains(TermMode::LINE_WRAP) {
                     // Insert placeholder before wide char if glyph does not fit in this row.
-                    self.grid
-                        .cursor
-                        .template
-                        .flags
-                        .insert(Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.grid.cursor.template.flags.insert(Flags::LEADING_WIDE_CHAR_SPACER);
                     self.write_at_cursor(' ');
-                    self.grid
-                        .cursor
-                        .template
-                        .flags
-                        .remove(Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.grid.cursor.template.flags.remove(Flags::LEADING_WIDE_CHAR_SPACER);
                     self.wrapline();
                 } else {
                     // Prevent out of bounds crash when linewrapping is disabled.
@@ -1247,17 +1155,9 @@ impl<T: EventListener> Handler for Term<T> {
 
             // Write spacer to cell following the wide glyph.
             self.grid.cursor.point.column += 1;
-            self.grid
-                .cursor
-                .template
-                .flags
-                .insert(Flags::WIDE_CHAR_SPACER);
+            self.grid.cursor.template.flags.insert(Flags::WIDE_CHAR_SPACER);
             self.write_at_cursor(' ');
-            self.grid
-                .cursor
-                .template
-                .flags
-                .remove(Flags::WIDE_CHAR_SPACER);
+            self.grid.cursor.template.flags.remove(Flags::WIDE_CHAR_SPACER);
         }
 
         if self.grid.cursor.point.column + 1 < columns {
@@ -1358,8 +1258,7 @@ impl<T: EventListener> Handler for Term<T> {
         let num_cells = cols_snapshot - destination;
 
         let line = cursor_point.line;
-        self.damage
-            .damage_line(line.0 as usize, 0, self.columns() - 1);
+        self.damage.damage_line(line.0 as usize, 0, self.columns() - 1);
 
         // Blank cell prepared above from the full current template.
 
@@ -1400,8 +1299,7 @@ impl<T: EventListener> Handler for Term<T> {
         let last_column = cmp::min(self.grid.cursor.point.column + cols, self.last_column());
 
         let cursor_line = self.grid.cursor.point.line.0 as usize;
-        self.damage
-            .damage_line(cursor_line, self.grid.cursor.point.column.0, last_column.0);
+        self.damage.damage_line(cursor_line, self.grid.cursor.point.column.0, last_column.0);
 
         self.grid.cursor.point.column = last_column;
         self.grid.cursor.input_needs_wrap = false;
@@ -1413,8 +1311,7 @@ impl<T: EventListener> Handler for Term<T> {
         let column = self.grid.cursor.point.column.saturating_sub(cols);
 
         let cursor_line = self.grid.cursor.point.line.0 as usize;
-        self.damage
-            .damage_line(cursor_line, column, self.grid.cursor.point.column.0);
+        self.damage.damage_line(cursor_line, column, self.grid.cursor.point.column.0);
 
         self.grid.cursor.point.column = Column(column);
         self.grid.cursor.input_needs_wrap = false;
@@ -1445,11 +1342,8 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         trace!("Reporting active keyboard mode");
-        let current_mode = self
-            .keyboard_mode_stack
-            .last()
-            .unwrap_or(&KeyboardModes::NO_MODE)
-            .bits();
+        let current_mode =
+            self.keyboard_mode_stack.last().unwrap_or(&KeyboardModes::NO_MODE).bits();
         let text = format!("\x1b[?{current_mode}u");
         self.event_proxy.send_event(Event::PtyWrite(text));
     }
@@ -1481,18 +1375,11 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         trace!("Attempting to pop {to_pop} keyboard modes from the stack");
-        let new_len = self
-            .keyboard_mode_stack
-            .len()
-            .saturating_sub(to_pop as usize);
+        let new_len = self.keyboard_mode_stack.len().saturating_sub(to_pop as usize);
         self.keyboard_mode_stack.truncate(new_len);
 
         // Reload active mode.
-        let mode = self
-            .keyboard_mode_stack
-            .last()
-            .copied()
-            .unwrap_or(KeyboardModes::NO_MODE);
+        let mode = self.keyboard_mode_stack.last().copied().unwrap_or(KeyboardModes::NO_MODE);
         self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
     }
 
@@ -1593,8 +1480,7 @@ impl<T: EventListener> Handler for Term<T> {
 
         let new_col = 0;
         let line = self.grid.cursor.point.line.0 as usize;
-        self.damage
-            .damage_line(line, new_col, self.grid.cursor.point.column.0);
+        self.damage.damage_line(line, new_col, self.grid.cursor.point.column.0);
         self.grid.cursor.point.column = Column(new_col);
         self.grid.cursor.input_needs_wrap = false;
     }
@@ -1705,11 +1591,7 @@ impl<T: EventListener> Handler for Term<T> {
         let cursor_point = self.grid.cursor.point;
         let template_bg = self.grid.cursor.template.bg;
 
-        trace!(
-            "Erasing chars: count={}, col={}",
-            count,
-            cursor_point.column
-        );
+        trace!("Erasing chars: count={}, col={}", count, cursor_point.column);
 
         let start = cursor_point.column;
         let end = cmp::min(start + count, Column(self.columns()));
@@ -1741,8 +1623,7 @@ impl<T: EventListener> Handler for Term<T> {
 
         let line = cursor_point.line;
         // Mark the damaged region from the cursor to the end of the line.
-        self.damage
-            .damage_line(line.0 as usize, start, num_cols - 1);
+        self.damage.damage_line(line.0 as usize, start, num_cols - 1);
 
         // Operate on the row slice directly for efficient shifting.
         let bg = self.grid.cursor.template.bg;
@@ -1784,8 +1665,7 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         let line = self.grid.cursor.point.line.0 as usize;
-        self.damage
-            .damage_line(line, self.grid.cursor.point.column.0, old_col);
+        self.damage.damage_line(line, self.grid.cursor.point.column.0, old_col);
     }
 
     #[inline]
@@ -1812,8 +1692,7 @@ impl<T: EventListener> Handler for Term<T> {
         }
 
         let line = self.grid.cursor.point.line.0 as usize;
-        self.damage
-            .damage_line(line, old_col, self.grid.cursor.point.column.0);
+        self.damage.damage_line(line, old_col, self.grid.cursor.point.column.0);
     }
 
     #[inline]
@@ -1847,8 +1726,7 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::LineClearMode::All => (Column(0), Column(self.columns())),
         };
 
-        self.damage
-            .damage_line(point.line.0 as usize, left.0, right.0 - 1);
+        self.damage.damage_line(point.line.0 as usize, left.0, right.0 - 1);
 
         let row = &mut self.grid[point.line];
         for cell in row[left..right].iter_mut() {
@@ -1918,8 +1796,7 @@ impl<T: EventListener> Handler for Term<T> {
 
         if let Ok(bytes) = Base64.decode(base64) {
             if let Ok(text) = String::from_utf8(bytes) {
-                self.event_proxy
-                    .send_event(Event::ClipboardStore(clipboard_type, text));
+                self.event_proxy.send_event(Event::ClipboardStore(clipboard_type, text));
             }
         }
     }
@@ -2018,16 +1895,10 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
 
-                self.vi_mode_cursor.point.line = self
-                    .vi_mode_cursor
-                    .point
-                    .line
-                    .grid_clamp(self, Boundary::Cursor);
+                self.vi_mode_cursor.point.line =
+                    self.vi_mode_cursor.point.line.grid_clamp(self, Boundary::Cursor);
 
-                self.selection = self
-                    .selection
-                    .take()
-                    .filter(|s| !s.intersects_range(..Line(0)));
+                self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
             }
             // We have no history to clear.
             ansi::ClearMode::Saved => (),
@@ -2092,10 +1963,7 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
         trace!("Setting hyperlink: {hyperlink:?}");
-        self.grid
-            .cursor
-            .template
-            .set_hyperlink(hyperlink.map(|e| e.into()));
+        self.grid.cursor.template.set_hyperlink(hyperlink.map(|e| e.into()));
     }
 
     /// Set a terminal attribute.
@@ -2207,9 +2075,7 @@ impl<T: EventListener> Handler for Term<T> {
             }
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                let style = self
-                    .cursor_style
-                    .get_or_insert(self.config.default_cursor_style);
+                let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
                 style.blinking = true;
                 self.event_proxy.send_event(Event::CursorBlinkingChange);
             }
@@ -2258,9 +2124,7 @@ impl<T: EventListener> Handler for Term<T> {
             NamedPrivateMode::Origin => self.mode.remove(TermMode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                let style = self
-                    .cursor_style
-                    .get_or_insert(self.config.default_cursor_style);
+                let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
                 style.blinking = false;
                 self.event_proxy.send_event(Event::CursorBlinkingChange);
             }
@@ -2277,9 +2141,7 @@ impl<T: EventListener> Handler for Term<T> {
                 NamedPrivateMode::Origin => self.mode.contains(TermMode::ORIGIN).into(),
                 NamedPrivateMode::LineWrap => self.mode.contains(TermMode::LINE_WRAP).into(),
                 NamedPrivateMode::BlinkingCursor => {
-                    let style = self
-                        .cursor_style
-                        .get_or_insert(self.config.default_cursor_style);
+                    let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
                     style.blinking.into()
                 }
                 NamedPrivateMode::ShowCursor => self.mode.contains(TermMode::SHOW_CURSOR).into(),
@@ -2445,9 +2307,7 @@ impl<T: EventListener> Handler for Term<T> {
     fn set_cursor_shape(&mut self, shape: CursorShape) {
         trace!("Setting cursor shape {shape:?}");
 
-        let style = self
-            .cursor_style
-            .get_or_insert(self.config.default_cursor_style);
+        let style = self.cursor_style.get_or_insert(self.config.default_cursor_style);
         style.shape = shape;
     }
 
@@ -2491,12 +2351,11 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn text_area_size_pixels(&mut self) {
-        self.event_proxy
-            .send_event(Event::TextAreaSizeRequest(Arc::new(move |window_size| {
-                let height = window_size.num_lines * window_size.cell_height;
-                let width = window_size.num_cols * window_size.cell_width;
-                format!("\x1b[4;{height};{width}t")
-            })));
+        self.event_proxy.send_event(Event::TextAreaSizeRequest(Arc::new(move |window_size| {
+            let height = window_size.num_lines * window_size.cell_height;
+            let width = window_size.num_cols * window_size.cell_width;
+            format!("\x1b[4;{height};{width}t")
+        })));
     }
 
     #[inline]
@@ -2562,9 +2421,7 @@ struct TabStops {
 impl TabStops {
     #[inline]
     fn new(columns: usize) -> TabStops {
-        TabStops {
-            tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect(),
-        }
+        TabStops { tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect() }
     }
 
     /// Remove all tabstops.
@@ -2612,11 +2469,7 @@ impl RenderableCursor {
     fn new<T>(term: &Term<T>) -> Self {
         // Cursor position.
         let vi_mode = term.mode().contains(TermMode::VI);
-        let mut point = if vi_mode {
-            term.vi_mode_cursor.point
-        } else {
-            term.grid.cursor.point
-        };
+        let mut point = if vi_mode { term.vi_mode_cursor.point } else { term.grid.cursor.point };
         if term.grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
             point.column -= 1;
         }
@@ -2674,10 +2527,7 @@ pub mod test {
 
     impl TermSize {
         pub fn new(columns: usize, screen_lines: usize) -> Self {
-            Self {
-                columns,
-                screen_lines,
-            }
+            Self { columns, screen_lines }
         }
     }
 
@@ -2718,12 +2568,7 @@ pub mod test {
         let lines: Vec<&str> = content.split('\n').collect();
         let num_cols = lines
             .iter()
-            .map(|line| {
-                line.chars()
-                    .filter(|c| *c != '\r')
-                    .map(|c| c.width().unwrap())
-                    .sum()
-            })
+            .map(|line| line.chars().filter(|c| *c != '\r').map(|c| c.width().unwrap()).sum())
             .max()
             .unwrap_or(0);
 
@@ -2735,9 +2580,7 @@ pub mod test {
         for (line, text) in lines.iter().enumerate() {
             let line = Line(line as i32);
             if !text.ends_with('\r') && line + 1 != lines.len() {
-                term.grid[line][Column(num_cols - 1)]
-                    .flags
-                    .insert(Flags::WRAPLINE);
+                term.grid[line][Column(num_cols - 1)].flags.insert(Flags::WRAPLINE);
             }
 
             let mut index = 0;
@@ -2747,12 +2590,8 @@ pub mod test {
                 // Handle fullwidth characters.
                 let width = c.width().unwrap();
                 if width == 2 {
-                    term.grid[line][Column(index)]
-                        .flags
-                        .insert(Flags::WIDE_CHAR);
-                    term.grid[line][Column(index + 1)]
-                        .flags
-                        .insert(Flags::WIDE_CHAR_SPACER);
+                    term.grid[line][Column(index)].flags.insert(Flags::WIDE_CHAR);
+                    term.grid[line][Column(index + 1)].flags.insert(Flags::WIDE_CHAR_SPACER);
                 }
 
                 index += width;
@@ -2859,48 +2698,24 @@ mod tests {
         // Multiple lines contain an empty line.
         term.selection = Some(Selection::new(
             SelectionType::Simple,
-            Point {
-                line: Line(0),
-                column: Column(0),
-            },
+            Point { line: Line(0), column: Column(0) },
             Side::Left,
         ));
         if let Some(s) = term.selection.as_mut() {
-            s.update(
-                Point {
-                    line: Line(2),
-                    column: Column(4),
-                },
-                Side::Right,
-            );
+            s.update(Point { line: Line(2), column: Column(4) }, Side::Right);
         }
-        assert_eq!(
-            term.selection_to_string(),
-            Some(String::from("\"aaa\"\n\n aaa "))
-        );
+        assert_eq!(term.selection_to_string(), Some(String::from("\"aaa\"\n\n aaa ")));
 
         // A wrapline.
         term.selection = Some(Selection::new(
             SelectionType::Simple,
-            Point {
-                line: Line(2),
-                column: Column(0),
-            },
+            Point { line: Line(2), column: Column(0) },
             Side::Left,
         ));
         if let Some(s) = term.selection.as_mut() {
-            s.update(
-                Point {
-                    line: Line(3),
-                    column: Column(4),
-                },
-                Side::Right,
-            );
+            s.update(Point { line: Line(3), column: Column(4) }, Side::Right);
         }
-        assert_eq!(
-            term.selection_to_string(),
-            Some(String::from(" aaa  aaa\""))
-        );
+        assert_eq!(term.selection_to_string(), Some(String::from(" aaa  aaa\"")));
     }
 
     #[test]
@@ -2926,10 +2741,7 @@ mod tests {
         {
             term.selection = Some(Selection::new(
                 SelectionType::Semantic,
-                Point {
-                    line: Line(0),
-                    column: Column(1),
-                },
+                Point { line: Line(0), column: Column(1) },
                 Side::Left,
             ));
             assert_eq!(term.selection_to_string(), Some(String::from("aa")));
@@ -2938,10 +2750,7 @@ mod tests {
         {
             term.selection = Some(Selection::new(
                 SelectionType::Semantic,
-                Point {
-                    line: Line(0),
-                    column: Column(4),
-                },
+                Point { line: Line(0), column: Column(4) },
                 Side::Left,
             ));
             assert_eq!(term.selection_to_string(), Some(String::from("aaa")));
@@ -2950,10 +2759,7 @@ mod tests {
         {
             term.selection = Some(Selection::new(
                 SelectionType::Semantic,
-                Point {
-                    line: Line(1),
-                    column: Column(1),
-                },
+                Point { line: Line(1), column: Column(1) },
                 Side::Left,
             ));
             assert_eq!(term.selection_to_string(), Some(String::from("aaa")));
@@ -2975,10 +2781,7 @@ mod tests {
 
         term.selection = Some(Selection::new(
             SelectionType::Lines,
-            Point {
-                line: Line(0),
-                column: Column(3),
-            },
+            Point { line: Line(0), column: Column(3) },
             Side::Left,
         ));
         assert_eq!(term.selection_to_string(), Some(String::from("\"aa\"a\n")));
@@ -3004,54 +2807,27 @@ mod tests {
 
         term.selection = Some(Selection::new(
             SelectionType::Block,
-            Point {
-                line: Line(0),
-                column: Column(3),
-            },
+            Point { line: Line(0), column: Column(3) },
             Side::Left,
         ));
 
         // The same column.
         if let Some(s) = term.selection.as_mut() {
-            s.update(
-                Point {
-                    line: Line(3),
-                    column: Column(3),
-                },
-                Side::Right,
-            );
+            s.update(Point { line: Line(3), column: Column(3) }, Side::Right);
         }
         assert_eq!(term.selection_to_string(), Some(String::from("\na\na\na")));
 
         // The first column.
         if let Some(s) = term.selection.as_mut() {
-            s.update(
-                Point {
-                    line: Line(3),
-                    column: Column(0),
-                },
-                Side::Left,
-            );
+            s.update(Point { line: Line(3), column: Column(0) }, Side::Left);
         }
-        assert_eq!(
-            term.selection_to_string(),
-            Some(String::from("\n\"aa\n\"a\n\"aa"))
-        );
+        assert_eq!(term.selection_to_string(), Some(String::from("\n\"aa\n\"a\n\"aa")));
 
         // The last column.
         if let Some(s) = term.selection.as_mut() {
-            s.update(
-                Point {
-                    line: Line(3),
-                    column: Column(4),
-                },
-                Side::Right,
-            );
+            s.update(Point { line: Line(3), column: Column(4) }, Side::Right);
         }
-        assert_eq!(
-            term.selection_to_string(),
-            Some(String::from("\na\"\na\"\na"))
-        );
+        assert_eq!(term.selection_to_string(), Some(String::from("\na\"\na\"\na")));
     }
 
     /// Check that the grid can be serialized back and forth losslessly.
@@ -3073,10 +2849,7 @@ mod tests {
         let size = TermSize::new(7, 17);
         let mut term = Term::new(Config::default(), &size, VoidListener);
         let cursor = Point::new(Line(0), Column(0));
-        term.configure_charset(
-            CharsetIndex::G0,
-            StandardCharset::SpecialCharacterAndLineDrawing,
-        );
+        term.configure_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
         term.input('a');
 
         assert_eq!(term.grid()[cursor].c, '▒');
@@ -3332,14 +3105,7 @@ mod tests {
             TermDamage::Full => panic!("Expected partial damage, however got Full"),
             TermDamage::Partial(damaged_lines) => damaged_lines,
         };
-        assert_eq!(
-            damaged_lines.next(),
-            Some(LineDamageBounds {
-                line: 0,
-                left,
-                right
-            })
-        );
+        assert_eq!(damaged_lines.next(), Some(LineDamageBounds { line: 0, left, right }));
         assert_eq!(damaged_lines.next(), None);
         term.reset_damage();
 
@@ -3382,19 +3148,11 @@ mod tests {
         };
         assert_eq!(
             damaged_lines.next(),
-            Some(LineDamageBounds {
-                line: display_offset,
-                left: 0,
-                right: 0
-            })
+            Some(LineDamageBounds { line: display_offset, left: 0, right: 0 })
         );
         assert_eq!(
             damaged_lines.next(),
-            Some(LineDamageBounds {
-                line: display_offset + 1,
-                left: 0,
-                right: 0
-            })
+            Some(LineDamageBounds { line: display_offset + 1, left: 0, right: 0 })
         );
         assert_eq!(damaged_lines.next(), None);
     }
@@ -3413,263 +3171,88 @@ mod tests {
         // following tests we will be accessing `term.damage.lines` directly to avoid adding extra
         // damage information (like cursor and Vi cursor), which we're not testing.
 
-        assert_eq!(
-            term.damage.lines[0],
-            LineDamageBounds {
-                line: 0,
-                left: 0,
-                right: 0
-            }
-        );
-        assert_eq!(
-            term.damage.lines[1],
-            LineDamageBounds {
-                line: 1,
-                left: 1,
-                right: 1
-            }
-        );
+        assert_eq!(term.damage.lines[0], LineDamageBounds { line: 0, left: 0, right: 0 });
+        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 1, right: 1 });
         term.damage.reset(num_cols);
 
         term.move_forward(3);
-        assert_eq!(
-            term.damage.lines[1],
-            LineDamageBounds {
-                line: 1,
-                left: 1,
-                right: 4
-            }
-        );
+        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 1, right: 4 });
         term.damage.reset(num_cols);
 
         term.move_backward(8);
-        assert_eq!(
-            term.damage.lines[1],
-            LineDamageBounds {
-                line: 1,
-                left: 0,
-                right: 4
-            }
-        );
+        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 0, right: 4 });
         term.goto(5, 5);
         term.damage.reset(num_cols);
 
         term.backspace();
         term.backspace();
-        assert_eq!(
-            term.damage.lines[5],
-            LineDamageBounds {
-                line: 5,
-                left: 3,
-                right: 5
-            }
-        );
+        assert_eq!(term.damage.lines[5], LineDamageBounds { line: 5, left: 3, right: 5 });
         term.damage.reset(num_cols);
 
         term.move_up(1);
-        assert_eq!(
-            term.damage.lines[5],
-            LineDamageBounds {
-                line: 5,
-                left: 3,
-                right: 3
-            }
-        );
-        assert_eq!(
-            term.damage.lines[4],
-            LineDamageBounds {
-                line: 4,
-                left: 3,
-                right: 3
-            }
-        );
+        assert_eq!(term.damage.lines[5], LineDamageBounds { line: 5, left: 3, right: 3 });
+        assert_eq!(term.damage.lines[4], LineDamageBounds { line: 4, left: 3, right: 3 });
         term.damage.reset(num_cols);
 
         term.move_down(1);
         term.move_down(1);
-        assert_eq!(
-            term.damage.lines[4],
-            LineDamageBounds {
-                line: 4,
-                left: 3,
-                right: 3
-            }
-        );
-        assert_eq!(
-            term.damage.lines[5],
-            LineDamageBounds {
-                line: 5,
-                left: 3,
-                right: 3
-            }
-        );
-        assert_eq!(
-            term.damage.lines[6],
-            LineDamageBounds {
-                line: 6,
-                left: 3,
-                right: 3
-            }
-        );
+        assert_eq!(term.damage.lines[4], LineDamageBounds { line: 4, left: 3, right: 3 });
+        assert_eq!(term.damage.lines[5], LineDamageBounds { line: 5, left: 3, right: 3 });
+        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 3, right: 3 });
         term.damage.reset(num_cols);
 
         term.wrapline();
-        assert_eq!(
-            term.damage.lines[6],
-            LineDamageBounds {
-                line: 6,
-                left: 3,
-                right: 3
-            }
-        );
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 0,
-                right: 0
-            }
-        );
+        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 3, right: 3 });
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 0 });
         term.move_forward(3);
         term.move_up(1);
         term.damage.reset(num_cols);
 
         term.linefeed();
-        assert_eq!(
-            term.damage.lines[6],
-            LineDamageBounds {
-                line: 6,
-                left: 3,
-                right: 3
-            }
-        );
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 3,
-                right: 3
-            }
-        );
+        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 3, right: 3 });
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 3, right: 3 });
         term.damage.reset(num_cols);
 
         term.carriage_return();
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 0,
-                right: 3
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 3 });
         term.damage.reset(num_cols);
 
         term.erase_chars(5);
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 0,
-                right: 5
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 5 });
         term.damage.reset(num_cols);
 
         term.delete_chars(3);
         let right = term.columns() - 1;
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 0,
-                right
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right });
         term.move_forward(term.columns());
         term.damage.reset(num_cols);
 
         term.move_backward_tabs(1);
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 8,
-                right
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right });
         term.save_cursor_position();
         term.goto(1, 1);
         term.damage.reset(num_cols);
 
         term.restore_cursor_position();
-        assert_eq!(
-            term.damage.lines[1],
-            LineDamageBounds {
-                line: 1,
-                left: 1,
-                right: 1
-            }
-        );
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 8,
-                right: 8
-            }
-        );
+        assert_eq!(term.damage.lines[1], LineDamageBounds { line: 1, left: 1, right: 1 });
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right: 8 });
         term.damage.reset(num_cols);
 
         term.clear_line(ansi::LineClearMode::All);
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 0,
-                right
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right });
         term.damage.reset(num_cols);
 
         term.clear_line(ansi::LineClearMode::Left);
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 0,
-                right: 8
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 0, right: 8 });
         term.damage.reset(num_cols);
 
         term.clear_line(ansi::LineClearMode::Right);
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 8,
-                right
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right });
         term.damage.reset(num_cols);
 
         term.reverse_index();
-        assert_eq!(
-            term.damage.lines[7],
-            LineDamageBounds {
-                line: 7,
-                left: 8,
-                right: 8
-            }
-        );
-        assert_eq!(
-            term.damage.lines[6],
-            LineDamageBounds {
-                line: 6,
-                left: 8,
-                right: 8
-            }
-        );
+        assert_eq!(term.damage.lines[7], LineDamageBounds { line: 7, left: 8, right: 8 });
+        assert_eq!(term.damage.lines[6], LineDamageBounds { line: 6, left: 8, right: 8 });
     }
 
     #[test]

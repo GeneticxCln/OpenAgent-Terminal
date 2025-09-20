@@ -30,12 +30,7 @@ pub struct EditorBufferMeta {
 
 impl Default for EditorBufferMeta {
     fn default() -> Self {
-        Self {
-            path: None,
-            language_id: None,
-            version: 1,
-            modified: false,
-        }
+        Self { path: None, language_id: None, version: 1, modified: false }
     }
 }
 
@@ -65,10 +60,7 @@ impl EditorBuffer {
 
     pub fn open_file(path: PathBuf) -> Result<Self> {
         let text = fs::read_to_string(&path).unwrap_or_default();
-        let meta = EditorBufferMeta {
-            path: Some(path),
-            ..Default::default()
-        };
+        let meta = EditorBufferMeta { path: Some(path), ..Default::default() };
         Ok(Self {
             rope: Arc::new(RwLock::new(Rope::from_str(&text))),
             cursor: Arc::new(RwLock::new(Cursor::default())),
@@ -77,12 +69,7 @@ impl EditorBuffer {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = self
-            .meta
-            .read()
-            .path
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no path"))?;
+        let path = self.meta.read().path.clone().ok_or_else(|| anyhow::anyhow!("no path"))?;
         let text = self.rope.read().to_string();
         fs::write(path, text)?;
         self.meta.write().modified = false;

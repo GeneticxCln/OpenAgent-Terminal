@@ -58,10 +58,7 @@ pub fn generate_openagent_config(unified: &UnifiedConfig) -> Result<String> {
         // Font faces
         if let Some(normal) = &unified.font.normal {
             if let Some(family) = &normal.family {
-                sections.push(format!(
-                    "[font.normal]\nfamily = \"{}\"",
-                    escape_string(family)
-                ));
+                sections.push(format!("[font.normal]\nfamily = \"{}\"", escape_string(family)));
                 if let Some(style) = &normal.style {
                     sections.push(format!("style = \"{}\"", escape_string(style)));
                 }
@@ -159,10 +156,7 @@ pub fn generate_openagent_config(unified: &UnifiedConfig) -> Result<String> {
                 selection_config.push(format!("background = '{}'", bg));
             }
             if !selection_config.is_empty() {
-                sections.push(format!(
-                    "[colors.selection]\n{}",
-                    selection_config.join("\n")
-                ));
+                sections.push(format!("[colors.selection]\n{}", selection_config.join("\n")));
             }
         }
     }
@@ -223,10 +217,8 @@ pub fn generate_openagent_config(unified: &UnifiedConfig) -> Result<String> {
                 selection_config.push(format!("save_to_clipboard = {}", save_clipboard));
             }
             if let Some(semantic_chars) = &selection.semantic_escape_chars {
-                selection_config.push(format!(
-                    "semantic_escape_chars = \"{}\"",
-                    escape_string(semantic_chars)
-                ));
+                selection_config
+                    .push(format!("semantic_escape_chars = \"{}\"", escape_string(semantic_chars)));
             }
             if !selection_config.is_empty() {
                 sections.push(format!("[selection]\n{}", selection_config.join("\n")));
@@ -287,10 +279,7 @@ pub fn generate_openagent_config(unified: &UnifiedConfig) -> Result<String> {
                 binding_config.push(format!("chars = \"{}\"", escape_string(chars)));
             }
 
-            sections.push(format!(
-                "[[keyboard.bindings]]\n{}",
-                binding_config.join("\n")
-            ));
+            sections.push(format!("[[keyboard.bindings]]\n{}", binding_config.join("\n")));
         }
     }
 

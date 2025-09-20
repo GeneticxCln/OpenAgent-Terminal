@@ -291,9 +291,7 @@ impl WorkflowEngine {
     /// List loaded workflows (id, definition)
     pub async fn list_workflows(&self) -> Vec<(String, WorkflowDefinition)> {
         let map = self.workflows.read().await;
-        map.iter()
-            .map(|(id, def)| (id.clone(), def.clone()))
-            .collect()
+        map.iter().map(|(id, def)| (id.clone(), def.clone())).collect()
     }
 
     /// Get a workflow by its `name` (returns the first matching version).
@@ -334,10 +332,7 @@ impl WorkflowEngine {
         validator.validate(&workflow)?;
 
         let workflow_id = format!("{}-{}", workflow.name, workflow.version);
-        self.workflows
-            .write()
-            .await
-            .insert(workflow_id.clone(), workflow);
+        self.workflows.write().await.insert(workflow_id.clone(), workflow);
 
         Ok(workflow_id)
     }
@@ -375,10 +370,7 @@ impl WorkflowEngine {
             logs: Vec::new(),
         };
 
-        self.states
-            .write()
-            .await
-            .insert(execution_id.clone(), state);
+        self.states.write().await.insert(execution_id.clone(), state);
 
         // Spawn execution task
         let engine = self.clone();
@@ -401,8 +393,7 @@ impl WorkflowEngine {
         parameters: HashMap<String, serde_json::Value>,
     ) -> Result<()> {
         // Update status to running
-        self.update_status(&execution_id, WorkflowStatus::Running)
-            .await?;
+        self.update_status(&execution_id, WorkflowStatus::Running).await?;
         self.log(
             &execution_id,
             None,
@@ -420,8 +411,7 @@ impl WorkflowEngine {
                 format!("Requirements check failed: {}", e),
             )
             .await;
-            self.update_status(&execution_id, WorkflowStatus::Failed)
-                .await?;
+            self.update_status(&execution_id, WorkflowStatus::Failed).await?;
             return Err(e);
         }
 
@@ -472,10 +462,8 @@ impl WorkflowEngine {
                 for pstep in parallel_steps.iter() {
                     let exec_id = execution_id.clone();
                     let ctx_clone = context.clone();
-                    let env = pstep
-                        .environment
-                        .clone()
-                        .unwrap_or_else(|| workflow.environment.clone());
+                    let env =
+                        pstep.environment.clone().unwrap_or_else(|| workflow.environment.clone());
                     let secrets = pstep.secrets.clone();
                     let name = pstep.name.clone();
                     let id = pstep.id.clone();
@@ -597,8 +585,7 @@ impl WorkflowEngine {
             }
 
             // Update current step
-            self.update_current_step(&execution_id, Some(&step.id))
-                .await?;
+            self.update_current_step(&execution_id, Some(&step.id)).await?;
             self.log(
                 &execution_id,
                 Some(&step.id),
@@ -726,14 +713,10 @@ impl WorkflowEngine {
         }
 
         // Update final status
-        let final_status = if overall_success {
-            WorkflowStatus::Success
-        } else {
-            WorkflowStatus::Failed
-        };
+        let final_status =
+            if overall_success { WorkflowStatus::Success } else { WorkflowStatus::Failed };
 
-        self.update_status(&execution_id, final_status.clone())
-            .await?;
+        self.update_status(&execution_id, final_status.clone()).await?;
         self.set_finished_time(&execution_id).await?;
 
         self.log(
@@ -875,10 +858,7 @@ impl WorkflowEngine {
 
             if let Some(env_var) = &req.env_var {
                 if std::env::var(env_var).is_err() && req.required {
-                    return Err(anyhow!(
-                        "Required environment variable not set: {}",
-                        env_var
-                    ));
+                    return Err(anyhow!("Required environment variable not set: {}", env_var));
                 }
             }
         }
@@ -985,11 +965,7 @@ impl WorkflowEngine {
 
         let out_str = redact(&stdout);
         if !out_str.is_empty() {
-            let msg = if truncated {
-                format!("{}\n[truncated]", out_str)
-            } else {
-                out_str
-            };
+            let msg = if truncated { format!("{}\n[truncated]", out_str) } else { out_str };
             self.log(execution_id, None, LogLevel::Info, msg).await;
         }
 
@@ -1042,43 +1018,22 @@ impl WorkflowEngine {
         // Common secret patterns with regex
         let secret_patterns = [
             // API keys
-            (
-                r"(?i)(api[_-]?key\s*[=:]\s*)([a-zA-Z0-9+/=]{20,})",
-                "$1[REDACTED:API_KEY]",
-            ),
+            (r"(?i)(api[_-]?key\s*[=:]\s*)([a-zA-Z0-9+/=]{20,})", "$1[REDACTED:API_KEY]"),
             // Bearer tokens
-            (
-                r"(?i)(bearer\s+)([a-zA-Z0-9_\-\.+/=]{20,})",
-                "$1[REDACTED:TOKEN]",
-            ),
+            (r"(?i)(bearer\s+)([a-zA-Z0-9_\-\.+/=]{20,})", "$1[REDACTED:TOKEN]"),
             // AWS access keys
             (r"(AKIA[0-9A-Z]{16})", "[REDACTED:AWS_ACCESS_KEY]"),
             // JWT tokens (simplified pattern)
-            (
-                r"([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)",
-                "[REDACTED:JWT]",
-            ),
+            (r"([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)", "[REDACTED:JWT]"),
             // Generic password patterns
-            (
-                r"(?i)(password\s*[=:]\s*)([^\s\n]{8,})",
-                "$1[REDACTED:PASSWORD]",
-            ),
-            (
-                r"(?i)(passwd\s*[=:]\s*)([^\s\n]{8,})",
-                "$1[REDACTED:PASSWORD]",
-            ),
+            (r"(?i)(password\s*[=:]\s*)([^\s\n]{8,})", "$1[REDACTED:PASSWORD]"),
+            (r"(?i)(passwd\s*[=:]\s*)([^\s\n]{8,})", "$1[REDACTED:PASSWORD]"),
             // Generic secret patterns
-            (
-                r"(?i)(secret\s*[=:]\s*)([^\s\n]{8,})",
-                "$1[REDACTED:SECRET]",
-            ),
+            (r"(?i)(secret\s*[=:]\s*)([^\s\n]{8,})", "$1[REDACTED:SECRET]"),
             // Database connection strings
             (r"(?i)(://[^:]+:)([^@]+)(@)", "$1[REDACTED:DB_PASSWORD]$3"),
             // SSH private key headers (partial redaction)
-            (
-                r"(-----BEGIN [A-Z ]+PRIVATE KEY-----)",
-                "[REDACTED:PRIVATE_KEY]",
-            ),
+            (r"(-----BEGIN [A-Z ]+PRIVATE KEY-----)", "[REDACTED:PRIVATE_KEY]"),
         ];
 
         for (pattern, replacement) in &secret_patterns {
@@ -1095,9 +1050,7 @@ impl WorkflowEngine {
 
         for pattern in &env_secret_patterns {
             if let Ok(re) = Regex::new(pattern) {
-                result = re
-                    .replace_all(&result, "$1[REDACTED:ENV_SECRET]")
-                    .to_string();
+                result = re.replace_all(&result, "$1[REDACTED:ENV_SECRET]").to_string();
             }
         }
 
@@ -1243,8 +1196,7 @@ impl WorkflowEngine {
 
     /// Cancel workflow execution
     pub async fn cancel_workflow(&self, execution_id: &str) -> Result<()> {
-        self.update_status(execution_id, WorkflowStatus::Cancelled)
-            .await?;
+        self.update_status(execution_id, WorkflowStatus::Cancelled).await?;
         self.set_finished_time(execution_id).await?;
         Ok(())
     }
@@ -1269,30 +1221,12 @@ impl Clone for WorkflowEngine {
 /// Workflow events
 #[derive(Debug, Clone)]
 pub enum WorkflowEvent {
-    Started {
-        execution_id: String,
-    },
-    StepStarted {
-        execution_id: String,
-        step_id: String,
-    },
-    StepCompleted {
-        execution_id: String,
-        step_id: String,
-    },
-    StepFailed {
-        execution_id: String,
-        step_id: String,
-    },
-    Completed {
-        execution_id: String,
-        status: WorkflowStatus,
-    },
-    Log {
-        execution_id: String,
-        step_id: Option<String>,
-        message: String,
-    },
+    Started { execution_id: String },
+    StepStarted { execution_id: String, step_id: String },
+    StepCompleted { execution_id: String, step_id: String },
+    StepFailed { execution_id: String, step_id: String },
+    Completed { execution_id: String, status: WorkflowStatus },
+    Log { execution_id: String, step_id: Option<String>, message: String },
 }
 
 /// Parse duration string (e.g., "5s", "10m", "1h")
@@ -1329,11 +1263,7 @@ mod tests {
             version: "1.0.0".to_string(),
             description: "Test workflow".to_string(),
             author: None,
-            metadata: WorkflowMetadata {
-                tags: vec![],
-                icon: None,
-                estimated_duration: None,
-            },
+            metadata: WorkflowMetadata { tags: vec![], icon: None, estimated_duration: None },
             requirements: vec![],
             parameters: vec![],
             environment: HashMap::new(),
@@ -1360,17 +1290,10 @@ mod tests {
         };
 
         let workflow_id = "test-1.0.0".to_string();
-        engine
-            .workflows
-            .write()
-            .await
-            .insert(workflow_id.clone(), workflow);
+        engine.workflows.write().await.insert(workflow_id.clone(), workflow);
 
         // Execute workflow
-        let execution_id = engine
-            .execute_workflow(&workflow_id, HashMap::new())
-            .await
-            .unwrap();
+        let execution_id = engine.execute_workflow(&workflow_id, HashMap::new()).await.unwrap();
 
         // Wait for completion
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

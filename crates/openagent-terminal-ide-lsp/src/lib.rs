@@ -45,15 +45,8 @@ pub struct LspClient {
 }
 
 enum ClientMessage {
-    Request {
-        id: i64,
-        method: String,
-        params: Value,
-    },
-    Notification {
-        method: String,
-        params: Value,
-    },
+    Request { id: i64, method: String, params: Value },
+    Notification { method: String, params: Value },
 }
 
 #[derive(Debug, Clone)]
@@ -64,10 +57,7 @@ pub enum LspNotification {
 impl LspClient {
     pub fn start(config: &ServerConfig, root_uri: Option<lsp::Url>) -> Result<Self> {
         let mut cmd = Command::new(&config.command);
-        cmd.args(&config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        cmd.args(&config.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
         let mut child = cmd.spawn()?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
@@ -91,20 +81,14 @@ impl LspClient {
 
         // Initialize
         let workspace_folders = root_uri.as_ref().map(|uri| {
-            vec![lsp::WorkspaceFolder {
-                uri: uri.clone(),
-                name: "workspace".to_string(),
-            }]
+            vec![lsp::WorkspaceFolder { uri: uri.clone(), name: "workspace".to_string() }]
         });
         let params = lsp::InitializeParams {
             process_id: Some(std::process::id()),
             initialization_options: config.initialization_options.clone(),
             capabilities: lsp::ClientCapabilities::default(),
             workspace_folders,
-            client_info: Some(lsp::ClientInfo {
-                name: "OpenAgent Terminal".into(),
-                version: None,
-            }),
+            client_info: Some(lsp::ClientInfo { name: "OpenAgent Terminal".into(), version: None }),
             ..Default::default()
         };
         let _ = this.request::<lsp::InitializeResult, _>("initialize", params)?;
@@ -226,13 +210,7 @@ impl LspPump {
         write: Arc<Mutex<ChildStdin>>,
         notify_tx: mpsc::Sender<LspNotification>,
     ) -> Result<Self> {
-        Ok(Self {
-            stdout: Some(stdout),
-            rx,
-            pending,
-            write,
-            notify_tx,
-        })
+        Ok(Self { stdout: Some(stdout), rx, pending, write, notify_tx })
     }
 
     fn run(&mut self) {

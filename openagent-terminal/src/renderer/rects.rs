@@ -24,15 +24,7 @@ pub struct RenderRect {
 
 impl RenderRect {
     pub fn new(x: f32, y: f32, width: f32, height: f32, color: Rgb, alpha: f32) -> Self {
-        RenderRect {
-            kind: RectKind::Normal,
-            x,
-            y,
-            width,
-            height,
-            color,
-            alpha,
-        }
+        RenderRect { kind: RectKind::Normal, x, y, width, height, color, alpha }
     }
 }
 
@@ -108,39 +100,24 @@ impl RenderLine {
             }
             // Make undercurl occupy the entire descent area.
             Flags::UNDERCURL => (metrics.descent, metrics.descent.abs(), RectKind::Undercurl),
-            Flags::UNDERLINE => (
-                metrics.underline_position,
-                metrics.underline_thickness,
-                RectKind::Normal,
-            ),
+            Flags::UNDERLINE => {
+                (metrics.underline_position, metrics.underline_thickness, RectKind::Normal)
+            }
             // Make dotted occupy the entire descent area.
-            Flags::DOTTED_UNDERLINE => (
-                metrics.descent,
-                metrics.descent.abs(),
-                RectKind::DottedUnderline,
-            ),
-            Flags::DASHED_UNDERLINE => (
-                metrics.underline_position,
-                metrics.underline_thickness,
-                RectKind::DashedUnderline,
-            ),
-            Flags::STRIKEOUT => (
-                metrics.strikeout_position,
-                metrics.strikeout_thickness,
-                RectKind::Normal,
-            ),
+            Flags::DOTTED_UNDERLINE => {
+                (metrics.descent, metrics.descent.abs(), RectKind::DottedUnderline)
+            }
+            Flags::DASHED_UNDERLINE => {
+                (metrics.underline_position, metrics.underline_thickness, RectKind::DashedUnderline)
+            }
+            Flags::STRIKEOUT => {
+                (metrics.strikeout_position, metrics.strikeout_thickness, RectKind::Normal)
+            }
             _ => unimplemented!("Invalid flag for cell line drawing specified"),
         };
 
-        let mut rect = Self::create_rect(
-            size,
-            metrics.descent,
-            start,
-            end,
-            position,
-            thickness,
-            color,
-        );
+        let mut rect =
+            Self::create_rect(size, metrics.descent, start, end, position, thickness, color);
         rect.kind = ty;
         rects.push(rect);
     }
@@ -199,9 +176,7 @@ impl RenderLines {
         self.inner
             .iter()
             .flat_map(|(flag, lines)| {
-                lines
-                    .iter()
-                    .flat_map(move |line| line.rects(*flag, metrics, size))
+                lines.iter().flat_map(move |line| line.rects(*flag, metrics, size))
             })
             .collect()
     }
@@ -224,11 +199,7 @@ impl RenderLines {
         }
 
         // The underline color escape does not apply to strikeout.
-        let color = if flag.contains(Flags::STRIKEOUT) {
-            cell.fg
-        } else {
-            cell.underline
-        };
+        let color = if flag.contains(Flags::STRIKEOUT) { cell.fg } else { cell.underline };
 
         // Include wide char spacer if the current cell is a wide char.
         let mut end = cell.point;
@@ -249,11 +220,7 @@ impl RenderLines {
         }
 
         // Start new line if there currently is none.
-        let line = RenderLine {
-            start: cell.point,
-            end,
-            color,
-        };
+        let line = RenderLine { start: cell.point, end, color };
         match self.inner.get_mut(&flag) {
             Some(lines) => lines.push(line),
             None => {

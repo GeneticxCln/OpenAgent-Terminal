@@ -11,11 +11,7 @@ fn example_bin() -> String {
     p.push("target");
     p.push("debug");
     p.push("examples");
-    p.push(if cfg!(windows) {
-        "render_smoke.exe"
-    } else {
-        "render_smoke"
-    });
+    p.push(if cfg!(windows) { "render_smoke.exe" } else { "render_smoke" });
     p.to_string_lossy().into_owned()
 }
 
@@ -46,10 +42,7 @@ fn test_render_smoke_wgpu_backend_runs() {
 
     #[cfg(feature = "wgpu")]
     {
-        assert!(
-            stdout.contains("backend:wgpu"),
-            "expected backend:wgpu in output, got: {stdout}"
-        );
+        assert!(stdout.contains("backend:wgpu"), "expected backend:wgpu in output, got: {stdout}");
     }
 
     #[cfg(not(feature = "wgpu"))]

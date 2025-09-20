@@ -238,10 +238,7 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
     let conout = UnblockedReader::new(conout, PIPE_CAPACITY);
 
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
-    let conpty = Conpty {
-        handle: pty_handle as HPCON,
-        api,
-    };
+    let conpty = Conpty { handle: pty_handle as HPCON, api };
 
     Ok(Pty::new(conpty, conout, conin, child_watcher))
 }
@@ -314,9 +311,6 @@ impl From<WindowSize> for COORD {
     fn from(window_size: WindowSize) -> Self {
         let lines = window_size.num_lines;
         let columns = window_size.num_cols;
-        COORD {
-            X: columns as i16,
-            Y: lines as i16,
-        }
+        COORD { X: columns as i16, Y: lines as i16 }
     }
 }

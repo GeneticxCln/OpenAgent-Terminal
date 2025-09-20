@@ -69,10 +69,7 @@ impl Default for IdeConfig {
         let mut debug_adapters = HashMap::new();
         debug_adapters.insert(
             "codelldb".into(),
-            DebugAdapterCommand {
-                command: "codelldb".into(),
-                args: vec![],
-            },
+            DebugAdapterCommand { command: "codelldb".into(), args: vec![] },
         );
 
         Self {

@@ -78,9 +78,7 @@ impl AiRuntime {
         let base = dirs::data_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        base.join("openagent-terminal")
-            .join("ai")
-            .join("history.json")
+        base.join("openagent-terminal").join("ai").join("history.json")
     }
     /// Reconfigure this runtime to a new provider using secure config, preserving UI scratch/cursor/history.
     pub fn reconfigure_to(
@@ -183,18 +181,24 @@ impl AiRuntime {
                     .require_endpoint(provider_name)
                     .unwrap_or("http://localhost:11434")
                     .to_string();
-                let model = credentials
-                    .require_model(provider_name)
-                    .map(|s| s.to_string())
-                    .or_else(|_| {
-                        config
-                            .default_model
-                            .clone()
-                            .ok_or_else(|| "Model required".to_string())
-                    })
-                    .unwrap_or_else(|_| "".to_string());
+                // Require an explicit model either from env or config.default_model
+                let model = if let Ok(m) = credentials.require_model(provider_name) {
+                    m.to_string()
+                } else if let Some(m) = config.default_model.clone() {
+                    m
+                } else {
+                    return Err(
+                        "Ollama requires a model; set OPENAGENT_OLLAMA_MODEL or configure ai.providers.ollama.default_model"
+                            .to_string(),
+                    );
+                };
                 self.ui.current_model = model.clone();
                 OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
+            }
+            "null" => {
+                // Switch to no-op provider explicitly
+                self.ui.current_model.clear();
+                Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>)
             }
             _ => Err(format!("Unknown provider: {}", provider_name)),
         };
@@ -202,6 +206,8 @@ impl AiRuntime {
             Ok(p) => {
                 self.provider = Arc::from(p);
                 self.ui.current_provider = provider_name.to_string();
+                // Invalidate agent manager so it can be rebuilt with the new provider
+                self.agent_manager = None;
                 // Reset transient result state
                 self.ui.proposals.clear();
                 self.ui.selected_proposal = 0;
@@ -211,10 +217,8 @@ impl AiRuntime {
                 self.ui.error_message = None;
             }
             Err(e) => {
-                self.ui.error_message = Some(format!(
-                    "Failed to reconfigure provider to '{}': {}",
-                    provider_name, e
-                ));
+                self.ui.error_message =
+                    Some(format!("Failed to reconfigure provider to '{}': {}", provider_name, e));
             }
         }
     }
@@ -247,10 +251,15 @@ impl AiRuntime {
             .ok()
             .and_then(|s| {
                 let lower = s.to_ascii_lowercase();
-                if lower.contains("zsh") { Some("zsh".to_string()) }
-                else if lower.contains("bash") { Some("bash".to_string()) }
-                else if lower.contains("fish") { Some("fish".to_string()) }
-                else { None }
+                if lower.contains("zsh") {
+                    Some("zsh".to_string())
+                } else if lower.contains("bash") {
+                    Some("bash".to_string())
+                } else if lower.contains("fish") {
+                    Some("fish".to_string())
+                } else {
+                    None
+                }
             })
             .unwrap_or_else(|| "zsh".to_string());
 
@@ -270,30 +279,25 @@ impl AiRuntime {
             ],
         };
 
-        let _ = std::thread::Builder::new()
-            .name("ai-inline".into())
-            .spawn(move || {
-                // Non-streaming, single-shot proposal
-                let result = provider.propose(req);
-                let suggestion = match result {
-                    Ok(mut props) => {
-                        // Take the first command from the first proposal, if any
-                        if let Some(prop) = props.first_mut() {
-                            prop.proposed_commands
-                                .first()
-                                .map(|cmd| compute_suffix(cmd, &prefix))
-                        } else {
-                            None
-                        }
+        let _ = std::thread::Builder::new().name("ai-inline".into()).spawn(move || {
+            // Non-streaming, single-shot proposal
+            let result = provider.propose(req);
+            let suggestion = match result {
+                Ok(mut props) => {
+                    // Take the first command from the first proposal, if any
+                    if let Some(prop) = props.first_mut() {
+                        prop.proposed_commands.first().map(|cmd| compute_suffix(cmd, &prefix))
+                    } else {
+                        None
                     }
-                    Err(_) => None,
-                };
+                }
+                Err(_) => None,
+            };
 
-                let payload = crate::event::EventType::AiInlineSuggestionReady(
-                    suggestion.unwrap_or_default(),
-                );
-                let _ = event_proxy.send_event(Event::new(payload, window_id));
-            });
+            let payload =
+                crate::event::EventType::AiInlineSuggestionReady(suggestion.unwrap_or_default());
+            let _ = event_proxy.send_event(Event::new(payload, window_id));
+        });
 
         // Helper to compute the suffix not yet typed
         fn compute_suffix(candidate: &str, typed: &str) -> String {
@@ -378,14 +382,7 @@ fn persist_ai_conversation(
     }
 
     let now = chrono::Utc::now().to_rfc3339();
-    let entry = Entry {
-        timestamp: now,
-        mode,
-        working_directory,
-        shell_kind,
-        input,
-        output,
-    };
+    let entry = Entry { timestamp: now, mode, working_directory, shell_kind, input, output };
 
     let base = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -478,14 +475,7 @@ fn persist_ai_conversation_sqlite(
     conn.execute(
         "INSERT INTO conversations (ts, mode, working_directory, shell_kind, input, output)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            ts,
-            mode,
-            working_directory.unwrap_or(""),
-            shell_kind.unwrap_or(""),
-            input,
-            output
-        ],
+        params![ts, mode, working_directory.unwrap_or(""), shell_kind.unwrap_or(""), input, output],
     )
     .map_err(|e| e.to_string())?;
 
@@ -499,9 +489,197 @@ pub struct AiRuntime {
     security_lens: SecurityLens,
     // Config-driven context collection policy
     context_cfg: crate::config::ai::AiContextConfig,
+    // Optional agent manager for capability-based routing (lazy init)
+    agent_manager: Option<openagent_terminal_ai::agents::manager::AgentManager>,
+    // Persistent single-threaded runtime for agent manager async calls
+    agent_rt: Option<tokio::runtime::Runtime>,
+    // Routing mode (overridable via OPENAGENT_AI_ROUTING)
+    routing_mode: crate::config::ai::AiRoutingMode,
+    // How to join multiple commands when applying
+    apply_joiner: crate::config::ai::AiApplyJoinStrategy,
 }
 
 impl AiRuntime {
+    fn ensure_agent_manager(&mut self) {
+        if self.agent_manager.is_some() {
+            return;
+        }
+        // Create persistent single-thread runtime if absent
+        if self.agent_rt.is_none() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime for agent registration");
+            self.agent_rt = Some(rt);
+        }
+        let mgr = openagent_terminal_ai::agents::manager::AgentManager::new();
+        let provider_arc = self.provider.clone();
+        let cmd_agent = openagent_terminal_ai::agents::command::CommandAgent::new(provider_arc.clone());
+        let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
+        let _ = rt.block_on(mgr.register_agent(Box::new(cmd_agent)));
+        // Also register code generation agent for explain/refactor flows
+        let code_agent = openagent_terminal_ai::agents::code_generation::CodeGenerationAgent::new(provider_arc);
+        let _ = rt.block_on(mgr.register_agent(Box::new(code_agent)));
+        self.agent_manager = Some(mgr);
+    }
+
+    /// Normalize agent-generated code into a list of runnable shell commands.
+    /// - Strips Markdown code fences
+    /// - Drops empty lines and standalone comments
+    /// - Trims common shell prompt characters (leading `$ `)
+    fn normalize_commands_from_generated(code: &str) -> Vec<String> {
+        // Strip code fences if present
+        let mut s = code.trim().to_string();
+        if s.starts_with("```") {
+            if let Some(idx) = s.find('\n') {
+                s = s[idx + 1..].to_string();
+            }
+            if let Some(idx) = s.rfind("```") {
+                s = s[..idx].to_string();
+            }
+        }
+        // Normalize newlines
+        s = s.replace("\r\n", "\n");
+        let mut cmds = Vec::new();
+        for line in s.lines() {
+            let mut l = line.trim();
+            if l.is_empty() {
+                continue;
+            }
+            // Drop standalone comments
+            if l.starts_with('#') {
+                continue;
+            }
+            // Strip list bullets / numbering like "- ", "* ", "1. ", "(a) ", "1) "
+            if l.starts_with("- ") || l.starts_with("* ") {
+                l = l[2..].trim_start();
+            } else if let Some(rest) = l.strip_prefix(|c: char| c.is_ascii_digit()) {
+                // patterns like "1. command" or "1) command"
+                let rest = rest.trim_start();
+                if rest.starts_with('.') || rest.starts_with(')') {
+                    l = rest[1..].trim_start();
+                }
+            }
+            // Strip common prompt prefixes
+            if let Some(stripped) = l.strip_prefix("$ ") {
+                l = stripped.trim_start();
+            } else if let Some(stripped) = l.strip_prefix("$") {
+                l = stripped.trim_start();
+            }
+            if l.is_empty() {
+                continue;
+            }
+            cmds.push(l.to_string());
+        }
+        cmds
+    }
+
+    /// Parse agent-generated fix output into multiple proposals when alternatives are present.
+    /// Heuristics:
+    /// - Split by fenced code blocks (```lang ... ```). Each shell block becomes a separate proposal.
+    /// - Use the nearest preceding non-empty line as the option title when it contains keywords
+    ///   like "Option", "Approach", "Alternative". Otherwise use the first command or a fallback.
+    /// - If no fences exist, split by blank lines and treat each chunk as commands.
+    fn parse_fix_proposals_from_agent_output(text: &str, default_title: &str, explanation: &str) -> Vec<openagent_terminal_ai::AiProposal> {
+        #[derive(Clone, Default)]
+        struct Block { lang: Option<String>, title_hint: Option<String>, content: String }
+
+        fn is_shell_lang(lang: &Option<String>) -> bool {
+            match lang.as_deref().map(|s| s.to_ascii_lowercase()) {
+                Some(ref s) if ["sh", "bash", "zsh", "shell", "console"].contains(&s.as_str()) => true,
+                None => true, // unknown: often shell-like
+                _ => false,
+            }
+        }
+
+        // Extract fenced code blocks with simple scanner
+        let mut blocks: Vec<Block> = Vec::new();
+        let mut lines: Vec<&str> = text.lines().collect();
+        let mut i = 0usize;
+        while i < lines.len() {
+            let line = lines[i];
+            if let Some(rest) = line.strip_prefix("```") {
+                // Start of block
+                let lang = rest.trim().split_whitespace().next().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                // Look for title hint above
+                let mut title_hint = None;
+                let mut j = i;
+                while j > 0 {
+                    j -= 1;
+                    let t = lines[j].trim();
+                    if t.is_empty() { continue; }
+                    let tl = t.to_ascii_lowercase();
+                    if tl.contains("option") || tl.contains("approach") || tl.contains("alternative") || tl.contains(":") {
+                        title_hint = Some(t.to_string());
+                    }
+                    break;
+                }
+                // Collect until closing fence
+                let mut content = String::new();
+                i += 1;
+                while i < lines.len() {
+                    if lines[i].starts_with("```") { break; }
+                    content.push_str(lines[i]);
+                    content.push('\n');
+                    i += 1;
+                }
+                // Skip closing fence if present
+                if i < lines.len() && lines[i].starts_with("```") { /* will be incremented by loop */ }
+                blocks.push(Block { lang, title_hint, content });
+            }
+            i += 1;
+        }
+
+        let mut proposals: Vec<openagent_terminal_ai::AiProposal> = Vec::new();
+
+        if !blocks.is_empty() {
+            for (idx, b) in blocks.into_iter().enumerate() {
+                if !is_shell_lang(&b.lang) { continue; }
+                let commands = Self::normalize_commands_from_generated(&b.content);
+                if commands.is_empty() { continue; }
+                let title = b
+                    .title_hint
+                    .as_ref()
+                    .and_then(|s| {
+                        let t = s.trim();
+                        if t.is_empty() { None } else { Some(t.to_string()) }
+                    })
+                    .unwrap_or_else(|| commands.get(0).cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1)));
+                proposals.push(openagent_terminal_ai::AiProposal { title, description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
+            }
+            if !proposals.is_empty() { return proposals; }
+        }
+
+        // No fenced blocks: split by blank-line separated chunks
+        let mut current = String::new();
+        let mut groups: Vec<String> = Vec::new();
+        for line in text.lines() {
+            if line.trim().is_empty() {
+                if !current.trim().is_empty() { groups.push(current.clone()); current.clear(); }
+            } else {
+                current.push_str(line);
+                current.push('\n');
+            }
+        }
+        if !current.trim().is_empty() { groups.push(current); }
+
+        for (idx, g) in groups.into_iter().enumerate() {
+            let commands = Self::normalize_commands_from_generated(&g);
+            if commands.is_empty() { continue; }
+            let title = commands.get(0).cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1));
+            proposals.push(openagent_terminal_ai::AiProposal { title, description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
+        }
+
+        if proposals.is_empty() {
+            // Fallback: treat whole thing as one
+            let commands = Self::normalize_commands_from_generated(text);
+            if !commands.is_empty() {
+                proposals.push(openagent_terminal_ai::AiProposal { title: default_title.to_string(), description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
+            }
+        }
+        proposals
+    }
+
     pub fn new(provider: Box<dyn AiProvider>) -> Self {
         info!("AI runtime initialized with provider: {}", provider.name());
         let ui = AiUiState {
@@ -515,6 +693,10 @@ impl AiRuntime {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             security_lens: SecurityLens::new(SecurityPolicy::default()),
             context_cfg: crate::config::ai::AiContextConfig::default(),
+            agent_manager: None,
+            agent_rt: None,
+            routing_mode: crate::config::ai::AiRoutingMode::Auto,
+            apply_joiner: crate::config::ai::AiApplyJoinStrategy::AndThen,
         };
         // Load persisted history best-effort
         rt.load_history();
@@ -568,19 +750,13 @@ impl AiRuntime {
     ) -> Self {
         use crate::config::ai_providers::ProviderCredentials;
 
-        info!(
-            "Initializing AI runtime with secure provider configuration: {}",
-            provider_name
-        );
+        info!("Initializing AI runtime with secure provider configuration: {}", provider_name);
 
         // Extract credentials securely without polluting global environment
         let credentials = match ProviderCredentials::from_config(provider_name, config) {
             Ok(creds) => creds,
             Err(e) => {
-                error!(
-                    "Failed to load secure credentials for provider '{}': {}",
-                    provider_name, e
-                );
+                error!("Failed to load secure credentials for provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure credential loading failed for '{}': {}. Check your environment \
@@ -703,10 +879,7 @@ impl AiRuntime {
                 rt
             }
             Err(e) => {
-                error!(
-                    "Failed to create secure provider '{}': {}",
-                    provider_name, e
-                );
+                error!("Failed to create secure provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
                 rt.ui.error_message = Some(format!(
                     "Secure AI provider initialization failed: {}. Please verify your \
@@ -743,6 +916,23 @@ impl AiRuntime {
             return;
         }
 
+        // Build minimal raw request; helper will reset UI state and spawn worker
+        let req_raw = AiRequest {
+            scratch_text: self.ui.scratch.clone(),
+            working_directory,
+            shell_kind,
+            context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
+        };
+        self.start_streaming_with_request(req_raw, event_proxy, window_id);
+    }
+
+    /// Internal helper to start streaming given a raw request; applies context providers and spawns worker.
+    fn start_streaming_with_request(
+        &mut self,
+        req_raw: AiRequest,
+        event_proxy: EventLoopProxy<Event>,
+        window_id: WindowId,
+    ) {
         // Reset state
         self.ui.proposals.clear();
         self.ui.selected_proposal = 0;
@@ -755,44 +945,68 @@ impl AiRuntime {
 
         let cancel = self.cancel_flag.clone();
         let provider = self.provider.clone();
-        let req_raw = AiRequest {
-            scratch_text: self.ui.scratch.clone(),
-            working_directory,
-            shell_kind,
-            context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
-        };
+
         // Build rich context with config-driven providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         // Spawn background worker
-        let _ = thread::Builder::new()
-            .name("ai-stream".into())
-            .spawn(move || {
-                // First try streaming
-                let mut batch_buf = String::new();
-                let mut last_flush = std::time::Instant::now();
-                let batch_ms = std::env::var("OPENAGENT_AI_STREAM_REDRAW_MS")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(16);
+        let _ = thread::Builder::new().name("ai-stream".into()).spawn(move || {
+            // First try streaming
+            let mut batch_buf = String::new();
+            let mut last_flush = std::time::Instant::now();
+            let batch_ms = std::env::var("OPENAGENT_AI_STREAM_REDRAW_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(16);
 
-                let mut on_chunk = |chunk: &str| {
-                    // Micro-batch: accumulate small chunks and flush at most every batch_ms
-                    batch_buf.push_str(chunk);
-                    let now = std::time::Instant::now();
-                    if now.saturating_duration_since(last_flush).as_millis() as u64 >= batch_ms
-                        && !batch_buf.is_empty()
-                    {
+            let mut on_chunk = |chunk: &str| {
+                // Micro-batch: accumulate small chunks and flush at most every batch_ms
+                batch_buf.push_str(chunk);
+                let now = std::time::Instant::now();
+                if now.saturating_duration_since(last_flush).as_millis() as u64 >= batch_ms
+                    && !batch_buf.is_empty()
+                {
+                    let payload = std::mem::take(&mut batch_buf);
+                    let _ = event_proxy
+                        .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
+                    last_flush = now;
+                }
+            };
+            match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
+                Ok(true) => {
+                    // Flush any pending chunk before finishing
+                    if !batch_buf.is_empty() {
                         let payload = std::mem::take(&mut batch_buf);
                         let _ = event_proxy
                             .send_event(Event::new(EventType::AiStreamChunk(payload), window_id));
-                        last_flush = now;
                     }
-                };
-                match provider.propose_stream(req.clone(), &mut on_chunk, &cancel) {
-                    Ok(true) => {
-                        // Flush any pending chunk before finishing
+                    info!("ai_runtime_stream_finished provider={}", provider.name());
+                    let _ =
+                        event_proxy.send_event(Event::new(EventType::AiStreamFinished, window_id));
+                }
+                Ok(false) => {
+                    info!("ai_runtime_fallback_blocking provider={}", provider.name());
+                    let result = provider.propose(req);
+                    match result {
+                        Ok(proposals) => {
+                            info!("ai_runtime_blocking_complete proposals={}", proposals.len());
+                            let _ = event_proxy.send_event(Event::new(
+                                EventType::AiProposals(proposals),
+                                window_id,
+                            ));
+                        }
+                        Err(e) => {
+                            error!("ai_runtime_blocking_error error={}", e);
+                            let _ = event_proxy
+                                .send_event(Event::new(EventType::AiStreamError(e), window_id));
+                        }
+                    }
+                }
+                Err(e) => {
+                    if e.eq_ignore_ascii_case("cancelled") || e.eq_ignore_ascii_case("canceled") {
+                        info!("ai_runtime_stream_cancelled provider={}", provider.name());
+                        // Flush any pending buffered chunk before finishing gracefully
                         if !batch_buf.is_empty() {
                             let payload = std::mem::take(&mut batch_buf);
                             let _ = event_proxy.send_event(Event::new(
@@ -800,59 +1014,22 @@ impl AiRuntime {
                                 window_id,
                             ));
                         }
-                        info!("ai_runtime_stream_finished provider={}", provider.name());
+                        // Treat cancellation as a graceful finish, do not surface an error
                         let _ = event_proxy
                             .send_event(Event::new(EventType::AiStreamFinished, window_id));
-                    }
-                    Ok(false) => {
-                        info!("ai_runtime_fallback_blocking provider={}", provider.name());
-                        let result = provider.propose(req);
-                        match result {
-                            Ok(proposals) => {
-                                info!("ai_runtime_blocking_complete proposals={}", proposals.len());
-                                let _ = event_proxy.send_event(Event::new(
-                                    EventType::AiProposals(proposals),
-                                    window_id,
-                                ));
-                            }
-                            Err(e) => {
-                                error!("ai_runtime_blocking_error error={}", e);
-                                let _ = event_proxy
-                                    .send_event(Event::new(EventType::AiStreamError(e), window_id));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if e.eq_ignore_ascii_case("cancelled") || e.eq_ignore_ascii_case("canceled")
-                        {
-                            info!("ai_runtime_stream_cancelled provider={}", provider.name());
-                            // Flush any pending buffered chunk before finishing gracefully
-                            if !batch_buf.is_empty() {
-                                let payload = std::mem::take(&mut batch_buf);
-                                let _ = event_proxy.send_event(Event::new(
-                                    EventType::AiStreamChunk(payload),
-                                    window_id,
-                                ));
-                            }
-                            // Treat cancellation as a graceful finish, do not surface an error
-                            let _ = event_proxy
-                                .send_event(Event::new(EventType::AiStreamFinished, window_id));
-                        } else {
-                            error!("ai_runtime_stream_error error={}", e);
-                            let _ = event_proxy
-                                .send_event(Event::new(EventType::AiStreamError(e), window_id));
-                        }
+                    } else {
+                        error!("ai_runtime_stream_error error={}", e);
+                        let _ = event_proxy
+                            .send_event(Event::new(EventType::AiStreamError(e), window_id));
                     }
                 }
-            });
+            }
+        });
     }
 
     /// Cancel any in-flight streaming.
     pub fn cancel(&mut self) {
-        info!(
-            "ai_runtime_cancel_requested provider={}",
-            self.provider.name()
-        );
+        info!("ai_runtime_cancel_requested provider={}", self.provider.name());
         self.cancel_flag.store(true, Ordering::SeqCst);
         self.ui.streaming_active = false;
         self.ui.is_loading = false;
@@ -891,7 +1068,8 @@ impl AiRuntime {
             ("platform".to_string(), std::env::consts::OS.to_string()),
             (
                 "guidelines".to_string(),
-                "no-invent; prefer-safe; no-placeholders; add --no-pager for git when relevant".to_string(),
+                "no-invent; prefer-safe; no-placeholders; add --no-pager for git when relevant"
+                    .to_string(),
             ),
         ];
         let req_raw = AiRequest {
@@ -1026,10 +1204,7 @@ impl AiRuntime {
 
     /// Get selected proposal commands
     pub fn get_selected_commands(&self) -> Option<String> {
-        self.ui
-            .proposals
-            .get(self.ui.selected_proposal)
-            .map(|p| p.proposed_commands.join("\n"))
+        self.ui.proposals.get(self.ui.selected_proposal).map(|p| p.proposed_commands.join("\n"))
     }
 
     /// Regenerate the last proposal
@@ -1043,9 +1218,8 @@ impl AiRuntime {
         // Restart the proposal stream with the same scratch text
         // Note: Context should be provided by the caller in real usage
         // This is a standalone method that doesn't have access to context provider
-        let working_directory = std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().to_string());
+        let working_directory =
+            std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string());
         let shell_kind = std::env::var("SHELL").ok().map(|s| {
             openagent_terminal_core::tty::pty_manager::ShellKind::from_shell_name(&s)
                 .to_str()
@@ -1078,35 +1252,54 @@ impl AiRuntime {
         self.ui
             .proposals
             .get(self.ui.selected_proposal)
-            .and_then(|p| p.proposed_commands.first())
-            .map(|cmd| {
+            .map(|p| {
+                let cmds = &p.proposed_commands;
                 if dry_run {
-                    // Analyze risk and annotate a dry-run output
-                    let risk = self.security_lens.analyze_command(cmd);
+                    // Build an annotated dry run for one or multiple commands
                     let mut annotated = String::new();
-                    annotated.push_str(&format!(
-                        "# Security Lens: {:?} - {}\n",
-                        risk.level, risk.explanation
-                    ));
-                    // Note: factors field is only available in full security-lens feature
-                    #[cfg(feature = "security-lens")]
-                    if !risk.factors.is_empty() {
-                        annotated.push_str("# Risk factors:\n");
-                        for f in &risk.factors {
-                            annotated
-                                .push_str(&format!("#  - {} ({})\n", f.description, f.category));
+                    if cmds.len() > 1 {
+                        annotated.push_str("# Multiple commands suggested:\n");
+                        for (i, c) in cmds.iter().enumerate() {
+                            let risk = self.security_lens.analyze_command(c);
+                            annotated.push_str(&format!("# [{}] {:?}: {}\n", i + 1, risk.level, risk.explanation));
+                            annotated.push_str(&format!("#     {}\n", c));
                         }
-                    }
-                    if !risk.mitigations.is_empty() {
-                        annotated.push_str("# Suggested mitigations:\n");
-                        for m in &risk.mitigations {
-                            annotated.push_str(&format!("#  - {}\n", m));
+                        let joiner = match self.apply_joiner {
+                            crate::config::ai::AiApplyJoinStrategy::AndThen => " && ",
+                            crate::config::ai::AiApplyJoinStrategy::Lines => "\n",
+                        };
+                        let combined = cmds.join(joiner);
+                        annotated.push_str("#\n# Use Copy to paste, or copy individual commands.\n");
+                        annotated.push_str(&format!("echo 'DRY RUN: batch ({} commands)'\\n# To execute all: {}", cmds.len(), combined));
+                        (annotated, true)
+                    } else {
+                        let cmd = cmds.first().cloned().unwrap_or_default();
+                        let risk = self.security_lens.analyze_command(&cmd);
+                        annotated.push_str(&format!(
+                            "# Security Lens: {:?} - {}\n",
+                            risk.level, risk.explanation
+                        ));
+                        #[cfg(feature = "security-lens")]
+                        if !risk.mitigations.is_empty() {
+                            annotated.push_str("# Suggested mitigations:\n");
+                            for m in &risk.mitigations {
+                                annotated.push_str(&format!("#  - {}\n", m));
+                            }
                         }
+                        annotated.push_str(&format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd));
+                        (annotated, true)
                     }
-                    annotated.push_str(&format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd));
-                    (annotated, true)
                 } else {
-                    (cmd.clone(), false)
+                    // Combine multiple commands with && so that failure halts subsequent steps
+                    if cmds.len() > 1 {
+                        let joiner = match self.apply_joiner {
+                            crate::config::ai::AiApplyJoinStrategy::AndThen => " && ",
+                            crate::config::ai::AiApplyJoinStrategy::Lines => "\n",
+                        };
+                        (cmds.join(joiner), false)
+                    } else {
+                        (cmds.first().cloned().unwrap_or_default(), false)
+                    }
                 }
             })
     }
@@ -1200,10 +1393,8 @@ impl AiRuntime {
         };
 
         // Build request including rich context (env/git/file_tree) and sanitize via privacy options
-        let mut base_ctx: Vec<(String, String)> = vec![(
-            "platform".to_string(),
-            std::env::consts::OS.to_string(),
-        )];
+        let mut base_ctx: Vec<(String, String)> =
+            vec![("platform".to_string(), std::env::consts::OS.to_string())];
         // If provided, augment with last command and shell executable for extra context
         if let Some(ref ctx) = context {
             if let Some(last) = ctx.last_command.clone() {
@@ -1220,6 +1411,54 @@ impl AiRuntime {
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
+        // Decide routing mode
+        let mode = self.effective_routing_mode();
+        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider);
+
+        // Try AgentManager first for capability-based routing if enabled
+        if try_agent && self.agent_manager.is_none() {
+            self.ensure_agent_manager();
+        }
+        if try_agent {
+            if let Some(mgr) = &self.agent_manager {
+                let t0 = std::time::Instant::now();
+                let agent_req = openagent_terminal_ai::agents::AgentRequest::Command(req.clone());
+                let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
+                match rt.block_on(mgr.process_request(agent_req)) {
+                    Ok(openagent_terminal_ai::agents::AgentResponse::Commands(proposals)) => {
+                        let dt = t0.elapsed();
+                        info!("AgentManager returned {} proposals", proposals.len());
+                        tracing::info!(
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_with_context_complete_agent"
+                        );
+                        self.ui.proposals = proposals;
+                        self.ui.is_loading = false;
+                        return;
+                    }
+                    Ok(other) => {
+                        let dt = t0.elapsed();
+                        error!("Agent response not commands: {:?}", other);
+                        tracing::info!(
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_with_context_wrong_variant"
+                        );
+                        // Fall through to direct provider
+                    }
+                    Err(e) => {
+                        let dt = t0.elapsed();
+                        error!("AgentManager error: {}", e);
+                        tracing::info!(
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_with_context_agent_error"
+                        );
+                        // Fall through to direct provider
+                    }
+                }
+            }
+        }
+
+        // Direct provider (fallback or Provider mode)
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
             Ok(proposals) => {
@@ -1235,10 +1474,7 @@ impl AiRuntime {
             Err(e) => {
                 let dt = t0.elapsed();
                 error!("AI query with context failed: {}", e);
-                tracing::info!(
-                    elapsed_ms = dt.as_millis() as u64,
-                    "ai.propose_with_context_error"
-                );
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_with_context_error");
                 self.ui.error_message = Some(format!("Query failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -1252,14 +1488,27 @@ impl AiRuntime {
         event_proxy: EventLoopProxy<Event>,
         window_id: WindowId,
     ) {
-        let (working_directory, shell_kind) = if let Some(ctx) = context {
-            let (wd, sk) = ctx.to_strings();
-            (Some(wd), Some(sk))
-        } else {
-            (None, None)
-        };
+        // Enrich request context with PTY details when available
+        let (working_directory, shell_kind, extra_ctx): (Option<String>, Option<String>, Vec<(String, String)>) =
+            if let Some(ctx) = context {
+                let (wd, sk) = ctx.to_strings();
+                let mut ext = vec![("platform".to_string(), std::env::consts::OS.to_string())];
+                if let Some(last) = ctx.last_command {
+                    ext.push(("last_command".into(), last));
+                }
+                ext.push(("shell_executable".into(), ctx.shell_executable));
+                (Some(wd), Some(sk), ext)
+            } else {
+                (None, None, vec![("platform".to_string(), std::env::consts::OS.to_string())])
+            };
 
-        self.start_propose_stream(working_directory, shell_kind, event_proxy, window_id);
+        let req_raw = AiRequest {
+            scratch_text: self.ui.scratch.clone(),
+            working_directory,
+            shell_kind,
+            context: extra_ctx,
+        };
+        self.start_streaming_with_request(req_raw, event_proxy, window_id);
     }
 
     /// Check if we can perform actions (have content to act on)
@@ -1308,6 +1557,60 @@ impl AiRuntime {
             context.push(("cwd".into(), dir.clone()));
         }
 
+        // Decide routing mode
+        let mode = self.effective_routing_mode();
+        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider);
+
+        // First attempt: route through AgentManager CodeGenerationAgent with action=Explain
+        if try_agent && self.agent_manager.is_none() {
+            self.ensure_agent_manager();
+        }
+        if try_agent {
+            if let Some(mgr) = &self.agent_manager {
+            let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
+            let code_ctx = openagent_terminal_ai::agents::CodeContext {
+                current_file: None,
+                selection: Some(target_text.clone()),
+                cursor_position: None,
+                project_files: Vec::new(),
+                dependencies: Vec::new(),
+            };
+            let agent_req = openagent_terminal_ai::agents::AgentRequest::CodeGeneration {
+                language: None,
+                context: code_ctx,
+                prompt: String::new(),
+                action: openagent_terminal_ai::agents::CodeAction::Explain,
+            };
+            let t0 = std::time::Instant::now();
+            match rt.block_on(mgr.process_request(agent_req)) {
+                Ok(openagent_terminal_ai::agents::AgentResponse::Code { generated_code, language, explanation, suggestions }) => {
+                    let dt = t0.elapsed();
+                    tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete_agent");
+                    // Map code response into a single proposal with explanation in description
+                    let desc = if explanation.is_empty() { Some("Explanation".to_string()) } else { Some(explanation) };
+                    let mut commands = Vec::new();
+                    if !generated_code.trim().is_empty() {
+                        commands.push(generated_code);
+                    }
+                    let proposal = openagent_terminal_ai::AiProposal {
+                        title: "Explanation".to_string(),
+                        description: desc,
+                        proposed_commands: commands,
+                    };
+                    self.ui.proposals = vec![proposal];
+                    self.ui.is_loading = false;
+                    return;
+                }
+                Ok(other) => {
+                    tracing::warn!("AgentManager returned unexpected variant for explain: {:?}", other);
+                }
+                Err(e) => {
+                    tracing::warn!("AgentManager explain attempt failed: {}", e);
+                }
+            }
+        }
+
+        // Fallback: direct provider path (original behavior)
         let req_raw = AiRequest {
             // Keep the scratch as the current query if present, else use the target_text
             scratch_text: if self.ui.scratch.trim().is_empty() {
@@ -1328,15 +1631,10 @@ impl AiRuntime {
         match self.provider.propose(req) {
             Ok(proposals) => {
                 let dt = t0.elapsed();
-                tracing::info!(
-                    elapsed_ms = dt.as_millis() as u64,
-                    "ai.propose_explain_complete"
-                );
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete");
                 // Persist conversation (input + proposals)
-                let cmds: Vec<String> = proposals
-                    .iter()
-                    .flat_map(|p| p.proposed_commands.clone())
-                    .collect();
+                let cmds: Vec<String> =
+                    proposals.iter().flat_map(|p| p.proposed_commands.clone()).collect();
                 let _ = persist_ai_conversation(
                     "explain",
                     working_directory.as_deref(),
@@ -1349,10 +1647,7 @@ impl AiRuntime {
             }
             Err(e) => {
                 let dt = t0.elapsed();
-                tracing::info!(
-                    elapsed_ms = dt.as_millis() as u64,
-                    "ai.propose_explain_error"
-                );
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_error");
                 self.ui.error_message = Some(format!("Explain failed: {}", e));
                 self.ui.is_loading = false;
             }
@@ -1402,11 +1697,103 @@ impl AiRuntime {
             context.push(("cwd".into(), dir.clone()));
         }
 
+        // Agent-first path (similar to explain), unless routing is forced to Provider
+        let mode = self.effective_routing_mode();
+        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider);
+        if try_agent {
+            if self.agent_manager.is_none() {
+                self.ensure_agent_manager();
+            }
+            if let Some(mgr) = &self.agent_manager {
+                let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
+                let code_ctx = openagent_terminal_ai::agents::CodeContext {
+                    current_file: None,
+                    selection: failed_command.clone(),
+                    cursor_position: None,
+                    project_files: Vec::new(),
+                    dependencies: Vec::new(),
+                };
+                let (action, prompt) = if failed_command.is_some() {
+                    (
+                        openagent_terminal_ai::agents::CodeAction::Refactor,
+                        format!(
+                            "Fix this command to address the following error:\n{}",
+                            error_text
+                        ),
+                    )
+                } else {
+                    (
+                        openagent_terminal_ai::agents::CodeAction::Generate,
+                        format!(
+                            "Propose a corrected shell command to address this error:\n{}",
+                            error_text
+                        ),
+                    )
+                };
+                let agent_req = openagent_terminal_ai::agents::AgentRequest::CodeGeneration {
+                    language: Some("shell".to_string()),
+                    context: code_ctx,
+                    prompt,
+                    action,
+                };
+                let t0 = std::time::Instant::now();
+                match rt.block_on(mgr.process_request(agent_req)) {
+                    Ok(openagent_terminal_ai::agents::AgentResponse::Code { generated_code, explanation, .. }) => {
+                        let dt = t0.elapsed();
+                        tracing::info!(
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_fix_complete_agent"
+                        );
+                        // Parse into one or more proposals when alternatives are present
+                        let default_title = "Fix suggestion";
+                        let proposals = Self::parse_fix_proposals_from_agent_output(&generated_code, default_title, &explanation);
+                        // Persist conversation (agent path)
+                        let input_joined = if let Some(fc) = &failed_command {
+                            format!("Error encountered while running '{}':\n{}", fc, error_text)
+                        } else {
+                            error_text.clone()
+                        };
+                        let flat_cmds: Vec<String> = proposals.iter().flat_map(|p| p.proposed_commands.clone()).collect();
+                        let _ = persist_ai_conversation(
+                            "fix",
+                            working_directory.as_deref(),
+                            shell_kind.as_deref(),
+                            &input_joined,
+                            &flat_cmds.join("\n"),
+                        );
+                        self.ui.proposals = if proposals.is_empty() {
+                            vec![openagent_terminal_ai::AiProposal { title: default_title.to_string(), description: if explanation.is_empty() { None } else { Some(explanation) }, proposed_commands: Vec::new() }]
+                        } else {
+                            proposals
+                        };
+                        self.ui.is_loading = false;
+                        return;
+                    }
+                    Ok(other) => {
+                        let dt = t0.elapsed();
+                        tracing::warn!(
+                            ?other,
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_fix_wrong_variant"
+                        );
+                        // fall through to provider
+                    }
+                    Err(e) => {
+                        let dt = t0.elapsed();
+                        tracing::warn!(
+                            error = %e,
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_fix_agent_error"
+                        );
+                        // fall through to provider
+                    }
+                }
+            }
+        }
+
+        // Provider fallback or Provider-only mode
         let prompt = if let Some(fc) = &failed_command {
-            format!(
-                "Error encountered while running '{}':\n{}\nSuggest a fix.",
-                fc, error_text
-            )
+            format!("Error encountered while running '{}':\n{}\nSuggest a fix.", fc, error_text)
         } else {
             format!("Error: {}\nSuggest a fix.", error_text)
         };
@@ -1426,15 +1813,10 @@ impl AiRuntime {
         match self.provider.propose(req) {
             Ok(proposals) => {
                 let dt = t0.elapsed();
-                tracing::info!(
-                    elapsed_ms = dt.as_millis() as u64,
-                    "ai.propose_fix_complete"
-                );
+                tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_fix_complete");
                 // Persist conversation (input + proposals)
-                let cmds: Vec<String> = proposals
-                    .iter()
-                    .flat_map(|p| p.proposed_commands.clone())
-                    .collect();
+                let cmds: Vec<String> =
+                    proposals.iter().flat_map(|p| p.proposed_commands.clone()).collect();
                 let input_joined = if let Some(fc) = &failed_command {
                     format!("Error encountered while running '{}':\n{}", fc, error_text)
                 } else {
@@ -1462,6 +1844,11 @@ impl AiRuntime {
     /// Apply runtime AI context configuration
     pub fn set_context_config(&mut self, cfg: crate::config::ai::AiContextConfig) {
         self.context_cfg = cfg;
+    }
+
+    /// Set join strategy for multi-command application
+    pub fn set_apply_joiner(&mut self, joiner: crate::config::ai::AiApplyJoinStrategy) {
+        self.apply_joiner = joiner;
     }
 
     fn build_context_manager(&self) -> (ContextManager, usize) {

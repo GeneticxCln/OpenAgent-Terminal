@@ -38,11 +38,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     // Texture we'll render into
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("offscreen"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -53,9 +49,8 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // Clear the texture to a deterministic color without drawing any geometry
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("clear-encoder"),
-    });
+    let mut encoder = device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("clear-encoder") });
     {
         let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear-pass"),
@@ -63,12 +58,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
                 view: &view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.4,
-                        a: 1.0,
-                    }),
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.4, a: 1.0 }),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -108,11 +98,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
                 rows_per_image: Some(height),
             },
         },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
     );
 
     queue.submit(std::iter::once(encoder.finish()));
@@ -141,12 +127,7 @@ async fn run_wgpu(width: u32, height: u32, out_path: &str) -> anyhow::Result<()>
     img.save(&out_path)?;
 
     // Print JSON for CI step parsing
-    println!(
-        "{{\"output\":\"{}\",\"width\":{},\"height\":{}}}",
-        out_path.display(),
-        width,
-        height
-    );
+    println!("{{\"output\":\"{}\",\"width\":{},\"height\":{}}}", out_path.display(), width, height);
 
     Ok(())
 }
@@ -162,10 +143,7 @@ fn main() {
         if let Err(e) = pollster::block_on(run_wgpu(width, height, out_path)) {
             eprintln!("WGPU snapshot failed: {}", e);
             // Still print a JSON with expected size but no file to make debugging easier
-            println!(
-                "{{\"output\":\"{}\",\"width\":{},\"height\":{}}}",
-                out_path, width, height
-            );
+            println!("{{\"output\":\"{}\",\"width\":{},\"height\":{}}}", out_path, width, height);
             std::process::exit(1);
         }
     }
@@ -173,9 +151,6 @@ fn main() {
     #[cfg(not(feature = "wgpu"))]
     {
         // If WGPU feature isn't enabled, print JSON and exit 0 so CI can handle fallback
-        println!(
-            "{{\"output\":\"{}\",\"width\":{},\"height\":{}}}",
-            out_path, width, height
-        );
+        println!("{{\"output\":\"{}\",\"width\":{},\"height\":{}}}", out_path, width, height);
     }
 }

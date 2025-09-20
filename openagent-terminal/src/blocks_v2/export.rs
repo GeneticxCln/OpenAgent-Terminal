@@ -66,19 +66,12 @@ impl<'a> BlockExporter<'a> {
         blocks: &[Block],
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Write CSV header
-        writeln!(
-            writer,
-            "id,command,directory,created_at,modified_at,exit_code,output_preview"
-        )?;
+        writeln!(writer, "id,command,directory,created_at,modified_at,exit_code,output_preview")?;
 
         // Write each block as a CSV row
         for block in blocks {
-            let output_preview = block
-                .output
-                .chars()
-                .take(100)
-                .collect::<String>()
-                .replace('\n', "\\n");
+            let output_preview =
+                block.output.chars().take(100).collect::<String>().replace('\n', "\\n");
             writeln!(
                 writer,
                 "{},{},{},{},{},{:?},\"{}\"",
@@ -153,17 +146,10 @@ impl ExportManager {
 
     fn write_csv(&self, writer: &mut Vec<u8>, blocks: &[Block]) -> anyhow::Result<()> {
         use std::io::Write as _;
-        writeln!(
-            writer,
-            "id,command,directory,created_at,modified_at,exit_code,output_preview"
-        )?;
+        writeln!(writer, "id,command,directory,created_at,modified_at,exit_code,output_preview")?;
         for block in blocks {
-            let output_preview = block
-                .output
-                .chars()
-                .take(100)
-                .collect::<String>()
-                .replace('\n', "\\n");
+            let output_preview =
+                block.output.chars().take(100).collect::<String>().replace('\n', "\\n");
             writeln!(
                 writer,
                 "{},{},{},{},{},{:?},\"{}\"",
@@ -272,11 +258,6 @@ pub struct ImportOptions {
 
 impl ImportOptions {
     pub fn new(source_path: std::path::PathBuf, format: ExportFormat) -> Self {
-        Self {
-            source_path,
-            format,
-            overwrite_existing: false,
-            generate_new_ids: false,
-        }
+        Self { source_path, format, overwrite_existing: false, generate_new_ids: false }
     }
 }

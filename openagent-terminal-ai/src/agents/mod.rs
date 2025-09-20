@@ -49,24 +49,13 @@ pub enum AgentRequest {
     },
 
     /// Project analysis and context understanding
-    ProjectContext {
-        project_path: String,
-        action: ContextAction,
-    },
+    ProjectContext { project_path: String, action: ContextAction },
 
     /// Code quality and security analysis
-    Quality {
-        code: String,
-        language: Option<String>,
-        action: QualityAction,
-    },
+    Quality { code: String, language: Option<String>, action: QualityAction },
 
     /// Multi-agent collaboration request
-    Collaboration {
-        agents: Vec<String>,
-        context: CollaborationContext,
-        goal: String,
-    },
+    Collaboration { agents: Vec<String>, context: CollaborationContext, goal: String },
 }
 
 /// Agent response types
@@ -76,18 +65,10 @@ pub enum AgentResponse {
     Commands(Vec<AiProposal>),
 
     /// Code generation results
-    Code {
-        generated_code: String,
-        language: String,
-        explanation: String,
-        suggestions: Vec<String>,
-    },
+    Code { generated_code: String, language: String, explanation: String, suggestions: Vec<String> },
 
     /// Project context information
-    Context {
-        project_info: ProjectInfo,
-        suggestions: Vec<ProjectSuggestion>,
-    },
+    Context { project_info: ProjectInfo, suggestions: Vec<ProjectSuggestion> },
 
     /// Quality analysis results
     QualityReport {
@@ -98,11 +79,7 @@ pub enum AgentResponse {
     },
 
     /// Collaboration result
-    CollaborationResult {
-        participating_agents: Vec<String>,
-        result: String,
-        confidence: f32,
-    },
+    CollaborationResult { participating_agents: Vec<String>, result: String, confidence: f32 },
 }
 
 /// Code-related action types

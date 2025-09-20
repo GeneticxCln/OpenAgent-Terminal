@@ -6,11 +6,8 @@ use std::path::Path;
 
 pub fn export_theme(theme: &Theme, output_path: &Path) -> Result<()> {
     // Create theme package
-    let package = ThemePackage {
-        theme: theme.clone(),
-        assets: None,
-        manifest: create_manifest(theme)?,
-    };
+    let package =
+        ThemePackage { theme: theme.clone(), assets: None, manifest: create_manifest(theme)? };
 
     // Serialize to TOML
     let content = toml::to_string_pretty(&package)?;

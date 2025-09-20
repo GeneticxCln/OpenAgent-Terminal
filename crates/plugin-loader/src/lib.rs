@@ -515,24 +515,12 @@ impl PluginManager {
         }
 
         // Add file system access limited to subdirectories inside plugin_dir.
-        for pattern in permissions
-            .read_files
-            .iter()
-            .chain(permissions.write_files.iter())
-        {
+        for pattern in permissions.read_files.iter().chain(permissions.write_files.iter()) {
             if let Some(safe_path) = self.sanitize_plugin_path(plugin_base_dir, pattern) {
                 // Determine permissions based on whether this is read or write access
                 let is_write = permissions.write_files.contains(pattern);
-                let dir_perms = if is_write {
-                    DirPerms::all()
-                } else {
-                    DirPerms::READ
-                };
-                let file_perms = if is_write {
-                    FilePerms::all()
-                } else {
-                    FilePerms::READ
-                };
+                let dir_perms = if is_write { DirPerms::all() } else { DirPerms::READ };
+                let file_perms = if is_write { FilePerms::all() } else { FilePerms::READ };
 
                 if let Err(e) = wasi_builder.preopened_dir(
                     &safe_path, pattern, // Use original pattern as guest path
@@ -578,12 +566,8 @@ impl PluginManager {
     ) -> Result<PluginExports, PluginError> {
         Ok(PluginExports {
             init: instance.get_typed_func(&mut *store, "plugin_init").ok(),
-            get_metadata: instance
-                .get_typed_func(&mut *store, "plugin_get_metadata")
-                .ok(),
-            handle_event: instance
-                .get_typed_func(&mut *store, "plugin_handle_event")
-                .ok(),
+            get_metadata: instance.get_typed_func(&mut *store, "plugin_get_metadata").ok(),
+            handle_event: instance.get_typed_func(&mut *store, "plugin_handle_event").ok(),
             cleanup: instance.get_typed_func(&mut *store, "plugin_cleanup").ok(),
         })
     }
@@ -615,14 +599,14 @@ impl PluginManager {
             let memory = instance
                 .get_export(&mut *store, "memory")
                 .and_then(|e| e.into_memory())
-                .ok_or_else(|| PluginError::RuntimeError("Plugin missing memory export".into()))?;
+                .ok_or_else(|| {
+                PluginError::RuntimeError("Plugin missing memory export".into())
+            })?;
 
             let mut buffer = vec![0u8; len as usize];
-            memory
-                .read(&mut *store, ptr as usize, &mut buffer)
-                .map_err(|_| {
-                    PluginError::RuntimeError("Failed to read plugin metadata from memory".into())
-                })?;
+            memory.read(&mut *store, ptr as usize, &mut buffer).map_err(|_| {
+                PluginError::RuntimeError("Failed to read plugin metadata from memory".into())
+            })?;
 
             let metadata: PluginMetadata = serde_json::from_slice(&buffer).map_err(|e| {
                 PluginError::RuntimeError(format!("Invalid plugin metadata JSON: {}", e))
@@ -683,10 +667,7 @@ impl PluginManager {
                     }
                 }
                 Err(e) => {
-                    return Err(PluginError::InvalidFormat(format!(
-                        "Invalid TOML manifest: {}",
-                        e
-                    )))
+                    return Err(PluginError::InvalidFormat(format!("Invalid TOML manifest: {}", e)))
                 }
             }
         }
@@ -712,9 +693,7 @@ impl PluginManager {
         }
 
         if plugin_info.version.as_ref().map_or(true, |s| s.is_empty()) {
-            return Err(PluginError::InvalidFormat(
-                "Plugin version is required".into(),
-            ));
+            return Err(PluginError::InvalidFormat("Plugin version is required".into()));
         }
 
         // Validate version format (basic semver check)
@@ -757,9 +736,7 @@ impl PluginManager {
         }
 
         if perms.timeout_ms == 0 {
-            return Err(PluginError::PermissionDenied(
-                "Timeout must be greater than 0".into(),
-            ));
+            return Err(PluginError::PermissionDenied("Timeout must be greater than 0".into()));
         }
 
         // Validate file access patterns
@@ -784,10 +761,7 @@ impl PluginManager {
         // Validate environment variable access
         for env_var in &perms.environment_variables {
             if self.is_sensitive_env_var(env_var) {
-                warn!(
-                    "Plugin requesting access to sensitive environment variable: {}",
-                    env_var
-                );
+                warn!("Plugin requesting access to sensitive environment variable: {}", env_var);
             }
         }
 
@@ -816,9 +790,7 @@ impl PluginManager {
             "sudoers", // Sensitive files
         ];
 
-        dangerous_patterns
-            .iter()
-            .any(|&dangerous| pattern.contains(dangerous))
+        dangerous_patterns.iter().any(|&dangerous| pattern.contains(dangerous))
     }
 
     /// Check if an environment variable is sensitive
@@ -836,19 +808,10 @@ impl PluginManager {
             "GPG_",
         ];
 
-        let sensitive_exact = [
-            "HOME",
-            "USER",
-            "USERNAME",
-            "PATH",
-            "LD_LIBRARY_PATH",
-            "SUDO_USER",
-            "LOGNAME",
-        ];
+        let sensitive_exact =
+            ["HOME", "USER", "USERNAME", "PATH", "LD_LIBRARY_PATH", "SUDO_USER", "LOGNAME"];
 
-        sensitive_prefixes
-            .iter()
-            .any(|&prefix| env_var.starts_with(prefix))
+        sensitive_prefixes.iter().any(|&prefix| env_var.starts_with(prefix))
             || sensitive_exact.contains(&env_var)
     }
 
@@ -860,15 +823,11 @@ impl PluginManager {
         plugin_base_dir: &Path,
     ) -> Result<(), PluginError> {
         if requested.network && !allowed.network {
-            return Err(PluginError::PermissionDenied(
-                "Network access not allowed".into(),
-            ));
+            return Err(PluginError::PermissionDenied("Network access not allowed".into()));
         }
 
         if requested.execute_commands && !allowed.execute_commands {
-            return Err(PluginError::PermissionDenied(
-                "Command execution not allowed".into(),
-            ));
+            return Err(PluginError::PermissionDenied("Command execution not allowed".into()));
         }
 
         // Helper to sanitize a requested path relative to the plugin_dir and compare to allowed.
@@ -1105,11 +1064,9 @@ impl PluginManager {
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
 
                     let mut cmd_buffer = vec![0u8; cmd_len as usize];
-                    memory
-                        .read(&caller, cmd_ptr as usize, &mut cmd_buffer)
-                        .map_err(|_| {
-                            anyhow::anyhow!("Failed to read command from plugin memory")
-                        })?;
+                    memory.read(&caller, cmd_ptr as usize, &mut cmd_buffer).map_err(|_| {
+                        anyhow::anyhow!("Failed to read command from plugin memory")
+                    })?;
 
                     let command = String::from_utf8_lossy(&cmd_buffer);
 
@@ -1134,11 +1091,9 @@ impl PluginManager {
                                         anyhow::anyhow!("Failed to write result length")
                                     })?;
                                 if result_ptr != 0 {
-                                    memory
-                                        .write(&mut caller, result_ptr as usize, &json)
-                                        .map_err(|_| {
-                                            anyhow::anyhow!("Failed to write result data")
-                                        })?;
+                                    memory.write(&mut caller, result_ptr as usize, &json).map_err(
+                                        |_| anyhow::anyhow!("Failed to write result data"),
+                                    )?;
                                 }
                                 Ok(0)
                             }
@@ -1241,11 +1196,9 @@ impl PluginManager {
                                         anyhow::anyhow!("Failed to write result length")
                                     })?;
                                 if result_ptr != 0 {
-                                    memory
-                                        .write(&mut caller, result_ptr as usize, &data)
-                                        .map_err(|_| {
-                                            anyhow::anyhow!("Failed to write result data")
-                                        })?;
+                                    memory.write(&mut caller, result_ptr as usize, &data).map_err(
+                                        |_| anyhow::anyhow!("Failed to write result data"),
+                                    )?;
                                 }
                                 Ok(0)
                             }
@@ -1283,27 +1236,45 @@ impl PluginManager {
                         .and_then(|e| e.into_memory())
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
                     let mut ns_buf = vec![0u8; ns_len as usize];
-                    memory.read(&caller, ns_ptr as usize, &mut ns_buf).map_err(|_| anyhow::anyhow!("Failed to read ns"))?;
+                    memory
+                        .read(&caller, ns_ptr as usize, &mut ns_buf)
+                        .map_err(|_| anyhow::anyhow!("Failed to read ns"))?;
                     let namespace = String::from_utf8_lossy(&ns_buf).to_string();
                     let mut id_buf = vec![0u8; id_len as usize];
-                    memory.read(&caller, id_ptr as usize, &mut id_buf).map_err(|_| anyhow::anyhow!("Failed to read id"))?;
+                    memory
+                        .read(&caller, id_ptr as usize, &mut id_buf)
+                        .map_err(|_| anyhow::anyhow!("Failed to read id"))?;
                     let doc_id = String::from_utf8_lossy(&id_buf).to_string();
                     let mut json_buf = vec![0u8; json_len as usize];
-                    memory.read(&caller, json_ptr as usize, &mut json_buf).map_err(|_| anyhow::anyhow!("Failed to read json"))?;
+                    memory
+                        .read(&caller, json_ptr as usize, &mut json_buf)
+                        .map_err(|_| anyhow::anyhow!("Failed to read json"))?;
                     let json_str = String::from_utf8_lossy(&json_buf).to_string();
 
                     let ctx = caller.data();
-                    if !ctx.permissions.storage { return Ok(-1); }
+                    if !ctx.permissions.storage {
+                        return Ok(-1);
+                    }
                     if let Some(ref host) = host_clone {
-                        match host.store_document_for(&ctx.plugin_id, &namespace, &doc_id, &json_str) {
+                        match host.store_document_for(
+                            &ctx.plugin_id,
+                            &namespace,
+                            &doc_id,
+                            &json_str,
+                        ) {
                             Ok(()) => Ok(0),
                             Err(_) => Ok(-2),
                         }
-                    } else { Ok(-3) }
+                    } else {
+                        Ok(-3)
+                    }
                 },
             )
             .map_err(|e| {
-                PluginError::InitializationFailed(format!("Failed to add host_store_document: {}", e))
+                PluginError::InitializationFailed(format!(
+                    "Failed to add host_store_document: {}",
+                    e
+                ))
             })?;
 
         // Host retrieve document function
@@ -1325,33 +1296,50 @@ impl PluginManager {
                         .and_then(|e| e.into_memory())
                         .ok_or_else(|| anyhow::anyhow!("Plugin missing memory export"))?;
                     let mut ns_buf = vec![0u8; ns_len as usize];
-                    memory.read(&caller, ns_ptr as usize, &mut ns_buf).map_err(|_| anyhow::anyhow!("Failed to read ns"))?;
+                    memory
+                        .read(&caller, ns_ptr as usize, &mut ns_buf)
+                        .map_err(|_| anyhow::anyhow!("Failed to read ns"))?;
                     let namespace = String::from_utf8_lossy(&ns_buf).to_string();
                     let mut id_buf = vec![0u8; id_len as usize];
-                    memory.read(&caller, id_ptr as usize, &mut id_buf).map_err(|_| anyhow::anyhow!("Failed to read id"))?;
+                    memory
+                        .read(&caller, id_ptr as usize, &mut id_buf)
+                        .map_err(|_| anyhow::anyhow!("Failed to read id"))?;
                     let doc_id = String::from_utf8_lossy(&id_buf).to_string();
 
                     let ctx = caller.data();
-                    if !ctx.permissions.storage { return Ok(-1); }
+                    if !ctx.permissions.storage {
+                        return Ok(-1);
+                    }
                     if let Some(ref host) = host_clone {
                         match host.retrieve_document_for(&ctx.plugin_id, &namespace, &doc_id) {
                             Ok(Some(json)) => {
                                 let data = json.into_bytes();
                                 let len_bytes = (data.len() as u32).to_le_bytes();
-                                memory.write(&mut caller, result_len_ptr as usize, &len_bytes).map_err(|_| anyhow::anyhow!("Failed to write result length"))?;
+                                memory
+                                    .write(&mut caller, result_len_ptr as usize, &len_bytes)
+                                    .map_err(|_| {
+                                        anyhow::anyhow!("Failed to write result length")
+                                    })?;
                                 if result_ptr != 0 {
-                                    memory.write(&mut caller, result_ptr as usize, &data).map_err(|_| anyhow::anyhow!("Failed to write result data"))?;
+                                    memory.write(&mut caller, result_ptr as usize, &data).map_err(
+                                        |_| anyhow::anyhow!("Failed to write result data"),
+                                    )?;
                                 }
                                 Ok(0)
                             }
                             Ok(None) => Ok(-4),
                             Err(_) => Ok(-2),
                         }
-                    } else { Ok(-3) }
+                    } else {
+                        Ok(-3)
+                    }
                 },
             )
             .map_err(|e| {
-                PluginError::InitializationFailed(format!("Failed to add host_retrieve_document: {}", e))
+                PluginError::InitializationFailed(format!(
+                    "Failed to add host_retrieve_document: {}",
+                    e
+                ))
             })?;
 
         Ok(())
@@ -1393,9 +1381,7 @@ impl PluginManager {
         let mut store = plugin.store.lock().await;
 
         // Allocate memory inside plugin if allocator exists
-        let alloc = instance
-            .get_typed_func::<i32, i32>(&mut *store, "plugin_alloc")
-            .ok();
+        let alloc = instance.get_typed_func::<i32, i32>(&mut *store, "plugin_alloc").ok();
         let memory = instance
             .get_export(&mut *store, "memory")
             .and_then(|e| e.into_memory())
@@ -1406,11 +1392,9 @@ impl PluginManager {
                 .call(&mut *store, event_json.len() as i32)
                 .map_err(|e| PluginError::RuntimeError(format!("plugin_alloc failed: {}", e)))?;
             // Write event JSON into plugin memory
-            memory
-                .write(&mut *store, p as usize, &event_json)
-                .map_err(|_| {
-                    PluginError::RuntimeError("Failed to write event data to plugin memory".into())
-                })?;
+            memory.write(&mut *store, p as usize, &event_json).map_err(|_| {
+                PluginError::RuntimeError("Failed to write event data to plugin memory".into())
+            })?;
             (p, event_json.len() as i32)
         } else {
             // Without an allocator we cannot safely write into plugin memory
@@ -1437,9 +1421,8 @@ impl PluginManager {
         }
 
         // Try to fetch optional last response from plugin
-        let last_resp_fn = instance
-            .get_typed_func::<(), i64>(&mut *store, "plugin_get_last_response")
-            .ok();
+        let last_resp_fn =
+            instance.get_typed_func::<(), i64>(&mut *store, "plugin_get_last_response").ok();
 
         let result = if let Some(get_resp) = last_resp_fn {
             let packed = get_resp.call(&mut *store, ()).map_err(|e| {
@@ -1449,11 +1432,9 @@ impl PluginManager {
             let rlen = (packed >> 32) as u32;
             if rptr != 0 && rlen > 0 {
                 let mut buf = vec![0u8; rlen as usize];
-                memory
-                    .read(&mut *store, rptr as usize, &mut buf)
-                    .map_err(|_| {
-                        PluginError::RuntimeError("Failed to read plugin response".into())
-                    })?;
+                memory.read(&mut *store, rptr as usize, &mut buf).map_err(|_| {
+                    PluginError::RuntimeError("Failed to read plugin response".into())
+                })?;
                 Some(String::from_utf8_lossy(&buf).to_string())
             } else {
                 None
@@ -1462,11 +1443,7 @@ impl PluginManager {
             None
         };
 
-        Ok(PluginEventResponse {
-            success: true,
-            result,
-            error: None,
-        })
+        Ok(PluginEventResponse { success: true, result, error: None })
     }
 }
 
@@ -1491,11 +1468,7 @@ impl PluginManager {
     fn sanitize_plugin_path(&self, base: &Path, p: &str) -> Option<String> {
         use std::path::PathBuf;
         let raw = PathBuf::from(p);
-        let resolved = if raw.is_absolute() {
-            raw
-        } else {
-            base.join(raw)
-        };
+        let resolved = if raw.is_absolute() { raw } else { base.join(raw) };
         // Disallow preopening '/' or paths outside base
         if resolved.components().count() == 0 {
             return None;
@@ -1512,11 +1485,7 @@ impl PluginManager {
 
 /// Check if a canonicalized resolved path is allowed under permissions
 fn is_allowed_path(ctx: &PluginContext, resolved: &std::path::Path, for_write: bool) -> bool {
-    let list = if for_write {
-        &ctx.permissions.write_files
-    } else {
-        &ctx.permissions.read_files
-    };
+    let list = if for_write { &ctx.permissions.write_files } else { &ctx.permissions.read_files };
     for allowed in list {
         // Support both absolute and relative manifest entries by trying direct canonicalize and base-joined canonicalize.
         let allowed_path = std::path::PathBuf::from(allowed);
@@ -1541,11 +1510,7 @@ impl ResourceLimiter for ResourceTracker {
         _maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
         // Enforce per-plugin configured limit; fall back to 50MB if unset
-        let max = if self.max_memory_bytes == 0 {
-            50 * 1024 * 1024
-        } else {
-            self.max_memory_bytes
-        };
+        let max = if self.max_memory_bytes == 0 { 50 * 1024 * 1024 } else { self.max_memory_bytes };
 
         if desired > max {
             return Ok(false);
@@ -1628,9 +1593,7 @@ impl PluginManager {
                     let key_hex = std::fs::read_to_string(entry.path())?;
                     let key_bytes = hex::decode(key_hex.trim()).map_err(|e| anyhow::anyhow!(e))?;
                     if let Ok(vk) = VerifyingKey::from_bytes(
-                        &key_bytes
-                            .try_into()
-                            .map_err(|_| anyhow::anyhow!("invalid key length"))?,
+                        &key_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?,
                     ) {
                         if vk.verify(&digest, &signature).is_ok() {
                             return Ok(Some(hex::encode(vk.to_bytes())));
@@ -1798,20 +1761,14 @@ timeout_ms=5000
         std::fs::write(&wasm_path, wasm_bytes).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
-        let name = manager
-            .load_plugin(&wasm_path)
-            .await
-            .expect("load_plugin should succeed");
+        let name = manager.load_plugin(&wasm_path).await.expect("load_plugin should succeed");
 
         // Ensure it's listed
         let listed = manager.list_plugins().await;
         assert_eq!(listed.len(), 1);
 
         // Unload; this will attempt to call the exported cleanup function
-        manager
-            .unload_plugin(&name)
-            .await
-            .expect("unload_plugin should call cleanup and succeed");
+        manager.unload_plugin(&name).await.expect("unload_plugin should call cleanup and succeed");
 
         // Ensure it's gone
         let listed = manager.list_plugins().await;
@@ -1868,10 +1825,7 @@ timeout_ms=5000
         std::fs::write(&wasm_path, build_cleanup_spin_wasm()).unwrap();
 
         let manager = PluginManager::new(temp_dir.path()).unwrap();
-        let name = manager
-            .load_plugin(&wasm_path)
-            .await
-            .expect("load_plugin should succeed");
+        let name = manager.load_plugin(&wasm_path).await.expect("load_plugin should succeed");
 
         // Ensure it's listed
         let listed = manager.list_plugins().await;
@@ -1879,10 +1833,7 @@ timeout_ms=5000
 
         // Unload should return an error due to timeout, but the plugin entry should be removed
         let unload_res = manager.unload_plugin(&name).await;
-        assert!(
-            unload_res.is_err(),
-            "Expected unload to return error due to timeout"
-        );
+        assert!(unload_res.is_err(), "Expected unload to return error due to timeout");
 
         let listed = manager.list_plugins().await;
         assert!(listed.is_empty());
@@ -2127,15 +2078,9 @@ timeout_ms=5000
         assert_eq!(listed[0].name, "test-plugin");
 
         // Send a minimal event (will succeed, no response)
-        let event = PluginEvent {
-            event_type: "ping".into(),
-            data: serde_json::json!({}),
-            timestamp: 0,
-        };
-        let resp = manager
-            .send_event_to_plugin(&name, &event)
-            .await
-            .expect("event ok");
+        let event =
+            PluginEvent { event_type: "ping".into(), data: serde_json::json!({}), timestamp: 0 };
+        let resp = manager.send_event_to_plugin(&name, &event).await.expect("event ok");
         assert!(resp.success);
     }
 
@@ -2158,9 +2103,7 @@ timeout_ms=5000
             ..Default::default()
         };
         // Build a minimal Wasi context via builder
-        let wasi = wasmtime_wasi::WasiCtxBuilder::new()
-            .inherit_stdio()
-            .build_p1();
+        let wasi = wasmtime_wasi::WasiCtxBuilder::new().inherit_stdio().build_p1();
         let ctx = PluginContext {
             // Unused fields
             wasi,

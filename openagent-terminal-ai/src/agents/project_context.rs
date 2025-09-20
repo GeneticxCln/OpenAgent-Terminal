@@ -2,19 +2,19 @@
 //! Provides working directory detection, shell identification, repository info, and project analysis.
 
 use crate::agents::types::{
-    ProjectContextInfo, ShellKind, RepositoryInfo, VcsType, RepoStatus, ProjectType, 
-    LanguageInfo, BuildSystem, ConcurrencyState
+    BuildSystem, ConcurrencyState, LanguageInfo, ProjectContextInfo, ProjectType, RepoStatus,
+    RepositoryInfo, ShellKind, VcsType,
 };
 
-use anyhow::{Result, anyhow, Context};
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Project context manager for analyzing and caching project information
 #[derive(Debug)]
@@ -102,7 +102,7 @@ impl ProjectContextAgent {
     /// Get or derive project context for a given directory
     pub async fn get_project_context<P: AsRef<Path>>(&self, path: P) -> Result<ProjectContextInfo> {
         let path_str = path.as_ref().to_string_lossy().to_string();
-        
+
         // Check cache first
         if let Some(cached) = self.get_cached_context(&path_str).await {
             if !self.is_cache_expired(&cached) {
@@ -114,23 +114,24 @@ impl ProjectContextAgent {
         // Derive fresh context
         info!(path = %path_str, "Deriving project context");
         let context = self.derive_project_context(path.as_ref()).await?;
-        
+
         // Cache the result
         self.cache_context(&path_str, &context).await;
-        
+
         Ok(context)
     }
 
     /// Derive complete project context information
     async fn derive_project_context(&self, path: &Path) -> Result<ProjectContextInfo> {
-        let working_directory = path.canonicalize()
+        let working_directory = path
+            .canonicalize()
             .with_context(|| format!("Failed to canonicalize path: {:?}", path))?
             .to_string_lossy()
             .to_string();
 
         // Detect shell kind
         let shell_kind = self.detect_shell_kind();
-        
+
         // Analyze repository information
         let repository_info = if self.config.enable_git_analysis {
             self.analyze_repository(&working_directory).await.ok()
@@ -157,7 +158,7 @@ impl ProjectContextAgent {
         let environment_vars = self.collect_relevant_env_vars();
 
         let now = Utc::now();
-        
+
         Ok(ProjectContextInfo {
             working_directory,
             shell_kind,
@@ -179,7 +180,7 @@ impl ProjectContextAgent {
     /// Detect the current shell kind
     fn detect_shell_kind(&self) -> ShellKind {
         // Try multiple methods to detect shell
-        
+
         // Method 1: Check SHELL environment variable
         if let Ok(shell_path) = std::env::var("SHELL") {
             if shell_path.contains("bash") {
@@ -195,7 +196,7 @@ impl ProjectContextAgent {
 
         // Method 2: Check parent process name (if available)
         // This would require platform-specific code
-        
+
         // Method 3: Platform defaults
         if cfg!(windows) {
             ShellKind::PowerShell
@@ -208,7 +209,7 @@ impl ProjectContextAgent {
     /// Analyze repository information (Git focus)
     async fn analyze_repository(&self, path: &str) -> Result<RepositoryInfo> {
         let path_buf = PathBuf::from(path);
-        
+
         // Check if we're in a Git repository
         if self.is_git_repository(&path_buf) {
             self.analyze_git_repository(&path_buf).await
@@ -234,23 +235,25 @@ impl ProjectContextAgent {
 
     /// Analyze Git repository details
     async fn analyze_git_repository(&self, path: &Path) -> Result<RepositoryInfo> {
-        let repo_root = self.find_git_root(path)
+        let repo_root = self
+            .find_git_root(path)
             .ok_or_else(|| anyhow!("Could not find Git root"))?
             .to_string_lossy()
             .to_string();
 
         // Get current branch
-        let current_branch = self.get_git_output(path, &["branch", "--show-current"])
+        let current_branch = self
+            .get_git_output(path, &["branch", "--show-current"])
             .map(|s| s.trim().to_string())
             .ok();
 
         // Get current commit
-        let current_commit = self.get_git_output(path, &["rev-parse", "HEAD"])
-            .map(|s| s.trim().to_string())
-            .ok();
+        let current_commit =
+            self.get_git_output(path, &["rev-parse", "HEAD"]).map(|s| s.trim().to_string()).ok();
 
         // Get remote URL
-        let remote_url = self.get_git_output(path, &["remote", "get-url", "origin"])
+        let remote_url = self
+            .get_git_output(path, &["remote", "get-url", "origin"])
             .map(|s| s.trim().to_string())
             .ok();
 
@@ -293,10 +296,7 @@ impl ProjectContextAgent {
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
-            Err(anyhow!(
-                "Git command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ))
+            Err(anyhow!("Git command failed: {}", String::from_utf8_lossy(&output.stderr)))
         }
     }
 
@@ -304,7 +304,7 @@ impl ProjectContextAgent {
     async fn analyze_git_status(&self, path: &Path) -> Result<RepoStatus> {
         // Get porcelain status
         let status_output = self.get_git_output(path, &["status", "--porcelain"])?;
-        
+
         let mut modified_files = Vec::new();
         let mut untracked_files = Vec::new();
         let mut staged_files = Vec::new();
@@ -313,7 +313,7 @@ impl ProjectContextAgent {
             if line.len() < 3 {
                 continue;
             }
-            
+
             let index_status = line.chars().nth(0).unwrap();
             let worktree_status = line.chars().nth(1).unwrap();
             let filename = &line[3..];
@@ -327,26 +327,21 @@ impl ProjectContextAgent {
         }
 
         // Check if repository is clean
-        let is_clean = modified_files.is_empty() && untracked_files.is_empty() && staged_files.is_empty();
+        let is_clean =
+            modified_files.is_empty() && untracked_files.is_empty() && staged_files.is_empty();
 
         // Get ahead/behind information
         let (ahead, behind) = self.get_ahead_behind_count(path).unwrap_or((0, 0));
 
-        Ok(RepoStatus {
-            is_clean,
-            modified_files,
-            untracked_files,
-            staged_files,
-            ahead,
-            behind,
-        })
+        Ok(RepoStatus { is_clean, modified_files, untracked_files, staged_files, ahead, behind })
     }
 
     /// Get ahead/behind count relative to upstream
     fn get_ahead_behind_count(&self, path: &Path) -> Option<(i32, i32)> {
-        let output = self.get_git_output(path, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        let output = self
+            .get_git_output(path, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
             .ok()?;
-        
+
         let counts: Vec<&str> = output.trim().split('\t').collect();
         if counts.len() == 2 {
             let ahead = counts[0].parse().unwrap_or(0);
@@ -381,11 +376,7 @@ impl ProjectContextAgent {
 
         let confidence = languages.get(&primary_language).cloned().unwrap_or(0.0);
 
-        Ok(LanguageDetectionResult {
-            languages,
-            primary_language,
-            confidence,
-        })
+        Ok(LanguageDetectionResult { languages, primary_language, confidence })
     }
 
     /// Recursively analyze directory for language files
@@ -400,8 +391,8 @@ impl ProjectContextAgent {
             return Ok(());
         }
 
-        let entries = fs::read_dir(dir)
-            .with_context(|| format!("Failed to read directory: {:?}", dir))?;
+        let entries =
+            fs::read_dir(dir).with_context(|| format!("Failed to read directory: {:?}", dir))?;
 
         for entry in entries {
             let entry = entry?;
@@ -538,7 +529,9 @@ impl ProjectContextAgent {
             }
         } else if path_buf.join("pom.xml").exists() {
             build_system = Some(BuildSystem::Maven);
-        } else if path_buf.join("build.gradle").exists() || path_buf.join("build.gradle.kts").exists() {
+        } else if path_buf.join("build.gradle").exists()
+            || path_buf.join("build.gradle.kts").exists()
+        {
             build_system = Some(BuildSystem::Gradle);
         } else if path_buf.join("Makefile").exists() || path_buf.join("makefile").exists() {
             build_system = Some(BuildSystem::Make);
@@ -561,11 +554,7 @@ impl ProjectContextAgent {
         package_managers.sort();
         package_managers.dedup();
 
-        Ok(FrameworkDetectionResult {
-            frameworks,
-            package_managers,
-            build_system,
-        })
+        Ok(FrameworkDetectionResult { frameworks, package_managers, build_system })
     }
 
     /// Detect JavaScript/TypeScript frameworks from package.json
@@ -630,12 +619,27 @@ impl ProjectContextAgent {
     /// Collect relevant environment variables
     fn collect_relevant_env_vars(&self) -> HashMap<String, String> {
         let mut env_vars = HashMap::new();
-        
+
         let relevant_vars = [
-            "PATH", "HOME", "USER", "SHELL", "PWD", "TERM",
-            "NODE_ENV", "RUST_LOG", "PYTHONPATH", "GOPATH", "JAVA_HOME",
-            "CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS",
-            "npm_config_registry", "CARGO_HOME", "RUSTUP_HOME",
+            "PATH",
+            "HOME",
+            "USER",
+            "SHELL",
+            "PWD",
+            "TERM",
+            "NODE_ENV",
+            "RUST_LOG",
+            "PYTHONPATH",
+            "GOPATH",
+            "JAVA_HOME",
+            "CC",
+            "CXX",
+            "CFLAGS",
+            "CXXFLAGS",
+            "LDFLAGS",
+            "npm_config_registry",
+            "CARGO_HOME",
+            "RUSTUP_HOME",
         ];
 
         for var_name in &relevant_vars {
@@ -667,7 +671,7 @@ impl ProjectContextAgent {
             cached_at: info.cached_at,
             ttl_seconds: info.cache_ttl_seconds,
         };
-        
+
         let mut cache = self.context_cache.write().await;
         cache.insert(path.to_string(), cached);
     }
@@ -676,7 +680,7 @@ impl ProjectContextAgent {
     pub async fn cleanup_cache(&self) {
         let mut cache = self.context_cache.write().await;
         let now = Utc::now();
-        
+
         cache.retain(|_, cached| {
             let elapsed = (now - cached.cached_at).num_seconds() as u64;
             elapsed <= cached.ttl_seconds
@@ -695,24 +699,25 @@ impl ProjectContextAgent {
         let cache = self.context_cache.read().await;
         let total = cache.len();
         let now = Utc::now();
-        
-        let expired = cache.values()
+
+        let expired = cache
+            .values()
             .filter(|cached| {
                 let elapsed = (now - cached.cached_at).num_seconds() as u64;
                 elapsed > cached.ttl_seconds
             })
             .count();
-        
+
         (total, expired)
     }
 
     /// Force refresh of project context (bypass cache)
     pub async fn refresh_context<P: AsRef<Path>>(&self, path: P) -> Result<ProjectContextInfo> {
         let path_str = path.as_ref().to_string_lossy().to_string();
-        
+
         // Invalidate existing cache
         self.invalidate_cache(&path_str).await;
-        
+
         // Get fresh context
         self.get_project_context(path).await
     }
@@ -721,15 +726,15 @@ impl ProjectContextAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_project_context_agent_creation() {
         let config = ContextConfig::default();
         let agent = ProjectContextAgent::new(config);
-        
+
         let (total, expired) = agent.cache_stats().await;
         assert_eq!(total, 0);
         assert_eq!(expired, 0);
@@ -739,17 +744,17 @@ mod tests {
     async fn test_language_detection() {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
-        
+
         // Create some test files
         let mut rust_file = File::create(temp_path.join("main.rs")).unwrap();
         writeln!(rust_file, "fn main() {{ println!(\"Hello, world!\"); }}").unwrap();
-        
+
         let mut js_file = File::create(temp_path.join("app.js")).unwrap();
         writeln!(js_file, "console.log('Hello, world!');").unwrap();
-        
+
         let agent = ProjectContextAgent::new(ContextConfig::default());
         let result = agent.detect_languages(temp_path.to_str().unwrap()).await.unwrap();
-        
+
         assert!(result.languages.contains_key("Rust"));
         assert!(result.languages.contains_key("JavaScript"));
         assert!(result.confidence > 0.0);
@@ -759,11 +764,15 @@ mod tests {
     fn test_shell_detection() {
         let agent = ProjectContextAgent::new(ContextConfig::default());
         let shell_kind = agent.detect_shell_kind();
-        
+
         // Should detect some shell type
         match shell_kind {
-            ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | 
-            ShellKind::PowerShell | ShellKind::Cmd | ShellKind::Unknown(_) => {
+            ShellKind::Bash
+            | ShellKind::Zsh
+            | ShellKind::Fish
+            | ShellKind::PowerShell
+            | ShellKind::Cmd
+            | ShellKind::Unknown(_) => {
                 // All valid shells
             }
         }
@@ -772,17 +781,26 @@ mod tests {
     #[test]
     fn test_language_from_file() {
         let agent = ProjectContextAgent::new(ContextConfig::default());
-        
+
         assert_eq!(agent.detect_language_from_file(Path::new("test.rs")), Some("Rust".to_string()));
-        assert_eq!(agent.detect_language_from_file(Path::new("test.js")), Some("JavaScript".to_string()));
-        assert_eq!(agent.detect_language_from_file(Path::new("test.py")), Some("Python".to_string()));
-        assert_eq!(agent.detect_language_from_file(Path::new("Dockerfile")), Some("Docker".to_string()));
+        assert_eq!(
+            agent.detect_language_from_file(Path::new("test.js")),
+            Some("JavaScript".to_string())
+        );
+        assert_eq!(
+            agent.detect_language_from_file(Path::new("test.py")),
+            Some("Python".to_string())
+        );
+        assert_eq!(
+            agent.detect_language_from_file(Path::new("Dockerfile")),
+            Some("Docker".to_string())
+        );
     }
 
     #[test]
     fn test_ignore_patterns() {
         let agent = ProjectContextAgent::new(ContextConfig::default());
-        
+
         assert!(agent.should_ignore_file(".git"));
         assert!(agent.should_ignore_file("node_modules"));
         assert!(agent.should_ignore_file("test.log"));

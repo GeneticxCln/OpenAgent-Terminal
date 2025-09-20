@@ -2,18 +2,17 @@
 //! Provides lightweight quality validation leveraging Security Lens outputs and static analysis.
 
 use crate::agents::types::{
-    QualityConfig, QualityCheck, PerformanceThresholds, StyleRules,
-    Severity, IndentStyle
+    IndentStyle, PerformanceThresholds, QualityCheck, QualityConfig, Severity, StyleRules,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs;
-use chrono::{DateTime, Utc};
+use std::path::Path;
 use tracing::warn;
-use regex::Regex;
 
 /// Quality validation agent for code analysis
 #[derive(Debug)]
@@ -162,7 +161,9 @@ impl QualityValidationAgent {
             security_patterns: SecurityPatternMatcher::new(),
             performance_analyzer: PerformanceAnalyzer::new(&config.performance_thresholds),
             style_checker: StyleChecker::new(&config.style_rules),
-            complexity_analyzer: ComplexityAnalyzer::new(config.performance_thresholds.max_complexity),
+            complexity_analyzer: ComplexityAnalyzer::new(
+                config.performance_thresholds.max_complexity,
+            ),
             config,
         }
     }
@@ -172,7 +173,7 @@ impl QualityValidationAgent {
         let path = file_path.as_ref();
         let content = fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read file {:?}: {}", path, e))?;
-        
+
         let language = self.detect_language(path);
         let context = AnalysisContext {
             file_path: path.to_string_lossy().to_string(),
@@ -224,7 +225,7 @@ impl QualityValidationAgent {
     pub async fn analyze_directory<P: AsRef<Path>>(&self, dir_path: P) -> Result<QualityReport> {
         let dir = dir_path.as_ref();
         let mut file_paths = Vec::new();
-        
+
         self.collect_source_files(dir, &mut file_paths)?;
         self.analyze_files(&file_paths).await
     }
@@ -283,31 +284,30 @@ impl QualityValidationAgent {
 
     /// Detect programming language from file extension
     fn detect_language(&self, path: &Path) -> Option<String> {
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| {
-                match ext.to_lowercase().as_str() {
-                    "rs" => "rust",
-                    "js" | "mjs" => "javascript",
-                    "ts" => "typescript",
-                    "py" => "python",
-                    "go" => "go",
-                    "java" => "java",
-                    "cpp" | "cxx" | "cc" => "cpp",
-                    "c" => "c",
-                    "cs" => "csharp",
-                    "rb" => "ruby",
-                    "php" => "php",
-                    "sh" | "bash" => "shell",
-                    _ => "unknown",
-                }.to_string()
-            })
+        path.extension().and_then(|ext| ext.to_str()).map(|ext| {
+            match ext.to_lowercase().as_str() {
+                "rs" => "rust",
+                "js" | "mjs" => "javascript",
+                "ts" => "typescript",
+                "py" => "python",
+                "go" => "go",
+                "java" => "java",
+                "cpp" | "cxx" | "cc" => "cpp",
+                "c" => "c",
+                "cs" => "csharp",
+                "rb" => "ruby",
+                "php" => "php",
+                "sh" | "bash" => "shell",
+                _ => "unknown",
+            }
+            .to_string()
+        })
     }
 
     /// Collect source files from directory recursively
     fn collect_source_files(&self, dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
-        let entries = fs::read_dir(dir)
-            .map_err(|e| anyhow!("Failed to read directory {:?}: {}", dir, e))?;
+        let entries =
+            fs::read_dir(dir).map_err(|e| anyhow!("Failed to read directory {:?}: {}", dir, e))?;
 
         for entry in entries {
             let entry = entry?;
@@ -326,9 +326,23 @@ impl QualityValidationAgent {
     /// Check if file is a source code file
     fn is_source_file(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            matches!(ext.to_lowercase().as_str(), 
-                "rs" | "js" | "ts" | "py" | "go" | "java" | "cpp" | "c" | "cs" | 
-                "rb" | "php" | "sh" | "bash" | "scala" | "kt" | "swift"
+            matches!(
+                ext.to_lowercase().as_str(),
+                "rs" | "js"
+                    | "ts"
+                    | "py"
+                    | "go"
+                    | "java"
+                    | "cpp"
+                    | "c"
+                    | "cs"
+                    | "rb"
+                    | "php"
+                    | "sh"
+                    | "bash"
+                    | "scala"
+                    | "kt"
+                    | "swift"
             )
         } else {
             false
@@ -338,9 +352,17 @@ impl QualityValidationAgent {
     /// Check if directory should be skipped during analysis
     fn should_skip_directory(&self, path: &Path) -> bool {
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            matches!(name, 
-                ".git" | "node_modules" | "target" | "build" | "dist" | 
-                ".vscode" | ".idea" | "__pycache__" | ".pytest_cache"
+            matches!(
+                name,
+                ".git"
+                    | "node_modules"
+                    | "target"
+                    | "build"
+                    | "dist"
+                    | ".vscode"
+                    | ".idea"
+                    | "__pycache__"
+                    | ".pytest_cache"
             )
         } else {
             false
@@ -385,13 +407,14 @@ impl QualityValidationAgent {
         let security_score = self.calculate_security_score(security_warnings);
         let performance_score = self.calculate_performance_score(issues);
         let style_compliance = self.calculate_style_compliance(issues);
-        
+
         Ok(QualityMetrics {
             cyclomatic_complexity: complexity,
             lines_of_code: context.line_count,
             code_coverage: 0.0, // Would require external tooling
             technical_debt_ratio: self.calculate_technical_debt(issues),
-            maintainability_index: self.calculate_maintainability_index(complexity, context.line_count),
+            maintainability_index: self
+                .calculate_maintainability_index(complexity, context.line_count),
             security_score,
             performance_score,
             style_compliance,
@@ -400,7 +423,8 @@ impl QualityValidationAgent {
 
     /// Calculate overall quality score
     fn calculate_overall_score(&self, issues: &[QualityIssue], metrics: &QualityMetrics) -> f64 {
-        let issue_penalty = issues.iter()
+        let issue_penalty = issues
+            .iter()
             .map(|issue| match issue.severity {
                 Severity::Critical => 10.0,
                 Severity::Error => 5.0,
@@ -410,15 +434,13 @@ impl QualityValidationAgent {
             .sum::<f64>();
 
         let base_score = 100.0;
-        let final_score = (base_score - issue_penalty)
-            .max(0.0)
-            .min(100.0);
+        let final_score = (base_score - issue_penalty).max(0.0).min(100.0);
 
         // Weight with metrics
-        let weighted_score = (final_score * 0.6) + 
-            (metrics.security_score * 0.2) + 
-            (metrics.performance_score * 0.1) + 
-            (metrics.style_compliance * 0.1);
+        let weighted_score = (final_score * 0.6)
+            + (metrics.security_score * 0.2)
+            + (metrics.performance_score * 0.1)
+            + (metrics.style_compliance * 0.1);
 
         weighted_score.max(0.0).min(100.0)
     }
@@ -429,7 +451,8 @@ impl QualityValidationAgent {
             return 100.0;
         }
 
-        let penalty = warnings.iter()
+        let penalty = warnings
+            .iter()
             .map(|warning| match warning.severity {
                 Severity::Critical => 25.0,
                 Severity::Error => 15.0,
@@ -443,7 +466,8 @@ impl QualityValidationAgent {
 
     /// Calculate performance score from performance issues
     fn calculate_performance_score(&self, issues: &[QualityIssue]) -> f64 {
-        let perf_issues: Vec<_> = issues.iter()
+        let perf_issues: Vec<_> = issues
+            .iter()
             .filter(|issue| matches!(issue.category, QualityCategory::Performance))
             .collect();
 
@@ -451,7 +475,8 @@ impl QualityValidationAgent {
             return 100.0;
         }
 
-        let penalty = perf_issues.iter()
+        let penalty = perf_issues
+            .iter()
             .map(|issue| match issue.severity {
                 Severity::Critical => 20.0,
                 Severity::Error => 12.0,
@@ -465,7 +490,8 @@ impl QualityValidationAgent {
 
     /// Calculate style compliance score
     fn calculate_style_compliance(&self, issues: &[QualityIssue]) -> f64 {
-        let style_issues: Vec<_> = issues.iter()
+        let style_issues: Vec<_> = issues
+            .iter()
             .filter(|issue| matches!(issue.category, QualityCategory::Style))
             .collect();
 
@@ -479,9 +505,8 @@ impl QualityValidationAgent {
 
     /// Calculate technical debt ratio
     fn calculate_technical_debt(&self, issues: &[QualityIssue]) -> f64 {
-        let debt_issues = issues.iter()
-            .filter(|issue| !matches!(issue.severity, Severity::Info))
-            .count();
+        let debt_issues =
+            issues.iter().filter(|issue| !matches!(issue.severity, Severity::Info)).count();
 
         debt_issues as f64 / issues.len().max(1) as f64
     }
@@ -490,7 +515,10 @@ impl QualityValidationAgent {
     fn calculate_maintainability_index(&self, complexity: f64, lines_of_code: usize) -> f64 {
         // Simplified maintainability index calculation
         let halstead_volume = lines_of_code as f64 * 0.1; // Placeholder
-        let mi = 171.0 - 5.2 * complexity.ln() - 0.23 * halstead_volume - 16.2 * (lines_of_code as f64).ln();
+        let mi = 171.0
+            - 5.2 * complexity.ln()
+            - 0.23 * halstead_volume
+            - 16.2 * (lines_of_code as f64).ln();
         mi.max(0.0).min(100.0)
     }
 
@@ -525,17 +553,17 @@ struct SecurityAnalysisResults {
 impl SecurityPatternMatcher {
     fn new() -> Self {
         let mut patterns = HashMap::new();
-        
+
         // Common security patterns for different languages
         Self::add_common_patterns(&mut patterns);
         Self::add_language_specific_patterns(&mut patterns);
-        
+
         Self { patterns }
     }
 
     fn add_common_patterns(patterns: &mut HashMap<String, Vec<SecurityPattern>>) {
         let mut common_patterns = Vec::new();
-        
+
         // SQL Injection patterns
         if let Ok(pattern) = Regex::new(r"(?i)(select|insert|update|delete).*\+.*\+") {
             common_patterns.push(SecurityPattern {
@@ -551,7 +579,8 @@ impl SecurityPatternMatcher {
         }
 
         // Password/secret patterns
-        if let Ok(pattern) = Regex::new(r#"(?i)(password|secret|key|token)\s*[:=]\s*['"][^'"\s]{8,}['"]"#)
+        if let Ok(pattern) =
+            Regex::new(r#"(?i)(password|secret|key|token)\s*[:=]\s*['"][^'"\s]{8,}['"]"#)
         {
             common_patterns.push(SecurityPattern {
                 id: "hardcoded_secret".to_string(),
@@ -559,9 +588,12 @@ impl SecurityPatternMatcher {
                 vulnerability_type: "Hardcoded Credentials".to_string(),
                 severity: Severity::Critical,
                 cwe_id: Some("CWE-798".to_string()),
-                owasp_category: Some("A07:2021 – Identification and Authentication Failures".to_string()),
+                owasp_category: Some(
+                    "A07:2021 – Identification and Authentication Failures".to_string(),
+                ),
                 description: "Hardcoded credentials detected".to_string(),
-                fix_suggestion: "Use environment variables or secure credential storage".to_string(),
+                fix_suggestion: "Use environment variables or secure credential storage"
+                    .to_string(),
             });
         }
 
@@ -571,7 +603,7 @@ impl SecurityPatternMatcher {
     fn add_language_specific_patterns(patterns: &mut HashMap<String, Vec<SecurityPattern>>) {
         // JavaScript/TypeScript patterns
         let mut js_patterns = Vec::new();
-        
+
         if let Ok(pattern) = Regex::new(r"eval\s*\(") {
             js_patterns.push(SecurityPattern {
                 id: "js_eval_usage".to_string(),
@@ -581,10 +613,11 @@ impl SecurityPatternMatcher {
                 cwe_id: Some("CWE-94".to_string()),
                 owasp_category: Some("A03:2021 – Injection".to_string()),
                 description: "Use of eval() can lead to code injection vulnerabilities".to_string(),
-                fix_suggestion: "Avoid eval() and use safer alternatives like JSON.parse()".to_string(),
+                fix_suggestion: "Avoid eval() and use safer alternatives like JSON.parse()"
+                    .to_string(),
             });
         }
-        
+
         patterns.insert("javascript".to_string(), js_patterns.clone());
         patterns.insert("typescript".to_string(), js_patterns);
     }
@@ -596,21 +629,29 @@ impl SecurityPatternMatcher {
 
         // Check common patterns
         if let Some(common_patterns) = self.patterns.get("common") {
-            self.check_patterns(context, common_patterns, &mut issues, &mut quality_issues, &mut suggestions);
+            self.check_patterns(
+                context,
+                common_patterns,
+                &mut issues,
+                &mut quality_issues,
+                &mut suggestions,
+            );
         }
 
         // Check language-specific patterns
         if let Some(language) = &context.language {
             if let Some(lang_patterns) = self.patterns.get(language) {
-                self.check_patterns(context, lang_patterns, &mut issues, &mut quality_issues, &mut suggestions);
+                self.check_patterns(
+                    context,
+                    lang_patterns,
+                    &mut issues,
+                    &mut quality_issues,
+                    &mut suggestions,
+                );
             }
         }
 
-        SecurityAnalysisResults {
-            issues,
-            quality_issues,
-            suggestions,
-        }
+        SecurityAnalysisResults { issues, quality_issues, suggestions }
     }
 
     fn check_patterns(
@@ -661,9 +702,7 @@ impl SecurityPatternMatcher {
 
 impl PerformanceAnalyzer {
     fn new(thresholds: &PerformanceThresholds) -> Self {
-        Self {
-            thresholds: thresholds.clone(),
-        }
+        Self { thresholds: thresholds.clone() }
     }
 
     fn analyze(&self, context: &AnalysisContext) -> Result<AnalysisResults> {
@@ -671,7 +710,8 @@ impl PerformanceAnalyzer {
         let mut suggestions = Vec::new();
 
         // Check file size
-        if context.line_count > self.thresholds.max_file_size_kb as usize * 10 { // rough estimate
+        if context.line_count > self.thresholds.max_file_size_kb as usize * 10 {
+            // rough estimate
             issues.push(QualityIssue {
                 severity: Severity::Warning,
                 category: QualityCategory::Performance,
@@ -708,7 +748,11 @@ impl PerformanceAnalyzer {
         }
     }
 
-    fn check_js_performance_patterns(&self, context: &AnalysisContext, issues: &mut Vec<QualityIssue>) {
+    fn check_js_performance_patterns(
+        &self,
+        context: &AnalysisContext,
+        issues: &mut Vec<QualityIssue>,
+    ) {
         // Check for inefficient loops
         if let Ok(pattern) = Regex::new(r"document\.getElementById.*for\s*\(") {
             for (line_num, line) in context.content.lines().enumerate() {
@@ -728,7 +772,11 @@ impl PerformanceAnalyzer {
         }
     }
 
-    fn check_python_performance_patterns(&self, context: &AnalysisContext, issues: &mut Vec<QualityIssue>) {
+    fn check_python_performance_patterns(
+        &self,
+        context: &AnalysisContext,
+        issues: &mut Vec<QualityIssue>,
+    ) {
         // Check for inefficient string concatenation
         if let Ok(pattern) = Regex::new(r#"\+\s*=\s*['"].*['"]\s*\+"#) {
             for (line_num, line) in context.content.lines().enumerate() {
@@ -736,12 +784,15 @@ impl PerformanceAnalyzer {
                     issues.push(QualityIssue {
                         severity: Severity::Warning,
                         category: QualityCategory::Performance,
-                        message: "String concatenation with += in loop can be inefficient".to_string(),
+                        message: "String concatenation with += in loop can be inefficient"
+                            .to_string(),
                         file_path: context.file_path.clone(),
                         line: Some(line_num + 1),
                         column: None,
                         rule_id: "inefficient_string_concat".to_string(),
-                        suggestion: Some("Use join() or f-strings for better performance".to_string()),
+                        suggestion: Some(
+                            "Use join() or f-strings for better performance".to_string(),
+                        ),
                     });
                 }
             }
@@ -751,9 +802,7 @@ impl PerformanceAnalyzer {
 
 impl StyleChecker {
     fn new(rules: &StyleRules) -> Self {
-        Self {
-            rules: rules.clone(),
-        }
+        Self { rules: rules.clone() }
     }
 
     fn analyze(&self, context: &AnalysisContext) -> Result<AnalysisResults> {
@@ -766,7 +815,10 @@ impl StyleChecker {
                 issues.push(QualityIssue {
                     severity: Severity::Warning,
                     category: QualityCategory::Style,
-                    message: format!("Line exceeds maximum length of {} characters", self.rules.max_line_length),
+                    message: format!(
+                        "Line exceeds maximum length of {} characters",
+                        self.rules.max_line_length
+                    ),
                     file_path: context.file_path.clone(),
                     line: Some(line_num + 1),
                     column: Some(self.rules.max_line_length as usize),
@@ -789,7 +841,7 @@ impl StyleChecker {
             }
 
             let leading_spaces = line.len() - line.trim_start().len();
-            
+
             match self.rules.indent_style {
                 IndentStyle::Spaces(size) => {
                     if leading_spaces % size as usize != 0 && leading_spaces > 0 {
@@ -837,7 +889,7 @@ impl ComplexityAnalyzer {
         let mut suggestions = Vec::new();
 
         let functions = self.extract_functions(context);
-        
+
         for function in functions {
             if function.complexity > self.max_complexity {
                 issues.push(QualityIssue {
@@ -855,7 +907,9 @@ impl ComplexityAnalyzer {
                     line: Some(function.line_start),
                     column: None,
                     rule_id: "high_complexity".to_string(),
-                    suggestion: Some("Consider breaking this function into smaller functions".to_string()),
+                    suggestion: Some(
+                        "Consider breaking this function into smaller functions".to_string(),
+                    ),
                 });
 
                 suggestions.push(QualityFix {
@@ -873,7 +927,7 @@ impl ComplexityAnalyzer {
 
     fn extract_functions(&self, context: &AnalysisContext) -> Vec<FunctionComplexity> {
         let mut functions = Vec::new();
-        
+
         // Simplified function detection (would need proper parsing for accuracy)
         match context.language.as_deref() {
             Some("rust") => self.extract_rust_functions(context, &mut functions),
@@ -881,11 +935,15 @@ impl ComplexityAnalyzer {
             Some("python") => self.extract_python_functions(context, &mut functions),
             _ => {}
         }
-        
+
         functions
     }
 
-    fn extract_rust_functions(&self, context: &AnalysisContext, functions: &mut Vec<FunctionComplexity>) {
+    fn extract_rust_functions(
+        &self,
+        context: &AnalysisContext,
+        functions: &mut Vec<FunctionComplexity>,
+    ) {
         if let Ok(pattern) = Regex::new(r"fn\s+(\w+)\s*\(") {
             for (line_num, line) in context.content.lines().enumerate() {
                 if let Some(captures) = pattern.captures(line) {
@@ -903,14 +961,20 @@ impl ComplexityAnalyzer {
         }
     }
 
-    fn extract_js_functions(&self, context: &AnalysisContext, functions: &mut Vec<FunctionComplexity>) {
+    fn extract_js_functions(
+        &self,
+        context: &AnalysisContext,
+        functions: &mut Vec<FunctionComplexity>,
+    ) {
         if let Ok(pattern) = Regex::new(r"function\s+(\w+)\s*\(|const\s+(\w+)\s*=\s*\(") {
             for (line_num, line) in context.content.lines().enumerate() {
                 if let Some(captures) = pattern.captures(line) {
-                    let name = captures.get(1).or_else(|| captures.get(2))
+                    let name = captures
+                        .get(1)
+                        .or_else(|| captures.get(2))
                         .map(|m| m.as_str().to_string())
                         .unwrap_or_else(|| "anonymous".to_string());
-                    
+
                     let complexity = self.calculate_function_complexity(context, line_num);
                     functions.push(FunctionComplexity {
                         name,
@@ -923,7 +987,11 @@ impl ComplexityAnalyzer {
         }
     }
 
-    fn extract_python_functions(&self, context: &AnalysisContext, functions: &mut Vec<FunctionComplexity>) {
+    fn extract_python_functions(
+        &self,
+        context: &AnalysisContext,
+        functions: &mut Vec<FunctionComplexity>,
+    ) {
         if let Ok(pattern) = Regex::new(r"def\s+(\w+)\s*\(") {
             for (line_num, line) in context.content.lines().enumerate() {
                 if let Some(captures) = pattern.captures(line) {
@@ -944,13 +1012,20 @@ impl ComplexityAnalyzer {
     fn calculate_function_complexity(&self, context: &AnalysisContext, start_line: usize) -> u32 {
         // Simplified complexity calculation - count decision points
         let decision_patterns = [
-            r"\bif\b", r"\belse\b", r"\bwhile\b", r"\bfor\b", 
-            r"\bswitch\b", r"\bmatch\b", r"\bcatch\b", r"&&", r"\|\|"
+            r"\bif\b",
+            r"\belse\b",
+            r"\bwhile\b",
+            r"\bfor\b",
+            r"\bswitch\b",
+            r"\bmatch\b",
+            r"\bcatch\b",
+            r"&&",
+            r"\|\|",
         ];
-        
+
         let mut complexity = 1; // Base complexity
         let lines_to_check = context.content.lines().skip(start_line).take(50); // Check next 50 lines
-        
+
         for line in lines_to_check {
             for pattern_str in &decision_patterns {
                 if let Ok(pattern) = Regex::new(pattern_str) {
@@ -958,17 +1033,17 @@ impl ComplexityAnalyzer {
                 }
             }
         }
-        
+
         complexity
     }
 
     fn calculate_average_complexity(&self, context: &AnalysisContext) -> Result<f64> {
         let functions = self.extract_functions(context);
-        
+
         if functions.is_empty() {
             return Ok(1.0); // No functions found, minimum complexity
         }
-        
+
         let total_complexity: u32 = functions.iter().map(|f| f.complexity).sum();
         Ok(total_complexity as f64 / functions.len() as f64)
     }
@@ -992,16 +1067,15 @@ impl Default for QualityMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn test_quality_validation_agent_creation() {
         let config = QualityConfig::default();
         let _agent = QualityValidationAgent::new(config);
-        
+
         // Should not panic
-        assert!(true);
     }
 
     #[tokio::test]
@@ -1009,12 +1083,12 @@ mod tests {
         let mut temp_file = NamedTempFile::new().unwrap();
         writeln!(temp_file, "password = 'hardcoded123'").unwrap();
         writeln!(temp_file, "query = 'SELECT * FROM users WHERE id=' + user_id").unwrap();
-        
+
         let config = QualityConfig::default();
         let agent = QualityValidationAgent::new(config);
-        
+
         let report = agent.analyze_file(temp_file.path()).await.unwrap();
-        
+
         assert!(!report.security_warnings.is_empty());
         assert!(report.overall_score < 100.0);
     }
@@ -1023,7 +1097,7 @@ mod tests {
     fn test_language_detection() {
         let config = QualityConfig::default();
         let agent = QualityValidationAgent::new(config);
-        
+
         assert_eq!(agent.detect_language(Path::new("test.rs")), Some("rust".to_string()));
         assert_eq!(agent.detect_language(Path::new("test.js")), Some("javascript".to_string()));
         assert_eq!(agent.detect_language(Path::new("test.py")), Some("python".to_string()));
@@ -1033,14 +1107,14 @@ mod tests {
     fn test_complexity_calculation() {
         let config = QualityConfig::default();
         let analyzer = ComplexityAnalyzer::new(config.performance_thresholds.max_complexity);
-        
+
         let context = AnalysisContext {
             file_path: "test.rs".to_string(),
             content: "fn test() { if x { while y { for z { } } } }".to_string(),
             language: Some("rust".to_string()),
             line_count: 1,
         };
-        
+
         let complexity = analyzer.calculate_function_complexity(&context, 0);
         assert!(complexity > 1); // Should detect decision points
     }
@@ -1051,17 +1125,19 @@ mod tests {
         writeln!(temp_file, "fn test() {{").unwrap();
         writeln!(temp_file, "      let x = 1; // 6 spaces instead of 4").unwrap();
         writeln!(temp_file, "}}").unwrap();
-        
+
         let mut config = QualityConfig::default();
         config.enabled_checks.insert(QualityCheck::Style);
-        
+
         let agent = QualityValidationAgent::new(config);
         let report = agent.analyze_file(temp_file.path()).await.unwrap();
-        
-        let style_issues: Vec<_> = report.issues.iter()
+
+        let style_issues: Vec<_> = report
+            .issues
+            .iter()
             .filter(|issue| matches!(issue.category, QualityCategory::Style))
             .collect();
-        
+
         assert!(!style_issues.is_empty());
     }
 }

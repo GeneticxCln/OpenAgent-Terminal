@@ -24,12 +24,7 @@ impl AnthropicProvider {
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        Ok(Self {
-            api_key,
-            endpoint,
-            model,
-            client,
-        })
+        Ok(Self { api_key, endpoint, model, client })
     }
 
     pub fn from_env() -> Result<Self, String> {
@@ -91,10 +86,7 @@ struct AnthropicDelta {
 fn ai_log_verbose() -> bool {
     static FLAG: OnceLock<bool> = OnceLock::new();
     *FLAG.get_or_init(|| {
-        matches!(
-            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
-            Some("verbose")
-        )
+        matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose"))
     })
 }
 fn ai_log_summary() -> bool {
@@ -114,10 +106,7 @@ impl AiProvider for AnthropicProvider {
 
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
         if ai_log_summary() {
-            info!(
-                "anthropic_propose_start model={} endpoint={}",
-                self.model, self.endpoint
-            );
+            info!("anthropic_propose_start model={} endpoint={}", self.model, self.endpoint);
         }
         // Build the system prompt (sanitized)
         let req = sanitize_request(&req, AiPrivacyOptions::from_env());
@@ -139,10 +128,8 @@ impl AiProvider for AnthropicProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![Message {
-            role: "user".to_string(),
-            content: req.scratch_text.clone(),
-        }];
+        let messages =
+            vec![Message { role: "user".to_string(), content: req.scratch_text.clone() }];
 
         let request_body = MessageRequest {
             model: self.model.clone(),
@@ -166,18 +153,13 @@ impl AiProvider for AnthropicProvider {
             .send()
             .map_err(|e| format!("Failed to send request: {}", e))?;
         if ai_log_summary() {
-            debug!(
-                "anthropic_propose_response_status status={}",
-                response.status()
-            );
+            debug!("anthropic_propose_response_status status={}", response.status());
         }
 
         if !response.status().is_success() {
             let status = response.status();
             let headers = response.headers().clone();
-            let error_text = response
-                .text()
-                .unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
             let mut msg = format!("API error {}: {}", status, error_text);
             if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
                 msg.push_str(&format!("; retry-after: {}", s));
@@ -200,9 +182,8 @@ impl AiProvider for AnthropicProvider {
             return Err(msg);
         }
 
-        let message_response: MessageResponse = response
-            .json()
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        let message_response: MessageResponse =
+            response.json().map_err(|e| format!("Failed to parse response: {}", e))?;
 
         if let Some(content) = message_response.content.first() {
             let text = &content.text;
@@ -243,10 +224,7 @@ impl AiProvider for AnthropicProvider {
         cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<bool, String> {
         if ai_log_summary() {
-            info!(
-                "anthropic_stream_start model={} endpoint={}",
-                self.model, self.endpoint
-            );
+            info!("anthropic_stream_start model={} endpoint={}", self.model, self.endpoint);
         }
         use crate::streaming::{RetryConfig, RetryStrategy};
 
@@ -267,10 +245,8 @@ impl AiProvider for AnthropicProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![Message {
-            role: "user".to_string(),
-            content: req.scratch_text.clone(),
-        }];
+        let messages =
+            vec![Message { role: "user".to_string(), content: req.scratch_text.clone() }];
 
         let request_body = MessageRequest {
             model: self.model.clone(),
@@ -292,39 +268,83 @@ impl AiProvider for AnthropicProvider {
         let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // We're already in an async runtime, use it directly
             handle.block_on(async {
-            loop {
-                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err("Cancelled".to_string());
-                }
-                let client = match reqwest::Client::builder()
-                    .connect_timeout(std::time::Duration::from_secs(5))
-                    .user_agent("openagent-terminal-ai/0.1")
-                    .build()
-                {
-                    Ok(c) => c,
-                    Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
-                };
+                loop {
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        return Err("Cancelled".to_string());
+                    }
+                    let client = match reqwest::Client::builder()
+                        .connect_timeout(std::time::Duration::from_secs(5))
+                        .user_agent("openagent-terminal-ai/0.1")
+                        .build()
+                    {
+                        Ok(c) => c,
+                        Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+                    };
 
-                let send_result = client
-                    .post(&url)
-                    .header("x-api-key", &self.api_key)
-                    .header("anthropic-version", "2023-06-01")
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "text/event-stream")
-                    .json(&request_body)
-                    // Streaming may take a long time; override client timeout for this request
-                    .timeout(std::time::Duration::from_secs(600))
-                    .send()
-                    .await;
-                let response = match send_result {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        let msg = format!("Failed to send request: {}", e);
+                    let send_result = client
+                        .post(&url)
+                        .header("x-api-key", &self.api_key)
+                        .header("anthropic-version", "2023-06-01")
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .json(&request_body)
+                        // Streaming may take a long time; override client timeout for this request
+                        .timeout(std::time::Duration::from_secs(600))
+                        .send()
+                        .await;
+                    let response = match send_result {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            let msg = format!("Failed to send request: {}", e);
+                            if retry.should_retry(attempt, &msg, cancel) {
+                                let delay = retry.delay_for_attempt(attempt, &msg);
+                                if ai_log_summary() {
+                                    info!(
+                                        "anthropic_stream_retry attempt={} delay_ms={}",
+                                        attempt + 1,
+                                        delay.as_millis()
+                                    );
+                                }
+                                tokio::time::sleep(delay).await;
+                                attempt += 1;
+                                continue;
+                            } else {
+                                return Err(msg);
+                            }
+                        }
+                    };
+
+                    if !response.status().is_success() {
+                        let status = response.status();
+                        let headers = response.headers().clone();
+                        let error_text = match response.text().await {
+                            Ok(t) => t,
+                            Err(_) => "Unknown error".to_string(),
+                        };
+                        let mut msg = format!("API error {}: {}", status, error_text);
+                        if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                            msg.push_str(&format!("; retry-after: {}", s));
+                        }
+                        if let Some(s) = headers
+                            .get("x-ratelimit-reset-after")
+                            .or_else(|| headers.get("x-rate-limit-reset-after"))
+                            .and_then(|v| v.to_str().ok())
+                        {
+                            msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
+                        }
+                        if let Some(s) = headers
+                            .get("x-ratelimit-reset")
+                            .or_else(|| headers.get("x-rate-limit-reset"))
+                            .and_then(|v| v.to_str().ok())
+                        {
+                            msg.push_str(&format!("; x-ratelimit-reset: {}", s));
+                        }
+                        error!("Anthropic API error {}: {}", status, error_text);
                         if retry.should_retry(attempt, &msg, cancel) {
                             let delay = retry.delay_for_attempt(attempt, &msg);
                             if ai_log_summary() {
                                 info!(
-                                    "anthropic_stream_retry attempt={} delay_ms={}",
+                                    "anthropic_stream_retry_http attempt={} delay_ms={}",
                                     attempt + 1,
                                     delay.as_millis()
                                 );
@@ -336,84 +356,40 @@ impl AiProvider for AnthropicProvider {
                             return Err(msg);
                         }
                     }
-                };
 
-                if !response.status().is_success() {
-                    let status = response.status();
-                    let headers = response.headers().clone();
-                    let error_text = match response.text().await {
-                        Ok(t) => t,
-                        Err(_) => "Unknown error".to_string(),
-                    };
-                    let mut msg = format!("API error {}: {}", status, error_text);
-                    if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
-                        msg.push_str(&format!("; retry-after: {}", s));
-                    }
-                    if let Some(s) = headers
-                        .get("x-ratelimit-reset-after")
-                        .or_else(|| headers.get("x-rate-limit-reset-after"))
-                        .and_then(|v| v.to_str().ok())
-                    {
-                        msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
-                    }
-                    if let Some(s) = headers
-                        .get("x-ratelimit-reset")
-                        .or_else(|| headers.get("x-rate-limit-reset"))
-                        .and_then(|v| v.to_str().ok())
-                    {
-                        msg.push_str(&format!("; x-ratelimit-reset: {}", s));
-                    }
-                    error!("Anthropic API error {}: {}", status, error_text);
-                    if retry.should_retry(attempt, &msg, cancel) {
-                        let delay = retry.delay_for_attempt(attempt, &msg);
-                        if ai_log_summary() {
-                            info!(
-                                "anthropic_stream_retry_http attempt={} delay_ms={}",
-                                attempt + 1,
-                                delay.as_millis()
-                            );
-                        }
-                        tokio::time::sleep(delay).await;
-                        attempt += 1;
-                        continue;
-                    } else {
-                        return Err(msg);
-                    }
-                }
-
-                // Stream SSE using unified helper; extract Anthropic delta.text per event
-                crate::streaming::consume_eventsource_response(
-                    response,
-                    cancel,
-                    on_chunk,
-                    |data: &str| {
-                        let mut out = Vec::new();
-                        match serde_json::from_str::<AnthropicStreamData>(data) {
-                            Ok(ev) => {
-                                if let Some(delta) = ev.delta {
-                                    if let Some(txt) = delta.text {
-                                        if ai_log_verbose() {
-                                            debug!("anthropic_stream_chunk len={}", txt.len());
+                    // Stream SSE using unified helper; extract Anthropic delta.text per event
+                    crate::streaming::consume_eventsource_response(
+                        response,
+                        cancel,
+                        on_chunk,
+                        |data: &str| {
+                            let mut out = Vec::new();
+                            match serde_json::from_str::<AnthropicStreamData>(data) {
+                                Ok(ev) => {
+                                    if let Some(delta) = ev.delta {
+                                        if let Some(txt) = delta.text {
+                                            if ai_log_verbose() {
+                                                debug!("anthropic_stream_chunk len={}", txt.len());
+                                            }
+                                            out.push(txt);
                                         }
-                                        out.push(txt);
                                     }
                                 }
+                                Err(e) => {
+                                    debug!("Skipping unexpected Anthropic SSE data: {}", e);
+                                }
                             }
-                            Err(e) => {
-                                debug!("Skipping unexpected Anthropic SSE data: {}", e);
-                            }
-                        }
-                        out
-                    },
-                )
-                .await?;
+                            out
+                        },
+                    )
+                    .await?;
 
-                if ai_log_summary() {
-                    info!("anthropic_stream_finished");
+                    if ai_log_summary() {
+                        info!("anthropic_stream_finished");
+                    }
+                    return Ok(true);
                 }
-                return Ok(true);
-            }
-        })
+            })
         } else {
             // We're not in an async context, create a runtime
             let rt = tokio::runtime::Builder::new_current_thread()

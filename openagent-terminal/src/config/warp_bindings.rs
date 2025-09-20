@@ -12,10 +12,7 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 /// Create a KeyBinding for a character key.
 fn kb_char(ch: &str, mods: ModifiersState, action: Action) -> KeyBinding {
     KeyBinding {
-        trigger: BindingKey::Keycode {
-            key: Key::Character(ch.into()),
-            location: KeyLocation::Any,
-        },
+        trigger: BindingKey::Keycode { key: Key::Character(ch.into()), location: KeyLocation::Any },
         mods,
         mode: BindingMode::empty(),
         notmode: BindingMode::SEARCH,
@@ -26,10 +23,7 @@ fn kb_char(ch: &str, mods: ModifiersState, action: Action) -> KeyBinding {
 /// Create a KeyBinding for a named key (Tab, Enter, Arrow keys).
 fn kb_named(key: NamedKey, mods: ModifiersState, action: Action) -> KeyBinding {
     KeyBinding {
-        trigger: BindingKey::Keycode {
-            key: Key::Named(key),
-            location: KeyLocation::Any,
-        },
+        trigger: BindingKey::Keycode { key: Key::Named(key), location: KeyLocation::Any },
         mods,
         mode: BindingMode::empty(),
         notmode: BindingMode::SEARCH,
@@ -59,10 +53,7 @@ fn build_warp_macos_bindings() -> Vec<KeyBinding> {
     push_unique(&mut v, kb_char("t", super_m, Action::CreateTab));
     push_unique(&mut v, kb_char("w", super_m, Action::CloseTab));
     push_unique(&mut v, kb_named(NamedKey::Tab, super_m, Action::NextTab));
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::Tab, super_shift, Action::PreviousTab),
-    );
+    push_unique(&mut v, kb_named(NamedKey::Tab, super_shift, Action::PreviousTab));
     push_unique(&mut v, kb_char("]", super_shift, Action::NextTab));
     push_unique(&mut v, kb_char("[", super_shift, Action::PreviousTab));
     // Tab numbers 1..9
@@ -81,46 +72,19 @@ fn build_warp_macos_bindings() -> Vec<KeyBinding> {
     push_unique(&mut v, kb_char("d", super_shift, Action::SplitVertical));
 
     // Pane navigation (Cmd+Alt+Arrows) -> directional focus
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowLeft, super_alt, Action::FocusPaneLeft),
-    );
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowUp, super_alt, Action::FocusPaneUp),
-    );
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowRight, super_alt, Action::FocusPaneRight),
-    );
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowDown, super_alt, Action::FocusPaneDown),
-    );
+    push_unique(&mut v, kb_named(NamedKey::ArrowLeft, super_alt, Action::FocusPaneLeft));
+    push_unique(&mut v, kb_named(NamedKey::ArrowUp, super_alt, Action::FocusPaneUp));
+    push_unique(&mut v, kb_named(NamedKey::ArrowRight, super_alt, Action::FocusPaneRight));
+    push_unique(&mut v, kb_named(NamedKey::ArrowDown, super_alt, Action::FocusPaneDown));
 
     // Pane resizing (Cmd+Ctrl+Arrows)
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowLeft, super_ctrl, Action::ResizePaneLeft),
-    );
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowRight, super_ctrl, Action::ResizePaneRight),
-    );
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowUp, super_ctrl, Action::ResizePaneUp),
-    );
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::ArrowDown, super_ctrl, Action::ResizePaneDown),
-    );
+    push_unique(&mut v, kb_named(NamedKey::ArrowLeft, super_ctrl, Action::ResizePaneLeft));
+    push_unique(&mut v, kb_named(NamedKey::ArrowRight, super_ctrl, Action::ResizePaneRight));
+    push_unique(&mut v, kb_named(NamedKey::ArrowUp, super_ctrl, Action::ResizePaneUp));
+    push_unique(&mut v, kb_named(NamedKey::ArrowDown, super_ctrl, Action::ResizePaneDown));
 
     // Zoom (Cmd+Shift+Enter)
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::Enter, super_shift, Action::ToggleZoom),
-    );
+    push_unique(&mut v, kb_named(NamedKey::Enter, super_shift, Action::ToggleZoom));
 
     v
 }
@@ -158,10 +122,7 @@ fn build_warp_non_macos_bindings(existing: &[KeyBinding]) -> (Vec<KeyBinding>, b
     push_unique(&mut v, kb_char("t", ctrl, Action::CreateTab));
     push_unique(&mut v, kb_char("w", ctrl, Action::CloseTab));
     push_unique(&mut v, kb_named(NamedKey::Tab, ctrl, Action::NextTab));
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::Tab, ctrl_shift, Action::PreviousTab),
-    );
+    push_unique(&mut v, kb_named(NamedKey::Tab, ctrl_shift, Action::PreviousTab));
     push_unique(&mut v, kb_char("]", ctrl_shift, Action::NextTab));
     push_unique(&mut v, kb_char("[", ctrl_shift, Action::PreviousTab));
     // Tab numbers 1..9
@@ -184,19 +145,10 @@ fn build_warp_non_macos_bindings(existing: &[KeyBinding]) -> (Vec<KeyBinding>, b
         b.mods == ctrl_alt
             && matches!(
                 &b.trigger,
-                BindingKey::Keycode {
-                    key: Key::Named(NamedKey::ArrowLeft),
-                    ..
-                } | BindingKey::Keycode {
-                    key: Key::Named(NamedKey::ArrowRight),
-                    ..
-                } | BindingKey::Keycode {
-                    key: Key::Named(NamedKey::ArrowUp),
-                    ..
-                } | BindingKey::Keycode {
-                    key: Key::Named(NamedKey::ArrowDown),
-                    ..
-                }
+                BindingKey::Keycode { key: Key::Named(NamedKey::ArrowLeft), .. }
+                    | BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. }
+                    | BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. }
+                    | BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. }
             )
             && matches!(
                 b.action,
@@ -215,66 +167,27 @@ fn build_warp_non_macos_bindings(existing: &[KeyBinding]) -> (Vec<KeyBinding>, b
         should_remove_default_ctrl_alt_resize = true;
 
         // Navigation (Ctrl+Alt+Arrows) -> currently approximate via prev/next
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowLeft, ctrl_alt, nav_action_left()),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowUp, ctrl_alt, nav_action_up()),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowRight, ctrl_alt, nav_action_right()),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowDown, ctrl_alt, nav_action_down()),
-        );
+        push_unique(&mut v, kb_named(NamedKey::ArrowLeft, ctrl_alt, nav_action_left()));
+        push_unique(&mut v, kb_named(NamedKey::ArrowUp, ctrl_alt, nav_action_up()));
+        push_unique(&mut v, kb_named(NamedKey::ArrowRight, ctrl_alt, nav_action_right()));
+        push_unique(&mut v, kb_named(NamedKey::ArrowDown, ctrl_alt, nav_action_down()));
 
         // Resizing (Ctrl+Shift+Arrows)
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowLeft, ctrl_shift, Action::ResizePaneLeft),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowRight, ctrl_shift, Action::ResizePaneRight),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowUp, ctrl_shift, Action::ResizePaneUp),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowDown, ctrl_shift, Action::ResizePaneDown),
-        );
+        push_unique(&mut v, kb_named(NamedKey::ArrowLeft, ctrl_shift, Action::ResizePaneLeft));
+        push_unique(&mut v, kb_named(NamedKey::ArrowRight, ctrl_shift, Action::ResizePaneRight));
+        push_unique(&mut v, kb_named(NamedKey::ArrowUp, ctrl_shift, Action::ResizePaneUp));
+        push_unique(&mut v, kb_named(NamedKey::ArrowDown, ctrl_shift, Action::ResizePaneDown));
     } else {
         // Otherwise, if Ctrl+Alt+Arrows are free, use them for navigation as Warp suggests
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowLeft, ctrl_alt, nav_action_left()),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowUp, ctrl_alt, nav_action_up()),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowRight, ctrl_alt, nav_action_right()),
-        );
-        push_unique(
-            &mut v,
-            kb_named(NamedKey::ArrowDown, ctrl_alt, nav_action_down()),
-        );
+        push_unique(&mut v, kb_named(NamedKey::ArrowLeft, ctrl_alt, nav_action_left()));
+        push_unique(&mut v, kb_named(NamedKey::ArrowUp, ctrl_alt, nav_action_up()));
+        push_unique(&mut v, kb_named(NamedKey::ArrowRight, ctrl_alt, nav_action_right()));
+        push_unique(&mut v, kb_named(NamedKey::ArrowDown, ctrl_alt, nav_action_down()));
         // And keep any existing resize bindings intact.
     }
 
     // Zoom (Ctrl+Shift+Enter)
-    push_unique(
-        &mut v,
-        kb_named(NamedKey::Enter, ctrl_shift, Action::ToggleZoom),
-    );
+    push_unique(&mut v, kb_named(NamedKey::Enter, ctrl_shift, Action::ToggleZoom));
 
     (v, should_remove_default_ctrl_alt_resize)
 }
@@ -305,28 +218,16 @@ pub fn integrate_warp_bindings(existing_bindings: &mut Vec<KeyBinding>) {
                 !matches!(
                     (&b.trigger, &b.action),
                     (
-                        BindingKey::Keycode {
-                            key: Key::Named(NamedKey::ArrowLeft),
-                            ..
-                        },
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowLeft), .. },
                         Action::ResizePaneLeft,
                     ) | (
-                        BindingKey::Keycode {
-                            key: Key::Named(NamedKey::ArrowRight),
-                            ..
-                        },
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowRight), .. },
                         Action::ResizePaneRight,
                     ) | (
-                        BindingKey::Keycode {
-                            key: Key::Named(NamedKey::ArrowUp),
-                            ..
-                        },
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowUp), .. },
                         Action::ResizePaneUp,
                     ) | (
-                        BindingKey::Keycode {
-                            key: Key::Named(NamedKey::ArrowDown),
-                            ..
-                        },
+                        BindingKey::Keycode { key: Key::Named(NamedKey::ArrowDown), .. },
                         Action::ResizePaneDown,
                     )
                 )

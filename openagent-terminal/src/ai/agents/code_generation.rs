@@ -131,11 +131,7 @@ impl CodeGenerationAgent {
         }
 
         // Add style preferences
-        match &request
-            .style_preferences
-            .as_ref()
-            .unwrap_or(&self.config.code_style)
-        {
+        match &request.style_preferences.as_ref().unwrap_or(&self.config.code_style) {
             CodeStyle::Functional => {
                 prompt.push_str("Use functional programming patterns where appropriate.\n")
             }
@@ -220,17 +216,12 @@ impl CodeGenerationAgent {
             shell_kind: Some("bash".to_string()), // TODO: Get from context
             context: vec![
                 ("mode".to_string(), "code_generation".to_string()),
-                (
-                    "language".to_string(),
-                    request.language.clone().unwrap_or("rust".to_string()),
-                ),
+                ("language".to_string(), request.language.clone().unwrap_or("rust".to_string())),
             ],
         };
 
         let proposals = if let Some(provider) = &self.ai_provider {
-            provider
-                .propose(ai_request)
-                .map_err(|e| anyhow!("AI provider error: {}", e))?
+            provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?
         } else {
             // Return a mock response when no AI provider is available
             vec![openagent_terminal_ai::AiProposal {
@@ -273,10 +264,7 @@ impl CodeGenerationAgent {
             metadata: {
                 let mut meta = HashMap::new();
                 meta.insert("language".to_string(), response.language.clone());
-                meta.insert(
-                    "confidence".to_string(),
-                    response.confidence_score.to_string(),
-                );
+                meta.insert("confidence".to_string(), response.confidence_score.to_string());
                 meta
             },
         });
@@ -387,10 +375,7 @@ impl Agent for CodeGenerationAgent {
     }
 
     fn capabilities(&self) -> Vec<AgentCapability> {
-        vec![
-            AgentCapability::CodeGeneration,
-            AgentCapability::CodeAnalysis,
-        ]
+        vec![AgentCapability::CodeGeneration, AgentCapability::CodeAnalysis]
     }
 
     async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
@@ -419,10 +404,7 @@ impl Agent for CodeGenerationAgent {
                     metadata: HashMap::new(),
                 })
             }
-            _ => Err(anyhow!(
-                "Unsupported request type: {:?}",
-                request.request_type
-            )),
+            _ => Err(anyhow!("Unsupported request type: {:?}", request.request_type)),
         }
     }
 
@@ -474,9 +456,7 @@ mod tests {
 
         assert_eq!(agent.id(), "code-generation");
         assert_eq!(agent.name(), "Code Generation Agent");
-        assert!(agent
-            .capabilities()
-            .contains(&AgentCapability::CodeGeneration));
+        assert!(agent.capabilities().contains(&AgentCapability::CodeGeneration));
         assert!(agent.can_handle(&AgentRequestType::GenerateCode));
         assert!(!agent.can_handle(&AgentRequestType::CheckSecurity));
     }

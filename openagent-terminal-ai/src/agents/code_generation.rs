@@ -5,16 +5,16 @@ use super::{
 use crate::agents::types::ConcurrencyState;
 use crate::{AiProvider, AiRequest};
 use async_trait::async_trait;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{RwLock, Semaphore};
-use std::collections::{HashMap, HashSet};
 use tokio::time::{timeout, Duration};
+use tracing::debug;
 use uuid::Uuid;
-use tracing::{debug};
 
 /// Enhanced code generation agent that goes beyond simple command suggestions
 pub struct CodeGenerationAgent {
-    provider: Box<dyn AiProvider>,
+    provider: std::sync::Arc<dyn AiProvider>,
     config: CodeGenConfig,
     /// Concurrency state to prevent race conditions
     concurrency_state: ConcurrencyState,
@@ -53,60 +53,61 @@ impl Default for CodeGenConfig {
 }
 
 impl CodeGenerationAgent {
-    pub fn new(provider: Box<dyn AiProvider>) -> Self {
+    pub fn new(provider: std::sync::Arc<dyn AiProvider>) -> Self {
         Self::with_config(provider, CodeGenConfig::default())
     }
 
-    pub fn with_config(provider: Box<dyn AiProvider>, config: CodeGenConfig) -> Self {
-        Self { 
-            provider, 
+    pub fn with_config(provider: std::sync::Arc<dyn AiProvider>, config: CodeGenConfig) -> Self {
+        Self {
+            provider,
             config,
             concurrency_state: ConcurrencyState::default(),
             active_operations: Arc::new(RwLock::new(HashMap::new())),
             timeout_duration: Duration::from_secs(60),
         }
     }
-    
+
     /// Register a new operation to prevent race conditions
     async fn register_operation(&self, operation_type: &str) -> Result<OperationGuard, AgentError> {
         let operation_id = Uuid::new_v4();
-        let key = format!("{}", operation_type);
-        
+        let key = operation_type.to_string();
+
         // Check for semaphore limits
         let semaphore = {
             let mut locks = self.concurrency_state.operation_locks.lock().await;
-            locks.entry(key.clone())
-                .or_insert_with(|| Arc::new(Semaphore::new(3)))
-                .clone()
+            locks.entry(key.clone()).or_insert_with(|| Arc::new(Semaphore::new(3))).clone()
         };
-        
+
         // Try to acquire semaphore with timeout
         let permit = match timeout(Duration::from_secs(5), semaphore.acquire_owned()).await {
             Ok(Ok(permit)) => permit,
-            Ok(Err(e)) => return Err(AgentError::ProcessingError(
-                format!("Failed to acquire semaphore: {}", e)
-            )),
-            Err(_) => return Err(AgentError::ProcessingError(
-                "Timeout waiting for operation lock".to_string()
-            )),
+            Ok(Err(e)) => {
+                return Err(AgentError::ProcessingError(format!(
+                    "Failed to acquire semaphore: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Err(AgentError::ProcessingError(
+                    "Timeout waiting for operation lock".to_string(),
+                ))
+            }
         };
-        
+
         // Register operation
         {
             let mut active_ops = self.active_operations.write().await;
-            active_ops.entry(key.clone())
-                .or_insert_with(HashSet::new)
-                .insert(operation_id);
+            active_ops.entry(key.clone()).or_insert_with(HashSet::new).insert(operation_id);
         }
-        
+
         // Update resource usage
         {
             let mut usage = self.concurrency_state.resource_usage.write().await;
             usage.active_threads += 1;
         }
-        
+
         debug!("Registered operation: {} ({})", operation_type, operation_id);
-        
+
         Ok(OperationGuard {
             id: operation_id,
             key,
@@ -136,17 +137,11 @@ impl CodeGenerationAgent {
             shell_kind: None,
             context: vec![
                 ("request_type".to_string(), "code_generation".to_string()),
-                (
-                    "language".to_string(),
-                    language.unwrap_or("auto".to_string()),
-                ),
+                ("language".to_string(), language.unwrap_or_else(|| "auto".to_string())),
             ],
         };
 
-        let proposals = self
-            .provider
-            .propose(ai_request)
-            .map_err(|e| AgentError::ProcessingError(e))?;
+        let proposals = self.provider.propose(ai_request).map_err(AgentError::ProcessingError)?;
 
         if proposals.is_empty() {
             return Err(AgentError::ProcessingError("No code generated".to_string()));
@@ -155,10 +150,8 @@ impl CodeGenerationAgent {
         // Extract code and explanation from the first proposal
         let proposal = &proposals[0];
         let code = proposal.proposed_commands.join("\n");
-        let explanation = proposal
-            .description
-            .clone()
-            .unwrap_or_else(|| "Generated code".to_string());
+        let explanation =
+            proposal.description.clone().unwrap_or_else(|| "Generated code".to_string());
 
         Ok((code, explanation))
     }
@@ -179,9 +172,7 @@ impl CodeGenerationAgent {
             let (completion, _) = self.generate_code(language, context, &prompt).await?;
             Ok(vec![completion])
         } else {
-            Err(AgentError::InvalidRequest(
-                "No code selection provided for completion".to_string(),
-            ))
+            Err(AgentError::InvalidRequest("No code selection provided for completion".to_string()))
         }
     }
 
@@ -200,8 +191,7 @@ impl CodeGenerationAgent {
                 selection
             );
 
-            self.generate_code(language, context, &refactor_prompt)
-                .await
+            self.generate_code(language, context, &refactor_prompt).await
         } else {
             Err(AgentError::InvalidRequest(
                 "No code selection provided for refactoring".to_string(),
@@ -255,19 +245,23 @@ impl CodeGenerationAgent {
             if !context.project_files.is_empty() {
                 prompt.push_str("\nProject context:\n");
                 for file in context.project_files.iter().take(10) {
-                    prompt.push_str(&format!("- {}\n", file));
+                    prompt.push_str("- ");
+                    prompt.push_str(file);
+                    prompt.push('\n');
                 }
             }
 
             if !context.dependencies.is_empty() {
                 prompt.push_str("Dependencies: ");
                 prompt.push_str(&context.dependencies.join(", "));
-                prompt.push_str("\n");
+                prompt.push('\n');
             }
         }
 
         // Add user's request
-        prompt.push_str(&format!("\nUser request: {}\n", user_prompt));
+        prompt.push_str("\nUser request: ");
+        prompt.push_str(user_prompt);
+        prompt.push('\n');
 
         // Output format instructions
         prompt.push_str("\nProvide the code with brief explanations. ");
@@ -289,12 +283,7 @@ impl AiAgent for CodeGenerationAgent {
 
     async fn process(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
         match request {
-            AgentRequest::CodeGeneration {
-                language,
-                context,
-                prompt,
-                action,
-            } => {
+            AgentRequest::CodeGeneration { language, context, prompt, action } => {
                 // Register a scoped operation guard to enforce concurrency limits
                 let op_label = match &action {
                     CodeAction::Generate => "generate",
@@ -304,36 +293,23 @@ impl AiAgent for CodeGenerationAgent {
                     CodeAction::Optimize => "optimize",
                     CodeAction::Convert { .. } => "convert",
                 };
-                let _guard = self.register_operation(&format!("code_generation:{}", op_label)).await?;
+                let _guard =
+                    self.register_operation(&format!("code_generation:{}", op_label)).await?;
 
                 let result = match action {
                     CodeAction::Generate => {
-                        let (code, explanation) = self
-                            .generate_code(language.clone(), &context, &prompt)
-                            .await?;
-                        (
-                            code,
-                            explanation,
-                            vec!["Generated successfully".to_string()],
-                        )
+                        let (code, explanation) =
+                            self.generate_code(language.clone(), &context, &prompt).await?;
+                        (code, explanation, vec!["Generated successfully".to_string()])
                     }
                     CodeAction::Complete => {
                         let completions = self.complete_code(language.clone(), &context).await?;
-                        (
-                            completions.join("\n"),
-                            "Code completion".to_string(),
-                            completions,
-                        )
+                        (completions.join("\n"), "Code completion".to_string(), completions)
                     }
                     CodeAction::Refactor => {
-                        let (code, explanation) = self
-                            .refactor_code(language.clone(), &context, &prompt)
-                            .await?;
-                        (
-                            code,
-                            explanation,
-                            vec!["Refactored successfully".to_string()],
-                        )
+                        let (code, explanation) =
+                            self.refactor_code(language.clone(), &context, &prompt).await?;
+                        (code, explanation, vec!["Refactored successfully".to_string()])
                     }
                     CodeAction::Explain => {
                         if let Some(selection) = &context.selection {
@@ -355,11 +331,7 @@ impl AiAgent for CodeGenerationAgent {
                             let (code, explanation) = self
                                 .generate_code(language.clone(), &context, &optimize_prompt)
                                 .await?;
-                            (
-                                code,
-                                explanation,
-                                vec!["Optimized for performance".to_string()],
-                            )
+                            (code, explanation, vec!["Optimized for performance".to_string()])
                         } else {
                             return Err(AgentError::InvalidRequest(
                                 "No code provided for optimization".to_string(),
@@ -381,11 +353,7 @@ impl AiAgent for CodeGenerationAgent {
                                     &convert_prompt,
                                 )
                                 .await?;
-                            (
-                                code,
-                                explanation,
-                                vec![format!("Converted to {}", target_language)],
-                            )
+                            (code, explanation, vec![format!("Converted to {}", target_language)])
                         } else {
                             return Err(AgentError::InvalidRequest(
                                 "No code provided for conversion".to_string(),
@@ -452,7 +420,7 @@ impl Drop for OperationGuard {
         let key = self.key.clone();
         let id = self.id;
         let resource_usage = self.resource_usage.clone();
-        
+
         // Spawn a task to release the operation when dropped
         // This is needed because we can't use .await in drop()
         tokio::spawn(async move {
@@ -466,13 +434,13 @@ impl Drop for OperationGuard {
                     }
                 }
             }
-            
+
             // Update resource usage
             {
                 let mut usage = resource_usage.write().await;
                 usage.active_threads = usage.active_threads.saturating_sub(1);
             }
-            
+
             debug!("Released operation lock: {} ({})", key, id);
         });
     }

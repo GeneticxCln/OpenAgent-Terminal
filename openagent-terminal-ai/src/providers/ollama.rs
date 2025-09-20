@@ -15,10 +15,7 @@ pub struct OllamaProvider {
 fn ai_log_verbose() -> bool {
     static FLAG: OnceLock<bool> = OnceLock::new();
     *FLAG.get_or_init(|| {
-        matches!(
-            std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
-            Some("verbose")
-        )
+        matches!(std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(), Some("verbose"))
     })
 }
 fn ai_log_summary() -> bool {
@@ -49,11 +46,7 @@ impl OllamaProvider {
             );
         }
         let url = format!("{}/api/generate", self.endpoint);
-        let req_body = OllamaRequest {
-            model: self.model.clone(),
-            prompt,
-            stream: true,
-        };
+        let req_body = OllamaRequest { model: self.model.clone(), prompt, stream: true };
 
         let response = self
             .client
@@ -114,11 +107,7 @@ impl OllamaProvider {
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        Ok(Self {
-            endpoint,
-            model,
-            client,
-        })
+        Ok(Self { endpoint, model, client })
     }
 
     pub fn from_env() -> Result<Self, String> {
@@ -131,10 +120,7 @@ impl OllamaProvider {
                 .to_string()
         })?;
 
-        info!(
-            "Initializing Ollama provider with endpoint: {} and model: {}",
-            endpoint, model
-        );
+        info!("Initializing Ollama provider with endpoint: {} and model: {}", endpoint, model);
         Self::new(endpoint, model)
     }
 
@@ -196,11 +182,7 @@ impl OllamaProvider {
                 Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
             };
             let url = format!("{}/api/generate", endpoint);
-            let req_body = OllamaRequest {
-                model,
-                prompt,
-                stream: true,
-            };
+            let req_body = OllamaRequest { model, prompt, stream: true };
             let resp = client
                 .post(&url)
                 .json(&req_body)
@@ -286,10 +268,7 @@ impl AiProvider for OllamaProvider {
 
     fn propose(&self, req: AiRequest) -> Result<Vec<AiProposal>, String> {
         if ai_log_summary() {
-            info!(
-                "ollama_propose_start model={} endpoint={}",
-                self.model, self.endpoint
-            );
+            info!("ollama_propose_start model={} endpoint={}", self.model, self.endpoint);
         }
         // Check if Ollama is available
         if !self.check_availability() {
@@ -336,11 +315,7 @@ impl AiProvider for OllamaProvider {
 
         // Make the actual API call
         let url = format!("{}/api/generate", self.endpoint);
-        let ollama_request = OllamaRequest {
-            model: self.model.clone(),
-            prompt,
-            stream: false,
-        };
+        let ollama_request = OllamaRequest { model: self.model.clone(), prompt, stream: false };
 
         let retry = RetryStrategy::Ollama {
             config: RetryConfig::default(),
@@ -351,10 +326,7 @@ impl AiProvider for OllamaProvider {
             match self.client.post(&url).json(&ollama_request).send() {
                 Ok(response) => {
                     if ai_log_summary() {
-                        debug!(
-                            "ollama_propose_response_status status={}",
-                            response.status()
-                        );
+                        debug!("ollama_propose_response_status status={}", response.status());
                     }
                     if response.status().is_success() {
                         match response.json::<OllamaGenerateResponse>() {

@@ -21,15 +21,20 @@ impl ConfigParser for ITerm2Parser {
                 if let Some(fonts) = json.get("New Bookmarks").and_then(|v| v.as_array()) {
                     if let Some(first) = fonts.first() {
                         if let Some(font_dict) = first.as_object() {
-                            if let Some(font_name) = font_dict.get("Normal Font").and_then(|v| v.as_str()) {
+                            if let Some(font_name) =
+                                font_dict.get("Normal Font").and_then(|v| v.as_str())
+                            {
                                 // iTerm2 font strings often look like "JetBrainsMono-Regular 12"
                                 let family = font_name.split_whitespace().next().unwrap_or("");
                                 if !family.is_empty() {
-                                    let normal = config.font.normal.get_or_insert(Default::default());
+                                    let normal =
+                                        config.font.normal.get_or_insert(Default::default());
                                     normal.family = Some(family.to_string());
                                 }
                                 if let Some(size_str) = font_name.split_whitespace().last() {
-                                    if let Ok(size) = size_str.parse::<f32>() { config.font.size = Some(size); }
+                                    if let Ok(size) = size_str.parse::<f32>() {
+                                        config.font.size = Some(size);
+                                    }
                                 }
                             }
                         }
@@ -47,7 +52,9 @@ impl ConfigParser for ITerm2Parser {
                             normal.family = Some(family.to_string());
                         }
                         if let Some(size_str) = font_name.split_whitespace().last() {
-                            if let Ok(size) = size_str.parse::<f32>() { config.font.size = Some(size); }
+                            if let Ok(size) = size_str.parse::<f32>() {
+                                config.font.size = Some(size);
+                            }
                         }
                     }
                 }

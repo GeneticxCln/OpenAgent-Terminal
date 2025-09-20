@@ -301,11 +301,7 @@ impl SecurityPolicy {
     /// Validate environment variable access
     pub fn can_access_env_var(&self, var_name: &str) -> bool {
         // Check if explicitly allowed
-        if self
-            .permissions
-            .environment_variables
-            .contains(&var_name.to_string())
-        {
+        if self.permissions.environment_variables.contains(&var_name.to_string()) {
             return true;
         }
 
@@ -336,9 +332,7 @@ impl SecurityPolicy {
         ];
 
         // Block sensitive variables unless explicitly allowed
-        if sensitive_prefixes
-            .iter()
-            .any(|&prefix| var_name.starts_with(prefix))
+        if sensitive_prefixes.iter().any(|&prefix| var_name.starts_with(prefix))
             || sensitive_exact.contains(&var_name)
         {
             return false;
@@ -439,9 +433,7 @@ impl SecurityPolicy {
             ".gnupg/",
         ];
 
-        dangerous_substrings
-            .iter()
-            .any(|&dangerous| pattern.contains(dangerous))
+        dangerous_substrings.iter().any(|&dangerous| pattern.contains(dangerous))
     }
 }
 
@@ -481,10 +473,8 @@ mod tests {
 
     #[test]
     fn test_path_normalization() {
-        let permissions = PluginPermissions {
-            read_files: vec!["test/**".to_string()],
-            ..Default::default()
-        };
+        let permissions =
+            PluginPermissions { read_files: vec!["test/**".to_string()], ..Default::default() };
         let policy = SecurityPolicy::from_permissions(&permissions);
 
         // Test various path inputs
@@ -531,11 +521,7 @@ mod tests {
         ];
 
         for path in &blocked_paths {
-            assert!(
-                policy.is_path_blocked(path),
-                "Should block dangerous path: {}",
-                path
-            );
+            assert!(policy.is_path_blocked(path), "Should block dangerous path: {}", path);
         }
     }
 
@@ -562,19 +548,13 @@ mod tests {
 
     #[test]
     fn test_permission_validation() {
-        let permissions = PluginPermissions {
-            max_memory_mb: 1000,
-            ..Default::default()
-        }; // Too high
+        let permissions = PluginPermissions { max_memory_mb: 1000, ..Default::default() }; // Too high
         let policy = SecurityPolicy::from_permissions(&permissions);
 
         let result = policy.validate_memory_limit();
         assert!(result.is_err(), "Should reject excessive memory limit");
 
-        let permissions_ok = PluginPermissions {
-            max_memory_mb: 100,
-            ..Default::default()
-        }; // Reasonable
+        let permissions_ok = PluginPermissions { max_memory_mb: 100, ..Default::default() }; // Reasonable
         let policy = SecurityPolicy::from_permissions(&permissions_ok);
         let result = policy.validate_memory_limit();
         assert!(result.is_ok(), "Should accept reasonable memory limit");

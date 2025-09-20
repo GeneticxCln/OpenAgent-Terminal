@@ -255,7 +255,9 @@ fn copy_to_dir(
     dest_dir: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
     std::fs::create_dir_all(dest_dir)?;
-    let filename = src.file_name().unwrap();
+    let filename = src.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Source path has no filename")
+    })?;
     let dest = dest_dir.join(filename);
     std::fs::copy(src, &dest)?;
     Ok(dest)
@@ -334,16 +336,12 @@ fn sign_wasm(
     let digest = Sha256::digest(&wasm_bytes);
 
     let sk = SigningKey::from_bytes(
-        &key_bytes
-            .clone()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("invalid key length"))?,
+        &key_bytes.clone().try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?,
     );
     let sig = sk.sign(&digest);
     let sig_hex = hex::encode(sig.to_bytes());
-    let out_path = sig_out
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| wasm_path.with_extension("sig"));
+    let out_path =
+        sig_out.map(std::path::PathBuf::from).unwrap_or_else(|| wasm_path.with_extension("sig"));
     std::fs::write(&out_path, sig_hex.as_bytes())?;
     Ok(out_path)
 }
@@ -353,9 +351,8 @@ fn verify_signature(wasm: &str, sig_file: Option<&str>) -> anyhow::Result<bool> 
     use sha2::{Digest, Sha256};
 
     let wasm_path = std::path::Path::new(wasm);
-    let sig_path = sig_file
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| wasm_path.with_extension("sig"));
+    let sig_path =
+        sig_file.map(std::path::PathBuf::from).unwrap_or_else(|| wasm_path.with_extension("sig"));
     if !sig_path.exists() {
         anyhow::bail!("Signature file not found: {}", sig_path.display());
     }
@@ -379,9 +376,7 @@ fn verify_signature(wasm: &str, sig_file: Option<&str>) -> anyhow::Result<bool> 
             let key_hex = std::fs::read_to_string(entry.path())?;
             let key_bytes = hex::decode(key_hex.trim())?;
             if let Ok(vk) = VerifyingKey::from_bytes(
-                &key_bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("invalid key length"))?,
+                &key_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid key length"))?,
             ) {
                 if vk.verify(&digest, &signature).is_ok() {
                     return Ok(true);

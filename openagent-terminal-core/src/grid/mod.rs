@@ -162,10 +162,9 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
     pub fn scroll_display(&mut self, scroll: Scroll) {
         self.display_offset = match scroll {
-            Scroll::Delta(count) => min(
-                max((self.display_offset as i32) + count, 0) as usize,
-                self.history_size(),
-            ),
+            Scroll::Delta(count) => {
+                min(max((self.display_offset as i32) + count, 0) as usize, self.history_size())
+            }
             Scroll::PageUp => min(self.display_offset + self.lines, self.history_size()),
             Scroll::PageDown => self.display_offset.saturating_sub(self.lines),
             Scroll::Top => self.history_size(),
@@ -418,11 +417,7 @@ impl<T> Grid<T> {
     #[inline]
     pub fn iter_from(&self, point: Point) -> GridIterator<'_, T> {
         let end = Point::new(self.bottommost_line(), self.last_column());
-        GridIterator {
-            grid: self,
-            point,
-            end,
-        }
+        GridIterator { grid: self, point, end }
     }
 
     /// Iterate over all visible cells.
@@ -436,11 +431,7 @@ impl<T> Grid<T> {
         let end_line = min(start.line + self.screen_lines(), self.bottommost_line());
         let end = Point::new(end_line, last_column);
 
-        GridIterator {
-            grid: self,
-            point: start,
-            end,
-        }
+        GridIterator { grid: self, point: start, end }
     }
 
     #[inline]
@@ -621,10 +612,7 @@ impl<'a, T> Iterator for GridIterator<'a, T> {
             _ => self.point.column += Column(1),
         }
 
-        Some(Indexed {
-            cell: &self.grid[self.point],
-            point: self.point,
-        })
+        Some(Indexed { cell: &self.grid[self.point], point: self.point })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -662,18 +650,13 @@ impl<T> BidirectionalIterator for GridIterator<'_, T> {
         }
 
         match self.point {
-            Point {
-                column: Column(0), ..
-            } => {
+            Point { column: Column(0), .. } => {
                 self.point.column = last_column;
                 self.point.line -= 1;
             }
             _ => self.point.column -= Column(1),
         }
 
-        Some(Indexed {
-            cell: &self.grid[self.point],
-            point: self.point,
-        })
+        Some(Indexed { cell: &self.grid[self.point], point: self.point })
     }
 }

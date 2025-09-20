@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 #[cfg(feature = "plugins")]
-use plugin_loader::{PluginEvent};
+use plugin_loader::PluginEvent;
 
 #[derive(Args, Debug, Clone)]
 pub struct PluginsOptions {
@@ -21,14 +21,20 @@ pub enum PluginsCommand {
     /// Unload a plugin by ID/name
     Unload { id: String },
     /// Send a simple event to a plugin (JSON data optional)
-    Event { id: String, #[clap(long="type")] event_type: String, #[clap(long)] data: Option<String> },
+    Event {
+        id: String,
+        #[clap(long = "type")]
+        event_type: String,
+        #[clap(long)]
+        data: Option<String>,
+    },
 }
 
 pub async fn run_plugins_cli(opts: &PluginsOptions) -> anyhow::Result<i32> {
     // Build policy toggles similar to components_init
     let enforce_signatures = true;
-    let require_all_default = if cfg!(debug_assertions) { false } else { true };
-    let hot_reload_default = if cfg!(debug_assertions) { true } else { false };
+    let require_all_default = !cfg!(debug_assertions);
+    let hot_reload_default = cfg!(debug_assertions);
     let require_all = std::env::var("OPENAGENT_PLUGINS_REQUIRE_ALL")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -72,36 +78,55 @@ pub async fn run_plugins_cli(opts: &PluginsOptions) -> anyhow::Result<i32> {
             }
             Ok(0)
         }
-        PluginsCommand::Discover => {
-            match pm.discover_plugins().await {
-                Ok(paths) => {
-                    for p in paths { println!("{}", p.display()); }
-                    Ok(0)
+        PluginsCommand::Discover => match pm.discover_plugins().await {
+            Ok(paths) => {
+                for p in paths {
+                    println!("{}", p.display());
                 }
-                Err(e) => { eprintln!("discover failed: {}", e); Ok(1) }
+                Ok(0)
             }
-        }
-        PluginsCommand::Load { path } => {
-            match pm.load_plugin(path).await {
-                Ok(id) => { println!("loaded: {}", id); Ok(0) }
-                Err(e) => { eprintln!("load failed: {}", e); Ok(1) }
+            Err(e) => {
+                eprintln!("discover failed: {}", e);
+                Ok(1)
             }
-        }
-        PluginsCommand::Unload { id } => {
-            match pm.unload_plugin(id).await {
-                Ok(()) => { println!("unloaded: {}", id); Ok(0) }
-                Err(e) => { eprintln!("unload failed: {}", e); Ok(1) }
+        },
+        PluginsCommand::Load { path } => match pm.load_plugin(path).await {
+            Ok(id) => {
+                println!("loaded: {}", id);
+                Ok(0)
             }
-        }
+            Err(e) => {
+                eprintln!("load failed: {}", e);
+                Ok(1)
+            }
+        },
+        PluginsCommand::Unload { id } => match pm.unload_plugin(id).await {
+            Ok(()) => {
+                println!("unloaded: {}", id);
+                Ok(0)
+            }
+            Err(e) => {
+                eprintln!("unload failed: {}", e);
+                Ok(1)
+            }
+        },
         PluginsCommand::Event { id, event_type, data } => {
             let json = match data {
-                Some(s) => serde_json::from_str::<serde_json::Value>(s).unwrap_or(serde_json::json!({})),
+                Some(s) => {
+                    serde_json::from_str::<serde_json::Value>(s).unwrap_or(serde_json::json!({}))
+                }
                 None => serde_json::json!({}),
             };
             let evt = PluginEvent { event_type: event_type.clone(), data: json, timestamp: 0 };
             match pm.send_event_to_plugin(id, &evt).await {
-                Ok(resp) => { println!("{}", serde_json::to_string_pretty(&resp).unwrap_or("{}".to_string())); Ok(if resp.success { 0 } else { 2 }) }
-                Err(e) => { eprintln!("event failed: {}", e); Ok(1) }
+                Ok(resp) => {
+                    println!("{}", serde_json::to_string_pretty(&resp).unwrap_or("{}".to_string()));
+                    Ok(if resp.success { 0 } else { 2 })
+                }
+                Err(e) => {
+                    eprintln!("event failed: {}", e);
+                    Ok(1)
+                }
             }
         }
     }

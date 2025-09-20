@@ -5,9 +5,9 @@ use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
+use log::warn;
 use polling::os::iocp::{CompletionPacket, PollerIocpExt};
 use polling::{Event, Poller};
-use log::warn;
 
 use windows_sys::Win32::Foundation::{BOOLEAN, FALSE, HANDLE};
 use windows_sys::Win32::System::Threading::{
@@ -39,21 +39,14 @@ extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
     let mut exit_code = 0_u32;
     let child_handle = event_tx.child_handle.load(Ordering::Relaxed) as HANDLE;
     let status = unsafe { GetExitCodeProcess(child_handle, &mut exit_code) };
-    let exit_code = if status == FALSE {
-        None
-    } else {
-        Some(exit_code as i32)
-    };
+    let exit_code = if status == FALSE { None } else { Some(exit_code as i32) };
     if let Err(err) = event_tx.sender.send(ChildEvent::Exited(exit_code)) {
         warn!("Failed to send ChildEvent::Exited to channel: {}", err);
     }
 
     let interest = event_tx.interest.lock().unwrap();
     if let Some(interest) = interest.as_ref() {
-        interest
-            .poller
-            .post(CompletionPacket::new(interest.event))
-            .ok();
+        interest.poller.post(CompletionPacket::new(interest.event)).ok();
     }
 }
 
@@ -107,10 +100,7 @@ impl ChildExitWatcher {
     }
 
     pub fn register(&self, poller: &Arc<Poller>, event: Event) {
-        *self.interest.lock().unwrap() = Some(Interest {
-            poller: poller.clone(),
-            event,
-        });
+        *self.interest.lock().unwrap() = Some(Interest { poller: poller.clone(), event });
     }
 
     pub fn deregister(&self) {
@@ -170,9 +160,6 @@ mod tests {
         poller.wait(&mut events, Some(WAIT_TIMEOUT)).unwrap();
         assert_eq!(events.iter().next().unwrap().key, PTY_CHILD_EVENT_TOKEN);
         // Verify that at least one `ChildEvent::Exited` was received.
-        assert_eq!(
-            child_exit_watcher.event_rx().try_recv(),
-            Ok(ChildEvent::Exited(Some(1)))
-        );
+        assert_eq!(child_exit_watcher.event_rx().try_recv(), Ok(ChildEvent::Exited(Some(1))));
     }
 }

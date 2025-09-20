@@ -71,11 +71,8 @@ impl Display {
             self.ai_panel_anim_start = Some(std::time::Instant::now());
             self.ai_panel_anim_opening = ai_state.active;
             // Theme-aware duration; respect reduce motion
-            let reduce_motion = config
-                .resolved_theme
-                .as_ref()
-                .map(|t| t.ui.reduce_motion)
-                .unwrap_or(false);
+            let reduce_motion =
+                config.resolved_theme.as_ref().map(|t| t.ui.reduce_motion).unwrap_or(false);
             self.ai_panel_anim_duration_ms = if reduce_motion {
                 0
             } else if ai_state.active {
@@ -107,11 +104,8 @@ impl Display {
         let num_lines = size_info.screen_lines;
 
         // Resolve theme tokens/ui for panel visuals
-        let theme = config
-            .resolved_theme
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
         let tui = theme.ui;
 
@@ -152,9 +146,8 @@ impl Display {
         };
         let target_lines = ((num_lines as f32 * fraction).round() as usize)
             .clamp(6, MAX_AI_PANEL_LINES.max(6).min(num_lines));
-        let anim_lines = ((target_lines as f32 * progress).ceil() as usize)
-            .min(target_lines)
-            .max(1);
+        let anim_lines =
+            ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
         let start_line = num_lines.saturating_sub(anim_lines);
 
         // Panel background/foreground from theme
@@ -177,11 +170,7 @@ impl Display {
                     panel_y + offset_y - spread,
                     size_info.width() + spread * 2.0,
                     panel_height + spread * 2.0,
-                    if tui.rounded_corners {
-                        tui.corner_radius_px + spread
-                    } else {
-                        0.0
-                    },
+                    if tui.rounded_corners { tui.corner_radius_px + spread } else { 0.0 },
                     Rgb::new(0, 0, 0),
                     shadow_alpha,
                 );
@@ -190,11 +179,7 @@ impl Display {
         }
 
         // Stage main rounded panel
-        let radius = if tui.rounded_corners {
-            tui.corner_radius_px
-        } else {
-            0.0
-        };
+        let radius = if tui.rounded_corners { tui.corner_radius_px } else { 0.0 };
         let panel = UiRoundedRect::new(
             0.0,
             panel_y,
@@ -227,13 +212,7 @@ impl Display {
             // Left header label
             let header_text = "AI".to_string();
             let header_point = Point::new(current_line, Column(1));
-            self.draw_ai_text(
-                header_point,
-                fg,
-                bg,
-                &header_text,
-                num_cols.saturating_sub(1),
-            );
+            self.draw_ai_text(header_point, fg, bg, &header_text, num_cols.saturating_sub(1));
             // Right controls
             // Draw each control separately so we can color/disable/hover them individually
             let ctrl_len = "⏹ ⟳ ✖".chars().count();
@@ -284,39 +263,13 @@ impl Display {
             }
 
             // Draw glyphs
-            let stop_fg = if stop_enabled {
-                ctrl_color_enabled
-            } else {
-                ctrl_color_disabled
-            };
-            let regen_fg = if regen_enabled {
-                ctrl_color_enabled
-            } else {
-                ctrl_color_disabled
-            };
+            let stop_fg = if stop_enabled { ctrl_color_enabled } else { ctrl_color_disabled };
+            let regen_fg = if regen_enabled { ctrl_color_enabled } else { ctrl_color_disabled };
             let close_fg = ctrl_color_enabled;
 
-            self.draw_ai_text(
-                Point::new(current_line, Column(stop_col)),
-                stop_fg,
-                bg,
-                "⏹",
-                1,
-            );
-            self.draw_ai_text(
-                Point::new(current_line, Column(regen_col)),
-                regen_fg,
-                bg,
-                "⟳",
-                1,
-            );
-            self.draw_ai_text(
-                Point::new(current_line, Column(close_col)),
-                close_fg,
-                bg,
-                "✖",
-                1,
-            );
+            self.draw_ai_text(Point::new(current_line, Column(stop_col)), stop_fg, bg, "⏹", 1);
+            self.draw_ai_text(Point::new(current_line, Column(regen_col)), regen_fg, bg, "⟳", 1);
+            self.draw_ai_text(Point::new(current_line, Column(close_col)), close_fg, bg, "✖", 1);
 
             current_line += 1;
         }
@@ -414,10 +367,8 @@ impl Display {
                     // Truncate command if too long
                     let available_width = num_cols.saturating_sub(line_text.width());
                     if first_cmd.width() > available_width {
-                        let truncated: String = first_cmd
-                            .chars()
-                            .take(available_width.saturating_sub(3))
-                            .collect();
+                        let truncated: String =
+                            first_cmd.chars().take(available_width.saturating_sub(3)).collect();
                         line_text.push_str(&truncated);
                         line_text.push_str("...");
                     } else {
@@ -425,11 +376,8 @@ impl Display {
                     }
 
                     let text_point = Point::new(current_line, Column(0));
-                    let text_color = if idx == ai_state.selected_proposal {
-                        tokens.success
-                    } else {
-                        fg
-                    };
+                    let text_color =
+                        if idx == ai_state.selected_proposal { tokens.success } else { fg };
                     self.draw_ai_text(text_point, text_color, bg, &line_text, num_cols);
                     current_line += 1;
 
@@ -526,9 +474,8 @@ impl Display {
         let fraction = config.ai.panel_height_fraction.clamp(0.20, 0.60);
         let target_lines = ((num_lines as f32 * fraction).round() as usize)
             .clamp(6, MAX_AI_PANEL_LINES.min(num_lines));
-        let anim_lines = ((target_lines as f32 * progress).ceil() as usize)
-            .min(target_lines)
-            .max(1);
+        let anim_lines =
+            ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
         let start_line = num_lines.saturating_sub(anim_lines);
 
         let prompt_line = start_line + anim_lines - 1;

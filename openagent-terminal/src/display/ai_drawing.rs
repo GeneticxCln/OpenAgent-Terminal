@@ -59,11 +59,7 @@ impl AiDrawConfig {
                 error_prefix: "❌ Error: ",
                 suggestion_prefix: "$ ",
                 selection_indicator: "▶ ",
-                anim_duration_ms: if ui_config.theme.resolve().ui.reduce_motion {
-                    0
-                } else {
-                    160
-                },
+                anim_duration_ms: if ui_config.theme.resolve().ui.reduce_motion { 0 } else { 160 },
             }
         }
         #[cfg(not(feature = "ai"))]
@@ -95,12 +91,7 @@ pub struct AiDrawContext<'a> {
 impl<'a> AiDrawContext<'a> {
     /// Create a new AI drawing context
     pub fn new(display: &'a mut Display, config: &'a UiConfig, mode: AiRenderMode) -> Self {
-        Self {
-            display,
-            config,
-            draw_config: AiDrawConfig::from_ui_config(config),
-            mode,
-        }
+        Self { display, config, draw_config: AiDrawConfig::from_ui_config(config), mode }
     }
 
     /// Draw the AI UI with the specified state
@@ -211,9 +202,8 @@ impl<'a> AiDrawContext<'a> {
 
         let target_lines = ((num_lines as f32 * fraction).round() as usize)
             .clamp(6, self.draw_config.max_panel_lines.min(num_lines));
-        let anim_lines = ((target_lines as f32 * progress).ceil() as usize)
-            .min(target_lines)
-            .max(1);
+        let anim_lines =
+            ((target_lines as f32 * progress).ceil() as usize).min(target_lines).max(1);
         let start_line = num_lines.saturating_sub(anim_lines);
 
         (start_line, anim_lines)
@@ -238,21 +228,11 @@ impl<'a> AiDrawContext<'a> {
             AiRenderMode::Overlay => 0.85 * progress,
         };
 
-        let panel_rect = RenderRect::new(
-            0.0,
-            panel_y,
-            size_info.width(),
-            panel_height,
-            bg,
-            panel_alpha,
-        );
+        let panel_rect =
+            RenderRect::new(0.0, panel_y, size_info.width(), panel_height, bg, panel_alpha);
         rects.push(panel_rect);
 
-        debug!(
-            "Drew panel background: lines {} to {}",
-            start_line,
-            start_line + anim_lines
-        );
+        debug!("Drew panel background: lines {} to {}", start_line, start_line + anim_lines);
     }
 
     /// Draw the panel content
@@ -311,8 +291,7 @@ impl<'a> AiDrawContext<'a> {
         // Label
         let label = "AI";
         let label_point = Point::new(line, Column(2));
-        self.display
-            .draw_ai_panel_text(label_point, fg, bg, label, num_cols - 2);
+        self.display.draw_ai_panel_text(label_point, fg, bg, label, num_cols - 2);
 
         // Provider chips moved to bottom composer; keep header minimal for clarity
     }
@@ -328,8 +307,7 @@ impl<'a> AiDrawContext<'a> {
 
         let hint_color = Rgb::new(180, 200, 220);
         let actions_point = Point::new(line, Column(2));
-        self.display
-            .draw_ai_panel_text(actions_point, hint_color, bg, actions, num_cols - 2);
+        self.display.draw_ai_panel_text(actions_point, hint_color, bg, actions, num_cols - 2);
     }
 
     /// Draw main content area
@@ -344,14 +322,7 @@ impl<'a> AiDrawContext<'a> {
     ) -> usize {
         if ai_state.is_loading {
             // Loading state
-            self.draw_loading_state(
-                ai_state,
-                &mut current_line,
-                separator_line,
-                fg,
-                bg,
-                num_cols,
-            );
+            self.draw_loading_state(ai_state, &mut current_line, separator_line, fg, bg, num_cols);
         } else if let Some(ref error) = ai_state.error_message {
             // Error state
             self.draw_error_state(error, current_line, fg, bg, num_cols);
@@ -368,14 +339,7 @@ impl<'a> AiDrawContext<'a> {
             );
         } else if !ai_state.proposals.is_empty() {
             // Proposals
-            self.draw_proposals(
-                ai_state,
-                &mut current_line,
-                separator_line,
-                fg,
-                bg,
-                num_cols,
-            );
+            self.draw_proposals(ai_state, &mut current_line, separator_line, fg, bg, num_cols);
         }
 
         current_line
@@ -421,8 +385,7 @@ impl<'a> AiDrawContext<'a> {
         let error_text = format!("{}{}", self.draw_config.error_prefix, error);
         let error_point = Point::new(line, Column(2));
         let error_color = Rgb::new(255, 100, 100);
-        self.display
-            .draw_ai_panel_text(error_point, error_color, bg, &error_text, num_cols - 2);
+        self.display.draw_ai_panel_text(error_point, error_color, bg, &error_text, num_cols - 2);
     }
 
     /// Draw streaming text
@@ -440,8 +403,7 @@ impl<'a> AiDrawContext<'a> {
                 break;
             }
             let text_point = Point::new(*current_line, Column(2));
-            self.display
-                .draw_ai_panel_text(text_point, fg, bg, line, num_cols - 2);
+            self.display.draw_ai_panel_text(text_point, fg, bg, line, num_cols - 2);
             *current_line += 1;
         }
     }
@@ -471,10 +433,7 @@ impl<'a> AiDrawContext<'a> {
 
             // Add command
             if let Some(first_cmd) = proposal.proposed_commands.first() {
-                line_text.push_str(&format!(
-                    "{}{}",
-                    self.draw_config.suggestion_prefix, first_cmd
-                ));
+                line_text.push_str(&format!("{}{}", self.draw_config.suggestion_prefix, first_cmd));
             }
 
             let text_point = Point::new(*current_line, Column(0));
@@ -483,8 +442,7 @@ impl<'a> AiDrawContext<'a> {
             } else {
                 fg
             };
-            self.display
-                .draw_ai_panel_text(text_point, text_color, bg, &line_text, num_cols);
+            self.display.draw_ai_panel_text(text_point, text_color, bg, &line_text, num_cols);
             *current_line += 1;
 
             // Show description if present and space available
@@ -505,8 +463,7 @@ impl<'a> AiDrawContext<'a> {
     fn draw_separator(&mut self, line: usize, fg: Rgb, bg: Rgb, num_cols: usize) {
         let separator = "─".repeat(num_cols.saturating_sub(4));
         let separator_point = Point::new(line, Column(2));
-        self.display
-            .draw_ai_panel_text(separator_point, fg, bg, &separator, num_cols - 2);
+        self.display.draw_ai_panel_text(separator_point, fg, bg, &separator, num_cols - 2);
     }
 
     /// Draw prompt line with input
@@ -521,15 +478,13 @@ impl<'a> AiDrawContext<'a> {
         let prefix = "🤖 ";
         let prompt = format!("{}{}", prefix, ai_state.scratch);
         let prompt_point = Point::new(line, Column(0));
-        self.display
-            .draw_ai_panel_text(prompt_point, fg, bg, &prompt, num_cols);
+        self.display.draw_ai_panel_text(prompt_point, fg, bg, &prompt, num_cols);
 
         // Draw cursor
         let cursor_col =
             (prefix.chars().count() + ai_state.cursor_position).min(num_cols.saturating_sub(1));
         let cursor_point = Point::new(line, Column(cursor_col));
-        self.display
-            .draw_ai_panel_text(cursor_point, bg, fg, " ", 1);
+        self.display.draw_ai_panel_text(cursor_point, bg, fg, " ", 1);
     }
 
     /// Apply damage tracking for the panel area
@@ -566,10 +521,7 @@ impl Display {
     ) {
         // Truncate text to fit in max_width
         let displayed_text: String = if text.chars().count() > max_width {
-            text.chars()
-                .take(max_width.saturating_sub(1))
-                .collect::<String>()
-                + "…"
+            text.chars().take(max_width.saturating_sub(1)).collect::<String>() + "…"
         } else {
             text.to_string()
         };
