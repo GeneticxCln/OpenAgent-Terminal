@@ -242,8 +242,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -321,8 +321,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Build and test with plugins feature (app crate)
@@ -349,8 +349,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Build with WGPU feature
@@ -422,8 +422,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run Windows PTY repro tests (core crate)
@@ -437,8 +437,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain (1.79.0)
-        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
       - name: Cache cargo
