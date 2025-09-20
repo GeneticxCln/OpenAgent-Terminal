@@ -15,7 +15,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # File system operations
-dirs = "5.0"
+dirs = "6.0"
 walkdir = "2.4"
 
 # HTTP client for theme downloads

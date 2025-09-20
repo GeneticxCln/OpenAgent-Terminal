@@ -23,7 +23,7 @@ colored = "2.0"
 # File system operations
 walkdir = "2.4"
 glob = "0.3"
-dirs = "5.0"
+dirs = "6.0"
 fontdb = "0.14"
 
 # Error handling
