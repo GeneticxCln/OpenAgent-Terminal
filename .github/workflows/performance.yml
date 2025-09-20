@@ -32,10 +32,23 @@ jobs:
         with:
           key: perf-benchmarks-${{ runner.os }}
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y xvfb jq libegl1-mesa-dev libgl1-mesa-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          sudo apt-get install -y \
+            pkg-config \
+            build-essential \
+            xvfb \
+            jq \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev
 
       # Performance smoke tests (existing)
       - name: Performance smoke tests
@@ -169,10 +182,23 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y xvfb libegl1-mesa-dev libgl1-mesa-dev libxcb-shape0-dev libxcb-xfixes0-dev jq
+          sudo apt-get install -y \
+            pkg-config \
+            build-essential \
+            xvfb \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            jq
 
       - name: Run comprehensive benchmarks
         run: |
@@ -238,10 +264,21 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y valgrind xvfb libegl1-mesa-dev libgl1-mesa-dev
+          sudo apt-get install -y \
+            pkg-config \
+            build-essential \
+            valgrind \
+            xvfb \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libxkbcommon-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev
 
       - name: Memory leak detection
         run: |
