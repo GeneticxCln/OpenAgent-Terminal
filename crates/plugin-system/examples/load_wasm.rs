@@ -3,7 +3,7 @@ use plugin_system::permissions::ExecRule;
 
 fn main() -> anyhow::Result<()> {
     // Create the manager
-    let manager = UnifiedPluginManager::new(".")?;
+    let mut manager = UnifiedPluginManager::new(".")?;
 
     // Union permissions for the three demo plugins
     let _perms = PluginPermissions {

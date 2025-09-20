@@ -299,6 +299,7 @@ impl Display {
         self.tab_bounds_px.clear();
         self.close_button_bounds_px.clear();
         self.new_tab_button_bounds = None;
+        self.gear_button_bounds = None;
         let active_tab_id = tab_manager.active_tab_id();
         // Track active tab changes for switch animation
         if self.tab_last_active_id != active_tab_id {
@@ -381,6 +382,8 @@ impl Display {
                 .unwrap_or((style.tab_height * 0.7).clamp(12.0, 20.0));
             let ix = (start_col as f32) * cw + (cw * gear_cols as f32 - icon_px) * 0.5;
             let iy = start_y + (style.tab_height - icon_px) * 0.5;
+            // Cache precise gear button bounds for click-hit testing
+            self.gear_button_bounds = Some((ix, iy, icon_px, icon_px));
             // Atlas slot 8 = gear (atlas has 9 slots)
             let step = 1.0f32 / 9.0f32;
             let uv_x = 8.0 * step;
@@ -402,6 +405,8 @@ impl Display {
                 1.0,
                 Some(nearest),
             ));
+        } else {
+            self.gear_button_bounds = None;
         }
 
         // Overflow indicator when tabs exceed available width
@@ -1102,6 +1107,12 @@ impl Display {
         let ch = self.size_info.cell_height();
         let x_px = (mouse_x_cols as f32) * cw;
         let y_px = (mouse_y_line as f32) * ch;
+        // First: settings gear bounds
+        if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
+            if x_px >= gx && x_px <= gx + gw && y_px >= gy && y_px <= gy + gh {
+                return Some(TabBarAction::OpenSettings);
+            }
+        }
         // Precise check: close button rectangle cache
         if config.workspace.tab_bar.show_close_button {
             if let Some((_tab_id, _bx, _by, _bw, _bh)) = self
@@ -1151,7 +1162,13 @@ impl Display {
         let ch = self.size_info.cell_height();
         let x_px = (mouse_x as f32) * cw;
         let y_px = (mouse_y as f32) * ch;
-        // First: precise check against cached close button rectangles
+        // First: precise check settings gear bounds
+        if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
+            if x_px >= gx && x_px <= gx + gw && y_px >= gy && y_px <= gy + gh {
+                return Some(TabBarAction::OpenSettings);
+            }
+        }
+        // Precise check against cached close button rectangles
         if config.workspace.tab_bar.show_close_button {
             if let Some((tab_id, _x, _y, _w, _h)) = self
                 .close_button_bounds_px
@@ -1271,6 +1288,14 @@ impl Display {
             } else {
                 return Some(TabBarAction::SelectTab(drag.tab_id));
             }
+        }
+        // If no drag, treat release as a generic click: if released over gear, open settings
+        if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
+            let cw = self.size_info.cell_width();
+            let ch = self.size_info.cell_height();
+            let mouse = self.size_info; // size_info contains height/width; use last mouse pos is not available here, rely on bounds only on press
+            let _ = mouse; // no-op to silence unused warnings if optimized out
+            // Release handler does not have coordinates; skip here to avoid false positives.
         }
         None
     }

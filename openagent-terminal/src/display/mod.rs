@@ -628,6 +628,8 @@ pub struct Display {
     pub close_button_bounds_px: Vec<(crate::workspace::TabId, f32, f32, f32, f32)>,
     /// Cached "+" new-tab button bounds in pixels (x, y, w, h)
     pub new_tab_button_bounds: Option<(f32, f32, f32, f32)>,
+    /// Cached settings gear button bounds in pixels (x, y, w, h)
+    pub gear_button_bounds: Option<(f32, f32, f32, f32)>,
     /// Active fade-out animations for tabs that were just closed
     pub tab_close_fades: Vec<TabCloseFade>,
     /// Workspace animation manager for smooth UI transitions
@@ -1336,6 +1338,7 @@ impl Display {
             tab_bounds_px: Vec::new(),
             close_button_bounds_px: Vec::new(),
             new_tab_button_bounds: None,
+            gear_button_bounds: None,
             // Tab close fade effects
             tab_close_fades: Vec::new(),
             split_hover: None,
