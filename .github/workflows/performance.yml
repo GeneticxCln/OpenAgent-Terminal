@@ -78,24 +78,30 @@ jobs:
           AVG_MS=$(echo "$RESULT" | grep "avg_ms:" | awk '{print $2}')
           echo "::notice title=Render Latency::Average render: ${AVG_MS}ms (target: ≤16ms)"
 
+      # Install cargo-criterion for JSON-formatted benchmarks
+      - name: Install cargo-criterion
+        run: |
+          set -euo pipefail
+          cargo install cargo-criterion --locked || echo "cargo-criterion already installed"
+
       # Criterion benchmarks (new systematic benchmarking)
       - name: Terminal startup benchmarks
         run: |
           set -euo pipefail
           echo "Running terminal startup benchmarks..."
-          cargo bench --bench terminal_startup -- --output-format json | tee startup_bench.json
+          cargo criterion --bench terminal_startup --output-format criterion
 
       - name: Render performance benchmarks
         run: |
           set -euo pipefail
           echo "Running render performance benchmarks..."
-          cargo bench --bench render_performance -- --output-format json | tee render_bench.json
+          cargo criterion --bench render_performance --output-format criterion
 
       - name: Security analysis benchmarks
         run: |
           set -euo pipefail
           echo "Running security analysis benchmarks..."
-          cargo bench --bench security_analysis -- --output-format json | tee security_bench.json
+          cargo criterion --bench security_analysis --output-format criterion
 
       # Memory usage validation
       - name: Memory usage validation
@@ -140,7 +146,6 @@ jobs:
         with:
           name: performance-results-${{ github.run_number }}
           path: |
-            *_bench.json
             target/criterion/
           retention-days: 30
 

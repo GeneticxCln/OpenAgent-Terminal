@@ -122,7 +122,7 @@ pub const WORKFLOWS_OVERLAY_RETAIN: Duration = Duration::from_millis(3000);
 
 /// Debounce for AI inline suggestions after typing
 #[cfg(feature = "ai")]
-pub const AI_INLINE_SUGGEST_DEBOUNCE: Duration = Duration::from_millis(200);
+pub const AI_INLINE_SUGGEST_DEBOUNCE: Duration = Duration::from_millis(120);
 
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;

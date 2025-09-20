@@ -233,19 +233,40 @@ impl AiRuntime {
         // Build a lightweight prompt for inline completion
         // We bias providers towards command completion, not multi-line explanations.
         let prompt = format!(
-            "Complete the shell command. Only return the completed command.\nPartial: \
-             {}\nCompletion:",
+            "You are completing a shell command for zsh on Linux.\n\
+             Return only the full completed command on a single line; no commentary, no quotes.\n\
+             Do not invent commands or flags. Prefer safe, non-destructive flags (e.g., -i).\n\
+             Avoid placeholders; use concrete, valid examples.\n\
+             Partial: {}\n\
+             Completion:",
             prefix
         );
+
+        // Derive shell from environment, default to zsh
+        let shell_kind = std::env::var("SHELL")
+            .ok()
+            .and_then(|s| {
+                let lower = s.to_ascii_lowercase();
+                if lower.contains("zsh") { Some("zsh".to_string()) }
+                else if lower.contains("bash") { Some("bash".to_string()) }
+                else if lower.contains("fish") { Some("fish".to_string()) }
+                else { None }
+            })
+            .unwrap_or_else(|| "zsh".to_string());
 
         let provider = self.provider.clone();
         let req = AiRequest {
             scratch_text: prompt,
             working_directory: None,
-            shell_kind: None,
+            shell_kind: Some(shell_kind.clone()),
             context: vec![
                 ("mode".to_string(), "inline".to_string()),
                 ("platform".to_string(), std::env::consts::OS.to_string()),
+                ("shell".to_string(), shell_kind),
+                (
+                    "guidelines".to_string(),
+                    "no-invent; prefer-safe; no-placeholders; single-line".to_string(),
+                ),
             ],
         };
 
@@ -866,11 +887,18 @@ impl AiRuntime {
 
         debug!("Submitting AI query: {}", self.ui.scratch);
 
+        let mut base_ctx: Vec<(String, String)> = vec![
+            ("platform".to_string(), std::env::consts::OS.to_string()),
+            (
+                "guidelines".to_string(),
+                "no-invent; prefer-safe; no-placeholders; add --no-pager for git when relevant".to_string(),
+            ),
+        ];
         let req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
-            context: vec![("platform".to_string(), std::env::consts::OS.to_string())],
+            context: base_ctx,
         };
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
@@ -1268,6 +1296,10 @@ impl AiRuntime {
             ("mode".to_string(), "explain".to_string()),
             ("explain_target".to_string(), target_text.clone()),
             ("platform".to_string(), std::env::consts::OS.to_string()),
+            (
+                "guidelines".to_string(),
+                "no-invent; prefer-safe; no-placeholders; concise".to_string(),
+            ),
         ];
         if let Some(ref sh) = shell_kind {
             context.push(("shell".into(), sh.clone()));
@@ -1355,6 +1387,10 @@ impl AiRuntime {
             ("mode".to_string(), "fix".to_string()),
             ("error".to_string(), error_text.clone()),
             ("platform".to_string(), std::env::consts::OS.to_string()),
+            (
+                "guidelines".to_string(),
+                "no-invent; prefer-safe; no-placeholders; suggest --no-pager for git; comment with # if unsure".to_string(),
+            ),
         ];
         if let Some(ref fc) = failed_command {
             context.push(("failed_command".into(), fc.clone()));

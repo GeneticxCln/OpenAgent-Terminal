@@ -2877,6 +2877,7 @@ impl Display {
                             .unwrap_or_else(|| config.theme.resolve());
                         let tokens = theme.tokens;
 
+
                         // Draw status pill, left-aligned command text, and right-aligned duration.
                         let cols = self.size_info.columns();
                         let cw = self.size_info.cell_width();
@@ -2889,6 +2890,30 @@ impl Display {
                             .blocks
                             .block_at_header_viewport_line(display_offset, line)
                             .cloned();
+
+                        // Modern header background: subtle rounded strip behind the header
+                        let row_x = 0.0f32;
+                        let row_y = (line as f32) * ch + (ch * 0.05);
+                        let row_w = self.size_info.width();
+                        let row_h = (ch * 0.90).max(10.0);
+                        let anim_p = if let Some(ref b) = block_opt {
+                            crate::display::animation::compute_progress(
+                                b.anim_start,
+                                b.anim_duration_ms.max(1),
+                                b.anim_opening,
+                                true,
+                            )
+                        } else {
+                            1.0
+                        };
+                        let mut bg_alpha = 0.12 * anim_p
+                            + if self.blocks_header_hover_line == Some(line) { 0.06 } else { 0.0 };
+                        if bg_alpha > 0.6 { bg_alpha = 0.6; }
+                        let radius = (row_h * 0.4).min(14.0);
+                        let row_bg = UiRoundedRect::new(
+                            row_x, row_y, row_w, row_h, radius, tokens.surface_muted, bg_alpha,
+                        );
+                        self.stage_ui_rounded_rect(row_bg);
 
                         // Status pill geometry (columns [0,3))
                         let pill_start_col = 0usize;

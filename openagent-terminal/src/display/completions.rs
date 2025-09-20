@@ -45,7 +45,8 @@ impl CompletionsState {
             external: Vec::new(),
             last_prefix: String::new(),
             last_compute: Instant::now() - Duration::from_secs(10),
-            debounce: Duration::from_millis(120),
+            // Slightly faster feedback while typing
+            debounce: Duration::from_millis(80),
             selected_index: 0,
         }
     }
@@ -91,7 +92,7 @@ impl super::Display {
         score / (candidate.len().max(1) as f32)
     }
 
-    fn compute_completions_for_prefix(prefix: &str, cwd: Option<PathBuf>) -> Vec<CompletionItem> {
+    fn compute_completions_for_prefix(&self, prefix: &str, cwd: Option<PathBuf>) -> Vec<CompletionItem> {
         let mut out: Vec<CompletionItem> = Vec::new();
 
         // Tokenize to get current token and first word (command)
@@ -155,26 +156,35 @@ impl super::Display {
                             None => continue,
                         };
                         let is_dir = path.is_dir();
-                        let label = if is_dir {
-                            format!("{}/", name)
-                        } else {
-                            name.clone()
-                        };
+                        let label = if is_dir { format!("{}/", name) } else { name.clone() };
                         let score = Self::fuzzy_score(cur_token, &name);
                         if score > 0.0 {
                             out.push(CompletionItem {
                                 label,
-                                kind: if is_dir {
-                                    CompletionKind::Dir
-                                } else {
-                                    CompletionKind::File
-                                },
+                                kind: if is_dir { CompletionKind::Dir } else { CompletionKind::File },
                                 details: None,
                                 icon: if is_dir { "📁" } else { "📄" },
                                 score,
                             });
                         }
                     }
+                }
+            }
+        }
+
+        // 2b) Commands from PATH when at the first token (and not a flag)
+        if !is_flag_context && tokens.len() <= 1 {
+            let cmds = path_commands();
+            for cmd in cmds {
+                let score = Self::fuzzy_score(cur_token, cmd);
+                if score > 0.0 {
+                    out.push(CompletionItem {
+                        label: cmd.clone(),
+                        kind: CompletionKind::Command,
+                        details: Some("$PATH command".to_string()),
+                        icon: "⌘",
+                        score,
+                    });
                 }
             }
         }
@@ -215,6 +225,112 @@ impl super::Display {
                         score,
                     });
                 }
+            }
+        }
+
+        // 4b) History-aware ranking and suggestions (from in-memory composer history)
+        // Only applies in first-token, non-flag context
+        if !is_flag_context && tokens.len() <= 1 {
+            use std::collections::{HashMap, HashSet};
+
+            // Build MRU/frequency maps from recent composer history (most-recent-first)
+            let mut freq: HashMap<String, usize> = HashMap::new();
+            let mut best_recency: HashMap<String, usize> = HashMap::new();
+            let mut seen_cmds: HashSet<String> = HashSet::new();
+            let consider = 200usize; // cap work per keystroke
+            for (idx, entry) in self.composer_history.iter().take(consider).enumerate() {
+                let first_tok = entry.split_whitespace().next().unwrap_or("");
+                if first_tok.is_empty() { continue; }
+                // Track only first token commands
+                let key = first_tok.to_string();
+                *freq.entry(key.clone()).or_insert(0) += 1;
+                best_recency
+                    .entry(key.clone())
+                    .and_modify(|r| { if idx < *r { *r = idx } })
+                    .or_insert(idx);
+                seen_cmds.insert(key);
+            }
+            let max_freq = freq.values().copied().max().unwrap_or(1) as f32;
+
+            // Boost scores of existing PATH/subcommand command items based on history
+            if !freq.is_empty() {
+                for it in &mut out {
+                    if matches!(it.kind, CompletionKind::Command) {
+                        if let Some(f) = freq.get(&it.label) {
+                            let rec = *best_recency.get(&it.label).unwrap_or(&usize::MAX);
+                            let recency_score = if rec == usize::MAX { 0.0 } else { 1.0 / (1.0 + rec as f32) };
+                            let freq_score = (*f as f32) / max_freq.max(1.0);
+                            // Keep boost modest so fuzzy/type context still dominates
+                            let boost = 1.0 + (0.35 * recency_score + 0.35 * freq_score);
+                            it.score *= boost;
+                        }
+                    }
+                }
+
+                // Add a few top MRU first-token commands that match the current prefix but
+                // aren't already present. These appear as "Recently used" commands.
+                let mut existing: HashSet<String> = out.iter().map(|i| i.label.clone()).collect();
+                let mut mru: Vec<(String, usize, usize)> = freq
+                    .iter()
+                    .map(|(k, f)| (k.clone(), *best_recency.get(k).unwrap_or(&usize::MAX), *f))
+                    .collect();
+                // Sort by recency first (smaller idx => more recent), then by freq desc
+                mru.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| b.2.cmp(&a.2)));
+
+                let mut added = 0usize;
+                let max_add = 4usize;
+                for (name, rec, f) in mru.into_iter() {
+                    if added >= max_add { break; }
+                    if existing.contains(&name) { continue; }
+                    let base = Self::fuzzy_score(cur_token, &name);
+                    if base <= 0.0 { continue; }
+                    let recency_score = if rec == usize::MAX { 0.0 } else { 1.0 / (1.0 + rec as f32) };
+                    let freq_score = (f as f32) / max_freq.max(1.0);
+                    let score = base * (1.0 + 0.45 * recency_score + 0.45 * freq_score);
+                    out.push(CompletionItem {
+                        label: name.clone(),
+                        kind: CompletionKind::Command,
+                        details: Some("Recently used".to_string()),
+                        icon: "🕘",
+                        score,
+                    });
+                    existing.insert(name);
+                    added += 1;
+                }
+            }
+        }
+
+        // Type-aware weighting to improve ranking by context
+        let type_weight = |kind: &CompletionKind| -> f32 {
+            if is_flag_context {
+                return match kind {
+                    CompletionKind::Flag => 1.25,
+                    CompletionKind::Command => 0.85,
+                    CompletionKind::File | CompletionKind::Dir => 0.8,
+                    _ => 0.9,
+                };
+            }
+            if tokens.len() <= 1 {
+                match kind {
+                    CompletionKind::Command => 1.20,
+                    CompletionKind::File | CompletionKind::Dir => 1.0,
+                    CompletionKind::Flag => 0.85,
+                    _ => 0.95,
+                }
+            } else {
+                match kind {
+                    CompletionKind::File | CompletionKind::Dir => 1.15,
+                    CompletionKind::Command => 1.0,
+                    CompletionKind::Flag => 0.95,
+                    _ => 1.0,
+                }
+            }
+        };
+        for it in &mut out {
+            it.score *= type_weight(&it.kind);
+            // Tiny boost for exact prefix
+            if !cur_token.is_empty() && it.label.starts_with(cur_token) {
+                it.score *= 1.08;
             }
         }
 
@@ -286,7 +402,7 @@ impl super::Display {
             || now.duration_since(self.completions.last_compute) > self.completions.debounce
         {
             let cwd = None::<PathBuf>; // Future: track via shell integration/OSC
-            self.completions.items = Self::compute_completions_for_prefix(prefix, cwd);
+            self.completions.items = self.compute_completions_for_prefix(prefix, cwd);
             // Reset selection when prefix changes
             if self.completions.selected_index >= self.completions.items.len() {
                 self.completions.selected_index = 0;
@@ -561,4 +677,33 @@ impl super::Display {
         self.completions.items.clear();
         self.completions.selected_index = 0;
     }
+}
+
+// Lazily compute list of commands available in $PATH. Returns cached vector.
+fn path_commands() -> &'static Vec<String> {
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+    static CMDS: OnceLock<Vec<String>> = OnceLock::new();
+    CMDS.get_or_init(|| {
+        let mut out: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        if let Ok(path_env) = std::env::var("PATH") {
+            for dir in path_env.split(':') {
+                let p = std::path::Path::new(dir);
+                if let Ok(rd) = std::fs::read_dir(p) {
+                    for ent in rd.flatten() {
+                        if let Some(name) = ent.file_name().to_str() {
+                            // Skip names with path separators or obvious non-commands
+                            if name.is_empty() || name.contains('/') { continue; }
+                            // De-duplicate across PATH entries
+                            if seen.insert(name.to_string()) {
+                                out.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    })
 }

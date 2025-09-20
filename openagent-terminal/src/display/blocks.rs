@@ -90,6 +90,7 @@ impl Blocks {
                 }
             }
             CommandBlockEvent::CommandStart { cmd } => {
+                let now = Instant::now();
                 let block = CommandBlock {
                     start_total_line: total_lines,
                     end_total_line: None,
@@ -97,10 +98,10 @@ impl Blocks {
                     cwd: None,
                     exit: None,
                     ended_at: None,
-                    started_at: Instant::now(),
+                    started_at: now,
                     folded: false,
-                    anim_start: None,
-                    anim_opening: false,
+                    anim_start: Some(now),
+                    anim_opening: true,
                     anim_duration_ms: 140,
                 };
                 self.blocks.push(block);
