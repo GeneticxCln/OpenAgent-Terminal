@@ -317,9 +317,15 @@ impl Window {
             let mut decoder = Decoder::new(Cursor::new(WINDOW_ICON));
             decoder.set_transformations(png::Transformations::normalize_to_color8());
             let mut reader = decoder.read_info().expect("invalid embedded icon");
-            let mut buf = vec![0; reader.output_buffer_size()];
-            let _ = reader.next_frame(&mut buf);
-            Icon::from_rgba(buf, reader.info().width, reader.info().height)
+            let buf_size = reader
+                .output_buffer_size()
+                .expect("unknown output buffer size for embedded icon");
+            let mut buf = vec![0; buf_size];
+            let info = reader
+                .next_frame(&mut buf)
+                .expect("invalid embedded icon frame");
+            let rgba = &buf[..info.buffer_size()];
+            Icon::from_rgba(rgba.to_vec(), info.width, info.height)
                 .expect("invalid embedded icon format")
         };
 
