@@ -421,7 +421,18 @@ Verify system health:
 
 ```bash
 # Check all components
-openagent-terminal ai validate --include-defaults --json
+openagent-terminal ai validate --include-defaults --json > /tmp/provider-health.json
+
+# Provider management
+
+List available providers and the active one:
+openagent-terminal ai provider list --include-defaults
+
+Switch active provider (persist selection):
+openagent-terminal ai provider set ollama
+
+Machine-readable listing:
+openagent-terminal ai provider list --json
 
 # Test specific agent
 openagent-terminal ai test-agent --agent command --prompt "list files"

@@ -3,7 +3,7 @@ use plugin_system::{PluginPermissions, UnifiedPluginManager};
 
 fn main() -> anyhow::Result<()> {
     // Create the manager
-    let mut manager = UnifiedPluginManager::new(".")?;
+    let manager = UnifiedPluginManager::new(".")?;
 
     // Union permissions for the three demo plugins
     let _perms = PluginPermissions {

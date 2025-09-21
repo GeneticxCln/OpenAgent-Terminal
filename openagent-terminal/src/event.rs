@@ -4790,7 +4790,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn settings_panel_save(&mut self) {
         let need_reload;
         let category = self.display.settings_panel.category;
-        match self.display.settings_panel.save() {
+        let save_res = self.display.settings_panel.save();
+        match save_res {
             Ok(()) => {
                 // For most categories we should reload config to apply changes
                 need_reload = matches!(
@@ -4799,6 +4800,37 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         | crate::display::settings_panel::SettingsCategory::Theme
                         | crate::display::settings_panel::SettingsCategory::General
                 );
+
+                // Hot-apply AI provider changes: reconfigure runtime with new model/endpoint
+                #[cfg(feature = "ai")]
+                if matches!(category, crate::display::settings_panel::SettingsCategory::Ai) {
+                    if let Some(rt) = self.ai_runtime_mut() {
+                        // Build provider config from current config (or defaults) and reconfigure
+                        let name = self.display.settings_panel.provider.to_ascii_lowercase();
+                        let prov_cfg = self
+                            .config
+                            .ai
+                            .providers
+                            .get(&name)
+                            .cloned()
+                            .or_else(|| crate::config::ai_providers::get_default_provider_configs().get(&name).cloned())
+                            .unwrap_or_default();
+                        rt.reconfigure_to(&name, &prov_cfg);
+                        // Update composer badges from runtime UI state
+                        self.display.ai_current_provider = rt.ui.current_provider.clone();
+                        self.display.ai_current_model = rt.ui.current_model.clone();
+                        // If an error occurred, surface it as a message
+                        if let Some(err) = rt.ui.error_message.clone() {
+                            let message = crate::message_bar::Message::new(
+                                format!("AI provider reconfigure failed: {}", err),
+                                crate::message_bar::MessageType::Error,
+                            );
+                            let _ = self
+                                .event_proxy
+                                .send_event(Event::new(EventType::Message(message), self.display.window.id()));
+                        }
+                    }
+                }
             }
             Err(e) => {
                 need_reload = false;
@@ -8203,10 +8235,40 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     let name = provider_name.to_ascii_lowercase();
                     if let Some(rt) = &mut self.ctx.ai_runtime {
                         // Use convenience method to resolve config and reconfigure
-                        let _ = rt.set_provider_by_name(&name, self.ctx.config());
-                        // Update composer display cache from runtime UI state
-                        self.ctx.display.ai_current_provider = rt.ui.current_provider.clone();
-                        self.ctx.display.ai_current_model = rt.ui.current_model.clone();
+                        match rt.set_provider_by_name(&name, self.ctx.config()) {
+                            Ok(()) => {
+                                // Update composer display cache from runtime UI state
+                                self.ctx.display.ai_current_provider = rt.ui.current_provider.clone();
+                                self.ctx.display.ai_current_model = rt.ui.current_model.clone();
+                                // Persist selection to config file (best-effort)
+                                if let Some(path) = self.ctx.config().config_paths.first() {
+                                    let mut doc: toml::Value = if path.exists() {
+                                        match std::fs::read_to_string(path) {
+                                            Ok(s) => toml::from_str(&s).unwrap_or_else(|_| toml::Value::Table(toml::map::Map::new())),
+                                            Err(_) => toml::Value::Table(toml::map::Map::new()),
+                                        }
+                                    } else {
+                                        toml::Value::Table(toml::map::Map::new())
+                                    };
+                                    if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                                    let tbl = doc.as_table_mut().unwrap();
+                                    let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                                    if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                                    let ai_tbl = ai.as_table_mut().unwrap();
+                                    ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
+                                    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+                                    if let Ok(s) = toml::to_string_pretty(&doc) { let _ = std::fs::write(path, s); }
+                                }
+                            }
+                            Err(err) => {
+                                // Surface a toast/message-bar notification on failure
+                                let message = crate::message_bar::Message::new(
+                                    format!("AI provider switch failed: {}", err),
+                                    crate::message_bar::MessageType::Error,
+                                );
+                                let _ = self.ctx.event_proxy.send_event(Event::new(EventType::Message(message), self.ctx.display.window.id()));
+                            }
+                        }
                     } else {
                         // If runtime wasn't initialized, just update the display; runtime will be created when AI opens
                         // Resolve provider config from user config or defaults to show model badge
@@ -8225,6 +8287,25 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             .unwrap_or_default();
                         self.ctx.display.ai_current_provider = name.clone();
                         self.ctx.display.ai_current_model = prov_cfg.default_model.unwrap_or_default();
+                        // Persist selection best-effort when runtime is not initialized yet
+                        if let Some(path) = self.ctx.config().config_paths.first() {
+                            let mut doc: toml::Value = if path.exists() {
+                                std::fs::read_to_string(path)
+                                    .ok()
+                                    .and_then(|s| toml::from_str(&s).ok())
+                                    .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new()))
+                            } else {
+                                toml::Value::Table(toml::map::Map::new())
+                            };
+                            if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                            let tbl = doc.as_table_mut().unwrap();
+                            let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                            if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                            let ai_tbl = ai.as_table_mut().unwrap();
+                            ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
+                            if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+                            if let Ok(s) = toml::to_string_pretty(&doc) { let _ = std::fs::write(path, s); }
+                        }
                     }
                     *self.ctx.dirty = true;
                 }

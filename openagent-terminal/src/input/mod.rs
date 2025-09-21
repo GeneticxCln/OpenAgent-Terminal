@@ -1888,6 +1888,38 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 self.ctx.mark_dirty();
                 return true;
             }
+
+            // Model chip: click to open Settings panel focused on AI -> Model (Warp-like)
+            if !self.ctx.display().ai_current_model.is_empty() {
+                use unicode_width::UnicodeWidthStr as _;
+                let start2 = end + 1; // space after provider chip
+                // Truncate consistently with draw
+                let model_text = {
+                    let max_len = 24usize;
+                    let m = &self.ctx.display().ai_current_model;
+                    if m.len() > max_len { format!("{}…", &m[..max_len]) } else { m.clone() }
+                };
+                let model_chip = format!("[{}]", model_text);
+                let mcols = model_chip.width();
+                let mstart = start2;
+                let mend = start2 + mcols;
+                if mouse_col >= mstart && mouse_col < mend {
+                    // Open settings panel and focus AI->Model
+                    self.ctx.open_settings_panel();
+                    // Ensure category is AI and advance to Model field
+                    // Move from default Provider -> ApiKey -> Model
+                    // Loop with safety cap
+                    for _ in 0..8 {
+                        let sel = self.ctx.display().settings_panel.selected_field;
+                        if matches!(sel, crate::display::settings_panel::Field::Model) { break; }
+                        self.ctx.settings_panel_next_field();
+                    }
+                    self.ctx.display().composer_press_flash_until =
+                        Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
+                    self.ctx.mark_dirty();
+                    return true;
+                }
+            }
         }
 
         // If clicked inside pill but not on a chip: focus composer and place caret at clicked col

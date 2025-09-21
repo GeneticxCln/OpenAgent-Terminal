@@ -103,6 +103,20 @@ export OPENAGENT_OPENAI_MODEL="gpt-4o-mini"
 
 ```toml
 # Complete multi-provider setup
+
+## Provider management
+
+- List all known providers and show the active one:
+
+  openagent-terminal ai provider list --include-defaults
+
+- Switch active provider (persists to your config):
+
+  openagent-terminal ai provider set anthropic
+
+- JSON for scripting:
+
+  openagent-terminal ai provider list --json
 [ai]
 enabled = true
 provider = "ollama"
