@@ -372,11 +372,13 @@ impl TabManager {
                 if self.tab_order.is_empty() {
                     self.active_tab_id = None;
                 } else {
-                    // Try to switch to previously visited tab, or first available
+                    // Prefer the most recently visited remaining tab, falling back to first available
                     let next_tab = self
                         .tab_history
-                        .get_previous()
-                        .filter(|&id| self.tabs.contains_key(&id))
+                        .visited_tabs
+                        .first()
+                        .copied()
+                        .filter(|id| self.tabs.contains_key(id))
                         .unwrap_or(self.tab_order[0]);
                     self.active_tab_id = Some(next_tab);
                     self.tab_history.visit(next_tab);
