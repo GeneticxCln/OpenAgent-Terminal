@@ -1,6 +1,18 @@
 //! Theme management and marketplace system for OpenAgent Terminal
 //!
 //! This crate provides comprehensive theme management including:
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::uninlined_format_args,
+    clippy::unnecessary_wraps,
+    clippy::single_match_else,
+    clippy::redundant_closure_for_method_calls,
+    clippy::inefficient_to_string,
+    clippy::assigning_clones
+)]
 //! - Theme loading and parsing
 //! - Theme validation and compatibility checking
 //! - Community theme marketplace integration

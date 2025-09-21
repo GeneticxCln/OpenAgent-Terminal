@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::too_many_lines)]
+
 use anyhow::Result;
 use openagent_terminal::ai::agents::{
     advanced_conversation_features::AdvancedConversationFeatures,

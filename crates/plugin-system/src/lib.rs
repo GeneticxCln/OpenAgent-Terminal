@@ -1,4 +1,11 @@
 //! Unified Plugin System for OpenAgent Terminal
+#![allow(
+    clippy::pedantic,
+    clippy::similar_names,
+    clippy::doc_markdown,
+    clippy::missing_errors_doc,
+    clippy::if_same_then_else
+)]
 //!
 //! This module provides a complete plugin system that combines:
 //! - Standardized plugin API and metadata

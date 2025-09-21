@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // GPU Snapshot Testing Infrastructure
 // Visual regression detection for terminal rendering
 

@@ -217,15 +217,15 @@ struct Cursor {
 };
 
 struct SelSpan {
-  rect: vec4<f32>;
+  rect: vec4<f32>,
 };
 
 struct SelectionBuffer {
   // header0.x = span count
-  header0: vec4<f32>;
+  header0: vec4<f32>,
   // color for selection overlay (sRGB [0,1])
-  color_rgba: vec4<f32>;
-  spans: array<SelSpan>;
+  color_rgba: vec4<f32>,
+  spans: array<SelSpan>,
 };
 
 fn to_lin_gamma(u: f32, gamma: f32) -> f32 {

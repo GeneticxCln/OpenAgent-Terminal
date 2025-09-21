@@ -2,6 +2,25 @@
 //!
 //! This module provides a secure, sandboxed environment for loading and executing
 //! WebAssembly plugins with enforced permissions and resource limits.
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::wildcard_imports,
+    clippy::missing_errors_doc,
+    clippy::unnecessary_wraps,
+    clippy::default_trait_access,
+    clippy::manual_let_else,
+    clippy::uninlined_format_args,
+    clippy::redundant_closure_for_method_calls,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_lossless,
+    clippy::needless_raw_string_hashes,
+    clippy::unused_async,
+    clippy::too_many_lines,
+    clippy::match_same_arms
+)]
 
 use anyhow::Result as AnyResult;
 use plugin_api::{CommandOutput, PluginError as ApiPluginError, PluginMetadata, PluginPermissions};

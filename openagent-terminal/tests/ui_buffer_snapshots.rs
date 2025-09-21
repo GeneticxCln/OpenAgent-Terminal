@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 use openagent_terminal_core::grid::{Dimensions, Grid};
 use openagent_terminal_core::index::{Column, Line};
 use openagent_terminal_core::term::cell::Cell;

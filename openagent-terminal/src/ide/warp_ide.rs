@@ -191,7 +191,17 @@ impl WarpIde {
     }
 
     fn detect_completion_triggers(&self, input: &str, cursor_pos: usize) -> Vec<CompletionTrigger> {
-        let before_cursor = &input[..cursor_pos];
+        // Ensure we slice at a valid UTF-8 boundary; cursor_pos may be a byte index inside a multi-byte char.
+        let safe_idx = if cursor_pos >= input.len() {
+            input.len()
+        } else {
+            let mut i = cursor_pos;
+            while i > 0 && !input.is_char_boundary(i) {
+                i -= 1;
+            }
+            i
+        };
+        let before_cursor = &input[..safe_idx];
         let parts: Vec<&str> = before_cursor.split_whitespace().collect();
 
         let mut triggers = Vec::new();

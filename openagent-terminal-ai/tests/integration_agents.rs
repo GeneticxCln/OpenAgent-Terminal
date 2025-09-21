@@ -1,4 +1,5 @@
 #![cfg(feature = "agents")]
+#![allow(clippy::pedantic, clippy::redundant_closure_for_method_calls)]
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};

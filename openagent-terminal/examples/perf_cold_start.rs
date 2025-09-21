@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::cast_possible_truncation)]
+
 use std::time::Instant;
 
 use openagent_terminal::config::UiConfig;

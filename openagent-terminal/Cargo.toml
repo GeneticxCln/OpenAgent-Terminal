@@ -56,6 +56,7 @@ optional = true
 
 [dependencies]
 openagent-terminal-ide-editor = { path = "../crates/openagent-terminal-ide-editor", version = "0.1.0", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
 openagent-terminal-ide-lsp = { path = "../crates/openagent-terminal-ide-lsp", version = "0.1.0", optional = true }
 openagent-terminal-ide-indexer = { path = "../crates/openagent-terminal-ide-indexer", version = "0.1.0", optional = true }
 openagent-terminal-ide-dap = { path = "../crates/openagent-terminal-ide-dap", version = "0.1.0", optional = true }
@@ -239,7 +240,7 @@ sync = ["dep:openagent-terminal-sync"]
 # Optional workflow engine for automated task execution
 workflow = ["dep:workflow-engine"]
 # Optional plugin system (plugin-loader temporarily disabled)
-plugins = ["dep:plugin-api", "dep:plugin-loader"]
+plugins = ["dep:plugin-api", "dep:plugin-loader", "dep:reqwest"]
 # Enhanced text shaping with HarfBuzz
 harfbuzz = ["dep:harfbuzz_rs", "dep:fontdb", "dep:unicode-bidi"]
 # Blocks 2.0 system for command execution tracking

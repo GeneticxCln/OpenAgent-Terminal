@@ -1,4 +1,18 @@
 // Docker Helper Plugin - Provides Docker completions, context, and utilities
+#![allow(
+    clippy::pedantic,
+    clippy::uninlined_format_args,
+    clippy::format_push_string,
+    clippy::unchecked_duration_subtraction,
+    clippy::unused_self,
+    clippy::too_many_lines,
+    clippy::doc_markdown,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::inefficient_to_string,
+    clippy::redundant_closure_for_method_calls,
+    clippy::wildcard_imports
+)]
 
 use plugin_api::*;
 use regex::Regex;

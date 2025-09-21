@@ -1,4 +1,5 @@
 #![cfg(feature = "serde")]
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 use serde::Deserialize;
 use serde_json as json;
 

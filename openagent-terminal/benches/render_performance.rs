@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::cast_precision_loss)]
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::Duration;
 

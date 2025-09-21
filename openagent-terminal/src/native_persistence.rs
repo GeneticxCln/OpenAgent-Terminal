@@ -21,6 +21,9 @@ use crate::blocks_v2::{Block, BlockId};
 use crate::workspace::tab_manager::TabManagerState;
 use crate::workspace::TabId;
 
+/// Callback type for persistence events to reduce type complexity
+pub type PersistenceEventCallback = Box<dyn Fn(&PersistenceEvent) + Send + Sync>;
+
 /// Native persistence manager with immediate write capabilities
 pub struct NativePersistence {
     /// Data directory for immediate file operations
@@ -41,7 +44,7 @@ pub struct NativePersistence {
     split_persistence: SplitPersistence,
 
     /// Persistence event callbacks
-    event_callbacks: Vec<Box<dyn Fn(&PersistenceEvent) + Send + Sync>>,
+    event_callbacks: Vec<PersistenceEventCallback>,
 
     /// Write-ahead log for immediate consistency
     wal: WriteAheadLog,
@@ -210,7 +213,7 @@ pub enum BackupPriority {
 /// Sync operations for real-time updates
 #[derive(Debug, Clone)]
 pub enum SyncOperation {
-    SaveBlock(Block),
+    SaveBlock(Box<Block>),
     DeleteBlock(BlockId),
     SaveTabState(TabManagerState),
     SaveSplitLayout { layout_id: String, layout_data: Vec<u8> },
@@ -501,7 +504,7 @@ impl NativePersistence {
 
         // Notify sync layer (best-effort)
         if let Some(tx) = &self.sync_sender {
-            let _ = tx.send(SyncOperation::SaveBlock(block.clone()));
+let _ = tx.send(SyncOperation::SaveBlock(Box::new(block.clone())));
         }
 
         // Schedule backup if needed
@@ -767,7 +770,7 @@ impl NativePersistence {
         let session_files = async_fs::read_dir(&self.tab_persistence.sessions_dir).await;
         if let Ok(mut entries) = session_files {
             while let Ok(Some(entry)) = entries.next_entry().await {
-                if entry.path().extension().map_or(false, |ext| ext == "json") {
+                if entry.path().extension().is_some_and(|ext| ext == "json") {
                     let _session_data = async_fs::read(entry.path()).await?;
                     // Parse session data if needed
                 }

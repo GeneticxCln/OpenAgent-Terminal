@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 // use std::sync::Arc; // not used currently
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -19,6 +20,9 @@ use serde::{Deserialize, Serialize};
 // use tokio::sync::mpsc; // not used currently
 
 use crate::blocks_v2::ShellType;
+
+/// Callback type for shell events to reduce type complexity
+pub type ShellEventCallback = Box<dyn Fn(&ShellEvent) + Send + Sync>;
 
 /// Native shell integration manager
 pub struct ShellIntegration {
@@ -41,7 +45,7 @@ pub struct ShellIntegration {
     shell_hooks: ShellHooks,
 
     /// Event callbacks for immediate responses
-    event_callbacks: Vec<Box<dyn Fn(&ShellEvent) + Send + Sync>>,
+    event_callbacks: Vec<ShellEventCallback>,
 
     /// Performance statistics
     stats: ShellStats,
@@ -641,23 +645,21 @@ impl ShellIntegration {
             self.directory_tracker.current_dir = new_dir.clone();
 
             // Detect project type immediately
-            if let Ok(project_info) =
+            if let Ok(Some(info)) =
                 self.directory_tracker.project_detector.detect_project(&new_dir)
             {
-                if let Some(info) = project_info {
-                    // Update directory pattern
-                    let pattern =
-                        self.directory_tracker.dir_patterns.entry(new_dir.clone()).or_insert_with(
-                            || DirectoryPattern {
-                                common_commands: Vec::new(),
-                                project_type: Some(info.project_type),
-                                frequency_map: HashMap::new(),
-                                last_updated: Utc::now(),
-                            },
-                        );
-                    pattern.project_type = Some(info.project_type);
-                    pattern.last_updated = Utc::now();
-                }
+                // Update directory pattern
+                let pattern =
+                    self.directory_tracker.dir_patterns.entry(new_dir.clone()).or_insert_with(
+                        || DirectoryPattern {
+                            common_commands: Vec::new(),
+                            project_type: Some(info.project_type),
+                            frequency_map: HashMap::new(),
+                            last_updated: Utc::now(),
+                        },
+                    );
+                pattern.project_type = Some(info.project_type);
+                pattern.last_updated = Utc::now();
             }
 
             // Update frequency tracking immediately
@@ -934,7 +936,7 @@ impl ProjectDetector {
         // Add more project types...
     }
 
-    fn detect_project(&mut self, dir: &PathBuf) -> Result<Option<ProjectInfo>> {
+    fn detect_project(&mut self, dir: &Path) -> Result<Option<ProjectInfo>> {
         if let Some(cached) = self.cache.get(dir) {
             return Ok(cached.clone());
         }
@@ -944,21 +946,21 @@ impl ProjectDetector {
                 let project_info = ProjectInfo {
                     project_type: rule.project_type,
                     name: dir.file_name().map(|n| n.to_string_lossy().to_string()),
-                    root_dir: dir.clone(),
+                    root_dir: dir.to_path_buf(),
                     config_files: Vec::new(),   // Would be populated
                     detected_tools: Vec::new(), // Would be populated
                 };
 
-                self.cache.insert(dir.clone(), Some(project_info.clone()));
+                self.cache.insert(dir.to_path_buf(), Some(project_info.clone()));
                 return Ok(Some(project_info));
             }
         }
 
-        self.cache.insert(dir.clone(), None);
+        self.cache.insert(dir.to_path_buf(), None);
         Ok(None)
     }
 
-    fn check_indicators(&self, dir: &PathBuf, indicators: &[ProjectIndicator]) -> bool {
+    fn check_indicators(&self, dir: &Path, indicators: &[ProjectIndicator]) -> bool {
         for indicator in indicators {
             match indicator {
                 ProjectIndicator::FileExists(file) => {
@@ -1076,21 +1078,21 @@ impl EnhancedHistory {
             self.search_index
                 .command_index
                 .entry(token.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(entry_index);
         }
 
         self.search_index
             .directory_index
             .entry(entry.working_dir.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(entry_index);
 
         if let Some(category) = entry.category {
             self.search_index
                 .category_index
                 .entry(category)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(entry_index);
         }
 
@@ -1098,7 +1100,7 @@ impl EnhancedHistory {
             self.search_index
                 .tag_index
                 .entry(tag.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(entry_index);
         }
 
@@ -1172,10 +1174,10 @@ impl HistorySuggestionEngine {
 
         // Recent command suggestions
         for entry in entries.iter().rev().take(50) {
-            if entry.command.starts_with(partial_command) {
-                if !suggestions.iter().any(|s| s.starts_with(&entry.command)) {
-                    suggestions.push(entry.command.clone());
-                }
+            if entry.command.starts_with(partial_command)
+                && !suggestions.iter().any(|s| s.starts_with(&entry.command))
+            {
+                suggestions.push(entry.command.clone());
             }
         }
 

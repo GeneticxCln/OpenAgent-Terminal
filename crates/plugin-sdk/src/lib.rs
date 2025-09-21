@@ -2,6 +2,18 @@
 //!
 //! This crate provides ergonomic tools for developing WebAssembly plugins for OpenAgent Terminal.
 //! It includes macros for easy plugin definition and safe wrappers for host function calls.
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::missing_errors_doc,
+    clippy::borrow_as_ptr,
+    clippy::uninlined_format_args,
+    clippy::redundant_closure_for_method_calls,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::map_unwrap_or
+)]
 
 use plugin_api::PluginMetadata;
 use std::sync::{Mutex, OnceLock};

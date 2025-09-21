@@ -1869,6 +1869,9 @@ use crate::blocks_v2::BlockId;
 use crate::workspace::split_manager::PaneId;
 use crate::workspace::TabId;
 
+/// Callback type for input events to reduce type complexity
+pub type InputEventCallback = Box<dyn Fn(&InputEvent) + Send + Sync>;
+
 /// Native input manager for immediate input processing
 pub struct NativeInput {
     /// Keyboard state for immediate key handling
@@ -1878,7 +1881,7 @@ pub struct NativeInput {
     mouse_state: MouseState,
 
     /// Input event callbacks for immediate responses
-    event_callbacks: Vec<Box<dyn Fn(&InputEvent) + Send + Sync>>,
+    event_callbacks: Vec<InputEventCallback>,
 
     /// Hotkey bindings for immediate activation
     hotkey_bindings: HashMap<HotkeyCombo, InputAction>,
@@ -2576,7 +2579,7 @@ mod tests {
     fn test_native_input_creation() {
         let input = NativeInput::new();
         assert_eq!(input.input_context, InputContext::Global);
-        assert!(input.hotkey_bindings.len() > 0); // Should have default hotkeys
+        assert!(!input.hotkey_bindings.is_empty()); // Should have default hotkeys
     }
 
     #[test]

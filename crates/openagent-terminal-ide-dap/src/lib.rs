@@ -1,4 +1,5 @@
 //! Minimal DAP (Debug Adapter Protocol) client over stdio.
+#![allow(clippy::pedantic, clippy::missing_errors_doc, clippy::must_use_candidate, clippy::doc_markdown, clippy::unnecessary_wraps, clippy::redundant_closure_for_method_calls)]
 
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;

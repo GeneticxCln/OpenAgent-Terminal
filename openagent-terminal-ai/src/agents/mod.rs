@@ -9,6 +9,7 @@ pub mod project_context;
 pub mod quality;
 pub mod types;
 pub mod workflow_orchestration;
+pub mod command;
 
 use crate::{AiProposal, AiRequest};
 use async_trait::async_trait;

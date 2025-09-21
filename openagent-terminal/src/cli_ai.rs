@@ -192,27 +192,25 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
 
                     eprintln!("⏳ Reading JSONL records...");
 
-                    for line in reader.lines() {
-                        if let Ok(l) = line {
-                            line_count += 1;
-                            if line_count % 1000 == 0 {
-                                eprintln!("   Read {} lines...", line_count);
-                            }
+                    for l in reader.lines().map_while(Result::ok) {
+                        line_count += 1;
+                        if line_count % 1000 == 0 {
+                            eprintln!("   Read {} lines...", line_count);
+                        }
 
-                            if l.trim().is_empty() {
-                                continue;
-                            }
-                            match serde_json::from_str::<serde_json::Value>(&l) {
-                                Ok(v) => records.push(v),
-                                Err(parse_err) => {
-                                    skipped_lines += 1;
-                                    if skipped_lines <= 5 {
-                                        // Only warn about first 5 errors
-                                        eprintln!(
-                                            "⚠️  Skipping invalid JSONL line {}: {}",
-                                            line_count, parse_err
-                                        );
-                                    }
+                        if l.trim().is_empty() {
+                            continue;
+                        }
+                        match serde_json::from_str::<serde_json::Value>(&l) {
+                            Ok(v) => records.push(v),
+                            Err(parse_err) => {
+                                skipped_lines += 1;
+                                if skipped_lines <= 5 {
+                                    // Only warn about first 5 errors
+                                    eprintln!(
+                                        "⚠️  Skipping invalid JSONL line {}: {}",
+                                        line_count, parse_err
+                                    );
                                 }
                             }
                         }
@@ -236,7 +234,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                             let s = serde_json::to_string_pretty(&records)
                                 .with_context(|| "Failed to serialize records to JSON")?;
                             eprintln!("   Writing {} bytes to file...", s.len());
-                            std::fs::write(&to, s)
+                            std::fs::write(to, s)
                                 .with_context(|| format!("Failed to write {}", to.display()))?;
                             println!(
                                 "✅ Exported {} AI history entries to {} (JSON via JSONL fallback)",
@@ -252,7 +250,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                                     .with_context(|| "Failed to serialize record")?;
                                 output.push(b'\n');
                             }
-                            std::fs::write(&to, output)
+                            std::fs::write(to, output)
                                 .with_context(|| format!("Failed to write {}", to.display()))?;
                             println!(
                                 "✅ Exported {} AI history entries to {} (JSONL via JSONL fallback)",
@@ -262,7 +260,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                         }
                         "csv" => {
                             eprintln!("   Creating CSV writer...");
-                            let mut wtr = csv::Writer::from_path(&to).with_context(|| {
+                            let mut wtr = csv::Writer::from_path(to).with_context(|| {
                                 format!("Failed to open {} for CSV", to.display())
                             })?;
 
@@ -344,14 +342,12 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                         .with_context(|| format!("Failed to open {}", jsonl.display()))?;
                     let reader = std::io::BufReader::new(file);
                     let mut records: Vec<serde_json::Value> = Vec::new();
-                    for line in reader.lines() {
-                        if let Ok(l) = line {
-                            if l.trim().is_empty() { continue; }
-                            match serde_json::from_str::<serde_json::Value>(&l) {
-                                Ok(v) => records.push(v),
-                                Err(parse_err) => {
-                                    tracing::warn!("Skipping invalid JSONL line: {}", parse_err);
-                                }
+                    for l in reader.lines().map_while(Result::ok) {
+                        if l.trim().is_empty() { continue; }
+                        match serde_json::from_str::<serde_json::Value>(&l) {
+                            Ok(v) => records.push(v),
+                            Err(parse_err) => {
+                                tracing::warn!("Skipping invalid JSONL line: {}", parse_err);
                             }
                         }
                     }
@@ -363,7 +359,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     match format.as_str() {
                         "json" => {
                             let s = serde_json::to_string_pretty(&records)?;
-                            std::fs::write(&to, s)
+                            std::fs::write(to, s)
                                 .with_context(|| format!("Failed to write {}", to.display()))?;
                             println!(
                                 "Exported {} AI history entries to {} (JSON via JSONL fallback)",
@@ -372,7 +368,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                             );
                         }
                         "csv" => {
-                            let mut wtr = csv::Writer::from_path(&to)
+                            let mut wtr = csv::Writer::from_path(to)
                                 .with_context(|| format!("Failed to open {} for CSV", to.display()))?;
                             wtr.write_record([
                                 "ts",
@@ -430,7 +426,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             match format.as_str() {
                 "json" => {
                     let s = serde_json::to_string_pretty(&records)?;
-                    std::fs::write(&to, s)
+                    std::fs::write(to, s)
                         .with_context(|| format!("Failed to write {}", to.display()))?;
                     println!(
                         "Exported {} AI history entries to {} (JSON)",
@@ -439,7 +435,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     );
                 }
                 "csv" => {
-                    let mut wtr = csv::Writer::from_path(&to)
+                    let mut wtr = csv::Writer::from_path(to)
                         .with_context(|| format!("Failed to open {} for CSV", to.display()))?;
                     wtr.write_record([
                         "ts",

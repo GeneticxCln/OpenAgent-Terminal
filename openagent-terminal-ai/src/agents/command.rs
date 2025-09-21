@@ -1,5 +1,5 @@
 use super::{AgentCapabilities, AgentError, AgentRequest, AgentResponse, AiAgent, PrivacyLevel};
-use crate::{AiProvider, AiRequest};
+use crate::AiProvider;
 use async_trait::async_trait;
 use std::sync::Arc;
 

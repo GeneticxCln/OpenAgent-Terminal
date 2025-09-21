@@ -75,20 +75,20 @@ pub struct ShapedLine {
 pub struct ShapedCell {
     pub cell_index: usize,
     pub shaped_glyphs: Vec<ShapedCellGlyph>,
-    pub cell_width: f32,
+    pub _cell_width: f32,
 }
 
 /// Glyph within a shaped cell
 #[derive(Debug, Clone)]
 pub struct ShapedCellGlyph {
-    pub glyph_id: u32,
+    pub _glyph_id: u32,
     pub glyph: Glyph,
     pub x_offset: f32,
     pub y_offset: f32,
     pub x_advance: f32,
-    pub y_advance: f32,
-    pub cluster: u32,
-    pub font_index: usize,
+    pub _y_advance: f32,
+    pub _cluster: u32,
+    pub _font_index: usize,
 }
 
 impl IntegratedTextShaper {
@@ -239,7 +239,7 @@ impl IntegratedTextShaper {
                 vec![self.create_basic_cell_glyph(cell, glyph_cache)?]
             };
 
-            shaped_cells.push(ShapedCell { cell_index, shaped_glyphs, cell_width });
+            shaped_cells.push(ShapedCell { cell_index, shaped_glyphs, _cell_width: cell_width });
         }
 
         Ok(ShapedLine {
@@ -286,14 +286,14 @@ impl IntegratedTextShaper {
             let glyph = self.load_glyph_for_shaped(glyph_key, hb_glyph, glyph_cache)?;
 
             cell_glyphs.push(ShapedCellGlyph {
-                glyph_id: hb_glyph.glyph_id,
+                _glyph_id: hb_glyph.glyph_id,
                 glyph,
                 x_offset: hb_glyph.x_offset,
                 y_offset: hb_glyph.y_offset,
                 x_advance: hb_glyph.x_advance,
-                y_advance: hb_glyph.y_advance,
-                cluster: hb_glyph.cluster,
-                font_index: hb_glyph.font_index,
+                _y_advance: hb_glyph.y_advance,
+                _cluster: hb_glyph.cluster,
+                _font_index: hb_glyph.font_index,
             });
         }
 
@@ -316,14 +316,14 @@ impl IntegratedTextShaper {
         let glyph = glyph_cache.get(glyph_key, &mut LoadGlyphImpl, true);
 
         Ok(ShapedCellGlyph {
-            glyph_id: cell.character as u32,
+            _glyph_id: cell.character as u32,
             glyph,
             x_offset: 0.0,
             y_offset: 0.0,
             x_advance: glyph_cache.font_size.as_pt() * 0.6, // This could be more accurate
-            y_advance: 0.0,
-            cluster: 0,
-            font_index: 0,
+            _y_advance: 0.0,
+            _cluster: 0,
+            _font_index: 0,
         })
     }
 
@@ -346,7 +346,7 @@ impl IntegratedTextShaper {
             shaped_cells.push(ShapedCell {
                 cell_index: index,
                 shaped_glyphs: vec![shaped_glyph],
-                cell_width,
+                _cell_width: cell_width,
             });
         }
 

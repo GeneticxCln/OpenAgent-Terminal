@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::manual_let_else, clippy::uninlined_format_args)]
+
 use std::path::Path;
 use std::process::Command;
 

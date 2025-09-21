@@ -478,7 +478,13 @@ impl PrivacyContentFilter {
             is_initialized: false,
         }
     }
+}
 
+impl Default for PrivacyContentFilter {
+    fn default() -> Self { Self::new() }
+}
+
+impl PrivacyContentFilter {
     pub fn with_config(mut self, config: PrivacyFilterConfig) -> Self {
         self.config = config;
         self
@@ -658,6 +664,7 @@ impl PrivacyContentFilter {
         standard: ComplianceStandard,
         date_range: (DateTime<Utc>, DateTime<Utc>),
     ) -> Result<ComplianceReport> {
+        let _use_classifier = &self.data_classifier;
         let audit = self.privacy_audit.read().await;
 
         let relevant_entries: Vec<&AuditEntry> = audit
@@ -697,14 +704,6 @@ impl PrivacyContentFilter {
 
     // Helper methods
 
-    async fn run_scanner(
-        &self,
-        scanner: &ContentScanner,
-        content: &str,
-        context: Option<&str>,
-    ) -> Result<Vec<SensitiveDataDetection>> {
-        Ok(Self::run_scanner_internal(scanner, content, context))
-    }
 
     fn run_scanner_internal(
         scanner: &ContentScanner,
@@ -1311,7 +1310,13 @@ impl RedactionEngine {
             encryption_key: None,
         }
     }
+}
 
+impl Default for RedactionEngine {
+    fn default() -> Self { Self::new() }
+}
+
+impl RedactionEngine {
     pub async fn apply_redaction(
         &self,
         content: &str,
@@ -1341,6 +1346,10 @@ impl DataClassifier {
     }
 }
 
+impl Default for DataClassifier {
+    fn default() -> Self { Self::new() }
+}
+
 impl PrivacyAuditLog {
     pub fn new() -> Self {
         Self {
@@ -1349,7 +1358,13 @@ impl PrivacyAuditLog {
             encryption_enabled: false,
         }
     }
+}
 
+impl Default for PrivacyAuditLog {
+    fn default() -> Self { Self::new() }
+}
+
+impl PrivacyAuditLog {
     pub fn cleanup_old_entries(&mut self) {
         let cutoff_date = Utc::now() - self.retention_period;
         self.audit_entries.retain(|entry| entry.timestamp > cutoff_date);

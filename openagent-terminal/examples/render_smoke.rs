@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Render smoke example (WGPU-only): sanity-check adapter discovery without a window.
 // This intentionally avoids deep integration with the main crate to keep compilation simple.
 

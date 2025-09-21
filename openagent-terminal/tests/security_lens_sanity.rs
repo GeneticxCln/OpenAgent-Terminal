@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // High-yield coverage: a small sanity test around SecurityLens config mapping
 
 use openagent_terminal::security_config::SecurityConfig;

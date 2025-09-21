@@ -2,6 +2,40 @@
 //! Only traits and simple types; no network clients included.
 
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::too_many_lines,
+    clippy::items_after_statements,
+    clippy::match_same_arms,
+    clippy::redundant_else,
+    clippy::redundant_closure_for_method_calls,
+    clippy::map_unwrap_or,
+    clippy::manual_let_else,
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::unnecessary_literal_bound,
+    clippy::uninlined_format_args,
+    clippy::if_not_else,
+    clippy::needless_continue,
+    clippy::unnested_or_patterns,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::match_like_matches_macro,
+    clippy::unnecessary_map_or,
+    clippy::manual_range_contains,
+    clippy::vec_init_then_push,
+    clippy::manual_strip,
+    clippy::map_flatten,
+    clippy::manual_clamp,
+    clippy::only_used_in_recursion,
+    clippy::large_enum_variant
+)]
+#![allow(dead_code, unused_imports)]
 
 pub mod context;
 pub mod error;

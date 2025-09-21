@@ -390,23 +390,80 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
 
 #[cfg(feature = "workflow")]
 async fn seed_default_workflows(dir: &std::path::Path) -> Result<()> {
-    let rust = r#"name: Cargo build
-on: manual
+    let rust = r#"name: Cargo Build
+version: "1.0.0"
+description: Build Rust workspace in release mode
+metadata:
+  tags: ["build", "rust"]
+  icon: null
+  estimated_duration: "5m"
+requirements:
+  - command: cargo
+    required: true
+parameters: []
+environment: {}
 steps:
-  - run: cargo build --workspace --release
+  - id: build
+    name: Cargo Build
     description: Build Rust workspace in release mode
+    commands:
+      - cargo build --workspace --release
+hooks: {}
+outputs: []
 "#;
-    let node = r#"name: Node test
-on: manual
+    let node = r#"name: Node Test
+version: "1.0.0"
+description: Install dependencies and run tests
+metadata:
+  tags: ["test", "node"]
+  icon: null
+  estimated_duration: "3m"
+requirements:
+  - command: node
+    required: true
+  - command: npm
+    required: true
+parameters: []
+environment: {}
 steps:
-  - run: npm ci
-  - run: npm test
+  - id: install
+    name: Install Dependencies
+    commands:
+      - npm ci
+  - id: test
+    name: Run Tests
+    commands:
+      - npm test
+hooks: {}
+outputs: []
 "#;
-    let python = r#"name: Python lint
-on: manual
+    let python = r#"name: Python Lint
+version: "1.0.0"
+description: Install dependencies and run linter
+metadata:
+  tags: ["lint", "python"]
+  icon: null
+  estimated_duration: "2m"
+requirements:
+  - command: python
+    required: true
+  - command: pip
+    required: true
+  - command: ruff
+    required: false
+parameters: []
+environment: {}
 steps:
-  - run: pip install -r requirements.txt
-  - run: ruff check .
+  - id: install
+    name: Install Dependencies
+    commands:
+      - pip install -r requirements.txt
+  - id: lint
+    name: Run Ruff Linter
+    commands:
+      - ruff check .
+hooks: {}
+outputs: []
 "#;
     let files = [("rust.yaml", rust), ("node.yaml", node), ("python.yaml", python)];
     for (name, content) in files {

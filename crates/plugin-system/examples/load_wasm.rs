@@ -3,10 +3,10 @@ use plugin_system::{PluginPermissions, UnifiedPluginManager};
 
 fn main() -> anyhow::Result<()> {
     // Create the manager
-    let manager = UnifiedPluginManager::new(".")?;
+    let mut manager = UnifiedPluginManager::new(".")?;
 
     // Union permissions for the three demo plugins
-    let _perms = PluginPermissions {
+let perms = PluginPermissions {
         read_files: vec!["/etc/hostname".into()],
         network: true,
         net_allow_domains: vec!["example.com".into()],
@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
     #[cfg(feature = "wasm-runtime")]
-    manager.set_default_host_from_permissions(&_perms);
+manager.set_default_host_from_permissions(&perms);
 
     // Choose which demo to run
     let wasm_path = std::env::args()
@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     rt.block_on(async move {
         let pid = manager.load_plugin(&wasm_path).await?;
-        println!("Loaded plugin: {}", pid);
+println!("Loaded plugin: {pid}");
         anyhow::Ok(())
     })
 }

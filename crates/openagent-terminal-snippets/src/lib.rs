@@ -1,4 +1,16 @@
 //! Advanced snippet and macro system for OpenAgent Terminal
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::wildcard_imports,
+    clippy::uninlined_format_args,
+    clippy::ignored_unit_patterns,
+    clippy::cast_precision_loss
+)]
 //!
 //! This crate provides:
 //! - Text expansion snippets

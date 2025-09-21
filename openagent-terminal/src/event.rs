@@ -380,8 +380,8 @@ impl Processor {
             if self.config.ai.enabled {
                 let provider_name = self.config.ai.provider.as_deref().unwrap_or("null");
                 if provider_name.eq_ignore_ascii_case("null") {
-                    let msg = crate::message_bar::Message::new(
-                        "AI is enabled with provider 'null'. Open AI (Ctrl+Shift+A) and switch provider, or configure [ai] in your config.",
+let msg = crate::message_bar::Message::new(
+                        "AI is enabled with provider 'null'. Open AI (Ctrl+Shift+A) and switch provider, or configure [ai] in your config.".to_string(),
                         crate::message_bar::MessageType::Warning,
                     );
                     if let Err(e) = self.proxy.send_event(Event::new(EventType::Message(msg), window_id)) {
@@ -747,6 +747,39 @@ impl Processor {
                     description: desc,
                     source: crate::display::workflow_panel::WorkflowSource::Config,
                 });
+            }
+        }
+        // Also include workflows loaded by the runtime engine when available
+        if let Some(components) = &self.components {
+            if let Some(engine) = &components.workflow_engine {
+                let engine = engine.clone();
+                let proxy = self.proxy.clone();
+                let win = window_id;
+                let mut base = items;
+                components.runtime.spawn(async move {
+                    let mut engine_items = Vec::new();
+                    let list = engine.list_workflows().await;
+                    for (_id, def) in list {
+                        let name = def.name.clone();
+                        let desc = Some(def.description.clone());
+                        let hay = format!("{} {}", name, def.description).to_lowercase();
+                        if q.trim().is_empty() || hay.contains(&q) {
+                            engine_items.push(crate::display::workflow_panel::WorkflowItem {
+                                name,
+                                description: desc,
+                                source: crate::display::workflow_panel::WorkflowSource::Engine,
+                            });
+                        }
+                    }
+                    // Merge and de-duplicate by name preferring engine entries last
+                    base.extend(engine_items);
+                    // De-dup by name keeping first occurrence
+                    let mut seen = std::collections::HashSet::new();
+                    base.retain(|it| seen.insert(it.name.clone()));
+                    let _ = proxy
+                        .send_event(Event::new(EventType::WorkflowsSearchResults(base), win));
+                });
+                return;
             }
         }
         let _ =
@@ -2521,6 +2554,192 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsSearchPerform(query), Some(window_id)) => {
+                // Build items from loaded plugins and discovered files; simple case-insensitive match
+                if let Some(components) = &self.components {
+                    if let Some(pm) = &components.plugin_manager {
+                        let pm = pm.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            let mut items: Vec<crate::display::plugin_panel::PluginItem> = Vec::new();
+                            let q = query.to_lowercase();
+                            // Loaded plugins
+                            let loaded = pm.list_plugins().await;
+                            for md in loaded {
+                                let mut hay = md.name.clone();
+                                hay.push(' ');
+                                hay.push_str(&md.description);
+                                if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
+                                    items.push(crate::display::plugin_panel::PluginItem {
+                                        name: md.name.clone(),
+                                        version: Some(md.version.clone()),
+                                        description: Some(md.description.clone()),
+                                        loaded: true,
+                                        path: None,
+                                    });
+                                }
+                            }
+                            // Discovered plugins on disk
+                            if let Ok(paths) = pm.discover_plugins().await {
+                                for p in paths {
+                                    let fname = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                                    let hay = format!("{} {}", fname, p.display());
+                                    if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
+                                        // Skip if already listed as loaded
+                                        if !items.iter().any(|it| it.name == fname && it.loaded) {
+                                            items.push(crate::display::plugin_panel::PluginItem {
+                                                name: fname,
+                                                version: None,
+                                                description: None,
+                                                loaded: false,
+                                                path: Some(p.to_string_lossy().to_string()),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchResults(items), win));
+                        });
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsSearchResults(items), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    window_context.display.plugins_panel.results = items;
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsLoadFromPath(path), Some(window_id)) => {
+                if let Some(components) = &self.components {
+                    if let Some(pm) = &components.plugin_manager {
+                        let pm = pm.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            match pm.load_plugin(&path).await {
+                                Ok(id) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Loaded plugin: {}", id),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                                Err(e) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Load failed: {}", e),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                            }
+                            // Refresh list
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
+                        });
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsUnloadByName(name), Some(window_id)) => {
+                if let Some(components) = &self.components {
+                    if let Some(pm) = &components.plugin_manager {
+                        let pm = pm.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            match pm.unload_plugin(&name).await {
+                                Ok(()) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Unloaded plugin: {}", name),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                                Err(e) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Unload failed: {}", e),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                            }
+                            // Refresh list
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
+                        });
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsInstallFromUrl { url }, Some(window_id)) => {
+                if let Some(components) = &self.components {
+                    // Compute user plugins dir similar to initialize_plugin_manager
+                    let plugins_dir = if let Some(data) = dirs::data_dir() {
+                        data.join("openagent-terminal").join("plugins")
+                    } else {
+                        std::path::PathBuf::from("./.openagent-terminal/plugins")
+                    };
+                    let _ = std::fs::create_dir_all(&plugins_dir);
+                    let proxy = self.proxy.clone();
+                    let win = *window_id;
+                    let rt = components.runtime.clone();
+                    // Download and save
+                    rt.spawn(async move {
+                        let fname = url.split('/').next_back().unwrap_or("plugin.wasm");
+                        let target = plugins_dir.join(fname);
+                        let client = reqwest::Client::new();
+                        let res = client.get(&url).send().await;
+                        match res {
+                            Ok(resp) => {
+                                match resp.bytes().await {
+                                    Ok(bytes) => {
+                                        if let Err(e) = tokio::fs::write(&target, &bytes).await {
+                                            let m = crate::message_bar::Message::new(
+                                                format!("Install failed: {}", e),
+                                                crate::message_bar::MessageType::Warning,
+                                            );
+                                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                        } else {
+                                            let m = crate::message_bar::Message::new(
+                                                format!("Downloaded plugin to {}", target.display()),
+                                                crate::message_bar::MessageType::Warning,
+                                            );
+                                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                            // Trigger load
+                                            let _ = proxy.send_event(Event::new(
+                                                EventType::PluginsLoadFromPath(target.to_string_lossy().to_string()),
+                                                win,
+                                            ));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let m = crate::message_bar::Message::new(
+                                            format!("Install failed: {}", e),
+                                            crate::message_bar::MessageType::Warning,
+                                        );
+                                        let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let m = crate::message_bar::Message::new(
+                                    format!("Download failed: {}", e),
+                                    crate::message_bar::MessageType::Warning,
+                                );
+                                let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                            }
+                        }
+                    });
+                }
+            }
             (payload, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.handle_event(
@@ -2750,6 +2969,17 @@ pub enum EventType {
         plugin: String,
         command: String,
     },
+    // Plugins panel events
+    #[cfg(feature = "plugins")]
+    PluginsSearchPerform(String),
+    #[cfg(feature = "plugins")]
+    PluginsSearchResults(Vec<crate::display::plugin_panel::PluginItem>),
+    #[cfg(feature = "plugins")]
+    PluginsLoadFromPath(String), // path to .wasm
+    #[cfg(feature = "plugins")]
+    PluginsUnloadByName(String), // plugin id/name
+    #[cfg(feature = "plugins")]
+    PluginsInstallFromUrl { url: String },
     #[cfg(feature = "workflow")]
     WorkflowsSearchResults(Vec<crate::display::workflow_panel::WorkflowItem>),
     #[cfg(feature = "workflow")]
@@ -4253,15 +4483,42 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
     }
 
+    #[cfg(feature = "plugins")]
+    fn open_plugins_panel(&mut self) {
+        if self.palette_active() {
+            self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.close();
+        }
+        self.display.plugins_panel.open();
+        self.mark_dirty();
+        // Trigger initial plugins search
+        let q = self.display.plugins_panel.query.clone();
+        let _ = self.event_proxy.send_event(Event::new(
+            EventType::PluginsSearchPerform(q),
+            self.display.window.id(),
+        ));
+    }
+
     #[cfg(feature = "workflow")]
     fn workflows_panel_cancel(&mut self) {
         self.display.workflows_panel.close();
         self.mark_dirty();
     }
 
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_cancel(&mut self) {
+        self.display.plugins_panel.close();
+        self.mark_dirty();
+    }
+
     #[cfg(feature = "workflow")]
     fn workflows_panel_active(&self) -> bool {
         self.display.workflows_panel.active
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_active(&self) -> bool {
+        self.display.plugins_panel.active
     }
 
     #[cfg(feature = "workflow")]
@@ -4275,6 +4532,20 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.unschedule(timer_id);
         let q = self.display.workflows_panel.query.clone();
         let evt = Event::new(EventType::WorkflowsSearchPerform(q), window_id);
+        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_input(&mut self, c: char) {
+        self.display.plugins_panel.query.push(c);
+        self.display.plugins_panel.selected = 0;
+        self.mark_dirty();
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::PluginsSearchTyping, window_id); // debounced plugin search
+        self.scheduler.unschedule(timer_id);
+        let q = self.display.plugins_panel.query.clone();
+        let evt = Event::new(EventType::PluginsSearchPerform(q), window_id);
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
@@ -4292,9 +4563,29 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_backspace(&mut self) {
+        self.display.plugins_panel.query.pop();
+        self.display.plugins_panel.selected = 0;
+        self.mark_dirty();
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::PluginsSearchTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let q = self.display.plugins_panel.query.clone();
+        let evt = Event::new(EventType::PluginsSearchPerform(q), window_id);
+        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+    }
+
     #[cfg(feature = "workflow")]
     fn workflows_panel_move_selection(&mut self, delta: isize) {
         self.display.workflows_panel.move_selection(delta);
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_move_selection(&mut self, delta: isize) {
+        self.display.plugins_panel.move_selection(delta);
         self.mark_dirty();
     }
 
@@ -4312,6 +4603,33 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
         self.display.workflows_panel.close();
         self.mark_dirty();
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_confirm(&mut self) {
+        // If query looks like a URL, request install from URL
+        let q = self.display.plugins_panel.query.trim().to_string();
+        if q.starts_with("http://") || q.starts_with("https://") {
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::PluginsInstallFromUrl { url: q },
+                self.display.window.id(),
+            ));
+            return;
+        }
+        if self.display.plugins_panel.results.is_empty() { return; }
+        let idx = self.display.plugins_panel.selected.min(self.display.plugins_panel.results.len() - 1);
+        let item = self.display.plugins_panel.results[idx].clone();
+        if item.loaded {
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::PluginsUnloadByName(item.name),
+                self.display.window.id(),
+            ));
+        } else if let Some(path) = item.path {
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::PluginsLoadFromPath(path),
+                self.display.window.id(),
+            ));
+        }
     }
 
     // Settings panel controls
@@ -8029,6 +8347,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 #[cfg(feature = "plugins")]
                 EventType::PaletteRequestPluginCommands | EventType::PluginsRunCommand { .. } => {
                     // Already handled at Processor level; ignore here
+                }
+                #[cfg(feature = "plugins")]
+                EventType::PluginsSearchPerform(_)
+                | EventType::PluginsSearchResults(_)
+                | EventType::PluginsLoadFromPath(_)
+                | EventType::PluginsUnloadByName(_)
+                | EventType::PluginsInstallFromUrl { .. } => {
+                    // Plugins panel events are handled in the window context processor; nothing to do here
                 }
             },
             WinitEvent::WindowEvent { event, .. } => {

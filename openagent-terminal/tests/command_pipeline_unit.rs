@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // High-yield coverage: command_pipeline utility behavior
 // These tests avoid spawning real shells; they focus on basic struct lifecycle.
 

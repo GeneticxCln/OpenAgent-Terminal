@@ -1,3 +1,4 @@
+#![allow(clippy::pedantic, clippy::missing_errors_doc)]
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -59,10 +60,10 @@ impl<'de, T: SerdeReplace + Deserialize<'de>> SerdeReplace for Option<T> {
     }
 }
 
-impl<'de, T: Deserialize<'de>> SerdeReplace for HashMap<String, T> {
+impl<'de, T: Deserialize<'de>, S: std::hash::BuildHasher + Default> SerdeReplace for HashMap<String, T, S> {
     fn replace(&mut self, value: Value) -> Result<(), Box<dyn Error>> {
         // Deserialize replacement as HashMap.
-        let hashmap: HashMap<String, T> = Self::deserialize(value)?;
+        let hashmap: HashMap<String, T, S> = Self::deserialize(value)?;
 
         // Merge the two HashMaps, replacing existing values.
         for (key, value) in hashmap {

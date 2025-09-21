@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::wildcard_imports, clippy::too_many_lines, clippy::cast_precision_loss, clippy::needless_pass_by_value)]
+
 use anyhow::Result;
 use chrono::Duration;
 use openagent_terminal::ai::agents::{

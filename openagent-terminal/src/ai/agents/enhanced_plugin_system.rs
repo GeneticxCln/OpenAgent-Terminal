@@ -124,7 +124,7 @@ pub struct PluginUsageStats {
 }
 
 /// Resource usage tracking
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResourceUsage {
     pub cpu_time_ms: u64,
     pub memory_peak_kb: u64,
@@ -181,9 +181,9 @@ pub struct SourceAuthentication {
 
 /// Plugin security manager
 pub struct PluginSecurityManager {
-    sandbox_configs: HashMap<String, SandboxConfig>,
+    _sandbox_configs: HashMap<String, SandboxConfig>,
     permission_manager: PermissionManager,
-    security_policies: HashMap<String, SecurityPolicy>,
+    _security_policies: HashMap<String, SecurityPolicy>,
 }
 
 /// Sandbox configuration
@@ -223,7 +223,7 @@ pub struct FilesystemRules {
 /// Permission manager for plugins
 pub struct PermissionManager {
     granted_permissions: HashMap<String, Vec<PluginPermission>>,
-    permission_policies: HashMap<PluginPermission, PermissionPolicy>,
+    _permission_policies: HashMap<PluginPermission, PermissionPolicy>,
 }
 
 /// Permission policy
@@ -439,17 +439,6 @@ impl Default for PluginUsageStats {
     }
 }
 
-impl Default for ResourceUsage {
-    fn default() -> Self {
-        Self {
-            cpu_time_ms: 0,
-            memory_peak_kb: 0,
-            network_requests: 0,
-            file_operations: 0,
-            disk_usage_kb: 0,
-        }
-    }
-}
 
 impl EnhancedPluginSystem {
     pub fn new() -> Self {
@@ -819,6 +808,10 @@ impl EnhancedPluginSystem {
     }
 }
 
+impl Default for EnhancedPluginSystem {
+    fn default() -> Self { Self::new() }
+}
+
 // Implementation for trait Agent
 #[async_trait]
 impl Agent for EnhancedPluginSystem {
@@ -973,12 +966,16 @@ impl PluginRegistry {
     }
 }
 
+impl Default for PluginRegistry {
+    fn default() -> Self { Self::new() }
+}
+
 impl PluginSecurityManager {
     pub fn new() -> Self {
-        Self {
-            sandbox_configs: HashMap::new(),
+Self {
+            _sandbox_configs: HashMap::new(),
             permission_manager: PermissionManager::new(),
-            security_policies: HashMap::new(),
+            _security_policies: HashMap::new(),
         }
     }
 
@@ -1007,10 +1004,18 @@ impl PluginSecurityManager {
     }
 }
 
+impl Default for PluginSecurityManager {
+    fn default() -> Self { Self::new() }
+}
+
 impl PermissionManager {
     pub fn new() -> Self {
-        Self { granted_permissions: HashMap::new(), permission_policies: HashMap::new() }
+Self { granted_permissions: HashMap::new(), _permission_policies: HashMap::new() }
     }
+}
+
+impl Default for PermissionManager {
+    fn default() -> Self { Self::new() }
 }
 
 /// Mock plugin for demonstration purposes

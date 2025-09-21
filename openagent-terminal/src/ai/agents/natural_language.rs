@@ -131,7 +131,13 @@ impl NaturalLanguageAgent {
             is_initialized: false,
         }
     }
+}
 
+impl Default for NaturalLanguageAgent {
+    fn default() -> Self { Self::new() }
+}
+
+impl NaturalLanguageAgent {
     /// Add a conversation turn to history
     pub fn add_conversation_turn(&mut self, role: ConversationRole, content: String) -> Uuid {
         let turn_id = Uuid::new_v4();
@@ -604,6 +610,9 @@ impl IntentClassifier {
         _context: &AgentContext,
     ) -> Result<Intent> {
         let text_lower = text.to_lowercase();
+        // Compile once per call (avoid regex creation inside inner loops)
+        let re_key_val = regex::Regex::new(r"--([A-Za-z0-9][A-Za-z0-9-_]*)=([^\s]+)")
+            .expect("valid regex");
         let mut best_intent: Option<Intent> = None;
         let mut best_score = 0.0;
 
@@ -640,23 +649,20 @@ impl IntentClassifier {
                     best_score = score;
                     // Naive parameter extraction from the input text
                     let mut params: HashMap<String, String> = HashMap::new();
-                    // --key=value
-                    if let Ok(re) = regex::Regex::new(r"--([A-Za-z0-9][A-Za-z0-9-_]*)=([^\s]+)") {
-                        for cap in re.captures_iter(text) {
+        // --key=value
+        for cap in re_key_val.captures_iter(text) {
                             let key = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
                             let val = cap.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
                             if !key.is_empty() {
                                 params.entry(key).or_insert(val);
                             }
                         }
-                    }
                     // --key value and -k value; single-char flags as booleans
                     let tokens: Vec<&str> = text.split_whitespace().collect();
                     let mut i = 0usize;
                     while i < tokens.len() {
                         let tok = tokens[i];
-                        if tok.starts_with("--") {
-                            let key = &tok[2..];
+                        if let Some(key) = tok.strip_prefix("--") {
                             if !key.is_empty() && !key.contains('=') {
                                 if i + 1 < tokens.len() && !tokens[i + 1].starts_with('-') {
                                     params
@@ -712,7 +718,17 @@ impl ConversationContextManager {
             session_context: HashMap::new(),
         }
     }
+}
 
+impl Default for IntentClassifier {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for ConversationContextManager {
+    fn default() -> Self { Self::new() }
+}
+
+impl ConversationContextManager {
     pub fn update_from_input(&mut self, _input: &str, entities: &[Entity], intent: &Intent) {
         // Update active entities
         for entity in entities {

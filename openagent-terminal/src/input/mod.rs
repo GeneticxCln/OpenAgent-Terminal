@@ -558,6 +558,22 @@ pub trait ActionContext<T: EventListener> {
         false
     }
 
+    // Plugins panel controls (feature = "plugins"). Default to no-op/false when disabled.
+    #[cfg(feature = "plugins")]
+    fn open_plugins_panel(&mut self) {}
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_cancel(&mut self) {}
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_active(&self) -> bool { false }
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_input(&mut self, _c: char) {}
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_backspace(&mut self) {}
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_move_selection(&mut self, _delta: isize) {}
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_confirm(&mut self) {}
+
     // Workflows progress overlay controls
     fn workflows_progress_active(&self) -> bool {
         false
@@ -2089,6 +2105,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         #[cfg(feature = "blocks")]
                         {
                             self.ctx.open_blocks_search_panel();
+                        }
+                        self.ctx.display().quick_actions_press_flash_until =
+                            Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
+                        return true;
+                    }
+                    "[Plugins]" => {
+                        #[cfg(feature = "plugins")]
+                        {
+                            self.ctx.open_plugins_panel();
                         }
                         self.ctx.display().quick_actions_press_flash_until =
                             Some(std::time::Instant::now() + std::time::Duration::from_millis(140));

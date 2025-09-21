@@ -84,13 +84,11 @@ pub(crate) fn config_crate_path() -> TokenStream2 {
 
     match found {
         // When deriving inside the config crate itself, prefer `crate` to ensure tests build.
-        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Itself) | Err(_) => quote!(crate),
         Ok(FoundCrate::Name(name)) => {
             let name = name.replace('-', "_");
             let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
             quote!( ::#ident )
         }
-        // Fallback to local crate if resolution fails (useful in unusual build contexts).
-        Err(_) => quote!(crate),
     }
 }

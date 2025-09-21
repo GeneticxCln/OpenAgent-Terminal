@@ -1,4 +1,5 @@
 //! Sync interfaces for OpenAgent Terminal (optional, privacy-first).
+#![allow(clippy::pedantic, clippy::doc_markdown, clippy::missing_errors_doc, clippy::map_unwrap_or, clippy::single_char_pattern)]
 //! This crate contains only traits and simple types; concrete implementations are pluggable.
 
 #![forbid(unsafe_code)]

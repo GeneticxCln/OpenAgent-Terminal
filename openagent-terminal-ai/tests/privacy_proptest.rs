@@ -1,3 +1,4 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args)]
 use proptest::prelude::*;
 use regex::Regex;
 

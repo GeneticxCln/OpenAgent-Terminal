@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args)]
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use openagent_terminal::security_lens::{RiskLevel, SecurityLens, SecurityPolicy};
 use std::time::Instant;

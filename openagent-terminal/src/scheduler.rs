@@ -56,6 +56,9 @@ pub enum Topic {
     BlocksSearchTyping,
     // Debounced Workflows Search typing
     WorkflowsSearchTyping,
+    // Debounced Plugins Search typing (only when plugins feature is enabled)
+    #[cfg(feature = "plugins")]
+    PluginsSearchTyping,
     // Retain workflows progress overlay briefly after completion
     WorkflowsProgressRetain,
     // Autosave workspace sessions periodically

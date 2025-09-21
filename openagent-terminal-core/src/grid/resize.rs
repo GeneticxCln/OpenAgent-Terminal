@@ -331,33 +331,32 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                     // Add removed cells to start of next row.
                     buffered = Some(wrapped);
                     break;
-                } else {
-                    // Reflow cursor if a line below it is deleted.
-                    let cursor_buffer_line = self.lines - self.cursor.point.line.0 as usize - 1;
-                    if (i == cursor_buffer_line && self.cursor.point.column < columns)
-                        || i < cursor_buffer_line
-                    {
-                        self.cursor.point.line = max(self.cursor.point.line - 1, Line(0));
-                    }
+                }
+                // Reflow cursor if a line below it is deleted.
+                let cursor_buffer_line = self.lines - self.cursor.point.line.0 as usize - 1;
+                if (i == cursor_buffer_line && self.cursor.point.column < columns)
+                    || i < cursor_buffer_line
+                {
+                    self.cursor.point.line = max(self.cursor.point.line - 1, Line(0));
+                }
 
-                    // Reflow the cursor if it is on this line beyond the width.
-                    if i == cursor_buffer_line && self.cursor.point.column >= columns {
-                        // Since only a single new line is created, we subtract only `columns`
-                        // from the cursor instead of reflowing it completely.
-                        self.cursor.point.column -= columns;
-                    }
+                // Reflow the cursor if it is on this line beyond the width.
+                if i == cursor_buffer_line && self.cursor.point.column >= columns {
+                    // Since only a single new line is created, we subtract only `columns`
+                    // from the cursor instead of reflowing it completely.
+                    self.cursor.point.column -= columns;
+                }
 
-                    // Make sure new row is at least as long as new width.
-                    let occ = wrapped.len();
-                    if occ < columns {
-                        wrapped.resize_with(columns, T::default);
-                    }
-                    row = Row::from_vec(wrapped, occ);
+                // Make sure new row is at least as long as new width.
+                let occ = wrapped.len();
+                if occ < columns {
+                    wrapped.resize_with(columns, T::default);
+                }
+                row = Row::from_vec(wrapped, occ);
 
-                    if i < self.display_offset {
-                        // Since we added a new line, rotate up the viewport.
-                        self.display_offset += 1;
-                    }
+                if i < self.display_offset {
+                    // Since we added a new line, rotate up the viewport.
+                    self.display_offset += 1;
                 }
             }
         }

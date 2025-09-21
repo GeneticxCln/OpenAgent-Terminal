@@ -81,6 +81,8 @@ pub mod warp_ui;
 pub mod window;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
+#[cfg(feature = "plugins")]
+pub mod plugin_panel;
 pub mod workspace_animations;
 
 /// Decide whether the overlay tab bar should be shown based on configuration and mouse position.
@@ -595,6 +597,9 @@ pub struct Display {
     /// Workflows parameter form overlay state.
     #[cfg(feature = "workflow")]
     pub workflows_params: workflow_panel::WorkflowParamsState,
+    /// Plugins panel state.
+    #[cfg(feature = "plugins")]
+    pub plugins_panel: crate::display::plugin_panel::PluginPanelState,
     /// Notebooks panel state (feature="blocks")
     #[cfg(feature = "blocks")]
     pub notebooks_panel: notebook_panel::NotebookPanelState,
@@ -892,6 +897,10 @@ impl Display {
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
         if config.workspace.quick_actions.show_palette {
             labels.push("[Palette]");
+        }
+        #[cfg(feature = "plugins")]
+        {
+            labels.push("[Plugins]");
         }
         #[cfg(feature = "ai")]
         if config.ai.enabled {
@@ -1223,7 +1232,7 @@ impl Display {
                                 .cloned()
                         })
                         .unwrap_or_default();
-                    prov_cfg.default_model.unwrap_or_else(|| String::new())
+                    prov_cfg.default_model.unwrap_or_default()
                 }
                 #[cfg(not(feature = "ai"))]
                 {
@@ -1270,6 +1279,8 @@ impl Display {
             workflows_progress: Default::default(),
             #[cfg(feature = "workflow")]
             workflows_params: Default::default(),
+            #[cfg(feature = "plugins")]
+            plugins_panel: crate::display::plugin_panel::PluginPanelState::new(),
             settings_panel: settings_panel::SettingsPanelState::new(),
             quick_actions_press_flash_until: None,
             #[cfg(feature = "editor")]
@@ -2687,6 +2698,12 @@ impl Display {
             if self.workflows_panel.active {
                 let st = self.workflows_panel.clone();
                 self.draw_workflows_panel_overlay(config, &st);
+            }
+            // Plugins panel overlay if active
+            #[cfg(feature = "plugins")]
+            if self.plugins_panel.active {
+                let st = self.plugins_panel.clone();
+                self.draw_plugins_panel_overlay(config, &st);
             }
             // Notebooks panel overlay if active
             #[cfg(feature = "blocks")]

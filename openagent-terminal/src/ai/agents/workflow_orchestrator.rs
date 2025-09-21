@@ -345,6 +345,10 @@ impl Default for RetryConfig {
     }
 }
 
+impl Default for WorkflowOrchestrator {
+    fn default() -> Self { Self::new() }
+}
+
 impl WorkflowOrchestrator {
     pub fn new() -> Self {
         Self {

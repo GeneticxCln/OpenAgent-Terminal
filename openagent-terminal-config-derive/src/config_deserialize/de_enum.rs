@@ -6,7 +6,7 @@ use syn::{DataEnum, Generics, Ident};
 
 use crate::serde_replace;
 
-pub fn derive_deserialize(ident: Ident, generics: Generics, data_enum: DataEnum) -> TokenStream {
+pub fn derive_deserialize(ident: &Ident, generics: &Generics, data_enum: &DataEnum) -> TokenStream {
     let visitor = format_ident!("{}Visitor", ident);
 
     // Create match arm streams and get a list with all available values.

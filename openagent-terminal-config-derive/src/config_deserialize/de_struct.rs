@@ -11,14 +11,14 @@ use crate::{serde_replace, Attr, GenericsStreams, MULTIPLE_FLATTEN_ERROR};
 const LOG_TARGET: &str = env!("CARGO_PKG_NAME");
 
 pub fn derive_deserialize<T>(
-    ident: Ident,
-    generics: Generics,
-    fields: Punctuated<Field, T>,
+    ident: &Ident,
+    generics: &Generics,
+    fields: &Punctuated<Field, T>,
 ) -> TokenStream {
     // Create all necessary tokens for the implementation.
     let GenericsStreams { unconstrained, constrained, phantoms } =
         crate::generics_streams(&generics.params);
-    let FieldStreams { flatten, match_assignments } = fields_deserializer(&fields);
+    let FieldStreams { flatten, match_assignments } = fields_deserializer(fields);
     let visitor = format_ident!("{}Visitor", ident);
 
     // Generate deserialization impl.
@@ -93,7 +93,7 @@ fn fields_deserializer<T>(fields: &Punctuated<Field, T>) -> FieldStreams {
     let mut field_streams = FieldStreams::default();
 
     // Create the deserialization stream for each field.
-    for field in fields.iter() {
+    for field in fields {
         if let Err(err) = field_deserializer(&mut field_streams, field) {
             field_streams.flatten = err.to_compile_error();
             return field_streams;
@@ -126,10 +126,7 @@ fn field_deserializer(field_streams: &mut FieldStreams, field: &Field) -> Result
 
     // Iterate over all #[config(...)] attributes.
     for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("config")) {
-        let parsed = match attr.parse_args::<Attr>() {
-            Ok(parsed) => parsed,
-            Err(_) => continue,
-        };
+        let Ok(parsed) = attr.parse_args::<Attr>() else { continue };
 
         match parsed.ident.as_str() {
             // Skip deserialization for `#[config(skip)]` fields.

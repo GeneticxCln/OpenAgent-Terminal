@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args)]
+
 // Example: Workflow Orchestrator Demo
 // Demonstrates advanced workflow orchestration with multi-agent coordination,
 // project context awareness, and conversation integration
@@ -124,10 +126,10 @@ async fn main() -> anyhow::Result<()> {
     println!("  • Total Workflows: {}", workflows.len());
     for workflow in &workflows {
         println!(
-            "    - {}: {} ({})",
+            "    - {}: {} ({:?})",
             workflow.id,
             workflow.title,
-            format!("{:?}", workflow.status)
+            workflow.status
         );
     }
 
