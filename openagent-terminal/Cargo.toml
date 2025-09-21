@@ -95,7 +95,6 @@ libc = "0.2"
 log = { version = "0.4", features = ["std", "serde"] }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true }
-tracing-appender = "0.2"
 notify = "8.0.0"
 parking_lot = "0.12.0"
 regex = "1"
@@ -114,12 +113,9 @@ winit = { workspace = true, features = ["serde"] }
 rusqlite = { workspace = true }
 csv = "1.3"
 # Observability
-metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 # Optional at-rest log encryption
 aes-gcm = { version = "0.10", features = ["aes"] }
-aes = "0.8"
-rand_core = "0.9"
 base64 = "0.22"
 rand = "0.9"
 

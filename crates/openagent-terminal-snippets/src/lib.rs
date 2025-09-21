@@ -230,14 +230,6 @@ mod tests {
         assert!(utils::validate_template("Hello {{").is_err());
     }
 
-    #[cfg(feature = "async")]
-    mod async_tests {
-        use super::*;
-        #[test]
-        fn test_async_snippet_expansion() {
-            let _system = SnippetSystem::new().unwrap();
-            // Test async snippet expansion
-            // This would test actual async template processing
-        }
-    }
+    // Async tests would go here when async feature is re-enabled
+    // Currently removed to avoid unused feature warnings
 }

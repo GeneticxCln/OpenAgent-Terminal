@@ -28,6 +28,8 @@ vte = { version = "0.15.0", default-features = false, features = ["std", "ansi"]
 serde = { version = "1", features = ["derive", "rc"], optional = true }
 log = "0.4"
 thiserror = { workspace = true }
+tokio-util = "0.7"
+tokio = { version = "1.47", features = ["time", "sync", "macros"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix-openpty = "0.2.0"

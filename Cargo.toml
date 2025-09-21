@@ -210,3 +210,11 @@ crossfont = "0.8.0"
 
 # Synchronization
 parking_lot = "0.12"
+
+# Standardized versions for conflict resolution
+base64 = "0.22.1"
+bitflags = "2.9.4"
+rustix = "1.1.2"
+byteorder = "1.5.0"
+futures-util = "0.3.31"
+futures-channel = "0.3.31"

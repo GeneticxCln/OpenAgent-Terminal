@@ -22,20 +22,15 @@ colored = "2.0"
 
 # File system operations
 walkdir = "2.4"
-glob = "0.3"
 dirs = "6.0"
 fontdb = "0.14"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
 
 # Validation
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
-
-# Platform detection
-cfg-if = "1.0"
 
 [dev-dependencies]
 tempfile = "3.8"
