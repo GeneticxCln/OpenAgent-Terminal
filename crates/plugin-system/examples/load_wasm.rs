@@ -6,7 +6,7 @@ fn main() -> anyhow::Result<()> {
     let mut manager = UnifiedPluginManager::new(".")?;
 
     // Union permissions for the three demo plugins
-let perms = PluginPermissions {
+    let _perms = PluginPermissions {
         read_files: vec!["/etc/hostname".into()],
         network: true,
         net_allow_domains: vec!["example.com".into()],
@@ -22,7 +22,7 @@ let perms = PluginPermissions {
         ..Default::default()
     };
     #[cfg(feature = "wasm-runtime")]
-manager.set_default_host_from_permissions(&perms);
+    manager.set_default_host_from_permissions(&_perms);
 
     // Choose which demo to run
     let wasm_path = std::env::args()

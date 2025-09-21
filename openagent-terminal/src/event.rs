@@ -18,6 +18,39 @@ use std::rc::Rc;
 #[cfg(unix)]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+fn write_security_audit_event_core(command: &str, action: &str, detail: Option<&str>) {
+    // Best-effort; never panic
+    if let Some(base) = dirs::data_dir() {
+        let dir = base.join("openagent-terminal").join("security");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let path = dir.join("audit.log");
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let entry = match detail {
+                Some(d) => serde_json::json!({
+                    "ts_ms": now_ms,
+                    "source": "core",
+                    "action": action,
+                    "command": command,
+                    "detail": d,
+                }),
+                None => serde_json::json!({
+                    "ts_ms": now_ms,
+                    "source": "core",
+                    "action": action,
+                    "command": command,
+                }),
+            };
+            let line = format!("{}\n", entry);
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = std::io::Write::write_all(&mut f, line.as_bytes());
+            }
+        }
+    }
+}
 use std::{env, f32, mem};
 
 use ahash::RandomState;
@@ -1158,7 +1191,9 @@ impl ApplicationHandler<Event> for Processor {
                 let mut lens = SecurityLens::new(policy.clone());
                 let risk = lens.analyze_command(&command);
 
-                if lens.should_block(&risk) {
+if lens.should_block(&risk) {
+                    // Telemetry: core blocked command
+                    write_security_audit_event_core(&command, "blocked", Some(&risk.explanation));
                     let _msg = self.config.theme.resolve().tokens.warning; // color not directly used here
                     let message = crate::message_bar::Message::new(
                         format!(
@@ -1252,8 +1287,10 @@ impl ApplicationHandler<Event> for Processor {
                 let policy: SecurityPolicy = self.config.security.clone();
                 if policy.gate_paste_events {
                     let mut lens = SecurityLens::new(policy.clone());
-                    if let Some(risk) = lens.analyze_paste_content(&text) {
+if let Some(risk) = lens.analyze_paste_content(&text) {
                         if lens.should_block(&risk) {
+                            // Telemetry: blocked paste
+                            write_security_audit_event_core(&text, "blocked_paste", Some(&risk.explanation));
                             let message = crate::message_bar::Message::new(
                                 format!("Blocked risky paste: {}", risk.explanation),
                                 crate::message_bar::MessageType::Warning,
@@ -2343,14 +2380,18 @@ impl ApplicationHandler<Event> for Processor {
             }
             (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
                 // If this is an AI pending confirm, handle it
-                #[cfg(feature = "ai")]
+#[cfg(feature = "ai")]
                 if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
                     if accepted {
+                        // Telemetry: confirmed command
+                        write_security_audit_event_core(&cmd, "confirmed", None);
                         let _ = self.proxy.send_event(Event::new(
                             EventType::AiApplyAsCommandChecked { command: cmd, dry_run },
                             win,
                         ));
                     } else {
+                        // Telemetry: denied command
+                        write_security_audit_event_core(&cmd, "denied_user", None);
                         // Show canceled message
                         let message = crate::message_bar::Message::new(
                             "Command canceled".into(),
@@ -2360,12 +2401,16 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
                 // If this is a pending paste confirmation, handle it
-                if let Some((text, win)) = self.pending_security_paste.remove(&id) {
+if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                     if accepted {
+                        // Telemetry: confirmed paste
+                        write_security_audit_event_core(&text, "confirmed_paste", None);
                         let _ = self
                             .proxy
                             .send_event(Event::new(EventType::PasteCommandChecked(text), win));
                     } else {
+                        // Telemetry: denied paste
+                        write_security_audit_event_core(&text, "denied_paste", None);
                         let message = crate::message_bar::Message::new(
                             "Paste canceled".into(),
                             crate::message_bar::MessageType::Warning,
@@ -7938,7 +7983,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
+#[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let prev = runtime.ui.streaming_text.len();
@@ -7955,6 +8000,17 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             );
                         }
                         runtime.ui.streaming_text.push_str(&chunk);
+                        // Cap in-memory streaming buffer to avoid unbounded growth in long sessions
+                        let cap_bytes: usize = std::env::var("OPENAGENT_AI_STREAM_MAX_BYTES")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .unwrap_or(512 * 1024);
+                        let cur_len = runtime.ui.streaming_text.len();
+                        if cur_len > cap_bytes {
+                            let drop = cur_len - cap_bytes;
+                            // Drop from the front to keep the most recent content visible
+                            runtime.ui.streaming_text.drain(0..drop);
+                        }
 
                         // Redraw throttling: only mark dirty if enough time elapsed since last redraw
                         let throttle_ms = std::env::var("OPENAGENT_AI_STREAM_REDRAW_MS")
@@ -8145,36 +8201,30 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::AiSwitchProvider(provider_name) => {
                     // Warp-like: hot-swap runtime provider immediately, preserve scratch/cursor.
                     let name = provider_name.to_ascii_lowercase();
-                    // Resolve provider config from user config or defaults
-                    let prov_cfg = self
-                        .ctx
-                        .config()
-                        .ai
-                        .providers
-                        .get(&name)
-                        .cloned()
-                        .or_else(|| {
-                            crate::config::ai_providers::get_default_provider_configs()
-                                .get(&name)
-                                .cloned()
-                        })
-                        .unwrap_or_default();
-
                     if let Some(rt) = &mut self.ctx.ai_runtime {
-                        // Preserve scratch/cursor already in rt; just reconfigure and update UI fields
-                        rt.reconfigure_to(&name, &prov_cfg);
-                        // Update composer display cache
-                        self.ctx.display.ai_current_provider = name.clone();
-                        self.ctx.display.ai_current_model = if rt.ui.current_model.is_empty() {
-                            prov_cfg.default_model.unwrap_or_default()
-                        } else {
-                            rt.ui.current_model.clone()
-                        };
+                        // Use convenience method to resolve config and reconfigure
+                        let _ = rt.set_provider_by_name(&name, self.ctx.config());
+                        // Update composer display cache from runtime UI state
+                        self.ctx.display.ai_current_provider = rt.ui.current_provider.clone();
+                        self.ctx.display.ai_current_model = rt.ui.current_model.clone();
                     } else {
                         // If runtime wasn't initialized, just update the display; runtime will be created when AI opens
+                        // Resolve provider config from user config or defaults to show model badge
+                        let prov_cfg = self
+                            .ctx
+                            .config()
+                            .ai
+                            .providers
+                            .get(&name)
+                            .cloned()
+                            .or_else(|| {
+                                crate::config::ai_providers::get_default_provider_configs()
+                                    .get(&name)
+                                    .cloned()
+                            })
+                            .unwrap_or_default();
                         self.ctx.display.ai_current_provider = name.clone();
-                        self.ctx.display.ai_current_model =
-                            prov_cfg.default_model.unwrap_or_default();
+                        self.ctx.display.ai_current_model = prov_cfg.default_model.unwrap_or_default();
                     }
                     *self.ctx.dirty = true;
                 }

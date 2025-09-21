@@ -251,11 +251,22 @@ impl WindowContext {
 
         // Initialize Warp functionality immediately (creates default tab or restores session)
         if config.workspace.warp_style {
-            let _ = workspace.initialize_warp(
+            match workspace.initialize_warp(
                 display.window.id(),
                 proxy.clone(),
                 config.workspace.sessions.restore_on_startup,
-            );
+            ) {
+                Ok(()) => {}
+                Err(e) => {
+                    // Surface session restore issues to the user as a warning message but continue
+                    let msg = crate::message_bar::Message::new(
+                        format!("Session restore issue: {}", e),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = proxy
+                        .send_event(crate::event::Event::new(crate::event::EventType::Message(msg), display.window.id()));
+                }
+            }
         }
 
         // For non-Warp mode, create an initial tab
@@ -316,6 +327,15 @@ impl WindowContext {
                             })
                             .unwrap_or_default();
                         {
+                            // Export retention-related envs for persistence helpers
+                            {
+                                let r = &config.ai.history_retention;
+                                std::env::set_var("OPENAGENT_AI_HISTORY_MAX_BYTES", r.conversation_jsonl_max_bytes.to_string());
+                                std::env::set_var("OPENAGENT_AI_HISTORY_ROTATED_KEEP", r.conversation_rotated_keep.to_string());
+                                std::env::set_var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
+                                std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS", r.conversation_max_rows.to_string());
+                                std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
+                            }
                             let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
                                 provider_name,
                                 &prov_cfg,
@@ -323,6 +343,7 @@ impl WindowContext {
                             rt.set_context_config(config.ai.context.clone());
                             rt.set_routing_mode(config.ai.routing);
                             rt.set_apply_joiner(config.ai.apply_joiner);
+                            rt.set_history_retention(config.ai.history_retention.clone());
                             Some(rt)
                         }
                     } else {
@@ -464,11 +485,21 @@ impl WindowContext {
                     })
                     .unwrap_or_default();
 
+                // Export retention-related envs for persistence helpers
+                {
+                    let r = &self.config.ai.history_retention;
+                    std::env::set_var("OPENAGENT_AI_HISTORY_MAX_BYTES", r.conversation_jsonl_max_bytes.to_string());
+                    std::env::set_var("OPENAGENT_AI_HISTORY_ROTATED_KEEP", r.conversation_rotated_keep.to_string());
+                    std::env::set_var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
+                    std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS", r.conversation_max_rows.to_string());
+                    std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
+                }
                 let mut rt =
                     crate::ai_runtime::AiRuntime::from_secure_config(provider_name, &prov_cfg);
                 rt.set_context_config(self.config.ai.context.clone());
                 rt.set_routing_mode(self.config.ai.routing);
                 rt.set_apply_joiner(self.config.ai.apply_joiner);
+                rt.set_history_retention(self.config.ai.history_retention.clone());
                 self.ai_runtime = Some(rt);
             } else {
                 self.ai_runtime = None;

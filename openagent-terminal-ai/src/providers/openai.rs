@@ -9,7 +9,6 @@ pub struct OpenAiProvider {
     api_key: String,
     endpoint: String,
     model: String,
-    client: reqwest::blocking::Client,
 }
 
 impl OpenAiProvider {
@@ -17,15 +16,7 @@ impl OpenAiProvider {
         if api_key.is_empty() {
             return Err("OpenAI API key is required".to_string());
         }
-
-        let client = reqwest::blocking::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .timeout(std::time::Duration::from_secs(20))
-            .user_agent("openagent-terminal-ai/0.1")
-            .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
-        Ok(Self { api_key, endpoint, model, client })
+        Ok(Self { api_key, endpoint, model })
     }
 
     pub fn from_env() -> Result<Self, String> {
@@ -156,9 +147,18 @@ impl AiProvider for OpenAiProvider {
         let retry =
             RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
         let mut attempt = 0usize;
+        // Build a blocking client for this request
+        let client = match reqwest::blocking::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(20))
+            .user_agent("openagent-terminal-ai/0.1")
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+        };
         let completion: ChatCompletionResponse = loop {
-            let send = self
-                .client
+            let send = client
                 .post(&url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
@@ -309,170 +309,197 @@ impl AiProvider for OpenAiProvider {
             system_prompt.push_str(&format!(" {}: {}.", key, value));
         }
 
-        let messages = vec![
-            ChatMessage { role: "system".to_string(), content: system_prompt },
-            ChatMessage { role: "user".to_string(), content: req.scratch_text.clone() },
-        ];
-
-        let request_body = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            temperature: 0.7,
-            max_tokens: 500,
-            stream: true,
-        };
-
-        let url = format!("{}/chat/completions", self.endpoint);
+        let user_text = req.scratch_text.clone();
         let retry =
             RetryStrategy::OpenAI { config: RetryConfig::default(), respect_retry_after: true };
-        let mut attempt = 0usize;
+        // Spawn a dedicated OS thread with its own Tokio runtime to perform async streaming
+        enum Msg {
+            Chunk(String),
+            Done(Result<bool, String>),
+        }
+        let (tx, rx) = std::sync::mpsc::channel::<Msg>();
+        let api_key = self.api_key.clone();
+        let endpoint = self.endpoint.clone();
+        let model = self.model.clone();
+        let system_prompt = system_prompt.clone();
+        let user_text = user_text.clone();
+        let cancel_arc = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+            cancel.load(std::sync::atomic::Ordering::Relaxed),
+        ));
+        let cancel_for_worker = std::sync::Arc::clone(&cancel_arc);
 
-        // Use a small, single-threaded Tokio runtime for responsive streaming/cancellation
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
-
-        rt.block_on(async {
-            loop {
-                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err("Cancelled".to_string());
+        std::thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let _ = tx.send(Msg::Done(Err(format!("Failed to create runtime: {}", e))));
+                    return;
                 }
+            };
+            rt.block_on(async move {
+                let mut attempt = 0usize;
+                loop {
+                    if cancel_for_worker.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _ = tx.send(Msg::Done(Ok(false)));
+                        return;
+                    }
 
-                let client = match reqwest::Client::builder()
-                    .connect_timeout(std::time::Duration::from_secs(5))
-                    .user_agent("openagent-terminal-ai/0.1")
-                    .build()
-                {
-                    Ok(c) => c,
-                    Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
-                };
+                    let client = match reqwest::Client::builder()
+                        .connect_timeout(std::time::Duration::from_secs(5))
+                        .user_agent("openagent-terminal-ai/0.1")
+                        .build()
+                    {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(Msg::Done(Err(format!(
+                                "Failed to create HTTP client: {}",
+                                e
+                            ))));
+                            return;
+                        }
+                    };
 
-                let send_result = client
-                    .post(&url)
-                    .header("Authorization", format!("Bearer {}", self.api_key))
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "text/event-stream")
-                    .json(&request_body)
-                    // Streaming may take a long time; override client timeout for this request
-                    .timeout(std::time::Duration::from_secs(600))
-                    .send()
-                    .await;
+                    let messages = vec![
+                        ChatMessage { role: "system".to_string(), content: system_prompt.clone() },
+                        ChatMessage { role: "user".to_string(), content: user_text.clone() },
+                    ];
+                    let request_body = ChatCompletionRequest {
+                        model: model.clone(),
+                        messages,
+                        temperature: 0.7,
+                        max_tokens: 500,
+                        stream: true,
+                    };
+                    let url = format!("{}/chat/completions", endpoint);
 
-                let response = match send_result {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        let msg = format!("Failed to send request: {}", e);
-                        if retry.should_retry(attempt, &msg, cancel) {
-                            let delay = retry.delay_for_attempt(attempt, &msg);
-                            if ai_log_summary() {
-                                info!(
-                                    "openai_stream_retry attempt={} delay_ms={}",
-                                    attempt + 1,
-                                    delay.as_millis()
-                                );
+                    let send_result = client
+                        .post(&url)
+                        .header("Authorization", format!("Bearer {}", api_key))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .json(&request_body)
+                        .timeout(std::time::Duration::from_secs(600))
+                        .send()
+                        .await;
+
+                    let response = match send_result {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            let msg = format!("Failed to send request: {}", e);
+if retry.should_retry(attempt, &msg, &cancel_for_worker) {
+                                let delay = retry.delay_for_attempt(attempt, &msg);
+                                tokio::time::sleep(delay).await;
+                                attempt += 1;
+                                continue;
+                            } else {
+                                let _ = tx.send(Msg::Done(Err(msg)));
+                                return;
                             }
+                        }
+                    };
+
+                    if !response.status().is_success() {
+                        let status = response.status();
+                        let headers = response.headers().clone();
+                        let error_text = match response.text().await {
+                            Ok(t) => t,
+                            Err(_) => "Unknown error".to_string(),
+                        };
+                        let mut msg = format!("API error {}: {}", status, error_text);
+                        if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
+                            msg.push_str(&format!("; retry-after: {}", s));
+                        }
+                        if let Some(s) = headers
+                            .get("x-ratelimit-reset-after")
+                            .or_else(|| headers.get("x-rate-limit-reset-after"))
+                            .and_then(|v| v.to_str().ok())
+                        {
+                            msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
+                        }
+                        if let Some(s) = headers
+                            .get("x-ratelimit-reset")
+                            .or_else(|| headers.get("x-rate-limit-reset"))
+                            .and_then(|v| v.to_str().ok())
+                        {
+                            msg.push_str(&format!("; x-ratelimit-reset: {}", s));
+                        }
+if retry.should_retry(attempt, &msg, &cancel_for_worker) {
+                            let delay = retry.delay_for_attempt(attempt, &msg);
                             tokio::time::sleep(delay).await;
                             attempt += 1;
                             continue;
                         } else {
-                            return Err(msg);
+                            let _ = tx.send(Msg::Done(Err(msg)));
+                            return;
                         }
                     }
-                };
 
-                if !response.status().is_success() {
-                    let status = response.status();
-                    // Capture rate-limit headers to feed into backoff parsing
-                    let headers = response.headers().clone();
-                    let error_text = match response.text().await {
-                        Ok(t) => t,
-                        Err(_) => "Unknown error".to_string(),
+                    let tx2 = tx.clone();
+                    let mut forward = move |chunk: &str| {
+                        let _ = tx2.send(Msg::Chunk(chunk.to_string()));
                     };
-                    let mut msg = format!("API error {}: {}", status, error_text);
-                    if let Some(s) = headers.get("retry-after").and_then(|v| v.to_str().ok()) {
-                        msg.push_str(&format!("; retry-after: {}", s));
-                    }
-                    if let Some(s) = headers
-                        .get("x-ratelimit-reset-after")
-                        .or_else(|| headers.get("x-rate-limit-reset-after"))
-                        .and_then(|v| v.to_str().ok())
-                    {
-                        msg.push_str(&format!("; x-ratelimit-reset-after: {}", s));
-                    }
-                    if let Some(s) = headers
-                        .get("x-ratelimit-reset")
-                        .or_else(|| headers.get("x-rate-limit-reset"))
-                        .and_then(|v| v.to_str().ok())
-                    {
-                        msg.push_str(&format!("; x-ratelimit-reset: {}", s));
-                    }
-                    error!("OpenAI API error {}: {}", status, error_text);
-                    if retry.should_retry(attempt, &msg, cancel) {
-                        let delay = retry.delay_for_attempt(attempt, &msg);
-                        if ai_log_summary() {
-                            info!(
-                                "openai_stream_retry_http attempt={} delay_ms={}",
-                                attempt + 1,
-                                delay.as_millis()
-                            );
-                        }
-                        tokio::time::sleep(delay).await;
-                        attempt += 1;
-                        continue;
-                    } else {
-                        return Err(msg);
-                    }
-                }
-
-                // Stream SSE using unified helper; extract OpenAI delta.content per event
-                crate::streaming::consume_eventsource_response(
-                    response,
-                    cancel,
-                    on_chunk,
-                    |data: &str| {
-                        let mut out = Vec::new();
-                        match serde_json::from_str::<ChatCompletionChunk>(data) {
-                            Ok(chunk) => {
-                                for choice in chunk.choices.into_iter() {
-                                    if let Some(c) = choice.delta.content {
-                                        if ai_log_verbose() {
-                                            debug!("openai_stream_chunk len={}", c.len());
+                    let res = crate::streaming::consume_eventsource_response(
+                        response,
+&cancel_for_worker,
+                        &mut forward,
+                        |data: &str| {
+                            let mut out = Vec::new();
+                            match serde_json::from_str::<ChatCompletionChunk>(data) {
+                                Ok(chunk) => {
+                                    for choice in chunk.choices.into_iter() {
+                                        if let Some(c) = choice.delta.content {
+                                            out.push(c);
                                         }
-                                        out.push(c);
+                                    }
+                                }
+                                Err(_) => {
+                                    lazy_static::lazy_static! {
+                                        static ref CONTENT_RE: regex::Regex = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#).unwrap();
+                                    }
+                                    if let Some(cap) = CONTENT_RE.captures(data).and_then(|caps| caps.get(1)) {
+                                        let c = cap.as_str().to_string();
+                                        if !c.is_empty() { out.push(c); }
                                     }
                                 }
                             }
-                            Err(e) => {
-                                // Fallback: extract minimal content via regex
-                                debug!(
-                                    "Skipping non-JSON or unexpected SSE data from OpenAI: {}",
-                                    e
-                                );
-                                lazy_static::lazy_static! {
-                                    static ref CONTENT_RE: regex::Regex = regex::Regex::new(r#"\"content\"\s*:\s*\"([^\"]*)\""#).unwrap();
-                                }
-                                if let Some(cap) = CONTENT_RE.captures(data).and_then(|caps| caps.get(1)) {
-                                    let c = cap.as_str().to_string();
-                                    if !c.is_empty() {
-                                        if ai_log_verbose() {
-                                            debug!("openai_stream_chunk_fallback len={}", c.len());
-                                        }
-                                        out.push(c);
-                                    }
-                                }
+                            out
+                        },
+                    )
+                    .await;
+
+                    match res {
+                        Ok(_) => {
+                            let _ = tx.send(Msg::Done(Ok(true)));
+                            return;
+                        }
+                        Err(e) => {
+                            let msg = e;
+if retry.should_retry(attempt, &msg, &cancel_for_worker) {
+                                let delay = retry.delay_for_attempt(attempt, &msg);
+                                tokio::time::sleep(delay).await;
+                                attempt += 1;
+                                continue;
+                            } else {
+                                let _ = tx.send(Msg::Done(Err(msg)));
+                                return;
                             }
                         }
-                        out
-                    },
-                )
-                .await?;
-
-                if ai_log_summary() {
-                    info!("openai_stream_finished");
+                    }
                 }
-                return Ok(true);
+            });
+        });
+
+        loop {
+            match rx.recv() {
+                Ok(Msg::Chunk(s)) => {
+                    on_chunk(&s);
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        cancel_arc.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                Ok(Msg::Done(res)) => return res,
+                Err(_) => return Err("streaming thread terminated unexpectedly".to_string()),
             }
-        })
+        }
     }
 }

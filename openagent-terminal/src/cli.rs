@@ -454,6 +454,11 @@ pub enum AiCommand {
         #[clap(long, action=clap::ArgAction::SetTrue)]
         json: bool,
     },
+    /// Manage AI providers (list/set)
+    Provider {
+        #[clap(subcommand)]
+        command: AiProviderCommand,
+    },
     /// Migrate legacy environment variables to secure, provider-specific ones
     Migrate {
         /// Path to write updated config with provider sections; if omitted, prints to stdout
@@ -480,6 +485,58 @@ pub enum AiCommand {
         /// Keep last N entries (use 0 to delete all)
         #[clap(long, default_value_t = 1000)]
         keep_last: usize,
+    },
+    /// Show AI history retention and storage status (limits, file sizes, row counts)
+    HistoryStatus {
+        /// Output machine-readable JSON
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+        /// Show verbose rotated file details
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        verbose: bool,
+    },
+    /// Update AI history retention settings in your config file
+    HistoryConfig {
+        /// key=value pairs to set (repeatable). Keys: ui_max_entries, ui_max_bytes, conversation_jsonl_max_bytes, conversation_rotated_keep, conversation_max_rows, conversation_max_age_days
+        #[clap(long = "set", num_args = 1..)]
+        set: Vec<String>,
+        /// Optional explicit config file path to write (defaults to loaded config path)
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        config_file: Option<PathBuf>,
+        /// Do not write file; print the would-be changes
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        dry_run: bool,
+        /// JSON output for dry-run or result summary
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+    },
+}
+
+#[cfg(feature = "ai")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum AiProviderCommand {
+    /// List available AI providers
+    List {
+        /// Include built-in default providers in addition to configured ones
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        include_defaults: bool,
+        /// Output JSON
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
+    },
+    /// Set the active AI provider
+    Set {
+        /// Provider name to activate (e.g., openai, anthropic, ollama, openrouter, null)
+        name: String,
+        /// Optional explicit config file path to write (defaults to loaded config path)
+        #[clap(long, value_hint = ValueHint::FilePath)]
+        config_file: Option<PathBuf>,
+        /// Dry run: do not write, print the would-be change
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        dry_run: bool,
+        /// Output JSON
+        #[clap(long, action=clap::ArgAction::SetTrue)]
+        json: bool,
     },
 }
 

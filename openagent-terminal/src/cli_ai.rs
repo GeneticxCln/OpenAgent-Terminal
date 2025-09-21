@@ -136,8 +136,92 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             println!("Next steps:\n  1) Source the env snippet in your shell rc, or export OPENAGENT_* vars manually.\n  2) Ensure your config contains [ai.providers.*] as shown above.\n  3) Run: openagent-terminal ai validate --include-defaults");
             Ok(0)
         }
+
+        AiCommand::Provider { command } => {
+            match command {
+                crate::cli::AiProviderCommand::List { include_defaults, json } => {
+                    // Aggregate providers: configured + optionally defaults
+                    let mut provider_map: HashMap<String, ProviderCfg> = HashMap::new();
+                    for (k, v) in &config.ai.providers { provider_map.insert(k.clone(), v.clone()); }
+                    if *include_defaults {
+                        for (k, v) in get_default_provider_configs() { provider_map.entry(k).or_insert(v); }
+                    }
+                    // Sort names for stable output
+                    let mut names: Vec<String> = provider_map.keys().cloned().collect();
+                    names.sort();
+                    let active = config.ai.provider.clone().unwrap_or_else(|| "null".to_string());
+                    if *json {
+                        let list: Vec<serde_json::Value> = names
+                            .into_iter()
+                            .map(|n| {
+                                let pcfg = provider_map.get(&n);
+                                serde_json::json!({
+                                    "name": n,
+                                    "active": (n == active),
+                                    "configured": pcfg.is_some(),
+                                    "model_default": pcfg.and_then(|c| c.default_model.clone()),
+                                    "endpoint_default": pcfg.and_then(|c| c.default_endpoint.clone()),
+                                    "api_key_env": pcfg.and_then(|c| c.api_key_env.clone()).is_some(),
+                                })
+                            })
+                            .collect();
+                        println!("{}", serde_json::json!({"providers": list, "active": active}));
+                    } else {
+                        println!("Available AI providers:");
+                        for n in names {
+                            let mark = if n == active { "*" } else { " "; };
+                            println!(" {} {}", mark, n);
+                        }
+                        println!("Active: {}", active);
+                    }
+                    Ok(0)
+                }
+                crate::cli::AiProviderCommand::Set { name, config_file, dry_run, json } => {
+                    // Determine target config path
+                    let path = if let Some(p) = config_file { p.clone() } else if let Some(first) = config.config_paths.first() { first.clone() } else {
+                        eprintln!("No loaded config file path available. Use --config-file to specify a target.");
+                        return Ok(2);
+                    };
+                    // Load or create TOML
+                    let mut doc: toml::Value = if path.exists() {
+                        let s = std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+                        toml::from_str(&s).with_context(|| format!("Failed to parse TOML at {}", path.display()))?
+                    } else {
+                        toml::Value::Table(toml::map::Map::new())
+                    };
+                    if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                    let tbl = doc.as_table_mut().unwrap();
+                    let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                    if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                    let ai_tbl = ai.as_table_mut().unwrap();
+                    ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
+
+                    if *dry_run {
+                        if *json {
+                            let out = serde_json::json!({"config_file": path.display().to_string(), "set_provider": name});
+                            println!("{}", out);
+                        } else {
+                            println!("Would set [ai].provider = \"{}\" in {}", name, path.display());
+                        }
+                        return Ok(0);
+                    }
+
+                    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).with_context(|| format!("Failed creating parent dir {}", parent.display()))?; }
+                    let s = toml::to_string_pretty(&doc).with_context(|| "Failed to serialize TOML")?;
+                    std::fs::write(&path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+
+                    if *json {
+                        let out = serde_json::json!({"ok": true, "config_file": path.display().to_string(), "active_provider": name});
+                        println!("{}", out);
+                    } else {
+                        println!("Set active AI provider to '{}' in {}", name, path.display());
+                    }
+                    Ok(0)
+                }
+            }
+        }
+
         AiCommand::HistoryExport { format, to } => {
-            let base = dirs::data_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join("openagent-terminal")
                 .join("ai_history");
@@ -513,6 +597,218 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 for e in rotated.into_iter().take(to_prune) {
                     let _ = std::fs::remove_file(e.path());
                 }
+            }
+            Ok(0)
+        }
+
+        AiCommand::HistoryStatus { json, verbose } => {
+            use serde_json::json;
+            let r = &config.ai.history_retention;
+            let env_overrides = vec![
+                ("OPENAGENT_AI_HISTORY_MAX_BYTES", std::env::var("OPENAGENT_AI_HISTORY_MAX_BYTES").ok()),
+                ("OPENAGENT_AI_HISTORY_ROTATED_KEEP", std::env::var("OPENAGENT_AI_HISTORY_ROTATED_KEEP").ok()),
+                ("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS", std::env::var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS").ok()),
+                ("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS", std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS").ok()),
+                ("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS", std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS").ok()),
+            ];
+            let base = dirs::data_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("openagent-terminal")
+                .join("ai_history");
+            let jsonl = base.join("history.jsonl");
+            let db_path = base.join("history.db");
+
+            // JSONL stats
+            let jsonl_size = std::fs::metadata(&jsonl).map(|m| m.len()).ok();
+            let mut rotated_files: Vec<(String, u64, Option<String>)> = Vec::new();
+            let mut rotated_total: u64 = 0;
+            let mut oldest: Option<std::time::SystemTime> = None;
+            let mut newest: Option<std::time::SystemTime> = None;
+            if let Ok(entries) = std::fs::read_dir(&base) {
+                for e in entries.flatten() {
+                    if let Some(name) = e.file_name().to_str() {
+                        if name.starts_with("history-") && name.ends_with(".jsonl") {
+                            if let Ok(meta) = e.metadata() {
+                                let size = meta.len();
+                                rotated_total = rotated_total.saturating_add(size);
+                                let mtime = meta.modified().ok();
+                                if let Some(t) = mtime {
+                                    oldest = Some(oldest.map_or(t, |o| o.min(t)));
+                                    newest = Some(newest.map_or(t, |n| n.max(t)));
+                                }
+                                let ts_str = mtime.map(|t| {
+                                    let dt: chrono::DateTime<chrono::Utc> = t.into();
+                                    dt.to_rfc3339()
+                                });
+                                rotated_files.push((name.to_string(), size, ts_str));
+                            }
+                        }
+                    }
+                }
+            }
+            rotated_files.sort_by(|a, b| a.0.cmp(&b.0));
+            let oldest_s = oldest.map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339());
+            let newest_s = newest.map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339());
+
+            // SQLite stats
+            let (db_exists, db_size, row_count, min_ts, max_ts) = match Connection::open(&db_path) {
+                Ok(conn) => {
+                    let size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+                    let count: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get(0))
+                        .unwrap_or(0);
+                    let min_ts: Option<String> = conn
+                        .query_row("SELECT MIN(ts) FROM conversations", [], |row| row.get(0))
+                        .ok();
+                    let max_ts: Option<String> = conn
+                        .query_row("SELECT MAX(ts) FROM conversations", [], |row| row.get(0))
+                        .ok();
+                    (true, size, count as u64, min_ts, max_ts)
+                }
+                Err(_) => (false, 0, 0, None, None),
+            };
+
+            if *json {
+                let ret = json!({
+                    "retention": {
+                        "ui_max_entries": r.ui_max_entries,
+                        "ui_max_bytes": r.ui_max_bytes,
+                        "conversation_jsonl_max_bytes": r.conversation_jsonl_max_bytes,
+                        "conversation_rotated_keep": r.conversation_rotated_keep,
+                        "conversation_max_rows": r.conversation_max_rows,
+                        "conversation_max_age_days": r.conversation_max_age_days,
+                    },
+                    "env_overrides": env_overrides.iter().map(|(k,v)| json!({"var": k, "value": v})).collect::<Vec<_>>(),
+                    "paths": {
+                        "base": base.display().to_string(),
+                        "jsonl": jsonl.display().to_string(),
+                        "sqlite": db_path.display().to_string(),
+                    },
+                    "jsonl": {
+                        "exists": jsonl_size.is_some(),
+                        "size_bytes": jsonl_size.unwrap_or(0),
+                        "rotated_count": rotated_files.len(),
+                        "rotated_total_bytes": rotated_total,
+                        "oldest_rotated_mtime": oldest_s,
+                        "newest_rotated_mtime": newest_s,
+                        "rotated_files": if *verbose { Some(rotated_files.iter().map(|(n,s,t)| json!({"name": n, "size_bytes": s, "mtime": t})).collect::<Vec<_>>()) } else { None },
+                    },
+                    "sqlite": {
+                        "exists": db_exists,
+                        "db_size_bytes": db_size,
+                        "row_count": row_count,
+                        "oldest_ts": min_ts,
+                        "newest_ts": max_ts,
+                    }
+                });
+                println!("{}", ret);
+            } else {
+                println!("AI History Status");
+                println!("  Retention:");
+                println!("    ui_max_entries: {}", r.ui_max_entries);
+                println!("    ui_max_bytes:   {}", r.ui_max_bytes);
+                println!("    jsonl_max_bytes:{}", r.conversation_jsonl_max_bytes);
+                println!("    rotated_keep:   {}", r.conversation_rotated_keep);
+                println!("    sqlite_rows:    {}", r.conversation_max_rows);
+                println!("    max_age_days:   {}", r.conversation_max_age_days);
+                let any_env = env_overrides.iter().any(|(_,v)| v.is_some());
+                println!("  Env overrides active: {}", if any_env { "yes" } else { "no" });
+                if *verbose {
+                    for (k,v) in &env_overrides { println!("    {} = {}", k, v.as_deref().unwrap_or("<unset>")); }
+                }
+                println!("  Paths:");
+                println!("    base:   {}", base.display());
+                println!("    jsonl:  {} (exists: {}, size: {} bytes)", jsonl.display(), jsonl_size.is_some(), jsonl_size.unwrap_or(0));
+                println!("    sqlite: {} (exists: {}, size: {} bytes)", db_path.display(), db_exists, db_size);
+                println!("  JSONL rotated: count={}, total_bytes={} oldest={} newest={}", rotated_files.len(), rotated_total, oldest_s.as_deref().unwrap_or("-"), newest_s.as_deref().unwrap_or("-"));
+                if *verbose {
+                    for (n,s,t) in &rotated_files { println!("    - {} ({} bytes, mtime={})", n, s, t.as_deref().unwrap_or("-")); }
+                }
+                if db_exists {
+                    println!("  SQLite: rows={}, oldest_ts={}, newest_ts={}", row_count, min_ts.as_deref().unwrap_or("-"), max_ts.as_deref().unwrap_or("-"));
+                }
+            }
+            Ok(0)
+        }
+
+        AiCommand::HistoryConfig { set, config_file, dry_run, json } => {
+            use toml::Value as TomlValue;
+            if set.is_empty() {
+                eprintln!("No --set key=value provided. Keys: ui_max_entries, ui_max_bytes, conversation_jsonl_max_bytes, conversation_rotated_keep, conversation_max_rows, conversation_max_age_days");
+                return Ok(2);
+            }
+            // Determine target config path
+            let path = if let Some(p) = config_file {
+                p.clone()
+            } else if let Some(first) = config.config_paths.first() {
+                first.clone()
+            } else {
+                eprintln!("No loaded config file path available. Use --config-file to specify a target, or add the section manually to your TOML.");
+                return Ok(2);
+            };
+            // Load or create TOML
+            let mut doc: TomlValue = if path.exists() {
+                let s = std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+                toml::from_str(&s).with_context(|| format!("Failed to parse TOML at {}", path.display()))?
+            } else {
+                TomlValue::Table(toml::map::Map::new())
+            };
+            // Ensure [ai] and [ai.history_retention]
+            if !doc.is_table() { doc = TomlValue::Table(toml::map::Map::new()); }
+            let tbl = doc.as_table_mut().unwrap();
+            let ai = tbl.entry("ai").or_insert_with(|| TomlValue::Table(toml::map::Map::new()));
+            if !ai.is_table() { *ai = TomlValue::Table(toml::map::Map::new()); }
+            let ai_tbl = ai.as_table_mut().unwrap();
+            let hr = ai_tbl.entry("history_retention").or_insert_with(|| TomlValue::Table(toml::map::Map::new()));
+            if !hr.is_table() { *hr = TomlValue::Table(toml::map::Map::new()); }
+            let hr_tbl = hr.as_table_mut().unwrap();
+
+            // Apply sets
+            let mut changes: Vec<(String, String)> = Vec::new();
+            for kv in set {
+                let (k, vstr) = match kv.split_once('=') {
+                    Some((k, v)) => (k.trim().to_string(), v.trim().to_string()),
+                    None => {
+                        return Err(anyhow!(format!("Invalid --set '{}', expected key=value", kv)));
+                    }
+                };
+                let key_ok = matches!(
+                    k.as_str(),
+                    "ui_max_entries" | "ui_max_bytes" | "conversation_jsonl_max_bytes" | "conversation_rotated_keep" | "conversation_max_rows" | "conversation_max_age_days"
+                );
+                if !key_ok {
+                    return Err(anyhow!(format!("Unsupported key '{}'", k)));
+                }
+                let intval: i64 = vstr.parse::<i64>().map_err(|e| anyhow!(format!("Invalid integer for {}: {}", k, e)))?;
+                hr_tbl.insert(k.clone(), TomlValue::Integer(intval));
+                changes.push((k, vstr));
+            }
+
+            if *dry_run {
+                if *json {
+                    let out = serde_json::json!({"config_file": path.display().to_string(), "changes": changes});
+                    println!("{}", out);
+                } else {
+                    println!("Would update {} with:", path.display());
+                    println!("[ai.history_retention]");
+                    for (k,v) in &changes { println!("{} = {}", k, v); }
+                }
+                return Ok(0);
+            }
+
+            // Write back
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).with_context(|| format!("Failed creating parent dir {}", parent.display()))?;
+            }
+            let s = toml::to_string_pretty(&doc).with_context(|| "Failed to serialize TOML")?;
+            std::fs::write(&path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+            if *json {
+                let out = serde_json::json!({"ok": true, "config_file": path.display().to_string(), "changes": changes});
+                println!("{}", out);
+            } else {
+                println!("Updated {}:", path.display());
+                println!("[ai.history_retention]");
+                for (k,v) in &changes { println!("{} = {}", k, v); }
             }
             Ok(0)
         }

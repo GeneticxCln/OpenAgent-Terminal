@@ -135,6 +135,31 @@ Runtime shortcuts (default):
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+…)
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
 
+## AI: History Retention
+
+You can control how much AI prompt history is kept in memory and how persisted conversation logs are retained/pruned.
+
+```toml
+[ai.history_retention]
+# In‑memory prompt history (UI)
+ui_max_entries = 200            # Keep most recent N prompts (default 200)
+ui_max_bytes   = 131072         # Total bytes across prompts (default ~128KB)
+
+# Persisted conversation logs — JSONL fallback file
+conversation_jsonl_max_bytes = 8_388_608   # Rotation threshold (default 8MB)
+conversation_rotated_keep    = 8           # Keep last N rotated files (default 8)
+conversation_max_age_days    = 90          # Prune rotated files older than N days (default 90)
+
+# Persisted conversation logs — SQLite database (preferred)
+conversation_max_rows = 50_000             # Cap total rows; prune oldest (default 50k)
+# conversation_max_age_days also applies to SQLite rows
+```
+
+Notes:
+- UI history is pruned on every append and on load to keep memory bounded.
+- Conversation persistence first attempts SQLite; if unavailable, it falls back to JSONL with rotation.
+- When running outside the main runtime (e.g., CLI helpers), the app exports matching OPENAGENT_* env vars so helpers can apply the same limits.
+
 ## Rendering backend
 
 OpenAgent Terminal uses the WGPU renderer exclusively. OpenGL fallback has been removed.

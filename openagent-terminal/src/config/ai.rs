@@ -42,6 +42,10 @@ pub struct AiConfig {
     #[serde(default)]
     pub context: AiContextConfig,
 
+    /// History retention and pruning settings for AI runtime and conversation logs.
+    #[serde(default)]
+    pub history_retention: AiHistoryRetention,
+
     /// Strategy to join multiple commands when applying.
     #[serde(default)]
     pub apply_joiner: AiApplyJoinStrategy,
@@ -150,6 +154,7 @@ impl Default for AiConfig {
             providers: HashMap::new(),
             context: AiContextConfig::default(),
             apply_joiner: AiApplyJoinStrategy::AndThen,
+            history_retention: AiHistoryRetention::default(),
         }
     }
 }
@@ -305,4 +310,33 @@ impl Default for AiGitConfig {
 #[allow(dead_code)]
 fn default_true() -> bool {
     true
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct AiHistoryRetention {
+    /// Maximum number of UI prompt history entries to keep in memory
+    pub ui_max_entries: usize,
+    /// Maximum total bytes for UI prompt history (sum of entry lengths)
+    pub ui_max_bytes: usize,
+    /// Maximum on-disk JSONL size before rotation (bytes)
+    pub conversation_jsonl_max_bytes: u64,
+    /// How many rotated JSONL files to keep
+    pub conversation_rotated_keep: usize,
+    /// Maximum SQLite rows to keep for conversations
+    pub conversation_max_rows: u64,
+    /// Maximum age in days for conversations (SQLite and rotated JSONL cleanup)
+    pub conversation_max_age_days: u64,
+}
+
+impl Default for AiHistoryRetention {
+    fn default() -> Self {
+        Self {
+            ui_max_entries: 200,
+            ui_max_bytes: 128 * 1024, // 128KB
+            conversation_jsonl_max_bytes: 8 * 1024 * 1024, // 8MB
+            conversation_rotated_keep: 8,
+            conversation_max_rows: 50_000,
+            conversation_max_age_days: 90,
+        }
+    }
 }

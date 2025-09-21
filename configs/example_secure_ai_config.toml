@@ -6,6 +6,15 @@
 enabled = true
 # Choose your primary provider
 provider = "openai"
+
+# AI history retention (memory + on-disk)
+[ai.history_retention]
+# ui_max_entries = 200
+# ui_max_bytes   = 131072
+# conversation_jsonl_max_bytes = 8_388_608
+# conversation_rotated_keep    = 8
+# conversation_max_age_days    = 90
+# conversation_max_rows        = 50_000
 panel_height_fraction = 0.40
 backdrop_alpha = 0.25
 shadow = true

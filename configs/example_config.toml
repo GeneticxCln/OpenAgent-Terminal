@@ -64,6 +64,18 @@ shadow_size_px = 8
 enabled = true
 # Choose provider: "null", "ollama", "openai", "anthropic", "openrouter"
 provider = "ollama"
+
+# AI history retention (memory + on-disk)
+[ai.history_retention]
+# In-memory prompt history (UI)
+# ui_max_entries = 200            # Keep most recent N prompts (default 200)
+# ui_max_bytes   = 131072         # Total bytes across prompts (default ~128KB)
+# Persisted conversations (JSONL fallback file)
+# conversation_jsonl_max_bytes = 8_388_608   # Rotation threshold (default 8MB)
+# conversation_rotated_keep    = 8           # Keep last N rotated files (default 8)
+# conversation_max_age_days    = 90          # Prune rotated files older than N days (default 90)
+# Persisted conversations (SQLite database)
+# conversation_max_rows = 50_000             # Cap total rows; prune oldest (default 50k)
 endpoint_env = "OPENAGENT_AI_ENDPOINT"
 api_key_env = "OPENAGENT_AI_API_KEY"
 model_env = "OPENAGENT_AI_MODEL"

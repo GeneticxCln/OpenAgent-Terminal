@@ -573,6 +573,7 @@ pub(crate) async fn initialize_plugin_manager(
         }
     }
 
+
     Ok(manager)
 }
 
@@ -615,6 +616,16 @@ impl PluginHost for TerminalPluginHost {
         let mut lens = crate::security_lens::SecurityLens::new(policy.clone());
         let risk = lens.analyze_command(command);
         if lens.should_block(&risk) {
+            // Telemetry: record a blocked command event (local-only JSONL)
+            if let Err(e) = write_security_audit_event(
+                None,
+                command,
+                "blocked",
+                &risk.explanation,
+                format!("{:?}", risk.level).as_str(),
+            ) {
+                warn!("Failed to write security audit log: {}", e);
+            }
             return Err(PluginError::CommandFailed(format!(
                 "Blocked risky plugin command ({}): {}",
                 risk.level as u8, risk.explanation
@@ -652,8 +663,29 @@ impl PluginHost for TerminalPluginHost {
                 Some("Cancel".into()),
                 Some(30_000),
             ) {
-                Ok(true) => {}
+                Ok(true) => {
+                    // Accepted: write audit event
+                    if let Err(e) = write_security_audit_event(
+                        None,
+                        command,
+                        "confirmed",
+                        &risk.explanation,
+                        format!("{:?}", risk.level).as_str(),
+                    ) {
+                        warn!("Failed to write security audit log: {}", e);
+                    }
+                }
                 Ok(false) => {
+                    // Canceled: write audit event and abort
+                    if let Err(e) = write_security_audit_event(
+                        None,
+                        command,
+                        "denied_user",
+                        &risk.explanation,
+                        format!("{:?}", risk.level).as_str(),
+                    ) {
+                        warn!("Failed to write security audit log: {}", e);
+                    }
                     return Err(PluginError::CommandFailed("User canceled command".into()));
                 }
                 Err(e) => {
@@ -836,6 +868,43 @@ fn sanitize_key_to_filename(key: &str) -> String {
         s.push('_');
     }
     s
+}
+
+#[cfg(feature = "plugins")]
+fn write_security_audit_event(
+    plugin_id: Option<&str>,
+    command: &str,
+    action: &str,
+    reason: &str,
+    risk_level: &str,
+) -> std::io::Result<()> {
+    // Resolve data dir
+    let base_dir = dirs::data_dir()
+        .map(|d| d.join("openagent-terminal").join("security"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./.openagent-terminal/security"));
+    std::fs::create_dir_all(&base_dir)?;
+    let log_path = base_dir.join("audit.log");
+
+    // Build JSONL entry
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let entry = serde_json::json!({
+        "ts_ms": now,
+        "source": "plugin",
+        "plugin_id": plugin_id,
+        "action": action,
+        "risk_level": risk_level,
+        "command": command,
+        "reason": reason,
+    });
+    let line = format!("{}\n", entry);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
 }
 
 #[cfg(feature = "plugins")]
