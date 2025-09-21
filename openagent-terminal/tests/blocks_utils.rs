@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args)]
+
 // High-yield coverage tests for Blocks v2 utilities
 
 use openagent_terminal::blocks_v2::{BlockId, ShellType};

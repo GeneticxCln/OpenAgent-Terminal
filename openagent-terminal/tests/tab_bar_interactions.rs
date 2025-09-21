@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 #[test]
 fn tab_bar_hit_test_integration() {
     use openagent_terminal as termapp;

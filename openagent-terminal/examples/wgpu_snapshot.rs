@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // WGPU offscreen snapshot example
 // Renders a solid color to an offscreen texture and writes a PNG file.
 // Prints a JSON summary with output path and dimensions for CI parsing.

@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Integration-style tests for header action chip hit-testing under constrained widths
 // These tests exercise the Blocks helper used by input path hit detection.
 

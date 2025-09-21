@@ -27,7 +27,21 @@ Purging history
 
 Validating provider configuration
 - Validate all (including defaults):
-  openagent-terminal ai validate --include-defaults
+openagent-terminal ai validate --include-defaults
+
+# Provider management
+
+List providers (configured plus defaults):
+
+  openagent-terminal ai provider list --include-defaults
+
+Set the active provider (persists to config):
+
+  openagent-terminal ai provider set openai
+
+JSON output for scripting:
+
+  openagent-terminal ai provider list --json
 
 - Validate a specific provider (e.g., openai):
   openagent-terminal ai validate --provider openai

@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Mid-stream chunks followed by cancel should yield chunks and then AiStreamFinished, without
 // AiStreamError
 

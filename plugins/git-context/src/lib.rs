@@ -1,4 +1,12 @@
 // Git Context Plugin - Provides git repository information and context
+#![allow(
+    clippy::pedantic,
+    clippy::uninlined_format_args,
+    clippy::assigning_clones,
+    clippy::doc_markdown,
+    clippy::cast_possible_truncation,
+    clippy::wildcard_imports
+)]
 
 use plugin_api::*;
 use serde_json::json;

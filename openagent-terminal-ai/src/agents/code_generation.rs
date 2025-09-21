@@ -208,33 +208,93 @@ impl CodeGenerationAgent {
     ) -> String {
         let mut prompt = String::new();
 
-        // System prompt for code generation
+        // System prompt: production-quality, no placeholders/templates
         prompt.push_str(
-            "You are an expert software developer AI assistant specialized in code generation. ",
+            "You are an expert software engineer generating production-ready code. ",
         );
         prompt.push_str(
-            "Generate clean, efficient, and well-documented code following best practices. ",
+            "Do NOT use placeholders or templates. Provide concrete, working code with real names, ",
+        );
+        prompt.push_str(
+            "no 'TODO', no '...'. Prefer small, cohesive units and include minimal documentation where it helps. ",
         );
 
         // Language-specific instructions
         if let Some(lang) = language {
-            prompt.push_str(&format!("Generate {} code. ", lang));
+            let lang_lc = lang.to_lowercase();
+            prompt.push_str(&format!("Generate {} code. ", lang_lc));
 
-            // Add language-specific best practices
-            match lang.to_lowercase().as_str() {
+            match lang_lc.as_str() {
+                // Rust guidance
                 "rust" => {
                     prompt.push_str(
-                        "Follow Rust idioms: use ownership properly, handle errors with Result, ",
+                        "Follow Rust idioms: use ownership/borrowing correctly; prefer iterators over loops; ",
                     );
-                    prompt.push_str("prefer iterators, and include appropriate lifetimes. ");
+                    prompt.push_str(
+                        "handle errors with Result and the ? operator; avoid unwrap/expect in library code; ",
+                    );
+                    prompt.push_str(
+                        "design APIs to be clippy-friendly (consider lint fixes); document safety and error cases; ",
+                    );
+                    prompt.push_str(
+                        "avoid unnecessary clones; prefer &str/&[T] over owned values when appropriate. ",
+                    );
                 }
+                // Python guidance
                 "python" => {
-                    prompt.push_str("Follow PEP 8 style guidelines, use type hints, ");
-                    prompt.push_str("and include proper docstrings. ");
+                    prompt.push_str(
+                        "Follow PEP 8; include type hints (PEP 484); write clear docstrings (Google or NumPy style); ",
+                    );
+                    prompt.push_str(
+                        "avoid mutable default args; use pathlib for paths; context managers for I/O; ",
+                    );
+                    prompt.push_str(
+                        "raise specific exceptions; prefer logging over prints in libraries. ",
+                    );
                 }
+                // JavaScript / TypeScript guidance
                 "javascript" | "typescript" => {
-                    prompt.push_str("Use modern ES6+ syntax, prefer const/let over var, ");
-                    prompt.push_str("and include proper TypeScript types if applicable. ");
+                    prompt.push_str(
+                        "Use modern ES2019+ syntax; prefer const/let; arrow functions where appropriate; ",
+                    );
+                    prompt.push_str("use strict equality; avoid implicit globals; ");
+                    if lang_lc == "typescript" {
+                        prompt.push_str(
+                            "use strict typing (no any), explicit return types, discriminated unions where helpful. ",
+                        );
+                    } else {
+                        prompt.push_str(
+                            "include JSDoc where helpful and keep modules cohesive. ",
+                        );
+                    }
+                }
+                // Go guidance
+                "go" => {
+                    prompt.push_str(
+                        "Keep functions small; return (T, error) and handle errors explicitly; ",
+                    );
+                    prompt.push_str("respect context.Context for cancelation; write idiomatic names. ");
+                }
+                // Java guidance
+                "java" => {
+                    prompt.push_str(
+                        "Use clear interfaces; prefer immutability; use try-with-resources; ",
+                    );
+                    prompt.push_str("validate inputs and document thrown exceptions. ");
+                }
+                // C/C++ guidance (lightweight)
+                "c" | "cpp" => {
+                    prompt.push_str(
+                        "Prefer RAII (C++) and smart pointers; avoid raw new/delete; ",
+                    );
+                    prompt.push_str("check return values; avoid UB; document lifetime and ownership. ");
+                }
+                // Shell scripts (when applicable)
+                "shell" | "bash" | "zsh" => {
+                    prompt.push_str(
+                        "Emit portable POSIX-compliant commands when possible; quote variables safely; ",
+                    );
+                    prompt.push_str("avoid dangerous flags; do not include commentary in the command output. ");
                 }
                 _ => {}
             }
@@ -243,7 +303,7 @@ impl CodeGenerationAgent {
         // Add project context if available
         if self.config.enable_context_analysis {
             if !context.project_files.is_empty() {
-                prompt.push_str("\nProject context:\n");
+                prompt.push_str("\nProject context (sample files):\n");
                 for file in context.project_files.iter().take(10) {
                     prompt.push_str("- ");
                     prompt.push_str(file);
@@ -258,14 +318,15 @@ impl CodeGenerationAgent {
             }
         }
 
-        // Add user's request
+        // Add user's request last
         prompt.push_str("\nUser request: ");
         prompt.push_str(user_prompt);
         prompt.push('\n');
 
-        // Output format instructions
-        prompt.push_str("\nProvide the code with brief explanations. ");
-        prompt.push_str("Focus on functionality and clarity.");
+        // Output format guidance
+        prompt.push_str(
+            "\nReturn production-ready code and a concise explanation. Keep explanations brief and practical. ",
+        );
 
         prompt
     }

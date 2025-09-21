@@ -340,7 +340,7 @@ pub enum UpdateFrequency {
 
 /// Layout manager for component positioning
 pub struct LayoutManager {
-    layout_engine: LayoutEngine,
+    _layout_engine: LayoutEngine,
     responsive_rules: RwLock<Vec<ResponsiveRule>>,
     terminal_size: RwLock<(u16, u16)>, // (width, height)
 }
@@ -593,7 +593,7 @@ pub struct DisplayBuffer {
     buffer: Vec<Vec<Cell>>,
     dirty_regions: Vec<Rectangle>,
     cursor_position: Position,
-    cursor_visible: bool,
+    _cursor_visible: bool,
 }
 
 /// Individual cell in display buffer
@@ -1052,19 +1052,19 @@ impl TerminalUIIntegration {
             Action::System(SystemAction::Quit) => {
                 // Handle quit action
                 tracing::info!("Quit action triggered");
-                return Ok(true);
+                Ok(true)
             }
             Action::System(SystemAction::Refresh) => {
                 self.render().await?;
-                return Ok(true);
+                Ok(true)
             }
             Action::Navigate(nav_action) => {
                 self.handle_navigation_action(nav_action).await?;
-                return Ok(true);
+                Ok(true)
             }
             _ => {
                 tracing::debug!("Unhandled action: {:?}", action);
-                return Ok(false);
+                Ok(false)
             }
         }
     }
@@ -1270,7 +1270,7 @@ impl TerminalUIIntegration {
 impl LayoutManager {
     pub fn new() -> Self {
         Self {
-            layout_engine: LayoutEngine::Grid,
+            _layout_engine: LayoutEngine::Grid,
             responsive_rules: RwLock::new(Vec::new()),
             terminal_size: RwLock::new((80, 24)),
         }
@@ -1438,7 +1438,7 @@ impl DisplayBuffer {
             buffer: vec![vec![Cell::default(); 80]; 24],
             dirty_regions: Vec::new(),
             cursor_position: Position { x: 0, y: 0 },
-            cursor_visible: true,
+            _cursor_visible: true,
         }
     }
 
@@ -1696,6 +1696,26 @@ impl TerminalUIIntegration {
 
         Ok(())
     }
+}
+
+impl Default for TerminalUIIntegration {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for LayoutManager {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for ThemeManager {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for InputHandler {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for DisplayBuffer {
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]

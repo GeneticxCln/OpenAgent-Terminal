@@ -19,6 +19,9 @@ use crate::workspace::tab_manager::{TabAnimation, TabAnimationType};
 use crate::workspace::TabId;
 use openagent_terminal_core::index::Point;
 
+/// Callback type for render events to reduce type complexity
+pub type RenderEventCallback = Box<dyn Fn(&RenderEvent) + Send + Sync>;
+
 /// Native renderer for immediate UI updates without lazy fallbacks
 pub struct NativeRenderer {
     /// Block rendering state for immediate access
@@ -40,7 +43,7 @@ pub struct NativeRenderer {
     render_cache: RenderCache,
 
     /// Event callbacks for immediate rendering updates
-    render_callbacks: Vec<Box<dyn Fn(&RenderEvent) + Send + Sync>>,
+    render_callbacks: Vec<RenderEventCallback>,
 }
 
 /// Render events for immediate feedback

@@ -1,4 +1,5 @@
 #![cfg(feature = "ai-anthropic")]
+#![allow(clippy::pedantic, clippy::uninlined_format_args)]
 #[cfg(test)]
 mod anthropic_provider_tests {
     use openagent_terminal_ai::providers::AnthropicProvider;

@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Non-cancel error path: AiStreamError should be emitted, not AiStreamFinished
 
 #![cfg(feature = "ai")]

@@ -96,8 +96,7 @@ impl BuildConfig {
         // Avoid emitting cargo warnings by default; enable verbose build status only if requested.
         let verbose = std::env::var("OPENAGENT_VERBOSE_BUILD")
             .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
         if !verbose {
             return;
         }
@@ -106,7 +105,7 @@ impl BuildConfig {
         println!("cargo:warning=Profile: {} (opt-level={})", self.profile, self.optimization_level);
         if !self.features.is_empty() {
             let feature_list: Vec<&String> = self.features.iter().collect();
-            println!("cargo:warning=Features: {:?}", feature_list);
+            println!("cargo:warning=Features: {feature_list:?}");
         }
     }
 
@@ -134,7 +133,7 @@ fn generate_version_info(config: &BuildConfig) {
     writeln!(file, "pub const PKG_VERSION: &str = \"{}\";", env!("CARGO_PKG_VERSION")).unwrap();
 
     if let Some(ref hash) = config.commit_hash {
-        writeln!(file, "pub const COMMIT_HASH: Option<&str> = Some(\"{}\");", hash).unwrap();
+        writeln!(file, "pub const COMMIT_HASH: Option<&str> = Some(\"{hash}\");").unwrap();
     } else {
         writeln!(file, "pub const COMMIT_HASH: Option<&str> = None;").unwrap();
     }
@@ -253,7 +252,7 @@ fn generate_feature_config(config: &BuildConfig) {
     writeln!(file, "    let mut features = HashSet::new();").unwrap();
 
     for feature in &config.features {
-        writeln!(file, "    features.insert(\"{}\");", feature).unwrap();
+        writeln!(file, "    features.insert(\"{feature}\");").unwrap();
     }
 
     writeln!(file, "    features").unwrap();
@@ -519,19 +518,14 @@ fn validate_feature_combinations(config: &BuildConfig) {
         ai_providers.iter().filter(|&&provider| config.has_feature(provider)).collect();
 
     if enabled_providers.len() > 1 {
-        println!(
-            "cargo:warning=Multiple AI providers enabled: {:?}. This is supported but may \
-             increase binary size.",
-            enabled_providers
-        );
+        println!("cargo:warning=Multiple AI providers enabled: {enabled_providers:?}. This is supported but may increase binary size.");
     }
 
     // Validate rendering backend combinations
     if config.has_feature("wgpu") && !config.is_release {
         let verbose = std::env::var("OPENAGENT_VERBOSE_BUILD")
             .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
         if verbose {
             println!(
                 "cargo:warning=WGPU backend enabled in debug mode. Performance may be degraded."

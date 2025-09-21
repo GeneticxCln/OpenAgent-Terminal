@@ -18,6 +18,39 @@ use std::rc::Rc;
 #[cfg(unix)]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+fn write_security_audit_event_core(command: &str, action: &str, detail: Option<&str>) {
+    // Best-effort; never panic
+    if let Some(base) = dirs::data_dir() {
+        let dir = base.join("openagent-terminal").join("security");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let path = dir.join("audit.log");
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let entry = match detail {
+                Some(d) => serde_json::json!({
+                    "ts_ms": now_ms,
+                    "source": "core",
+                    "action": action,
+                    "command": command,
+                    "detail": d,
+                }),
+                None => serde_json::json!({
+                    "ts_ms": now_ms,
+                    "source": "core",
+                    "action": action,
+                    "command": command,
+                }),
+            };
+            let line = format!("{}\n", entry);
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = std::io::Write::write_all(&mut f, line.as_bytes());
+            }
+        }
+    }
+}
 use std::{env, f32, mem};
 
 use ahash::RandomState;
@@ -380,8 +413,8 @@ impl Processor {
             if self.config.ai.enabled {
                 let provider_name = self.config.ai.provider.as_deref().unwrap_or("null");
                 if provider_name.eq_ignore_ascii_case("null") {
-                    let msg = crate::message_bar::Message::new(
-                        "AI is enabled with provider 'null'. Open AI (Ctrl+Shift+A) and switch provider, or configure [ai] in your config.",
+let msg = crate::message_bar::Message::new(
+                        "AI is enabled with provider 'null'. Open AI (Ctrl+Shift+A) and switch provider, or configure [ai] in your config.".to_string(),
                         crate::message_bar::MessageType::Warning,
                     );
                     if let Err(e) = self.proxy.send_event(Event::new(EventType::Message(msg), window_id)) {
@@ -747,6 +780,39 @@ impl Processor {
                     description: desc,
                     source: crate::display::workflow_panel::WorkflowSource::Config,
                 });
+            }
+        }
+        // Also include workflows loaded by the runtime engine when available
+        if let Some(components) = &self.components {
+            if let Some(engine) = &components.workflow_engine {
+                let engine = engine.clone();
+                let proxy = self.proxy.clone();
+                let win = window_id;
+                let mut base = items;
+                components.runtime.spawn(async move {
+                    let mut engine_items = Vec::new();
+                    let list = engine.list_workflows().await;
+                    for (_id, def) in list {
+                        let name = def.name.clone();
+                        let desc = Some(def.description.clone());
+                        let hay = format!("{} {}", name, def.description).to_lowercase();
+                        if q.trim().is_empty() || hay.contains(&q) {
+                            engine_items.push(crate::display::workflow_panel::WorkflowItem {
+                                name,
+                                description: desc,
+                                source: crate::display::workflow_panel::WorkflowSource::Engine,
+                            });
+                        }
+                    }
+                    // Merge and de-duplicate by name preferring engine entries last
+                    base.extend(engine_items);
+                    // De-dup by name keeping first occurrence
+                    let mut seen = std::collections::HashSet::new();
+                    base.retain(|it| seen.insert(it.name.clone()));
+                    let _ = proxy
+                        .send_event(Event::new(EventType::WorkflowsSearchResults(base), win));
+                });
+                return;
             }
         }
         let _ =
@@ -1125,7 +1191,9 @@ impl ApplicationHandler<Event> for Processor {
                 let mut lens = SecurityLens::new(policy.clone());
                 let risk = lens.analyze_command(&command);
 
-                if lens.should_block(&risk) {
+if lens.should_block(&risk) {
+                    // Telemetry: core blocked command
+                    write_security_audit_event_core(&command, "blocked", Some(&risk.explanation));
                     let _msg = self.config.theme.resolve().tokens.warning; // color not directly used here
                     let message = crate::message_bar::Message::new(
                         format!(
@@ -1219,8 +1287,10 @@ impl ApplicationHandler<Event> for Processor {
                 let policy: SecurityPolicy = self.config.security.clone();
                 if policy.gate_paste_events {
                     let mut lens = SecurityLens::new(policy.clone());
-                    if let Some(risk) = lens.analyze_paste_content(&text) {
+if let Some(risk) = lens.analyze_paste_content(&text) {
                         if lens.should_block(&risk) {
+                            // Telemetry: blocked paste
+                            write_security_audit_event_core(&text, "blocked_paste", Some(&risk.explanation));
                             let message = crate::message_bar::Message::new(
                                 format!("Blocked risky paste: {}", risk.explanation),
                                 crate::message_bar::MessageType::Warning,
@@ -2310,14 +2380,18 @@ impl ApplicationHandler<Event> for Processor {
             }
             (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
                 // If this is an AI pending confirm, handle it
-                #[cfg(feature = "ai")]
+#[cfg(feature = "ai")]
                 if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
                     if accepted {
+                        // Telemetry: confirmed command
+                        write_security_audit_event_core(&cmd, "confirmed", None);
                         let _ = self.proxy.send_event(Event::new(
                             EventType::AiApplyAsCommandChecked { command: cmd, dry_run },
                             win,
                         ));
                     } else {
+                        // Telemetry: denied command
+                        write_security_audit_event_core(&cmd, "denied_user", None);
                         // Show canceled message
                         let message = crate::message_bar::Message::new(
                             "Command canceled".into(),
@@ -2327,12 +2401,16 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
                 // If this is a pending paste confirmation, handle it
-                if let Some((text, win)) = self.pending_security_paste.remove(&id) {
+if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                     if accepted {
+                        // Telemetry: confirmed paste
+                        write_security_audit_event_core(&text, "confirmed_paste", None);
                         let _ = self
                             .proxy
                             .send_event(Event::new(EventType::PasteCommandChecked(text), win));
                     } else {
+                        // Telemetry: denied paste
+                        write_security_audit_event_core(&text, "denied_paste", None);
                         let message = crate::message_bar::Message::new(
                             "Paste canceled".into(),
                             crate::message_bar::MessageType::Warning,
@@ -2519,6 +2597,192 @@ impl ApplicationHandler<Event> for Processor {
                             }
                         });
                     }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsSearchPerform(query), Some(window_id)) => {
+                // Build items from loaded plugins and discovered files; simple case-insensitive match
+                if let Some(components) = &self.components {
+                    if let Some(pm) = &components.plugin_manager {
+                        let pm = pm.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            let mut items: Vec<crate::display::plugin_panel::PluginItem> = Vec::new();
+                            let q = query.to_lowercase();
+                            // Loaded plugins
+                            let loaded = pm.list_plugins().await;
+                            for md in loaded {
+                                let mut hay = md.name.clone();
+                                hay.push(' ');
+                                hay.push_str(&md.description);
+                                if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
+                                    items.push(crate::display::plugin_panel::PluginItem {
+                                        name: md.name.clone(),
+                                        version: Some(md.version.clone()),
+                                        description: Some(md.description.clone()),
+                                        loaded: true,
+                                        path: None,
+                                    });
+                                }
+                            }
+                            // Discovered plugins on disk
+                            if let Ok(paths) = pm.discover_plugins().await {
+                                for p in paths {
+                                    let fname = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                                    let hay = format!("{} {}", fname, p.display());
+                                    if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
+                                        // Skip if already listed as loaded
+                                        if !items.iter().any(|it| it.name == fname && it.loaded) {
+                                            items.push(crate::display::plugin_panel::PluginItem {
+                                                name: fname,
+                                                version: None,
+                                                description: None,
+                                                loaded: false,
+                                                path: Some(p.to_string_lossy().to_string()),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchResults(items), win));
+                        });
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsSearchResults(items), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    window_context.display.plugins_panel.results = items;
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsLoadFromPath(path), Some(window_id)) => {
+                if let Some(components) = &self.components {
+                    if let Some(pm) = &components.plugin_manager {
+                        let pm = pm.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            match pm.load_plugin(&path).await {
+                                Ok(id) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Loaded plugin: {}", id),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                                Err(e) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Load failed: {}", e),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                            }
+                            // Refresh list
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
+                        });
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsUnloadByName(name), Some(window_id)) => {
+                if let Some(components) = &self.components {
+                    if let Some(pm) = &components.plugin_manager {
+                        let pm = pm.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            match pm.unload_plugin(&name).await {
+                                Ok(()) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Unloaded plugin: {}", name),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                                Err(e) => {
+                                    let msg = crate::message_bar::Message::new(
+                                        format!("Unload failed: {}", e),
+                                        crate::message_bar::MessageType::Warning,
+                                    );
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                }
+                            }
+                            // Refresh list
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
+                        });
+                    }
+                }
+            }
+            #[cfg(feature = "plugins")]
+            (EventType::PluginsInstallFromUrl { url }, Some(window_id)) => {
+                if let Some(components) = &self.components {
+                    // Compute user plugins dir similar to initialize_plugin_manager
+                    let plugins_dir = if let Some(data) = dirs::data_dir() {
+                        data.join("openagent-terminal").join("plugins")
+                    } else {
+                        std::path::PathBuf::from("./.openagent-terminal/plugins")
+                    };
+                    let _ = std::fs::create_dir_all(&plugins_dir);
+                    let proxy = self.proxy.clone();
+                    let win = *window_id;
+                    let rt = components.runtime.clone();
+                    // Download and save
+                    rt.spawn(async move {
+                        let fname = url.split('/').next_back().unwrap_or("plugin.wasm");
+                        let target = plugins_dir.join(fname);
+                        let client = reqwest::Client::new();
+                        let res = client.get(&url).send().await;
+                        match res {
+                            Ok(resp) => {
+                                match resp.bytes().await {
+                                    Ok(bytes) => {
+                                        if let Err(e) = tokio::fs::write(&target, &bytes).await {
+                                            let m = crate::message_bar::Message::new(
+                                                format!("Install failed: {}", e),
+                                                crate::message_bar::MessageType::Warning,
+                                            );
+                                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                        } else {
+                                            let m = crate::message_bar::Message::new(
+                                                format!("Downloaded plugin to {}", target.display()),
+                                                crate::message_bar::MessageType::Warning,
+                                            );
+                                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                            // Trigger load
+                                            let _ = proxy.send_event(Event::new(
+                                                EventType::PluginsLoadFromPath(target.to_string_lossy().to_string()),
+                                                win,
+                                            ));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let m = crate::message_bar::Message::new(
+                                            format!("Install failed: {}", e),
+                                            crate::message_bar::MessageType::Warning,
+                                        );
+                                        let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let m = crate::message_bar::Message::new(
+                                    format!("Download failed: {}", e),
+                                    crate::message_bar::MessageType::Warning,
+                                );
+                                let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                            }
+                        }
+                    });
                 }
             }
             (payload, Some(window_id)) => {
@@ -2750,6 +3014,17 @@ pub enum EventType {
         plugin: String,
         command: String,
     },
+    // Plugins panel events
+    #[cfg(feature = "plugins")]
+    PluginsSearchPerform(String),
+    #[cfg(feature = "plugins")]
+    PluginsSearchResults(Vec<crate::display::plugin_panel::PluginItem>),
+    #[cfg(feature = "plugins")]
+    PluginsLoadFromPath(String), // path to .wasm
+    #[cfg(feature = "plugins")]
+    PluginsUnloadByName(String), // plugin id/name
+    #[cfg(feature = "plugins")]
+    PluginsInstallFromUrl { url: String },
     #[cfg(feature = "workflow")]
     WorkflowsSearchResults(Vec<crate::display::workflow_panel::WorkflowItem>),
     #[cfg(feature = "workflow")]
@@ -4253,15 +4528,42 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
     }
 
+    #[cfg(feature = "plugins")]
+    fn open_plugins_panel(&mut self) {
+        if self.palette_active() {
+            self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.close();
+        }
+        self.display.plugins_panel.open();
+        self.mark_dirty();
+        // Trigger initial plugins search
+        let q = self.display.plugins_panel.query.clone();
+        let _ = self.event_proxy.send_event(Event::new(
+            EventType::PluginsSearchPerform(q),
+            self.display.window.id(),
+        ));
+    }
+
     #[cfg(feature = "workflow")]
     fn workflows_panel_cancel(&mut self) {
         self.display.workflows_panel.close();
         self.mark_dirty();
     }
 
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_cancel(&mut self) {
+        self.display.plugins_panel.close();
+        self.mark_dirty();
+    }
+
     #[cfg(feature = "workflow")]
     fn workflows_panel_active(&self) -> bool {
         self.display.workflows_panel.active
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_active(&self) -> bool {
+        self.display.plugins_panel.active
     }
 
     #[cfg(feature = "workflow")]
@@ -4275,6 +4577,20 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.unschedule(timer_id);
         let q = self.display.workflows_panel.query.clone();
         let evt = Event::new(EventType::WorkflowsSearchPerform(q), window_id);
+        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_input(&mut self, c: char) {
+        self.display.plugins_panel.query.push(c);
+        self.display.plugins_panel.selected = 0;
+        self.mark_dirty();
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::PluginsSearchTyping, window_id); // debounced plugin search
+        self.scheduler.unschedule(timer_id);
+        let q = self.display.plugins_panel.query.clone();
+        let evt = Event::new(EventType::PluginsSearchPerform(q), window_id);
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
@@ -4292,9 +4608,29 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_backspace(&mut self) {
+        self.display.plugins_panel.query.pop();
+        self.display.plugins_panel.selected = 0;
+        self.mark_dirty();
+        // Debounce search
+        let window_id = self.display.window.id();
+        let timer_id = TimerId::new(Topic::PluginsSearchTyping, window_id);
+        self.scheduler.unschedule(timer_id);
+        let q = self.display.plugins_panel.query.clone();
+        let evt = Event::new(EventType::PluginsSearchPerform(q), window_id);
+        self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
+    }
+
     #[cfg(feature = "workflow")]
     fn workflows_panel_move_selection(&mut self, delta: isize) {
         self.display.workflows_panel.move_selection(delta);
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_move_selection(&mut self, delta: isize) {
+        self.display.plugins_panel.move_selection(delta);
         self.mark_dirty();
     }
 
@@ -4312,6 +4648,33 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
         self.display.workflows_panel.close();
         self.mark_dirty();
+    }
+
+    #[cfg(feature = "plugins")]
+    fn plugins_panel_confirm(&mut self) {
+        // If query looks like a URL, request install from URL
+        let q = self.display.plugins_panel.query.trim().to_string();
+        if q.starts_with("http://") || q.starts_with("https://") {
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::PluginsInstallFromUrl { url: q },
+                self.display.window.id(),
+            ));
+            return;
+        }
+        if self.display.plugins_panel.results.is_empty() { return; }
+        let idx = self.display.plugins_panel.selected.min(self.display.plugins_panel.results.len() - 1);
+        let item = self.display.plugins_panel.results[idx].clone();
+        if item.loaded {
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::PluginsUnloadByName(item.name),
+                self.display.window.id(),
+            ));
+        } else if let Some(path) = item.path {
+            let _ = self.event_proxy.send_event(Event::new(
+                EventType::PluginsLoadFromPath(path),
+                self.display.window.id(),
+            ));
+        }
     }
 
     // Settings panel controls
@@ -4427,7 +4790,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn settings_panel_save(&mut self) {
         let need_reload;
         let category = self.display.settings_panel.category;
-        match self.display.settings_panel.save() {
+        let save_res = self.display.settings_panel.save();
+        match save_res {
             Ok(()) => {
                 // For most categories we should reload config to apply changes
                 need_reload = matches!(
@@ -4436,6 +4800,37 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         | crate::display::settings_panel::SettingsCategory::Theme
                         | crate::display::settings_panel::SettingsCategory::General
                 );
+
+                // Hot-apply AI provider changes: reconfigure runtime with new model/endpoint
+                #[cfg(feature = "ai")]
+                if matches!(category, crate::display::settings_panel::SettingsCategory::Ai) {
+                    if let Some(rt) = self.ai_runtime_mut() {
+                        // Build provider config from current config (or defaults) and reconfigure
+                        let name = self.display.settings_panel.provider.to_ascii_lowercase();
+                        let prov_cfg = self
+                            .config
+                            .ai
+                            .providers
+                            .get(&name)
+                            .cloned()
+                            .or_else(|| crate::config::ai_providers::get_default_provider_configs().get(&name).cloned())
+                            .unwrap_or_default();
+                        rt.reconfigure_to(&name, &prov_cfg);
+                        // Update composer badges from runtime UI state
+                        self.display.ai_current_provider = rt.ui.current_provider.clone();
+                        self.display.ai_current_model = rt.ui.current_model.clone();
+                        // If an error occurred, surface it as a message
+                        if let Some(err) = rt.ui.error_message.clone() {
+                            let message = crate::message_bar::Message::new(
+                                format!("AI provider reconfigure failed: {}", err),
+                                crate::message_bar::MessageType::Error,
+                            );
+                            let _ = self
+                                .event_proxy
+                                .send_event(Event::new(EventType::Message(message), self.display.window.id()));
+                        }
+                    }
+                }
             }
             Err(e) => {
                 need_reload = false;
@@ -7620,7 +8015,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
+#[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let prev = runtime.ui.streaming_text.len();
@@ -7637,6 +8032,17 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             );
                         }
                         runtime.ui.streaming_text.push_str(&chunk);
+                        // Cap in-memory streaming buffer to avoid unbounded growth in long sessions
+                        let cap_bytes: usize = std::env::var("OPENAGENT_AI_STREAM_MAX_BYTES")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .unwrap_or(512 * 1024);
+                        let cur_len = runtime.ui.streaming_text.len();
+                        if cur_len > cap_bytes {
+                            let drop = cur_len - cap_bytes;
+                            // Drop from the front to keep the most recent content visible
+                            runtime.ui.streaming_text.drain(0..drop);
+                        }
 
                         // Redraw throttling: only mark dirty if enough time elapsed since last redraw
                         let throttle_ms = std::env::var("OPENAGENT_AI_STREAM_REDRAW_MS")
@@ -7827,36 +8233,79 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::AiSwitchProvider(provider_name) => {
                     // Warp-like: hot-swap runtime provider immediately, preserve scratch/cursor.
                     let name = provider_name.to_ascii_lowercase();
-                    // Resolve provider config from user config or defaults
-                    let prov_cfg = self
-                        .ctx
-                        .config()
-                        .ai
-                        .providers
-                        .get(&name)
-                        .cloned()
-                        .or_else(|| {
-                            crate::config::ai_providers::get_default_provider_configs()
-                                .get(&name)
-                                .cloned()
-                        })
-                        .unwrap_or_default();
-
                     if let Some(rt) = &mut self.ctx.ai_runtime {
-                        // Preserve scratch/cursor already in rt; just reconfigure and update UI fields
-                        rt.reconfigure_to(&name, &prov_cfg);
-                        // Update composer display cache
-                        self.ctx.display.ai_current_provider = name.clone();
-                        self.ctx.display.ai_current_model = if rt.ui.current_model.is_empty() {
-                            prov_cfg.default_model.unwrap_or_default()
-                        } else {
-                            rt.ui.current_model.clone()
-                        };
+                        // Use convenience method to resolve config and reconfigure
+                        match rt.set_provider_by_name(&name, self.ctx.config()) {
+                            Ok(()) => {
+                                // Update composer display cache from runtime UI state
+                                self.ctx.display.ai_current_provider = rt.ui.current_provider.clone();
+                                self.ctx.display.ai_current_model = rt.ui.current_model.clone();
+                                // Persist selection to config file (best-effort)
+                                if let Some(path) = self.ctx.config().config_paths.first() {
+                                    let mut doc: toml::Value = if path.exists() {
+                                        match std::fs::read_to_string(path) {
+                                            Ok(s) => toml::from_str(&s).unwrap_or_else(|_| toml::Value::Table(toml::map::Map::new())),
+                                            Err(_) => toml::Value::Table(toml::map::Map::new()),
+                                        }
+                                    } else {
+                                        toml::Value::Table(toml::map::Map::new())
+                                    };
+                                    if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                                    let tbl = doc.as_table_mut().unwrap();
+                                    let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                                    if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                                    let ai_tbl = ai.as_table_mut().unwrap();
+                                    ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
+                                    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+                                    if let Ok(s) = toml::to_string_pretty(&doc) { let _ = std::fs::write(path, s); }
+                                }
+                            }
+                            Err(err) => {
+                                // Surface a toast/message-bar notification on failure
+                                let message = crate::message_bar::Message::new(
+                                    format!("AI provider switch failed: {}", err),
+                                    crate::message_bar::MessageType::Error,
+                                );
+                                let _ = self.ctx.event_proxy.send_event(Event::new(EventType::Message(message), self.ctx.display.window.id()));
+                            }
+                        }
                     } else {
                         // If runtime wasn't initialized, just update the display; runtime will be created when AI opens
+                        // Resolve provider config from user config or defaults to show model badge
+                        let prov_cfg = self
+                            .ctx
+                            .config()
+                            .ai
+                            .providers
+                            .get(&name)
+                            .cloned()
+                            .or_else(|| {
+                                crate::config::ai_providers::get_default_provider_configs()
+                                    .get(&name)
+                                    .cloned()
+                            })
+                            .unwrap_or_default();
                         self.ctx.display.ai_current_provider = name.clone();
-                        self.ctx.display.ai_current_model =
-                            prov_cfg.default_model.unwrap_or_default();
+                        self.ctx.display.ai_current_model = prov_cfg.default_model.unwrap_or_default();
+                        // Persist selection best-effort when runtime is not initialized yet
+                        if let Some(path) = self.ctx.config().config_paths.first() {
+                            let mut doc: toml::Value = if path.exists() {
+                                std::fs::read_to_string(path)
+                                    .ok()
+                                    .and_then(|s| toml::from_str(&s).ok())
+                                    .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new()))
+                            } else {
+                                toml::Value::Table(toml::map::Map::new())
+                            };
+                            if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                            let tbl = doc.as_table_mut().unwrap();
+                            let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                            if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                            let ai_tbl = ai.as_table_mut().unwrap();
+                            ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
+                            if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+                            if let Ok(s) = toml::to_string_pretty(&doc) { let _ = std::fs::write(path, s); }
+                        }
                     }
                     *self.ctx.dirty = true;
                 }
@@ -8029,6 +8478,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 #[cfg(feature = "plugins")]
                 EventType::PaletteRequestPluginCommands | EventType::PluginsRunCommand { .. } => {
                     // Already handled at Processor level; ignore here
+                }
+                #[cfg(feature = "plugins")]
+                EventType::PluginsSearchPerform(_)
+                | EventType::PluginsSearchResults(_)
+                | EventType::PluginsLoadFromPath(_)
+                | EventType::PluginsUnloadByName(_)
+                | EventType::PluginsInstallFromUrl { .. } => {
+                    // Plugins panel events are handled in the window context processor; nothing to do here
                 }
             },
             WinitEvent::WindowEvent { event, .. } => {

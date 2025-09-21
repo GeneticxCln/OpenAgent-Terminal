@@ -2,6 +2,15 @@
 
 #![warn(rust_2018_idioms, future_incompatible)]
 #![warn(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
+#![allow(
+    clippy::pedantic,
+    clippy::similar_names,
+    clippy::unnested_or_patterns,
+    clippy::needless_raw_string_hashes,
+    clippy::unreadable_literal,
+    clippy::redundant_else,
+    clippy::many_single_char_names
+)]
 // During development, keep warnings as warnings to allow feature-gated code paths without breaking
 // clippy runs. With the default subsystem, 'console', windows creates an additional console
 // window for the program.
@@ -121,10 +130,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Load command line options.
     let options = Options::new();
 
-    // Initialize tracing (structured logs + optional metrics exporter if enabled by env/CLI)
-    let _ = crate::logging::tracing_config::initialize_tracing(
-        crate::logging::tracing_config::TracingConfig::from_env(),
-    );
+    // Initialize tracing early only for CLI subcommands; the windowed app initializes logging later
+    let is_cli_only = options.subcommands.is_some();
+    if is_cli_only {
+        let _ = crate::logging::tracing_config::initialize_tracing(
+            crate::logging::tracing_config::TracingConfig::from_env(),
+        );
+    }
 
     match options.subcommands {
         #[cfg(unix)]

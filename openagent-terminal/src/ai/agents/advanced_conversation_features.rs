@@ -134,7 +134,7 @@ pub struct ConflictResolution {
 pub struct SessionCoordinator {
     active_sessions: HashMap<Uuid, SessionInfo>,
     session_groups: HashMap<String, SessionGroup>,
-    cross_session_context: CrossSessionContext,
+    _cross_session_context: CrossSessionContext,
     session_priorities: HashMap<Uuid, SessionPriority>,
 }
 
@@ -173,10 +173,10 @@ pub struct SharedContext {
 
 /// Cross-session context management
 pub struct CrossSessionContext {
-    global_knowledge_base: HashMap<String, KnowledgeEntry>,
-    entity_relationships: HashMap<String, Vec<EntityRelationship>>,
-    temporal_patterns: Vec<TemporalPattern>,
-    user_behavior_model: UserBehaviorModel,
+    _global_knowledge_base: HashMap<String, KnowledgeEntry>,
+    _entity_relationships: HashMap<String, Vec<EntityRelationship>>,
+    _temporal_patterns: Vec<TemporalPattern>,
+    _user_behavior_model: UserBehaviorModel,
 }
 
 /// Knowledge entry in global knowledge base
@@ -1309,7 +1309,7 @@ impl SessionCoordinator {
         Self {
             active_sessions: HashMap::new(),
             session_groups: HashMap::new(),
-            cross_session_context: CrossSessionContext::new(),
+            _cross_session_context: CrossSessionContext::new(),
             session_priorities: HashMap::new(),
         }
     }
@@ -1326,10 +1326,10 @@ impl SessionCoordinator {
 impl CrossSessionContext {
     pub fn new() -> Self {
         Self {
-            global_knowledge_base: HashMap::new(),
-            entity_relationships: HashMap::new(),
-            temporal_patterns: Vec::new(),
-            user_behavior_model: UserBehaviorModel {
+            _global_knowledge_base: HashMap::new(),
+            _entity_relationships: HashMap::new(),
+            _temporal_patterns: Vec::new(),
+            _user_behavior_model: UserBehaviorModel {
                 preferences: HashMap::new(),
                 interaction_patterns: Vec::new(),
                 goal_patterns: Vec::new(),
@@ -1382,6 +1382,22 @@ impl GoalAutomation {
             completion_detectors: RwLock::new(HashMap::new()),
         }
     }
+}
+
+impl Default for SessionCoordinator {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for CrossSessionContext {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for SummarizationEngine {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for GoalAutomation {
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]

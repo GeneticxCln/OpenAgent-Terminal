@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args)]
+
 use std::process::Command;
 
 fn example_bin() -> String {

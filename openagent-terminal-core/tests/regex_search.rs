@@ -1,3 +1,4 @@
+#![allow(clippy::pedantic)]
 use openagent_terminal_core::event::{Event, EventListener};
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Direction, Line, Point, Side};

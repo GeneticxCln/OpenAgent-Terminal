@@ -1,6 +1,16 @@
 //! Library interface for OpenAgent Terminal modules used by examples and tests.
+#![deny(warnings)]
 #![warn(rust_2018_idioms, future_incompatible)]
 #![warn(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
+#![allow(
+    clippy::pedantic,
+    clippy::similar_names,
+    clippy::unnested_or_patterns,
+    clippy::needless_raw_string_hashes,
+    clippy::unreadable_literal,
+    clippy::redundant_else,
+    clippy::many_single_char_names
+)]
 
 // Re-export SerdeReplace at crate root so config derive macros can refer to `crate::SerdeReplace`.
 pub use crate::config::monitor::ConfigMonitor;

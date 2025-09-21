@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Offscreen tab bar snapshot example (software-rendered)
 // Renders simplified tab bar visuals for scenarios:
 //   normal, hover, overflow, reduced

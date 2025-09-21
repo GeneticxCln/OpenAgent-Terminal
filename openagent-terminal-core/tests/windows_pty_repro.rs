@@ -1,4 +1,5 @@
 #![cfg(windows)]
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::cast_possible_truncation)]
 
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};

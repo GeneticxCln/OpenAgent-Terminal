@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::too_many_lines)]
+
 use anyhow::Result;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -176,7 +178,7 @@ async fn main() -> Result<()> {
     println!("💬 Demo 5: Natural Language Conversation");
     println!("----------------------------------------");
 
-    let conversation_examples = vec![
+    let conversation_examples = [
         "Check if the current directory has any security vulnerabilities",
         "Create a new Git branch called feature/security-improvements",
         "Generate documentation for the main.rs file",

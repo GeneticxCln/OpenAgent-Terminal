@@ -1,4 +1,5 @@
 // Plugin API - Core trait definitions and types for OpenAgent Terminal plugins
+#![allow(clippy::pedantic, clippy::missing_errors_doc, clippy::doc_markdown)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -5,19 +5,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Routing mode for AI requests
-#[derive(ConfigDeserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AiRoutingMode {
+    #[default]
     Auto,
     Agent,
     Provider,
 }
 
-impl Default for AiRoutingMode {
-    fn default() -> Self {
-        AiRoutingMode::Auto
-    }
-}
 
 #[derive(ValueEnum, SerdeReplace, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -45,6 +41,10 @@ pub struct AiConfig {
     /// Context collection settings for enriching AI requests.
     #[serde(default)]
     pub context: AiContextConfig,
+
+    /// History retention and pruning settings for AI runtime and conversation logs.
+    #[serde(default)]
+    pub history_retention: AiHistoryRetention,
 
     /// Strategy to join multiple commands when applying.
     #[serde(default)]
@@ -154,6 +154,7 @@ impl Default for AiConfig {
             providers: HashMap::new(),
             context: AiContextConfig::default(),
             apply_joiner: AiApplyJoinStrategy::AndThen,
+            history_retention: AiHistoryRetention::default(),
         }
     }
 }
@@ -181,19 +182,6 @@ pub struct ProviderConfig {
     pub extra: HashMap<String, String>,
 }
 
-/// Ollama-specific configuration.
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-#[serde(default)]
-pub struct OllamaConfig {
-    /// Ollama API endpoint.
-    pub endpoint: String,
-
-    /// Model to use.
-    pub model: String,
-
-    /// Request timeout in seconds.
-    pub timeout: u64,
-}
 
 #[derive(ValueEnum, SerdeReplace, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -219,15 +207,6 @@ impl fmt::Display for AiLogVerbosity {
     }
 }
 
-impl Default for OllamaConfig {
-    fn default() -> Self {
-        Self {
-            endpoint: "http://localhost:11434".to_string(),
-            model: "codellama".to_string(),
-            timeout: 30,
-        }
-    }
-}
 
 /// Context collection configuration for enriching AI requests.
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
@@ -290,18 +269,14 @@ impl Default for AiContextTimeouts {
     }
 }
 
-#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AiRootStrategy {
+    #[default]
     Git,
     Cwd,
 }
 
-impl Default for AiRootStrategy {
-    fn default() -> Self {
-        AiRootStrategy::Git
-    }
-}
 
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AiFileTreeConfig {
@@ -335,4 +310,33 @@ impl Default for AiGitConfig {
 #[allow(dead_code)]
 fn default_true() -> bool {
     true
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct AiHistoryRetention {
+    /// Maximum number of UI prompt history entries to keep in memory
+    pub ui_max_entries: usize,
+    /// Maximum total bytes for UI prompt history (sum of entry lengths)
+    pub ui_max_bytes: usize,
+    /// Maximum on-disk JSONL size before rotation (bytes)
+    pub conversation_jsonl_max_bytes: u64,
+    /// How many rotated JSONL files to keep
+    pub conversation_rotated_keep: usize,
+    /// Maximum SQLite rows to keep for conversations
+    pub conversation_max_rows: u64,
+    /// Maximum age in days for conversations (SQLite and rotated JSONL cleanup)
+    pub conversation_max_age_days: u64,
+}
+
+impl Default for AiHistoryRetention {
+    fn default() -> Self {
+        Self {
+            ui_max_entries: 200,
+            ui_max_bytes: 128 * 1024, // 128KB
+            conversation_jsonl_max_bytes: 8 * 1024 * 1024, // 8MB
+            conversation_rotated_keep: 8,
+            conversation_max_rows: 50_000,
+            conversation_max_age_days: 90,
+        }
+    }
 }

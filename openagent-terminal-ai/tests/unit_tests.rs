@@ -1,6 +1,6 @@
 //! Unit tests for core AI agent functionality
 //! Focuses on individual components that can be tested in isolation
-
+#![allow(clippy::pedantic, unused_imports, clippy::manual_string_new, clippy::useless_vec)]
 
 // Test only if the agents feature is enabled
 #[cfg(feature = "agents")]

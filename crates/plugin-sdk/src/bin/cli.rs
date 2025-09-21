@@ -1,6 +1,7 @@
 //! Plugin SDK Command Line Tool
 //!
 //! This tool helps developers create and manage OpenAgent Terminal plugins.
+#![allow(clippy::pedantic, clippy::doc_markdown, clippy::uninlined_format_args, clippy::map_unwrap_or)]
 
 use ed25519_dalek::Signer;
 use std::path::Path;

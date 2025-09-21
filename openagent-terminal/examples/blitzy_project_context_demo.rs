@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::wildcard_imports, clippy::too_many_lines, clippy::cast_precision_loss, clippy::needless_pass_by_value)]
+
 // Example: Blitzy Project Context Agent Demo
 // Demonstrates enhanced project analysis, Git integration, and conversation awareness
 
@@ -109,9 +111,9 @@ async fn main() -> anyhow::Result<()> {
                         println!("\n📁 Generated Artifacts:");
                         for artifact in &response.artifacts {
                             println!(
-                                "  • {} ({})",
+                                "  • {} ({:?})",
                                 artifact.content,
-                                format!("{:?}", artifact.artifact_type)
+                                artifact.artifact_type
                             );
                         }
                     }

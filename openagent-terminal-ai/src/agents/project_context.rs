@@ -486,73 +486,145 @@ impl ProjectContextAgent {
         false
     }
 
-    /// Detect frameworks and build systems
+    /// Detect frameworks and build systems (plus package managers) by reading project manifests
     async fn detect_frameworks(&self, path: &str) -> Result<FrameworkDetectionResult> {
         let path_buf = PathBuf::from(path);
-        let mut frameworks = Vec::new();
-        let mut package_managers = Vec::new();
-        let mut build_system = None;
+        let mut frameworks: Vec<String> = Vec::new();
+        let mut package_managers: Vec<String> = Vec::new();
+        let mut build_system: Option<BuildSystem> = None;
 
-        // Check for common configuration files
-        let config_files = [
-            ("package.json", "Node.js", "npm"),
-            ("yarn.lock", "Node.js", "yarn"),
-            ("pnpm-lock.yaml", "Node.js", "pnpm"),
-            ("Cargo.toml", "Rust", "cargo"),
-            ("pom.xml", "Java", "maven"),
-            ("build.gradle", "Java", "gradle"),
-            ("requirements.txt", "Python", "pip"),
-            ("Pipfile", "Python", "pipenv"),
-            ("pyproject.toml", "Python", "poetry"),
-            ("go.mod", "Go", "go"),
-            ("composer.json", "PHP", "composer"),
-            ("Gemfile", "Ruby", "bundler"),
-        ];
-
-        for (filename, framework, package_manager) in &config_files {
-            if path_buf.join(filename).exists() {
-                frameworks.push(framework.to_string());
-                package_managers.push(package_manager.to_string());
-            }
-        }
-
-        // Detect build systems
-        if path_buf.join("Cargo.toml").exists() {
+        // Rust: parse Cargo.toml for dependency names (direct). Detect common frameworks.
+        let cargo_toml = path_buf.join("Cargo.toml");
+        if cargo_toml.exists() {
+            package_managers.push("cargo".to_string());
             build_system = Some(BuildSystem::Cargo);
-        } else if path_buf.join("package.json").exists() {
-            if path_buf.join("yarn.lock").exists() {
-                build_system = Some(BuildSystem::Yarn);
-            } else if path_buf.join("pnpm-lock.yaml").exists() {
+            if let Ok(s) = fs::read_to_string(&cargo_toml) {
+                if let Ok(value) = s.parse::<toml::Value>() {
+                    let mut names: Vec<String> = Vec::new();
+                    if let Some(table) = value.get("dependencies").and_then(|v| v.as_table()) {
+                        names.extend(table.keys().cloned());
+                    }
+                    if let Some(table) = value.get("dev-dependencies").and_then(|v| v.as_table()) {
+                        names.extend(table.keys().cloned());
+                    }
+                    let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+                    if lower.iter().any(|n| n.starts_with("actix")) {
+                        frameworks.push("actix".to_string());
+                    }
+                    if lower.iter().any(|n| n == "axum") {
+                        frameworks.push("axum".to_string());
+                    }
+                    if lower.iter().any(|n| n == "tokio") {
+                        frameworks.push("tokio".to_string());
+                    }
+                }
+            }
+        }
+
+        // Node: detect manager by lockfile and analyze package.json
+        let pkg_json = path_buf.join("package.json");
+        if pkg_json.exists() {
+            let has_pnpm = path_buf.join("pnpm-lock.yaml").exists();
+            let has_yarn = path_buf.join("yarn.lock").exists();
+            let has_npm = path_buf.join("package-lock.json").exists();
+            if has_pnpm {
+                package_managers.push("pnpm".to_string());
                 build_system = Some(BuildSystem::Pnpm);
-            } else {
+            } else if has_yarn {
+                package_managers.push("yarn".to_string());
+                build_system = Some(BuildSystem::Yarn);
+            } else if has_npm {
+                package_managers.push("npm".to_string());
                 build_system = Some(BuildSystem::Npm);
+            } else {
+                package_managers.push("npm".to_string());
+                build_system.get_or_insert(BuildSystem::Npm);
             }
-        } else if path_buf.join("pom.xml").exists() {
-            build_system = Some(BuildSystem::Maven);
-        } else if path_buf.join("build.gradle").exists()
-            || path_buf.join("build.gradle.kts").exists()
-        {
-            build_system = Some(BuildSystem::Gradle);
-        } else if path_buf.join("Makefile").exists() || path_buf.join("makefile").exists() {
-            build_system = Some(BuildSystem::Make);
-        } else if path_buf.join("CMakeLists.txt").exists() {
-            build_system = Some(BuildSystem::CMake);
-        } else if path_buf.join("BUILD").exists() || path_buf.join("BUILD.bazel").exists() {
-            build_system = Some(BuildSystem::Bazel);
+            if let Ok(s) = fs::read_to_string(&pkg_json) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                    // Aggregate dependency names
+                    let mut names: Vec<String> = Vec::new();
+                    if let Some(deps) = v.get("dependencies").and_then(|d| d.as_object()) {
+                        names.extend(deps.keys().cloned().collect::<Vec<_>>());
+                    }
+                    if let Some(dev) = v.get("devDependencies").and_then(|d| d.as_object()) {
+                        names.extend(dev.keys().cloned().collect::<Vec<_>>());
+                    }
+                    let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+                    if lower.iter().any(|n| n == "react") { frameworks.push("react".to_string()); }
+                    if lower.iter().any(|n| n == "next" || n == "next.js") { frameworks.push("next".to_string()); }
+                    if lower.iter().any(|n| n == "express") { frameworks.push("express".to_string()); }
+                } else {
+                    // Fallback to substring scanning
+                    self.detect_js_frameworks(&s, &mut frameworks);
+                }
+            }
         }
 
-        // Detect specific frameworks by analyzing package.json
-        if path_buf.join("package.json").exists() {
-            if let Ok(package_content) = fs::read_to_string(path_buf.join("package.json")) {
-                self.detect_js_frameworks(&package_content, &mut frameworks);
+        // Python: pyproject.toml and requirements.txt
+        let pyproject = path_buf.join("pyproject.toml");
+        let requirements = path_buf.join("requirements.txt");
+        if pyproject.exists() {
+            if let Ok(s) = fs::read_to_string(&pyproject) {
+                if let Ok(value) = s.parse::<toml::Value>() {
+                    if value.get("tool").and_then(|t| t.get("poetry")).is_some() {
+                        package_managers.push("poetry".to_string());
+                        build_system = Some(BuildSystem::Custom("poetry".to_string()));
+                    } else {
+                        package_managers.push("pip".to_string());
+                        build_system.get_or_insert(BuildSystem::Custom("pip".to_string()));
+                    }
+                    let mut deps: Vec<String> = Vec::new();
+                    if let Some(arr) = value.get("project").and_then(|p| p.get("dependencies")).and_then(|d| d.as_array()) {
+                        for it in arr { if let Some(s) = it.as_str() { deps.push(s.to_string()); } }
+                    }
+                    if let Some(table) = value.get("tool").and_then(|t| t.get("poetry")).and_then(|p| p.get("dependencies")).and_then(|d| d.as_table()) {
+                        deps.extend(table.keys().cloned());
+                    }
+                    let lower: Vec<String> = deps.iter().map(|n| n.to_lowercase()).collect();
+                    if lower.iter().any(|n| n == "django") { frameworks.push("django".to_string()); }
+                    if lower.iter().any(|n| n == "flask") { frameworks.push("flask".to_string()); }
+                }
+            }
+        }
+        if requirements.exists() {
+            if let Ok(s) = fs::read_to_string(&requirements) {
+                let names: Vec<String> = s
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(|l| l.split(&['=', '>', '<', ' '][..]).next().unwrap_or("").to_string())
+                    .collect();
+                let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+                if lower.iter().any(|n| n == "django") && !frameworks.iter().any(|f| f == "django") {
+                    frameworks.push("django".to_string());
+                }
+                if lower.iter().any(|n| n == "flask") && !frameworks.iter().any(|f| f == "flask") {
+                    frameworks.push("flask".to_string());
+                }
+                if !package_managers.iter().any(|m| m == "poetry") {
+                    package_managers.push("pip".to_string());
+                    build_system.get_or_insert(BuildSystem::Custom("pip".to_string()));
+                }
             }
         }
 
-        // Remove duplicates
-        frameworks.sort();
-        frameworks.dedup();
-        package_managers.sort();
-        package_managers.dedup();
+        // Go: go.mod (naive parse)
+        let go_mod = path_buf.join("go.mod");
+        if go_mod.exists() {
+            package_managers.push("go".to_string());
+            build_system = Some(BuildSystem::Custom("go".to_string()));
+            if let Ok(s) = fs::read_to_string(&go_mod) {
+                let lower_s = s.to_lowercase();
+                if lower_s.contains("gin-gonic") && !frameworks.iter().any(|f| f == "gin") {
+                    frameworks.push("gin".to_string());
+                }
+            }
+        }
+
+        // De-dup
+        frameworks.sort(); frameworks.dedup();
+        package_managers.sort(); package_managers.dedup();
 
         Ok(FrameworkDetectionResult { frameworks, package_managers, build_system })
     }

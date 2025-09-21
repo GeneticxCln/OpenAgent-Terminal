@@ -1171,10 +1171,18 @@ impl Agent for BlitzyProjectContextAgent {
     }
 }
 
+impl Default for BlitzyProjectContextAgent {
+    fn default() -> Self { Self::new() }
+}
+
 impl ProjectCache {
     pub fn new() -> Self {
         Self { projects: HashMap::new(), file_summaries: HashMap::new(), last_updated: Utc::now() }
     }
+}
+
+impl Default for ProjectCache {
+    fn default() -> Self { Self::new() }
 }
 
 impl std::fmt::Display for ProjectType {

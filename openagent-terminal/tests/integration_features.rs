@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::cast_precision_loss, clippy::uninlined_format_args, clippy::similar_names, clippy::default_trait_access)]
+
 //! Integration tests for AI, Blocks, and Security features
 //! Tests that all three features work together without lazy fallbacks
 

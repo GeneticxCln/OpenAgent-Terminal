@@ -19,6 +19,9 @@ use tracing::{debug, info, warn};
 use crate::blocks_v2::BlockId;
 use crate::shell_integration::CommandId;
 
+/// Callback type for search events to reduce type complexity
+pub type SearchEventCallback = Box<dyn Fn(&SearchEvent) + Send + Sync>;
+
 /// Parse human-friendly sizes like "10KB", "2MB", "1GB" (case-insensitive). Base 1024.
 fn parse_human_size(s: &str) -> Option<u64> {
     let s = s.trim();
@@ -60,7 +63,7 @@ pub struct SearchIntegration {
     index_manager: SearchIndexManager,
 
     /// Event callbacks for immediate responses
-    event_callbacks: Vec<Box<dyn Fn(&SearchEvent) + Send + Sync>>,
+    event_callbacks: Vec<SearchEventCallback>,
 
     /// Performance statistics
     stats: SearchStats,
@@ -384,7 +387,7 @@ pub struct FuzzyMatcher {
 }
 
 /// Search algorithms collection
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SearchAlgorithms {
     /// Boolean search
     boolean_search: BooleanSearch,
@@ -1212,7 +1215,7 @@ impl SearchIntegration {
                 {
                     let result = SearchResult {
                         id: format!("file_content_{}", file_path),
-                        title: file_path.split('/').last().unwrap_or(&file_path).to_string(),
+                        title: file_path.split('/').next_back().unwrap_or(&file_path).to_string(),
                         content: matches.join("\n"),
                         context: SearchContext::FileSystem,
                         relevance_score: self.calculate_content_relevance(&matches, query),
@@ -1815,14 +1818,14 @@ impl InvertedIndex {
         for term in &terms {
             self.term_docs
                 .entry(term.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(doc_id.to_string());
 
             // Update term frequency
             *self
                 .term_frequencies
                 .entry(term.clone())
-                .or_insert_with(HashMap::new)
+                .or_default()
                 .entry(doc_id.to_string())
                 .or_insert(0) += 1;
         }
@@ -1968,16 +1971,6 @@ impl BooleanSearch {
     }
 }
 
-impl Default for SearchAlgorithms {
-    fn default() -> Self {
-        Self {
-            boolean_search: BooleanSearch::default(),
-            tfidf_scorer: TfIdfScorer::default(),
-            bm25_ranker: Bm25Ranker::default(),
-            vector_search: VectorSpaceSearch::default(),
-        }
-    }
-}
 
 impl Default for SearchIntegration {
     fn default() -> Self {
@@ -2023,7 +2016,7 @@ mod tests {
         };
 
         // Test filter application (would need full implementation)
-        assert_eq!(result.content.contains("test"), true);
+        assert!(result.content.contains("test"));
     }
 
     #[test]
@@ -2381,7 +2374,7 @@ mod tests_native_filters {
         let before = now - Duration::from_secs(60);
         let after = now + Duration::from_secs(60);
         let mk = |ts: Instant| SearchResult {
-            id: format!("id-{:?}", ts).into(),
+            id: format!("id-{:?}", ts),
             title: "t".into(),
             content: "c".into(),
             context: SearchContext::Global,

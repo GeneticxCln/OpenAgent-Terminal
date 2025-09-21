@@ -15,7 +15,7 @@ pub struct ConversationManager {
     id: String,
     conversations: Arc<RwLock<HashMap<Uuid, ConversationSession>>>,
     default_session: Arc<RwLock<Option<Uuid>>>,
-    context_store: Arc<RwLock<ConversationContextStore>>,
+    _context_store: Arc<RwLock<ConversationContextStore>>,
     config: ConversationConfig,
     is_initialized: bool,
 }
@@ -190,9 +190,9 @@ pub struct ConversationConfig {
 /// Storage for conversation context
 pub struct ConversationContextStore {
     // In-memory storage (could be backed by database in production)
-    sessions: HashMap<Uuid, ConversationSession>,
-    file_cache: HashMap<String, FileContext>,
-    command_cache: VecDeque<CommandExecution>,
+    _sessions: HashMap<Uuid, ConversationSession>,
+    _file_cache: HashMap<String, FileContext>,
+    _command_cache: VecDeque<CommandExecution>,
 }
 
 impl Default for ConversationPreferences {
@@ -228,7 +228,7 @@ impl ConversationManager {
             id: "conversation-manager".to_string(),
             conversations: Arc::new(RwLock::new(HashMap::new())),
             default_session: Arc::new(RwLock::new(None)),
-            context_store: Arc::new(RwLock::new(ConversationContextStore::new())),
+            _context_store: Arc::new(RwLock::new(ConversationContextStore::new())),
             config: ConversationConfig::default(),
             is_initialized: false,
         }
@@ -237,7 +237,7 @@ impl ConversationManager {
     fn conversations_data_path() -> PathBuf {
         // ~/.local/share/openagent-terminal/ai/conversations.json
         let base = dirs::data_dir()
-            .unwrap_or_else(|| std::env::temp_dir())
+            .unwrap_or_else(std::env::temp_dir)
             .join("openagent-terminal")
             .join("ai");
         std::fs::create_dir_all(&base).ok();
@@ -718,7 +718,7 @@ impl ConversationManager {
 
     /// Detect file type from path
     fn detect_file_type(&self, path: &str) -> String {
-        if let Some(extension) = path.split('.').last() {
+        if let Some(extension) = path.split('.').next_back() {
             match extension.to_lowercase().as_str() {
                 "rs" => "Rust",
                 "py" => "Python",
@@ -953,11 +953,23 @@ impl PersistentConversationContext {
 impl ConversationContextStore {
     pub fn new() -> Self {
         Self {
-            sessions: HashMap::new(),
-            file_cache: HashMap::new(),
-            command_cache: VecDeque::new(),
+            _sessions: HashMap::new(),
+            _file_cache: HashMap::new(),
+            _command_cache: VecDeque::new(),
         }
     }
+}
+
+impl Default for ConversationManager {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for PersistentConversationContext {
+    fn default() -> Self { Self::new() }
+}
+
+impl Default for ConversationContextStore {
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]

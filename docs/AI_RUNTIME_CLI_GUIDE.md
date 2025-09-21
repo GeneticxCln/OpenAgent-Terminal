@@ -251,6 +251,34 @@ openagent-terminal ai history-purge --keep-last 100
 openagent-terminal ai history-purge --keep-last 0
 ```
 
+#### History Retention (Configuration)
+
+AI history retention is configurable via your TOML config under [ai.history_retention]. Defaults are conservative in‑memory and more generous on disk:
+
+```toml
+[ai.history_retention]
+# In‑memory prompt history (UI)
+ui_max_entries = 200            # keep most recent N prompts
+ui_max_bytes   = 131072         # ~128KB cap across all prompts
+
+# Persisted conversations — JSONL fallback
+conversation_jsonl_max_bytes = 8_388_608   # 8MB rotation threshold
+conversation_rotated_keep    = 8           # keep last N rotated files
+conversation_max_age_days    = 90          # prune rotated files older than N days
+
+# Persisted conversations — SQLite (preferred)
+conversation_max_rows     = 50_000         # cap total rows (oldest pruned)
+# conversation_max_age_days applies to SQLite as well
+```
+
+At runtime, a few environment variables are honored by the persistence layer (you normally don’t need to set these if you configure TOML; the app exports them for helpers):
+
+- OPENAGENT_AI_HISTORY_MAX_BYTES          → conversation_jsonl_max_bytes
+- OPENAGENT_AI_HISTORY_ROTATED_KEEP       → conversation_rotated_keep
+- OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS → conversation_max_age_days
+- OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS    → conversation_max_rows
+- OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS→ conversation_max_age_days
+
 ## Agent Performance Metrics
 
 ### Real-Time Metrics
@@ -393,7 +421,18 @@ Verify system health:
 
 ```bash
 # Check all components
-openagent-terminal ai validate --include-defaults --json
+openagent-terminal ai validate --include-defaults --json > /tmp/provider-health.json
+
+# Provider management
+
+List available providers and the active one:
+openagent-terminal ai provider list --include-defaults
+
+Switch active provider (persist selection):
+openagent-terminal ai provider set ollama
+
+Machine-readable listing:
+openagent-terminal ai provider list --json
 
 # Test specific agent
 openagent-terminal ai test-agent --agent command --prompt "list files"

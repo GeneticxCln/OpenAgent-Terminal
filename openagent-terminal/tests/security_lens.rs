@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::default_trait_access)]
+
 #![cfg(feature = "security-lens")]
 // Security Lens tests to lock regex compilation and avoid false-positive blocking
 

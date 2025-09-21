@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::too_many_lines, clippy::if_not_else, clippy::inefficient_to_string)]
+
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use openagent_terminal::ai::agents::{
@@ -242,7 +244,7 @@ async fn main() -> Result<()> {
     println!("📝 Created conversation session: {}", session_id);
 
     // Simulate conversation with privacy filtering
-    let conversation_messages = vec![
+    let conversation_messages = [
         "Hi, I need help with setting up authentication for our app.",
         "My email is demo@company.com and phone is 555-0100.",
         "We're storing user credit cards like 4000-1234-5678-9012.",

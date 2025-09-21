@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Minimal WGPU initialization example (requires --features=wgpu)
 
 #[cfg(feature = "wgpu")]

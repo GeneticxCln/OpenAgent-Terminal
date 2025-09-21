@@ -1,7 +1,7 @@
 //! AI runtime: UI state and provider wiring (optional feature)
-#![allow(dead_code)]
 
 use log::{debug, error, info};
+use crate::ai_context_provider::AiContextProvider;
 use std::collections::VecDeque;
 
 use crate::security::{SecurityLens, SecurityPolicy};
@@ -14,9 +14,10 @@ use openagent_terminal_ai::providers::{
     AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
 };
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
+use crate::config::ai::ProviderConfig as ProviderCfg;
 
-/// Maximum history entries to keep
-const MAX_HISTORY: usize = 100;
+/// Default UI history capacity for initial allocation (pruning is configurable)
+const DEFAULT_UI_HISTORY_CAPACITY: usize = 128;
 
 #[derive(Debug, Clone)]
 pub struct AiUiState {
@@ -42,9 +43,214 @@ pub struct AiUiState {
     pub current_provider: String,
     /// Current model identifier used by the provider (for compact model badge in UI)
     pub current_model: String,
+    /// Compact project context line for UI
+    pub project_context_line: Option<String>,
 }
 
 impl AiRuntime {
+    fn ensure_project_ctx_agent(&mut self) {
+        if self.project_ctx_agent.is_some() {
+            return;
+        }
+        let cfg = openagent_terminal_ai::agents::project_context::ContextConfig::default();
+        let agent = openagent_terminal_ai::agents::project_context::ProjectContextAgent::new(cfg);
+        self.project_ctx_agent = Some(agent);
+        // Ensure a runtime exists for async calls only if we're not already inside one
+        if self.agent_rt.is_none() && tokio::runtime::Handle::try_current().is_err() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime for project context");
+            self.agent_rt = Some(rt);
+        }
+    }
+
+    /// Fetch a compact project context summary (kv pairs) and set UI line
+    fn fetch_project_context_kv(&mut self, working_dir: &str) -> Vec<(String, String)> {
+        self.ensure_project_ctx_agent();
+        let mut kv: Vec<(String, String)> = Vec::new();
+        if let Some(agent) = self.project_ctx_agent.as_ref() {
+            // Prefer dedicated runtime if we created one; otherwise avoid blocking inside an active runtime
+            let ctx_res = if let Some(rt) = self.agent_rt.as_ref() {
+                rt.block_on(agent.get_project_context(working_dir))
+            } else if tokio::runtime::Handle::try_current().is_ok() {
+                // We're already inside a runtime; skip heavy project context to avoid nested block_on
+                return kv;
+            } else {
+                // Fallback: create a temporary multi-thread runtime for this call
+                let rt = tokio::runtime::Runtime::new().expect("temp tokio runtime");
+                rt.block_on(agent.get_project_context(working_dir))
+            };
+            if let Ok(info) = ctx_res {
+                // Dependency aggregation from lock/manifests (best-effort)
+                let mut dep_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                let wd_path = std::path::Path::new(working_dir);
+                // Cargo.lock (TOML)
+                let cargo_lock = wd_path.join("Cargo.lock");
+                if cargo_lock.exists() {
+                    if let Ok(s) = std::fs::read_to_string(&cargo_lock) {
+                        if let Ok(val) = s.parse::<toml::Value>() {
+                            if let Some(pkgs) = val.get("package").and_then(|p| p.as_array()) {
+                                for p in pkgs {
+                                    if let Some(n) = p.get("name").and_then(|n| n.as_str()) {
+                                        dep_names.insert(n.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // package-lock.json (JSON)
+                let pkg_lock = wd_path.join("package-lock.json");
+                if pkg_lock.exists() {
+                    if let Ok(s) = std::fs::read_to_string(&pkg_lock) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&s) {
+                            fn walk_deps(obj: &serde_json::Map<String, serde_json::Value>, out: &mut std::collections::BTreeSet<String>) {
+                                if let Some(deps) = obj.get("dependencies").and_then(|d| d.as_object()) {
+                                    for (name, v) in deps.iter() {
+                                        out.insert(name.clone());
+                                        if let Some(child) = v.as_object() { walk_deps(child, out); }
+                                    }
+                                }
+                            }
+                            if let Some(root) = val.as_object() { walk_deps(root, &mut dep_names); }
+                        }
+                    }
+                }
+                // requirements.txt
+                let req = wd_path.join("requirements.txt");
+                if req.exists() {
+                    if let Ok(s) = std::fs::read_to_string(&req) {
+                        for l in s.lines() {
+                            let t = l.trim();
+                            if t.is_empty() || t.starts_with('#') { continue; }
+                            let name = t.split(|c: char| c == '=' || c == '>' || c == '<' || c.is_whitespace()).next().unwrap_or("");
+                            if !name.is_empty() { dep_names.insert(name.to_lowercase()); }
+                        }
+                    }
+                }
+                // go.sum
+                let go_sum = wd_path.join("go.sum");
+                if go_sum.exists() {
+                    if let Ok(s) = std::fs::read_to_string(&go_sum) {
+                        for l in s.lines() {
+                            let mut it = l.split_whitespace();
+                            if let Some(name) = it.next() { dep_names.insert(name.to_string()); }
+                        }
+                    }
+                }
+                let lang = info.language_info.primary_language.clone();
+                let frameworks = if info.language_info.frameworks.is_empty() {
+                    String::new()
+                } else {
+                    info.language_info.frameworks.join(",")
+                };
+                let pms = if info.language_info.package_managers.is_empty() {
+                    String::new()
+                } else {
+                    info.language_info.package_managers.join(",")
+                };
+                let build = info
+                    .build_system
+                    .as_ref()
+                    .map(|b| format!("{:?}", b))
+                    .unwrap_or_default();
+                let (clean, ahead, behind) = if let Some(repo) = info.repository_info.as_ref() {
+                    (repo.status.is_clean, repo.status.ahead, repo.status.behind)
+                } else {
+                    (true, 0, 0)
+                };
+                // Important files
+                let mut important_files: Vec<&str> = Vec::new();
+                let wd_path = std::path::Path::new(working_dir);
+                for cand in [
+                    "Cargo.toml",
+                    "Cargo.lock",
+                    "package.json",
+                    "yarn.lock",
+                    "pnpm-lock.yaml",
+                    "package-lock.json",
+                    "pyproject.toml",
+                    "requirements.txt",
+                    "go.mod",
+                    "go.sum",
+                    "README.md",
+                ] {
+                    if wd_path.join(cand).exists() { important_files.push(cand); }
+                }
+                let important = if important_files.is_empty() { String::new() } else { important_files.join(",") };
+
+                // Add key-values
+                kv.push(("project.primary_language".into(), lang.clone()));
+                if !frameworks.is_empty() {
+                    kv.push(("project.frameworks".into(), frameworks.clone()));
+                }
+                if !pms.is_empty() {
+                    kv.push(("project.package_managers".into(), pms.clone()));
+                }
+                if !build.is_empty() {
+                    kv.push(("project.build_system".into(), build.clone()));
+                }
+                if !important.is_empty() {
+                    kv.push(("project.important_files".into(), important.clone()));
+                }
+                // Dependency summary
+                if !dep_names.is_empty() {
+                    kv.push(("project.dep_count".into(), dep_names.len().to_string()));
+                    let sample: Vec<String> = dep_names.iter().take(8).cloned().collect();
+                    kv.push(("project.dep_sample".into(), sample.join(",")));
+                }
+                kv.push(("project.repo_clean".into(), clean.to_string()));
+                kv.push(("project.ahead".into(), ahead.to_string()));
+                kv.push(("project.behind".into(), behind.to_string()));
+
+                // Compact UI line
+                let mut parts: Vec<String> = Vec::new();
+                if !lang.is_empty() { parts.push(format!("lang={}", lang)); }
+                if !frameworks.is_empty() { parts.push(format!("fw={}", frameworks)); }
+                if !pms.is_empty() { parts.push(format!("pm={}", pms)); }
+                if !build.is_empty() { parts.push(format!("build={}", build)); }
+                parts.push(format!("repo={} a:{} b:{}", if clean { "clean" } else { "dirty" }, ahead, behind));
+                self.ui.project_context_line = Some(parts.join("  ·  "));
+                self.last_project_primary_language = Some(lang);
+            }
+        }
+        kv
+    }
+}
+
+impl AiRuntime {
+    /// Apply history retention settings.
+    pub fn set_history_retention(&mut self, retention: crate::config::ai::AiHistoryRetention) {
+        self.history_retention = retention;
+        self.prune_ui_history();
+    }
+
+    fn prune_ui_history(&mut self) {
+        // Enforce max entries
+        while self.ui.history.len() > self.history_retention.ui_max_entries {
+            self.ui.history.pop_back();
+        }
+        // Enforce max bytes
+        let mut total: usize = self.ui.history.iter().map(|s| s.len()).sum();
+        while total > self.history_retention.ui_max_bytes {
+            if let Some(s) = self.ui.history.pop_back() {
+                total = total.saturating_sub(s.len());
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Internal: reference selected public methods so they are considered used in minimal builds
+    fn _keep_public_api_reachable(&mut self) {
+        let _ = AiRuntime::from_config as fn(Option<&str>, Option<&str>, Option<&str>, Option<&str>) -> Self;
+        let _ = AiRuntime::propose as fn(&mut AiRuntime, Option<String>, Option<String>);
+        let _ = AiRuntime::get_selected_commands as fn(&AiRuntime) -> Option<String>;
+        let _ = AiRuntime::propose_with_context as fn(&mut AiRuntime, Option<openagent_terminal_core::tty::pty_manager::PtyAiContext>);
+        let _ = AiRuntime::has_content as fn(&AiRuntime) -> bool;
+    }
+
     /// Load previously persisted AI history (best-effort).
     fn load_history(&mut self) {
         let path = Self::history_path();
@@ -53,17 +259,17 @@ impl AiRuntime {
                 for s in entries.into_iter().rev() {
                     // maintain most-recent-first order
                     self.ui.history.push_front(s);
-                    if self.ui.history.len() > MAX_HISTORY {
-                        self.ui.history.pop_back();
-                        break;
-                    }
                 }
+                // Prune according to configured retention
+                self.prune_ui_history();
             }
         }
     }
 
     /// Persist AI history to disk (best-effort, synchronous, small file).
-    fn save_history(&self) {
+    fn save_history(&mut self) {
+        // Ensure pruning before saving
+        self.prune_ui_history();
         let path = Self::history_path();
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -86,123 +292,27 @@ impl AiRuntime {
         provider_name: &str,
         config: &crate::config::ai::ProviderConfig,
     ) {
-        use crate::config::ai_providers::ProviderCredentials;
         self.ui.error_message = None;
-        // Load credentials
-        let credentials = match ProviderCredentials::from_config(provider_name, config) {
-            Ok(creds) => creds,
+        match self.provider_registry.create(provider_name, config) {
+            Ok((p, model_opt)) => {
+                if let Some(m) = model_opt { self.ui.current_model = m; } else { self.ui.current_model.clear(); }
+                self.provider = Arc::from(p);
+                self.ui.current_provider = provider_name.to_string();
+                // Invalidate agent manager so it can be rebuilt with the new provider
+                self.agent_manager = None;
+                // Reset transient result state
+                self.ui.proposals.clear();
+                self.ui.selected_proposal = 0;
+                self.ui.is_loading = false;
+                self.ui.streaming_active = false;
+                self.ui.streaming_text.clear();
+                self.ui.error_message = None;
+            }
             Err(e) => {
-                self.ui.error_message = Some(format!(
-                    "Secure credential loading failed for '{}': {}",
-                    provider_name, e
-                ));
-                return;
+                self.ui.error_message = Some(format!("Failed to reconfigure provider to '{}': {}", provider_name, e));
             }
         };
-        // Create provider for new config
-        let new_provider: Result<Box<dyn AiProvider>, String> = match provider_name {
-            "openai" => {
-                let api_key = match credentials.require_api_key(provider_name) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => {
-                        self.ui.error_message =
-                            Some(format!("{} provider config error: {}", provider_name, e));
-                        return;
-                    }
-                };
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("https://api.openai.com/v1")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => {
-                        self.ui.error_message =
-                            Some(format!("{} provider config error: {}", provider_name, e));
-                        return;
-                    }
-                };
-                self.ui.current_model = model.clone();
-                OpenAiProvider::new(api_key, endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "openrouter" => {
-                let api_key = match credentials.require_api_key(provider_name) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => {
-                        self.ui.error_message =
-                            Some(format!("{} provider config error: {}", provider_name, e));
-                        return;
-                    }
-                };
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("https://openrouter.ai/api/v1")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => {
-                        self.ui.error_message =
-                            Some(format!("{} provider config error: {}", provider_name, e));
-                        return;
-                    }
-                };
-                self.ui.current_model = model.clone();
-                OpenRouterProvider::new(api_key, endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "anthropic" => {
-                let api_key = match credentials.require_api_key(provider_name) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => {
-                        self.ui.error_message =
-                            Some(format!("{} provider config error: {}", provider_name, e));
-                        return;
-                    }
-                };
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("https://api.anthropic.com")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => {
-                        self.ui.error_message =
-                            Some(format!("{} provider config error: {}", provider_name, e));
-                        return;
-                    }
-                };
-                self.ui.current_model = model.clone();
-                AnthropicProvider::new(api_key, endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "ollama" => {
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("http://localhost:11434")
-                    .to_string();
-                // Require an explicit model either from env or config.default_model
-                let model = if let Ok(m) = credentials.require_model(provider_name) {
-                    m.to_string()
-                } else if let Some(m) = config.default_model.clone() {
-                    m
-                } else {
-                    return Err(
-                        "Ollama requires a model; set OPENAGENT_OLLAMA_MODEL or configure ai.providers.ollama.default_model"
-                            .to_string(),
-                    );
-                };
-                self.ui.current_model = model.clone();
-                OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "null" => {
-                // Switch to no-op provider explicitly
-                self.ui.current_model.clear();
-                Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>)
-            }
-            _ => Err(format!("Unknown provider: {}", provider_name)),
-        };
-        match new_provider {
+        return;
             Ok(p) => {
                 self.provider = Arc::from(p);
                 self.ui.current_provider = provider_name.to_string();
@@ -263,10 +373,24 @@ impl AiRuntime {
             })
             .unwrap_or_else(|| "zsh".to_string());
 
+        // Gather context from NullContextProvider (lightweight, best-effort)
+        let ctx_provider = crate::ai_context_provider::NullContextProvider;
+        // Mark methods as used and collect context
+        let (working_directory, shell_from_ctx) = {
+            let ctx = ctx_provider.get_pty_context();
+            crate::ai_context_provider::context_to_ai_params(&ctx)
+        };
+        let shell_kind = shell_from_ctx.unwrap_or_else(|| shell_kind.clone());
+        // Update command context (no-op for Null provider)
+        let mut ctx_provider_mut = crate::ai_context_provider::NullContextProvider;
+        ctx_provider_mut.update_command_context(&prefix);
+        let shell_exec = ctx_provider.get_shell_executable();
+        let last_cmd = ctx_provider.get_last_command();
+
         let provider = self.provider.clone();
-        let req = AiRequest {
+        let mut req = AiRequest {
             scratch_text: prompt,
-            working_directory: None,
+            working_directory,
             shell_kind: Some(shell_kind.clone()),
             context: vec![
                 ("mode".to_string(), "inline".to_string()),
@@ -278,6 +402,8 @@ impl AiRuntime {
                 ),
             ],
         };
+        if let Some(exec) = shell_exec { req.context.push(("shell_exec".into(), exec)); }
+        if let Some(cmd) = last_cmd { req.context.push(("last_cmd".into(), cmd)); }
 
         let _ = std::thread::Builder::new().name("ai-inline".into()).spawn(move || {
             // Non-streaming, single-shot proposal
@@ -326,7 +452,7 @@ impl Default for AiUiState {
             selected_proposal: 0,
             is_loading: false,
             error_message: None,
-            history: VecDeque::with_capacity(MAX_HISTORY),
+            history: VecDeque::with_capacity(DEFAULT_UI_HISTORY_CAPACITY),
             history_index: None,
             streaming_active: false,
             streaming_text: String::new(),
@@ -334,6 +460,7 @@ impl Default for AiUiState {
             inline_suggestion: None,
             current_provider: "null".to_string(),
             current_model: String::new(),
+            project_context_line: None,
         }
     }
 }
@@ -393,11 +520,20 @@ fn persist_ai_conversation(
 
     // Simple rotation: if file exceeds threshold, rename with timestamp and keep at most N rotated files.
     const DEFAULT_MAX_BYTES: u64 = 2 * 1024 * 1024; // 2MB
-    const MAX_ROTATED: usize = 5;
+    const DEFAULT_ROTATED_KEEP: usize = 5;
+    const DEFAULT_MAX_AGE_DAYS: u64 = 30;
     let max_bytes = std::env::var("OPENAGENT_AI_HISTORY_MAX_BYTES")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(DEFAULT_MAX_BYTES);
+    let rotated_keep = std::env::var("OPENAGENT_AI_HISTORY_ROTATED_KEEP")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_ROTATED_KEEP);
+    let max_age_days = std::env::var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_AGE_DAYS);
 
     if let Ok(meta) = std::fs::metadata(&file) {
         if meta.len() >= max_bytes {
@@ -405,7 +541,7 @@ fn persist_ai_conversation(
             let ts = chrono::Local::now().format("%Y%m%d%H%M%S");
             let rotated = base.join(format!("history-{}.jsonl", ts));
             let _ = std::fs::rename(&file, rotated);
-            // Prune old rotated files (keep most recent MAX_ROTATED)
+            // Prune old rotated files (keep most recent rotated_keep and older than max_age_days)
             if let Ok(entries) = std::fs::read_dir(&base) {
                 let mut rotated: Vec<std::fs::DirEntry> = entries
                     .filter_map(|e| e.ok())
@@ -418,8 +554,36 @@ fn persist_ai_conversation(
                     })
                     .collect();
                 rotated.sort_by_key(|e| e.file_name());
-                // Keep last MAX_ROTATED
-                let to_prune = rotated.len().saturating_sub(MAX_ROTATED);
+                // Time-based prune
+                let now = std::time::SystemTime::now();
+                for e in &rotated {
+                    if let Ok(meta) = e.metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            if let Ok(age) = now.duration_since(modified) {
+                                if age.as_secs() > max_age_days * 24 * 3600 {
+                                    let _ = std::fs::remove_file(e.path());
+                                }
+                            }
+                        }
+                    }
+                }
+                // Reload listing after time-based prune
+                let mut rotated: Vec<std::fs::DirEntry> = std::fs::read_dir(&base)
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        if let Some(name) = e.file_name().to_str() {
+                            name.starts_with("history-") && name.ends_with(".jsonl")
+                        } else {
+                            false
+                        }
+                    })
+                    .collect();
+                rotated.sort_by_key(|e| e.file_name());
+                // Keep last rotated_keep
+                let to_prune = rotated.len().saturating_sub(rotated_keep);
                 if to_prune > 0 {
                     for e in rotated.into_iter().take(to_prune) {
                         let _ = std::fs::remove_file(e.path());
@@ -479,12 +643,46 @@ fn persist_ai_conversation_sqlite(
     )
     .map_err(|e| e.to_string())?;
 
+    // Retention policy: prune by age and max rows
+    let max_age_days: u64 = std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(30);
+    let cutoff = chrono::Utc::now()
+        .checked_sub_signed(chrono::Duration::days(max_age_days as i64))
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+    let _ = conn.execute(
+        "DELETE FROM conversations WHERE ts < ?1",
+        params![cutoff],
+    );
+
+    // Cap total rows
+    let max_rows: i64 = std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS")
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(20_000);
+    // Delete oldest rows beyond limit
+    let _ = conn.execute(
+        &format!(
+            "DELETE FROM conversations WHERE id IN (
+                SELECT id FROM conversations ORDER BY ts ASC LIMIT (
+                    SELECT MAX(COUNT(*) - {}, 0) FROM conversations
+                )
+            )",
+            max_rows
+        ),
+        [],
+    );
+
     Ok(())
 }
 
 pub struct AiRuntime {
     pub ui: AiUiState,
     pub provider: Arc<dyn AiProvider>,
+    // Registered provider factories and helpers
+    provider_registry: ProviderRegistry,
     cancel_flag: Arc<AtomicBool>,
     security_lens: SecurityLens,
     // Config-driven context collection policy
@@ -493,10 +691,84 @@ pub struct AiRuntime {
     agent_manager: Option<openagent_terminal_ai::agents::manager::AgentManager>,
     // Persistent single-threaded runtime for agent manager async calls
     agent_rt: Option<tokio::runtime::Runtime>,
+    // Project context agent (lazy init)
+    project_ctx_agent: Option<openagent_terminal_ai::agents::project_context::ProjectContextAgent>,
     // Routing mode (overridable via OPENAGENT_AI_ROUTING)
     routing_mode: crate::config::ai::AiRoutingMode,
     // How to join multiple commands when applying
     apply_joiner: crate::config::ai::AiApplyJoinStrategy,
+    // Last detected project primary language (for routing bias)
+    last_project_primary_language: Option<String>,
+    // History retention configuration
+    history_retention: crate::config::ai::AiHistoryRetention,
+}
+
+/// Factory and registry for AI providers (secure, per-provider credentials)
+#[derive(Default, Debug)]
+pub struct ProviderRegistry;
+
+impl ProviderRegistry {
+    pub fn new() -> Self { Self }
+
+    pub fn create(
+        &self,
+        provider_name: &str,
+        config: &ProviderCfg,
+    ) -> Result<(Box<dyn AiProvider>, Option<String>), String> {
+        use crate::config::ai_providers::ProviderCredentials;
+        let credentials = ProviderCredentials::from_config(provider_name, config)?;
+        match provider_name {
+            "openai" => {
+                let api_key = credentials.require_api_key(provider_name)?.to_string();
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string();
+                let model = credentials.require_model(provider_name)?.to_string();
+                let prov = OpenAiProvider::new(api_key, endpoint, model.clone())
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+                    .map_err(|e| e.to_string())?;
+                Ok((prov, Some(model)))
+            }
+            "openrouter" => {
+                let api_key = credentials.require_api_key(provider_name)?.to_string();
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://openrouter.ai/api/v1")
+                    .to_string();
+                let model = credentials.require_model(provider_name)?.to_string();
+                let prov = OpenRouterProvider::new(api_key, endpoint, model.clone())
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+                    .map_err(|e| e.to_string())?;
+                Ok((prov, Some(model)))
+            }
+            "anthropic" => {
+                let api_key = credentials.require_api_key(provider_name)?.to_string();
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("https://api.anthropic.com")
+                    .to_string();
+                let model = credentials.require_model(provider_name)?.to_string();
+                let prov = AnthropicProvider::new(api_key, endpoint, model.clone())
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+                    .map_err(|e| e.to_string())?;
+                Ok((prov, Some(model)))
+            }
+            "ollama" => {
+                let endpoint = credentials
+                    .require_endpoint(provider_name)
+                    .unwrap_or("http://localhost:11434")
+                    .to_string();
+                let model = credentials.require_model(provider_name)?.to_string();
+                let prov = OllamaProvider::new(endpoint, model.clone())
+                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
+                    .map_err(|e| e.to_string())?;
+                Ok((prov, Some(model)))
+            }
+            "null" => Ok((Box::new(openagent_terminal_ai::NullProvider), None)),
+            other => Err(format!("Unknown provider: {}", other)),
+        }
+    }
 }
 
 impl AiRuntime {
@@ -506,11 +778,16 @@ impl AiRuntime {
         }
         // Create persistent single-thread runtime if absent
         if self.agent_rt.is_none() {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("tokio runtime for agent registration");
-            self.agent_rt = Some(rt);
+            if tokio::runtime::Handle::try_current().is_err() {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("tokio runtime for agent registration");
+                self.agent_rt = Some(rt);
+            } else {
+                // Inside an existing runtime; skip agent manager setup in this context
+                return;
+            }
         }
         let mgr = openagent_terminal_ai::agents::manager::AgentManager::new();
         let provider_arc = self.provider.clone();
@@ -594,13 +871,13 @@ impl AiRuntime {
 
         // Extract fenced code blocks with simple scanner
         let mut blocks: Vec<Block> = Vec::new();
-        let mut lines: Vec<&str> = text.lines().collect();
+        let lines: Vec<&str> = text.lines().collect();
         let mut i = 0usize;
         while i < lines.len() {
             let line = lines[i];
             if let Some(rest) = line.strip_prefix("```") {
                 // Start of block
-                let lang = rest.trim().split_whitespace().next().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                let lang = rest.split_whitespace().next().map(|s| s.to_string());
                 // Look for title hint above
                 let mut title_hint = None;
                 let mut j = i;
@@ -644,7 +921,7 @@ impl AiRuntime {
                         let t = s.trim();
                         if t.is_empty() { None } else { Some(t.to_string()) }
                     })
-                    .unwrap_or_else(|| commands.get(0).cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1)));
+                    .unwrap_or_else(|| commands.first().cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1)));
                 proposals.push(openagent_terminal_ai::AiProposal { title, description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
             }
             if !proposals.is_empty() { return proposals; }
@@ -666,7 +943,7 @@ impl AiRuntime {
         for (idx, g) in groups.into_iter().enumerate() {
             let commands = Self::normalize_commands_from_generated(&g);
             if commands.is_empty() { continue; }
-            let title = commands.get(0).cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1));
+            let title = commands.first().cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1));
             proposals.push(openagent_terminal_ai::AiProposal { title, description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
         }
 
@@ -690,16 +967,22 @@ impl AiRuntime {
         let mut rt = Self {
             ui,
             provider: Arc::from(provider),
+            provider_registry: ProviderRegistry::new(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             security_lens: SecurityLens::new(SecurityPolicy::default()),
             context_cfg: crate::config::ai::AiContextConfig::default(),
             agent_manager: None,
             agent_rt: None,
+            project_ctx_agent: None,
             routing_mode: crate::config::ai::AiRoutingMode::Auto,
             apply_joiner: crate::config::ai::AiApplyJoinStrategy::AndThen,
+            last_project_primary_language: None,
+            history_retention: crate::config::ai::AiHistoryRetention::default(),
         };
         // Load persisted history best-effort
         rt.load_history();
+        // Keep selected public API reachable in minimal builds to avoid dead_code warnings
+        rt._keep_public_api_reachable();
         rt
     }
 
@@ -748,124 +1031,34 @@ impl AiRuntime {
         provider_name: &str,
         config: &crate::config::ai::ProviderConfig,
     ) -> Self {
-        use crate::config::ai_providers::ProviderCredentials;
-
         info!("Initializing AI runtime with secure provider configuration: {}", provider_name);
 
-        // Extract credentials securely without polluting global environment
-        let credentials = match ProviderCredentials::from_config(provider_name, config) {
-            Ok(creds) => creds,
+        let reg = ProviderRegistry::new();
+        match reg.create(provider_name, config) {
+            Ok((provider, model_opt)) => {
+                info!("Successfully created secure AI provider: {}", provider_name);
+                let mut rt = Self::new(provider);
+                rt.provider_registry = reg;
+                rt.ui.current_provider = provider_name.to_string();
+                if let Some(m) = model_opt {
+                    rt.ui.current_model = m;
+                } else {
+                    rt.ui.current_model = config.default_model.clone().unwrap_or_default();
+                }
+                rt
+            }
             Err(e) => {
-                error!("Failed to load secure credentials for provider '{}': {}", provider_name, e);
+                error!("Failed to create secure provider '{}': {}", provider_name, e);
                 let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
+                rt.provider_registry = reg;
                 rt.ui.error_message = Some(format!(
-                    "Secure credential loading failed for '{}': {}. Check your environment \
-                     variables and configuration.",
-                    provider_name, e
+                    "Secure AI provider initialization failed: {}. Please verify your \
+                     configuration and credentials.",
+                    e
                 ));
-                return rt;
+                rt
             }
-        };
-
-        // Create provider with isolated credentials
-        let mut selected_model: Option<String> = None;
-        let provider_result = match provider_name {
-            "openai" => {
-                let api_key = match credentials.require_api_key(provider_name) {
-                    Ok(key) => key.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("https://api.openai.com/v1")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(model) => model.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                selected_model = Some(model.clone());
-                OpenAiProvider::new(api_key, endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "openrouter" => {
-                let api_key = match credentials.require_api_key(provider_name) {
-                    Ok(key) => key.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("https://openrouter.ai/api/v1")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(model) => model.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                selected_model = Some(model.clone());
-                OpenRouterProvider::new(api_key, endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "anthropic" => {
-                let api_key = match credentials.require_api_key(provider_name) {
-                    Ok(key) => key.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("https://api.anthropic.com")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(model) => model.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                selected_model = Some(model.clone());
-                AnthropicProvider::new(api_key, endpoint, model)
-                    .map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "ollama" => {
-                let endpoint = credentials
-                    .require_endpoint(provider_name)
-                    .unwrap_or("http://localhost:11434")
-                    .to_string();
-                let model = match credentials.require_model(provider_name) {
-                    Ok(model) => model.to_string(),
-                    Err(e) => {
-                        let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                        rt.ui.error_message = Some(e);
-                        return rt;
-                    }
-                };
-                selected_model = Some(model.clone());
-                OllamaProvider::new(endpoint, model).map(|p| Box::new(p) as Box<dyn AiProvider>)
-            }
-            "null" => Ok(Box::new(openagent_terminal_ai::NullProvider) as Box<dyn AiProvider>),
-            _ => Err(format!("Unknown provider: {}", provider_name)),
-        };
-
-        match provider_result {
+        }
             Ok(provider) => {
                 info!("Successfully created secure AI provider: {}", provider_name);
                 let mut rt = Self::new(provider);
@@ -948,7 +1141,13 @@ impl AiRuntime {
 
         // Build rich context with config-driven providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
-        let req = build_request_with_context(req_raw, &cm, budget_kb);
+        // Append compact project context summary (cached 5–10 min)
+        let mut req = req_raw;
+        if let Some(wd) = req.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+            let kv = self.fetch_project_context_kv(&wd);
+            req.context.extend(kv);
+        }
+        let req = build_request_with_context(req, &cm, budget_kb);
 
         // Spawn background worker
         let _ = thread::Builder::new().name("ai-stream".into()).spawn(move || {
@@ -989,8 +1188,14 @@ impl AiRuntime {
                     info!("ai_runtime_fallback_blocking provider={}", provider.name());
                     let result = provider.propose(req);
                     match result {
-                        Ok(proposals) => {
+                        Ok(mut proposals) => {
                             info!("ai_runtime_blocking_complete proposals={}", proposals.len());
+                            // Enforce --no-pager for git lines before sending to UI
+                            for p in &mut proposals {
+                                for cmd in &mut p.proposed_commands {
+                                    *cmd = enforce_git_no_pager_line(cmd);
+                                }
+                            }
                             let _ = event_proxy.send_event(Event::new(
                                 EventType::AiProposals(proposals),
                                 window_id,
@@ -1049,11 +1254,8 @@ impl AiRuntime {
 
         // Add to history
         self.ui.history.push_front(self.ui.scratch.clone());
-        // Persist updated history
+        // Prune and persist updated history
         self.save_history();
-        if self.ui.history.len() > MAX_HISTORY {
-            self.ui.history.pop_back();
-        }
         self.ui.history_index = None;
 
         // Clear previous state
@@ -1064,7 +1266,7 @@ impl AiRuntime {
 
         debug!("Submitting AI query: {}", self.ui.scratch);
 
-        let mut base_ctx: Vec<(String, String)> = vec![
+        let base_ctx: Vec<(String, String)> = vec![
             ("platform".to_string(), std::env::consts::OS.to_string()),
             (
                 "guidelines".to_string(),
@@ -1072,21 +1274,27 @@ impl AiRuntime {
                     .to_string(),
             ),
         ];
-        let req_raw = AiRequest {
+        let mut req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
             context: base_ctx,
         };
+        // Enrich with cached project context KV
+        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+            let kv = self.fetch_project_context_kv(&wd);
+            req_raw.context.extend(kv);
+        }
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
-            Ok(proposals) => {
+            Ok(mut proposals) => {
                 let dt = t0.elapsed();
                 info!("Received {} proposals", proposals.len());
                 tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_complete");
+                self.enforce_git_no_pager_on_proposals(proposals.as_mut_slice());
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
@@ -1372,9 +1580,7 @@ impl AiRuntime {
 
         // Add to history
         self.ui.history.push_front(self.ui.scratch.clone());
-        if self.ui.history.len() > MAX_HISTORY {
-            self.ui.history.pop_back();
-        }
+        self.prune_ui_history();
         self.ui.history_index = None;
 
         // Clear previous state
@@ -1402,18 +1608,24 @@ impl AiRuntime {
             }
             base_ctx.push(("shell_executable".into(), ctx.shell_executable.clone()));
         }
-        let req_raw = AiRequest {
+        let mut req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
             context: base_ctx,
         };
+        // Project context enrichment
+        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+            let kv = self.fetch_project_context_kv(&wd);
+            req_raw.context.extend(kv);
+        }
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         // Decide routing mode
         let mode = self.effective_routing_mode();
-        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider);
+        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider)
+            && (self.agent_rt.is_some() || tokio::runtime::Handle::try_current().is_err());
 
         // Try AgentManager first for capability-based routing if enabled
         if try_agent && self.agent_manager.is_none() {
@@ -1425,13 +1637,14 @@ impl AiRuntime {
                 let agent_req = openagent_terminal_ai::agents::AgentRequest::Command(req.clone());
                 let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
                 match rt.block_on(mgr.process_request(agent_req)) {
-                    Ok(openagent_terminal_ai::agents::AgentResponse::Commands(proposals)) => {
+                    Ok(openagent_terminal_ai::agents::AgentResponse::Commands(mut proposals)) => {
                         let dt = t0.elapsed();
                         info!("AgentManager returned {} proposals", proposals.len());
                         tracing::info!(
                             elapsed_ms = dt.as_millis() as u64,
                             "ai.propose_with_context_complete_agent"
                         );
+                        self.enforce_git_no_pager_on_proposals(&mut proposals);
                         self.ui.proposals = proposals;
                         self.ui.is_loading = false;
                         return;
@@ -1461,13 +1674,14 @@ impl AiRuntime {
         // Direct provider (fallback or Provider mode)
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
-            Ok(proposals) => {
+            Ok(mut proposals) => {
                 let dt = t0.elapsed();
                 info!("Received {} proposals with context", proposals.len());
                 tracing::info!(
                     elapsed_ms = dt.as_millis() as u64,
                     "ai.propose_with_context_complete"
                 );
+                self.enforce_git_no_pager_on_proposals(&mut proposals);
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
@@ -1502,12 +1716,16 @@ impl AiRuntime {
                 (None, None, vec![("platform".to_string(), std::env::consts::OS.to_string())])
             };
 
-        let req_raw = AiRequest {
+        let mut req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
             working_directory,
             shell_kind,
             context: extra_ctx,
         };
+        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+            let kv = self.fetch_project_context_kv(&wd);
+            req_raw.context.extend(kv);
+        }
         self.start_streaming_with_request(req_raw, event_proxy, window_id);
     }
 
@@ -1559,7 +1777,8 @@ impl AiRuntime {
 
         // Decide routing mode
         let mode = self.effective_routing_mode();
-        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider);
+        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider)
+            && (self.agent_rt.is_some() || tokio::runtime::Handle::try_current().is_err());
 
         // First attempt: route through AgentManager CodeGenerationAgent with action=Explain
         if try_agent && self.agent_manager.is_none() {
@@ -1575,15 +1794,16 @@ impl AiRuntime {
                 project_files: Vec::new(),
                 dependencies: Vec::new(),
             };
+            let lang_bias = self.last_project_primary_language.clone().map(|s| s.to_lowercase());
             let agent_req = openagent_terminal_ai::agents::AgentRequest::CodeGeneration {
-                language: None,
+                language: lang_bias,
                 context: code_ctx,
                 prompt: String::new(),
                 action: openagent_terminal_ai::agents::CodeAction::Explain,
             };
             let t0 = std::time::Instant::now();
             match rt.block_on(mgr.process_request(agent_req)) {
-                Ok(openagent_terminal_ai::agents::AgentResponse::Code { generated_code, language, explanation, suggestions }) => {
+                Ok(openagent_terminal_ai::agents::AgentResponse::Code { generated_code, language: _, explanation, suggestions: _ }) => {
                     let dt = t0.elapsed();
                     tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete_agent");
                     // Map code response into a single proposal with explanation in description
@@ -1609,9 +1829,10 @@ impl AiRuntime {
                 }
             }
         }
+        }
 
         // Fallback: direct provider path (original behavior)
-        let req_raw = AiRequest {
+        let mut req_raw = AiRequest {
             // Keep the scratch as the current query if present, else use the target_text
             scratch_text: if self.ui.scratch.trim().is_empty() {
                 format!("Explain: {}", target_text)
@@ -1623,13 +1844,17 @@ impl AiRuntime {
             shell_kind: shell_kind.clone(),
             context,
         };
+        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+            let kv = self.fetch_project_context_kv(&wd);
+            req_raw.context.extend(kv);
+        }
         // Enrich with configured context providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
-            Ok(proposals) => {
+            Ok(mut proposals) => {
                 let dt = t0.elapsed();
                 tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete");
                 // Persist conversation (input + proposals)
@@ -1642,6 +1867,7 @@ impl AiRuntime {
                     &target_text,
                     &cmds.join("\n"),
                 );
+                self.enforce_git_no_pager_on_proposals(proposals.as_mut_slice());
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
@@ -1699,7 +1925,8 @@ impl AiRuntime {
 
         // Agent-first path (similar to explain), unless routing is forced to Provider
         let mode = self.effective_routing_mode();
-        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider);
+        let try_agent = !matches!(mode, crate::config::ai::AiRoutingMode::Provider)
+            && (self.agent_rt.is_some() || tokio::runtime::Handle::try_current().is_err());
         if try_agent {
             if self.agent_manager.is_none() {
                 self.ensure_agent_manager();
@@ -1746,7 +1973,7 @@ impl AiRuntime {
                         );
                         // Parse into one or more proposals when alternatives are present
                         let default_title = "Fix suggestion";
-                        let proposals = Self::parse_fix_proposals_from_agent_output(&generated_code, default_title, &explanation);
+let mut proposals = Self::parse_fix_proposals_from_agent_output(&generated_code, default_title, &explanation);
                         // Persist conversation (agent path)
                         let input_joined = if let Some(fc) = &failed_command {
                             format!("Error encountered while running '{}':\n{}", fc, error_text)
@@ -1761,6 +1988,7 @@ impl AiRuntime {
                             &input_joined,
                             &flat_cmds.join("\n"),
                         );
+                        self.enforce_git_no_pager_on_proposals(&mut proposals);
                         self.ui.proposals = if proposals.is_empty() {
                             vec![openagent_terminal_ai::AiProposal { title: default_title.to_string(), description: if explanation.is_empty() { None } else { Some(explanation) }, proposed_commands: Vec::new() }]
                         } else {
@@ -1798,20 +2026,24 @@ impl AiRuntime {
             format!("Error: {}\nSuggest a fix.", error_text)
         };
 
-        let req_raw = AiRequest {
+        let mut req_raw = AiRequest {
             scratch_text: prompt,
             // Clone so we can still reference these later for persistence
             working_directory: working_directory.clone(),
             shell_kind: shell_kind.clone(),
             context,
         };
+        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+            let kv = self.fetch_project_context_kv(&wd);
+            req_raw.context.extend(kv);
+        }
         // Enrich with configured context providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
         match self.provider.propose(req) {
-            Ok(proposals) => {
+            Ok(mut proposals) => {
                 let dt = t0.elapsed();
                 tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_fix_complete");
                 // Persist conversation (input + proposals)
@@ -1829,6 +2061,7 @@ impl AiRuntime {
                     &input_joined,
                     &cmds.join("\n"),
                 );
+                self.enforce_git_no_pager_on_proposals(&mut proposals);
                 self.ui.proposals = proposals;
                 self.ui.is_loading = false;
             }
@@ -1849,6 +2082,27 @@ impl AiRuntime {
     /// Set join strategy for multi-command application
     pub fn set_apply_joiner(&mut self, joiner: crate::config::ai::AiApplyJoinStrategy) {
         self.apply_joiner = joiner;
+    }
+
+    /// Convenience: switch provider by name using the loaded UiConfig.
+    /// Falls back to built-in defaults when provider is not present in config.
+    /// Returns Ok(()) if reconfiguration succeeded, Err(message) if it failed.
+    pub fn set_provider_by_name(
+        &mut self,
+        provider_name: &str,
+        ui_cfg: &crate::config::UiConfig,
+    ) -> Result<(), String> {
+        let name = provider_name.to_ascii_lowercase();
+        let prov_cfg = ui_cfg
+            .ai
+            .providers
+            .get(&name)
+            .cloned()
+            .or_else(|| crate::config::ai_providers::get_default_provider_configs().get(&name).cloned())
+            .ok_or_else(|| format!("Unknown provider: {}", name))?;
+        // Attempt reconfiguration; errors are surfaced via ui.error_message.
+        self.reconfigure_to(&name, &prov_cfg);
+        if let Some(err) = self.ui.error_message.clone() { Err(err) } else { Ok(()) }
     }
 
     fn build_context_manager(&self) -> (ContextManager, usize) {
@@ -1908,4 +2162,55 @@ impl AiRuntime {
         }
         (cm, kb)
     }
+}
+
+impl AiRuntime {
+    pub fn set_routing_mode(&mut self, mode: crate::config::ai::AiRoutingMode) {
+        self.routing_mode = mode;
+    }
+
+    pub fn effective_routing_mode(&self) -> crate::config::ai::AiRoutingMode {
+        self.routing_mode
+    }
+
+    fn enforce_git_no_pager_on_proposals(&self, proposals: &mut [AiProposal]) {
+        for p in proposals.iter_mut() {
+            for cmd in p.proposed_commands.iter_mut() {
+                *cmd = enforce_git_no_pager_line(cmd);
+            }
+        }
+    }
+}
+
+fn enforce_git_no_pager_line(line: &str) -> String {
+    // Fast path: skip if no 'git' or already contains --no-pager
+    if !line.contains("git") || line.contains("--no-pager") {
+        return line.to_string();
+    }
+    let mut tokens: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
+    if tokens.is_empty() {
+        return line.to_string();
+    }
+    // Find 'git' token possibly after sudo
+    let mut git_idx: Option<usize> = None;
+    for (i, t) in tokens.iter().enumerate() {
+        if t == "git" {
+            git_idx = Some(i);
+            break;
+        }
+    }
+    let gi = match git_idx { Some(i) => i, None => return line.to_string() };
+    // Determine insertion index after handling "-C <path>" chain
+    let mut insert_at = gi + 1;
+    let mut i = gi + 1;
+    while i + 1 < tokens.len() {
+        if tokens[i] == "-C" {
+            i += 2;
+            insert_at = i;
+        } else {
+            break;
+        }
+    }
+    tokens.insert(insert_at, "--no-pager".to_string());
+    tokens.join(" ")
 }

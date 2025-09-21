@@ -38,7 +38,7 @@ pub struct EventBus {
     // Channel for broadcasting events to all agents
     broadcast_tx: broadcast::Sender<AgentEvent>,
     // Channel for direct agent-to-agent communication
-    direct_channels: HashMap<String, mpsc::UnboundedSender<AgentMessage>>,
+    _direct_channels: HashMap<String, mpsc::UnboundedSender<AgentMessage>>,
 }
 
 /// Coordinates multi-agent workflows and task execution
@@ -629,6 +629,10 @@ impl Agent for AgentCommunicationHub {
     }
 }
 
+impl Default for AgentCommunicationHub {
+    fn default() -> Self { Self::new() }
+}
+
 /// Request structures for communication hub operations
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkflowRequest {
@@ -710,9 +714,14 @@ impl MessageRouter {
     }
 }
 
+
+impl Default for MessageRouter {
+    fn default() -> Self { Self::new() }
+}
+
 impl EventBus {
     pub fn new(broadcast_tx: broadcast::Sender<AgentEvent>) -> Self {
-        Self { broadcast_tx, direct_channels: HashMap::new() }
+Self { broadcast_tx, _direct_channels: HashMap::new() }
     }
 
     pub async fn broadcast(&self, event: AgentEvent) -> Result<()> {
@@ -833,8 +842,7 @@ impl WorkflowCoordinator {
     }
 
     pub async fn get_workflow_status(&self, workflow_id: Uuid) -> Result<WorkflowStatus> {
-        let workflow = self.get_workflow(workflow_id).await?;
-        Ok(workflow.status.clone())
+        Ok(self.get_workflow(workflow_id).await?.status.clone())
     }
 
     pub async fn list_active_workflows(&self) -> Vec<Uuid> {
@@ -887,6 +895,10 @@ impl WorkflowCoordinator {
         }
         Ok(())
     }
+}
+
+impl Default for WorkflowCoordinator {
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]

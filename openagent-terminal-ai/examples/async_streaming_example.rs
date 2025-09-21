@@ -1,5 +1,17 @@
 // async-streaming-migration.rs
 // Async streaming client implementation with unified cancellation
+#![allow(
+    clippy::pedantic,
+    clippy::must_use_candidate,
+    clippy::missing_panics_doc,
+    clippy::redundant_closure_for_method_calls,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::uninlined_format_args,
+    clippy::ignored_unit_patterns,
+    clippy::unused_async,
+    clippy::too_many_lines
+)]
 
 use anyhow::Result;
 use futures::stream::{Stream, StreamExt};

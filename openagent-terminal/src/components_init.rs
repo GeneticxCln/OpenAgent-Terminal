@@ -390,23 +390,80 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
 
 #[cfg(feature = "workflow")]
 async fn seed_default_workflows(dir: &std::path::Path) -> Result<()> {
-    let rust = r#"name: Cargo build
-on: manual
+    let rust = r#"name: Cargo Build
+version: "1.0.0"
+description: Build Rust workspace in release mode
+metadata:
+  tags: ["build", "rust"]
+  icon: null
+  estimated_duration: "5m"
+requirements:
+  - command: cargo
+    required: true
+parameters: []
+environment: {}
 steps:
-  - run: cargo build --workspace --release
+  - id: build
+    name: Cargo Build
     description: Build Rust workspace in release mode
+    commands:
+      - cargo build --workspace --release
+hooks: {}
+outputs: []
 "#;
-    let node = r#"name: Node test
-on: manual
+    let node = r#"name: Node Test
+version: "1.0.0"
+description: Install dependencies and run tests
+metadata:
+  tags: ["test", "node"]
+  icon: null
+  estimated_duration: "3m"
+requirements:
+  - command: node
+    required: true
+  - command: npm
+    required: true
+parameters: []
+environment: {}
 steps:
-  - run: npm ci
-  - run: npm test
+  - id: install
+    name: Install Dependencies
+    commands:
+      - npm ci
+  - id: test
+    name: Run Tests
+    commands:
+      - npm test
+hooks: {}
+outputs: []
 "#;
-    let python = r#"name: Python lint
-on: manual
+    let python = r#"name: Python Lint
+version: "1.0.0"
+description: Install dependencies and run linter
+metadata:
+  tags: ["lint", "python"]
+  icon: null
+  estimated_duration: "2m"
+requirements:
+  - command: python
+    required: true
+  - command: pip
+    required: true
+  - command: ruff
+    required: false
+parameters: []
+environment: {}
 steps:
-  - run: pip install -r requirements.txt
-  - run: ruff check .
+  - id: install
+    name: Install Dependencies
+    commands:
+      - pip install -r requirements.txt
+  - id: lint
+    name: Run Ruff Linter
+    commands:
+      - ruff check .
+hooks: {}
+outputs: []
 "#;
     let files = [("rust.yaml", rust), ("node.yaml", node), ("python.yaml", python)];
     for (name, content) in files {
@@ -516,6 +573,7 @@ pub(crate) async fn initialize_plugin_manager(
         }
     }
 
+
     Ok(manager)
 }
 
@@ -558,6 +616,16 @@ impl PluginHost for TerminalPluginHost {
         let mut lens = crate::security_lens::SecurityLens::new(policy.clone());
         let risk = lens.analyze_command(command);
         if lens.should_block(&risk) {
+            // Telemetry: record a blocked command event (local-only JSONL)
+            if let Err(e) = write_security_audit_event(
+                None,
+                command,
+                "blocked",
+                &risk.explanation,
+                format!("{:?}", risk.level).as_str(),
+            ) {
+                warn!("Failed to write security audit log: {}", e);
+            }
             return Err(PluginError::CommandFailed(format!(
                 "Blocked risky plugin command ({}): {}",
                 risk.level as u8, risk.explanation
@@ -595,8 +663,29 @@ impl PluginHost for TerminalPluginHost {
                 Some("Cancel".into()),
                 Some(30_000),
             ) {
-                Ok(true) => {}
+                Ok(true) => {
+                    // Accepted: write audit event
+                    if let Err(e) = write_security_audit_event(
+                        None,
+                        command,
+                        "confirmed",
+                        &risk.explanation,
+                        format!("{:?}", risk.level).as_str(),
+                    ) {
+                        warn!("Failed to write security audit log: {}", e);
+                    }
+                }
                 Ok(false) => {
+                    // Canceled: write audit event and abort
+                    if let Err(e) = write_security_audit_event(
+                        None,
+                        command,
+                        "denied_user",
+                        &risk.explanation,
+                        format!("{:?}", risk.level).as_str(),
+                    ) {
+                        warn!("Failed to write security audit log: {}", e);
+                    }
                     return Err(PluginError::CommandFailed("User canceled command".into()));
                 }
                 Err(e) => {
@@ -779,6 +868,43 @@ fn sanitize_key_to_filename(key: &str) -> String {
         s.push('_');
     }
     s
+}
+
+#[cfg(feature = "plugins")]
+fn write_security_audit_event(
+    plugin_id: Option<&str>,
+    command: &str,
+    action: &str,
+    reason: &str,
+    risk_level: &str,
+) -> std::io::Result<()> {
+    // Resolve data dir
+    let base_dir = dirs::data_dir()
+        .map(|d| d.join("openagent-terminal").join("security"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./.openagent-terminal/security"));
+    std::fs::create_dir_all(&base_dir)?;
+    let log_path = base_dir.join("audit.log");
+
+    // Build JSONL entry
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let entry = serde_json::json!({
+        "ts_ms": now,
+        "source": "plugin",
+        "plugin_id": plugin_id,
+        "action": action,
+        "risk_level": risk_level,
+        "command": command,
+        "reason": reason,
+    });
+    let line = format!("{}\n", entry);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
 }
 
 #[cfg(feature = "plugins")]

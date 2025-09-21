@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::items_after_statements, clippy::uninlined_format_args, clippy::too_many_lines)]
+
 #[cfg(feature = "ai")]
 mod integration_tests {
     use anyhow::Result;
@@ -23,7 +25,6 @@ mod integration_tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio;
 
     async fn setup_integrated_system() -> Result<(
         Arc<ConversationManager>,

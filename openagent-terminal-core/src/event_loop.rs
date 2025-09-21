@@ -423,17 +423,15 @@ where
                         let skip = if combined[end] == BEL { 1 } else { 2 };
                         i = end + skip;
                         continue;
-                    } else {
-                        // Incomplete OSC 133 sequence: buffer the remainder and break.
-                        state.osc133_accum.extend_from_slice(&combined[i..]);
-                        break;
                     }
-                } else {
-                    // Not OSC 133; treat ESC ] as normal bytes, output and advance by 1.
-                    out.push(combined[i]);
-                    i += 1;
-                    continue;
+                    // Incomplete OSC 133 sequence: buffer the remainder and break.
+                    state.osc133_accum.extend_from_slice(&combined[i..]);
+                    break;
                 }
+                // Not OSC 133; treat ESC ] as normal bytes, output and advance by 1.
+                out.push(combined[i]);
+                i += 1;
+                continue;
             }
 
             // Normal byte, copy to output.

@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::cast_precision_loss, clippy::uninlined_format_args, clippy::similar_names)]
+
 use std::process::Command;
 use std::time::{Duration, Instant};
 

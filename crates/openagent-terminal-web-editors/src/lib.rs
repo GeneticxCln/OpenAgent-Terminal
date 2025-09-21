@@ -1,4 +1,13 @@
 //! Native WebView editor (Monaco) integration for OpenAgent Terminal (Linux: WebKitGTK via wry)
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::items_after_statements,
+    clippy::match_same_arms,
+    clippy::missing_errors_doc,
+    clippy::ignored_unit_patterns,
+    clippy::unused_async
+)]
 
 use anyhow::Result;
 use std::fs;

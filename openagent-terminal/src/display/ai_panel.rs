@@ -274,6 +274,18 @@ impl Display {
             current_line += 1;
         }
 
+        // Draw compact project context line (if available)
+        if current_line < num_lines {
+            if let Some(ref ctx_line) = ai_state.project_context_line {
+                if !ctx_line.is_empty() {
+                    let line_point = Point::new(current_line, Column(2));
+                    let color = tokens.text_muted;
+                    self.draw_ai_text(line_point, color, bg, ctx_line, num_cols.saturating_sub(2));
+                    current_line += 1;
+                }
+            }
+        }
+
         // Draw actions/help row or hover tooltip
         if current_line < num_lines {
             let actions_point = Point::new(current_line, Column(2));

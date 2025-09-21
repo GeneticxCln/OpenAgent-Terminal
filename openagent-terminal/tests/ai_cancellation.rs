@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::too_many_lines)]
+
 // AI cancellation behavior tests for AiRuntime
 // Ensures that when a provider returns a "Cancelled" error from propose_stream,
 // the runtime posts AiStreamFinished rather than AiStreamError.

@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 // Happy-path streaming: provider returns Ok(true) after emitting chunks; expect AiStreamFinished
 
 #![cfg(feature = "ai")]
