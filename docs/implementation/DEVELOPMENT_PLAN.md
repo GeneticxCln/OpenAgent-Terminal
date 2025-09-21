@@ -371,7 +371,7 @@ We welcome contributions! Priority areas:
 4. Documentation improvements
 5. Testing coverage
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for details.
 
 ---
 

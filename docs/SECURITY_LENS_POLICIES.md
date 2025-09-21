@@ -372,4 +372,4 @@ To contribute new patterns or improve existing ones:
    - Threat intelligence integration
    - Automated pattern updates
 
-For more information, see the [Security Lens Development Guide](./SECURITY_LENS_DEVELOPMENT.md).
+For more information, see the [Security Lens Development Guide](./guides/SECURITY_LENS_README.md).

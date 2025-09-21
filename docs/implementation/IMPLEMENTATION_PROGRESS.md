@@ -1,6 +1,6 @@
 # OpenAgent Terminal - Implementation Progress to 100%
 
-Note: The canonical project status is tracked in [STATUS.md](STATUS.md). This document focuses on implementation breakdown and task tracking.
+Note: The canonical project status is tracked in [STATUS.md](../../STATUS.md). This document focuses on implementation breakdown and task tracking.
 
 ## 🎯 Current Status: ~75% Complete
 

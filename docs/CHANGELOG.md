@@ -6,7 +6,9 @@ The sections should follow the order `Packaging`, `Added`, `Changed`, `Fixed` an
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 Notable changes to the `openagent-terminal-core` crate are documented in its
-[CHANGELOG](./openagent-terminal-core/CHANGELOG.md).
+[CHANGELOG](../openagent-terminal-core/CHANGELOG.md).
+
+Note: Current development on main uses a WGPU-only renderer; the OpenGL fallback has been removed. Older entries mentioning OpenGL reflect historical behavior.
 
 ## 0.16.2
 

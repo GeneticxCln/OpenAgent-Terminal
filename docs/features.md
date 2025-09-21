@@ -145,13 +145,9 @@ action = "CloseTab"
 
 ## Rendering Backends
 
-OpenAgent Terminal supports two rendering backends:
-- OpenGL (default): stable and widely compatible.
-- WGPU (experimental): available behind a feature flag; enable with:
-  - Build: `cargo build -p openagent-terminal --features wgpu`
-  - Runtime preference: set `debug.prefer_wgpu = true` in your config to attempt WGPU; the app will fall back to OpenGL if WGPU initialization fails.
-
-WGPU is documented as experimental until visual parity and stability are proven through snapshot testing on all platforms.
+OpenAgent Terminal now uses a WGPU renderer exclusively.
+- OpenGL fallback has been removed.
+- If WGPU initialization fails on your system, the app will exit with an error explaining why.
 
 ## Security Lens & Confirmation Overlay
 

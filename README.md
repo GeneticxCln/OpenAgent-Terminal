@@ -288,9 +288,9 @@ A: Yes. Full backward compatibility with existing Alacritty configurations.
 
 ## License
 
-Dual-licensed under Apache-2.0 OR MIT. See [LICENSE-APACHE](../LICENSE-APACHE) and [LICENSE-MIT](../LICENSE-MIT).
+Dual-licensed under Apache-2.0 OR MIT. See [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT).
 
-Based on [Alacritty](https://github.com/alacritty/alacritty). See [ATTRIBUTION.md](../docs/guides/ATTRIBUTION.md) for details.
+Based on [Alacritty](https://github.com/alacritty/alacritty). See [ATTRIBUTION.md](docs/guides/ATTRIBUTION.md) for details.
 
 ---
 

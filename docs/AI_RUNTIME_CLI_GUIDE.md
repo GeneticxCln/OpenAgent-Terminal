@@ -504,4 +504,4 @@ stream_redraw_ms = 8  # Lower = more responsive, higher = less CPU
 For more information, see:
 - [AI Environment Security](AI_ENVIRONMENT_SECURITY.md)
 - [Agent Architecture](AGENT_ARCHITECTURE.md)
-- [Configuration Manual](configuration.md)
+- [Configuration Manual](../openagent-terminal/docs/configuration.md)

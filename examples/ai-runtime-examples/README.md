@@ -664,4 +664,4 @@ Each example includes:
 - Security considerations
 - Monitoring setup
 
-For more detailed information, see the [AI Runtime & CLI Guide](../docs/AI_RUNTIME_CLI_GUIDE.md).
+For more detailed information, see the [AI Runtime & CLI Guide](../../docs/AI_RUNTIME_CLI_GUIDE.md).

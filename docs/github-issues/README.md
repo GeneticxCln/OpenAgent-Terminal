@@ -68,7 +68,7 @@ This directory contains GitHub issue templates for all the high-priority TODO an
 ## Related Documentation
 
 - **[TODO_FIXME_SUMMARY.md](../TODO_FIXME_SUMMARY.md)** - Complete overview of all TODO/FIXME items
-- **[IMPLEMENTATION_PROGRESS.md](../IMPLEMENTATION_PROGRESS.md)** - Current implementation status
+- **[IMPLEMENTATION_PROGRESS.md](../implementation/IMPLEMENTATION_PROGRESS.md)** - Current implementation status
 
 ## Template Structure
 
