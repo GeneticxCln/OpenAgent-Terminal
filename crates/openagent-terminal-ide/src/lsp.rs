@@ -63,7 +63,7 @@ pub enum LspNotification {
 }
 
 impl LspClient {
-    pub fn start(config: &ServerConfig, root_uri: Option<lsp::Uri>) -> Result<Self> {
+    pub fn start(config: &ServerConfig, root_uri: Option<lsp::Url>) -> Result<Self> {
         let mut cmd = Command::new(&config.command);
         cmd.args(&config.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
         let mut child = cmd.spawn()?;
@@ -140,7 +140,7 @@ impl LspClient {
         self.request("textDocument/signatureHelp", pos)
     }
 
-    pub fn open_document(&self, uri: lsp::Uri, language_id: &str, text: &str) -> Result<()> {
+    pub fn open_document(&self, uri: lsp::Url, language_id: &str, text: &str) -> Result<()> {
         let params = lsp::DidOpenTextDocumentParams {
             text_document: lsp::TextDocumentItem {
                 uri,
@@ -154,7 +154,7 @@ impl LspClient {
 
     pub fn change_document(
         &self,
-        uri: lsp::Uri,
+        uri: lsp::Url,
         version: i32,
         changes: Vec<lsp::TextDocumentContentChangeEvent>,
     ) -> Result<()> {

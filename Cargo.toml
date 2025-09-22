@@ -6,22 +6,18 @@ members = [
     "openagent-terminal-config-derive",
     "openagent-terminal-sync",
     "openagent-terminal-ai",
-    "crates/plugin-api",
-    "crates/plugin-loader",
-    "crates/plugin-sdk",
-    "crates/plugin-system",
+    # Plugin crates consolidated
+    "crates/plugin-runtime",  # loader + system
+    "crates/plugin-sdk",      # api + sdk (enhanced)
     "crates/workflow-engine",
     "plugins/git-context",
     "plugins/docker-helper",
     "plugins/dev-tools",
-    "crates/openagent-terminal-migrate",
-    "crates/openagent-terminal-themes",
-    "crates/openagent-terminal-snippets",
-    "crates/openagent-terminal-ide-editor",
-    "crates/openagent-terminal-ide-lsp",
-    "crates/openagent-terminal-ide-indexer",
-    "crates/openagent-terminal-ide-dap",
-    "crates/openagent-terminal-web-editors",
+    # Utility crates consolidated into single crate
+    "crates/openagent-terminal-utils",
+    # IDE crates consolidated into single crate
+    "crates/openagent-terminal-ide",
+    # Note: web-editors functionality moved to openagent-terminal-ide
 ]
 resolver = "2"
 

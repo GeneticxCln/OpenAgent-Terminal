@@ -1,0 +1,38 @@
+[package]
+name = "plugin-runtime"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Plugin runtime engine for OpenAgent Terminal (WASM loading and execution)"
+
+[dependencies]
+# Core dependencies
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# WASM runtime
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+
+# JSON-RPC for plugin communication
+jsonrpc-core.workspace = true
+jsonrpc-ipc-server.workspace = true
+
+# Security and sandboxing
+parking_lot.workspace = true
+
+# File system operations
+dirs = "6.0.0"
+
+[features]
+default = ["wasi"]
+wasi = []
+security-audit = []
+hot-reload = []
+all = ["wasi", "security-audit", "hot-reload"]
