@@ -24,6 +24,6 @@ version = "0.2.3-dev"
 
 [dev-dependencies]
 tracing = { workspace = true }
-serde = { version = "1.0.117", features = ["derive"] }
+serde = { version = "1.0.226", features = ["derive"] }
 toml.workspace = true
 log = "0.4"
