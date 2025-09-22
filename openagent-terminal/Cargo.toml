@@ -133,7 +133,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # Ensure examples/tests can directly depend on wgpu APIs regardless of optional feature plumbing
 wgpu = "26.0"
 pollster = "0.4"
-proptest = "1.4"
+proptest = "1.8"
 serial_test = "3"
 insta = "1.34"
 
