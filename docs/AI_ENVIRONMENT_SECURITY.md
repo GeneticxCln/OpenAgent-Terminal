@@ -88,6 +88,14 @@ model_env = "OPENAGENT_OLLAMA_MODEL"
 3. Add deprecation warnings for old environment variable patterns
 4. Provide migration scripts for common configurations
 
+## Legacy vs Preferred Environment Variables
+
+- Preferred (client-side):
+  - OPENAGENT_OLLAMA_ENDPOINT (was OLLAMA_ENDPOINT)
+  - OPENAGENT_OLLAMA_MODEL (was OLLAMA_MODEL)
+- Legacy: OLLAMA_ENDPOINT and OLLAMA_MODEL are still recognized for backward compatibility, but use the OPENAGENT_* names for clarity and provider isolation.
+- Server-side: OLLAMA_HOST and other OLLAMA_* toggles (e.g., OLLAMA_FLASH_ATTENTION) configure the Ollama server process and are not read by OpenAgent Terminal.
+
 ## Validate and Migrate with CLI
 
 - Validate providers: `openagent-terminal ai validate --include-defaults`

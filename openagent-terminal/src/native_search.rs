@@ -1816,10 +1816,7 @@ impl InvertedIndex {
 
         // Update term-to-document mapping
         for term in &terms {
-            self.term_docs
-                .entry(term.clone())
-                .or_default()
-                .insert(doc_id.to_string());
+            self.term_docs.entry(term.clone()).or_default().insert(doc_id.to_string());
 
             // Update term frequency
             *self
@@ -1970,7 +1967,6 @@ impl BooleanSearch {
         Vec::new()
     }
 }
-
 
 impl Default for SearchIntegration {
     fn default() -> Self {

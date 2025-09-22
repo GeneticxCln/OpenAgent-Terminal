@@ -1,4 +1,9 @@
-#![allow(clippy::pedantic, clippy::manual_let_else, clippy::single_match_else, clippy::uninlined_format_args)]
+#![allow(
+    clippy::pedantic,
+    clippy::manual_let_else,
+    clippy::single_match_else,
+    clippy::uninlined_format_args
+)]
 
 use std::process::Command;
 

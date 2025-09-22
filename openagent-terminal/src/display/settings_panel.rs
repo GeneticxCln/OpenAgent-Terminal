@@ -8,9 +8,9 @@ use std::path::PathBuf;
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
 #[cfg(feature = "ai")]
-use crate::config::ai::{AiRoutingMode, AiApplyJoinStrategy};
+use crate::config::ai::{AiApplyJoinStrategy, AiRoutingMode};
+use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
 #[cfg(not(feature = "ai"))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AiRoutingMode {
@@ -66,7 +66,7 @@ impl SettingsCategory {
 pub struct SettingsPanelState {
     pub active: bool,
     pub category: SettingsCategory,
-// AI page
+    // AI page
     pub provider: String,
     pub selected_field: Field,
     pub ai_enabled: bool,
@@ -310,16 +310,17 @@ impl SettingsPanelState {
     pub fn cycle_apply_joiner(&mut self, forward: bool) {
         let options = [AiApplyJoinStrategy::AndThen, AiApplyJoinStrategy::Lines];
         let idx = options.iter().position(|m| *m == self.apply_joiner).unwrap_or(0);
-        let next = if forward { (idx + 1) % options.len() } else { (idx + options.len() - 1) % options.len() };
+        let next = if forward {
+            (idx + 1) % options.len()
+        } else {
+            (idx + options.len() - 1) % options.len()
+        };
         self.apply_joiner = options[next];
     }
 
     pub fn cycle_routing(&mut self, forward: bool) {
         let options = [AiRoutingMode::Auto, AiRoutingMode::Agent, AiRoutingMode::Provider];
-        let idx = options
-            .iter()
-            .position(|m| *m == self.routing)
-            .unwrap_or(0);
+        let idx = options.iter().position(|m| *m == self.routing).unwrap_or(0);
         let next = if forward {
             (idx + 1) % options.len()
         } else {
@@ -385,7 +386,7 @@ impl SettingsPanelState {
         match self.category {
             SettingsCategory::Ai => {
                 self.selected_field = match self.selected_field {
-Field::Provider => Field::ApplyJoiner,
+                    Field::Provider => Field::ApplyJoiner,
                     Field::ApplyJoiner => Field::Routing,
                     Field::Routing => Field::CtxFileTree,
                     Field::AiEnabled => Field::Endpoint,
@@ -572,8 +573,7 @@ Field::Provider => Field::ApplyJoiner,
                 | Field::CtxGit
                 | Field::CtxFileTree
                 | Field::Routing
-                | Field::ApplyJoiner
-                => {}
+                | Field::ApplyJoiner => {}
             }
         } else if self.category == SettingsCategory::Theme {
             self.theme_name.pop();

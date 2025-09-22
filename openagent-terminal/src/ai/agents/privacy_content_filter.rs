@@ -481,7 +481,9 @@ impl PrivacyContentFilter {
 }
 
 impl Default for PrivacyContentFilter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PrivacyContentFilter {
@@ -703,7 +705,6 @@ impl PrivacyContentFilter {
     }
 
     // Helper methods
-
 
     fn run_scanner_internal(
         scanner: &ContentScanner,
@@ -1313,7 +1314,9 @@ impl RedactionEngine {
 }
 
 impl Default for RedactionEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RedactionEngine {
@@ -1347,7 +1350,9 @@ impl DataClassifier {
 }
 
 impl Default for DataClassifier {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PrivacyAuditLog {
@@ -1361,7 +1366,9 @@ impl PrivacyAuditLog {
 }
 
 impl Default for PrivacyAuditLog {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PrivacyAuditLog {

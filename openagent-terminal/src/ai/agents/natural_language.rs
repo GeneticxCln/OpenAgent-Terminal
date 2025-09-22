@@ -134,7 +134,9 @@ impl NaturalLanguageAgent {
 }
 
 impl Default for NaturalLanguageAgent {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NaturalLanguageAgent {
@@ -611,8 +613,8 @@ impl IntentClassifier {
     ) -> Result<Intent> {
         let text_lower = text.to_lowercase();
         // Compile once per call (avoid regex creation inside inner loops)
-        let re_key_val = regex::Regex::new(r"--([A-Za-z0-9][A-Za-z0-9-_]*)=([^\s]+)")
-            .expect("valid regex");
+        let re_key_val =
+            regex::Regex::new(r"--([A-Za-z0-9][A-Za-z0-9-_]*)=([^\s]+)").expect("valid regex");
         let mut best_intent: Option<Intent> = None;
         let mut best_score = 0.0;
 
@@ -649,14 +651,14 @@ impl IntentClassifier {
                     best_score = score;
                     // Naive parameter extraction from the input text
                     let mut params: HashMap<String, String> = HashMap::new();
-        // --key=value
-        for cap in re_key_val.captures_iter(text) {
-                            let key = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
-                            let val = cap.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
-                            if !key.is_empty() {
-                                params.entry(key).or_insert(val);
-                            }
+                    // --key=value
+                    for cap in re_key_val.captures_iter(text) {
+                        let key = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                        let val = cap.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
+                        if !key.is_empty() {
+                            params.entry(key).or_insert(val);
                         }
+                    }
                     // --key value and -k value; single-char flags as booleans
                     let tokens: Vec<&str> = text.split_whitespace().collect();
                     let mut i = 0usize;
@@ -721,11 +723,15 @@ impl ConversationContextManager {
 }
 
 impl Default for IntentClassifier {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Default for ConversationContextManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConversationContextManager {

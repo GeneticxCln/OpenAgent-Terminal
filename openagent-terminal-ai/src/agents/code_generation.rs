@@ -209,9 +209,7 @@ impl CodeGenerationAgent {
         let mut prompt = String::new();
 
         // System prompt: production-quality, no placeholders/templates
-        prompt.push_str(
-            "You are an expert software engineer generating production-ready code. ",
-        );
+        prompt.push_str("You are an expert software engineer generating production-ready code. ");
         prompt.push_str(
             "Do NOT use placeholders or templates. Provide concrete, working code with real names, ",
         );
@@ -263,9 +261,7 @@ impl CodeGenerationAgent {
                             "use strict typing (no any), explicit return types, discriminated unions where helpful. ",
                         );
                     } else {
-                        prompt.push_str(
-                            "include JSDoc where helpful and keep modules cohesive. ",
-                        );
+                        prompt.push_str("include JSDoc where helpful and keep modules cohesive. ");
                     }
                 }
                 // Go guidance
@@ -273,7 +269,9 @@ impl CodeGenerationAgent {
                     prompt.push_str(
                         "Keep functions small; return (T, error) and handle errors explicitly; ",
                     );
-                    prompt.push_str("respect context.Context for cancelation; write idiomatic names. ");
+                    prompt.push_str(
+                        "respect context.Context for cancelation; write idiomatic names. ",
+                    );
                 }
                 // Java guidance
                 "java" => {
@@ -284,17 +282,19 @@ impl CodeGenerationAgent {
                 }
                 // C/C++ guidance (lightweight)
                 "c" | "cpp" => {
+                    prompt.push_str("Prefer RAII (C++) and smart pointers; avoid raw new/delete; ");
                     prompt.push_str(
-                        "Prefer RAII (C++) and smart pointers; avoid raw new/delete; ",
+                        "check return values; avoid UB; document lifetime and ownership. ",
                     );
-                    prompt.push_str("check return values; avoid UB; document lifetime and ownership. ");
                 }
                 // Shell scripts (when applicable)
                 "shell" | "bash" | "zsh" => {
                     prompt.push_str(
                         "Emit portable POSIX-compliant commands when possible; quote variables safely; ",
                     );
-                    prompt.push_str("avoid dangerous flags; do not include commentary in the command output. ");
+                    prompt.push_str(
+                        "avoid dangerous flags; do not include commentary in the command output. ",
+                    );
                 }
                 _ => {}
             }

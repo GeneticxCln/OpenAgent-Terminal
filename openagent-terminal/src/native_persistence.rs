@@ -504,7 +504,7 @@ impl NativePersistence {
 
         // Notify sync layer (best-effort)
         if let Some(tx) = &self.sync_sender {
-let _ = tx.send(SyncOperation::SaveBlock(Box::new(block.clone())));
+            let _ = tx.send(SyncOperation::SaveBlock(Box::new(block.clone())));
         }
 
         // Schedule backup if needed

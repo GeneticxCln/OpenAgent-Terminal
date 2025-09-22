@@ -439,7 +439,6 @@ impl Default for PluginUsageStats {
     }
 }
 
-
 impl EnhancedPluginSystem {
     pub fn new() -> Self {
         Self {
@@ -809,7 +808,9 @@ impl EnhancedPluginSystem {
 }
 
 impl Default for EnhancedPluginSystem {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // Implementation for trait Agent
@@ -967,12 +968,14 @@ impl PluginRegistry {
 }
 
 impl Default for PluginRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PluginSecurityManager {
     pub fn new() -> Self {
-Self {
+        Self {
             _sandbox_configs: HashMap::new(),
             permission_manager: PermissionManager::new(),
             _security_policies: HashMap::new(),
@@ -1005,17 +1008,21 @@ Self {
 }
 
 impl Default for PluginSecurityManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PermissionManager {
     pub fn new() -> Self {
-Self { granted_permissions: HashMap::new(), _permission_policies: HashMap::new() }
+        Self { granted_permissions: HashMap::new(), _permission_policies: HashMap::new() }
     }
 }
 
 impl Default for PermissionManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Mock plugin for demonstration purposes

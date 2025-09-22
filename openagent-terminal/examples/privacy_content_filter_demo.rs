@@ -1,4 +1,10 @@
-#![allow(clippy::pedantic, clippy::uninlined_format_args, clippy::too_many_lines, clippy::if_not_else, clippy::inefficient_to_string)]
+#![allow(
+    clippy::pedantic,
+    clippy::uninlined_format_args,
+    clippy::too_many_lines,
+    clippy::if_not_else,
+    clippy::inefficient_to_string
+)]
 
 use anyhow::Result;
 use chrono::{Duration, Utc};

@@ -1,4 +1,8 @@
-#![allow(clippy::pedantic, clippy::match_wildcard_for_single_variants, clippy::uninlined_format_args)]
+#![allow(
+    clippy::pedantic,
+    clippy::match_wildcard_for_single_variants,
+    clippy::uninlined_format_args
+)]
 use openagent_terminal_core::event::{Event, EventListener};
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::term::{Config as TermConfig, Term};

@@ -62,9 +62,9 @@ impl OllamaProvider {
     }
 
     pub fn from_env() -> Result<Self, String> {
-        let endpoint = std::env::var("OLLAMA_ENDPOINT")
+        let endpoint = std::env::var("OPENAGENT_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        let model = std::env::var("OLLAMA_MODEL")
+        let model = std::env::var("OPENAGENT_OLLAMA_MODEL")
             .unwrap_or_else(|_| "codellama".to_string());
         Ok(Self { endpoint, model })
     }
@@ -317,6 +317,15 @@ eprintln!("Debug: AI request: {:?}", request);
 cargo build --release --features "ai"
 perf record --call-graph=dwarf ./target/release/openagent-terminal
 perf report
+```
+
+### Performance tests and timing guard
+- Some performance tests (e.g., render_smoke_runs_quickly) are sensitive to hardware/VM variance.
+- By default, these tests run but skip strict timing checks on slower machines.
+- To enforce CI-level timing budgets locally, set:
+```bash
+export OPENAGENT_STRICT_PERF=1
+cargo test -p openagent-terminal --features ai-ollama -- --include-ignored
 ```
 
 ---

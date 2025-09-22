@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     rt.block_on(async move {
         let pid = manager.load_plugin(&wasm_path).await?;
-println!("Loaded plugin: {pid}");
+        println!("Loaded plugin: {pid}");
         anyhow::Ok(())
     })
 }

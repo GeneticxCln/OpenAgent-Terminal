@@ -66,7 +66,6 @@ impl AiContextProvider for NullContextProvider {
     }
 }
 
-
 /// Convenience function to convert context to AI request parameters
 pub fn context_to_ai_params(context: &Option<PtyAiContext>) -> (Option<String>, Option<String>) {
     if let Some(ctx) = context {

@@ -1082,18 +1082,49 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if self.ctx.plugins_panel_active() {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
-                Key::Named(NamedKey::Enter) => { self.ctx.plugins_panel_confirm(); return; }
-                Key::Named(NamedKey::Escape) => { self.ctx.plugins_panel_cancel(); return; }
-                Key::Named(NamedKey::Backspace) => { self.ctx.plugins_panel_backspace(); return; }
-                Key::Named(NamedKey::ArrowUp) => { self.ctx.plugins_panel_move_selection(-1); return; }
-                Key::Named(NamedKey::ArrowDown) => { self.ctx.plugins_panel_move_selection(1); return; }
-                Key::Named(NamedKey::PageUp) => { self.ctx.plugins_panel_move_selection(-5); return; }
-                Key::Named(NamedKey::PageDown) => { self.ctx.plugins_panel_move_selection(5); return; }
-                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("n")) => { self.ctx.plugins_panel_move_selection(1); return; }
-                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("p")) => { self.ctx.plugins_panel_move_selection(-1); return; }
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.plugins_panel_confirm();
+                    return;
+                }
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.plugins_panel_cancel();
+                    return;
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.plugins_panel_backspace();
+                    return;
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.plugins_panel_move_selection(-1);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.plugins_panel_move_selection(1);
+                    return;
+                }
+                Key::Named(NamedKey::PageUp) => {
+                    self.ctx.plugins_panel_move_selection(-5);
+                    return;
+                }
+                Key::Named(NamedKey::PageDown) => {
+                    self.ctx.plugins_panel_move_selection(5);
+                    return;
+                }
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("n")) => {
+                    self.ctx.plugins_panel_move_selection(1);
+                    return;
+                }
+                Key::Character(c) if mods.control_key() && (c.eq_ignore_ascii_case("p")) => {
+                    self.ctx.plugins_panel_move_selection(-1);
+                    return;
+                }
                 _ => {}
             }
-            for ch in text.chars() { if !ch.is_control() { self.ctx.plugins_panel_input(ch); } }
+            for ch in text.chars() {
+                if !ch.is_control() {
+                    self.ctx.plugins_panel_input(ch);
+                }
+            }
             return;
         }
 

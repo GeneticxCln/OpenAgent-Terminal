@@ -447,7 +447,9 @@ impl Agent for CodeGenerationAgent {
 }
 
 impl Default for CodeGenerationAgent {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

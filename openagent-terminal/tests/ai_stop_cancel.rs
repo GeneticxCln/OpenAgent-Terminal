@@ -1,7 +1,5 @@
 #![allow(clippy::pedantic)]
-
 // AiStop/cancel path: calling AiRuntime.cancel() should lead to AiStreamFinished (no error)
-
 #![cfg(feature = "ai")]
 
 use openagent_terminal::ai_runtime::AiRuntime;

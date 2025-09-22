@@ -1,8 +1,6 @@
 #![allow(clippy::pedantic)]
-
 // Mid-stream chunks followed by cancel should yield chunks and then AiStreamFinished, without
 // AiStreamError
-
 #![cfg(feature = "ai")]
 
 use openagent_terminal::ai_runtime::AiRuntime;

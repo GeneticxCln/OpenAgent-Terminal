@@ -60,7 +60,9 @@ impl<'de, T: SerdeReplace + Deserialize<'de>> SerdeReplace for Option<T> {
     }
 }
 
-impl<'de, T: Deserialize<'de>, S: std::hash::BuildHasher + Default> SerdeReplace for HashMap<String, T, S> {
+impl<'de, T: Deserialize<'de>, S: std::hash::BuildHasher + Default> SerdeReplace
+    for HashMap<String, T, S>
+{
     fn replace(&mut self, value: Value) -> Result<(), Box<dyn Error>> {
         // Deserialize replacement as HashMap.
         let hashmap: HashMap<String, T, S> = Self::deserialize(value)?;

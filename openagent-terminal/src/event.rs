@@ -413,11 +413,13 @@ impl Processor {
             if self.config.ai.enabled {
                 let provider_name = self.config.ai.provider.as_deref().unwrap_or("null");
                 if provider_name.eq_ignore_ascii_case("null") {
-let msg = crate::message_bar::Message::new(
+                    let msg = crate::message_bar::Message::new(
                         "AI is enabled with provider 'null'. Open AI (Ctrl+Shift+A) and switch provider, or configure [ai] in your config.".to_string(),
                         crate::message_bar::MessageType::Warning,
                     );
-                    if let Err(e) = self.proxy.send_event(Event::new(EventType::Message(msg), window_id)) {
+                    if let Err(e) =
+                        self.proxy.send_event(Event::new(EventType::Message(msg), window_id))
+                    {
                         tracing::warn!("failed to post AI provider hint Message: {:?}", e);
                     }
                 }
@@ -809,8 +811,8 @@ impl Processor {
                     // De-dup by name keeping first occurrence
                     let mut seen = std::collections::HashSet::new();
                     base.retain(|it| seen.insert(it.name.clone()));
-                    let _ = proxy
-                        .send_event(Event::new(EventType::WorkflowsSearchResults(base), win));
+                    let _ =
+                        proxy.send_event(Event::new(EventType::WorkflowsSearchResults(base), win));
                 });
                 return;
             }
@@ -1191,7 +1193,7 @@ impl ApplicationHandler<Event> for Processor {
                 let mut lens = SecurityLens::new(policy.clone());
                 let risk = lens.analyze_command(&command);
 
-if lens.should_block(&risk) {
+                if lens.should_block(&risk) {
                     // Telemetry: core blocked command
                     write_security_audit_event_core(&command, "blocked", Some(&risk.explanation));
                     let _msg = self.config.theme.resolve().tokens.warning; // color not directly used here
@@ -1287,10 +1289,14 @@ if lens.should_block(&risk) {
                 let policy: SecurityPolicy = self.config.security.clone();
                 if policy.gate_paste_events {
                     let mut lens = SecurityLens::new(policy.clone());
-if let Some(risk) = lens.analyze_paste_content(&text) {
+                    if let Some(risk) = lens.analyze_paste_content(&text) {
                         if lens.should_block(&risk) {
                             // Telemetry: blocked paste
-                            write_security_audit_event_core(&text, "blocked_paste", Some(&risk.explanation));
+                            write_security_audit_event_core(
+                                &text,
+                                "blocked_paste",
+                                Some(&risk.explanation),
+                            );
                             let message = crate::message_bar::Message::new(
                                 format!("Blocked risky paste: {}", risk.explanation),
                                 crate::message_bar::MessageType::Warning,
@@ -2380,7 +2386,7 @@ if let Some(risk) = lens.analyze_paste_content(&text) {
             }
             (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
                 // If this is an AI pending confirm, handle it
-#[cfg(feature = "ai")]
+                #[cfg(feature = "ai")]
                 if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
                     if accepted {
                         // Telemetry: confirmed command
@@ -2401,7 +2407,7 @@ if let Some(risk) = lens.analyze_paste_content(&text) {
                     }
                 }
                 // If this is a pending paste confirmation, handle it
-if let Some((text, win)) = self.pending_security_paste.remove(&id) {
+                if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                     if accepted {
                         // Telemetry: confirmed paste
                         write_security_audit_event_core(&text, "confirmed_paste", None);
@@ -2609,7 +2615,8 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                         let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            let mut items: Vec<crate::display::plugin_panel::PluginItem> = Vec::new();
+                            let mut items: Vec<crate::display::plugin_panel::PluginItem> =
+                                Vec::new();
                             let q = query.to_lowercase();
                             // Loaded plugins
                             let loaded = pm.list_plugins().await;
@@ -2630,7 +2637,11 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                             // Discovered plugins on disk
                             if let Ok(paths) = pm.discover_plugins().await {
                                 for p in paths {
-                                    let fname = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                                    let fname = p
+                                        .file_stem()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or("")
+                                        .to_string();
                                     let hay = format!("{} {}", fname, p.display());
                                     if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
                                         // Skip if already listed as loaded
@@ -2646,7 +2657,10 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                                     }
                                 }
                             }
-                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchResults(items), win));
+                            let _ = proxy.send_event(Event::new(
+                                EventType::PluginsSearchResults(items),
+                                win,
+                            ));
                         });
                     }
                 }
@@ -2676,18 +2690,23 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                                         format!("Loaded plugin: {}", id),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                                 Err(e) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Load failed: {}", e),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                             }
                             // Refresh list
-                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
+                            let _ = proxy.send_event(Event::new(
+                                EventType::PluginsSearchPerform(String::new()),
+                                win,
+                            ));
                         });
                     }
                 }
@@ -2707,18 +2726,23 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                                         format!("Unloaded plugin: {}", name),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                                 Err(e) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Unload failed: {}", e),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ =
+                                        proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                             }
                             // Refresh list
-                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
+                            let _ = proxy.send_event(Event::new(
+                                EventType::PluginsSearchPerform(String::new()),
+                                win,
+                            ));
                         });
                     }
                 }
@@ -2751,16 +2775,23 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                                                 format!("Install failed: {}", e),
                                                 crate::message_bar::MessageType::Warning,
                                             );
-                                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                            let _ = proxy
+                                                .send_event(Event::new(EventType::Message(m), win));
                                         } else {
                                             let m = crate::message_bar::Message::new(
-                                                format!("Downloaded plugin to {}", target.display()),
+                                                format!(
+                                                    "Downloaded plugin to {}",
+                                                    target.display()
+                                                ),
                                                 crate::message_bar::MessageType::Warning,
                                             );
-                                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                            let _ = proxy
+                                                .send_event(Event::new(EventType::Message(m), win));
                                             // Trigger load
                                             let _ = proxy.send_event(Event::new(
-                                                EventType::PluginsLoadFromPath(target.to_string_lossy().to_string()),
+                                                EventType::PluginsLoadFromPath(
+                                                    target.to_string_lossy().to_string(),
+                                                ),
                                                 win,
                                             ));
                                         }
@@ -2770,7 +2801,8 @@ if let Some((text, win)) = self.pending_security_paste.remove(&id) {
                                             format!("Install failed: {}", e),
                                             crate::message_bar::MessageType::Warning,
                                         );
-                                        let _ = proxy.send_event(Event::new(EventType::Message(m), win));
+                                        let _ = proxy
+                                            .send_event(Event::new(EventType::Message(m), win));
                                     }
                                 }
                             }
@@ -3024,7 +3056,9 @@ pub enum EventType {
     #[cfg(feature = "plugins")]
     PluginsUnloadByName(String), // plugin id/name
     #[cfg(feature = "plugins")]
-    PluginsInstallFromUrl { url: String },
+    PluginsInstallFromUrl {
+        url: String,
+    },
     #[cfg(feature = "workflow")]
     WorkflowsSearchResults(Vec<crate::display::workflow_panel::WorkflowItem>),
     #[cfg(feature = "workflow")]
@@ -4538,10 +4572,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
         // Trigger initial plugins search
         let q = self.display.plugins_panel.query.clone();
-        let _ = self.event_proxy.send_event(Event::new(
-            EventType::PluginsSearchPerform(q),
-            self.display.window.id(),
-        ));
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(EventType::PluginsSearchPerform(q), self.display.window.id()));
     }
 
     #[cfg(feature = "workflow")]
@@ -4661,8 +4694,11 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             ));
             return;
         }
-        if self.display.plugins_panel.results.is_empty() { return; }
-        let idx = self.display.plugins_panel.selected.min(self.display.plugins_panel.results.len() - 1);
+        if self.display.plugins_panel.results.is_empty() {
+            return;
+        }
+        let idx =
+            self.display.plugins_panel.selected.min(self.display.plugins_panel.results.len() - 1);
         let item = self.display.plugins_panel.results[idx].clone();
         if item.loaded {
             let _ = self.event_proxy.send_event(Event::new(
@@ -4804,31 +4840,50 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 // Hot-apply AI provider changes: reconfigure runtime with new model/endpoint
                 #[cfg(feature = "ai")]
                 if matches!(category, crate::display::settings_panel::SettingsCategory::Ai) {
-                    if let Some(rt) = self.ai_runtime_mut() {
-                        // Build provider config from current config (or defaults) and reconfigure
-                        let name = self.display.settings_panel.provider.to_ascii_lowercase();
-                        let prov_cfg = self
-                            .config
-                            .ai
-                            .providers
-                            .get(&name)
-                            .cloned()
-                            .or_else(|| crate::config::ai_providers::get_default_provider_configs().get(&name).cloned())
-                            .unwrap_or_default();
+                    // Build provider selection and config without holding a mutable borrow
+                    let name = self.display.settings_panel.provider.to_ascii_lowercase();
+                    let prov_cfg = self
+                        .config
+                        .ai
+                        .providers
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| {
+                            crate::config::ai_providers::get_default_provider_configs()
+                                .get(&name)
+                                .cloned()
+                        })
+                        .unwrap_or_default();
+
+                    // Reconfigure runtime in a limited scope and capture results
+                    let (new_provider, new_model, err_opt) = if let Some(rt) = self.ai_runtime_mut()
+                    {
                         rt.reconfigure_to(&name, &prov_cfg);
-                        // Update composer badges from runtime UI state
-                        self.display.ai_current_provider = rt.ui.current_provider.clone();
-                        self.display.ai_current_model = rt.ui.current_model.clone();
-                        // If an error occurred, surface it as a message
-                        if let Some(err) = rt.ui.error_message.clone() {
-                            let message = crate::message_bar::Message::new(
-                                format!("AI provider reconfigure failed: {}", err),
-                                crate::message_bar::MessageType::Error,
-                            );
-                            let _ = self
-                                .event_proxy
-                                .send_event(Event::new(EventType::Message(message), self.display.window.id()));
-                        }
+                        (
+                            rt.ui.current_provider.clone(),
+                            rt.ui.current_model.clone(),
+                            rt.ui.error_message.clone(),
+                        )
+                    } else {
+                        (String::new(), String::new(), None)
+                    };
+
+                    // Update composer badges from captured values (after mutable borrow ends)
+                    if !new_provider.is_empty() {
+                        self.display.ai_current_provider = new_provider;
+                        self.display.ai_current_model = new_model;
+                    }
+
+                    // If an error occurred, surface it as a message
+                    if let Some(err) = err_opt {
+                        let message = crate::message_bar::Message::new(
+                            format!("AI provider reconfigure failed: {}", err),
+                            crate::message_bar::MessageType::Error,
+                        );
+                        let _ = self.event_proxy.send_event(Event::new(
+                            EventType::Message(message),
+                            self.display.window.id(),
+                        ));
                     }
                 }
             }
@@ -6838,11 +6893,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let proxy = self.event_proxy.clone();
             let window_id = self.display.window.id();
             // Prefer full PTY/workspace context when available (Warp parity)
-            let ai_ctx = self
-                .workspace
-                .warp
-                .as_ref()
-                .and_then(|w| w.get_current_ai_context());
+            let ai_ctx = self.workspace.warp.as_ref().and_then(|w| w.get_current_ai_context());
             runtime.start_propose_stream_with_context(ai_ctx, proxy, window_id);
             *self.dirty = true;
         }
@@ -8015,7 +8066,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-#[cfg(feature = "ai")]
+                #[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let prev = runtime.ui.streaming_text.len();
@@ -8233,49 +8284,10 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::AiSwitchProvider(provider_name) => {
                     // Warp-like: hot-swap runtime provider immediately, preserve scratch/cursor.
                     let name = provider_name.to_ascii_lowercase();
-                    if let Some(rt) = &mut self.ctx.ai_runtime {
-                        // Use convenience method to resolve config and reconfigure
-                        match rt.set_provider_by_name(&name, self.ctx.config()) {
-                            Ok(()) => {
-                                // Update composer display cache from runtime UI state
-                                self.ctx.display.ai_current_provider = rt.ui.current_provider.clone();
-                                self.ctx.display.ai_current_model = rt.ui.current_model.clone();
-                                // Persist selection to config file (best-effort)
-                                if let Some(path) = self.ctx.config().config_paths.first() {
-                                    let mut doc: toml::Value = if path.exists() {
-                                        match std::fs::read_to_string(path) {
-                                            Ok(s) => toml::from_str(&s).unwrap_or_else(|_| toml::Value::Table(toml::map::Map::new())),
-                                            Err(_) => toml::Value::Table(toml::map::Map::new()),
-                                        }
-                                    } else {
-                                        toml::Value::Table(toml::map::Map::new())
-                                    };
-                                    if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
-                                    let tbl = doc.as_table_mut().unwrap();
-                                    let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
-                                    if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
-                                    let ai_tbl = ai.as_table_mut().unwrap();
-                                    ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
-                                    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-                                    if let Ok(s) = toml::to_string_pretty(&doc) { let _ = std::fs::write(path, s); }
-                                }
-                            }
-                            Err(err) => {
-                                // Surface a toast/message-bar notification on failure
-                                let message = crate::message_bar::Message::new(
-                                    format!("AI provider switch failed: {}", err),
-                                    crate::message_bar::MessageType::Error,
-                                );
-                                let _ = self.ctx.event_proxy.send_event(Event::new(EventType::Message(message), self.ctx.display.window.id()));
-                            }
-                        }
-                    } else {
-                        // If runtime wasn't initialized, just update the display; runtime will be created when AI opens
-                        // Resolve provider config from user config or defaults to show model badge
-                        let prov_cfg = self
-                            .ctx
-                            .config()
-                            .ai
+                    // Resolve provider config from user config or defaults without holding mutable borrows
+                    let prov_cfg = {
+                        let cfg = self.ctx.config();
+                        cfg.ai
                             .providers
                             .get(&name)
                             .cloned()
@@ -8284,9 +8296,70 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                     .get(&name)
                                     .cloned()
                             })
-                            .unwrap_or_default();
+                            .unwrap_or_default()
+                    };
+
+                    if let Some(rt) = &mut self.ctx.ai_runtime {
+                        // Reconfigure using precomputed config
+                        rt.reconfigure_to(&name, &prov_cfg);
+                        let new_provider = rt.ui.current_provider.clone();
+                        let new_model = rt.ui.current_model.clone();
+                        let err_opt = rt.ui.error_message.clone();
+                        // Update composer display cache after mutable borrow ends
+                        self.ctx.display.ai_current_provider = new_provider;
+                        self.ctx.display.ai_current_model = new_model;
+
+                        if let Some(err) = err_opt {
+                            // Surface a toast/message-bar notification on failure
+                            let message = crate::message_bar::Message::new(
+                                format!("AI provider switch failed: {}", err),
+                                crate::message_bar::MessageType::Error,
+                            );
+                            let _ = self.ctx.event_proxy.send_event(Event::new(
+                                EventType::Message(message),
+                                self.ctx.display.window.id(),
+                            ));
+                        } else {
+                            // Persist selection to config file (best-effort)
+                            if let Some(path) = self.ctx.config().config_paths.first() {
+                                let mut doc: toml::Value = if path.exists() {
+                                    match std::fs::read_to_string(path) {
+                                        Ok(s) => toml::from_str(&s).unwrap_or_else(|_| {
+                                            toml::Value::Table(toml::map::Map::new())
+                                        }),
+                                        Err(_) => toml::Value::Table(toml::map::Map::new()),
+                                    }
+                                } else {
+                                    toml::Value::Table(toml::map::Map::new())
+                                };
+                                if !doc.is_table() {
+                                    doc = toml::Value::Table(toml::map::Map::new());
+                                }
+                                let tbl = doc.as_table_mut().unwrap();
+                                let ai = tbl
+                                    .entry("ai")
+                                    .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                                if !ai.is_table() {
+                                    *ai = toml::Value::Table(toml::map::Map::new());
+                                }
+                                let ai_tbl = ai.as_table_mut().unwrap();
+                                ai_tbl.insert(
+                                    "provider".to_string(),
+                                    toml::Value::String(name.clone()),
+                                );
+                                if let Some(parent) = path.parent() {
+                                    let _ = std::fs::create_dir_all(parent);
+                                }
+                                if let Ok(s) = toml::to_string_pretty(&doc) {
+                                    let _ = std::fs::write(path, s);
+                                }
+                            }
+                        }
+                    } else {
+                        // If runtime wasn't initialized, just update the display; runtime will be created when AI opens
                         self.ctx.display.ai_current_provider = name.clone();
-                        self.ctx.display.ai_current_model = prov_cfg.default_model.unwrap_or_default();
+                        self.ctx.display.ai_current_model =
+                            prov_cfg.default_model.unwrap_or_default();
                         // Persist selection best-effort when runtime is not initialized yet
                         if let Some(path) = self.ctx.config().config_paths.first() {
                             let mut doc: toml::Value = if path.exists() {
@@ -8297,14 +8370,25 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             } else {
                                 toml::Value::Table(toml::map::Map::new())
                             };
-                            if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                            if !doc.is_table() {
+                                doc = toml::Value::Table(toml::map::Map::new());
+                            }
                             let tbl = doc.as_table_mut().unwrap();
-                            let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
-                            if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                            let ai = tbl
+                                .entry("ai")
+                                .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                            if !ai.is_table() {
+                                *ai = toml::Value::Table(toml::map::Map::new());
+                            }
                             let ai_tbl = ai.as_table_mut().unwrap();
-                            ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
-                            if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-                            if let Ok(s) = toml::to_string_pretty(&doc) { let _ = std::fs::write(path, s); }
+                            ai_tbl
+                                .insert("provider".to_string(), toml::Value::String(name.clone()));
+                            if let Some(parent) = path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            if let Ok(s) = toml::to_string_pretty(&doc) {
+                                let _ = std::fs::write(path, s);
+                            }
                         }
                     }
                     *self.ctx.dirty = true;

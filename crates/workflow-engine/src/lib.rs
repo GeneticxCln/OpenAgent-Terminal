@@ -1,5 +1,11 @@
 // Workflow Engine - Execute YAML workflow definitions with full lifecycle management
-#![allow(clippy::pedantic, clippy::needless_raw_string_hashes, clippy::similar_names, clippy::doc_markdown, clippy::missing_errors_doc)]
+#![allow(
+    clippy::pedantic,
+    clippy::needless_raw_string_hashes,
+    clippy::similar_names,
+    clippy::doc_markdown,
+    clippy::missing_errors_doc
+)]
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};

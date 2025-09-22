@@ -630,7 +630,9 @@ impl Agent for AgentCommunicationHub {
 }
 
 impl Default for AgentCommunicationHub {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Request structures for communication hub operations
@@ -714,14 +716,15 @@ impl MessageRouter {
     }
 }
 
-
 impl Default for MessageRouter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EventBus {
     pub fn new(broadcast_tx: broadcast::Sender<AgentEvent>) -> Self {
-Self { broadcast_tx, _direct_channels: HashMap::new() }
+        Self { broadcast_tx, _direct_channels: HashMap::new() }
     }
 
     pub async fn broadcast(&self, event: AgentEvent) -> Result<()> {
@@ -898,7 +901,9 @@ impl WorkflowCoordinator {
 }
 
 impl Default for WorkflowCoordinator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

@@ -205,6 +205,15 @@ volumes:
   ai_history:
 ```
 
+> Note: OLLAMA_HOST configures the Ollama server container itself. To configure OpenAgent Terminal as a client, set OPENAGENT_OLLAMA_ENDPOINT and OPENAGENT_OLLAMA_MODEL in the terminal’s environment.
+>
+> Example (client-side):
+>
+> ```bash
+> export OPENAGENT_OLLAMA_ENDPOINT="http://ollama:11434"   # or http://localhost:11434 when running locally
+> export OPENAGENT_OLLAMA_MODEL="codellama:7b"
+> ```
+
 ### Kubernetes Deployment
 
 ```yaml

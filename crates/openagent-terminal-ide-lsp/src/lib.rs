@@ -1,6 +1,12 @@
 //! Minimal LSP (Language Server Protocol) client over stdio.
 //! This is a lightweight, editor-agnostic client suitable for a terminal-first UX.
-#![allow(clippy::pedantic, clippy::missing_errors_doc, clippy::must_use_candidate, clippy::unnecessary_wraps, clippy::doc_markdown)]
+#![allow(
+    clippy::pedantic,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::unnecessary_wraps,
+    clippy::doc_markdown
+)]
 //! This is a lightweight, editor-agnostic client suitable for a terminal-first UX.
 
 use anyhow::{anyhow, Result};

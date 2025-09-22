@@ -2,9 +2,9 @@
 
 use openagent_terminal::workspace::warp_tab_manager::WarpTabManager;
 use openagent_terminal::workspace::TabId;
-use tempfile::tempdir;
 use std::fs;
 use std::path::PathBuf;
+use tempfile::tempdir;
 
 #[test]
 fn warp_tab_manager_smart_naming_and_command_update() {
@@ -35,9 +35,6 @@ version = "0.1.0"
     // Update tab for command should produce "<cmd> in <dir_name>" style title
     mgr.update_tab_for_command(tab_id, "npm run dev");
     let updated = mgr.active_tab().expect("active tab still exists");
-    let dir_name = project_dir
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let dir_name = project_dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
     assert_eq!(updated.title, format!("npm in {}", dir_name));
 }

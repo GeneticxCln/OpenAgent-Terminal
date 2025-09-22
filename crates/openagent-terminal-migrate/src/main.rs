@@ -1,4 +1,13 @@
-#![allow(clippy::pedantic, clippy::doc_markdown, clippy::uninlined_format_args, clippy::wildcard_imports, clippy::match_same_arms, clippy::needless_raw_string_hashes, clippy::default_trait_access, clippy::unnecessary_wraps)]
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::uninlined_format_args,
+    clippy::wildcard_imports,
+    clippy::match_same_arms,
+    clippy::needless_raw_string_hashes,
+    clippy::default_trait_access,
+    clippy::unnecessary_wraps
+)]
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::*;

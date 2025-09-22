@@ -1,5 +1,4 @@
 #![allow(clippy::pedantic)]
-
 #![cfg(feature = "ai")]
 use std::sync::{Arc, Mutex};
 

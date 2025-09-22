@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # OpenAgent Terminal AI Integration Test Script
+# Note: For app usage, prefer OPENAGENT_OLLAMA_ENDPOINT and OPENAGENT_OLLAMA_MODEL.
+# This script uses OLLAMA_* to exercise the library provider's from_env(), which now
+# accepts both OPENAGENT_* (preferred) and legacy OLLAMA_*.
 
 echo "=== OpenAgent Terminal AI Integration Test ==="
 echo

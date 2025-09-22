@@ -1,5 +1,9 @@
 #![cfg(feature = "agents")]
-#![allow(clippy::pedantic, clippy::redundant_closure_for_method_calls, clippy::uninlined_format_args)]
+#![allow(
+    clippy::pedantic,
+    clippy::redundant_closure_for_method_calls,
+    clippy::uninlined_format_args
+)]
 use async_trait::async_trait;
 use openagent_terminal_ai::agents::communication_hub::{CommunicationHub, HubConfig};
 use openagent_terminal_ai::agents::{

@@ -619,7 +619,11 @@ impl super::Display {
             row.push_str(&item.label);
             let avail = box_width_cols;
             // Highlight selected item using item index (headers excluded)
-            let color = if self.completions.selected_index == current_item_display_idx { accent } else { fg };
+            let color = if self.completions.selected_index == current_item_display_idx {
+                accent
+            } else {
+                fg
+            };
             self.draw_ai_text(
                 Point::new(line, Column(start_col)),
                 color,

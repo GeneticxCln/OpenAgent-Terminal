@@ -1,8 +1,8 @@
 #![cfg(feature = "ai")]
 
 use openagent_terminal::ai_runtime::AiRuntime;
-use openagent_terminal::config::UiConfig;
 use openagent_terminal::config::ai::ProviderConfig;
+use openagent_terminal::config::UiConfig;
 use openagent_terminal_ai::{AiProvider, AiRequest};
 
 #[test]
