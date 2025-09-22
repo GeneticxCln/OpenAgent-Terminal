@@ -15,8 +15,8 @@ default = ["serde"]
 serde = ["dep:serde", "bitflags/serde", "vte/serde"]
 
 [dependencies]
-base64 = "0.22.0"
-bitflags = "2.4.1"
+base64 = { workspace = true }
+bitflags = { workspace = true }
 home = "0.5.5"
 libc = "0.2"
 tracing = { workspace = true }
@@ -29,7 +29,7 @@ serde = { version = "1", features = ["derive", "rc"], optional = true }
 log = "0.4"
 thiserror = { workspace = true }
 tokio-util = "0.7"
-tokio = { version = "1.47", features = ["time", "sync", "macros"] }
+tokio = { workspace = true, features = ["time", "sync", "macros"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix-openpty = "0.2.0"
