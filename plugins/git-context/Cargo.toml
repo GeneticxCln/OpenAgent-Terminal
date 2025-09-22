@@ -5,8 +5,7 @@ edition = "2021"
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-plugin-api = { path = "../../crates/plugin-api", version = "0.1.0" }
-plugin-sdk = { path = "../../crates/plugin-sdk", version = "0.1.0", optional = true }
+plugin-sdk = { path = "../../crates/plugin-sdk", version = "0.1.0" }
 serde_json = "1.0"
 
 [lib]
@@ -18,4 +17,4 @@ crate-type = ["cdylib"]
 
 [features]
 default = []
-wasi = ["plugin-sdk"]
+wasi = []

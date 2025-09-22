@@ -70,9 +70,10 @@ impl SnippetsManager {
             .values()
             .filter(|snippet| {
                 snippet.name.to_lowercase().contains(&query.to_lowercase())
-                    || snippet.description
+                    || snippet
+                        .description
                         .as_ref()
-                        .map_or(false, |desc| desc.to_lowercase().contains(&query.to_lowercase()))
+                        .is_some_and(|desc| desc.to_lowercase().contains(&query.to_lowercase()))
                     || snippet.tags
                         .iter()
                         .any(|tag| tag.to_lowercase().contains(&query.to_lowercase()))

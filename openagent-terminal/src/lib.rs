@@ -25,6 +25,8 @@ pub mod ai_runtime;
 pub mod cli;
 #[cfg(feature = "plugins")]
 pub mod cli_plugins;
+#[cfg(feature = "plugins")]
+pub mod plugins_api;
 pub mod clipboard;
 pub mod command_history;
 pub mod command_pipeline;

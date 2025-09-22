@@ -1,6 +1,6 @@
 //! Web editor functionality for OpenAgent Terminal IDE
 
-use crate::{IdeError, IdeResult};
+use crate::IdeResult;
 
 /// Web editor manager
 #[derive(Debug, Default)]

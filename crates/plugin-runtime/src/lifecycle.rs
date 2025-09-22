@@ -6,19 +6,25 @@ use std::collections::HashMap;
 /// Plugin lifecycle manager
 #[derive(Debug)]
 pub struct PluginLifecycle {
+    #[allow(dead_code)]
     config: RuntimeConfig,
     loaded_plugins: HashMap<String, PluginInfo>,
 }
 
 #[derive(Debug, Clone)]
 struct PluginInfo {
+    #[allow(dead_code)]
     id: String,
+    #[allow(dead_code)]
     loaded_at: std::time::Instant,
 }
 
 impl PluginLifecycle {
     pub fn new(config: &RuntimeConfig) -> RuntimeResult<Self> {
         tracing::info!("Initializing plugin lifecycle manager");
+        if config.enable_hot_reload {
+            tracing::debug!("Hot reload enabled for plugin lifecycle");
+        }
         Ok(Self {
             config: config.clone(),
             loaded_plugins: HashMap::new(),

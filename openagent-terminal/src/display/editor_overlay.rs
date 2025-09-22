@@ -25,9 +25,9 @@ pub struct EditorOverlayState {
     pub scroll_line: usize,
     // LSP integration (optional)
 #[cfg(feature = "lsp")]
-    pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
+pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
     #[cfg(feature = "lsp")]
-    pub lsp_uri: Option<lsp_types::Url>,
+    pub lsp_uri: Option<lsp_types::Uri>,
     #[cfg(feature = "lsp")]
     pub language_id: Option<String>,
     // Completion UI state
@@ -65,17 +65,17 @@ pub struct EditorOverlayState {
 #[cfg(feature = "lsp")]
 fn lsp_server_config_for_language(lang: &str) -> Option<openagent_terminal_ide::lsp::ServerConfig> {
     match lang {
-        "rust" => Some(openagent_terminal_ide_lsp::ServerConfig {
+        "rust" => Some(openagent_terminal_ide::lsp::ServerConfig {
             command: "rust-analyzer".into(),
             args: vec![],
             initialization_options: None,
         }),
-        "typescript" | "javascript" => Some(openagent_terminal_ide_lsp::ServerConfig {
+        "typescript" | "javascript" => Some(openagent_terminal_ide::lsp::ServerConfig {
             command: "typescript-language-server".into(),
             args: vec!["--stdio".into()],
             initialization_options: None,
         }),
-        "python" => Some(openagent_terminal_ide_lsp::ServerConfig {
+        "python" => Some(openagent_terminal_ide::lsp::ServerConfig {
             command: "pyright-langserver".into(),
             args: vec!["--stdio".into()],
             initialization_options: None,
@@ -106,7 +106,7 @@ impl Display {
         if let Some(client) = self.editor_overlay.lsp.as_ref() {
             while let Some(note) = client.try_recv_notification() {
                 match note {
-                    openagent_terminal_ide_lsp::LspNotification::PublishDiagnostics(params) => {
+openagent_terminal_ide::lsp::LspNotification::PublishDiagnostics(params)
                         if let Some(cur_uri) = self.editor_overlay.lsp_uri.clone() {
                             if params.uri == cur_uri {
                                 self.editor_overlay.diagnostics = params.diagnostics;
@@ -300,11 +300,11 @@ impl EditorOverlayState {
                     {
                         let lang = guess_language_from_path(&path);
                         self.language_id = Some(lang.clone());
-                        if let Ok(uri) = lsp_types::Url::from_file_path(&path) {
+if let Ok(uri) = lsp_types::Uri::from_file_path(&path) {
                             self.lsp_uri = Some(uri.clone());
                             let cfg = lsp_server_config_for_language(&lang);
                             if let Some(cfg) = cfg {
-                                if let Ok(client) = openagent_terminal_ide_lsp::LspClient::start(
+if let Ok(client) = openagent_terminal_ide::lsp::LspClient::start(
                                     &cfg,
                                     Some(uri.clone()),
                                 ) {
@@ -1026,7 +1026,7 @@ impl Display {
     #[cfg(feature = "lsp")]
     fn lsp_pos_to_char_index_buf(
         &self,
-        buf: &openagent_terminal_ide_editor::EditorBuffer,
+buf: &openagent_terminal_ide::editor::EditorBuffer,
         pos: lsp_types::Position,
     ) -> usize {
         let rope = buf.rope.read();

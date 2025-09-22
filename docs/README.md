@@ -22,7 +22,7 @@ Quick links
 - Plugins
   - Plugins overview: ./plugins.md
   - Plugin Host API quickstart: ./guides/PLUGIN_HOST_API_QUICKSTART.md
-  - Plugin API crate docs: ../crates/plugin-api/README.md
+- Plugin SDK/API crate docs: ../crates/plugin-sdk/README.md
   - Example plugin: ../examples/plugins/hello-wasi/README.md
 - Guides
   - Contributing: ../CONTRIBUTING.md

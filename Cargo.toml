@@ -19,6 +19,20 @@ members = [
     "crates/openagent-terminal-ide",
     # Note: web-editors functionality moved to openagent-terminal-ide
 ]
+# Speed default builds by excluding plugin examples unless targeted
+default-members = [
+    "openagent-terminal",
+    "openagent-terminal-core",
+    "openagent-terminal-config",
+    "openagent-terminal-config-derive",
+    "openagent-terminal-sync",
+    "openagent-terminal-ai",
+    "crates/plugin-runtime",
+    "crates/plugin-sdk",
+    "crates/workflow-engine",
+    "crates/openagent-terminal-utils",
+    "crates/openagent-terminal-ide",
+]
 resolver = "2"
 
 [workspace.package]

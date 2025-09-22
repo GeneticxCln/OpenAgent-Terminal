@@ -53,23 +53,11 @@ pub enum IdeError {
 pub type IdeResult<T> = Result<T, IdeError>;
 
 /// Common IDE configuration
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct IdeConfig {
     pub enable_lsp: bool,
     pub enable_dap: bool,
     pub enable_editor: bool,
     pub enable_indexer: bool,
     pub enable_web_editors: bool,
-}
-
-impl Default for IdeConfig {
-    fn default() -> Self {
-        Self {
-            enable_lsp: false,
-            enable_dap: false, 
-            enable_editor: false,
-            enable_indexer: false,
-            enable_web_editors: false,
-        }
-    }
 }

@@ -14,7 +14,7 @@
     clippy::wildcard_imports
 )]
 
-use plugin_api::*;
+use plugin_sdk::*;
 use regex::Regex;
 use serde_json::json;
 use std::collections::HashMap;

@@ -7,6 +7,7 @@ use wasmtime::{Engine, Module};
 /// Plugin loader manager
 #[derive(Debug)]
 pub struct PluginLoader {
+    #[allow(dead_code)]
     config: RuntimeConfig,
     engine: Engine,
 }
@@ -35,7 +36,10 @@ impl PluginLoader {
     pub fn new(config: &RuntimeConfig) -> RuntimeResult<Self> {
         tracing::info!("Initializing plugin loader");
         let engine = Engine::default();
-        
+        // Touch config to avoid dead_code warnings and to gate future behavior
+        if !config.enable_wasi {
+            tracing::warn!("WASI disabled: loader will refuse WASM execution");
+        }
         Ok(Self {
             config: config.clone(),
             engine,

@@ -1,10 +1,11 @@
 //! Security functionality for plugin runtime
 
-use crate::{RuntimeError, RuntimeResult, RuntimeConfig};
+use crate::{RuntimeResult, RuntimeConfig};
 
 /// Security manager
 #[derive(Debug)]
 pub struct Security {
+    #[allow(dead_code)]
     config: RuntimeConfig,
 }
 

@@ -12,7 +12,7 @@ NEW_RUNTIME_CRATE="plugin-runtime"
 RUNTIME_CRATE_PATH="crates/$NEW_RUNTIME_CRATE"
 
 # Create plugin-sdk (api + sdk - developer-facing)
-# Note: plugin-sdk already exists, we'll enhance it with plugin-api content
+# Note: plugin-sdk already exists, and now includes the former plugin-api content
 
 echo "📁 Creating plugin-runtime crate..."
 mkdir -p "$RUNTIME_CRATE_PATH/src"

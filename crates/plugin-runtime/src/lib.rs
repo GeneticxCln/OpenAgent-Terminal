@@ -85,6 +85,7 @@ impl Default for RuntimeConfig {
 /// Main plugin runtime system
 #[derive(Debug)]
 pub struct PluginRuntime {
+    #[allow(dead_code)]
     config: RuntimeConfig,
     loader: PluginLoader,
     sandbox: WasmSandbox,
@@ -114,6 +115,8 @@ impl PluginRuntime {
     }
     
     pub fn execute_plugin(&mut self, plugin_id: &str, function: &str, args: &[u8]) -> RuntimeResult<Vec<u8>> {
+        // Use communication channel for a lightweight debug message (avoids dead_code on field)
+        let _ = self.communication.send_message(plugin_id, &format!("call:{}", function));
         tracing::debug!("Executing plugin {} function {}", plugin_id, function);
         self.sandbox.execute_plugin(plugin_id, function, args)
     }

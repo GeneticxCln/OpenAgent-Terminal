@@ -238,6 +238,28 @@ mod copy_export_tests {
         let expected = ["CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III"].join("\n");
         assert_eq!(out, expected);
     }
+
+    #[test]
+    fn collect_block_output_empty_when_out_of_range() {
+        let grid: Grid<Cell> = Grid::new(3, 3, 0);
+        // Request a range completely outside the grid
+        let out = crate::event::collect_block_output_from_grid(&grid, 10, 12);
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn collect_block_output_preserves_blank_lines() {
+        let mut grid: Grid<Cell> = Grid::new(3, 3, 0);
+        // Leave line 0 blank (len=0 -> newline)
+        // Put content on line 1
+        for c in 0..3 {
+            grid[Line(1)][Column(c)].c = ['A', 'B', 'C'][c as usize];
+        }
+        // Leave line 2 blank as well
+        let out = crate::event::collect_block_output_from_grid(&grid, 0, 2);
+        // Should include blank line, then 'ABC', then blank line
+        assert_eq!(out, "\nABC\n");
+    }
 }
 
 #[cfg(test)]
@@ -2728,7 +2750,7 @@ impl ApplicationHandler<Event> for Processor {
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
                             use serde_json::json;
-                            let evt = plugin_loader::PluginEvent {
+let evt = crate::plugins_api::PluginEvent {
                                 event_type: "command".into(),
                                 data: json!({ "name": cmd_name, "args": [] }),
                                 timestamp: std::time::SystemTime::now()

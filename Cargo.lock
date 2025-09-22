@@ -1586,7 +1586,7 @@ checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
 name = "dev-tools"
 version = "1.0.0"
 dependencies = [
- "plugin-api",
+ "plugin-sdk",
  "regex",
  "serde_json",
 ]
@@ -1685,7 +1685,7 @@ dependencies = [
 name = "docker-helper"
 version = "1.0.0"
 dependencies = [
- "plugin-api",
+ "plugin-sdk",
  "regex",
  "serde_json",
 ]
@@ -2516,7 +2516,6 @@ dependencies = [
 name = "git-context"
 version = "1.0.0"
 dependencies = [
- "plugin-api",
  "plugin-sdk",
  "serde_json",
 ]
@@ -4784,7 +4783,11 @@ dependencies = [
  "async-trait",
  "axum",
  "hyper",
+ "ignore",
  "lsp-types 0.95.1",
+ "notify",
+ "parking_lot 0.12.4",
+ "ropey",
  "serde",
  "serde_json",
  "thiserror 2.0.16",
@@ -5295,15 +5298,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "plugin-api"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.16",
-]
-
-[[package]]
 name = "plugin-runtime"
 version = "0.1.0"
 dependencies = [
@@ -5331,11 +5325,11 @@ dependencies = [
  "dirs",
  "ed25519-dalek",
  "hex",
- "plugin-api",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
+ "thiserror 2.0.16",
  "wasi 0.14.7+wasi-0.2.4",
 ]
 
@@ -6068,6 +6062,16 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "ropey"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93411e420bcd1a75ddd1dc3caf18c23155eda2c090631a85af21ba19e97093b5"
+dependencies = [
+ "smallvec",
+ "str_indices",
 ]
 
 [[package]]
@@ -6954,6 +6958,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "str_indices"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d08889ec5408683408db66ad89e0e1f93dff55c73a4ccc71c427d5b277ee47e6"
 
 [[package]]
 name = "strict-num"

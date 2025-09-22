@@ -17,6 +17,16 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 
+# Concurrency primitives (feature-gated where used)
+parking_lot = { version = "0.12", optional = true }
+
+# Rope buffer for editor
+ropey = { version = "1.6", optional = true }
+
+# Gitignore-aware walker and filesystem watching for indexer
+ignore = { version = "0.4", optional = true }
+notify = { version = "8.0.0", optional = true }
+
 # LSP dependencies
 lsp-types = { version = "0.95.1", optional = true }
 
@@ -28,9 +38,9 @@ wry = { workspace = true, optional = true }
 
 [features]
 default = []
-lsp = ["lsp-types"]
-editor = []
-indexer = []
-dap = []
+lsp = ["lsp-types", "parking_lot"]
+editor = ["ropey", "parking_lot"]
+indexer = ["ignore", "notify", "parking_lot"]
+dap = ["parking_lot"]
 web-editors = ["axum", "hyper", "tokio-tungstenite", "wry"]
 all = ["lsp", "editor", "indexer", "dap", "web-editors"]

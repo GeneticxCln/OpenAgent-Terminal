@@ -1,10 +1,11 @@
 //! Communication functionality for plugin runtime
 
-use crate::{RuntimeError, RuntimeResult, RuntimeConfig};
+use crate::{RuntimeResult, RuntimeConfig};
 
 /// Plugin communication manager
 #[derive(Debug)]
 pub struct PluginCommunication {
+    #[allow(dead_code)]
     config: RuntimeConfig,
 }
 
