@@ -18,7 +18,7 @@ plist = "1.5"  # For iTerm2 on macOS
 
 # CLI
 clap = { version = "4.4", features = ["derive"] }
-colored = "2.0"
+colored = "3.0"
 
 # File system operations
 walkdir = "2.4"
