@@ -186,7 +186,7 @@ async-openai = "0.25"
 
 # Plugin system
 wasmtime = "36.0"
-wasmtime-wasi = "36.0"
+wasmtime-wasi = "37.0"
 jsonrpc-core = "18.0"
 jsonrpc-ipc-server = "18.0"
 
