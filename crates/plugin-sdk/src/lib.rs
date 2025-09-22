@@ -478,6 +478,62 @@ macro_rules! simple_plugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    // Mock implementations of host functions for testing
+    #[no_mangle]
+    pub extern "C" fn host_log(_level: i32, _ptr: *const u8, _len: usize) {
+        // Mock implementation that does nothing
+    }
+    
+    #[no_mangle]
+    pub extern "C" fn host_read_file(
+        _path_ptr: *const u8,
+        _path_len: usize,
+        _result_ptr: *mut u8,
+        _result_len_ptr: *mut u32,
+    ) -> i32 {
+        -1 // Mock error response
+    }
+    
+    #[no_mangle]
+    pub extern "C" fn host_write_file(
+        _path_ptr: *const u8,
+        _path_len: usize,
+        _data_ptr: *const u8,
+        _data_len: usize,
+    ) -> i32 {
+        -1 // Mock error response
+    }
+    
+    #[no_mangle]
+    pub extern "C" fn host_execute_command(
+        _cmd_ptr: *const u8,
+        _cmd_len: usize,
+        _result_ptr: *mut u8,
+        _result_len_ptr: *mut u32,
+    ) -> i32 {
+        -1 // Mock error response
+    }
+    
+    #[no_mangle]
+    pub extern "C" fn host_store_data(
+        _key_ptr: *const u8,
+        _key_len: usize,
+        _data_ptr: *const u8,
+        _data_len: usize,
+    ) -> i32 {
+        -1 // Mock error response
+    }
+    
+    #[no_mangle]
+    pub extern "C" fn host_retrieve_data(
+        _key_ptr: *const u8,
+        _key_len: usize,
+        _result_ptr: *mut u8,
+        _result_len_ptr: *mut u32,
+    ) -> i32 {
+        -1 // Mock error response
+    }
 
     #[test]
     fn test_result_codes() {

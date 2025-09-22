@@ -2,13 +2,33 @@
 
 use crate::{RuntimeError, RuntimeResult, RuntimeConfig};
 use std::path::Path;
-use wasmtime::{Engine, Module, Store};
+use wasmtime::{Engine, Module};
 
 /// Plugin loader manager
 #[derive(Debug)]
 pub struct PluginLoader {
     config: RuntimeConfig,
     engine: Engine,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_minimal_wasm_module() {
+        // Create minimal wasm from WAT
+        let wat = "(module)";
+        let wasm = wat::parse_str(wat).expect("valid wat");
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("mini.wasm");
+        std::fs::write(&path, wasm).expect("write wasm");
+
+        let cfg = RuntimeConfig::default();
+        let mut loader = PluginLoader::new(&cfg).expect("loader");
+        let id = loader.load_plugin(&path).expect("load");
+        assert_eq!(id, "mini");
+    }
 }
 
 impl PluginLoader {

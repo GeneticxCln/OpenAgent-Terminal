@@ -128,7 +128,7 @@ jobs:
       - name: Plugins smoke tests (loader/runtime)
         run: |
           set -euo pipefail
-          cargo test -p plugin-loader -p plugin-system -- --nocapture
+          cargo test -p plugin-loader -p plugin-system -p plugin-runtime -- --nocapture
 
       # Store benchmark results as artifacts
       - name: Upload performance results

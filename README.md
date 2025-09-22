@@ -238,6 +238,9 @@ Notes:
 
 ## Installation
 
+- See INSTALL.md for platform-specific install and troubleshooting.
+- Accessibility guidance: docs/ACCESSIBILITY.md
+
 **From Source:**
 ```bash
 cargo install --git https://github.com/GeneticxCln/OpenAgent-Terminal.git

@@ -16,9 +16,9 @@ use crate::blocks_v2::{BlockManager, CreateBlockParams};
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "plugins")]
-use plugin_api::{CommandOutput, PluginError};
+pub(crate) use plugin_sdk::{CommandOutput, PluginError};
 #[cfg(feature = "plugins")]
-use plugin_loader::{LogLevel, PluginHost, PluginManager};
+use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
 #[cfg(feature = "workflow")]
 use workflow_engine::WorkflowEngine;
 
@@ -547,7 +547,7 @@ pub(crate) async fn initialize_plugin_manager(
         .context("Failed to create plugin manager")?;
     manager.set_enforce_signatures(enforce_signatures);
 
-    manager.configure_signature_policy(plugin_loader::SignaturePolicy {
+    manager.configure_signature_policy(SignaturePolicy {
         require_signatures_for_all,
         require_system: path_require_system,
         require_user: path_require_user,

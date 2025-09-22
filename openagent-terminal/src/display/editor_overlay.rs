@@ -5,7 +5,7 @@
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[cfg(feature = "editor")]
-use openagent_terminal_ide_editor::EditorBuffer;
+use openagent_terminal_ide::editor::EditorBuffer;
 
 use std::path::PathBuf;
 
@@ -24,8 +24,8 @@ pub struct EditorOverlayState {
     pub buffer: Option<EditorBuffer>,
     pub scroll_line: usize,
     // LSP integration (optional)
-    #[cfg(feature = "lsp")]
-    pub lsp: Option<openagent_terminal_ide_lsp::LspClient>,
+#[cfg(feature = "lsp")]
+    pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
     #[cfg(feature = "lsp")]
     pub lsp_uri: Option<lsp_types::Url>,
     #[cfg(feature = "lsp")]
@@ -63,7 +63,7 @@ pub struct EditorOverlayState {
 }
 
 #[cfg(feature = "lsp")]
-fn lsp_server_config_for_language(lang: &str) -> Option<openagent_terminal_ide_lsp::ServerConfig> {
+fn lsp_server_config_for_language(lang: &str) -> Option<openagent_terminal_ide::lsp::ServerConfig> {
     match lang {
         "rust" => Some(openagent_terminal_ide_lsp::ServerConfig {
             command: "rust-analyzer".into(),

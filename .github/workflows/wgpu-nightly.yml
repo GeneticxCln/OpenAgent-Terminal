@@ -84,7 +84,7 @@ jobs:
       - name: Plugins smoke tests (nightly)
         run: |
           set -euo pipefail
-          cargo test -p plugin-loader -p plugin-system -- --nocapture
+          cargo test -p plugin-loader -p plugin-system -p plugin-runtime -- --nocapture
 
       - name: Upload snapshot outputs (if any)
         if: always()

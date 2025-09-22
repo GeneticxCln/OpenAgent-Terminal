@@ -36,3 +36,7 @@ wasi = []
 security-audit = []
 hot-reload = []
 all = ["wasi", "security-audit", "hot-reload"]
+
+[dev-dependencies]
+wat = "1.239"
+tempfile = "3"

@@ -2388,6 +2388,148 @@ mod tests_native_filters {
         // now and after should remain
         assert_eq!(out.len(), 2);
     }
+
+    #[test]
+    fn parse_human_size_variants() {
+        use super::parse_human_size;
+        assert_eq!(parse_human_size("0"), Some(0));
+        assert_eq!(parse_human_size("1"), Some(1));
+        assert_eq!(parse_human_size("1k"), Some(1024));
+        assert_eq!(parse_human_size("2KB"), Some(2 * 1024));
+        assert_eq!(parse_human_size("3mb"), Some(3 * 1024 * 1024));
+        assert_eq!(parse_human_size("1GB"), Some(1024 * 1024 * 1024));
+        assert_eq!(parse_human_size("   4MB  "), Some(4 * 1024 * 1024));
+        assert_eq!(parse_human_size("xyz"), None);
+        assert_eq!(parse_human_size("12XB"), None);
+    }
+
+    #[test]
+    fn update_index_updates_inverted_index() {
+        let mut si = SearchIntegration::new();
+        // Add a document into the text index
+        si.update_index("text", "doc-1", Some("hello world".to_string())).unwrap();
+        assert!(si.text_search.inverted_index.term_docs.contains_key("hello"));
+        // Remove the document
+        si.update_index("text", "doc-1", None).unwrap();
+        // After removal, terms for doc-1 should be gone (either term removed or doc removed from set)
+        assert!(
+            !si.text_search
+                .inverted_index
+                .term_docs
+                .get("hello")
+                .map(|set| set.contains("doc-1"))
+                .unwrap_or(false)
+        );
+    }
+
+    #[test]
+    fn filename_relevance_prefers_name_match_over_path() {
+        let si = SearchIntegration::new();
+        let now = Instant::now();
+        let file = FileEntry {
+            path: "/a/b/hello.txt".into(),
+            name: "hello.txt".into(),
+            extension: Some("txt".into()),
+            size: 42,
+            modified: now,
+            file_type: FileType::Regular,
+        };
+        let low = si.calculate_filename_relevance(&file, "a");
+        let high = si.calculate_filename_relevance(&file, "hello");
+        assert!(high > low);
+    }
+
+    #[test]
+    fn extract_match_positions_multiple_occurrences() {
+        let si = SearchIntegration::new();
+        let matches = vec![
+            "one foo two foo three".to_string(),
+            "no match here".to_string(),
+            "foo at start and foo at end foo".to_string(),
+        ];
+        let positions = si.extract_match_positions(&matches, "foo");
+        // Should find 2 + 0 + 3 = 5 occurrences
+        assert_eq!(positions.len(), 5);
+        // Verify first line positions are ordered
+        let first_line_positions: Vec<usize> = positions
+            .iter()
+            .filter(|p| p.context.as_deref() == Some("one foo two foo three"))
+            .map(|p| p.start)
+            .collect();
+        assert!(first_line_positions.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn calculate_content_relevance_increases_with_occurrences() {
+        let si = SearchIntegration::new();
+        let a = vec!["foo bar".to_string()]; // 1 occurrence
+        let b = vec!["foo bar foo".to_string(), "foo".to_string()]; // 3 occurrences total
+        let ra = si.calculate_content_relevance(&a, "foo");
+        let rb = si.calculate_content_relevance(&b, "foo");
+        assert!(rb > ra);
+    }
+
+    #[test]
+    fn add_and_clear_filters_affects_apply_filters() {
+        let mut si = SearchIntegration::new();
+        let now = Instant::now();
+        let mk_res = |id: &str, content: &str| SearchResult {
+            id: id.into(),
+            title: id.into(),
+            content: content.into(),
+            context: SearchContext::Global,
+            relevance_score: 0.0,
+            match_positions: vec![],
+            metadata: HashMap::new(),
+            timestamp: now,
+            created_at: Some(now),
+        };
+        let r1 = mk_res("a", "hello world");
+        let r2 = mk_res("b", "bye world");
+        si.add_filter(SearchFilter::TextFilter { pattern: "hello".into(), case_sensitive: false });
+        let out = si.apply_filters(vec![r1.clone(), r2.clone()]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, r1.id);
+        // Clear and apply again; both should remain
+        si.clear_filters();
+        let out2 = si.apply_filters(vec![r1, r2]).unwrap();
+        assert_eq!(out2.len(), 2);
+    }
+
+    #[test]
+    fn date_filter_inclusive_upper_bound() {
+        let si = SearchIntegration::new();
+        let now = Instant::now();
+        let mk = |ts: Instant| SearchResult {
+            id: format!("id-{:?}", ts),
+            title: "t".into(),
+            content: "c".into(),
+            context: SearchContext::Global,
+            relevance_score: 1.0,
+            match_positions: vec![],
+            metadata: HashMap::new(),
+            timestamp: ts,
+            created_at: Some(ts),
+        };
+        let results = vec![mk(now - Duration::from_secs(1)), mk(now)];
+        let out = si
+            .apply_filters(results)
+            .unwrap()
+            .into_iter()
+            .collect::<Vec<_>>();
+        // No active filters yet
+        assert_eq!(out.len(), 2);
+        // Apply DateFilter with to: Some(now)
+        let mut si2 = SearchIntegration::new();
+        let out2 = si2
+            .apply_single_filter(
+                vec![mk(now - Duration::from_secs(1)), mk(now), mk(now + Duration::from_secs(1))],
+                &SearchFilter::DateFilter { from: None, to: Some(now) },
+            )
+            .unwrap();
+        // Should keep the two <= now
+        assert_eq!(out2.len(), 2);
+    }
 }
 
 // Native Search and Filtering System for OpenAgent Terminal
