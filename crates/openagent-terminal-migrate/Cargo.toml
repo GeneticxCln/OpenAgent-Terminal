@@ -11,7 +11,7 @@ license = "Apache-2.0 OR MIT"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-toml = "0.8"
+toml = "0.9"
 
 # Terminal config formats
 plist = "1.5"  # For iTerm2 on macOS
