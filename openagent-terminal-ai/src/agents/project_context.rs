@@ -551,9 +551,15 @@ impl ProjectContextAgent {
                         names.extend(dev.keys().cloned().collect::<Vec<_>>());
                     }
                     let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
-                    if lower.iter().any(|n| n == "react") { frameworks.push("react".to_string()); }
-                    if lower.iter().any(|n| n == "next" || n == "next.js") { frameworks.push("next".to_string()); }
-                    if lower.iter().any(|n| n == "express") { frameworks.push("express".to_string()); }
+                    if lower.iter().any(|n| n == "react") {
+                        frameworks.push("react".to_string());
+                    }
+                    if lower.iter().any(|n| n == "next" || n == "next.js") {
+                        frameworks.push("next".to_string());
+                    }
+                    if lower.iter().any(|n| n == "express") {
+                        frameworks.push("express".to_string());
+                    }
                 } else {
                     // Fallback to substring scanning
                     self.detect_js_frameworks(&s, &mut frameworks);
@@ -575,15 +581,32 @@ impl ProjectContextAgent {
                         build_system.get_or_insert(BuildSystem::Custom("pip".to_string()));
                     }
                     let mut deps: Vec<String> = Vec::new();
-                    if let Some(arr) = value.get("project").and_then(|p| p.get("dependencies")).and_then(|d| d.as_array()) {
-                        for it in arr { if let Some(s) = it.as_str() { deps.push(s.to_string()); } }
+                    if let Some(arr) = value
+                        .get("project")
+                        .and_then(|p| p.get("dependencies"))
+                        .and_then(|d| d.as_array())
+                    {
+                        for it in arr {
+                            if let Some(s) = it.as_str() {
+                                deps.push(s.to_string());
+                            }
+                        }
                     }
-                    if let Some(table) = value.get("tool").and_then(|t| t.get("poetry")).and_then(|p| p.get("dependencies")).and_then(|d| d.as_table()) {
+                    if let Some(table) = value
+                        .get("tool")
+                        .and_then(|t| t.get("poetry"))
+                        .and_then(|p| p.get("dependencies"))
+                        .and_then(|d| d.as_table())
+                    {
                         deps.extend(table.keys().cloned());
                     }
                     let lower: Vec<String> = deps.iter().map(|n| n.to_lowercase()).collect();
-                    if lower.iter().any(|n| n == "django") { frameworks.push("django".to_string()); }
-                    if lower.iter().any(|n| n == "flask") { frameworks.push("flask".to_string()); }
+                    if lower.iter().any(|n| n == "django") {
+                        frameworks.push("django".to_string());
+                    }
+                    if lower.iter().any(|n| n == "flask") {
+                        frameworks.push("flask".to_string());
+                    }
                 }
             }
         }
@@ -596,7 +619,8 @@ impl ProjectContextAgent {
                     .map(|l| l.split(&['=', '>', '<', ' '][..]).next().unwrap_or("").to_string())
                     .collect();
                 let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
-                if lower.iter().any(|n| n == "django") && !frameworks.iter().any(|f| f == "django") {
+                if lower.iter().any(|n| n == "django") && !frameworks.iter().any(|f| f == "django")
+                {
                     frameworks.push("django".to_string());
                 }
                 if lower.iter().any(|n| n == "flask") && !frameworks.iter().any(|f| f == "flask") {
@@ -623,8 +647,10 @@ impl ProjectContextAgent {
         }
 
         // De-dup
-        frameworks.sort(); frameworks.dedup();
-        package_managers.sort(); package_managers.dedup();
+        frameworks.sort();
+        frameworks.dedup();
+        package_managers.sort();
+        package_managers.dedup();
 
         Ok(FrameworkDetectionResult { frameworks, package_managers, build_system })
     }

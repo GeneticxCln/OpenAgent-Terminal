@@ -564,7 +564,9 @@ pub trait ActionContext<T: EventListener> {
     #[cfg(feature = "plugins")]
     fn plugins_panel_cancel(&mut self) {}
     #[cfg(feature = "plugins")]
-    fn plugins_panel_active(&self) -> bool { false }
+    fn plugins_panel_active(&self) -> bool {
+        false
+    }
     #[cfg(feature = "plugins")]
     fn plugins_panel_input(&mut self, _c: char) {}
     #[cfg(feature = "plugins")]
@@ -1893,11 +1895,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             if !self.ctx.display().ai_current_model.is_empty() {
                 use unicode_width::UnicodeWidthStr as _;
                 let start2 = end + 1; // space after provider chip
-                // Truncate consistently with draw
+                                      // Truncate consistently with draw
                 let model_text = {
                     let max_len = 24usize;
                     let m = &self.ctx.display().ai_current_model;
-                    if m.len() > max_len { format!("{}…", &m[..max_len]) } else { m.clone() }
+                    if m.len() > max_len {
+                        format!("{}…", &m[..max_len])
+                    } else {
+                        m.clone()
+                    }
                 };
                 let model_chip = format!("[{}]", model_text);
                 let mcols = model_chip.width();
@@ -1911,7 +1917,9 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     // Loop with safety cap
                     for _ in 0..8 {
                         let sel = self.ctx.display().settings_panel.selected_field;
-                        if matches!(sel, crate::display::settings_panel::Field::Model) { break; }
+                        if matches!(sel, crate::display::settings_panel::Field::Model) {
+                            break;
+                        }
                         self.ctx.settings_panel_next_field();
                     }
                     self.ctx.display().composer_press_flash_until =

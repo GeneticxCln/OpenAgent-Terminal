@@ -142,9 +142,13 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 crate::cli::AiProviderCommand::List { include_defaults, json } => {
                     // Aggregate providers: configured + optionally defaults
                     let mut provider_map: HashMap<String, ProviderCfg> = HashMap::new();
-                    for (k, v) in &config.ai.providers { provider_map.insert(k.clone(), v.clone()); }
+                    for (k, v) in &config.ai.providers {
+                        provider_map.insert(k.clone(), v.clone());
+                    }
                     if *include_defaults {
-                        for (k, v) in get_default_provider_configs() { provider_map.entry(k).or_insert(v); }
+                        for (k, v) in get_default_provider_configs() {
+                            provider_map.entry(k).or_insert(v);
+                        }
                     }
                     // Sort names for stable output
                     let mut names: Vec<String> = provider_map.keys().cloned().collect();
@@ -169,7 +173,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                     } else {
                         println!("Available AI providers:");
                         for n in names {
-                            let mark = if n == active { "*" } else { " "; };
+                            let mark = if n == active { "*" } else { " " };
                             println!(" {} {}", mark, n);
                         }
                         println!("Active: {}", active);
@@ -178,21 +182,34 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 }
                 crate::cli::AiProviderCommand::Set { name, config_file, dry_run, json } => {
                     // Determine target config path
-                    let path = if let Some(p) = config_file { p.clone() } else if let Some(first) = config.config_paths.first() { first.clone() } else {
+                    let path = if let Some(p) = config_file {
+                        p.clone()
+                    } else if let Some(first) = config.config_paths.first() {
+                        first.clone()
+                    } else {
                         eprintln!("No loaded config file path available. Use --config-file to specify a target.");
                         return Ok(2);
                     };
                     // Load or create TOML
                     let mut doc: toml::Value = if path.exists() {
-                        let s = std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
-                        toml::from_str(&s).with_context(|| format!("Failed to parse TOML at {}", path.display()))?
+                        let s = std::fs::read_to_string(&path)
+                            .with_context(|| format!("Failed to read {}", path.display()))?;
+                        toml::from_str(&s).with_context(|| {
+                            format!("Failed to parse TOML at {}", path.display())
+                        })?
                     } else {
                         toml::Value::Table(toml::map::Map::new())
                     };
-                    if !doc.is_table() { doc = toml::Value::Table(toml::map::Map::new()); }
+                    if !doc.is_table() {
+                        doc = toml::Value::Table(toml::map::Map::new());
+                    }
                     let tbl = doc.as_table_mut().unwrap();
-                    let ai = tbl.entry("ai").or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
-                    if !ai.is_table() { *ai = toml::Value::Table(toml::map::Map::new()); }
+                    let ai = tbl
+                        .entry("ai")
+                        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+                    if !ai.is_table() {
+                        *ai = toml::Value::Table(toml::map::Map::new());
+                    }
                     let ai_tbl = ai.as_table_mut().unwrap();
                     ai_tbl.insert("provider".to_string(), toml::Value::String(name.clone()));
 
@@ -201,14 +218,24 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                             let out = serde_json::json!({"config_file": path.display().to_string(), "set_provider": name});
                             println!("{}", out);
                         } else {
-                            println!("Would set [ai].provider = \"{}\" in {}", name, path.display());
+                            println!(
+                                "Would set [ai].provider = \"{}\" in {}",
+                                name,
+                                path.display()
+                            );
                         }
                         return Ok(0);
                     }
 
-                    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).with_context(|| format!("Failed creating parent dir {}", parent.display()))?; }
-                    let s = toml::to_string_pretty(&doc).with_context(|| "Failed to serialize TOML")?;
-                    std::fs::write(&path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent).with_context(|| {
+                            format!("Failed creating parent dir {}", parent.display())
+                        })?;
+                    }
+                    let s =
+                        toml::to_string_pretty(&doc).with_context(|| "Failed to serialize TOML")?;
+                    std::fs::write(&path, s)
+                        .with_context(|| format!("Failed to write {}", path.display()))?;
 
                     if *json {
                         let out = serde_json::json!({"ok": true, "config_file": path.display().to_string(), "active_provider": name});
@@ -222,6 +249,7 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
         }
 
         AiCommand::HistoryExport { format, to } => {
+            let base = dirs::data_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join("openagent-terminal")
                 .join("ai_history");
@@ -605,11 +633,26 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             use serde_json::json;
             let r = &config.ai.history_retention;
             let env_overrides = vec![
-                ("OPENAGENT_AI_HISTORY_MAX_BYTES", std::env::var("OPENAGENT_AI_HISTORY_MAX_BYTES").ok()),
-                ("OPENAGENT_AI_HISTORY_ROTATED_KEEP", std::env::var("OPENAGENT_AI_HISTORY_ROTATED_KEEP").ok()),
-                ("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS", std::env::var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS").ok()),
-                ("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS", std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS").ok()),
-                ("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS", std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS").ok()),
+                (
+                    "OPENAGENT_AI_HISTORY_MAX_BYTES",
+                    std::env::var("OPENAGENT_AI_HISTORY_MAX_BYTES").ok(),
+                ),
+                (
+                    "OPENAGENT_AI_HISTORY_ROTATED_KEEP",
+                    std::env::var("OPENAGENT_AI_HISTORY_ROTATED_KEEP").ok(),
+                ),
+                (
+                    "OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS",
+                    std::env::var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS").ok(),
+                ),
+                (
+                    "OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS",
+                    std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS").ok(),
+                ),
+                (
+                    "OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS",
+                    std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS").ok(),
+                ),
             ];
             let base = dirs::data_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -711,21 +754,51 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 println!("    rotated_keep:   {}", r.conversation_rotated_keep);
                 println!("    sqlite_rows:    {}", r.conversation_max_rows);
                 println!("    max_age_days:   {}", r.conversation_max_age_days);
-                let any_env = env_overrides.iter().any(|(_,v)| v.is_some());
+                let any_env = env_overrides.iter().any(|(_, v)| v.is_some());
                 println!("  Env overrides active: {}", if any_env { "yes" } else { "no" });
                 if *verbose {
-                    for (k,v) in &env_overrides { println!("    {} = {}", k, v.as_deref().unwrap_or("<unset>")); }
+                    for (k, v) in &env_overrides {
+                        println!("    {} = {}", k, v.as_deref().unwrap_or("<unset>"));
+                    }
                 }
                 println!("  Paths:");
                 println!("    base:   {}", base.display());
-                println!("    jsonl:  {} (exists: {}, size: {} bytes)", jsonl.display(), jsonl_size.is_some(), jsonl_size.unwrap_or(0));
-                println!("    sqlite: {} (exists: {}, size: {} bytes)", db_path.display(), db_exists, db_size);
-                println!("  JSONL rotated: count={}, total_bytes={} oldest={} newest={}", rotated_files.len(), rotated_total, oldest_s.as_deref().unwrap_or("-"), newest_s.as_deref().unwrap_or("-"));
+                println!(
+                    "    jsonl:  {} (exists: {}, size: {} bytes)",
+                    jsonl.display(),
+                    jsonl_size.is_some(),
+                    jsonl_size.unwrap_or(0)
+                );
+                println!(
+                    "    sqlite: {} (exists: {}, size: {} bytes)",
+                    db_path.display(),
+                    db_exists,
+                    db_size
+                );
+                println!(
+                    "  JSONL rotated: count={}, total_bytes={} oldest={} newest={}",
+                    rotated_files.len(),
+                    rotated_total,
+                    oldest_s.as_deref().unwrap_or("-"),
+                    newest_s.as_deref().unwrap_or("-")
+                );
                 if *verbose {
-                    for (n,s,t) in &rotated_files { println!("    - {} ({} bytes, mtime={})", n, s, t.as_deref().unwrap_or("-")); }
+                    for (n, s, t) in &rotated_files {
+                        println!(
+                            "    - {} ({} bytes, mtime={})",
+                            n,
+                            s,
+                            t.as_deref().unwrap_or("-")
+                        );
+                    }
                 }
                 if db_exists {
-                    println!("  SQLite: rows={}, oldest_ts={}, newest_ts={}", row_count, min_ts.as_deref().unwrap_or("-"), max_ts.as_deref().unwrap_or("-"));
+                    println!(
+                        "  SQLite: rows={}, oldest_ts={}, newest_ts={}",
+                        row_count,
+                        min_ts.as_deref().unwrap_or("-"),
+                        max_ts.as_deref().unwrap_or("-")
+                    );
                 }
             }
             Ok(0)
@@ -748,19 +821,29 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
             };
             // Load or create TOML
             let mut doc: TomlValue = if path.exists() {
-                let s = std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
-                toml::from_str(&s).with_context(|| format!("Failed to parse TOML at {}", path.display()))?
+                let s = std::fs::read_to_string(&path)
+                    .with_context(|| format!("Failed to read {}", path.display()))?;
+                toml::from_str(&s)
+                    .with_context(|| format!("Failed to parse TOML at {}", path.display()))?
             } else {
                 TomlValue::Table(toml::map::Map::new())
             };
             // Ensure [ai] and [ai.history_retention]
-            if !doc.is_table() { doc = TomlValue::Table(toml::map::Map::new()); }
+            if !doc.is_table() {
+                doc = TomlValue::Table(toml::map::Map::new());
+            }
             let tbl = doc.as_table_mut().unwrap();
             let ai = tbl.entry("ai").or_insert_with(|| TomlValue::Table(toml::map::Map::new()));
-            if !ai.is_table() { *ai = TomlValue::Table(toml::map::Map::new()); }
+            if !ai.is_table() {
+                *ai = TomlValue::Table(toml::map::Map::new());
+            }
             let ai_tbl = ai.as_table_mut().unwrap();
-            let hr = ai_tbl.entry("history_retention").or_insert_with(|| TomlValue::Table(toml::map::Map::new()));
-            if !hr.is_table() { *hr = TomlValue::Table(toml::map::Map::new()); }
+            let hr = ai_tbl
+                .entry("history_retention")
+                .or_insert_with(|| TomlValue::Table(toml::map::Map::new()));
+            if !hr.is_table() {
+                *hr = TomlValue::Table(toml::map::Map::new());
+            }
             let hr_tbl = hr.as_table_mut().unwrap();
 
             // Apply sets
@@ -774,12 +857,19 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 };
                 let key_ok = matches!(
                     k.as_str(),
-                    "ui_max_entries" | "ui_max_bytes" | "conversation_jsonl_max_bytes" | "conversation_rotated_keep" | "conversation_max_rows" | "conversation_max_age_days"
+                    "ui_max_entries"
+                        | "ui_max_bytes"
+                        | "conversation_jsonl_max_bytes"
+                        | "conversation_rotated_keep"
+                        | "conversation_max_rows"
+                        | "conversation_max_age_days"
                 );
                 if !key_ok {
                     return Err(anyhow!(format!("Unsupported key '{}'", k)));
                 }
-                let intval: i64 = vstr.parse::<i64>().map_err(|e| anyhow!(format!("Invalid integer for {}: {}", k, e)))?;
+                let intval: i64 = vstr
+                    .parse::<i64>()
+                    .map_err(|e| anyhow!(format!("Invalid integer for {}: {}", k, e)))?;
                 hr_tbl.insert(k.clone(), TomlValue::Integer(intval));
                 changes.push((k, vstr));
             }
@@ -791,24 +881,30 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                 } else {
                     println!("Would update {} with:", path.display());
                     println!("[ai.history_retention]");
-                    for (k,v) in &changes { println!("{} = {}", k, v); }
+                    for (k, v) in &changes {
+                        println!("{} = {}", k, v);
+                    }
                 }
                 return Ok(0);
             }
 
             // Write back
             if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).with_context(|| format!("Failed creating parent dir {}", parent.display()))?;
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("Failed creating parent dir {}", parent.display()))?;
             }
             let s = toml::to_string_pretty(&doc).with_context(|| "Failed to serialize TOML")?;
-            std::fs::write(&path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+            std::fs::write(&path, s)
+                .with_context(|| format!("Failed to write {}", path.display()))?;
             if *json {
                 let out = serde_json::json!({"ok": true, "config_file": path.display().to_string(), "changes": changes});
                 println!("{}", out);
             } else {
                 println!("Updated {}:", path.display());
                 println!("[ai.history_retention]");
-                for (k,v) in &changes { println!("{} = {}", k, v); }
+                for (k, v) in &changes {
+                    println!("{} = {}", k, v);
+                }
             }
             Ok(0)
         }

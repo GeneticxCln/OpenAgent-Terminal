@@ -1,4 +1,9 @@
-#![allow(clippy::pedantic, clippy::items_after_statements, clippy::uninlined_format_args, clippy::too_many_lines)]
+#![allow(
+    clippy::pedantic,
+    clippy::items_after_statements,
+    clippy::uninlined_format_args,
+    clippy::too_many_lines
+)]
 
 #[cfg(feature = "ai")]
 mod integration_tests {

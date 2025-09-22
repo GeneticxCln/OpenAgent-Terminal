@@ -27,10 +27,8 @@ impl AiAgent for CommandAgent {
     async fn process(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
         match request {
             AgentRequest::Command(ai_req) => {
-                let proposals = self
-                    .provider
-                    .propose(ai_req)
-                    .map_err(AgentError::ProcessingError)?;
+                let proposals =
+                    self.provider.propose(ai_req).map_err(AgentError::ProcessingError)?;
                 Ok(AgentResponse::Commands(proposals))
             }
             _ => Err(AgentError::NotSupported(

@@ -1,5 +1,11 @@
 //! Project indexer and file tree structures
-#![allow(clippy::pedantic, clippy::missing_errors_doc, clippy::must_use_candidate, clippy::map_unwrap_or, clippy::doc_markdown)]
+#![allow(
+    clippy::pedantic,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::map_unwrap_or,
+    clippy::doc_markdown
+)]
 
 use anyhow::{anyhow, Result};
 use ignore::WalkBuilder;

@@ -1,5 +1,4 @@
 #![allow(clippy::pedantic)]
-
 #![allow(dead_code)]
 //! Tests for directional pane focus and pane swap behavior.
 

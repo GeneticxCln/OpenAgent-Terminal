@@ -6,8 +6,8 @@
 #![allow(dead_code)]
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 // use std::sync::Arc; // not used currently
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -645,8 +645,7 @@ impl ShellIntegration {
             self.directory_tracker.current_dir = new_dir.clone();
 
             // Detect project type immediately
-            if let Ok(Some(info)) =
-                self.directory_tracker.project_detector.detect_project(&new_dir)
+            if let Ok(Some(info)) = self.directory_tracker.project_detector.detect_project(&new_dir)
             {
                 // Update directory pattern
                 let pattern =
@@ -1075,11 +1074,7 @@ impl EnhancedHistory {
             entry.command.split_whitespace().map(|s| s.to_lowercase()).collect();
 
         for token in &command_tokens {
-            self.search_index
-                .command_index
-                .entry(token.clone())
-                .or_default()
-                .push(entry_index);
+            self.search_index.command_index.entry(token.clone()).or_default().push(entry_index);
         }
 
         self.search_index
@@ -1089,19 +1084,11 @@ impl EnhancedHistory {
             .push(entry_index);
 
         if let Some(category) = entry.category {
-            self.search_index
-                .category_index
-                .entry(category)
-                .or_default()
-                .push(entry_index);
+            self.search_index.category_index.entry(category).or_default().push(entry_index);
         }
 
         for tag in &entry.tags {
-            self.search_index
-                .tag_index
-                .entry(tag.clone())
-                .or_default()
-                .push(entry_index);
+            self.search_index.tag_index.entry(tag.clone()).or_default().push(entry_index);
         }
 
         self.entries.push_back(entry);

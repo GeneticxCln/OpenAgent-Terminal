@@ -52,11 +52,19 @@ Security note: Always review install scripts before piping curl to sh. Prefer yo
 **Cloud AI:**
 ```bash
 # OpenAI
-export OPENAI_API_KEY="your-key"
+export OPENAGENT_OPENAI_API_KEY="your-key"
 
 # Anthropic  
-export ANTHROPIC_API_KEY="your-key"
+export OPENAGENT_ANTHROPIC_API_KEY="your-key"
 ```
+
+Client environment variables (preferred)
+- For local Ollama client config, set:
+```bash
+export OPENAGENT_OLLAMA_ENDPOINT="http://localhost:11434"
+export OPENAGENT_OLLAMA_MODEL="codellama:7b"
+```
+Note: OLLAMA_HOST configures the Ollama server process/container; it is not read by OpenAgent Terminal. Use OPENAGENT_OLLAMA_* on the client side.
 
 ### 3. Usage
 

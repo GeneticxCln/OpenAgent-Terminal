@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime};
-use serde::{Deserialize, Serialize};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Security audit events for plugin activities
 #[allow(dead_code)] // Public API for future integration
@@ -204,7 +204,11 @@ impl SecurityAuditor {
     }
 
     /// Record memory usage update for a plugin
-    pub fn update_memory_usage(&mut self, plugin_name: &str, memory_bytes: u64) -> Result<(), SecurityViolation> {
+    pub fn update_memory_usage(
+        &mut self,
+        plugin_name: &str,
+        memory_bytes: u64,
+    ) -> Result<(), SecurityViolation> {
         if memory_bytes > self.config.max_memory_per_plugin {
             let event = SecurityEvent::ResourceLimitExceeded {
                 plugin_name: plugin_name.to_string(),
@@ -248,11 +252,15 @@ impl SecurityAuditor {
         self.events.push(event);
 
         match severity {
-            SeverityLevel::Low => info!("Low severity activity in plugin '{}': {}", plugin_name, details),
-            SeverityLevel::Medium => warn!("Medium severity activity in plugin '{}': {}", plugin_name, details),
+            SeverityLevel::Low => {
+                info!("Low severity activity in plugin '{}': {}", plugin_name, details)
+            }
+            SeverityLevel::Medium => {
+                warn!("Medium severity activity in plugin '{}': {}", plugin_name, details)
+            }
             SeverityLevel::High | SeverityLevel::Critical => {
                 error!("High/Critical severity activity in plugin '{}': {}", plugin_name, details);
-                
+
                 if let Some(stats) = self.plugin_stats.get_mut(plugin_name) {
                     stats.violation_count += 1;
                 }
@@ -325,10 +333,10 @@ pub struct PluginSecurityStats {
 pub enum SecurityViolation {
     #[error("Plugin '{plugin}' exceeded rate limit for {limit_type}")]
     RateLimitExceeded { plugin: String, limit_type: String },
-    
+
     #[error("Plugin '{plugin}' exceeded memory limit: {current} bytes (limit: {limit} bytes)")]
     MemoryLimitExceeded { plugin: String, current: u64, limit: u64 },
-    
+
     #[error("Plugin '{plugin}' attempted unauthorized access to {resource}")]
     UnauthorizedAccess { plugin: String, resource: String },
 }
@@ -349,22 +357,21 @@ mod tests {
     fn test_plugin_load_recording() {
         let mut auditor = SecurityAuditor::new(SecurityConfig::default());
         auditor.record_plugin_load("test_plugin".to_string(), vec!["read".to_string()]);
-        
+
         assert_eq!(auditor.events.len(), 1);
         assert!(auditor.plugin_stats.contains_key("test_plugin"));
     }
 
     #[test]
     fn test_memory_limit_enforcement() {
-        let mut config = SecurityConfig::default();
-        config.max_memory_per_plugin = 1024; // 1KB limit
+        let config = SecurityConfig { max_memory_per_plugin: 1024, ..Default::default() };
         let mut auditor = SecurityAuditor::new(config);
-        
+
         auditor.record_plugin_load("test_plugin".to_string(), vec![]);
-        
+
         let result = auditor.update_memory_usage("test_plugin", 2048); // 2KB usage
         assert!(result.is_err());
-        
+
         if let Err(SecurityViolation::MemoryLimitExceeded { current, limit, .. }) = result {
             assert_eq!(current, 2048);
             assert_eq!(limit, 1024);

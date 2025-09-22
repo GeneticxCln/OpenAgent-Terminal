@@ -125,7 +125,9 @@ pub fn create_provider(name: &str) -> Result<Box<dyn AiProvider>, error::AiError
                 setting: "Ollama".to_string(),
                 message: e,
                 suggestion: Some(
-                    "Check OLLAMA_ENDPOINT and OLLAMA_MODEL environment variables".to_string(),
+                    "Check OPENAGENT_OLLAMA_ENDPOINT and OPENAGENT_OLLAMA_MODEL (preferred), or \
+                     legacy OLLAMA_ENDPOINT/OLLAMA_MODEL environment variables"
+                        .to_string(),
                 ),
             }),
         #[cfg(feature = "ai-openai")]

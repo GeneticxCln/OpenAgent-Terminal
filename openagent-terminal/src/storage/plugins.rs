@@ -87,7 +87,7 @@ impl PluginStorage {
     fn default_quota() -> QuotaConfig {
         QuotaConfig {
             max_total_bytes: Some(50 * 1024 * 1024), // 50 MiB
-            max_value_bytes: Some(1024 * 1024),  // 1 MiB per entry/doc
+            max_value_bytes: Some(1024 * 1024),      // 1 MiB per entry/doc
             max_keys: Some(5000),
             max_docs: Some(5000),
         }

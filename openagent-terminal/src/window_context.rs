@@ -263,8 +263,10 @@ impl WindowContext {
                         format!("Session restore issue: {}", e),
                         crate::message_bar::MessageType::Warning,
                     );
-                    let _ = proxy
-                        .send_event(crate::event::Event::new(crate::event::EventType::Message(msg), display.window.id()));
+                    let _ = proxy.send_event(crate::event::Event::new(
+                        crate::event::EventType::Message(msg),
+                        display.window.id(),
+                    ));
                 }
             }
         }
@@ -330,11 +332,26 @@ impl WindowContext {
                             // Export retention-related envs for persistence helpers
                             {
                                 let r = &config.ai.history_retention;
-                                std::env::set_var("OPENAGENT_AI_HISTORY_MAX_BYTES", r.conversation_jsonl_max_bytes.to_string());
-                                std::env::set_var("OPENAGENT_AI_HISTORY_ROTATED_KEEP", r.conversation_rotated_keep.to_string());
-                                std::env::set_var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
-                                std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS", r.conversation_max_rows.to_string());
-                                std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
+                                std::env::set_var(
+                                    "OPENAGENT_AI_HISTORY_MAX_BYTES",
+                                    r.conversation_jsonl_max_bytes.to_string(),
+                                );
+                                std::env::set_var(
+                                    "OPENAGENT_AI_HISTORY_ROTATED_KEEP",
+                                    r.conversation_rotated_keep.to_string(),
+                                );
+                                std::env::set_var(
+                                    "OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS",
+                                    r.conversation_max_age_days.to_string(),
+                                );
+                                std::env::set_var(
+                                    "OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS",
+                                    r.conversation_max_rows.to_string(),
+                                );
+                                std::env::set_var(
+                                    "OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS",
+                                    r.conversation_max_age_days.to_string(),
+                                );
                             }
                             let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
                                 provider_name,
@@ -488,11 +505,26 @@ impl WindowContext {
                 // Export retention-related envs for persistence helpers
                 {
                     let r = &self.config.ai.history_retention;
-                    std::env::set_var("OPENAGENT_AI_HISTORY_MAX_BYTES", r.conversation_jsonl_max_bytes.to_string());
-                    std::env::set_var("OPENAGENT_AI_HISTORY_ROTATED_KEEP", r.conversation_rotated_keep.to_string());
-                    std::env::set_var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
-                    std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS", r.conversation_max_rows.to_string());
-                    std::env::set_var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS", r.conversation_max_age_days.to_string());
+                    std::env::set_var(
+                        "OPENAGENT_AI_HISTORY_MAX_BYTES",
+                        r.conversation_jsonl_max_bytes.to_string(),
+                    );
+                    std::env::set_var(
+                        "OPENAGENT_AI_HISTORY_ROTATED_KEEP",
+                        r.conversation_rotated_keep.to_string(),
+                    );
+                    std::env::set_var(
+                        "OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS",
+                        r.conversation_max_age_days.to_string(),
+                    );
+                    std::env::set_var(
+                        "OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS",
+                        r.conversation_max_rows.to_string(),
+                    );
+                    std::env::set_var(
+                        "OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS",
+                        r.conversation_max_age_days.to_string(),
+                    );
                 }
                 let mut rt =
                     crate::ai_runtime::AiRuntime::from_secure_config(provider_name, &prov_cfg);

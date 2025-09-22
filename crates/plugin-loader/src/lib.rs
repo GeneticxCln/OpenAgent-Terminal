@@ -36,7 +36,7 @@ use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 mod security_audit;
 // Security audit types available for future integration
 #[allow(unused_imports)]
-use security_audit::{SecurityAuditor, SecurityConfig, AccessType, SeverityLevel};
+use security_audit::{AccessType, SecurityAuditor, SecurityConfig, SeverityLevel};
 
 /// Enhanced plugin manifest structure for TOML parsing
 #[derive(serde::Deserialize)]

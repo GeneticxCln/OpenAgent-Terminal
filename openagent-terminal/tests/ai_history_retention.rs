@@ -3,7 +3,9 @@
 #[test]
 fn ui_history_prunes_to_configured_limits() {
     // Arrange: create a runtime and set tight retention
-    let mut rt = openagent_terminal::ai_runtime::AiRuntime::new(Box::new(openagent_terminal_ai::NullProvider));
+    let mut rt = openagent_terminal::ai_runtime::AiRuntime::new(Box::new(
+        openagent_terminal_ai::NullProvider,
+    ));
     let retention = openagent_terminal::config::ai::AiHistoryRetention {
         ui_max_entries: 3,
         ui_max_bytes: 10, // very small, to force byte-based prune too
@@ -22,7 +24,7 @@ fn ui_history_prunes_to_configured_limits() {
     rt.propose(None, None); // history: ["abcd","1234"]
     rt.ui.scratch = "xyz".into();
     rt.propose(None, None); // history: ["xyz","abcd","1234"]
-    // This one should push out the oldest by entries cap, and then by bytes cap
+                            // This one should push out the oldest by entries cap, and then by bytes cap
     rt.ui.scratch = "longentry".into(); // 9 bytes
     rt.propose(None, None);
 
@@ -30,5 +32,11 @@ fn ui_history_prunes_to_configured_limits() {
     let entries: Vec<String> = rt.ui.history.iter().cloned().collect();
     assert!(entries.len() <= retention.ui_max_entries);
     let total: usize = entries.iter().map(|s| s.len()).sum();
-    assert!(total <= retention.ui_max_bytes, "total bytes {} > {}: {:?}", total, retention.ui_max_bytes, entries);
+    assert!(
+        total <= retention.ui_max_bytes,
+        "total bytes {} > {}: {:?}",
+        total,
+        retention.ui_max_bytes,
+        entries
+    );
 }

@@ -69,8 +69,8 @@ pub struct OllamaProvider {
 [ai]
 enabled = true
 provider = "ollama"
-endpoint_env = "OLLAMA_ENDPOINT"
-model_env = "OLLAMA_MODEL"
+endpoint_env = "OPENAGENT_OLLAMA_ENDPOINT"
+model_env = "OPENAGENT_OLLAMA_MODEL"
 scratch_autosave = true
 propose_max_commands = 10
 never_auto_run = true  # Safety first!

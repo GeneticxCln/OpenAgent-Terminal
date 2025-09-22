@@ -1,8 +1,8 @@
 use clap::ValueEnum;
-use std::fmt;
 use openagent_terminal_config_derive::{ConfigDeserialize, SerdeReplace};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Routing mode for AI requests
 #[derive(ConfigDeserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -13,7 +13,6 @@ pub enum AiRoutingMode {
     Agent,
     Provider,
 }
-
 
 #[derive(ValueEnum, SerdeReplace, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -182,7 +181,6 @@ pub struct ProviderConfig {
     pub extra: HashMap<String, String>,
 }
 
-
 #[derive(ValueEnum, SerdeReplace, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AiLogVerbosity {
@@ -206,7 +204,6 @@ impl fmt::Display for AiLogVerbosity {
         }
     }
 }
-
 
 /// Context collection configuration for enriching AI requests.
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
@@ -277,7 +274,6 @@ pub enum AiRootStrategy {
     Cwd,
 }
 
-
 #[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AiFileTreeConfig {
     /// Maximum number of file entries to include
@@ -332,7 +328,7 @@ impl Default for AiHistoryRetention {
     fn default() -> Self {
         Self {
             ui_max_entries: 200,
-            ui_max_bytes: 128 * 1024, // 128KB
+            ui_max_bytes: 128 * 1024,                      // 128KB
             conversation_jsonl_max_bytes: 8 * 1024 * 1024, // 8MB
             conversation_rotated_keep: 8,
             conversation_max_rows: 50_000,

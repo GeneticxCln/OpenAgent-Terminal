@@ -573,7 +573,6 @@ pub(crate) async fn initialize_plugin_manager(
         }
     }
 
-
     Ok(manager)
 }
 

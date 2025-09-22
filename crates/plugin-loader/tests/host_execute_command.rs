@@ -1,4 +1,9 @@
-#![allow(clippy::pedantic, clippy::doc_markdown, clippy::uninlined_format_args, clippy::must_use_candidate)]
+#![allow(
+    clippy::pedantic,
+    clippy::doc_markdown,
+    clippy::uninlined_format_args,
+    clippy::must_use_candidate
+)]
 use plugin_api::{CommandOutput, PluginError as ApiPluginError};
 use plugin_loader::{LogLevel, PluginEvent, PluginHost, PluginManager};
 use std::sync::Arc;

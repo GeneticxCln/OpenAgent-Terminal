@@ -14,6 +14,9 @@ Note: Current development on main uses a WGPU-only renderer; the OpenGL fallback
 
 ### Added
 
+- AI env consistency: Prefer OPENAGENT_OLLAMA_ENDPOINT and OPENAGENT_OLLAMA_MODEL for client-side configuration; legacy OLLAMA_* still accepted for backward compatibility. Clarified that OLLAMA_HOST is server-side.
+- Perf tests: Added OPENAGENT_STRICT_PERF=1 to enforce timing budgets locally/CI; default skips strict timing checks to avoid flakiness on slower hosts.
+
 - Workspace: Drag-and-drop highlight/snap configuration now validated and clamped on load:
   - highlight_alpha_* values are clamped to [0.0, 1.0] and coerced so hover >= base
   - tab_drop_snap_px and new_tab_snap_extra_px are clamped to be non-negative

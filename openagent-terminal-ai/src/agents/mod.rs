@@ -2,6 +2,7 @@
 // Integrating selected Blitzy Platform AI capabilities
 
 pub mod code_generation;
+pub mod command;
 pub mod communication_hub;
 pub mod manager;
 pub mod natural_language;
@@ -9,7 +10,6 @@ pub mod project_context;
 pub mod quality;
 pub mod types;
 pub mod workflow_orchestration;
-pub mod command;
 
 use crate::{AiProposal, AiRequest};
 use async_trait::async_trait;

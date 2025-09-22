@@ -119,7 +119,9 @@ impl Default for SecurityLensConfig {
 }
 
 impl Default for SecurityLensAgent {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecurityLensAgent {
@@ -410,14 +412,12 @@ impl SecurityLensAgent {
     fn should_block_execution(&self, risk_level: &SecurityRiskLevel) -> bool {
         match risk_level {
             SecurityRiskLevel::Critical => self.config.block_critical_risks,
-            SecurityRiskLevel::High => matches!(
-                self.config.risk_tolerance,
-                RiskTolerance::VeryLow | RiskTolerance::Low
-            ),
-            SecurityRiskLevel::Medium => matches!(
-                self.config.risk_tolerance,
-                RiskTolerance::VeryLow
-            ),
+            SecurityRiskLevel::High => {
+                matches!(self.config.risk_tolerance, RiskTolerance::VeryLow | RiskTolerance::Low)
+            }
+            SecurityRiskLevel::Medium => {
+                matches!(self.config.risk_tolerance, RiskTolerance::VeryLow)
+            }
             _ => false,
         }
     }

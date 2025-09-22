@@ -11,7 +11,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     match input.data {
-Data::Struct(DataStruct { fields: Fields::Named(fields), .. }) => {
+        Data::Struct(DataStruct { fields: Fields::Named(fields), .. }) => {
             de_struct::derive_deserialize(&input.ident, &input.generics, &fields.named)
         }
         Data::Enum(ref data_enum) => {

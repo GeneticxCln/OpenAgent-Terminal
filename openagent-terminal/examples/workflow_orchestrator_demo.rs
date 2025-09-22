@@ -125,12 +125,7 @@ async fn main() -> anyhow::Result<()> {
     let workflows = workflow_orchestrator.list_workflows().await;
     println!("  • Total Workflows: {}", workflows.len());
     for workflow in &workflows {
-        println!(
-            "    - {}: {} ({:?})",
-            workflow.id,
-            workflow.title,
-            workflow.status
-        );
+        println!("    - {}: {} ({:?})", workflow.id, workflow.title, workflow.status);
     }
 
     // Cleanup

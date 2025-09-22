@@ -1,5 +1,10 @@
 //! Minimal text editor core with a rope buffer and cursor management.
-#![allow(clippy::pedantic, clippy::missing_errors_doc, clippy::must_use_candidate, clippy::doc_markdown)]
+#![allow(
+    clippy::pedantic,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::doc_markdown
+)]
 
 use anyhow::Result;
 use parking_lot::RwLock;

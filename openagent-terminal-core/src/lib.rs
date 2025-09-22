@@ -6,6 +6,7 @@
 // Suppress pedantic lints in this crate; correctness-focused lints remain enforced.
 #![allow(clippy::pedantic)]
 
+pub mod async_utils;
 pub mod event;
 pub mod event_loop;
 pub mod grid;
@@ -16,7 +17,6 @@ pub mod term;
 pub mod thread;
 pub mod tty;
 pub mod vi_mode;
-pub mod async_utils;
 
 pub use crate::grid::Grid;
 pub use crate::term::Term;

@@ -1,7 +1,7 @@
 //! AI runtime: UI state and provider wiring (optional feature)
 
-use log::{debug, error, info};
 use crate::ai_context_provider::AiContextProvider;
+use log::{debug, error, info};
 use std::collections::VecDeque;
 
 use crate::security::{SecurityLens, SecurityPolicy};
@@ -10,11 +10,11 @@ use openagent_terminal_ai::context::{
     BasicEnvProvider, ContextManager, FileTreeProvider, FileTreeRootStrategy, GitProvider,
 };
 // Privacy sanitization is applied via build_request_with_context
+use crate::config::ai::ProviderConfig as ProviderCfg;
 use openagent_terminal_ai::providers::{
     AnthropicProvider, OllamaProvider, OpenAiProvider, OpenRouterProvider,
 };
 use openagent_terminal_ai::{create_provider, AiProposal, AiProvider, AiRequest};
-use crate::config::ai::ProviderConfig as ProviderCfg;
 
 /// Default UI history capacity for initial allocation (pruning is configurable)
 const DEFAULT_UI_HISTORY_CAPACITY: usize = 128;
@@ -83,7 +83,8 @@ impl AiRuntime {
             };
             if let Ok(info) = ctx_res {
                 // Dependency aggregation from lock/manifests (best-effort)
-                let mut dep_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                let mut dep_names: std::collections::BTreeSet<String> =
+                    std::collections::BTreeSet::new();
                 let wd_path = std::path::Path::new(working_dir);
                 // Cargo.lock (TOML)
                 let cargo_lock = wd_path.join("Cargo.lock");
@@ -105,15 +106,24 @@ impl AiRuntime {
                 if pkg_lock.exists() {
                     if let Ok(s) = std::fs::read_to_string(&pkg_lock) {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&s) {
-                            fn walk_deps(obj: &serde_json::Map<String, serde_json::Value>, out: &mut std::collections::BTreeSet<String>) {
-                                if let Some(deps) = obj.get("dependencies").and_then(|d| d.as_object()) {
+                            fn walk_deps(
+                                obj: &serde_json::Map<String, serde_json::Value>,
+                                out: &mut std::collections::BTreeSet<String>,
+                            ) {
+                                if let Some(deps) =
+                                    obj.get("dependencies").and_then(|d| d.as_object())
+                                {
                                     for (name, v) in deps.iter() {
                                         out.insert(name.clone());
-                                        if let Some(child) = v.as_object() { walk_deps(child, out); }
+                                        if let Some(child) = v.as_object() {
+                                            walk_deps(child, out);
+                                        }
                                     }
                                 }
                             }
-                            if let Some(root) = val.as_object() { walk_deps(root, &mut dep_names); }
+                            if let Some(root) = val.as_object() {
+                                walk_deps(root, &mut dep_names);
+                            }
                         }
                     }
                 }
@@ -123,9 +133,18 @@ impl AiRuntime {
                     if let Ok(s) = std::fs::read_to_string(&req) {
                         for l in s.lines() {
                             let t = l.trim();
-                            if t.is_empty() || t.starts_with('#') { continue; }
-                            let name = t.split(|c: char| c == '=' || c == '>' || c == '<' || c.is_whitespace()).next().unwrap_or("");
-                            if !name.is_empty() { dep_names.insert(name.to_lowercase()); }
+                            if t.is_empty() || t.starts_with('#') {
+                                continue;
+                            }
+                            let name = t
+                                .split(|c: char| {
+                                    c == '=' || c == '>' || c == '<' || c.is_whitespace()
+                                })
+                                .next()
+                                .unwrap_or("");
+                            if !name.is_empty() {
+                                dep_names.insert(name.to_lowercase());
+                            }
                         }
                     }
                 }
@@ -135,7 +154,9 @@ impl AiRuntime {
                     if let Ok(s) = std::fs::read_to_string(&go_sum) {
                         for l in s.lines() {
                             let mut it = l.split_whitespace();
-                            if let Some(name) = it.next() { dep_names.insert(name.to_string()); }
+                            if let Some(name) = it.next() {
+                                dep_names.insert(name.to_string());
+                            }
                         }
                     }
                 }
@@ -150,11 +171,8 @@ impl AiRuntime {
                 } else {
                     info.language_info.package_managers.join(",")
                 };
-                let build = info
-                    .build_system
-                    .as_ref()
-                    .map(|b| format!("{:?}", b))
-                    .unwrap_or_default();
+                let build =
+                    info.build_system.as_ref().map(|b| format!("{:?}", b)).unwrap_or_default();
                 let (clean, ahead, behind) = if let Some(repo) = info.repository_info.as_ref() {
                     (repo.status.is_clean, repo.status.ahead, repo.status.behind)
                 } else {
@@ -176,9 +194,15 @@ impl AiRuntime {
                     "go.sum",
                     "README.md",
                 ] {
-                    if wd_path.join(cand).exists() { important_files.push(cand); }
+                    if wd_path.join(cand).exists() {
+                        important_files.push(cand);
+                    }
                 }
-                let important = if important_files.is_empty() { String::new() } else { important_files.join(",") };
+                let important = if important_files.is_empty() {
+                    String::new()
+                } else {
+                    important_files.join(",")
+                };
 
                 // Add key-values
                 kv.push(("project.primary_language".into(), lang.clone()));
@@ -206,11 +230,24 @@ impl AiRuntime {
 
                 // Compact UI line
                 let mut parts: Vec<String> = Vec::new();
-                if !lang.is_empty() { parts.push(format!("lang={}", lang)); }
-                if !frameworks.is_empty() { parts.push(format!("fw={}", frameworks)); }
-                if !pms.is_empty() { parts.push(format!("pm={}", pms)); }
-                if !build.is_empty() { parts.push(format!("build={}", build)); }
-                parts.push(format!("repo={} a:{} b:{}", if clean { "clean" } else { "dirty" }, ahead, behind));
+                if !lang.is_empty() {
+                    parts.push(format!("lang={}", lang));
+                }
+                if !frameworks.is_empty() {
+                    parts.push(format!("fw={}", frameworks));
+                }
+                if !pms.is_empty() {
+                    parts.push(format!("pm={}", pms));
+                }
+                if !build.is_empty() {
+                    parts.push(format!("build={}", build));
+                }
+                parts.push(format!(
+                    "repo={} a:{} b:{}",
+                    if clean { "clean" } else { "dirty" },
+                    ahead,
+                    behind
+                ));
                 self.ui.project_context_line = Some(parts.join("  ·  "));
                 self.last_project_primary_language = Some(lang);
             }
@@ -244,11 +281,15 @@ impl AiRuntime {
 
     /// Internal: reference selected public methods so they are considered used in minimal builds
     fn _keep_public_api_reachable(&mut self) {
-        let _ = AiRuntime::from_config as fn(Option<&str>, Option<&str>, Option<&str>, Option<&str>) -> Self;
+        let _ = AiRuntime::from_config
+            as fn(Option<&str>, Option<&str>, Option<&str>, Option<&str>) -> Self;
         let _ = AiRuntime::propose as fn(&mut AiRuntime, Option<String>, Option<String>);
         let _ = AiRuntime::get_selected_commands as fn(&AiRuntime) -> Option<String>;
-        let _ = AiRuntime::propose_with_context as fn(&mut AiRuntime, Option<openagent_terminal_core::tty::pty_manager::PtyAiContext>);
+        let _ = AiRuntime::propose_with_context
+            as fn(&mut AiRuntime, Option<openagent_terminal_core::tty::pty_manager::PtyAiContext>);
         let _ = AiRuntime::has_content as fn(&AiRuntime) -> bool;
+        let _ = AiRuntime::set_provider_by_name
+            as fn(&mut AiRuntime, &str, &crate::config::UiConfig) -> Result<(), String>;
     }
 
     /// Load previously persisted AI history (best-effort).
@@ -295,25 +336,11 @@ impl AiRuntime {
         self.ui.error_message = None;
         match self.provider_registry.create(provider_name, config) {
             Ok((p, model_opt)) => {
-                if let Some(m) = model_opt { self.ui.current_model = m; } else { self.ui.current_model.clear(); }
-                self.provider = Arc::from(p);
-                self.ui.current_provider = provider_name.to_string();
-                // Invalidate agent manager so it can be rebuilt with the new provider
-                self.agent_manager = None;
-                // Reset transient result state
-                self.ui.proposals.clear();
-                self.ui.selected_proposal = 0;
-                self.ui.is_loading = false;
-                self.ui.streaming_active = false;
-                self.ui.streaming_text.clear();
-                self.ui.error_message = None;
-            }
-            Err(e) => {
-                self.ui.error_message = Some(format!("Failed to reconfigure provider to '{}': {}", provider_name, e));
-            }
-        };
-        return;
-            Ok(p) => {
+                if let Some(m) = model_opt {
+                    self.ui.current_model = m;
+                } else {
+                    self.ui.current_model.clear();
+                }
                 self.provider = Arc::from(p);
                 self.ui.current_provider = provider_name.to_string();
                 // Invalidate agent manager so it can be rebuilt with the new provider
@@ -330,7 +357,7 @@ impl AiRuntime {
                 self.ui.error_message =
                     Some(format!("Failed to reconfigure provider to '{}': {}", provider_name, e));
             }
-        }
+        };
     }
 
     /// Start background computation of an inline suggestion based on the current prompt prefix.
@@ -402,8 +429,12 @@ impl AiRuntime {
                 ),
             ],
         };
-        if let Some(exec) = shell_exec { req.context.push(("shell_exec".into(), exec)); }
-        if let Some(cmd) = last_cmd { req.context.push(("last_cmd".into(), cmd)); }
+        if let Some(exec) = shell_exec {
+            req.context.push(("shell_exec".into(), exec));
+        }
+        if let Some(cmd) = last_cmd {
+            req.context.push(("last_cmd".into(), cmd));
+        }
 
         let _ = std::thread::Builder::new().name("ai-inline".into()).spawn(move || {
             // Non-streaming, single-shot proposal
@@ -652,10 +683,7 @@ fn persist_ai_conversation_sqlite(
         .checked_sub_signed(chrono::Duration::days(max_age_days as i64))
         .map(|d| d.to_rfc3339())
         .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
-    let _ = conn.execute(
-        "DELETE FROM conversations WHERE ts < ?1",
-        params![cutoff],
-    );
+    let _ = conn.execute("DELETE FROM conversations WHERE ts < ?1", params![cutoff]);
 
     // Cap total rows
     let max_rows: i64 = std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS")
@@ -708,7 +736,9 @@ pub struct AiRuntime {
 pub struct ProviderRegistry;
 
 impl ProviderRegistry {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 
     pub fn create(
         &self,
@@ -791,11 +821,13 @@ impl AiRuntime {
         }
         let mgr = openagent_terminal_ai::agents::manager::AgentManager::new();
         let provider_arc = self.provider.clone();
-        let cmd_agent = openagent_terminal_ai::agents::command::CommandAgent::new(provider_arc.clone());
+        let cmd_agent =
+            openagent_terminal_ai::agents::command::CommandAgent::new(provider_arc.clone());
         let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
         let _ = rt.block_on(mgr.register_agent(Box::new(cmd_agent)));
         // Also register code generation agent for explain/refactor flows
-        let code_agent = openagent_terminal_ai::agents::code_generation::CodeGenerationAgent::new(provider_arc);
+        let code_agent =
+            openagent_terminal_ai::agents::code_generation::CodeGenerationAgent::new(provider_arc);
         let _ = rt.block_on(mgr.register_agent(Box::new(code_agent)));
         self.agent_manager = Some(mgr);
     }
@@ -857,13 +889,23 @@ impl AiRuntime {
     /// - Use the nearest preceding non-empty line as the option title when it contains keywords
     ///   like "Option", "Approach", "Alternative". Otherwise use the first command or a fallback.
     /// - If no fences exist, split by blank lines and treat each chunk as commands.
-    fn parse_fix_proposals_from_agent_output(text: &str, default_title: &str, explanation: &str) -> Vec<openagent_terminal_ai::AiProposal> {
+    fn parse_fix_proposals_from_agent_output(
+        text: &str,
+        default_title: &str,
+        explanation: &str,
+    ) -> Vec<openagent_terminal_ai::AiProposal> {
         #[derive(Clone, Default)]
-        struct Block { lang: Option<String>, title_hint: Option<String>, content: String }
+        struct Block {
+            lang: Option<String>,
+            title_hint: Option<String>,
+            content: String,
+        }
 
         fn is_shell_lang(lang: &Option<String>) -> bool {
             match lang.as_deref().map(|s| s.to_ascii_lowercase()) {
-                Some(ref s) if ["sh", "bash", "zsh", "shell", "console"].contains(&s.as_str()) => true,
+                Some(ref s) if ["sh", "bash", "zsh", "shell", "console"].contains(&s.as_str()) => {
+                    true
+                }
                 None => true, // unknown: often shell-like
                 _ => false,
             }
@@ -884,9 +926,15 @@ impl AiRuntime {
                 while j > 0 {
                     j -= 1;
                     let t = lines[j].trim();
-                    if t.is_empty() { continue; }
+                    if t.is_empty() {
+                        continue;
+                    }
                     let tl = t.to_ascii_lowercase();
-                    if tl.contains("option") || tl.contains("approach") || tl.contains("alternative") || tl.contains(":") {
+                    if tl.contains("option")
+                        || tl.contains("approach")
+                        || tl.contains("alternative")
+                        || tl.contains(":")
+                    {
                         title_hint = Some(t.to_string());
                     }
                     break;
@@ -895,13 +943,16 @@ impl AiRuntime {
                 let mut content = String::new();
                 i += 1;
                 while i < lines.len() {
-                    if lines[i].starts_with("```") { break; }
+                    if lines[i].starts_with("```") {
+                        break;
+                    }
                     content.push_str(lines[i]);
                     content.push('\n');
                     i += 1;
                 }
                 // Skip closing fence if present
-                if i < lines.len() && lines[i].starts_with("```") { /* will be incremented by loop */ }
+                if i < lines.len() && lines[i].starts_with("```") { /* will be incremented by loop */
+                }
                 blocks.push(Block { lang, title_hint, content });
             }
             i += 1;
@@ -911,20 +962,43 @@ impl AiRuntime {
 
         if !blocks.is_empty() {
             for (idx, b) in blocks.into_iter().enumerate() {
-                if !is_shell_lang(&b.lang) { continue; }
+                if !is_shell_lang(&b.lang) {
+                    continue;
+                }
                 let commands = Self::normalize_commands_from_generated(&b.content);
-                if commands.is_empty() { continue; }
+                if commands.is_empty() {
+                    continue;
+                }
                 let title = b
                     .title_hint
                     .as_ref()
                     .and_then(|s| {
                         let t = s.trim();
-                        if t.is_empty() { None } else { Some(t.to_string()) }
+                        if t.is_empty() {
+                            None
+                        } else {
+                            Some(t.to_string())
+                        }
                     })
-                    .unwrap_or_else(|| commands.first().cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1)));
-                proposals.push(openagent_terminal_ai::AiProposal { title, description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
+                    .unwrap_or_else(|| {
+                        commands
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| format!("Fix option {}", idx + 1))
+                    });
+                proposals.push(openagent_terminal_ai::AiProposal {
+                    title,
+                    description: if explanation.is_empty() {
+                        None
+                    } else {
+                        Some(explanation.to_string())
+                    },
+                    proposed_commands: commands,
+                });
             }
-            if !proposals.is_empty() { return proposals; }
+            if !proposals.is_empty() {
+                return proposals;
+            }
         }
 
         // No fenced blocks: split by blank-line separated chunks
@@ -932,26 +1006,50 @@ impl AiRuntime {
         let mut groups: Vec<String> = Vec::new();
         for line in text.lines() {
             if line.trim().is_empty() {
-                if !current.trim().is_empty() { groups.push(current.clone()); current.clear(); }
+                if !current.trim().is_empty() {
+                    groups.push(current.clone());
+                    current.clear();
+                }
             } else {
                 current.push_str(line);
                 current.push('\n');
             }
         }
-        if !current.trim().is_empty() { groups.push(current); }
+        if !current.trim().is_empty() {
+            groups.push(current);
+        }
 
         for (idx, g) in groups.into_iter().enumerate() {
             let commands = Self::normalize_commands_from_generated(&g);
-            if commands.is_empty() { continue; }
-            let title = commands.first().cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1));
-            proposals.push(openagent_terminal_ai::AiProposal { title, description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
+            if commands.is_empty() {
+                continue;
+            }
+            let title =
+                commands.first().cloned().unwrap_or_else(|| format!("Fix option {}", idx + 1));
+            proposals.push(openagent_terminal_ai::AiProposal {
+                title,
+                description: if explanation.is_empty() {
+                    None
+                } else {
+                    Some(explanation.to_string())
+                },
+                proposed_commands: commands,
+            });
         }
 
         if proposals.is_empty() {
             // Fallback: treat whole thing as one
             let commands = Self::normalize_commands_from_generated(text);
             if !commands.is_empty() {
-                proposals.push(openagent_terminal_ai::AiProposal { title: default_title.to_string(), description: if explanation.is_empty() { None } else { Some(explanation.to_string()) }, proposed_commands: commands });
+                proposals.push(openagent_terminal_ai::AiProposal {
+                    title: default_title.to_string(),
+                    description: if explanation.is_empty() {
+                        None
+                    } else {
+                        Some(explanation.to_string())
+                    },
+                    proposed_commands: commands,
+                });
             }
         }
         proposals
@@ -1059,29 +1157,6 @@ impl AiRuntime {
                 rt
             }
         }
-            Ok(provider) => {
-                info!("Successfully created secure AI provider: {}", provider_name);
-                let mut rt = Self::new(provider);
-                rt.ui.current_provider = provider_name.to_string();
-                if let Some(m) = selected_model.take() {
-                    rt.ui.current_model = m;
-                } else {
-                    // Fallback to config default if available
-                    rt.ui.current_model = config.default_model.clone().unwrap_or_default();
-                }
-                rt
-            }
-            Err(e) => {
-                error!("Failed to create secure provider '{}': {}", provider_name, e);
-                let mut rt = Self::new(Box::new(openagent_terminal_ai::NullProvider));
-                rt.ui.error_message = Some(format!(
-                    "Secure AI provider initialization failed: {}. Please verify your \
-                     configuration and credentials.",
-                    e
-                ));
-                rt
-            }
-        }
     }
 
     /// Begin a streaming proposal in a background thread. Falls back to blocking propose if the
@@ -1143,7 +1218,11 @@ impl AiRuntime {
         let (cm, budget_kb) = self.build_context_manager();
         // Append compact project context summary (cached 5–10 min)
         let mut req = req_raw;
-        if let Some(wd) = req.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+        if let Some(wd) = req
+            .working_directory
+            .clone()
+            .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        {
             let kv = self.fetch_project_context_kv(&wd);
             req.context.extend(kv);
         }
@@ -1281,7 +1360,11 @@ impl AiRuntime {
             context: base_ctx,
         };
         // Enrich with cached project context KV
-        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+        if let Some(wd) = req_raw
+            .working_directory
+            .clone()
+            .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        {
             let kv = self.fetch_project_context_kv(&wd);
             req_raw.context.extend(kv);
         }
@@ -1457,59 +1540,65 @@ impl AiRuntime {
 
     /// Apply command with safe-run (dry-run by default)
     pub fn apply_command(&mut self, dry_run: bool) -> Option<(String, bool)> {
-        self.ui
-            .proposals
-            .get(self.ui.selected_proposal)
-            .map(|p| {
-                let cmds = &p.proposed_commands;
-                if dry_run {
-                    // Build an annotated dry run for one or multiple commands
-                    let mut annotated = String::new();
-                    if cmds.len() > 1 {
-                        annotated.push_str("# Multiple commands suggested:\n");
-                        for (i, c) in cmds.iter().enumerate() {
-                            let risk = self.security_lens.analyze_command(c);
-                            annotated.push_str(&format!("# [{}] {:?}: {}\n", i + 1, risk.level, risk.explanation));
-                            annotated.push_str(&format!("#     {}\n", c));
-                        }
-                        let joiner = match self.apply_joiner {
-                            crate::config::ai::AiApplyJoinStrategy::AndThen => " && ",
-                            crate::config::ai::AiApplyJoinStrategy::Lines => "\n",
-                        };
-                        let combined = cmds.join(joiner);
-                        annotated.push_str("#\n# Use Copy to paste, or copy individual commands.\n");
-                        annotated.push_str(&format!("echo 'DRY RUN: batch ({} commands)'\\n# To execute all: {}", cmds.len(), combined));
-                        (annotated, true)
-                    } else {
-                        let cmd = cmds.first().cloned().unwrap_or_default();
-                        let risk = self.security_lens.analyze_command(&cmd);
+        self.ui.proposals.get(self.ui.selected_proposal).map(|p| {
+            let cmds = &p.proposed_commands;
+            if dry_run {
+                // Build an annotated dry run for one or multiple commands
+                let mut annotated = String::new();
+                if cmds.len() > 1 {
+                    annotated.push_str("# Multiple commands suggested:\n");
+                    for (i, c) in cmds.iter().enumerate() {
+                        let risk = self.security_lens.analyze_command(c);
                         annotated.push_str(&format!(
-                            "# Security Lens: {:?} - {}\n",
-                            risk.level, risk.explanation
+                            "# [{}] {:?}: {}\n",
+                            i + 1,
+                            risk.level,
+                            risk.explanation
                         ));
-                        #[cfg(feature = "security-lens")]
-                        if !risk.mitigations.is_empty() {
-                            annotated.push_str("# Suggested mitigations:\n");
-                            for m in &risk.mitigations {
-                                annotated.push_str(&format!("#  - {}\n", m));
-                            }
-                        }
-                        annotated.push_str(&format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd));
-                        (annotated, true)
+                        annotated.push_str(&format!("#     {}\n", c));
                     }
+                    let joiner = match self.apply_joiner {
+                        crate::config::ai::AiApplyJoinStrategy::AndThen => " && ",
+                        crate::config::ai::AiApplyJoinStrategy::Lines => "\n",
+                    };
+                    let combined = cmds.join(joiner);
+                    annotated.push_str("#\n# Use Copy to paste, or copy individual commands.\n");
+                    annotated.push_str(&format!(
+                        "echo 'DRY RUN: batch ({} commands)'\\n# To execute all: {}",
+                        cmds.len(),
+                        combined
+                    ));
+                    (annotated, true)
                 } else {
-                    // Combine multiple commands with && so that failure halts subsequent steps
-                    if cmds.len() > 1 {
-                        let joiner = match self.apply_joiner {
-                            crate::config::ai::AiApplyJoinStrategy::AndThen => " && ",
-                            crate::config::ai::AiApplyJoinStrategy::Lines => "\n",
-                        };
-                        (cmds.join(joiner), false)
-                    } else {
-                        (cmds.first().cloned().unwrap_or_default(), false)
+                    let cmd = cmds.first().cloned().unwrap_or_default();
+                    let risk = self.security_lens.analyze_command(&cmd);
+                    annotated.push_str(&format!(
+                        "# Security Lens: {:?} - {}\n",
+                        risk.level, risk.explanation
+                    ));
+                    #[cfg(feature = "security-lens")]
+                    if !risk.mitigations.is_empty() {
+                        annotated.push_str("# Suggested mitigations:\n");
+                        for m in &risk.mitigations {
+                            annotated.push_str(&format!("#  - {}\n", m));
+                        }
                     }
+                    annotated.push_str(&format!("echo 'DRY RUN: {}'\n# To execute: {}", cmd, cmd));
+                    (annotated, true)
                 }
-            })
+            } else {
+                // Combine multiple commands with && so that failure halts subsequent steps
+                if cmds.len() > 1 {
+                    let joiner = match self.apply_joiner {
+                        crate::config::ai::AiApplyJoinStrategy::AndThen => " && ",
+                        crate::config::ai::AiApplyJoinStrategy::Lines => "\n",
+                    };
+                    (cmds.join(joiner), false)
+                } else {
+                    (cmds.first().cloned().unwrap_or_default(), false)
+                }
+            }
+        })
     }
 
     /// Copy output in the specified format
@@ -1615,7 +1704,11 @@ impl AiRuntime {
             context: base_ctx,
         };
         // Project context enrichment
-        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+        if let Some(wd) = req_raw
+            .working_directory
+            .clone()
+            .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        {
             let kv = self.fetch_project_context_kv(&wd);
             req_raw.context.extend(kv);
         }
@@ -1703,18 +1796,21 @@ impl AiRuntime {
         window_id: WindowId,
     ) {
         // Enrich request context with PTY details when available
-        let (working_directory, shell_kind, extra_ctx): (Option<String>, Option<String>, Vec<(String, String)>) =
-            if let Some(ctx) = context {
-                let (wd, sk) = ctx.to_strings();
-                let mut ext = vec![("platform".to_string(), std::env::consts::OS.to_string())];
-                if let Some(last) = ctx.last_command {
-                    ext.push(("last_command".into(), last));
-                }
-                ext.push(("shell_executable".into(), ctx.shell_executable));
-                (Some(wd), Some(sk), ext)
-            } else {
-                (None, None, vec![("platform".to_string(), std::env::consts::OS.to_string())])
-            };
+        let (working_directory, shell_kind, extra_ctx): (
+            Option<String>,
+            Option<String>,
+            Vec<(String, String)>,
+        ) = if let Some(ctx) = context {
+            let (wd, sk) = ctx.to_strings();
+            let mut ext = vec![("platform".to_string(), std::env::consts::OS.to_string())];
+            if let Some(last) = ctx.last_command {
+                ext.push(("last_command".into(), last));
+            }
+            ext.push(("shell_executable".into(), ctx.shell_executable));
+            (Some(wd), Some(sk), ext)
+        } else {
+            (None, None, vec![("platform".to_string(), std::env::consts::OS.to_string())])
+        };
 
         let mut req_raw = AiRequest {
             scratch_text: self.ui.scratch.clone(),
@@ -1722,7 +1818,11 @@ impl AiRuntime {
             shell_kind,
             context: extra_ctx,
         };
-        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+        if let Some(wd) = req_raw
+            .working_directory
+            .clone()
+            .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        {
             let kv = self.fetch_project_context_kv(&wd);
             req_raw.context.extend(kv);
         }
@@ -1786,49 +1886,65 @@ impl AiRuntime {
         }
         if try_agent {
             if let Some(mgr) = &self.agent_manager {
-            let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
-            let code_ctx = openagent_terminal_ai::agents::CodeContext {
-                current_file: None,
-                selection: Some(target_text.clone()),
-                cursor_position: None,
-                project_files: Vec::new(),
-                dependencies: Vec::new(),
-            };
-            let lang_bias = self.last_project_primary_language.clone().map(|s| s.to_lowercase());
-            let agent_req = openagent_terminal_ai::agents::AgentRequest::CodeGeneration {
-                language: lang_bias,
-                context: code_ctx,
-                prompt: String::new(),
-                action: openagent_terminal_ai::agents::CodeAction::Explain,
-            };
-            let t0 = std::time::Instant::now();
-            match rt.block_on(mgr.process_request(agent_req)) {
-                Ok(openagent_terminal_ai::agents::AgentResponse::Code { generated_code, language: _, explanation, suggestions: _ }) => {
-                    let dt = t0.elapsed();
-                    tracing::info!(elapsed_ms = dt.as_millis() as u64, "ai.propose_explain_complete_agent");
-                    // Map code response into a single proposal with explanation in description
-                    let desc = if explanation.is_empty() { Some("Explanation".to_string()) } else { Some(explanation) };
-                    let mut commands = Vec::new();
-                    if !generated_code.trim().is_empty() {
-                        commands.push(generated_code);
+                let rt = self.agent_rt.as_ref().expect("agent runtime initialized");
+                let code_ctx = openagent_terminal_ai::agents::CodeContext {
+                    current_file: None,
+                    selection: Some(target_text.clone()),
+                    cursor_position: None,
+                    project_files: Vec::new(),
+                    dependencies: Vec::new(),
+                };
+                let lang_bias =
+                    self.last_project_primary_language.clone().map(|s| s.to_lowercase());
+                let agent_req = openagent_terminal_ai::agents::AgentRequest::CodeGeneration {
+                    language: lang_bias,
+                    context: code_ctx,
+                    prompt: String::new(),
+                    action: openagent_terminal_ai::agents::CodeAction::Explain,
+                };
+                let t0 = std::time::Instant::now();
+                match rt.block_on(mgr.process_request(agent_req)) {
+                    Ok(openagent_terminal_ai::agents::AgentResponse::Code {
+                        generated_code,
+                        language: _,
+                        explanation,
+                        suggestions: _,
+                    }) => {
+                        let dt = t0.elapsed();
+                        tracing::info!(
+                            elapsed_ms = dt.as_millis() as u64,
+                            "ai.propose_explain_complete_agent"
+                        );
+                        // Map code response into a single proposal with explanation in description
+                        let desc = if explanation.is_empty() {
+                            Some("Explanation".to_string())
+                        } else {
+                            Some(explanation)
+                        };
+                        let mut commands = Vec::new();
+                        if !generated_code.trim().is_empty() {
+                            commands.push(generated_code);
+                        }
+                        let proposal = openagent_terminal_ai::AiProposal {
+                            title: "Explanation".to_string(),
+                            description: desc,
+                            proposed_commands: commands,
+                        };
+                        self.ui.proposals = vec![proposal];
+                        self.ui.is_loading = false;
+                        return;
                     }
-                    let proposal = openagent_terminal_ai::AiProposal {
-                        title: "Explanation".to_string(),
-                        description: desc,
-                        proposed_commands: commands,
-                    };
-                    self.ui.proposals = vec![proposal];
-                    self.ui.is_loading = false;
-                    return;
-                }
-                Ok(other) => {
-                    tracing::warn!("AgentManager returned unexpected variant for explain: {:?}", other);
-                }
-                Err(e) => {
-                    tracing::warn!("AgentManager explain attempt failed: {}", e);
+                    Ok(other) => {
+                        tracing::warn!(
+                            "AgentManager returned unexpected variant for explain: {:?}",
+                            other
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("AgentManager explain attempt failed: {}", e);
+                    }
                 }
             }
-        }
         }
 
         // Fallback: direct provider path (original behavior)
@@ -1844,7 +1960,11 @@ impl AiRuntime {
             shell_kind: shell_kind.clone(),
             context,
         };
-        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+        if let Some(wd) = req_raw
+            .working_directory
+            .clone()
+            .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        {
             let kv = self.fetch_project_context_kv(&wd);
             req_raw.context.extend(kv);
         }
@@ -1943,10 +2063,7 @@ impl AiRuntime {
                 let (action, prompt) = if failed_command.is_some() {
                     (
                         openagent_terminal_ai::agents::CodeAction::Refactor,
-                        format!(
-                            "Fix this command to address the following error:\n{}",
-                            error_text
-                        ),
+                        format!("Fix this command to address the following error:\n{}", error_text),
                     )
                 } else {
                     (
@@ -1965,7 +2082,11 @@ impl AiRuntime {
                 };
                 let t0 = std::time::Instant::now();
                 match rt.block_on(mgr.process_request(agent_req)) {
-                    Ok(openagent_terminal_ai::agents::AgentResponse::Code { generated_code, explanation, .. }) => {
+                    Ok(openagent_terminal_ai::agents::AgentResponse::Code {
+                        generated_code,
+                        explanation,
+                        ..
+                    }) => {
                         let dt = t0.elapsed();
                         tracing::info!(
                             elapsed_ms = dt.as_millis() as u64,
@@ -1973,14 +2094,19 @@ impl AiRuntime {
                         );
                         // Parse into one or more proposals when alternatives are present
                         let default_title = "Fix suggestion";
-let mut proposals = Self::parse_fix_proposals_from_agent_output(&generated_code, default_title, &explanation);
+                        let mut proposals = Self::parse_fix_proposals_from_agent_output(
+                            &generated_code,
+                            default_title,
+                            &explanation,
+                        );
                         // Persist conversation (agent path)
                         let input_joined = if let Some(fc) = &failed_command {
                             format!("Error encountered while running '{}':\n{}", fc, error_text)
                         } else {
                             error_text.clone()
                         };
-                        let flat_cmds: Vec<String> = proposals.iter().flat_map(|p| p.proposed_commands.clone()).collect();
+                        let flat_cmds: Vec<String> =
+                            proposals.iter().flat_map(|p| p.proposed_commands.clone()).collect();
                         let _ = persist_ai_conversation(
                             "fix",
                             working_directory.as_deref(),
@@ -1990,7 +2116,15 @@ let mut proposals = Self::parse_fix_proposals_from_agent_output(&generated_code,
                         );
                         self.enforce_git_no_pager_on_proposals(&mut proposals);
                         self.ui.proposals = if proposals.is_empty() {
-                            vec![openagent_terminal_ai::AiProposal { title: default_title.to_string(), description: if explanation.is_empty() { None } else { Some(explanation) }, proposed_commands: Vec::new() }]
+                            vec![openagent_terminal_ai::AiProposal {
+                                title: default_title.to_string(),
+                                description: if explanation.is_empty() {
+                                    None
+                                } else {
+                                    Some(explanation)
+                                },
+                                proposed_commands: Vec::new(),
+                            }]
                         } else {
                             proposals
                         };
@@ -2033,7 +2167,11 @@ let mut proposals = Self::parse_fix_proposals_from_agent_output(&generated_code,
             shell_kind: shell_kind.clone(),
             context,
         };
-        if let Some(wd) = req_raw.working_directory.clone().or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())) {
+        if let Some(wd) = req_raw
+            .working_directory
+            .clone()
+            .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        {
             let kv = self.fetch_project_context_kv(&wd);
             req_raw.context.extend(kv);
         }
@@ -2098,11 +2236,17 @@ let mut proposals = Self::parse_fix_proposals_from_agent_output(&generated_code,
             .providers
             .get(&name)
             .cloned()
-            .or_else(|| crate::config::ai_providers::get_default_provider_configs().get(&name).cloned())
+            .or_else(|| {
+                crate::config::ai_providers::get_default_provider_configs().get(&name).cloned()
+            })
             .ok_or_else(|| format!("Unknown provider: {}", name))?;
         // Attempt reconfiguration; errors are surfaced via ui.error_message.
         self.reconfigure_to(&name, &prov_cfg);
-        if let Some(err) = self.ui.error_message.clone() { Err(err) } else { Ok(()) }
+        if let Some(err) = self.ui.error_message.clone() {
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     fn build_context_manager(&self) -> (ContextManager, usize) {
@@ -2199,7 +2343,10 @@ fn enforce_git_no_pager_line(line: &str) -> String {
             break;
         }
     }
-    let gi = match git_idx { Some(i) => i, None => return line.to_string() };
+    let gi = match git_idx {
+        Some(i) => i,
+        None => return line.to_string(),
+    };
     // Determine insertion index after handling "-C <path>" chain
     let mut insert_at = gi + 1;
     let mut i = gi + 1;

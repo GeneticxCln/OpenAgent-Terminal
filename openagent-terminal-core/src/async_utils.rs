@@ -27,7 +27,7 @@ impl Timeouts {
 pub enum TimeoutError {
     #[error("Operation timed out after {timeout:?} in {operation}")]
     Timeout { timeout: Duration, operation: String },
-    
+
     #[error("Operation cancelled: {reason}")]
     Cancelled { reason: String },
 }
@@ -42,7 +42,7 @@ where
     F: Future<Output = T>,
 {
     let start = Instant::now();
-    
+
     match timeout(timeout_duration, future).await {
         Ok(result) => {
             let elapsed = start.elapsed();
@@ -55,10 +55,7 @@ where
             Ok(result)
         }
         Err(_) => {
-            error!(
-                "Operation '{}' timed out after {:?}",
-                operation_name, timeout_duration
-            );
+            error!("Operation '{}' timed out after {:?}", operation_name, timeout_duration);
             Err(TimeoutError::Timeout {
                 timeout: timeout_duration,
                 operation: operation_name.to_string(),
@@ -98,7 +95,7 @@ where
     F: Future<Output = T>,
 {
     let start = Instant::now();
-    
+
     tokio::select! {
         result = timeout(timeout_duration, future) => {
             match result {
@@ -147,10 +144,10 @@ where
 {
     let mut attempts = 0;
     let mut delay = initial_delay;
-    
+
     loop {
         attempts += 1;
-        
+
         match operation().await {
             Ok(result) => {
                 if attempts > 1 {
@@ -169,12 +166,12 @@ where
                     );
                     return Err(e);
                 }
-                
+
                 warn!(
                     "Operation '{}' failed on attempt {}/{}, retrying in {:?}: {:?}",
                     operation_name, attempts, max_attempts, delay, e
                 );
-                
+
                 tokio::time::sleep(delay).await;
                 delay = std::cmp::min(delay * 2, Duration::from_secs(60)); // Cap at 60 seconds
             }
@@ -191,21 +188,21 @@ pub async fn graceful_shutdown<F>(
     F: Future<Output = ()>,
 {
     shutdown_signal.await;
-    
+
     let start = Instant::now();
     info!("Graceful shutdown initiated, waiting for operations to complete...");
-    
+
     while start.elapsed() < max_shutdown_wait {
         let count = *active_operations.read().await;
         if count == 0 {
             info!("All operations completed, shutting down");
             return;
         }
-        
+
         warn!("Waiting for {} active operations to complete", count);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    
+
     let remaining = *active_operations.read().await;
     if remaining > 0 {
         error!(
@@ -227,11 +224,8 @@ impl OperationGuard {
             let mut count = counter.write().await;
             *count += 1;
         }
-        
-        Self {
-            counter,
-            name: operation_name,
-        }
+
+        Self { counter, name: operation_name }
     }
 }
 
@@ -239,7 +233,7 @@ impl Drop for OperationGuard {
     fn drop(&mut self) {
         let counter = self.counter.clone();
         let name = self.name.clone();
-        
+
         tokio::spawn(async move {
             let mut count = counter.write().await;
             if *count > 0 {
@@ -259,12 +253,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_timeout_success() {
-        let result = timeout_with_log(
-            async { "success" },
-            Timeouts::SHORT,
-            "test_operation",
-        ).await;
-        
+        let result = timeout_with_log(async { "success" }, Timeouts::SHORT, "test_operation").await;
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
     }
@@ -278,8 +268,9 @@ mod tests {
             },
             Duration::from_millis(100),
             "test_timeout",
-        ).await;
-        
+        )
+        .await;
+
         assert!(result.is_err());
     }
 
@@ -287,12 +278,12 @@ mod tests {
     async fn test_cancellation() {
         let token = tokio_util::sync::CancellationToken::new();
         let token_clone = token.clone();
-        
+
         tokio::spawn(async move {
             sleep(Duration::from_millis(50)).await;
             token_clone.cancel();
         });
-        
+
         let result = with_cancellation(
             async {
                 sleep(Duration::from_millis(1000)).await;
@@ -300,8 +291,9 @@ mod tests {
             },
             token,
             "test_cancellation",
-        ).await;
-        
+        )
+        .await;
+
         assert!(result.is_err());
         if let Err(TimeoutError::Cancelled { .. }) = result {
             // Expected
@@ -313,7 +305,7 @@ mod tests {
     #[tokio::test]
     async fn test_retry_with_backoff() {
         let mut attempt_count = 0;
-        
+
         let result = retry_with_backoff(
             || {
                 attempt_count += 1;
@@ -328,8 +320,9 @@ mod tests {
             5,
             Duration::from_millis(10),
             "test_retry",
-        ).await;
-        
+        )
+        .await;
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
         assert_eq!(attempt_count, 3);
@@ -338,12 +331,12 @@ mod tests {
     #[tokio::test]
     async fn test_operation_guard() {
         let counter = Arc::new(tokio::sync::RwLock::new(0u32));
-        
+
         {
             let _guard = OperationGuard::new(counter.clone(), "test_op".to_string()).await;
             assert_eq!(*counter.read().await, 1);
         }
-        
+
         // Give the drop handler a chance to run
         tokio::time::sleep(Duration::from_millis(10)).await;
         assert_eq!(*counter.read().await, 0);

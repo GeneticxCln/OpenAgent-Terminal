@@ -802,10 +802,7 @@ mod tests {
     #[cfg(feature = "wasm-runtime")]
     impl crate::host::HostInterface for CaptureHost {
         fn log(&self, level: crate::host::LogLevel, message: &str) {
-            self.logs
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push((level, message.to_string()));
+            self.logs.lock().unwrap_or_else(|e| e.into_inner()).push((level, message.to_string()));
         }
         fn read_file(&self, _path: &str) -> Result<Vec<u8>, crate::api::PluginError> {
             Ok(Vec::new())

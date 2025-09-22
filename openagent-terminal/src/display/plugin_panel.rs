@@ -27,7 +27,9 @@ pub struct PluginPanelState {
 }
 
 impl Default for PluginPanelState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PluginPanelState {
@@ -48,8 +50,12 @@ impl PluginPanelState {
         }
         let len = self.results.len() as isize;
         let mut idx = self.selected as isize + delta;
-        if idx < 0 { idx = 0; }
-        if idx >= len { idx = len - 1; }
+        if idx < 0 {
+            idx = 0;
+        }
+        if idx >= len {
+            idx = len - 1;
+        }
         self.selected = idx as usize;
     }
 }
@@ -57,9 +63,12 @@ impl PluginPanelState {
 impl Display {
     /// Draw the Plugins panel (bottom overlay). This draws both background rects and text.
     pub fn draw_plugins_panel_overlay(&mut self, config: &UiConfig, state: &PluginPanelState) {
-        if !state.active { return; }
+        if !state.active {
+            return;
+        }
         let size_info = self.size_info;
-        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
         let tokens = theme.tokens;
 
         // Panel sizing: 40% of viewport height, min 8 lines
@@ -101,7 +110,9 @@ impl Display {
         prompt.push_str(&state.query);
         self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &prompt, num_cols);
         let mut cursor_col = prompt_prefix.width() + state.query.width();
-        if cursor_col >= num_cols { cursor_col = num_cols.saturating_sub(1); }
+        if cursor_col >= num_cols {
+            cursor_col = num_cols.saturating_sub(1);
+        }
         self.draw_ai_text(Point::new(line, Column(cursor_col)), bg, fg, " ", 1);
         line += 1;
 
@@ -115,12 +126,18 @@ impl Display {
         // Results list (reserve one line for footer)
         let max_lines = footer_line.saturating_sub(1);
         for (idx, item) in state.results.iter().enumerate() {
-            if line > max_lines { break; }
+            if line > max_lines {
+                break;
+            }
             let mut row = String::new();
             row.push_str(if idx == state.selected { "▶ " } else { "  " });
             // Name and version
             row.push_str(&item.name);
-            if let Some(ver) = &item.version { if !ver.is_empty() { row.push_str(&format!(" {}", ver)); } }
+            if let Some(ver) = &item.version {
+                if !ver.is_empty() {
+                    row.push_str(&format!(" {}", ver));
+                }
+            }
             // Status
             row.push_str(if item.loaded { " — [Loaded]" } else { " — [Available]" });
             // Path or description

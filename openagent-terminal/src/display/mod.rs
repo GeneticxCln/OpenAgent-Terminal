@@ -75,14 +75,14 @@ pub mod hint;
 pub mod notebook_panel;
 pub mod palette;
 pub mod pane_drag_drop;
+#[cfg(feature = "plugins")]
+pub mod plugin_panel;
 pub mod settings_panel;
 pub mod tab_bar;
 pub mod warp_ui;
 pub mod window;
 #[cfg(feature = "workflow")]
 pub mod workflow_panel;
-#[cfg(feature = "plugins")]
-pub mod plugin_panel;
 pub mod workspace_animations;
 
 /// Decide whether the overlay tab bar should be shown based on configuration and mouse position.

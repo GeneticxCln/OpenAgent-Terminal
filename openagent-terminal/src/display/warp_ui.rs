@@ -1064,7 +1064,11 @@ impl Display {
         let hit_slop = 2.0_f32;
         // First: settings gear bounds
         if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
-            if x_px + hit_slop >= gx && x_px <= gx + gw + hit_slop && y_px + hit_slop >= gy && y_px <= gy + gh + hit_slop {
+            if x_px + hit_slop >= gx
+                && x_px <= gx + gw + hit_slop
+                && y_px + hit_slop >= gy
+                && y_px <= gy + gh + hit_slop
+            {
                 return Some(TabBarAction::OpenSettings);
             }
         }
@@ -1072,7 +1076,10 @@ impl Display {
         if config.workspace.tab_bar.show_close_button {
             if let Some((_tab_id, _bx, _by, _bw, _bh)) =
                 self.close_button_bounds_px.iter().copied().find(|(_, bx, by, bw, bh)| {
-                    x_px + hit_slop >= *bx && x_px <= *bx + *bw + hit_slop && y_px + hit_slop >= *by && y_px <= *by + *bh + hit_slop
+                    x_px + hit_slop >= *bx
+                        && x_px <= *bx + *bw + hit_slop
+                        && y_px + hit_slop >= *by
+                        && y_px <= *by + *bh + hit_slop
                 })
             {
                 // Don't return here since this is a generic click handler; press handler handles close
@@ -1080,7 +1087,10 @@ impl Display {
                 // Find matching tab id
                 if let Some((tab_id, _, _, _, _)) =
                     self.close_button_bounds_px.iter().copied().find(|(_, cbx, cby, cbw, cbh)| {
-                        x_px + hit_slop >= *cbx && x_px <= *cbx + *cbw + hit_slop && y_px + hit_slop >= *cby && y_px <= *cby + *cbh + hit_slop
+                        x_px + hit_slop >= *cbx
+                            && x_px <= *cbx + *cbw + hit_slop
+                            && y_px + hit_slop >= *cby
+                            && y_px <= *cby + *cbh + hit_slop
                     })
                 {
                     return Some(TabBarAction::CloseTab(tab_id));
@@ -1119,7 +1129,11 @@ impl Display {
         // Apply a small hit slop to account for high-DPI rounding
         let hit_slop = 2.0_f32;
         if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
-            if x_px + hit_slop >= gx && x_px <= gx + gw + hit_slop && y_px + hit_slop >= gy && y_px <= gy + gh + hit_slop {
+            if x_px + hit_slop >= gx
+                && x_px <= gx + gw + hit_slop
+                && y_px + hit_slop >= gy
+                && y_px <= gy + gh + hit_slop
+            {
                 return Some(TabBarAction::OpenSettings);
             }
         }
@@ -1127,7 +1141,10 @@ impl Display {
         if config.workspace.tab_bar.show_close_button {
             if let Some((tab_id, _x, _y, _w, _h)) =
                 self.close_button_bounds_px.iter().copied().find(|(_, bx, by, bw, bh)| {
-                    x_px + hit_slop >= *bx && x_px <= *bx + *bw + hit_slop && y_px + hit_slop >= *by && y_px <= *by + *bh + hit_slop
+                    x_px + hit_slop >= *bx
+                        && x_px <= *bx + *bw + hit_slop
+                        && y_px + hit_slop >= *by
+                        && y_px <= *by + *bh + hit_slop
                 })
             {
                 // Start a fade-out animation for this tab before it is removed
@@ -1138,7 +1155,9 @@ impl Display {
         let hit = hit_test_tab_bar_cached(
             self.size_info.height(),
             &self.tab_bounds_px,
-            self.new_tab_button_bounds.map(|(bx, by, bw, bh)| (bx - hit_slop, by - hit_slop, bw + hit_slop * 2.0, bh + hit_slop * 2.0)),
+            self.new_tab_button_bounds.map(|(bx, by, bw, bh)| {
+                (bx - hit_slop, by - hit_slop, bw + hit_slop * 2.0, bh + hit_slop * 2.0)
+            }),
             config,
             position,
             x_px,
