@@ -185,7 +185,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 async-openai = "0.25"
 
 # Plugin system
-wasmtime = "36.0"
+wasmtime = "37.0"
 wasmtime-wasi = "37.0"
 jsonrpc-core = "18.0"
 jsonrpc-ipc-server = "18.0"
