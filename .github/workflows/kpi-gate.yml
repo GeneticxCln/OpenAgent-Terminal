@@ -1,0 +1,58 @@
+name: kpi-gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  kpi:
+    name: KPI performance gates
+    runs-on: ubuntu-latest
+    env:
+      OPENAGENT_STRICT_PERF: "1"
+      BUILD_BUDGET_SEC: "900"  # optional build-time budget (15 min)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Measure build time (optional budget)
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          t0=$(date +%s)
+          cargo build -p openagent-terminal --features "ai" --release --locked
+          t1=$(date +%s)
+          dt=$((t1 - t0))
+          echo "seconds=$dt" >> "$GITHUB_OUTPUT"
+          echo "Build seconds: $dt" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$dt" -gt "$BUILD_BUDGET_SEC" ]; then
+            echo "::warning::Build time ${dt}s exceeded budget ${BUILD_BUDGET_SEC}s"
+          fi
+
+      - name: Cold start KPI (<= 100ms)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p openagent-terminal --example perf_cold_start -- --max-ms=100
+
+      - name: Idle memory KPI (<= 150MB) with AI enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p openagent-terminal --features "ai" --example perf_idle_memory -- --max-mb=150
+
+      - name: Enforce perf_smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p openagent-terminal --features "ai" --locked perf_smoke -- --nocapture

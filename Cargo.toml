@@ -6,22 +6,18 @@ members = [
     "openagent-terminal-config-derive",
     "openagent-terminal-sync",
     "openagent-terminal-ai",
-    "crates/plugin-api",
-    "crates/plugin-loader",
-    "crates/plugin-sdk",
-    "crates/plugin-system",
+    # Plugin crates consolidated
+    "crates/plugin-runtime",  # loader + system
+    "crates/plugin-sdk",      # api + sdk (enhanced)
     "crates/workflow-engine",
     "plugins/git-context",
     "plugins/docker-helper",
     "plugins/dev-tools",
-    "crates/openagent-terminal-migrate",
-    "crates/openagent-terminal-themes",
-    "crates/openagent-terminal-snippets",
-    "crates/openagent-terminal-ide-editor",
-    "crates/openagent-terminal-ide-lsp",
-    "crates/openagent-terminal-ide-indexer",
-    "crates/openagent-terminal-ide-dap",
-    "crates/openagent-terminal-web-editors",
+    # Utility crates consolidated into single crate
+    "crates/openagent-terminal-utils",
+    # IDE crates consolidated into single crate
+    "crates/openagent-terminal-ide",
+    # Note: web-editors functionality moved to openagent-terminal-ide
 ]
 resolver = "2"
 
@@ -138,13 +134,21 @@ codegen-units = 1
 incremental = false
 
 [workspace.dependencies]
+# Dependency version overrides to resolve conflicts
+base64 = "0.22.1"  # Override to use newer version consistently
+rustix = "1.1.2"   # Use newer rustix across all crates
+bitflags = "2.9.4" # Use newer bitflags to avoid conflicts
+hashbrown = "0.16.0" # Consistent hashbrown version
+futures = "0.3.31"  # Ensure consistent futures versions
+regex = "1.11.2"    # Updated regex version
+
 # Core dependencies (always needed)
 toml = "0.9.7"
 toml_edit = "0.23.2"
 anyhow = "1.0"
 thiserror = "2.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1.0.226", features = ["derive"] }
+serde_json = "1.0.145"
 serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -159,9 +163,8 @@ urlencoding = "2.1"
 wry = "0.44"
 
 # Async runtime
-tokio = { version = "1.47", features = ["full"] }
+tokio = { version = "1.47.1", features = ["full"] }
 async-trait = "0.1"
-futures = "0.3"
 
 # Rendering - WGPU
 wgpu = "26.0"
@@ -191,10 +194,9 @@ jsonrpc-core = "18.0"
 jsonrpc-ipc-server = "18.0"
 
 # Workflow system
-tera = "1.19"
-regex = "1.10"
+tera = "1.20"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.18", features = ["v4", "serde"] }
 
 # UI components
 egui = "0.29"
@@ -204,17 +206,12 @@ ratatui = "0.30"
 
 # Performance monitoring
 pprof = { version = "0.13", features = ["flamegraph"] }
-metrics = "0.21"
-metrics-exporter-prometheus = "0.13"
+metrics = "0.22"
+metrics-exporter-prometheus = "0.14"
 crossfont = "0.8.0"
 
 # Synchronization
 parking_lot = "0.12"
-
-# Standardized versions for conflict resolution
-base64 = "0.22.1"
-bitflags = "2.9.4"
-rustix = "1.1.2"
 byteorder = "1.5.0"
 futures-util = "0.3.31"
 futures-channel = "0.3.31"

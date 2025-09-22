@@ -399,6 +399,8 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
         run: cargo test -p plugin-loader -- --nocapture
       - name: Plugin system tests
         run: cargo test -p plugin-system -- --nocapture
+      - name: Plugin runtime tests
+        run: cargo test -p plugin-runtime -- --nocapture
 
   shader-sync-check:
     name: Shader sync check (RectKind vs WGSL)

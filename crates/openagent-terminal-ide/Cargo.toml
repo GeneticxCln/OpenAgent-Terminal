@@ -1,0 +1,36 @@
+[package]
+name = "openagent-terminal-ide"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "IDE features for OpenAgent Terminal (LSP, DAP, editor, indexer)"
+
+[dependencies]
+# Core dependencies
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+# LSP dependencies
+lsp-types = { version = "0.95.1", optional = true }
+
+# Web editor dependencies  
+axum = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+wry = { workspace = true, optional = true }
+
+[features]
+default = []
+lsp = ["lsp-types"]
+editor = []
+indexer = []
+dap = []
+web-editors = ["axum", "hyper", "tokio-tungstenite", "wry"]
+all = ["lsp", "editor", "indexer", "dap", "web-editors"]

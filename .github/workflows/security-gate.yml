@@ -1,0 +1,32 @@
+name: security-gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  security-gate:
+    name: Security Lens + Plugin Sandbox Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run plugin-runtime sandbox tests
+        run: |
+          cargo test -p plugin-runtime --all-features --locked -- --nocapture
+
+      - name: Run Security Lens suites (openagent-terminal)
+        run: |
+          # Run focused security-lens test binaries (faster gate) with full security features
+          cargo test -p openagent-terminal --features security-lens-full --locked security_lens -- --nocapture
+          cargo test -p openagent-terminal --features security-lens-full --locked security_lens_sanity -- --nocapture

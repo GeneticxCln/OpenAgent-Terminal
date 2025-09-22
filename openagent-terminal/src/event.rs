@@ -104,7 +104,7 @@ use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 #[cfg(feature = "plugins")]
-use plugin_loader::PluginEvent;
+use crate::plugins_api::PluginEvent;
 #[cfg(feature = "plugins")]
 use serde_json::json;
 
@@ -237,6 +237,181 @@ mod copy_export_tests {
         let out = crate::event::collect_block_output_from_grid(&grid, 2, 8);
         let expected = ["CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III"].join("\n");
         assert_eq!(out, expected);
+    }
+}
+
+#[cfg(test)]
+mod basic_event_tests {
+    use super::*;
+    use openagent_terminal_core::index::{Column, Line};
+    use crate::message_bar::{Message, MessageType};
+
+    #[test]
+    fn search_state_defaults_and_accessors() {
+        let st = SearchState::default();
+        assert_eq!(st.direction(), Direction::Right);
+        assert!(st.regex().is_none());
+        assert!(st.focused_match().is_none());
+    }
+
+    #[test]
+    fn search_state_regex_history() {
+        let mut st = SearchState::default();
+        // Simulate active search with current input at index 0
+        st.history.push_front("foo".to_string());
+        st.history_index = Some(0);
+        assert_eq!(st.regex(), Some(&"foo".to_string()));
+
+        // Clear focused match
+        st.clear_focused_match();
+        assert!(st.focused_match().is_none());
+    }
+
+    #[test]
+    fn event_wrapper_payload_access() {
+        let wid: WindowId = WindowId::dummy();
+        let msg = Message::new("hello".into(), MessageType::Warning);
+        let ev = Event::new(EventType::Message(msg.clone()), wid);
+        match ev.payload() {
+            EventType::Message(m) => {
+                // Verify type
+                assert!(matches!(m.ty(), MessageType::Warning));
+                // Verify rendered text contains the message
+                // Ensure there is space for at least one message line beyond MIN_FREE_LINES.
+                let si = crate::display::SizeInfo::new(200.0, 120.0, 10.0, 20.0, 0.0, 0.0, false);
+                let lines = m.text(&si);
+                assert!(!lines.is_empty());
+            }
+            _ => panic!("unexpected payload"),
+        }
+    }
+
+    #[test]
+    fn touch_zoom_font_delta_quantizes() {
+        use winit::dpi::PhysicalPosition;
+        use winit::event::{DeviceId, Touch as WTouch, TouchPhase};
+
+        // Two distinct touch points
+        let dev = DeviceId::dummy();
+        let t1 = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let t2 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let mut zoom = TouchZoom::new((t1, t2));
+
+        // Move one finger far to increase distance -> positive, quantized delta
+        let t2_far = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 200.0), force: None, phase: TouchPhase::Moved };
+        let d_pos = zoom.font_delta(t2_far);
+        let steps = d_pos / crate::input::FONT_SIZE_STEP;
+        assert!((steps - steps.round()).abs() < 1e-6, "delta must be quantized to FONT_SIZE_STEP");
+
+        // Move back to zero distance -> negative delta
+        let t2_close = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let d_neg = zoom.font_delta(t2_close);
+        assert!(d_neg < 0.0);
+    }
+
+    #[test]
+    fn touch_zoom_fraction_accumulates_across_small_moves() {
+        use winit::dpi::PhysicalPosition;
+        use winit::event::{DeviceId, Touch as WTouch, TouchPhase};
+
+        let dev = DeviceId::dummy();
+        let t1 = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let t2 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let mut zoom = TouchZoom::new((t1, t2));
+
+        // +50px => 0.5 step -> quantizes to 0
+        let t2_50 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 50.0), force: None, phase: TouchPhase::Moved };
+        let d1 = zoom.font_delta(t2_50);
+        assert!(d1.abs() < 1e-6);
+
+        // +100px total => additional 50px (0.5) + 0.5 fraction = 1.0 step
+        let t2_100 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 100.0), force: None, phase: TouchPhase::Moved };
+        let d2 = zoom.font_delta(t2_100);
+        assert!((d2 - crate::input::FONT_SIZE_STEP).abs() < 1e-6);
+
+        // +10px => below threshold, accumulates fraction only
+        let t2_110 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 110.0), force: None, phase: TouchPhase::Moved };
+        let d3 = zoom.font_delta(t2_110);
+        assert!(d3.abs() < 1e-6);
+
+        // -20px => still below threshold (with fraction), no step
+        let t2_90 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 90.0), force: None, phase: TouchPhase::Moved };
+        let d4 = zoom.font_delta(t2_90);
+        assert!(d4.abs() < 1e-6);
+
+        // Back to zero => should yield exactly -1 step due to accumulated fraction
+        let t2_0 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let d5 = zoom.font_delta(t2_0);
+        assert!((d5 + crate::input::FONT_SIZE_STEP).abs() < 1e-6);
+    }
+
+    #[test]
+    fn touch_zoom_slots_update_and_identity() {
+        use winit::dpi::PhysicalPosition;
+        use winit::event::{DeviceId, Touch as WTouch, TouchPhase};
+
+        let dev = DeviceId::dummy();
+        let t1 = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let t2 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(10.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let mut zoom = TouchZoom::new((t1, t2));
+
+        // Move slot 1 and verify identity/location preserved
+        let t1b = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(20.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let _ = zoom.font_delta(t1b);
+        let (s1, s2) = zoom.slots();
+        assert_eq!(s1.id, 1);
+        assert_eq!(s2.id, 2);
+        assert_eq!(s1.location.x, 20.0);
+        assert_eq!(s2.location.x, 10.0);
+
+        // Move slot 2 and verify updated
+        let t2b = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(25.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let _ = zoom.font_delta(t2b);
+        let (s1c, s2c) = zoom.slots();
+        assert_eq!(s1c.id, 1);
+        assert_eq!(s2c.id, 2);
+        assert_eq!(s1c.location.x, 20.0);
+        assert_eq!(s2c.location.x, 25.0);
+    }
+
+    #[test]
+    fn search_state_history_and_regex_mut() {
+        let mut st = SearchState::default();
+        // No active history -> regex_mut is None
+        assert!(st.regex_mut().is_none());
+        // Push a query and activate it
+        st.history.push_front("abc".to_string());
+        st.history_index = Some(0);
+        assert_eq!(st.regex(), Some(&"abc".to_string()));
+        // Mutate via regex_mut
+        if let Some(re) = st.regex_mut() {
+            re.push('d');
+        }
+        assert_eq!(st.regex(), Some(&"abcd".to_string()));
+    }
+
+    #[test]
+    fn mouse_point_maps_from_pixels_to_grid() {
+        // Size: 3x2 cells, 10x20 px cell, 5 px padding
+        let si = crate::display::SizeInfo::new(35.0, 50.0, 10.0, 20.0, 5.0, 5.0, false);
+        let mut mouse = Mouse::default();
+        // Put mouse inside first cell after padding
+        mouse.x = 6; // padding_x + 1
+        mouse.y = 6; // padding_y + 1
+        let p = mouse.point(&si, 0);
+        assert_eq!(p.line, Line(0));
+        assert_eq!(p.column, Column(0));
+
+        // Move to second column, same row
+        mouse.x = 5 + 10 + 1; // padding + one cell width + 1
+        let p = mouse.point(&si, 0);
+        assert_eq!(p.line, Line(0));
+        assert_eq!(p.column, Column(1));
+
+        // Move to last visible row
+        mouse.y = 5 + 20 + 1; // padding + one cell height + 1
+        let p = mouse.point(&si, 0);
+        assert_eq!(p.line, Line(1));
     }
 }
 
@@ -8832,3 +9007,4 @@ pub(crate) fn schedule_blocks_search_for_test(
     let evt = Event::new(EventType::BlocksSearchPerform(query), window_id);
     scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
 }
+

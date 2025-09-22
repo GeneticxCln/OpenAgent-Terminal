@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 #[cfg(feature = "plugins")]
-use plugin_loader::PluginEvent;
+use crate::plugins_api::PluginEvent;
 
 #[derive(Args, Debug, Clone)]
 pub struct PluginsOptions {

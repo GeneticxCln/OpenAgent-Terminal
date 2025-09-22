@@ -2561,3 +2561,90 @@ fn composer_next_word_boundary(s: &str, mut idx: usize, style: &WordBoundaryStyl
     }
     i
 }
+
+#[cfg(test)]
+mod composer_buffer_tests {
+    use super::*;
+    use crate::config::theme::WordBoundaryStyle;
+
+    #[test]
+    fn char_boundaries_handle_unicode() {
+        let s = "a👩d"; // 'a' + emoji + 'd'
+        let len = s.len();
+        // Move left boundary from end should land at start of 'd'
+        let prev1 = composer_prev_char_boundary(s, len);
+        let ch1 = s[prev1..].chars().next().unwrap();
+        assert_eq!(ch1, 'd');
+        // Move left again should land at start of emoji
+        let prev2 = composer_prev_char_boundary(s, prev1);
+        let ch2 = s[prev2..].chars().next().unwrap();
+        assert_eq!(ch2, '👩');
+        // Next after emoji should go to start of 'd'
+        let next_from_emoji = composer_next_char_boundary(s, prev2);
+        assert_eq!(next_from_emoji, prev1);
+    }
+
+    #[test]
+    fn word_boundaries_respect_style() {
+        let s = "foo_bar baz";
+        // With Alnum, '_' is part of word; prev from end goes to 'b' in "baz"
+        let i1 = composer_prev_word_boundary(s, s.len(), &WordBoundaryStyle::Alnum);
+        assert_eq!(&s[i1..i1 + 1], "b");
+        // Next from start should jump to end of first word 'foo_bar'
+        let n1 = composer_next_word_boundary(s, 0, &WordBoundaryStyle::Alnum);
+        assert!(n1 > 0);
+        // With Unicode, '_' is not word; next from start should stop at '_' boundary
+        let n2 = composer_next_word_boundary(s, 0, &WordBoundaryStyle::Unicode);
+        // Must stop exactly at the underscore
+        let underscore_idx = s.find('_').unwrap();
+        assert_eq!(n2, underscore_idx);
+    }
+
+    #[test]
+    fn prev_word_from_middle_returns_start() {
+        let s = "hello world";
+        // Cursor just after 'r' in "world"
+        let after_r = s.find('r').unwrap() + 'r'.len_utf8();
+        let start_word = composer_prev_word_boundary(s, after_r, &WordBoundaryStyle::Unicode);
+        assert_eq!(&s[start_word..start_word + 1], "w");
+    }
+
+    #[test]
+    fn next_word_from_middle_stops_at_punct() {
+        let s = "foo-bar";
+        // Cursor after the last 'o' in "foo"
+        let after_o = s.match_indices('o').last().unwrap().0 + 'o'.len_utf8();
+        let next = composer_next_word_boundary(s, after_o, &WordBoundaryStyle::Unicode);
+        // Boundary should advance past '-' to the start of the next word ('b')
+        let b_idx = s.find('b').unwrap();
+        assert_eq!(next, b_idx);
+    }
+
+    #[test]
+    fn word_delete_left_alnum_skips_ws_and_underscore() {
+        let s = "foo_bar baz";
+        let mut t = s.to_string();
+        let cur = t.len();
+        let prev = composer_prev_word_boundary(&t, cur, &WordBoundaryStyle::Alnum);
+        // Simulate Backspace with word modifier: delete prev..cur
+        t.replace_range(prev..cur, "");
+        assert_eq!(t, "foo_bar ");
+    }
+
+    #[test]
+    fn word_delete_right_unicode_until_space() {
+        let s = "foo bar";
+        let mut t = s.to_string();
+        let cur = t.find('b').unwrap();
+        let next = composer_next_word_boundary(&t, cur, &WordBoundaryStyle::Unicode);
+        t.replace_range(cur..next, "");
+        assert_eq!(t, "foo ");
+    }
+
+    #[test]
+    fn char_boundaries_clamp_edges() {
+        let s = "abc";
+        assert_eq!(composer_prev_char_boundary(s, 0), 0);
+        assert_eq!(composer_next_char_boundary(s, s.len()), s.len());
+    }
+}

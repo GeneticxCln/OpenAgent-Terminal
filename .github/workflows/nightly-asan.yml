@@ -1,0 +1,104 @@
+name: nightly-asan
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # nightly at 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  asan:
+    name: AddressSanitizer leak checks and memory tracking
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+      RUSTFLAGS: "-Zsanitizer=address"
+      RUSTDOCFLAGS: "-Zsanitizer=address"
+      ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1:allocator_may_return_null=1:strict_init_order=true:strict_string_checks=true"
+      LSAN_OPTIONS: "suppressions=/home/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/.dev/lsan.supp"
+      # Memory budgets (KB) for prioritized stress binaries; adjust as needed
+      PERF_SMOKE_RSS_BUDGET_KB: "500000"     # ~500 MB
+      RENDER_SMOKE_RSS_BUDGET_KB: "1200000"  # ~1.2 GB (GPU/wgpu path)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly (with llvm-tools)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Install required tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y time
+
+      - name: Build prioritized ASAN test binaries (no-run)
+        run: |
+          # Build std with sanitizer as well for full coverage
+          cargo +nightly test -Z build-std --package openagent-terminal --test perf_smoke --no-run --all-features --locked
+          cargo +nightly test -Z build-std --package openagent-terminal --test render_smoke --no-run --all-features --locked
+
+      - name: Locate test binaries
+        id: bins
+        shell: bash
+        run: |
+          set -euo pipefail
+          perf_bin=$(find target -type f -perm -111 -name 'perf_smoke-*' | head -n1)
+          render_bin=$(find target -type f -perm -111 -name 'render_smoke-*' | head -n1)
+          echo "perf_bin=$perf_bin" >> "$GITHUB_OUTPUT"
+          echo "render_bin=$render_bin" >> "$GITHUB_OUTPUT"
+
+      - name: Run perf_smoke under ASAN with memory tracking
+        id: perf
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Running: ${{ steps.bins.outputs.perf_bin }}"
+          # Loop to expose leaks in repeated init/teardown cycles (time-compressed)
+          runs=30
+          max_kb=0
+          for i in $(seq 1 $runs); do
+            out=$(/usr/bin/time -v "${{ steps.bins.outputs.perf_bin }}" 2>&1 >/dev/null || true)
+            rss=$(echo "$out" | awk -F': ' '/Maximum resident set size/ {print $2}' | tr -d ' ')
+            echo "perf_smoke iter $i RSS=${rss}KB"
+            if [ -n "$rss" ] && [ "$rss" -gt "$max_kb" ]; then max_kb=$rss; fi
+            # Fail early on ASAN errors (non-zero exit already halts job unless suppressed)
+          done
+          echo "peak_rss_kb=$max_kb" >> "$GITHUB_OUTPUT"
+          budget=${PERF_SMOKE_RSS_BUDGET_KB}
+          echo "Perf peak RSS: ${max_kb} KB (budget ${budget} KB)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$max_kb" -gt "$budget" ]; then
+            echo "::warning::perf_smoke peak RSS ${max_kb} KB exceeds budget ${budget} KB"
+          fi
+
+      - name: Run render_smoke under ASAN with memory tracking
+        id: render
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Running: ${{ steps.bins.outputs.render_bin }}"
+          runs=10
+          max_kb=0
+          for i in $(seq 1 $runs); do
+            out=$(/usr/bin/time -v "${{ steps.bins.outputs.render_bin }}" 2>&1 >/dev/null || true)
+            rss=$(echo "$out" | awk -F': ' '/Maximum resident set size/ {print $2}' | tr -d ' ')
+            echo "render_smoke iter $i RSS=${rss}KB"
+            if [ -n "$rss" ] && [ "$rss" -gt "$max_kb" ]; then max_kb=$rss; fi
+          done
+          echo "peak_rss_kb=$max_kb" >> "$GITHUB_OUTPUT"
+          budget=${RENDER_SMOKE_RSS_BUDGET_KB}
+          echo "Render peak RSS: ${max_kb} KB (budget ${budget} KB)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$max_kb" -gt "$budget" ]; then
+            echo "::warning::render_smoke peak RSS ${max_kb} KB exceeds budget ${budget} KB"
+          fi
+
+      - name: Summarize results
+        shell: bash
+        run: |
+          echo "## Nightly ASAN Leak & Memory Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "- perf_smoke peak RSS: ${{ steps.perf.outputs.peak_rss_kb }} KB (budget ${PERF_SMOKE_RSS_BUDGET_KB} KB)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- render_smoke peak RSS: ${{ steps.render.outputs.peak_rss_kb }} KB (budget ${RENDER_SMOKE_RSS_BUDGET_KB} KB)" >> "$GITHUB_STEP_SUMMARY"
