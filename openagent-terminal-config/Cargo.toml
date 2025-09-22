@@ -12,9 +12,9 @@ rust-version.workspace = true
 [dependencies]
 log = { version = "0.4", features = ["serde"] }
 tracing = { workspace = true }
-serde = "1.0.163"
+serde = "1.0.226"
 toml.workspace = true
 
 [dev-dependencies]
 openagent-terminal-config-derive = { version = "0.2.5-dev", path = "../openagent-terminal-config-derive" }
-serde = { version = "1.0.163", features = ["derive"] }
+serde = { version = "1.0.226", features = ["derive"] }
