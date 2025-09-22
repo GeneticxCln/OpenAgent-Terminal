@@ -61,7 +61,7 @@ openagent-terminal-ide-lsp = { path = "../crates/openagent-terminal-ide-lsp", ve
 openagent-terminal-ide-indexer = { path = "../crates/openagent-terminal-ide-indexer", version = "0.1.0", optional = true }
 openagent-terminal-ide-dap = { path = "../crates/openagent-terminal-ide-dap", version = "0.1.0", optional = true }
 openagent-terminal-web-editors = { path = "../crates/openagent-terminal-web-editors", version = "0.1.0", optional = true }
-lsp-types = { version = "0.95.1", optional = true }
+lsp-types = { version = "0.97.0", optional = true }
 ahash = { version = "0.8.6", features = ["no-rng"] }
 wat = "1.238.1"
 bitflags = "2.2.1"
