@@ -17,7 +17,7 @@ Quick start (WASI “Hello” plugin)
 
 API versioning and stability
 
-- The Rust crate crates/plugin-api is versioned independently (SemVer)
+- The Rust crate crates/plugin-sdk (which includes the API) is versioned independently (SemVer)
 - Backwards-compatible changes (minor) may add new capabilities while preserving existing interfaces
 - Breaking changes (major) are rare and announced in the changelog; a migration section will accompany them
 

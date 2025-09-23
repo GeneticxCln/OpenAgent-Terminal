@@ -248,7 +248,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines.
 
 ## References
 
-- [Alacritty Architecture](https://github.com/alacritty/alacritty/blob/master/docs/architecture.md)
+- [Alacritty README](https://github.com/alacritty/alacritty/blob/master/README.md)
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [Ollama Documentation](https://ollama.ai/docs)
 

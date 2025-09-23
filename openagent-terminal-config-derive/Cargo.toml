@@ -4,6 +4,7 @@ version = "0.2.5-dev"
 authors = ["Christian Duerr <contact@christianduerr.com>"]
 license = "Apache-2.0 OR MIT"
 description = "Failure-resistant deserialization derive (OpenAgent Terminal)"
+readme = "README.md"
 homepage = "https://github.com/GeneticxCln/OpenAgent-Terminal"
 repository.workspace = true
 edition.workspace = true

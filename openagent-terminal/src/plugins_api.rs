@@ -110,7 +110,7 @@ impl PluginManager {
     /// Discover *.wasm under configured plugin directories
     pub async fn discover_plugins(&self) -> anyhow::Result<Vec<PathBuf>> {
         let mut out = Vec::new();
-        // Manual read-dir loop to avoid holding directory readers across awaits
+        // Manual read-dir loop to avoid holding read_dir iterator across awaits
         for dir in &self.plugin_dirs {
             let mut it = match tokio::fs::read_dir(dir).await {
                 Ok(i) => i,
@@ -167,9 +167,9 @@ impl PluginManager {
         self.loaded.lock().await.keys().cloned().collect()
     }
 
-    /// Broadcast an event to all loaded plugins (best-effort)
+    /// Broadcast an event to all loaded plugins; errors are logged but do not abort the loop
     pub async fn broadcast_event(&self, event: &PluginEvent) -> anyhow::Result<()> {
-        let ids: Vec<String> = self.list_plugins().await;
+        let ids: Vec<String> = self.loaded.lock().await.keys().cloned().collect();
         for id in ids {
             let _ = self.send_event_to_plugin(&id, event).await;
         }

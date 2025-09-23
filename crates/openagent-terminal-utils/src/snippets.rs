@@ -74,8 +74,7 @@ impl SnippetsManager {
                         .description
                         .as_ref()
                         .is_some_and(|desc| desc.to_lowercase().contains(&query.to_lowercase()))
-                    || snippet
-                        .tags
+                    || snippet.tags
                         .iter()
                         .any(|tag| tag.to_lowercase().contains(&query.to_lowercase()))
             })

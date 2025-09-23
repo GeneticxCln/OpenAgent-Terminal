@@ -53,7 +53,7 @@ pub enum IdeError {
 pub type IdeResult<T> = Result<T, IdeError>;
 
 /// Common IDE configuration
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct IdeConfig {
     pub enable_lsp: bool,
     pub enable_dap: bool,

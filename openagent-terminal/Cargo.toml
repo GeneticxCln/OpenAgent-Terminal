@@ -64,7 +64,7 @@ openagent-terminal-ide = { path = "../crates/openagent-terminal-ide", version = 
 # Networking for plugin tooling and other optional components
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
 
-lsp-types = { version = "0.97.0", optional = true }
+lsp-types = { version = "0.95.1", optional = true }
 ahash = { version = "0.8.6", features = ["no-rng"] }
 wat = "1.238.1"
 bitflags = { workspace = true }
@@ -133,6 +133,9 @@ pollster = "0.4"
 proptest = "1.8"
 serial_test = "3"
 insta = "1.34"
+# Memory testing dependencies
+filetime = "0.2"
+tempfile = "3.12.0"
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"
@@ -174,6 +177,19 @@ embed-resource = "3.0.2"
 default = ["wayland", "x11", "blocks", "workflow", "wgpu", "completions", "security-lens"]
 # Convenience alias for a comprehensive local dev build (no provider-specific AI by default)
 full = ["wgpu", "workflow", "completions", "harfbuzz", "blocks", "plugins", "security-lens-full"]
+# Convenience alias for a sensible "everything-in-one" setup with a single AI backend to keep size reasonable
+# Usage: cargo build -p openagent-terminal --features atlas
+atlas = [
+    "wgpu",
+    "ide",
+    "workflow",
+    "blocks",
+    "plugins",
+    "harfbuzz",
+    "security-lens-full",
+    # Choose exactly one AI backend to avoid enabling all providers at once
+    "ai-openai",
+]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Experimental placeholders/scaffolding that is planned but not yet actively used

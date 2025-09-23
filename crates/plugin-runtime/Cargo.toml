@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Plugin runtime engine for OpenAgent Terminal (WASM loading and execution)"
+readme = "README.md"
 
 [dependencies]
 # Core dependencies

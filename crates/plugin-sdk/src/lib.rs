@@ -15,16 +15,14 @@
     clippy::map_unwrap_or
 )]
 
-use plugin_api::PluginMetadata;
+pub mod api;
 use std::sync::{Mutex, OnceLock};
 
-pub use plugin_api;
-
 // Re-export common types for convenience
-pub use plugin_api::{
+pub use api::{
     CommandOutput, Completion, CompletionContext, CompletionKind, Context, ContextRequest,
     HookData, HookEvent, HookResponse, HookType, Plugin, PluginCapabilities, PluginConfig,
-    PluginError, SensitivityLevel, TerminalInfo,
+    PluginError, SensitivityLevel, TerminalInfo, PluginMetadata,
 };
 
 /// Global storage for plugin metadata (allocated in WASM linear memory)

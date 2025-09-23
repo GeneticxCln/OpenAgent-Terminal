@@ -3,11 +3,12 @@
 
 # Exclude patterns (regex) for links we don't want to check
 exclude = [
-  "^mailto:",
-  "^tel:",
-  "^#",                 # in-page anchors
-  "^http://127\.0\.0\.1", # local references used in docs
-  "^http://localhost",
+  '^mailto:',
+  '^tel:',
+  '^#',                 # in-page anchors
+  '^http://127\\.0\\.0\\.1', # local references used in docs
+  '^http://localhost',
+  '^https?://platform\\.openai\\.com/',  # OpenAI docs often 403/anti-bot
 ]
 
 # Treat these HTTP status codes as success
