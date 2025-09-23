@@ -1158,4 +1158,54 @@ mod tests {
         assert!(config.enable_workflows);
         assert!(config.enable_plugins);
     }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn test_plugins_manager_discovers_and_loads() {
+        // Create a temporary plugins dir and a minimal WASM file
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let plugins_dir = dir.path().to_path_buf();
+
+        const WAT_SRC: &str = r#"(module
+          (memory (export "memory") 1)
+          (func (export "plugin_alloc") (param i32) (result i32)
+            (i32.const 0)
+          )
+          (func (export "plugin_init") (result i32)
+            (i32.const 0)
+          )
+          (func (export "plugin_cleanup") (result i32)
+            (i32.const 0)
+          )
+          (func (export "plugin_handle_event") (param i32 i32) (result i32)
+            (i32.const 0)
+          )
+        )"#;
+        let wasm_bytes = wat::parse_str(WAT_SRC).expect("wat->wasm");
+        let wasm_path = plugins_dir.join("unit_test_plugin.wasm");
+        tokio::fs::write(&wasm_path, &wasm_bytes).await.expect("write wasm");
+
+        // Initialize manager with relaxed policy
+        let pm = initialize_plugin_manager(
+            plugins_dir.clone(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect("manager");
+
+        // Discover and check the file is present
+        let mut found = pm.discover_plugins().await.expect("discover");
+        found.sort();
+        assert!(found.iter().any(|p| p == &wasm_path));
+
+        // Load and then unload
+        let id = pm.load_plugin(&wasm_path).await.expect("load");
+        assert_eq!(id, "unit_test_plugin");
+        pm.unload_plugin(&id).await.expect("unload");
+    }
 }

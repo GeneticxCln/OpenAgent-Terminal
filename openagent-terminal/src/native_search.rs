@@ -2498,7 +2498,7 @@ mod tests_native_filters {
 
     #[test]
     fn date_filter_inclusive_upper_bound() {
-        let si = SearchIntegration::new();
+        let mut si = SearchIntegration::new();
         let now = Instant::now();
         let mk = |ts: Instant| SearchResult {
             id: format!("id-{:?}", ts),

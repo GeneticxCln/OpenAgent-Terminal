@@ -48,6 +48,8 @@ mod cli;
 mod cli_ai;
 #[cfg(feature = "plugins")]
 mod cli_plugins;
+#[cfg(feature = "plugins")]
+mod plugins_api;
 #[cfg(feature = "security-lens")]
 mod cli_security;
 #[cfg(feature = "sync")]
@@ -223,19 +225,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "web-editors")]
 fn web_edit_run(opts: &crate::cli::WebEditOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_web_editors as webedit;
-    let cfg = webedit::WebEditorConfig {
-        file_path: opts.file.clone(),
-        title: opts.title.clone(),
-        prefer_monaco: true,
-    };
-    webedit::open_editor_blocking(cfg)?;
+    use openagent_terminal_ide::web_editors as webedit;
+    // Start minimal web editor server (placeholder implementation in IDE crate)
+    let mut mgr = webedit::WebEditorManager::new();
+    // Use a default port; in a full implementation this would choose an available port
+    mgr.start_server(8080)?;
+    println!(
+        "Started web editor server for file {} (title: {:?})",
+        opts.file.display(), opts.title
+    );
     Ok(0)
 }
 
 #[cfg(feature = "ide-indexer")]
 fn ide_index_run(opts: &crate::cli::IdeIndexOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_ide_indexer as ide_indexer;
+    use openagent_terminal_ide::indexer as ide_indexer;
     let cfg = ide_indexer::ProjectIndexConfig::new(opts.root.clone());
     let index = ide_indexer::ProjectIndex::build(&cfg)?;
     if opts.json {
@@ -255,7 +259,7 @@ fn ide_index_run(opts: &crate::cli::IdeIndexOptions) -> Result<i32, Box<dyn Erro
 #[cfg(feature = "ide-lsp")]
 fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<dyn Error>> {
     use lsp_types as lsp;
-    use openagent_terminal_ide_lsp as ide_lsp;
+    use openagent_terminal_ide::lsp as ide_lsp;
     use std::fs;
 
     // Guess language if not provided

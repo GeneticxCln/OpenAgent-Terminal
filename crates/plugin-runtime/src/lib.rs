@@ -111,7 +111,10 @@ impl PluginRuntime {
     
     pub fn load_plugin(&mut self, path: &std::path::Path) -> RuntimeResult<String> {
         tracing::info!("Loading plugin from: {:?}", path);
-        self.loader.load_plugin(path)
+        let id = self.loader.load_plugin(path)?;
+        // Register in lifecycle for proper unload handling
+        self.lifecycle.register_plugin(&id)?;
+        Ok(id)
     }
     
     pub fn execute_plugin(&mut self, plugin_id: &str, function: &str, args: &[u8]) -> RuntimeResult<Vec<u8>> {

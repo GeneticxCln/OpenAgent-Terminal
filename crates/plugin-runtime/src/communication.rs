@@ -23,3 +23,16 @@ impl PluginCommunication {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn send_message_ok() {
+        let cfg = RuntimeConfig::default();
+        let comm = PluginCommunication::new(&cfg).expect("comm");
+        let res = comm.send_message("p1", "hello");
+        assert!(res.is_ok());
+    }
+}

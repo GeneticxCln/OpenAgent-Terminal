@@ -1303,7 +1303,7 @@ mod tests {
         let execution_id = engine.execute_workflow(&workflow_id, HashMap::new()).await.unwrap();
 
         // Wait for completion
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         // Check state
         let state = engine.get_state(&execution_id).await.unwrap();

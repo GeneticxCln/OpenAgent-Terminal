@@ -27,7 +27,7 @@ pub struct EditorOverlayState {
 #[cfg(feature = "lsp")]
 pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
     #[cfg(feature = "lsp")]
-    pub lsp_uri: Option<lsp_types::Uri>,
+    pub lsp_uri: Option<lsp_types::Url>,
     #[cfg(feature = "lsp")]
     pub language_id: Option<String>,
     // Completion UI state
@@ -104,15 +104,13 @@ impl Display {
     #[cfg(feature = "lsp")]
     pub fn editor_overlay_poll_lsp(&mut self) {
         if let Some(client) = self.editor_overlay.lsp.as_ref() {
-            while let Some(note) = client.try_recv_notification() {
-                match note {
-openagent_terminal_ide::lsp::LspNotification::PublishDiagnostics(params)
-                        if let Some(cur_uri) = self.editor_overlay.lsp_uri.clone() {
-                            if params.uri == cur_uri {
-                                self.editor_overlay.diagnostics = params.diagnostics;
-                                self.pending_update.dirty = true;
-                            }
-                        }
+            while let Some(openagent_terminal_ide::lsp::LspNotification::PublishDiagnostics(params)) =
+                client.try_recv_notification()
+            {
+                if let Some(cur_uri) = self.editor_overlay.lsp_uri.clone() {
+                    if params.uri == cur_uri {
+                        self.editor_overlay.diagnostics = params.diagnostics;
+                        self.pending_update.dirty = true;
                     }
                 }
             }
@@ -300,7 +298,7 @@ impl EditorOverlayState {
                     {
                         let lang = guess_language_from_path(&path);
                         self.language_id = Some(lang.clone());
-if let Ok(uri) = lsp_types::Uri::from_file_path(&path) {
+if let Ok(uri) = lsp_types::Url::from_file_path(&path) {
                             self.lsp_uri = Some(uri.clone());
                             let cfg = lsp_server_config_for_language(&lang);
                             if let Some(cfg) = cfg {

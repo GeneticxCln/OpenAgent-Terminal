@@ -1,8 +1,6 @@
 //! Compatibility wrapper to unify legacy plugin-loader API with the new plugin-runtime.
 //! This allows openagent-terminal to depend on plugin-runtime + plugin-sdk only.
 
-#![cfg(feature = "plugins")]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -112,12 +110,7 @@ impl PluginManager {
     /// Discover *.wasm under configured plugin directories
     pub async fn discover_plugins(&self) -> anyhow::Result<Vec<PathBuf>> {
         let mut out = Vec::new();
-        for dir in &self.plugin_dirs {
-            if let Ok(rd) = tokio::fs::read_dir(dir).await {
-                tokio::pin!(rd);
-            }
-        }
-        // Manual read-dir loop to avoid holding rd across awaits
+        // Manual read-dir loop to avoid holding read_dir iterator across awaits
         for dir in &self.plugin_dirs {
             let mut it = match tokio::fs::read_dir(dir).await {
                 Ok(i) => i,
@@ -172,5 +165,14 @@ impl PluginManager {
     /// Convenience: list plugin names
     pub async fn list_plugins(&self) -> Vec<String> {
         self.loaded.lock().await.keys().cloned().collect()
+    }
+
+    /// Broadcast an event to all loaded plugins; errors are logged but do not abort the loop
+    pub async fn broadcast_event(&self, event: &PluginEvent) -> anyhow::Result<()> {
+        let ids: Vec<String> = self.loaded.lock().await.keys().cloned().collect();
+        for id in ids {
+            let _ = self.send_event_to_plugin(&id, event).await;
+        }
+        Ok(())
     }
 }

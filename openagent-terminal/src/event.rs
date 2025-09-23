@@ -2705,35 +2705,14 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             #[cfg(feature = "plugins")]
-            (EventType::PaletteRequestPluginCommands, Some(window_id)) => {
+            (EventType::PaletteRequestPluginCommands, Some(_window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
                         let pm = pm.clone();
-                        let proxy = self.proxy.clone();
-                        let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            // Gather commands from all loaded plugins' metadata
-                            let plugins = pm.list_plugins().await;
-                            let mut out: Vec<(String, String, Option<String>)> = Vec::new();
-                            for md in plugins {
-                                let plugin_name = md.name.clone();
-                                for cmd in md.capabilities.commands.iter() {
-                                    // Optional subtitle from plugin description
-                                    let sub = if md.description.is_empty() {
-                                        None
-                                    } else {
-                                        Some(md.description.clone())
-                                    };
-                                    out.push((plugin_name.clone(), cmd.clone(), sub));
-                                }
-                            }
-                            if !out.is_empty() {
-                                let _ = proxy.send_event(Event::new(
-                                    EventType::PaletteAppendPluginCommands(out),
-                                    win,
-                                ));
-                            }
+                            // Capability metadata is not available in the lightweight runtime; skip appending plugin commands.
+                            let _ids = pm.list_plugins().await;
                         });
                     }
                 }
@@ -2750,7 +2729,7 @@ impl ApplicationHandler<Event> for Processor {
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
                             use serde_json::json;
-let evt = crate::plugins_api::PluginEvent {
+let evt = PluginEvent {
                                 event_type: "command".into(),
                                 data: json!({ "name": cmd_name, "args": [] }),
                                 timestamp: std::time::SystemTime::now()
@@ -2817,15 +2796,13 @@ let evt = crate::plugins_api::PluginEvent {
                             let q = query.to_lowercase();
                             // Loaded plugins
                             let loaded = pm.list_plugins().await;
-                            for md in loaded {
-                                let mut hay = md.name.clone();
-                                hay.push(' ');
-                                hay.push_str(&md.description);
+                            for id in loaded {
+                                let hay = id.clone();
                                 if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
                                     items.push(crate::display::plugin_panel::PluginItem {
-                                        name: md.name.clone(),
-                                        version: Some(md.version.clone()),
-                                        description: Some(md.description.clone()),
+                                        name: id.clone(),
+                                        version: None,
+                                        description: None,
                                         loaded: true,
                                         path: None,
                                     });
@@ -2881,7 +2858,7 @@ let evt = crate::plugins_api::PluginEvent {
                         let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            match pm.load_plugin(&path).await {
+                            match pm.load_plugin(std::path::Path::new(&path)).await {
                                 Ok(id) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Loaded plugin: {}", id),
