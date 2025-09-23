@@ -4,6 +4,7 @@ version = "0.2.3-dev"
 authors = ["Christian Duerr <contact@christianduerr.com>"]
 license = "Apache-2.0 OR MIT"
 description = "OpenAgent Terminal configuration abstractions (Alacritty-derived)"
+readme = "README.md"
 homepage = "https://github.com/GeneticxCln/OpenAgent-Terminal"
 repository.workspace = true
 edition.workspace = true

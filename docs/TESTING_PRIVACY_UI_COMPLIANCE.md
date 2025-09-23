@@ -12,4 +12,4 @@ This README summarizes how to execute tests/benches related to privacy redaction
   - cargo bench -p openagent-terminal compliance_report
 
 Metrics exporter
-- Set OPENAGENT_PROM_PORT=9898 (default) and start the terminal to expose Prometheus metrics at http://127.0.0.1:9898/metrics
+- Set OPENAGENT_PROM_PORT=9898 (default) and start the terminal to expose Prometheus metrics at 127.0.0.1:9898/metrics (local endpoint)

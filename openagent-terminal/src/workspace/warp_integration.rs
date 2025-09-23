@@ -167,7 +167,23 @@ impl WarpIntegration {
             match self.tab_manager.load_session() {
                 Ok(true) => {
                     info!("Loaded Warp session successfully");
-                    self.restore_session_terminals()?;
+                    match self.restore_session_terminals() {
+                        Ok(()) => {}
+                        Err(WarpIntegrationError::PartialRestore { restored, total }) => {
+                            warn!(
+                                "Partial session restore: {}/{} panes restored; continuing startup",
+                                restored, total
+                            );
+                            // Proceed without failing initialization.
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to restore session terminals ({}); creating default tab",
+                                e
+                            );
+                            self.create_default_tab()?;
+                        }
+                    }
                 }
                 Ok(false) => {
                     info!("No previous Warp session found, creating default tab");
@@ -1065,7 +1081,22 @@ impl WarpIntegration {
             match self.tab_manager.load_session() {
                 Ok(true) => {
                     info!("Loaded Warp session successfully (test mode)");
-                    self.restore_session_terminals()?;
+                    match self.restore_session_terminals() {
+                        Ok(()) => {}
+                        Err(WarpIntegrationError::PartialRestore { restored, total }) => {
+                            warn!(
+                                "Partial session restore (test mode): {}/{} panes restored; continuing",
+                                restored, total
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to restore session terminals (test mode: {}); creating default tab",
+                                e
+                            );
+                            self.create_default_tab()?;
+                        }
+                    }
                 }
                 Ok(false) => {
                     info!("No previous Warp session found, creating default tab (test mode)");

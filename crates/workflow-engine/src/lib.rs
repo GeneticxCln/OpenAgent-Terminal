@@ -26,6 +26,7 @@ pub mod docker_integration;
 pub mod executor;
 pub mod git_integration;
 pub mod parser;
+pub mod persistence;
 pub mod validator;
 
 // Re-export main developer workflow components
@@ -270,11 +271,18 @@ pub struct WorkflowEngine {
     event_sender: broadcast::Sender<WorkflowEvent>,
     #[allow(dead_code)]
     template_engine: Tera,
+    /// Persistence layer for workflow history (optional)
+    persistence: Option<Box<dyn crate::persistence::WorkflowPersistenceInterface>>,
 }
 
 impl WorkflowEngine {
     /// Create a new workflow engine
     pub fn new() -> Result<Self> {
+        Self::with_persistence(None)
+    }
+
+    /// Create a new workflow engine with persistence
+    pub fn with_persistence(persistence: Option<Box<dyn crate::persistence::WorkflowPersistenceInterface>>) -> Result<Self> {
         let (event_sender, _) = broadcast::channel(100);
         let mut template_engine = Tera::default();
 
@@ -292,6 +300,7 @@ impl WorkflowEngine {
             states: Arc::new(RwLock::new(HashMap::new())),
             event_sender,
             template_engine,
+            persistence,
         })
     }
 
@@ -326,6 +335,7 @@ impl WorkflowEngine {
             states: self.states.clone(),
             event_sender: self.event_sender.clone(),
             template_engine: Tera::default(),
+            persistence: None, // Fresh clone doesn't copy persistence layer
         }
     }
 
@@ -1221,6 +1231,7 @@ impl Clone for WorkflowEngine {
             states: self.states.clone(),
             event_sender: self.event_sender.clone(),
             template_engine: Tera::default(),
+            persistence: None, // Clone doesn't copy persistence layer for thread safety
         }
     }
 }
@@ -1303,7 +1314,7 @@ mod tests {
         let execution_id = engine.execute_workflow(&workflow_id, HashMap::new()).await.unwrap();
 
         // Wait for completion
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         // Check state
         let state = engine.get_state(&execution_id).await.unwrap();

@@ -665,6 +665,15 @@ pub trait ActionContext<T: EventListener> {
     ) -> Option<crate::display::warp_ui::TabBarAction> {
         None
     }
+    
+    // Workspace tab bar click testing with pixel coordinates
+    fn workspace_tab_bar_click(
+        &mut self,
+        _mouse_x_px: usize,
+        _mouse_y_px: usize,
+    ) -> Option<crate::display::warp_ui::TabBarAction> {
+        None
+    }
 
     /// Hit-test split divider (input coords in pixels), returns info if hovering a divider.
     fn workspace_split_hit(
@@ -2379,9 +2388,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 && self.ctx.config().workspace.tab_bar.position
                     != crate::workspace::TabBarPosition::Hidden
             {
-                let mx = point.column.0;
-                let my = point.line.0 as usize;
-                self.ctx.workspace_tab_bar_hit(mx, my).is_some()
+                // Use pixel coordinates directly for hover detection
+                self.ctx.workspace_tab_bar_click(x, y).is_some()
             } else {
                 false
             }
@@ -2606,10 +2614,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let base_line = splits.indicator_line_width.max(1.0);
         let base_handle =
             if splits.show_resize_handles { splits.handle_size.max(1.0) } else { 0.0 };
-        // Use half of the larger visual element as tolerance, with sane bounds.
+        // Use half of the larger visual element as tolerance, with sane bounds, then scale for DPI.
         let mut tol = (base_line.max(base_handle)) * 0.5;
-        // Slightly increase tolerance to ease hover acquisition, but clamp to reasonable range.
-        tol = (tol + 2.0).clamp(3.0, 12.0);
+        // Slightly increase tolerance to ease hover acquisition, scaling by DPI; clamp to reasonable range.
+        let s = self.ctx.window().scale_factor as f32;
+        tol = (tol + 2.0 * s).clamp(3.0 * s, 12.0 * s);
 
         let split_hover_new = self.ctx.workspace_split_hit(x as f32, y as f32, tol);
         if self.ctx.display().split_hover.as_ref().map(|h| (h.axis, h.rect.x, h.rect.y))
@@ -2623,10 +2632,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // If a tab drag is active, process drag move to update potential reorder target
         if self.ctx.display().tab_drag_active.is_some() {
-            let size_info = self.ctx.size_info();
-            let display_offset = self.ctx.terminal().grid().display_offset();
-            let p = self.ctx.mouse().point(&size_info, display_offset);
-            let _ = self.ctx.workspace_tab_bar_drag_move(p.column.0, p.line.0 as usize);
+            let _ = self.ctx.workspace_tab_bar_drag_move(x, y);
         }
 
         // Compute hover over block header action chips for pointer cursor
@@ -2692,9 +2698,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             && self.ctx.config().workspace.tab_bar.position
                 != crate::workspace::TabBarPosition::Hidden
         {
-            let mx = point.column.0;
-            let my = point.line.0 as usize;
-            if let Some(action) = self.ctx.workspace_tab_bar_hit(mx, my) {
+            // Use pixel coordinates for more accurate hover detection
+            if let Some(action) = self.ctx.workspace_tab_bar_click(x, y) {
                 use crate::display::warp_ui::TabBarAction;
                 match action {
                     TabBarAction::SelectTab(id) => Some(crate::display::TabHoverTarget::Tab(id)),
@@ -3480,13 +3485,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             }
                         }
                         // Tab bar drag/click handling (top/bottom)
-                        // Compute current grid coordinates
-                        let size_info = self.ctx.size_info();
-                        let display_offset = self.ctx.terminal().grid().display_offset();
-                        let point = self.ctx.mouse().point(&size_info, display_offset);
-                        let mouse_x = point.column.0;
-                        let mouse_y = point.line.0 as usize;
-                        if self.ctx.workspace_tab_bar_drag_press(mouse_x, mouse_y, button) {
+                        // Use raw pixel coordinates instead of grid coordinates for precision
+                        let mouse_x_px = self.ctx.display().last_mouse_x;
+                        let mouse_y_px = self.ctx.display().last_mouse_y;
+                        if self.ctx.workspace_tab_bar_drag_press(mouse_x_px, mouse_y_px, button) {
                             return;
                         }
                         // Fallback: handle immediate tab bar click via cached geometry

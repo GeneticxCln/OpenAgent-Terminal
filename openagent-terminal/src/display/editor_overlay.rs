@@ -24,10 +24,10 @@ pub struct EditorOverlayState {
     pub buffer: Option<EditorBuffer>,
     pub scroll_line: usize,
     // LSP integration (optional)
+#[cfg(feature = "lsp")]
+pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
     #[cfg(feature = "lsp")]
-    pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
-    #[cfg(feature = "lsp")]
-    pub lsp_uri: Option<lsp_types::Uri>,
+    pub lsp_uri: Option<lsp_types::Url>,
     #[cfg(feature = "lsp")]
     pub language_id: Option<String>,
     // Completion UI state
@@ -104,15 +104,13 @@ impl Display {
     #[cfg(feature = "lsp")]
     pub fn editor_overlay_poll_lsp(&mut self) {
         if let Some(client) = self.editor_overlay.lsp.as_ref() {
-            while let Some(note) = client.try_recv_notification() {
-                match note {
-                    openagent_terminal_ide::lsp::LspNotification::PublishDiagnostics(params) => {
-                        if let Some(cur_uri) = self.editor_overlay.lsp_uri.clone() {
-                            if params.uri == cur_uri {
-                                self.editor_overlay.diagnostics = params.diagnostics;
-                                self.pending_update.dirty = true;
-                            }
-                        }
+            while let Some(openagent_terminal_ide::lsp::LspNotification::PublishDiagnostics(params)) =
+                client.try_recv_notification()
+            {
+                if let Some(cur_uri) = self.editor_overlay.lsp_uri.clone() {
+                    if params.uri == cur_uri {
+                        self.editor_overlay.diagnostics = params.diagnostics;
+                        self.pending_update.dirty = true;
                     }
                 }
             }
@@ -300,16 +298,11 @@ impl EditorOverlayState {
                     {
                         let lang = guess_language_from_path(&path);
                         self.language_id = Some(lang.clone());
-                        // Construct a file:// URI string and parse into lsp_types::Uri (lsp_types 0.97+)
-                        let url = format!(
-                            "file://{}",
-                            path.to_string_lossy().replace('\\', "/")
-                        );
-                        if let Ok(uri) = url.parse::<lsp_types::Uri>() {
+if let Ok(uri) = lsp_types::Url::from_file_path(&path) {
                             self.lsp_uri = Some(uri.clone());
                             let cfg = lsp_server_config_for_language(&lang);
                             if let Some(cfg) = cfg {
-                                if let Ok(client) = openagent_terminal_ide::lsp::LspClient::start(
+if let Ok(client) = openagent_terminal_ide::lsp::LspClient::start(
                                     &cfg,
                                     Some(uri.clone()),
                                 ) {
@@ -505,7 +498,7 @@ impl Display {
         if let Some(buf) = &state.buffer {
             // Render visible lines from rope
             let text_all = buf.text();
-            for (yline, (_i, raw)) in
+            for (yline, (i, raw)) in
                 text_all.lines().enumerate().skip(state.scroll_line).take(content_lines).enumerate()
             {
                 let line = content_top + yline;
@@ -537,7 +530,7 @@ impl Display {
                 // Diagnostics underline for this line
                 #[cfg(feature = "lsp")]
                 {
-                    let dl = _i;
+                    let dl = i;
                     for d in &state.diagnostics {
                         let start = d.range.start;
                         let end = d.range.end;
@@ -666,14 +659,7 @@ impl Display {
                     .map(|loc| {
                         format!(
                             "{}:{}:{}",
-                            {
-                                let s = loc.uri.to_string();
-                                s.trim_end_matches('/')
-                                    .rsplit('/')
-                                    .next()
-                                    .unwrap_or("")
-                                    .to_string()
-                            },
+                            loc.uri.path().rsplit('/').next().unwrap_or(""),
                             loc.range.start.line + 1,
                             loc.range.start.character + 1
                         )
@@ -903,11 +889,9 @@ impl Display {
                 return;
             }
         }
-        // Convert file:// URI string to a PathBuf in a best-effort way
-        let s = loc.uri.to_string();
-        let path_str = s.strip_prefix("file://").unwrap_or(&s);
-        let path = PathBuf::from(path_str);
-        self.editor_overlay_open(path);
+        if let Ok(path) = loc.uri.to_file_path() {
+            self.editor_overlay_open(path);
+        }
     }
 
     #[cfg(feature = "lsp")]
@@ -1040,7 +1024,7 @@ impl Display {
     #[cfg(feature = "lsp")]
     fn lsp_pos_to_char_index_buf(
         &self,
-        buf: &openagent_terminal_ide::editor::EditorBuffer,
+buf: &openagent_terminal_ide::editor::EditorBuffer,
         pos: lsp_types::Position,
     ) -> usize {
         let rope = buf.rope.read();

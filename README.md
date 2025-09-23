@@ -275,6 +275,7 @@ Metrics exporter (Prometheus)
 - Documentation Hub: docs/README.md
 - Installation Guide: INSTALL.md
 - Configuration Manual: openagent-terminal/docs/configuration.md  
+- Testing Guide: docs/TESTING.md (headless GUI tests via OPENAGENT_HEADLESS_GUI_TESTS=1)
 - AI Environment Security: docs/AI_ENVIRONMENT_SECURITY.md
 - AI Architecture: docs/adr/001-ai-architecture.md
 - Security Lens: openagent-terminal/docs/security_lens.md

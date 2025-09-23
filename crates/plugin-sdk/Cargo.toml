@@ -5,10 +5,10 @@ edition = "2021"
 authors = ["OpenAgent Terminal Contributors"]
 license = "Apache-2.0 OR MIT"
 description = "SDK for developing OpenAgent Terminal plugins in WebAssembly"
+readme = "README.md"
 repository.workspace = true
 
 [dependencies]
-plugin-api = { path = "../plugin-api", version = "0.1.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dirs = "6.0.0"
@@ -17,6 +17,7 @@ sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 reqwest = { version = "0.12", features = ["blocking"] }
 anyhow = "1.0"
+thiserror = "2.0"
 
 [features]
 default = []

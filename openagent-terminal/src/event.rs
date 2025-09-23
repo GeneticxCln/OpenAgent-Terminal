@@ -99,12 +99,12 @@ use crate::input::{self, ActionContext as _, FONT_SIZE_STEP};
 use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
-#[cfg(feature = "plugins")]
-use crate::plugins_api::PluginEvent;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
+#[cfg(feature = "plugins")]
+use crate::plugins_api::PluginEvent;
 #[cfg(feature = "plugins")]
 use serde_json::json;
 
@@ -146,10 +146,8 @@ pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
 const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 
 /// Debounce delay for Blocks Search typing.
-#[cfg(feature = "blocks")]
 pub const BLOCKS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Debounce delay for Workflows Search typing.
-#[cfg(feature = "workflow")]
 pub const WORKFLOWS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Retention time for workflows progress overlay after completion.
 #[cfg(feature = "workflow")]
@@ -240,13 +238,35 @@ mod copy_export_tests {
         let expected = ["CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III"].join("\n");
         assert_eq!(out, expected);
     }
+
+    #[test]
+    fn collect_block_output_empty_when_out_of_range() {
+        let grid: Grid<Cell> = Grid::new(3, 3, 0);
+        // Request a range completely outside the grid
+        let out = crate::event::collect_block_output_from_grid(&grid, 10, 12);
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn collect_block_output_preserves_blank_lines() {
+        let mut grid: Grid<Cell> = Grid::new(3, 3, 0);
+        // Leave line 0 blank (len=0 -> newline)
+        // Put content on line 1
+        for c in 0..3 {
+            grid[Line(1)][Column(c)].c = ['A', 'B', 'C'][c as usize];
+        }
+        // Leave line 2 blank as well
+        let out = crate::event::collect_block_output_from_grid(&grid, 0, 2);
+        // Should include blank line, then 'ABC', then blank line
+        assert_eq!(out, "\nABC\n");
+    }
 }
 
 #[cfg(test)]
 mod basic_event_tests {
     use super::*;
-    use crate::message_bar::{Message, MessageType};
     use openagent_terminal_core::index::{Column, Line};
+    use crate::message_bar::{Message, MessageType};
 
     #[test]
     fn search_state_defaults_and_accessors() {
@@ -295,42 +315,18 @@ mod basic_event_tests {
 
         // Two distinct touch points
         let dev = DeviceId::dummy();
-        let t1 = WTouch {
-            device_id: dev,
-            id: 1,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
-        let t2 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t1 = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let t2 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
         let mut zoom = TouchZoom::new((t1, t2));
 
         // Move one finger far to increase distance -> positive, quantized delta
-        let t2_far = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 200.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_far = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 200.0), force: None, phase: TouchPhase::Moved };
         let d_pos = zoom.font_delta(t2_far);
         let steps = d_pos / crate::input::FONT_SIZE_STEP;
         assert!((steps - steps.round()).abs() < 1e-6, "delta must be quantized to FONT_SIZE_STEP");
 
         // Move back to zero distance -> negative delta
-        let t2_close = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_close = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
         let d_neg = zoom.font_delta(t2_close);
         assert!(d_neg < 0.0);
     }
@@ -341,74 +337,32 @@ mod basic_event_tests {
         use winit::event::{DeviceId, Touch as WTouch, TouchPhase};
 
         let dev = DeviceId::dummy();
-        let t1 = WTouch {
-            device_id: dev,
-            id: 1,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
-        let t2 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t1 = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let t2 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
         let mut zoom = TouchZoom::new((t1, t2));
 
         // +50px => 0.5 step -> quantizes to 0
-        let t2_50 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 50.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_50 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 50.0), force: None, phase: TouchPhase::Moved };
         let d1 = zoom.font_delta(t2_50);
         assert!(d1.abs() < 1e-6);
 
         // +100px total => additional 50px (0.5) + 0.5 fraction = 1.0 step
-        let t2_100 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 100.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_100 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 100.0), force: None, phase: TouchPhase::Moved };
         let d2 = zoom.font_delta(t2_100);
         assert!((d2 - crate::input::FONT_SIZE_STEP).abs() < 1e-6);
 
         // +10px => below threshold, accumulates fraction only
-        let t2_110 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 110.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_110 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 110.0), force: None, phase: TouchPhase::Moved };
         let d3 = zoom.font_delta(t2_110);
         assert!(d3.abs() < 1e-6);
 
         // -20px => still below threshold (with fraction), no step
-        let t2_90 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 90.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_90 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 90.0), force: None, phase: TouchPhase::Moved };
         let d4 = zoom.font_delta(t2_90);
         assert!(d4.abs() < 1e-6);
 
         // Back to zero => should yield exactly -1 step due to accumulated fraction
-        let t2_0 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2_0 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
         let d5 = zoom.font_delta(t2_0);
         assert!((d5 + crate::input::FONT_SIZE_STEP).abs() < 1e-6);
     }
@@ -419,30 +373,12 @@ mod basic_event_tests {
         use winit::event::{DeviceId, Touch as WTouch, TouchPhase};
 
         let dev = DeviceId::dummy();
-        let t1 = WTouch {
-            device_id: dev,
-            id: 1,
-            location: PhysicalPosition::new(0.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
-        let t2 = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(10.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t1 = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(0.0, 0.0), force: None, phase: TouchPhase::Moved };
+        let t2 = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(10.0, 0.0), force: None, phase: TouchPhase::Moved };
         let mut zoom = TouchZoom::new((t1, t2));
 
         // Move slot 1 and verify identity/location preserved
-        let t1b = WTouch {
-            device_id: dev,
-            id: 1,
-            location: PhysicalPosition::new(20.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t1b = WTouch { device_id: dev, id: 1, location: PhysicalPosition::new(20.0, 0.0), force: None, phase: TouchPhase::Moved };
         let _ = zoom.font_delta(t1b);
         let (s1, s2) = zoom.slots();
         assert_eq!(s1.id, 1);
@@ -451,13 +387,7 @@ mod basic_event_tests {
         assert_eq!(s2.location.x, 10.0);
 
         // Move slot 2 and verify updated
-        let t2b = WTouch {
-            device_id: dev,
-            id: 2,
-            location: PhysicalPosition::new(25.0, 0.0),
-            force: None,
-            phase: TouchPhase::Moved,
-        };
+        let t2b = WTouch { device_id: dev, id: 2, location: PhysicalPosition::new(25.0, 0.0), force: None, phase: TouchPhase::Moved };
         let _ = zoom.font_delta(t2b);
         let (s1c, s2c) = zoom.slots();
         assert_eq!(s1c.id, 1);
@@ -486,9 +416,10 @@ mod basic_event_tests {
     fn mouse_point_maps_from_pixels_to_grid() {
         // Size: 3x2 cells, 10x20 px cell, 5 px padding
         let si = crate::display::SizeInfo::new(35.0, 50.0, 10.0, 20.0, 5.0, 5.0, false);
-        // Initialize with desired coordinates to avoid field-reassign-with-default
-        let mut mouse = Mouse { x: 6, y: 6, ..Default::default() };
+        let mut mouse = Mouse::default();
         // Put mouse inside first cell after padding
+        mouse.x = 6; // padding_x + 1
+        mouse.y = 6; // padding_y + 1
         let p = mouse.point(&si, 0);
         assert_eq!(p.line, Line(0));
         assert_eq!(p.column, Column(0));
@@ -749,25 +680,37 @@ impl Processor {
     }
 
     /// Create a new terminal window.
-    #[cfg(feature = "wgpu")]
     pub fn create_window(
         &mut self,
         event_loop: &ActiveEventLoop,
         options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
+        // WGPU-only: always use WGPU for additional windows; no GL fallback.
+        let _use_wgpu_additional = cfg!(feature = "wgpu");
+
         // Override config with CLI/IPC options.
         let mut config_overrides = options.config_overrides();
         #[cfg(unix)]
         config_overrides.extend_from_slice(&self.global_ipc_options);
-        let config = config_overrides.override_config_rc(self.config.clone());
+        let mut config = self.config.clone();
+        config = config_overrides.override_config_rc(config);
 
-        let window_context: WindowContext = WindowContext::additional_wgpu(
-            event_loop,
-            self.proxy.clone(),
-            config,
-            options,
-            config_overrides,
-        )?;
+        let window_context: WindowContext = {
+            #[cfg(feature = "wgpu")]
+            {
+                WindowContext::additional_wgpu(
+                    event_loop,
+                    self.proxy.clone(),
+                    config,
+                    options,
+                    config_overrides,
+                )?
+            }
+            #[cfg(not(feature = "wgpu"))]
+            {
+                return Err("This build is WGPU-only. Rebuild with --features=wgpu".into());
+            }
+        };
 
         let window_id = window_context.id();
         self.windows.insert(window_id, window_context);
@@ -819,16 +762,6 @@ impl Processor {
         }
 
         Ok(())
-    }
-
-    /// Create a new terminal window (stub when WGPU is disabled).
-    #[cfg(not(feature = "wgpu"))]
-    pub fn create_window(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _options: WindowOptions,
-    ) -> Result<(), Box<dyn Error>> {
-        Err("This build requires WGPU. Rebuild with --features=wgpu".into())
     }
 
     /// Initialize components asynchronously
@@ -2772,24 +2705,14 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             #[cfg(feature = "plugins")]
-            (EventType::PaletteRequestPluginCommands, Some(window_id)) => {
+            (EventType::PaletteRequestPluginCommands, Some(_window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
                         let pm = pm.clone();
-                        let proxy = self.proxy.clone();
-                        let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            // Gather commands from loaded plugins if available.
-                            // Minimal plugin manager returns names only; command introspection not supported.
-                            let _plugins = pm.list_plugins().await;
-                            let out: Vec<(String, String, Option<String>)> = Vec::new();
-                            if !out.is_empty() {
-                                let _ = proxy.send_event(Event::new(
-                                    EventType::PaletteAppendPluginCommands(out),
-                                    win,
-                                ));
-                            }
+                            // Capability metadata is not available in the lightweight runtime; skip appending plugin commands.
+                            let _ids = pm.list_plugins().await;
                         });
                     }
                 }
@@ -2806,7 +2729,7 @@ impl ApplicationHandler<Event> for Processor {
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
                             use serde_json::json;
-                            let evt = PluginEvent {
+let evt = PluginEvent {
                                 event_type: "command".into(),
                                 data: json!({ "name": cmd_name, "args": [] }),
                                 timestamp: std::time::SystemTime::now()
@@ -2873,11 +2796,11 @@ impl ApplicationHandler<Event> for Processor {
                             let q = query.to_lowercase();
                             // Loaded plugins
                             let loaded = pm.list_plugins().await;
-                            for name in loaded {
-                                let hay = name.clone();
+                            for id in loaded {
+                                let hay = id.clone();
                                 if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
                                     items.push(crate::display::plugin_panel::PluginItem {
-                                        name: name.clone(),
+                                        name: id.clone(),
                                         version: None,
                                         description: None,
                                         loaded: true,
@@ -3273,16 +3196,11 @@ pub enum EventType {
     NotebooksAddCommand(String), // notebook id
     #[cfg(feature = "blocks")]
     NotebooksAddMarkdown(String), // notebook id
-// New editing and export actions
-    #[cfg(feature = "blocks")]
+    // New editing and export actions
     NotebooksDeleteCell(String),            // cell id
-    #[cfg(feature = "blocks")]
     NotebooksConvertCellToMarkdown(String), // cell id
-    #[cfg(feature = "blocks")]
     NotebooksConvertCellToCommand(String),  // cell id
-    #[cfg(feature = "blocks")]
     NotebooksExportNotebook(String),        // notebook id
-    #[cfg(feature = "blocks")]
     NotebooksEditApply {
         cell_id: String,
         content: String,
@@ -3535,32 +3453,17 @@ pub struct ActionContext<'a, N, T> {
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
-    #[cfg(feature = "completions")]
     fn completions_active(&self) -> bool {
         self.display.completions_active()
     }
-    #[cfg(not(feature = "completions"))]
-    fn completions_active(&self) -> bool {
-        false
-    }
-
-    #[cfg(feature = "completions")]
     fn completions_move_selection(&mut self, delta: isize) {
         self.display.completions_move_selection(delta);
         *self.dirty = true;
     }
-    #[cfg(not(feature = "completions"))]
-    fn completions_move_selection(&mut self, _delta: isize) {}
-
-    #[cfg(feature = "completions")]
     fn completions_clear(&mut self) {
         self.display.completions_clear();
         *self.dirty = true;
     }
-    #[cfg(not(feature = "completions"))]
-    fn completions_clear(&mut self) {}
-
-    #[cfg(feature = "completions")]
     fn completions_confirm(&mut self) {
         // Compute prefix up to cursor
         use openagent_terminal_core::index::Column as Col;
@@ -3600,8 +3503,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             *self.dirty = true;
         }
     }
-    #[cfg(not(feature = "completions"))]
-    fn completions_confirm(&mut self) {}
 
     fn ide_on_command_end(&mut self, exit_code: Option<i32>) {
         if let Some(code) = exit_code {
@@ -4286,12 +4187,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         }
                     }
                 }
-                PaletteEntry::Workflow(_name) => {
+                PaletteEntry::Workflow(name) => {
                     // Ask processor to execute via engine if available
                     #[cfg(feature = "workflow")]
                     {
                         let _ = self.event_proxy.send_event(Event::new(
-                            EventType::WorkflowsExecuteByName(_name),
+                            EventType::WorkflowsExecuteByName(name),
                             self.display.window.id(),
                         ));
                     }
@@ -6545,25 +6446,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
-    fn workspace_tab_bar_hit(
+    fn workspace_tab_bar_click(
         &mut self,
-        mouse_x: usize,
-        mouse_y: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
     ) -> Option<crate::display::warp_ui::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
         self.display.handle_tab_bar_click(
             self.config,
             &self.workspace.tabs,
             position,
-            mouse_x,
-            mouse_y,
+            mouse_x_px,
+            mouse_y_px,
         )
     }
 
     fn workspace_tab_bar_drag_press(
         &mut self,
-        mouse_x: usize,
-        mouse_y: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
         button: MouseButton,
     ) -> bool {
         let position = self.config.workspace.tab_bar.position;
@@ -6571,8 +6472,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.config,
             &self.workspace.tabs,
             position,
-            mouse_x,
-            mouse_y,
+            mouse_x_px,
+            mouse_y_px,
             button,
         ) {
             use crate::display::warp_ui::TabBarAction as TBA;
@@ -6606,9 +6507,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         false
     }
 
-    fn workspace_tab_bar_drag_move(&mut self, mouse_x: usize, mouse_y: usize) -> bool {
+    fn workspace_tab_bar_drag_move(&mut self, mouse_x_px: usize, mouse_y_px: usize) -> bool {
         if let Some(action) =
-            self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
+            self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x_px, mouse_y_px)
         {
             use crate::display::warp_ui::TabBarAction as TBA;
             if let TBA::DragMove(tab_id, new_pos) = action {
@@ -9059,17 +8960,14 @@ impl EventListener for EventProxy {
 #[cfg(test)]
 pub(crate) mod test_posted_events {
     use super::*;
-    #[allow(dead_code)]
     static SENT: once_cell::sync::Lazy<std::sync::Mutex<Vec<EventType>>> =
         once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
 
-    #[allow(dead_code)]
     pub fn record(ev: EventType) {
         let mut g = SENT.lock().unwrap();
         g.push(ev);
     }
 
-    #[allow(dead_code)]
     pub fn take() -> Vec<EventType> {
         let mut g = SENT.lock().unwrap();
         let v = g.clone();
@@ -9077,7 +8975,6 @@ pub(crate) mod test_posted_events {
         v
     }
 
-    #[allow(dead_code)]
     pub fn clear() {
         SENT.lock().unwrap().clear();
     }
@@ -9109,3 +9006,4 @@ pub(crate) fn schedule_blocks_search_for_test(
     let evt = Event::new(EventType::BlocksSearchPerform(query), window_id);
     scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
 }
+

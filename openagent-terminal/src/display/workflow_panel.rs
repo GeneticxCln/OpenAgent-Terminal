@@ -18,6 +18,39 @@ pub enum WorkflowSource {
     Engine,
 }
 
+/// Workflow history panel state
+#[derive(Clone, Debug, Default)]
+pub struct WorkflowHistoryPanelState {
+    pub active: bool,
+    pub executions: Vec<WorkflowExecutionSummary>,
+    pub selected: usize,
+    pub search_query: String,
+    pub status_filter: Option<WorkflowExecutionStatus>,
+}
+
+/// Workflow execution summary for history display
+#[derive(Clone, Debug)]
+pub struct WorkflowExecutionSummary {
+    pub id: String,
+    pub workflow_name: String,
+    pub status: WorkflowExecutionStatus,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub duration_ms: Option<i64>,
+    pub parameters_count: usize,
+    pub has_outputs: bool,
+    pub error_summary: Option<String>,
+}
+
+/// Workflow execution status for UI display
+#[derive(Clone, Debug, PartialEq)]
+pub enum WorkflowExecutionStatus {
+    Pending,
+    Running,
+    Success,
+    Failed,
+    Cancelled,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct WorkflowProgressState {
     pub active: bool,
@@ -307,6 +340,54 @@ impl WorkflowsPanelState {
     }
 }
 
+impl WorkflowHistoryPanelState {
+    pub fn new() -> Self {
+        Self {
+            active: false,
+            executions: Vec::new(),
+            selected: 0,
+            search_query: String::new(),
+            status_filter: None,
+        }
+    }
+
+    pub fn open(&mut self) {
+        self.active = true;
+        self.selected = 0;
+    }
+
+    pub fn close(&mut self) {
+        self.active = false;
+    }
+
+    pub fn move_selection(&mut self, delta: isize) {
+        if self.executions.is_empty() {
+            self.selected = 0;
+            return;
+        }
+        let len = self.executions.len() as isize;
+        let mut idx = self.selected as isize + delta;
+        if idx < 0 {
+            idx = 0;
+        }
+        if idx >= len {
+            idx = len - 1;
+        }
+        self.selected = idx as usize;
+    }
+
+    pub fn get_selected_execution(&self) -> Option<&WorkflowExecutionSummary> {
+        self.executions.get(self.selected)
+    }
+
+    pub fn update_executions(&mut self, executions: Vec<WorkflowExecutionSummary>) {
+        self.executions = executions;
+        if self.selected >= self.executions.len() {
+            self.selected = self.executions.len().saturating_sub(1);
+        }
+    }
+}
+
 impl Display {
     /// Draw the Workflows panel (bottom overlay). This draws both background rects and text.
     pub fn draw_workflows_panel_overlay(&mut self, config: &UiConfig, state: &WorkflowsPanelState) {
@@ -409,6 +490,155 @@ impl Display {
 }
 
 impl Display {
+    /// Draw the workflow history panel overlay
+    pub fn draw_workflow_history_panel_overlay(
+        &mut self,
+        config: &UiConfig,
+        state: &WorkflowHistoryPanelState,
+    ) {
+        if !state.active {
+            return;
+        }
+        let size_info = self.size_info;
+        let theme =
+            config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+
+        // Panel sizing: 40% of viewport height, min 8 lines
+        let num_lines = size_info.screen_lines();
+        let target_lines = ((num_lines as f32 * 0.40).round() as usize).clamp(8, num_lines);
+        let start_line = num_lines.saturating_sub(target_lines);
+        let panel_y = start_line as f32 * size_info.cell_height();
+        let panel_h = target_lines as f32 * size_info.cell_height();
+
+        // Backdrop dim
+        let backdrop =
+            RenderRect::new(0.0, 0.0, size_info.width(), size_info.height(), tokens.overlay, 0.20);
+        // Panel background
+        let panel_bg =
+            RenderRect::new(0.0, panel_y, size_info.width(), panel_h, tokens.surface_muted, 0.95);
+
+        // Stage rects then draw them
+        let rects = vec![backdrop, panel_bg];
+        let metrics = self.glyph_cache.font_metrics();
+        let size_copy = self.size_info;
+        self.renderer_draw_rects(&size_copy, &metrics, rects);
+
+        // Header and content
+        let num_cols = size_info.columns();
+        let fg = tokens.text;
+        let bg = tokens.surface_muted;
+
+        let mut line = start_line;
+
+        // Header with execution count
+        let count = state.executions.len();
+        let header = if count == 1 {
+            format!("Workflow History — {} execution", count)
+        } else {
+            format!("Workflow History — {} executions", count)
+        };
+        self.draw_ai_text(Point::new(line, Column(2)), fg, bg, &header, num_cols - 2);
+        line += 1;
+
+        // Search/filter bar
+        let mut search_bar = String::from("🔍 ");
+        if !state.search_query.is_empty() {
+            search_bar.push_str(&state.search_query);
+        } else {
+            search_bar.push_str("Search executions...");
+        }
+        
+        // Add status filter indicator
+        if let Some(status) = &state.status_filter {
+            search_bar.push_str(&format!(" [{}]", status_to_display_string(status)));
+        }
+        
+        self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &search_bar, num_cols);
+        line += 1;
+
+        // Separator
+        let sep = "─".repeat(num_cols);
+        self.draw_ai_text(Point::new(line, Column(0)), fg, bg, &sep, num_cols);
+        line += 1;
+
+        // Compute footer line and results area
+        let footer_line = start_line + target_lines - 1;
+        let max_lines = footer_line.saturating_sub(1);
+
+        // Execution list
+        for (idx, execution) in state.executions.iter().enumerate() {
+            if line > max_lines {
+                break;
+            }
+
+            let mut row = String::new();
+            if idx == state.selected {
+                row.push_str("▶ ");
+            } else {
+                row.push_str("  ");
+            }
+
+            // Status indicator
+            let status_indicator = match execution.status {
+                WorkflowExecutionStatus::Success => "✔",
+                WorkflowExecutionStatus::Failed => "✖",
+                WorkflowExecutionStatus::Running => "⏳",
+                WorkflowExecutionStatus::Cancelled => "⚠",
+                WorkflowExecutionStatus::Pending => "⏸",
+            };
+            row.push_str(status_indicator);
+            row.push(' ');
+
+            // Workflow name and timing
+            row.push_str(&execution.workflow_name);
+            
+            // Duration if available
+            if let Some(duration_ms) = execution.duration_ms {
+                if duration_ms < 1000 {
+                    row.push_str(&format!(" ({}ms)", duration_ms));
+                } else {
+                    row.push_str(&format!(" ({:.1}s)", duration_ms as f64 / 1000.0));
+                }
+            }
+
+            // Parameters count
+            if execution.parameters_count > 0 {
+                row.push_str(&format!(" [{}p]", execution.parameters_count));
+            }
+
+            // Error summary if failed
+            if let Some(error) = &execution.error_summary {
+                row.push_str(" — ");
+                row.push_str(error);
+            }
+
+            // Truncate if too long
+            let remaining = num_cols;
+            if row.width() > remaining {
+                let truncated: String = row.chars().take(remaining.saturating_sub(3)).collect();
+                row = truncated + "...";
+            }
+
+            // Color based on status
+            let row_color = match execution.status {
+                WorkflowExecutionStatus::Success => tokens.success,
+                WorkflowExecutionStatus::Failed => tokens.error,
+                WorkflowExecutionStatus::Running => tokens.accent,
+                WorkflowExecutionStatus::Cancelled => tokens.warning,
+                WorkflowExecutionStatus::Pending => tokens.text_muted,
+            };
+
+            self.draw_ai_text(Point::new(line, Column(0)), row_color, bg, &row, num_cols);
+            line += 1;
+        }
+
+        // Footer controls/hints
+        let hint = "Enter: Re-run  •  V: View Details  •  D: Delete  •  F: Filter  •  Esc: Close  •  ↑/↓: Navigate";
+        let hint_fg = tokens.text_muted;
+        self.draw_ai_text(Point::new(footer_line, Column(2)), hint_fg, bg, hint, num_cols - 2);
+    }
+
     pub fn draw_workflows_params_overlay(&mut self, config: &UiConfig, st: &WorkflowParamsState) {
         if !st.active {
             return;
@@ -498,5 +728,16 @@ impl Display {
             footer,
             panel_cols.saturating_sub(4),
         );
+    }
+}
+
+/// Convert workflow execution status to display string
+fn status_to_display_string(status: &WorkflowExecutionStatus) -> &'static str {
+    match status {
+        WorkflowExecutionStatus::Pending => "Pending",
+        WorkflowExecutionStatus::Running => "Running", 
+        WorkflowExecutionStatus::Success => "Success",
+        WorkflowExecutionStatus::Failed => "Failed",
+        WorkflowExecutionStatus::Cancelled => "Cancelled",
     }
 }

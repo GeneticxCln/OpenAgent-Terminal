@@ -85,7 +85,8 @@ impl Default for RuntimeConfig {
 /// Main plugin runtime system
 #[derive(Debug)]
 pub struct PluginRuntime {
-    _config: RuntimeConfig,
+    #[allow(dead_code)]
+    config: RuntimeConfig,
     loader: PluginLoader,
     sandbox: WasmSandbox,
     lifecycle: PluginLifecycle,
@@ -99,20 +100,20 @@ impl PluginRuntime {
         let lifecycle = PluginLifecycle::new(&config)?;
         let communication = PluginCommunication::new(&config)?;
 
-        Ok(Self { _config: config, loader, sandbox, lifecycle, _communication: communication })
+        Ok(Self { config, loader, sandbox, lifecycle, _communication: communication })
     }
 
     pub fn load_plugin(&mut self, path: &std::path::Path) -> RuntimeResult<String> {
         tracing::info!("Loading plugin from: {:?}", path);
-        self.loader.load_plugin(path)
+        let id = self.loader.load_plugin(path)?;
+        // Register in lifecycle for proper unload handling
+        self.lifecycle.register_plugin(&id)?;
+        Ok(id)
     }
-
-    pub fn execute_plugin(
-        &mut self,
-        plugin_id: &str,
-        function: &str,
-        args: &[u8],
-    ) -> RuntimeResult<Vec<u8>> {
+    
+    pub fn execute_plugin(&mut self, plugin_id: &str, function: &str, args: &[u8]) -> RuntimeResult<Vec<u8>> {
+        // Use communication channel for a lightweight debug message (avoids dead_code on field)
+        let _ = self._communication.send_message(plugin_id, &format!("call:{}", function));
         tracing::debug!("Executing plugin {} function {}", plugin_id, function);
         self.sandbox.execute_plugin(plugin_id, function, args)
     }

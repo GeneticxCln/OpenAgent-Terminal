@@ -67,6 +67,7 @@ pub use security::security_lens;
 pub use security::stub as security_lens;
 pub mod text_shaping;
 pub mod ui_confirm;
+pub mod workflow_persistence;
 pub mod workspace;
 
 #[cfg(feature = "completions")]

@@ -22,7 +22,6 @@ Quick links
 - Plugins
   - Plugins overview: ./plugins.md
   - Plugin Host API quickstart: ./guides/PLUGIN_HOST_API_QUICKSTART.md
-  - Plugin API crate docs: ../crates/plugin-api/README.md
   - Example plugin: ../examples/plugins/hello-wasi/README.md
 - Guides
   - Contributing: ../CONTRIBUTING.md
@@ -31,6 +30,10 @@ Quick links
 - Roadmaps & release notes
   - Roadmap: ./roadmaps/ROADMAP.md
   - Changelog: ../CHANGELOG.md
+- Testing
+  - How to run tests: ./TESTING.md
+  - Coverage: ./COVERAGE.md
+  - Privacy & UI: ./TESTING_PRIVACY_UI_COMPLIANCE.md
 
 CI overview
 - Snapshot gating and performance thresholds are enforced in CI.
@@ -38,7 +41,7 @@ CI overview
   - Performance: .github/workflows/performance.yml
   - WGPU Nightly Snapshots: .github/workflows/wgpu-nightly.yml
 - Highlights
-- GPU snapshots: scenario comparisons with threshold >= 0.996 on Linux via xvfb
+  - GPU snapshots: scenario comparisons with threshold >= 0.996 on Linux via xvfb
   - Perf checks: cold start (≤800ms) and render latency (≤16ms)
   - Coverage: llvm-cov with minimal threshold; clippy denies warnings; sanitizers run on subset
 

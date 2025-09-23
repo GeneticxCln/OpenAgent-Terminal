@@ -255,18 +255,18 @@ macro_rules! plugin_metadata {
         capabilities: { $($cap_key:ident: $cap_val:expr),* },
         permissions: { $($perm_key:ident: $perm_val:expr),* }
     ) => {
-        PluginMetadata {
+::plugin_sdk::api::PluginMetadata {
             name: $name.to_string(),
             version: $version.to_string(),
             author: $author.to_string(),
             description: $desc.to_string(),
             license: "MIT".to_string(),
             homepage: None,
-            capabilities: PluginCapabilities {
+capabilities: ::plugin_sdk::api::PluginCapabilities {
                 $($cap_key: $cap_val,)*
                 ..Default::default()
             },
-            permissions: PluginPermissions {
+permissions: ::plugin_sdk::api::PluginPermissions {
                 $($perm_key: $perm_val,)*
                 ..Default::default()
             },
@@ -286,7 +286,7 @@ pub extern "C" fn _start() {
 macro_rules! register_plugin {
     ($plugin_type:ty) => {
         #[no_mangle]
-        pub extern "C" fn create_plugin() -> Box<dyn Plugin> {
+pub extern "C" fn create_plugin() -> Box<dyn ::plugin_sdk::api::Plugin> {
             Box::new(<$plugin_type>::new())
         }
 

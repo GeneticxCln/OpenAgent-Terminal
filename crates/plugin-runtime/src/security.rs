@@ -1,16 +1,19 @@
 //! Security functionality for plugin runtime
 
-use crate::{RuntimeConfig, RuntimeResult};
+use crate::{RuntimeResult, RuntimeConfig};
 
 /// Security manager
 #[derive(Debug)]
 pub struct Security {
-    _config: RuntimeConfig,
+    #[allow(dead_code)]
+    config: RuntimeConfig,
 }
 
 impl Security {
     pub fn new(config: &RuntimeConfig) -> RuntimeResult<Self> {
         tracing::info!("Initializing security manager");
-        Ok(Self { _config: config.clone() })
+        Ok(Self {
+            config: config.clone(),
+        })
     }
 }

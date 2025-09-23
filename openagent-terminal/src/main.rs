@@ -225,21 +225,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "web-editors")]
 fn web_edit_run(opts: &crate::cli::WebEditOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_ide::web_editors::WebEditorManager;
-
-    // Placeholder implementation using consolidated IDE crate.
-    // Start a minimal web editor server (no real UI yet) and report success.
-    let mut mgr = WebEditorManager::new();
-    // Use an arbitrary port; implementation is a stub and does not bind.
-    mgr.start_server(0)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    use openagent_terminal_ide::web_editors as webedit;
+    // Start minimal web editor server (placeholder implementation in IDE crate)
+    let mut mgr = webedit::WebEditorManager::new();
+    // Use a default port; in a full implementation this would choose an available port
+    mgr.start_server(8080)?;
     println!(
-        "Web editor (placeholder) started for file: {}{}",
-        opts.file.display(),
-        opts.title
-            .as_ref()
-            .map(|t| format!(" (title: {t})"))
-            .unwrap_or_default()
+        "Started web editor server for file {} (title: {:?})",
+        opts.file.display(), opts.title
     );
     Ok(0)
 }
@@ -268,7 +261,6 @@ fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<d
     use lsp_types as lsp;
     use openagent_terminal_ide::lsp as ide_lsp;
     use std::fs;
-    use std::str::FromStr;
 
     // Guess language if not provided
     fn guess_language_from_path(path: &std::path::Path) -> String {
@@ -310,14 +302,10 @@ fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<d
         initialization_options: server.initialization_options.clone(),
     };
 
-    let root_uri = opts
-        .file
-        .parent()
-        .and_then(|p| lsp::Uri::from_str(&format!("file://{}", p.to_string_lossy())).ok());
+    let root_uri = opts.file.parent().map(|p| lsp::Url::from_file_path(p).unwrap());
     let client = ide_lsp::LspClient::start(&server_cfg, root_uri)?;
 
-    let uri = lsp::Uri::from_str(&format!("file://{}", opts.file.to_string_lossy()))
-        .map_err(|_| "invalid file path for LSP URI")?;
+    let uri = lsp::Url::from_file_path(&opts.file).map_err(|_| "invalid file path for LSP URI")?;
     let text = fs::read_to_string(&opts.file).unwrap_or_default();
     client.open_document(uri.clone(), &lang, &text)?;
 

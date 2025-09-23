@@ -1,0 +1,221 @@
+name: "Git Development Workflow"
+version: "1.0.0"
+description: "Complete Git workflow with branch management, testing, and deployment"
+author: "OpenAgent Terminal"
+
+metadata:
+  tags: ["git", "development", "ci/cd"]
+  icon: "🔄"
+  estimated_duration: "2-5 minutes"
+
+# System requirements
+requirements:
+  - command: "git"
+    required: true
+  - command: "npm"
+    required: false
+  - env_var: "BRANCH_NAME"
+    required: false
+
+# Workflow parameters (supports re-run with different values)
+parameters:
+  - name: "feature_branch"
+    type: "string"
+    description: "Name of the feature branch to create/use"
+    required: true
+    default: "feature/new-feature"
+    validation: "^[a-zA-Z0-9/_-]+$"
+
+  - name: "commit_message"
+    type: "string"
+    description: "Commit message for changes"
+    required: true
+    default: "Add new feature implementation"
+
+  - name: "push_to_remote"
+    type: "boolean"
+    description: "Whether to push changes to remote repository"
+    required: false
+    default: true
+
+  - name: "run_tests"
+    type: "boolean"
+    description: "Run tests before committing"
+    required: false
+    default: true
+
+  - name: "merge_strategy"
+    type: "choice"
+    description: "Strategy for merging back to main"
+    required: false
+    default: "merge"
+    options:
+      - value: "merge"
+        label: "Create merge commit"
+      - value: "rebase"
+        label: "Rebase and fast-forward"
+      - value: "squash"
+        label: "Squash merge"
+
+# Environment variables for the workflow
+environment:
+  GIT_AUTHOR_NAME: "OpenAgent User"
+  GIT_AUTHOR_EMAIL: "user@openagent.dev"
+  NODE_ENV: "development"
+
+# Workflow steps
+steps:
+  - id: "check_status"
+    name: "Check Git Repository Status"
+    description: "Verify we're in a Git repository and check current status"
+    commands:
+      - "git status --porcelain"
+      - "git branch --show-current"
+    continue_on_error: false
+
+  - id: "create_branch"
+    name: "Create or Switch to Feature Branch"
+    description: "Create the feature branch if it doesn't exist, or switch to it"
+    commands:
+      - "git checkout -b {{feature_branch}} 2>/dev/null || git checkout {{feature_branch}}"
+    continue_on_error: false
+
+  - id: "show_branch_info"
+    name: "Display Branch Information"
+    description: "Show information about the current branch"
+    commands:
+      - "echo 'Current branch: {{feature_branch}}'"
+      - "git log --oneline -5"
+    continue_on_error: true
+
+  - id: "run_tests_step"
+    name: "Run Project Tests"
+    description: "Execute project test suite if requested"
+    condition: "{{run_tests}}"
+    commands:
+      - "echo 'Running tests...'"
+      - "npm test 2>/dev/null || echo 'No npm tests found, skipping'"
+    continue_on_error: true
+    timeout: "30s"
+
+  - id: "stage_changes"
+    name: "Stage All Changes"
+    description: "Add all modified files to the staging area"
+    commands:
+      - "git add ."
+      - "git status --short"
+    continue_on_error: false
+
+  - id: "commit_changes"
+    name: "Commit Staged Changes"
+    description: "Create a commit with the provided message"
+    commands:
+      - "git commit -m '{{commit_message}}' || echo 'No changes to commit'"
+    continue_on_error: true
+
+  - id: "push_branch"
+    name: "Push Branch to Remote"
+    description: "Push the feature branch to the remote repository"
+    condition: "{{push_to_remote}}"
+    commands:
+      - "git push -u origin {{feature_branch}} || echo 'Failed to push to remote'"
+    continue_on_error: true
+    timeout: "60s"
+
+  - id: "merge_preparation"
+    name: "Prepare for Merge"
+    description: "Switch to main branch and pull latest changes"
+    commands:
+      - "git checkout main || git checkout master"
+      - "git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || echo 'Could not pull latest changes'"
+    continue_on_error: true
+
+  - id: "merge_feature"
+    name: "Merge Feature Branch"
+    description: "Merge the feature branch using the specified strategy"
+    commands:
+      - "git merge {{feature_branch}} --no-ff -m 'Merge {{feature_branch}}: {{commit_message}}'"
+    condition: "{{merge_strategy}} == 'merge'"
+    continue_on_error: true
+
+  - id: "rebase_feature"
+    name: "Rebase Feature Branch"
+    description: "Rebase feature branch onto main"
+    commands:
+      - "git checkout {{feature_branch}}"
+      - "git rebase main"
+      - "git checkout main"
+      - "git merge {{feature_branch}} --ff-only"
+    condition: "{{merge_strategy}} == 'rebase'"
+    continue_on_error: true
+
+  - id: "squash_feature"
+    name: "Squash Merge Feature Branch"
+    description: "Squash merge the feature branch"
+    commands:
+      - "git merge {{feature_branch}} --squash"
+      - "git commit -m 'Squash merge {{feature_branch}}: {{commit_message}}'"
+    condition: "{{merge_strategy}} == 'squash'"
+    continue_on_error: true
+
+  - id: "cleanup"
+    name: "Clean Up Feature Branch"
+    description: "Delete the local feature branch after successful merge"
+    commands:
+      - "git branch -d {{feature_branch}} || echo 'Could not delete feature branch'"
+      - "git remote prune origin || echo 'Could not prune remote branches'"
+    continue_on_error: true
+    always_run: true
+
+# Workflow hooks
+hooks:
+  pre_workflow:
+    - "echo 'Starting Git workflow for feature: {{feature_branch}}'"
+    - "git --version"
+
+  post_workflow:
+    - "echo 'Git workflow completed successfully'"
+    - "git log --oneline -3"
+
+  on_failure:
+    - "echo 'Git workflow failed - checking repository state'"
+    - "git status"
+    - "git branch --show-current"
+
+  on_success:
+    - "echo 'Git workflow completed successfully!'"
+    - "echo 'Feature {{feature_branch}} has been processed with strategy: {{merge_strategy}}'"
+
+# Workflow outputs (available for review after execution)
+outputs:
+  - name: "final_branch"
+    value: "{{WORKFLOW_BRANCH}}"
+    description: "The final active branch after workflow completion"
+
+  - name: "commit_hash"
+    value: "{{WORKFLOW_COMMIT}}"
+    description: "Hash of the final commit created"
+
+  - name: "execution_summary"
+    value: "Git workflow executed for {{feature_branch}} with {{merge_strategy}} strategy"
+    description: "Summary of the workflow execution"
+
+# AI context for intelligent assistance
+ai_context:
+  description: "This workflow manages a complete Git development cycle including branching, testing, committing, and merging."
+  common_issues:
+    - "Merge conflicts may occur when merging feature branches"
+    - "Remote push might fail if branch doesn't exist on remote"
+    - "Tests might fail and prevent commit"
+    - "Repository might not be in a clean state"
+  parameter_suggestions:
+    feature_branch: "Use descriptive names like 'feature/user-auth' or 'bugfix/login-error'"
+    commit_message: "Follow conventional commit format: 'feat: add user authentication'"
+    merge_strategy: "Use 'squash' for clean history, 'merge' to preserve branch history"
+
+# Execution limits for safety
+execution_limits:
+  max_workflow_duration: "10m"
+  max_parallel_steps: 2
+  max_step_output_bytes: 10240
+  default_step_timeout: "60s"

@@ -564,7 +564,7 @@ Run `openagent-terminal migrate` to automatically convert all configuration file
 
 - IME composition preview not appearing on Windows
 - Synchronized terminal updates using `DCS = 1 s ST`/`DCS = 2 s ST`
-- Regex terminal hints ([see features.md](./docs/features.md#hints))
+- Regex terminal hints ([see features.md](./features.md#hints))
 - macOS keybinding (cmd+alt+H) hiding all windows other than OpenAgent Terminal
 - Support for `magnet` URLs
 
@@ -1285,7 +1285,7 @@ Run `openagent-terminal migrate` to automatically convert all configuration file
 - Alt modifier is no longer sent separately from the modified key
 - Various Windows issues, like color support and performance, through the new ConPTY
 - Fixed rendering non default mouse cursors in terminal mouse mode (linux)
-- Fix the `Copy` `mouse_bindings` action ([#1963](https://github.com/openagent/openagent-terminal/issues/1963))
+- Fix the `Copy` `mouse_bindings` action ([#1963](https://github.com/alacritty/alacritty/issues/1963))
 - URLs are only launched when left-clicking
 - Removal of extra characters (like `,`) at the end of URLs has been improved
 - Single quotes (`'`) are removed from URLs when there is no matching opening quote
