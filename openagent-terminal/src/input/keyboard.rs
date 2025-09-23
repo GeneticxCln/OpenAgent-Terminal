@@ -2613,7 +2613,7 @@ mod composer_buffer_tests {
     fn next_word_from_middle_stops_at_punct() {
         let s = "foo-bar";
         // Cursor after the last 'o' in "foo"
-        let after_o = s.match_indices('o').last().unwrap().0 + 'o'.len_utf8();
+        let after_o = s.match_indices('o').next_back().unwrap().0 + 'o'.len_utf8();
         let next = composer_next_word_boundary(s, after_o, &WordBoundaryStyle::Unicode);
         // Boundary should advance past '-' to the start of the next word ('b')
         let b_idx = s.find('b').unwrap();

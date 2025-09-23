@@ -30,6 +30,7 @@ use crate::cli::{ParsedOptions, WindowOptions};
 use crate::clipboard::Clipboard;
 use crate::components_init::InitializedComponents;
 use crate::config::UiConfig;
+#[cfg(feature = "wgpu")]
 use crate::display::window::Window;
 use crate::display::Display;
 use crate::event::{
@@ -77,6 +78,7 @@ pub struct WindowContext {
 
 impl WindowContext {
     /// Create initial window context that does bootstrapping the graphics API we're going to use.
+    #[cfg(feature = "wgpu")]
     pub fn initial(
         event_loop: &ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
@@ -97,37 +99,31 @@ impl WindowContext {
             std::env::set_var("WINIT_UNIX_BACKEND", "x11");
         }
 
-        // WGPU-only: initialize WGPU; no fallback to any other graphics API.
-        #[cfg(feature = "wgpu")]
-        {
-            // Create a winit window for WGPU path (visual selection not required)
-            let window_wgpu = Window::new(event_loop, &config, &identity, &mut options)?;
+        // Create a winit window for WGPU path (visual selection not required)
+        let window_wgpu = Window::new(event_loop, &config, &identity, &mut options)?;
 
-            tracing::info!("Initializing WGPU backend…");
-            match Display::new_wgpu(window_wgpu, &config, false) {
-                Ok(display) => {
-                    tracing::info!("Render backend selected: WGPU");
-                    Self::new(display, config, options, proxy)
-                }
-                Err(e) => {
-                    tracing::error!("WGPU init failed: {e:?}");
-                    Err("WGPU initialization failed; OpenGL fallback is removed in this build"
-                        .into())
-                }
+        tracing::info!("Initializing WGPU backend…");
+        match Display::new_wgpu(window_wgpu, &config, false) {
+            Ok(display) => {
+                tracing::info!("Render backend selected: WGPU");
+                Self::new(display, config, options, proxy)
+            }
+            Err(e) => {
+                tracing::error!("WGPU init failed: {e:?}");
+                Err("WGPU initialization failed; OpenGL fallback is removed in this build".into())
             }
         }
+    }
 
-        // If the build does not include the `wgpu` feature, error clearly.
-        #[cfg(not(feature = "wgpu"))]
-        {
-            return Err("This build requires WGPU. Rebuild with --features=wgpu".into());
-        }
-
-        // If the build does not include the `wgpu` feature, error clearly.
-        #[cfg(not(feature = "wgpu"))]
-        {
-            return Err("This build requires WGPU. Rebuild with --features=wgpu".into());
-        }
+    #[cfg(not(feature = "wgpu"))]
+    pub fn initial(
+        _event_loop: &ActiveEventLoop,
+        _proxy: EventLoopProxy<Event>,
+        _config: Rc<UiConfig>,
+        options: WindowOptions,
+    ) -> Result<Self, Box<dyn Error>> {
+        let _ = &options; // silence unused warnings
+        Err("This build requires WGPU. Rebuild with --features=wgpu".into())
     }
 
     /// Create additional context using the WGPU backend.

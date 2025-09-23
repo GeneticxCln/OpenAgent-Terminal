@@ -478,13 +478,13 @@ macro_rules! simple_plugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // Mock implementations of host functions for testing
     #[no_mangle]
     pub extern "C" fn host_log(_level: i32, _ptr: *const u8, _len: usize) {
         // Mock implementation that does nothing
     }
-    
+
     #[no_mangle]
     pub extern "C" fn host_read_file(
         _path_ptr: *const u8,
@@ -494,7 +494,7 @@ mod tests {
     ) -> i32 {
         -1 // Mock error response
     }
-    
+
     #[no_mangle]
     pub extern "C" fn host_write_file(
         _path_ptr: *const u8,
@@ -504,7 +504,7 @@ mod tests {
     ) -> i32 {
         -1 // Mock error response
     }
-    
+
     #[no_mangle]
     pub extern "C" fn host_execute_command(
         _cmd_ptr: *const u8,
@@ -514,7 +514,7 @@ mod tests {
     ) -> i32 {
         -1 // Mock error response
     }
-    
+
     #[no_mangle]
     pub extern "C" fn host_store_data(
         _key_ptr: *const u8,
@@ -524,7 +524,7 @@ mod tests {
     ) -> i32 {
         -1 // Mock error response
     }
-    
+
     #[no_mangle]
     pub extern "C" fn host_retrieve_data(
         _key_ptr: *const u8,

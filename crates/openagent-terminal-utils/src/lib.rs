@@ -1,5 +1,5 @@
 //! Utility functions for OpenAgent Terminal
-//! 
+//!
 //! This crate consolidates utility functionality including:
 //! - Theme management and loading
 //! - Code snippets and templates
@@ -22,22 +22,22 @@ pub mod migrate;
 pub enum UtilsError {
     #[error("Theme error: {0}")]
     Theme(String),
-    
+
     #[error("Snippet error: {0}")]
     Snippet(String),
-    
+
     #[error("Migration error: {0}")]
     Migration(String),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
-    
+
     #[error("TOML error: {0}")]
     Toml(#[from] toml::de::Error),
-    
+
     #[error("YAML error: {0}")]
     Yaml(#[from] serde_yaml::Error),
 }

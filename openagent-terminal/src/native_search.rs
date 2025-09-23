@@ -809,6 +809,145 @@ pub struct EditDistanceCalculator {
     pub cache: HashMap<(String, String), usize>,
 }
 
+impl EditDistanceCalculator {
+    pub fn distance(&mut self, a: &str, b: &str) -> usize {
+        let key = if a <= b { (a.to_string(), b.to_string()) } else { (b.to_string(), a.to_string()) };
+        if let Some(d) = self.cache.get(&key) {
+            return *d;
+        }
+        let d = match self.algorithm {
+            EditDistanceAlgorithm::Levenshtein => levenshtein(a, b),
+            EditDistanceAlgorithm::DamerauLevenshtein => damerau_levenshtein(a, b),
+            EditDistanceAlgorithm::Hamming => hamming(a, b).unwrap_or_else(|| levenshtein(a, b)),
+            EditDistanceAlgorithm::Jaro => jaro_distance(a, b),
+            EditDistanceAlgorithm::JaroWinkler => jaro_winkler_distance(a, b),
+        } as usize;
+        self.cache.insert(key, d);
+        d
+    }
+}
+
+fn levenshtein(a: &str, b: &str) -> usize {
+    let (m, n) = (a.len(), b.len());
+    if m == 0 { return n; }
+    if n == 0 { return m; }
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr: Vec<usize> = vec![0; n + 1];
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            let cost = if a_bytes[i - 1] == b_bytes[j - 1] { 0 } else { 1 };
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[n]
+}
+
+fn damerau_levenshtein(a: &str, b: &str) -> usize {
+    let (m, n) = (a.len(), b.len());
+    if m == 0 { return n; }
+    if n == 0 { return m; }
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let mut d = vec![vec![0usize; n + 2]; m + 2];
+    let max_dist = m + n;
+    d[0][0] = max_dist;
+    for i in 0..=m { d[i + 1][0] = max_dist; d[i + 1][1] = i; }
+    for j in 0..=n { d[0][j + 1] = max_dist; d[1][j + 1] = j; }
+
+    let mut da = std::collections::HashMap::<u8, usize>::new();
+    for i in 1..=m {
+        let mut db = 0usize;
+        for j in 1..=n {
+            let i1 = *da.get(&b_bytes[j - 1]).unwrap_or(&0);
+            let j1 = db;
+            let mut cost = 1usize;
+            if a_bytes[i - 1] == b_bytes[j - 1] {
+                cost = 0;
+                db = j;
+            }
+            d[i + 1][j + 1] = (d[i][j] + cost)
+                .min(d[i + 1][j] + 1)
+                .min(d[i][j + 1] + 1)
+                .min(d[i1][j1] + (i - i1 - 1) + 1 + (j - j1 - 1));
+        }
+        da.insert(a_bytes[i - 1], i);
+    }
+    d[m + 1][n + 1]
+}
+
+fn hamming(a: &str, b: &str) -> Option<usize> {
+    if a.len() != b.len() { return None; }
+    Some(a.as_bytes().iter().zip(b.as_bytes()).filter(|(x, y)| x != y).count())
+}
+
+// For Jaro/Jaro-Winkler, return a distance scaled to 0..= (len max) so we can normalize like Levenshtein
+fn jaro_distance(a: &str, b: &str) -> usize {
+    let s = jaro(a, b);
+    let max_len = a.len().max(b.len()).max(1) as f64;
+    ((1.0 - s) * max_len).round() as usize
+}
+
+fn jaro_winkler_distance(a: &str, b: &str) -> usize {
+    let s = jaro_winkler(a, b);
+    let max_len = a.len().max(b.len()).max(1) as f64;
+    ((1.0 - s) * max_len).round() as usize
+}
+
+// Basic Jaro similarity
+fn jaro(a: &str, b: &str) -> f64 {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let (a_len, b_len) = (a_bytes.len(), b_bytes.len());
+    if a_len == 0 && b_len == 0 { return 1.0; }
+    let match_distance = (a_len.max(b_len) / 2).saturating_sub(1);
+
+    let mut a_matches = vec![false; a_len];
+    let mut b_matches = vec![false; b_len];
+
+    let mut matches = 0;
+    for i in 0..a_len {
+        let start = i.saturating_sub(match_distance);
+        let end = (i + match_distance + 1).min(b_len);
+        for j in start..end {
+            if !b_matches[j] && a_bytes[i] == b_bytes[j] {
+                a_matches[i] = true;
+                b_matches[j] = true;
+                matches += 1;
+                break;
+            }
+        }
+    }
+    if matches == 0 { return 0.0; }
+
+    let mut t = 0;
+    let mut k = 0;
+    for i in 0..a_len {
+        if a_matches[i] {
+            while !b_matches[k] { k += 1; }
+            if a_bytes[i] != b_bytes[k] { t += 1; }
+            k += 1;
+        }
+    }
+    let transpositions = t as f64 / 2.0;
+
+    (matches as f64 / a_len as f64 + matches as f64 / b_len as f64 + (matches as f64 - transpositions) / matches as f64)
+        / 3.0
+}
+
+fn jaro_winkler(a: &str, b: &str) -> f64 {
+    let j = jaro(a, b);
+    // common prefix length up to 4
+    let mut l = 0;
+    for (ca, cb) in a.chars().zip(b.chars()) {
+        if ca == cb { l += 1; if l == 4 { break; } } else { break; }
+    }
+    j + (l as f64 * 0.1 * (1.0 - j))
+}
+
 /// Edit distance algorithms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditDistanceAlgorithm {
@@ -1631,16 +1770,121 @@ impl TextSearchEngine {
         Some(results)
     }
 
-    fn search_fuzzy(&self, query: &str) -> Option<Vec<SearchResult>> {
-        if self.config.include_fuzzy {
-            Some(self.fuzzy_matcher.search(query))
-        } else {
-            None
+    // Fuzzy search across the inverted index using normalized Levenshtein distance
+    fn search_fuzzy(&mut self, query: &str) -> Option<Vec<SearchResult>> {
+        if !self.config.include_fuzzy || query.trim().is_empty() {
+            return None;
         }
+
+        let q = query.trim().to_lowercase();
+        let threshold = self.fuzzy_matcher.similarity_threshold;
+        let now = Instant::now();
+        let mut results: Vec<(String, f64)> = Vec::new();
+
+        // Iterate documents and compute best similarity across their terms
+        for (doc_id, terms) in &self.inverted_index.doc_terms {
+            let mut best_sim = 0.0f64;
+            for term in terms {
+                let term_l = term.to_lowercase();
+                let max_len = term_l.len().max(q.len()) as f64;
+                if max_len == 0.0 { continue; }
+                let dist = self.fuzzy_matcher.distance(&term_l, &q) as f64;
+                let sim = 1.0 - (dist / max_len);
+                if sim > best_sim {
+                    best_sim = sim;
+                }
+                if best_sim >= 0.999 { break; }
+            }
+            if best_sim >= threshold {
+                results.push((doc_id.clone(), best_sim));
+            }
+        }
+
+        if results.is_empty() {
+            return Some(Vec::new());
+        }
+
+        // Sort by similarity descending and cap by max_results
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        let max_n = self.config.max_results.max(1);
+
+        let out: Vec<SearchResult> = results
+            .into_iter()
+            .take(max_n)
+            .map(|(doc_id, score)| SearchResult {
+                id: doc_id.clone(),
+                title: doc_id.clone(),
+                content: String::new(),
+                context: SearchContext::Global,
+                relevance_score: score
+                    + (if q.len() >= 3 && doc_id.to_lowercase().starts_with(&q) {
+                        self.fuzzy_matcher.scoring_weights.prefix_bonus
+                    } else { 0.0 })
+                    + self.fuzzy_matcher.scoring_weights.exact_match_bonus
+                        * (if doc_id.eq_ignore_ascii_case(&q) { 1.0 } else { 0.0 }),
+                match_positions: Vec::new(),
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: None,
+            })
+            .collect();
+
+        Some(out)
     }
 
+    // Minimal boolean query handling (AND / OR / NOT) over the inverted index
     fn search_boolean(&self, query: &str) -> Option<Vec<SearchResult>> {
-        Some(self.algorithms.boolean_search.search(query))
+        let q = query.trim();
+        if q.is_empty() {
+            return Some(Vec::new());
+        }
+
+        let mut make_set = |term: &str| -> std::collections::HashSet<String> {
+            let t = term.trim().to_lowercase();
+            let mut set = std::collections::HashSet::new();
+            for (doc, terms) in &self.inverted_index.doc_terms {
+                if terms.iter().any(|tt| tt.eq_ignore_ascii_case(&t)) {
+                    set.insert(doc.clone());
+                }
+            }
+            set
+        };
+
+        let results_ids = if let Some((a, b)) = q.split_once(" AND ") {
+            let sa = make_set(a);
+            let sb = make_set(b);
+            sa.intersection(&sb).cloned().collect::<Vec<_>>()
+        } else if let Some((a, b)) = q.split_once(" OR ") {
+            let mut sa = make_set(a);
+            let sb = make_set(b);
+            for id in sb { sa.insert(id); }
+            sa.into_iter().collect::<Vec<_>>()
+        } else if let Some((a, b)) = q.split_once(" NOT ") {
+            let sa = make_set(a);
+            let sb = make_set(b);
+            sa.difference(&sb).cloned().collect::<Vec<_>>()
+        } else {
+            // Fallback: treat as simple term search
+            make_set(q).into_iter().collect::<Vec<_>>()
+        };
+
+        let now = Instant::now();
+        let results: Vec<SearchResult> = results_ids
+            .into_iter()
+            .map(|doc_id| SearchResult {
+                id: doc_id.clone(),
+                title: doc_id.clone(),
+                content: String::new(),
+                context: SearchContext::Global,
+                relevance_score: 1.0,
+                match_positions: Vec::new(),
+                metadata: HashMap::new(),
+                timestamp: now,
+                created_at: None,
+            })
+            .collect();
+
+        Some(results)
     }
 
     fn cache_search_results(&mut self, query: String, results: Vec<SearchResult>) {
@@ -1911,9 +2155,9 @@ impl FuzzyMatcher {
         }
     }
 
-    fn search(&self, _query: &str) -> Vec<SearchResult> {
-        // Placeholder for fuzzy search implementation
-        Vec::new()
+    // Proxy for computing distance so callers don't need to touch the calculator directly
+    fn distance(&mut self, a: &str, b: &str) -> usize {
+        self.edit_distance.distance(a, b)
     }
 }
 
@@ -1962,10 +2206,8 @@ impl Default for Bm25Ranker {
 }
 
 impl BooleanSearch {
-    fn search(&self, _query: &str) -> Vec<SearchResult> {
-        // Placeholder for boolean search implementation
-        Vec::new()
-    }
+    // Note: boolean query execution is implemented in TextSearchEngine::search_boolean where
+    // we have access to the inverted index. This struct can later hold parser state.
 }
 
 impl Default for SearchIntegration {
@@ -2412,14 +2654,13 @@ mod tests_native_filters {
         // Remove the document
         si.update_index("text", "doc-1", None).unwrap();
         // After removal, terms for doc-1 should be gone (either term removed or doc removed from set)
-        assert!(
-            !si.text_search
-                .inverted_index
-                .term_docs
-                .get("hello")
-                .map(|set| set.contains("doc-1"))
-                .unwrap_or(false)
-        );
+        assert!(!si
+            .text_search
+            .inverted_index
+            .term_docs
+            .get("hello")
+            .map(|set| set.contains("doc-1"))
+            .unwrap_or(false));
     }
 
     #[test]
@@ -2498,7 +2739,7 @@ mod tests_native_filters {
 
     #[test]
     fn date_filter_inclusive_upper_bound() {
-        let si = SearchIntegration::new();
+        let mut si = SearchIntegration::new();
         let now = Instant::now();
         let mk = |ts: Instant| SearchResult {
             id: format!("id-{:?}", ts),
@@ -2512,15 +2753,11 @@ mod tests_native_filters {
             created_at: Some(ts),
         };
         let results = vec![mk(now - Duration::from_secs(1)), mk(now)];
-        let out = si
-            .apply_filters(results)
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>();
+        let out = si.apply_filters(results).unwrap().into_iter().collect::<Vec<_>>();
         // No active filters yet
         assert_eq!(out.len(), 2);
         // Apply DateFilter with to: Some(now)
-        let mut si2 = SearchIntegration::new();
+        let si2 = SearchIntegration::new();
         let out2 = si2
             .apply_single_filter(
                 vec![mk(now - Duration::from_secs(1)), mk(now), mk(now + Duration::from_secs(1))],

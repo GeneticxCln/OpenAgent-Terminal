@@ -21,6 +21,7 @@ pub fn test_take_events() -> Vec<Event> {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn test_clear_events() {
     TEST_EVENTS.lock().unwrap().clear();
 }
@@ -53,21 +54,25 @@ pub enum Topic {
     BlinkTimeout,
     Frame,
     // Debounced Blocks Search typing
+    #[cfg(feature = "blocks")]
     BlocksSearchTyping,
     // Debounced Workflows Search typing
+    #[cfg(feature = "workflow")]
     WorkflowsSearchTyping,
     // Debounced Plugins Search typing (only when plugins feature is enabled)
     #[cfg(feature = "plugins")]
     PluginsSearchTyping,
     // Retain workflows progress overlay briefly after completion
+    #[cfg(feature = "workflow")]
     WorkflowsProgressRetain,
     // Autosave workspace sessions periodically
     WorkspaceSessionAutosave,
     // Debounced AI inline suggestion trigger
-    #[allow(dead_code)]
+    #[cfg(feature = "ai")]
     AiInlineTyping,
 }
 
+/// Event scheduled to be emitted at a specific time.
 /// Event scheduled to be emitted at a specific time.
 pub struct Timer {
     pub deadline: Instant,
@@ -168,11 +173,16 @@ mod tests {
         let mut builder = winit::event_loop::EventLoop::<crate::event::Event>::with_user_event();
         #[cfg(target_os = "linux")]
         {
-            use winit::platform::wayland::EventLoopBuilderExtWayland;
-            use winit::platform::x11::EventLoopBuilderExtX11;
-            // Disambiguate: set for both Wayland and X11 backends
-            EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
-            EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+            #[cfg(feature = "wayland")]
+            {
+                use winit::platform::wayland::EventLoopBuilderExtWayland;
+                EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
+            }
+            #[cfg(feature = "x11")]
+            {
+                use winit::platform::x11::EventLoopBuilderExtX11;
+                EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+            }
         }
         let event_loop = builder.build().expect("failed to build event loop");
         let proxy = event_loop.create_proxy();
@@ -290,10 +300,16 @@ mod frame_tests {
         let mut builder = winit::event_loop::EventLoop::<crate::event::Event>::with_user_event();
         #[cfg(target_os = "linux")]
         {
-            use winit::platform::wayland::EventLoopBuilderExtWayland;
-            use winit::platform::x11::EventLoopBuilderExtX11;
-            EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
-            EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+            #[cfg(feature = "wayland")]
+            {
+                use winit::platform::wayland::EventLoopBuilderExtWayland;
+                EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
+            }
+            #[cfg(feature = "x11")]
+            {
+                use winit::platform::x11::EventLoopBuilderExtX11;
+                EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+            }
         }
         let event_loop = builder.build().expect("failed to build event loop");
         let proxy = event_loop.create_proxy();

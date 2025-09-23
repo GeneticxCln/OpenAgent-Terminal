@@ -12,13 +12,36 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
+#[cfg(feature = "blocks")]
 use chrono::{DateTime, Utc};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
+#[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockId, BlockManager, CreateBlockParams, ShellType};
+#[cfg(not(feature = "blocks"))]
+mod blocks_stub {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    pub struct BlockId(pub u64);
+    impl std::fmt::Display for BlockId {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+    #[derive(Debug, Clone, Copy)]
+    pub enum ShellType {
+        Bash,
+        Zsh,
+        Fish,
+        PowerShell,
+        Nushell,
+        Custom(u32),
+    }
+}
+#[cfg(not(feature = "blocks"))]
+pub use blocks_stub::{BlockId, ShellType};
 use crate::workspace::{TabId, TabManager};
 use openagent_terminal_core::event::CommandBlockEvent;
 
@@ -27,6 +50,7 @@ type CommandPipelineEventCallback = Box<dyn Fn(&CommandPipelineEvent) + Send + S
 /// Native command execution pipeline
 pub struct CommandPipeline {
     /// Block manager for immediate block operations
+    #[cfg(feature = "blocks")]
     block_manager: Option<Arc<tokio::sync::Mutex<BlockManager>>>,
 
     /// Tab manager for context tracking
@@ -75,13 +99,31 @@ pub struct OutputChunk {
     pub block_id: BlockId,
     pub content: String,
     pub is_stderr: bool,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: OutputTimestamp,
+}
+
+#[cfg(feature = "blocks")]
+type OutputTimestamp = DateTime<Utc>;
+#[cfg(not(feature = "blocks"))]
+type OutputTimestamp = std::time::SystemTime;
+
+#[inline]
+fn now_ts() -> OutputTimestamp {
+    #[cfg(feature = "blocks")]
+    {
+        Utc::now()
+    }
+    #[cfg(not(feature = "blocks"))]
+    {
+        std::time::SystemTime::now()
+    }
 }
 
 impl CommandPipeline {
     /// Create new native command pipeline
     pub fn new() -> Self {
         Self {
+            #[cfg(feature = "blocks")]
             block_manager: None,
             tab_manager: None,
             active_commands: HashMap::new(),
@@ -92,9 +134,11 @@ impl CommandPipeline {
     }
 
     /// Set block manager for immediate block operations
+    #[cfg(feature = "blocks")]
     pub fn set_block_manager(&mut self, block_manager: Arc<tokio::sync::Mutex<BlockManager>>) {
         self.block_manager = Some(block_manager);
     }
+
 
     /// Set tab manager for context tracking
     pub fn set_tab_manager(&mut self, tab_manager: Arc<tokio::sync::Mutex<TabManager>>) {
@@ -134,6 +178,7 @@ impl CommandPipeline {
         let shell = shell.unwrap_or(ShellType::Bash);
 
         // Create block immediately - no lazy loading
+        #[cfg(feature = "blocks")]
         let block_id = if let Some(ref block_manager) = self.block_manager {
             let mut manager = block_manager.lock().await;
             let params = CreateBlockParams {
@@ -150,6 +195,16 @@ impl CommandPipeline {
             block.id
         } else {
             return Err(anyhow::anyhow!("Block manager not set"));
+        };
+        #[cfg(not(feature = "blocks"))]
+        let block_id = {
+            // Generate a dummy ID using a timestamp hash for bookkeeping
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            command.hash(&mut h);
+            working_dir.hash(&mut h);
+            let raw = (Instant::now().elapsed().as_nanos() as u64) ^ h.finish();
+            BlockId(raw)
         };
 
         // Emit immediate block creation event
@@ -229,6 +284,7 @@ impl CommandPipeline {
         self.output_streams.insert(block_id, output_tx.clone());
 
         // Clone references for async tasks
+        #[cfg(feature = "blocks")]
         let block_manager = self.block_manager.clone();
         let _event_sender = self.event_sender.clone();
         let _pipeline_callbacks = self.event_callbacks.len(); // We can't clone the callbacks easily
@@ -256,7 +312,7 @@ impl CommandPipeline {
                     block_id,
                     content: line.clone(),
                     is_stderr: false,
-                    timestamp: Utc::now(),
+timestamp: now_ts(),
                 };
 
                 let _ = stdout_output_tx.send(chunk);
@@ -287,7 +343,7 @@ impl CommandPipeline {
                     block_id,
                     content: line.clone(),
                     is_stderr: true,
-                    timestamp: Utc::now(),
+                    timestamp: now_ts(),
                 };
 
                 let _ = stderr_output_tx.send(chunk);
@@ -299,9 +355,10 @@ impl CommandPipeline {
         tokio::spawn(async move {
             while let Some(chunk) = output_rx.recv().await {
                 // Process output chunk immediately - no lazy processing
-                debug!("Received output chunk for block {}: {:?}", chunk.block_id, chunk);
+                debug!("Received output chunk for block {:?}: {:?}", chunk.block_id, chunk);
 
                 // Update block with output immediately if we have a block manager
+                #[cfg(feature = "blocks")]
                 if let Some(ref manager) = block_manager {
                     let mut mgr = manager.lock().await;
                     let _ = mgr.append_output(block_id, &chunk.content);
@@ -321,7 +378,7 @@ impl CommandPipeline {
             self.process_completion(block_id, exit_code, duration).await?;
         } else {
             info!(
-                "CommandPipeline: no child process found for block {} when awaiting completion",
+                "CommandPipeline: no child process found for block {:?} when awaiting completion",
                 block_id
             );
         }
@@ -348,6 +405,7 @@ impl CommandPipeline {
             }
 
             // Update block status to cancelled immediately
+            #[cfg(feature = "blocks")]
             if let Some(ref block_manager) = self.block_manager {
                 let mut mgr = block_manager.lock().await;
                 let _ = mgr.mark_block_cancelled(block_id).await;
@@ -361,7 +419,7 @@ impl CommandPipeline {
                 });
             }
 
-            info!("Cancelled command execution for block {}", block_id);
+            info!("Cancelled command execution for block {:?}", block_id);
         }
 
         Ok(())
@@ -375,12 +433,14 @@ impl CommandPipeline {
         duration: std::time::Duration,
     ) -> Result<()> {
         if let Some(execution) = self.active_commands.remove(&block_id) {
+            #[cfg(feature = "blocks")]
             let output = {
                 let buffer = execution.output_buffer.lock().await;
                 buffer.clone()
             };
 
             // Update block immediately - no lazy updates
+            #[cfg(feature = "blocks")]
             if let Some(ref block_manager) = self.block_manager {
                 let mut manager = block_manager.lock().await;
                 manager
@@ -403,7 +463,7 @@ impl CommandPipeline {
                 duration,
             });
 
-            info!("Command completed for block {} with exit code {}", block_id, exit_code);
+            info!("Command completed for block {:?} with exit code {}", block_id, exit_code);
         }
 
         Ok(())

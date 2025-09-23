@@ -1,10 +1,10 @@
 //! Themes functionality for OpenAgent Terminal
-//! 
+//!
 //! This module provides theme management and loading capabilities.
 
 use crate::{UtilsError, UtilsResult};
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Theme color definition
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -38,27 +38,27 @@ impl ThemesManager {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn initialize(&mut self) -> UtilsResult<()> {
         tracing::info!("Initializing themes manager");
         self.load_builtin_themes()?;
         Ok(())
     }
-    
+
     pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
         tracing::info!("Loading themes from directory: {:?}", path);
         // TODO: Scan directory for .toml theme files and load them
         Ok(())
     }
-    
+
     pub fn get_theme(&self, name: &str) -> Option<&Theme> {
         self.themes.get(name)
     }
-    
+
     pub fn list_themes(&self) -> Vec<&str> {
         self.themes.keys().map(|s| s.as_str()).collect()
     }
-    
+
     pub fn set_current_theme(&mut self, name: String) -> UtilsResult<()> {
         if self.themes.contains_key(&name) {
             self.current_theme = Some(name);
@@ -67,11 +67,11 @@ impl ThemesManager {
             Err(UtilsError::Theme(format!("Theme '{}' not found", name)))
         }
     }
-    
+
     pub fn get_current_theme(&self) -> Option<&Theme> {
         self.current_theme.as_ref().and_then(|name| self.themes.get(name))
     }
-    
+
     fn load_builtin_themes(&mut self) -> UtilsResult<()> {
         // Add a default theme
         let default_theme = Theme {
@@ -106,7 +106,7 @@ impl ThemesManager {
                 ],
             },
         };
-        
+
         self.themes.insert("default".to_string(), default_theme);
         self.current_theme = Some("default".to_string());
         Ok(())

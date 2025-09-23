@@ -1,10 +1,10 @@
 //! Snippets functionality for OpenAgent Terminal
-//! 
+//!
 //! This module provides code snippet and template management capabilities.
 
 use crate::{UtilsError, UtilsResult};
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Code snippet definition
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -44,62 +44,68 @@ impl SnippetsManager {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn initialize(&mut self) -> UtilsResult<()> {
         tracing::info!("Initializing snippets manager");
         self.load_builtin_snippets()?;
         Ok(())
     }
-    
+
     pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
         tracing::info!("Loading snippets from directory: {:?}", path);
         // TODO: Scan directory for .toml snippet files and load them
         Ok(())
     }
-    
+
     pub fn get_snippet(&self, name: &str) -> Option<&Snippet> {
         self.snippets.get(name)
     }
-    
+
     pub fn list_snippets(&self) -> Vec<&str> {
         self.snippets.keys().map(|s| s.as_str()).collect()
     }
-    
+
     pub fn search_snippets(&self, query: &str) -> Vec<&Snippet> {
         self.snippets
             .values()
             .filter(|snippet| {
                 snippet.name.to_lowercase().contains(&query.to_lowercase())
-                    || snippet.description
+                    || snippet
+                        .description
                         .as_ref()
-                        .map_or(false, |desc| desc.to_lowercase().contains(&query.to_lowercase()))
-                    || snippet.tags
+                        .is_some_and(|desc| desc.to_lowercase().contains(&query.to_lowercase()))
+                    || snippet
+                        .tags
                         .iter()
                         .any(|tag| tag.to_lowercase().contains(&query.to_lowercase()))
             })
             .collect()
     }
-    
+
     pub fn add_snippet(&mut self, snippet: Snippet) -> UtilsResult<()> {
         let name = snippet.name.clone();
         self.snippets.insert(name, snippet);
         Ok(())
     }
-    
+
     pub fn get_template(&self, name: &str) -> Option<&Template> {
         self.templates.get(name)
     }
-    
-    pub fn expand_template(&self, name: &str, variables: &HashMap<String, String>) -> UtilsResult<String> {
+
+    pub fn expand_template(
+        &self,
+        name: &str,
+        variables: &HashMap<String, String>,
+    ) -> UtilsResult<String> {
         if let Some(template) = self.templates.get(name) {
             let mut content = template.content.clone();
-            
+
             // Simple variable substitution {{variable_name}}
             for (key, value) in variables {
                 let placeholder = format!("{{{{{}}}}}", key);
                 content = content.replace(&placeholder, value);
             }
-            
+
             // Fill in default values for unset variables
             for template_var in &template.variables {
                 let placeholder = format!("{{{{{}}}}}", template_var.name);
@@ -111,13 +117,13 @@ impl SnippetsManager {
                     }
                 }
             }
-            
+
             Ok(content)
         } else {
             Err(UtilsError::Snippet(format!("Template '{}' not found", name)))
         }
     }
-    
+
     fn load_builtin_snippets(&mut self) -> UtilsResult<()> {
         // Add some basic snippets
         let git_status = Snippet {
@@ -127,7 +133,7 @@ impl SnippetsManager {
             language: Some("bash".to_string()),
             tags: vec!["git".to_string(), "status".to_string()],
         };
-        
+
         let git_log = Snippet {
             name: "git-log".to_string(),
             description: Some("Show git commit history".to_string()),
@@ -135,7 +141,7 @@ impl SnippetsManager {
             language: Some("bash".to_string()),
             tags: vec!["git".to_string(), "history".to_string()],
         };
-        
+
         let cargo_build = Snippet {
             name: "cargo-build".to_string(),
             description: Some("Build Rust project".to_string()),
@@ -143,11 +149,11 @@ impl SnippetsManager {
             language: Some("bash".to_string()),
             tags: vec!["rust".to_string(), "cargo".to_string(), "build".to_string()],
         };
-        
+
         self.snippets.insert("git-status".to_string(), git_status);
         self.snippets.insert("git-log".to_string(), git_log);
         self.snippets.insert("cargo-build".to_string(), cargo_build);
-        
+
         // Add a basic template
         let rust_module = Template {
             name: "rust-module".to_string(),
@@ -180,7 +186,8 @@ mod tests {
         // TODO: Add test assertions
     }
 }
-"#.to_string(),
+"#
+            .to_string(),
             variables: vec![
                 TemplateVariable {
                     name: "description".to_string(),
@@ -209,7 +216,7 @@ mod tests {
                 },
             ],
         };
-        
+
         self.templates.insert("rust-module".to_string(), rust_module);
         Ok(())
     }

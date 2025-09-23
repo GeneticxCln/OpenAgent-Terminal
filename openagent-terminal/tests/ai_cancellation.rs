@@ -69,11 +69,16 @@ fn build_event_loop() -> (EventLoop<Event>, EventLoopProxy<Event>) {
     let mut builder = EventLoop::<Event>::with_user_event();
     #[cfg(target_os = "linux")]
     {
-        use winit::platform::wayland::EventLoopBuilderExtWayland;
-        use winit::platform::x11::EventLoopBuilderExtX11;
-        // Allow running on any thread for both Wayland and X11
-        EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
-        EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+        #[cfg(feature = "wayland")]
+        {
+            use winit::platform::wayland::EventLoopBuilderExtWayland;
+            EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
+        }
+        #[cfg(feature = "x11")]
+        {
+            use winit::platform::x11::EventLoopBuilderExtX11;
+            EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+        }
     }
     let event_loop = builder.build().expect("failed to build event loop");
     let proxy = event_loop.create_proxy();

@@ -1,3 +1,4 @@
+
 [workspace]
 members = [
     "openagent-terminal",
@@ -141,6 +142,7 @@ bitflags = "2.9.4" # Use newer bitflags to avoid conflicts
 hashbrown = "0.16.0" # Consistent hashbrown version
 futures = "0.3.31"  # Ensure consistent futures versions
 regex = "1.11.2"    # Updated regex version
+chrono = { version = "0.4.42", features = ["std", "serde"] }
 
 # Core dependencies (always needed)
 toml = "0.9.7"
@@ -195,7 +197,6 @@ jsonrpc-ipc-server = "18.0"
 
 # Workflow system
 tera = "1.20"
-chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
 
 # UI components

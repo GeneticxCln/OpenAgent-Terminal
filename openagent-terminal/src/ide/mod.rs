@@ -27,6 +27,7 @@ impl IdeManager {
     }
 
     /// Handle terminal input for inline completions (synchronous)
+    #[allow(dead_code)]
     pub fn handle_input(&self, input: &str, cursor_pos: usize) -> Vec<CompletionItem> {
         let mut ide = self.warp_ide.write().unwrap();
         ide.handle_input(input, cursor_pos)

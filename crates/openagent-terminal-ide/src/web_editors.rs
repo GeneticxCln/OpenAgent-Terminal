@@ -1,6 +1,6 @@
 //! Web editor functionality for OpenAgent Terminal IDE
 
-use crate::{IdeError, IdeResult};
+use crate::IdeResult;
 
 /// Web editor manager
 #[derive(Debug, Default)]
@@ -12,7 +12,7 @@ impl WebEditorManager {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn start_server(&mut self, port: u16) -> IdeResult<()> {
         tracing::info!("Starting web editor server on port {}", port);
         // TODO: Implement web editor server

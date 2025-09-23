@@ -3489,6 +3489,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         if self.ctx.workspace_tab_bar_drag_press(mouse_x, mouse_y, button) {
                             return;
                         }
+                        // Fallback: handle immediate tab bar click via cached geometry
+                        if self.process_tab_bar_click() {
+                            return;
+                        }
                         // Bottom composer click handling (opens AI panel)
                         if self.process_bottom_composer_click() {
                             return;
@@ -4215,4 +4219,3 @@ mod tests {
         mods: ModifiersState::ALT | ModifiersState::SUPER,
     }
 }
-

@@ -4,7 +4,6 @@
 #[allow(unused_imports)]
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 #[allow(unused_imports)]
@@ -13,12 +12,12 @@ use tracing::{debug, error, info, warn};
 // Import new components
 #[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockManager, CreateBlockParams};
+#[cfg(feature = "plugins")]
+use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "plugins")]
 pub(crate) use plugin_sdk::{CommandOutput, PluginError};
-#[cfg(feature = "plugins")]
-use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
 #[cfg(feature = "workflow")]
 use workflow_engine::WorkflowEngine;
 
@@ -775,6 +774,7 @@ impl PluginHost for TerminalPluginHost {
 
 /// Integration helper for using components with the terminal
 pub struct ComponentIntegration<'a> {
+    #[allow(dead_code)]
     components: &'a InitializedComponents,
 }
 
@@ -795,7 +795,8 @@ impl<'a> ComponentIntegration<'a> {
                 directory: Some(std::env::current_dir()?),
                 environment: Some(std::env::vars().collect()),
                 shell: Some(
-                    crate::blocks_v2::ShellType::from_str(shell)
+                    shell
+                        .parse::<crate::blocks_v2::ShellType>()
                         .unwrap_or(crate::blocks_v2::ShellType::Bash),
                 ),
                 tags: None,

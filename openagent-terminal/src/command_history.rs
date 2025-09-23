@@ -2,17 +2,23 @@
 //! Bridges the blocks_v2 system with the terminal for command/history tracking
 
 use std::path::PathBuf;
+#[cfg(feature = "blocks")]
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(feature = "blocks")]
 use tokio::sync::Mutex;
 
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 #[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockId, BlockManager, CreateBlockParams, ShellType};
 
+
+/// Unified timestamp type for history entries (chrono when blocks enabled; SystemTime otherwise)
+#[cfg(feature = "blocks")]
+pub type HistoryTimestamp = chrono::DateTime<chrono::Utc>;
 #[cfg(not(feature = "blocks"))]
-use chrono::Utc;
+pub type HistoryTimestamp = std::time::SystemTime;
 
 /// Command history manager that integrates with the blocks system
 pub struct CommandHistory {
@@ -33,7 +39,7 @@ pub struct HistoryEntry {
     pub exit_code: Option<i32>,
     pub output: String,
     pub working_dir: PathBuf,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub timestamp: HistoryTimestamp,
     pub duration: Option<Duration>,
 }
 
@@ -58,7 +64,7 @@ impl CommandHistory {
                         Some(Arc::new(Mutex::new(manager)))
                     }
                     Err(e) => {
-                        error!("Failed to initialize block manager: {}, using fallback", e);
+                        tracing::error!("Failed to initialize block manager: {}, using fallback", e);
                         None
                     }
                 }
@@ -71,6 +77,7 @@ impl CommandHistory {
 
         #[cfg(not(feature = "blocks"))]
         {
+            let _ = &data_dir; // silence unused variable when feature is disabled
             info!("Command history initialized with simple fallback (blocks feature disabled)");
             Self { simple_history: Vec::new(), current_command: None }
         }
@@ -110,9 +117,9 @@ impl CommandHistory {
                     });
                     info!("Created block {} for command", block.id);
                 }
-                Err(e) => {
-                    error!("Failed to create block: {}", e);
-                    // Fallback to simple tracking
+                    Err(e) => {
+                        tracing::error!("Failed to create block: {}", e);
+                        // Fallback to simple tracking
                     self.current_command = Some(ActiveCommand {
                         block_id: None,
                         command: command.clone(),
@@ -170,7 +177,7 @@ impl CommandHistory {
                         info!("Updated block {} with output", block_id);
                     }
                     Err(e) => {
-                        error!("Failed to update block: {}", e);
+                        tracing::error!("Failed to update block: {}", e);
                     }
                 }
             }
@@ -183,7 +190,7 @@ impl CommandHistory {
                     exit_code: Some(exit_code),
                     output,
                     working_dir: active.working_dir,
-                    timestamp: Utc::now(),
+                    timestamp: std::time::SystemTime::now(),
                     duration: Some(duration),
                 };
                 self.simple_history.push(entry);
@@ -199,8 +206,8 @@ impl CommandHistory {
     }
 
     /// Search command history
+    #[cfg(feature = "blocks")]
     pub async fn search(&self, query: &str, max_results: usize) -> Vec<HistoryEntry> {
-        #[cfg(feature = "blocks")]
         if let Some(ref block_manager) = self.block_manager {
             let manager = block_manager.lock().await;
             let search_query = crate::blocks_v2::SearchQuery {
@@ -224,31 +231,30 @@ impl CommandHistory {
                         .collect();
                 }
                 Err(e) => {
-                    error!("Search failed: {}", e);
+                    tracing::error!("Search failed: {}", e);
                 }
             }
         }
-
-        #[cfg(not(feature = "blocks"))]
-        {
-            let query_lower = query.to_lowercase();
-            let mut results: Vec<_> = self
-                .simple_history
-                .iter()
-                .filter(|entry| entry.command.to_lowercase().contains(&query_lower))
-                .cloned()
-                .collect();
-            results.reverse(); // Most recent first
-            results.truncate(max_results);
-            return results;
-        }
-
         Vec::new()
     }
 
+    #[cfg(not(feature = "blocks"))]
+    pub async fn search(&self, query: &str, max_results: usize) -> Vec<HistoryEntry> {
+        let query_lower = query.to_lowercase();
+        let mut results: Vec<_> = self
+            .simple_history
+            .iter()
+            .filter(|entry| entry.command.to_lowercase().contains(&query_lower))
+            .cloned()
+            .collect();
+        results.reverse(); // Most recent first
+        results.truncate(max_results);
+        results
+    }
+
     /// Get recent command history
+    #[cfg(feature = "blocks")]
     pub async fn get_recent(&self, limit: usize) -> Vec<HistoryEntry> {
-        #[cfg(feature = "blocks")]
         if let Some(ref block_manager) = self.block_manager {
             let manager = block_manager.lock().await;
             let search_query = crate::blocks_v2::SearchQuery {
@@ -273,20 +279,19 @@ impl CommandHistory {
                         .collect();
                 }
                 Err(e) => {
-                    error!("Failed to get recent commands: {}", e);
+                    tracing::error!("Failed to get recent commands: {}", e);
                 }
             }
         }
-
-        #[cfg(not(feature = "blocks"))]
-        {
-            let mut recent: Vec<_> = self.simple_history.iter().cloned().collect();
-            recent.reverse(); // Most recent first
-            recent.truncate(limit);
-            return recent;
-        }
-
         Vec::new()
+    }
+
+    #[cfg(not(feature = "blocks"))]
+    pub async fn get_recent(&self, limit: usize) -> Vec<HistoryEntry> {
+        let mut recent: Vec<_> = self.simple_history.iter().cloned().collect();
+        recent.reverse(); // Most recent first
+        recent.truncate(limit);
+        recent
     }
 
     /// Detect current shell type

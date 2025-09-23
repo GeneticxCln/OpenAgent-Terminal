@@ -25,6 +25,8 @@ pub mod ai_runtime;
 pub mod cli;
 #[cfg(feature = "plugins")]
 pub mod cli_plugins;
+#[cfg(feature = "plugins")]
+pub mod plugins_api;
 pub mod clipboard;
 pub mod command_history;
 pub mod command_pipeline;
@@ -52,6 +54,7 @@ pub mod utils;
 pub mod window_context;
 
 // New component modules
+#[cfg(feature = "blocks")]
 pub mod blocks_v2;
 pub mod components_init;
 #[cfg(feature = "blocks")]

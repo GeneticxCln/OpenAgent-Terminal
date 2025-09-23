@@ -479,6 +479,21 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                                 to.display()
                             );
                         }
+                        "jsonl" => {
+                            let mut output = Vec::new();
+                            for record in &records {
+                                serde_json::to_writer(&mut output, record)
+                                    .with_context(|| "Failed to serialize record")?;
+                                output.push(b'\n');
+                            }
+                            std::fs::write(to, output)
+                                .with_context(|| format!("Failed to write {}", to.display()))?;
+                            println!(
+                                "Exported {} AI history entries to {} (JSONL via JSONL fallback)",
+                                records.len(),
+                                to.display()
+                            );
+                        }
                         "csv" => {
                             let mut wtr = csv::Writer::from_path(to)
                                 .with_context(|| format!("Failed to open {} for CSV", to.display()))?;
@@ -542,6 +557,21 @@ pub fn run_ai_cli(opts: &AiOptions, config: &UiConfig) -> Result<i32> {
                         .with_context(|| format!("Failed to write {}", to.display()))?;
                     println!(
                         "Exported {} AI history entries to {} (JSON)",
+                        records.len(),
+                        to.display()
+                    );
+                }
+                "jsonl" => {
+                    let mut output = Vec::new();
+                    for record in &records {
+                        serde_json::to_writer(&mut output, record)
+                            .with_context(|| "Failed to serialize record")?;
+                        output.push(b'\n');
+                    }
+                    std::fs::write(to, output)
+                        .with_context(|| format!("Failed to write {}", to.display()))?;
+                    println!(
+                        "Exported {} AI history entries to {} (JSONL)",
                         records.len(),
                         to.display()
                     );
@@ -977,5 +1007,30 @@ mod tests {
         let content = fs::read_to_string(tmp.path().join("out.csv")).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert!(lines.len() >= 2); // header + at least one row
+    }
+
+    #[test]
+    fn history_export_jsonl_fallback_jsonl() {
+        let tmp = tempdir().unwrap();
+        std::env::set_var("XDG_DATA_HOME", tmp.path());
+        write_jsonl_entry(tmp.path());
+
+        let opts = AiOptions {
+            command: AiCommand::HistoryExport {
+                format: "jsonl".to_string(),
+                to: tmp.path().join("out.jsonl"),
+            },
+        };
+        let cfg = UiConfig::default();
+        let code = run_ai_cli(&opts, &cfg).unwrap();
+        assert_eq!(code, 0);
+        let content = fs::read_to_string(tmp.path().join("out.jsonl")).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.len() >= 1);
+        // Validate that it's valid JSON per line
+        for l in lines {
+            if l.trim().is_empty() { continue; }
+            let _: serde_json::Value = serde_json::from_str(l).unwrap();
+        }
     }
 }

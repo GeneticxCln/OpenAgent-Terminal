@@ -1226,6 +1226,10 @@ impl AiRuntime {
             let kv = self.fetch_project_context_kv(&wd);
             req.context.extend(kv);
         }
+        // Append latest WGPU snapshot metadata if present (best-effort)
+        if let Some(kv) = fetch_latest_snapshot_kv() {
+            req.context.extend(kv);
+        }
         let req = build_request_with_context(req, &cm, budget_kb);
 
         // Spawn background worker
@@ -1369,6 +1373,10 @@ impl AiRuntime {
             req_raw.context.extend(kv);
         }
         let (cm, budget_kb) = self.build_context_manager();
+        // Append latest WGPU snapshot metadata if present (best-effort)
+        if let Some(kv) = fetch_latest_snapshot_kv() {
+            req_raw.context.extend(kv);
+        }
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
@@ -1826,6 +1834,10 @@ impl AiRuntime {
             let kv = self.fetch_project_context_kv(&wd);
             req_raw.context.extend(kv);
         }
+        // Append latest WGPU snapshot metadata if present (best-effort)
+        if let Some(kv) = fetch_latest_snapshot_kv() {
+            req_raw.context.extend(kv);
+        }
         self.start_streaming_with_request(req_raw, event_proxy, window_id);
     }
 
@@ -1970,6 +1982,10 @@ impl AiRuntime {
         }
         // Enrich with configured context providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
+        // Append latest WGPU snapshot metadata if present (best-effort)
+        if let Some(kv) = fetch_latest_snapshot_kv() {
+            req_raw.context.extend(kv);
+        }
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
@@ -2177,6 +2193,10 @@ impl AiRuntime {
         }
         // Enrich with configured context providers and sanitize
         let (cm, budget_kb) = self.build_context_manager();
+        // Append latest WGPU snapshot metadata if present (best-effort)
+        if let Some(kv) = fetch_latest_snapshot_kv() {
+            req_raw.context.extend(kv);
+        }
         let req = build_request_with_context(req_raw, &cm, budget_kb);
 
         let t0 = std::time::Instant::now();
@@ -2360,4 +2380,52 @@ fn enforce_git_no_pager_line(line: &str) -> String {
     }
     tokens.insert(insert_at, "--no-pager".to_string());
     tokens.join(" ")
+}
+
+/// Locate the latest offscreen WGPU snapshot produced by examples/tests and return key-values
+/// to enrich AI request context. Best-effort; returns None when no snapshot exists.
+fn fetch_latest_snapshot_kv() -> Option<Vec<(String, String)>> {
+    use std::fs;
+    use std::time::SystemTime;
+    let cwd = std::env::current_dir().ok()?;
+    let candidates = [
+        cwd.join("tests").join("snapshot_output"),
+        cwd.join("snapshot_output"),
+    ];
+    let mut newest: Option<(std::path::PathBuf, SystemTime)> = None;
+    for dir in candidates.iter() {
+        if !dir.exists() {
+            continue;
+        }
+        if let Ok(rd) = fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
+                    if ext.eq_ignore_ascii_case("png") {
+                        if let Ok(meta) = e.metadata() {
+                            if let Ok(mtime) = meta.modified() {
+                                if newest.as_ref().map(|(_, t)| mtime > *t).unwrap_or(true) {
+                                    newest = Some((p.clone(), mtime));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let (path, mtime) = newest?;
+    let size_bytes = fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
+    let ts = chrono::DateTime::<chrono::Utc>::from(mtime).to_rfc3339();
+    let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let mut kv = Vec::new();
+    kv.push(("snapshot.path".to_string(), path.display().to_string()));
+    kv.push(("snapshot.file".to_string(), file));
+    kv.push(("snapshot.size_bytes".to_string(), size_bytes.to_string()));
+    kv.push(("snapshot.modified".to_string(), ts));
+    kv.push((
+        "snapshot.note".to_string(),
+        "Latest offscreen WGPU snapshot available for visual reference".to_string(),
+    ));
+    Some(kv)
 }

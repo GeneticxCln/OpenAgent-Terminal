@@ -17,6 +17,7 @@ pub struct WarpIde {
 
 /// Individual completion item
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CompletionItem {
     /// Completion text
     pub text: String,
@@ -36,6 +37,7 @@ pub struct CompletionItem {
 
 /// Types of completions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum CompletionKind {
     /// File path
     FilePath,
@@ -49,6 +51,7 @@ pub enum CompletionKind {
 
 /// Completion triggers
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum CompletionTrigger {
     /// File path context
     FilePath(String),
@@ -69,6 +72,7 @@ pub struct ErrorSuggestion {
 
 /// Warp IDE configuration
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct WarpIdeConfig {
     /// Enable inline completions
     pub completions_enabled: bool,
@@ -82,6 +86,7 @@ pub struct WarpIdeConfig {
 
 /// Completion settings
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CompletionSettings {
     /// Maximum suggestions
     pub max_suggestions: usize,
@@ -97,6 +102,7 @@ impl WarpIde {
     }
 
     /// Handle terminal input for completions
+    #[allow(dead_code)]
     pub fn handle_input(&mut self, input: &str, cursor_pos: usize) -> Vec<CompletionItem> {
         if !self.config.completions_enabled {
             return Vec::new();
@@ -144,6 +150,7 @@ impl WarpIde {
     // Private helper methods
 
     // Interleave suggestions by category (CompletionKind) in a round-robin fashion
+    #[allow(dead_code)]
     fn interleave_suggestions(&self, items: Vec<CompletionItem>) -> Vec<CompletionItem> {
         use std::collections::VecDeque;
         let mut by_kind: HashMap<CompletionKind, VecDeque<CompletionItem>> = HashMap::new();
@@ -190,6 +197,7 @@ impl WarpIde {
         out
     }
 
+    #[allow(dead_code)]
     fn detect_completion_triggers(&self, input: &str, cursor_pos: usize) -> Vec<CompletionTrigger> {
         // Ensure we slice at a valid UTF-8 boundary; cursor_pos may be a byte index inside a multi-byte char.
         let safe_idx = if cursor_pos >= input.len() {
@@ -240,6 +248,7 @@ impl WarpIde {
         Vec::new()
     }
 
+    #[allow(dead_code)]
     fn get_file_completions(&self, partial: &str) -> Vec<CompletionItem> {
         let mut completions = Vec::new();
 
@@ -275,6 +284,7 @@ impl WarpIde {
         completions
     }
 
+    #[allow(dead_code)]
     fn get_command_completions(&self, partial: &str) -> Vec<CompletionItem> {
         let mut completions = Vec::new();
 
@@ -313,6 +323,7 @@ impl WarpIde {
         completions
     }
 
+    #[allow(dead_code)]
     fn get_git_completions(&self, partial: &str) -> Vec<CompletionItem> {
         let mut completions = Vec::new();
 

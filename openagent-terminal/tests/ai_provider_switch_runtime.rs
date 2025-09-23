@@ -3,7 +3,7 @@
 use openagent_terminal::ai_runtime::AiRuntime;
 use openagent_terminal::config::ai::ProviderConfig;
 use openagent_terminal::config::UiConfig;
-use openagent_terminal_ai::{AiProvider, AiRequest};
+use openagent_terminal_ai::AiRequest;
 
 #[test]
 fn switch_provider_from_null_to_ollama() {

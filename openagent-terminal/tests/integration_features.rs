@@ -161,7 +161,6 @@ mod blocks_tests {
 // Test blocks without the blocks feature (fallback)
 #[cfg(not(feature = "blocks"))]
 mod blocks_fallback_tests {
-    use super::*;
     use openagent_terminal::command_history::CommandHistory;
 
     #[tokio::test]

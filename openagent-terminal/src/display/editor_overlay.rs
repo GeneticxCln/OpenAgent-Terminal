@@ -24,10 +24,10 @@ pub struct EditorOverlayState {
     pub buffer: Option<EditorBuffer>,
     pub scroll_line: usize,
     // LSP integration (optional)
-#[cfg(feature = "lsp")]
+    #[cfg(feature = "lsp")]
     pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
     #[cfg(feature = "lsp")]
-    pub lsp_uri: Option<lsp_types::Url>,
+    pub lsp_uri: Option<lsp_types::Uri>,
     #[cfg(feature = "lsp")]
     pub language_id: Option<String>,
     // Completion UI state
@@ -65,17 +65,17 @@ pub struct EditorOverlayState {
 #[cfg(feature = "lsp")]
 fn lsp_server_config_for_language(lang: &str) -> Option<openagent_terminal_ide::lsp::ServerConfig> {
     match lang {
-        "rust" => Some(openagent_terminal_ide_lsp::ServerConfig {
+        "rust" => Some(openagent_terminal_ide::lsp::ServerConfig {
             command: "rust-analyzer".into(),
             args: vec![],
             initialization_options: None,
         }),
-        "typescript" | "javascript" => Some(openagent_terminal_ide_lsp::ServerConfig {
+        "typescript" | "javascript" => Some(openagent_terminal_ide::lsp::ServerConfig {
             command: "typescript-language-server".into(),
             args: vec!["--stdio".into()],
             initialization_options: None,
         }),
-        "python" => Some(openagent_terminal_ide_lsp::ServerConfig {
+        "python" => Some(openagent_terminal_ide::lsp::ServerConfig {
             command: "pyright-langserver".into(),
             args: vec!["--stdio".into()],
             initialization_options: None,
@@ -106,7 +106,7 @@ impl Display {
         if let Some(client) = self.editor_overlay.lsp.as_ref() {
             while let Some(note) = client.try_recv_notification() {
                 match note {
-                    openagent_terminal_ide_lsp::LspNotification::PublishDiagnostics(params) => {
+                    openagent_terminal_ide::lsp::LspNotification::PublishDiagnostics(params) => {
                         if let Some(cur_uri) = self.editor_overlay.lsp_uri.clone() {
                             if params.uri == cur_uri {
                                 self.editor_overlay.diagnostics = params.diagnostics;
@@ -300,11 +300,16 @@ impl EditorOverlayState {
                     {
                         let lang = guess_language_from_path(&path);
                         self.language_id = Some(lang.clone());
-                        if let Ok(uri) = lsp_types::Url::from_file_path(&path) {
+                        // Construct a file:// URI string and parse into lsp_types::Uri (lsp_types 0.97+)
+                        let url = format!(
+                            "file://{}",
+                            path.to_string_lossy().replace('\\', "/")
+                        );
+                        if let Ok(uri) = url.parse::<lsp_types::Uri>() {
                             self.lsp_uri = Some(uri.clone());
                             let cfg = lsp_server_config_for_language(&lang);
                             if let Some(cfg) = cfg {
-                                if let Ok(client) = openagent_terminal_ide_lsp::LspClient::start(
+                                if let Ok(client) = openagent_terminal_ide::lsp::LspClient::start(
                                     &cfg,
                                     Some(uri.clone()),
                                 ) {
@@ -500,7 +505,7 @@ impl Display {
         if let Some(buf) = &state.buffer {
             // Render visible lines from rope
             let text_all = buf.text();
-            for (yline, (i, raw)) in
+            for (yline, (_i, raw)) in
                 text_all.lines().enumerate().skip(state.scroll_line).take(content_lines).enumerate()
             {
                 let line = content_top + yline;
@@ -532,7 +537,7 @@ impl Display {
                 // Diagnostics underline for this line
                 #[cfg(feature = "lsp")]
                 {
-                    let dl = i;
+                    let dl = _i;
                     for d in &state.diagnostics {
                         let start = d.range.start;
                         let end = d.range.end;
@@ -661,7 +666,14 @@ impl Display {
                     .map(|loc| {
                         format!(
                             "{}:{}:{}",
-                            loc.uri.path().rsplit('/').next().unwrap_or(""),
+                            {
+                                let s = loc.uri.to_string();
+                                s.trim_end_matches('/')
+                                    .rsplit('/')
+                                    .next()
+                                    .unwrap_or("")
+                                    .to_string()
+                            },
                             loc.range.start.line + 1,
                             loc.range.start.character + 1
                         )
@@ -891,9 +903,11 @@ impl Display {
                 return;
             }
         }
-        if let Ok(path) = loc.uri.to_file_path() {
-            self.editor_overlay_open(path);
-        }
+        // Convert file:// URI string to a PathBuf in a best-effort way
+        let s = loc.uri.to_string();
+        let path_str = s.strip_prefix("file://").unwrap_or(&s);
+        let path = PathBuf::from(path_str);
+        self.editor_overlay_open(path);
     }
 
     #[cfg(feature = "lsp")]
@@ -1026,7 +1040,7 @@ impl Display {
     #[cfg(feature = "lsp")]
     fn lsp_pos_to_char_index_buf(
         &self,
-        buf: &openagent_terminal_ide_editor::EditorBuffer,
+        buf: &openagent_terminal_ide::editor::EditorBuffer,
         pos: lsp_types::Position,
     ) -> usize {
         let rope = buf.rope.read();

@@ -48,6 +48,8 @@ mod cli;
 mod cli_ai;
 #[cfg(feature = "plugins")]
 mod cli_plugins;
+#[cfg(feature = "plugins")]
+mod plugins_api;
 #[cfg(feature = "security-lens")]
 mod cli_security;
 #[cfg(feature = "sync")]
@@ -223,19 +225,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(feature = "web-editors")]
 fn web_edit_run(opts: &crate::cli::WebEditOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_web_editors as webedit;
-    let cfg = webedit::WebEditorConfig {
-        file_path: opts.file.clone(),
-        title: opts.title.clone(),
-        prefer_monaco: true,
-    };
-    webedit::open_editor_blocking(cfg)?;
+    use openagent_terminal_ide::web_editors::WebEditorManager;
+
+    // Placeholder implementation using consolidated IDE crate.
+    // Start a minimal web editor server (no real UI yet) and report success.
+    let mut mgr = WebEditorManager::new();
+    // Use an arbitrary port; implementation is a stub and does not bind.
+    mgr.start_server(0)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    println!(
+        "Web editor (placeholder) started for file: {}{}",
+        opts.file.display(),
+        opts.title
+            .as_ref()
+            .map(|t| format!(" (title: {t})"))
+            .unwrap_or_default()
+    );
     Ok(0)
 }
 
 #[cfg(feature = "ide-indexer")]
 fn ide_index_run(opts: &crate::cli::IdeIndexOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_ide_indexer as ide_indexer;
+    use openagent_terminal_ide::indexer as ide_indexer;
     let cfg = ide_indexer::ProjectIndexConfig::new(opts.root.clone());
     let index = ide_indexer::ProjectIndex::build(&cfg)?;
     if opts.json {
@@ -255,8 +266,9 @@ fn ide_index_run(opts: &crate::cli::IdeIndexOptions) -> Result<i32, Box<dyn Erro
 #[cfg(feature = "ide-lsp")]
 fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<dyn Error>> {
     use lsp_types as lsp;
-    use openagent_terminal_ide_lsp as ide_lsp;
+    use openagent_terminal_ide::lsp as ide_lsp;
     use std::fs;
+    use std::str::FromStr;
 
     // Guess language if not provided
     fn guess_language_from_path(path: &std::path::Path) -> String {
@@ -298,10 +310,14 @@ fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<d
         initialization_options: server.initialization_options.clone(),
     };
 
-    let root_uri = opts.file.parent().map(|p| lsp::Url::from_file_path(p).unwrap());
+    let root_uri = opts
+        .file
+        .parent()
+        .and_then(|p| lsp::Uri::from_str(&format!("file://{}", p.to_string_lossy())).ok());
     let client = ide_lsp::LspClient::start(&server_cfg, root_uri)?;
 
-    let uri = lsp::Url::from_file_path(&opts.file).map_err(|_| "invalid file path for LSP URI")?;
+    let uri = lsp::Uri::from_str(&format!("file://{}", opts.file.to_string_lossy()))
+        .map_err(|_| "invalid file path for LSP URI")?;
     let text = fs::read_to_string(&opts.file).unwrap_or_default();
     client.open_document(uri.clone(), &lang, &text)?;
 

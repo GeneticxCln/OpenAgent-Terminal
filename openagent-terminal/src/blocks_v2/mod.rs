@@ -1,8 +1,6 @@
 // Blocks 2.0 System for OpenAgent Terminal
 // Enhanced block system with per-block environments, tagging, and advanced features
 
-#![cfg(feature = "blocks")]
-
 pub mod environment;
 pub mod export;
 pub mod search;

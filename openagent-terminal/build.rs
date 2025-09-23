@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
+// Build-time timestamping (avoid external deps in minimal builds)
+
 #[allow(unexpected_cfgs)]
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -69,7 +71,14 @@ impl BuildConfig {
             version = format!("{version} ({hash})");
         }
 
-        let build_timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+        let build_timestamp = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            secs.to_string()
+        };
 
         let optimization_level = env::var("OPT_LEVEL").unwrap_or_else(|_| {
             if is_release {

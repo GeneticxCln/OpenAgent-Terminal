@@ -4,11 +4,34 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use openagent_terminal::security_lens::{RiskLevel, SecurityLens, SecurityPolicy};
 use std::time::Instant;
 
+// Use the real ComplianceReport when the security-lens feature is enabled,
+// otherwise provide a local fallback with the same fields used by this bench.
+#[cfg(feature = "security-lens")]
+use openagent_terminal::security::compliance::ComplianceReport;
+
+#[cfg(not(feature = "security-lens"))]
+#[derive(Default)]
+struct ComplianceReport {
+    total_commands_analyzed: usize,
+    critical_findings: usize,
+    warning_findings: usize,
+    caution_findings: usize,
+    safe_commands: usize,
+    generation_ms: u128,
+}
+
+#[cfg(not(feature = "security-lens"))]
+impl ComplianceReport {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
 fn stress_generate_compliance_report(c: &mut Criterion) {
     c.bench_function("compliance_report_stress", |b| {
         b.iter(|| {
             let mut lens = SecurityLens::new(SecurityPolicy::default());
-            let mut report = openagent_terminal::security::compliance::ComplianceReport::new();
+            let mut report = ComplianceReport::new();
 
             let commands = [
                 "ls -la",

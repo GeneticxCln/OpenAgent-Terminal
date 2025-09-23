@@ -7,7 +7,10 @@ use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 use std::{cmp, mem};
 
+#[cfg(feature = "wgpu")]
 use log::{debug, info};
+#[cfg(not(feature = "wgpu"))]
+use log::info;
 use parking_lot::MutexGuard;
 use serde::{Deserialize, Serialize};
 use winit::dpi::PhysicalSize;
@@ -15,7 +18,9 @@ use winit::keyboard::ModifiersState;
 use winit::raw_window_handle::RawWindowHandle;
 use winit::window::CursorIcon;
 
-use crossfont::{Metrics, Rasterize, Rasterizer, Size as FontSize};
+use crossfont::{Metrics, Size as FontSize};
+#[cfg(feature = "wgpu")]
+use crossfont::{Rasterize, Rasterizer};
 use unicode_width::UnicodeWidthChar;
 
 use openagent_terminal_core::event::{EventListener, OnResize, WindowSize};
@@ -33,6 +38,7 @@ use crate::config::debug::SubpixelOrientation;
 use crate::config::font::Font;
 use crate::config::window::Dimensions;
 #[cfg(not(windows))]
+#[cfg(all(not(windows), feature = "wgpu"))]
 use crate::config::window::StartupMode;
 use crate::config::UiConfig;
 use crate::display::bell::VisualBell;
@@ -425,6 +431,20 @@ impl DisplayUpdate {
     }
 }
 
+// Completions stubs when the completions feature is disabled
+#[cfg(not(feature = "completions"))]
+#[allow(dead_code)]
+impl Display {
+    pub fn completions_active(&self) -> bool {
+        false
+    }
+    pub fn completions_move_selection(&mut self, _delta: isize) {}
+    pub fn completions_clear(&mut self) {}
+    pub fn completions_selected_label(&self) -> Option<String> {
+        None
+    }
+}
+
 /// The display wraps a window, font rasterizer, and GPU renderer.
 /// Runtime-only fade animation for a tab that was just closed.
 #[derive(Debug, Clone)]
@@ -675,7 +695,10 @@ pub struct Display {
 }
 
 enum Backend {
+    #[cfg(feature = "wgpu")]
     Wgpu { renderer: crate::renderer::wgpu::WgpuRenderer },
+    #[cfg(not(feature = "wgpu"))]
+    Noop,
 }
 
 impl Display {
@@ -1034,7 +1057,7 @@ impl Display {
     // Fallback helper: draw text using the renderer. This is available when the `blocks` feature is
     // disabled to satisfy calls from overlays/palette that rely on a common text drawing helper.
     // When `blocks` is enabled, a similar helper exists in the blocks_search_panel module.
-    #[cfg(not(feature = "blocks"))]
+#[cfg(all(not(feature = "blocks"), feature = "wgpu"))]
     pub(crate) fn draw_ai_text(
         &mut self,
         point: Point<usize>,
@@ -1063,6 +1086,18 @@ impl Display {
                 );
             }
         }
+    }
+
+    // Provide a no-op draw_ai_text stub when WGPU is not enabled
+    #[cfg(all(not(feature = "blocks"), not(feature = "wgpu")))]
+    pub(crate) fn draw_ai_text(
+        &mut self,
+        _point: Point<usize>,
+        _fg: Rgb,
+        _bg: Rgb,
+        _text: &str,
+        _max_width: usize,
+    ) {
     }
 
     #[cfg(feature = "wgpu")]
@@ -1346,6 +1381,7 @@ impl Display {
     }
 
     /// Reset glyph cache.
+    #[cfg(feature = "wgpu")]
     fn reset_glyph_cache(&mut self) {
         match &mut self.backend {
             Backend::Wgpu { renderer } => {
@@ -1355,6 +1391,10 @@ impl Display {
             }
         }
     }
+
+    /// Reset glyph cache (no-op when WGPU disabled).
+    #[cfg(not(feature = "wgpu"))]
+    fn reset_glyph_cache(&mut self) {}
 
     /// Draw overlay visuals for active pane drag (preview + drop zone).
     pub fn draw_pane_drag_overlay(
@@ -1729,17 +1769,20 @@ impl Display {
         #[allow(unused_mut)]
         let mut renderer_update = self.pending_renderer_update.take().unwrap_or_default();
         #[cfg(feature = "wgpu")]
-        let Backend::Wgpu { renderer } = &mut self.backend;
-        if renderer.take_atlas_evicted() {
-            // Clear CPU glyph cache; then evict a single page in the WGPU renderer.
-            renderer_update.clear_font_cache = true;
-            if !renderer.evict_one_page() {
-                // Fallback to full reset if no pending eviction was set.
-                renderer.reset_atlas();
+        {
+            let Backend::Wgpu { renderer } = &mut self.backend;
+            if renderer.take_atlas_evicted() {
+                // Clear CPU glyph cache; then evict a single page in the WGPU renderer.
+                renderer_update.clear_font_cache = true;
+                if !renderer.evict_one_page() {
+                    // Fallback to full reset if no pending eviction was set.
+                    renderer.reset_atlas();
+                }
             }
         }
 
         // Resize renderer.
+        #[cfg(feature = "wgpu")]
         if renderer_update.resize {
             let Backend::Wgpu { renderer } = &mut self.backend;
             renderer.resize(&self.size_info);
@@ -4549,7 +4592,7 @@ mod tests {
     #[test]
     fn test_size_info_creation() {
         let size = SizeInfo::new(800.0, 600.0, 10.0, 24.0, 5.0, 5.0, false);
-        
+
         assert_eq!(size.width(), 800.0);
         assert_eq!(size.height(), 600.0);
         assert_eq!(size.cell_width(), 10.0);
@@ -4561,54 +4604,61 @@ mod tests {
     #[test]
     fn test_size_info_dimensions() {
         let size = SizeInfo::new(800.0, 600.0, 10.0, 24.0, 5.0, 5.0, false);
-        
+
         // Test column/line calculations
         let columns = size.columns();
         let lines = size.screen_lines();
-        
+
         assert!(columns > 0);
         assert!(lines > 0);
-        
+
         // Test that dimensions are calculated properly
         // With width=800, cell_width=10, padding_x=5, we should have:
         // columns = (800 - 2*5) / 10 = 79
-        let expected_columns = ((size.width() - 2.0 * size.padding_x()) / size.cell_width()) as usize;
+        let expected_columns =
+            ((size.width() - 2.0 * size.padding_x()) / size.cell_width()) as usize;
         assert!(columns >= expected_columns.max(openagent_terminal_core::term::MIN_COLUMNS));
-        
+
         // Similar for lines
-        let expected_lines = ((size.height() - 2.0 * size.padding_y()) / size.cell_height()) as usize;
+        let expected_lines =
+            ((size.height() - 2.0 * size.padding_y()) / size.cell_height()) as usize;
         assert!(lines >= expected_lines.max(openagent_terminal_core::term::MIN_SCREEN_LINES));
     }
 
     #[test]
     fn test_size_info_contains_point() {
         let size = SizeInfo::new(800.0, 600.0, 10.0, 24.0, 5.0, 5.0, false);
-        
+
         // Test points within terminal bounds (considering padding)
         let terminal_x_end = size.padding_x() + (size.columns() as f32) * size.cell_width();
         let terminal_y_end = size.padding_y() + (size.screen_lines() as f32) * size.cell_height();
-        
+
         // Points within terminal grid should be contained
-        assert!(size.contains_point((size.padding_x() + 10.0) as usize, (size.padding_y() + 10.0) as usize));
-        
+        assert!(size.contains_point(
+            (size.padding_x() + 10.0) as usize,
+            (size.padding_y() + 10.0) as usize
+        ));
+
         // Points outside terminal grid should not be contained
-        assert!(!size.contains_point((terminal_x_end + 10.0) as usize, (size.padding_y() + 10.0) as usize));
-        assert!(!size.contains_point((size.padding_x() + 10.0) as usize, (terminal_y_end + 10.0) as usize));
+        assert!(!size
+            .contains_point((terminal_x_end + 10.0) as usize, (size.padding_y() + 10.0) as usize));
+        assert!(!size
+            .contains_point((size.padding_x() + 10.0) as usize, (terminal_y_end + 10.0) as usize));
     }
 
     #[test]
     fn test_color_operations() {
         use crate::display::color::Rgb;
-        
+
         // Test RGB color creation
         let red = Rgb::new(255, 0, 0);
         let green = Rgb::new(0, 255, 0);
         let blue = Rgb::new(0, 0, 255);
-        
+
         // Test color operations
         assert_ne!(red, green);
         assert_ne!(green, blue);
-        
+
         // Test color tuple conversion
         let (r, g, b) = red.as_tuple();
         assert_eq!(r, 255);
@@ -4620,7 +4670,7 @@ mod tests {
     fn test_damage_tracker_creation() {
         // Test damage tracker initialization
         let damage = crate::display::damage::DamageTracker::new(24, 80);
-        
+
         // Basic test - just verify we can create a damage tracker
         // The actual damage tracking API would need to be properly tested
         // with the correct methods once they're identified
@@ -4633,10 +4683,10 @@ mod tests {
         let grid_lines = 1000;
         let screen_lines = 24;
         let display_offset = 100;
-        
+
         let visible_start = display_offset;
         let visible_end = display_offset + screen_lines;
-        
+
         assert!(visible_start < visible_end);
         assert!(visible_end <= grid_lines);
     }
@@ -4644,10 +4694,10 @@ mod tests {
     #[test]
     fn test_frame_timer() {
         use std::time::Duration;
-        
+
         let mut timer = FrameTimer::new();
         let refresh_interval = Duration::from_millis(16); // ~60 FPS
-        
+
         // Test frame timer computation
         let timeout = timer.compute_timeout(refresh_interval);
         assert!(timeout <= refresh_interval);
@@ -4657,7 +4707,7 @@ mod tests {
     fn test_preedit_creation() {
         let preedit_text = "test";
         let cursor_byte_offset = Some((0, 2));
-        
+
         let preedit = Preedit::new(preedit_text.to_string(), cursor_byte_offset);
         assert_eq!(preedit.text, preedit_text);
         assert_eq!(preedit.cursor_byte_offset, cursor_byte_offset);

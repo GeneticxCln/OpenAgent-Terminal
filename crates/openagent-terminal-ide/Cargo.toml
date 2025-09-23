@@ -17,8 +17,18 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 
+# Synchronization & data structures (optional, gated by features)
+parking_lot = { workspace = true, optional = true }
+
+# Editor dependencies (optional)
+ropey = { version = "1.6", optional = true }
+
+# Indexer dependencies (optional)
+ignore = { version = "0.4", optional = true }
+notify = { version = "6.1", optional = true }
+
 # LSP dependencies
-lsp-types = { version = "0.95.1", optional = true }
+lsp-types = { version = "0.97.0", optional = true }
 
 # Web editor dependencies  
 axum = { workspace = true, optional = true }
@@ -28,9 +38,10 @@ wry = { workspace = true, optional = true }
 
 [features]
 default = []
-lsp = ["lsp-types"]
-editor = []
-indexer = []
-dap = []
-web-editors = ["axum", "hyper", "tokio-tungstenite", "wry"]
+# Enable optional deps via feature activation
+lsp = ["dep:lsp-types", "dep:parking_lot"]
+editor = ["dep:ropey", "dep:parking_lot"]
+indexer = ["dep:ignore", "dep:notify", "dep:parking_lot"]
+dap = ["dep:parking_lot"]
+web-editors = ["dep:axum", "dep:hyper", "dep:tokio-tungstenite", "dep:wry"]
 all = ["lsp", "editor", "indexer", "dap", "web-editors"]

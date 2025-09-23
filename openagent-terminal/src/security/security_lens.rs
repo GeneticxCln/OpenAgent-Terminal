@@ -1370,11 +1370,15 @@ impl SecurityLens {
 
     fn generate_mitigation_links(&self, factors: &[RiskFactor]) -> Vec<MitigationLink> {
         let mut links = vec![];
-        let base_url = if self.policy.docs_base_url.is_empty() {
-            "https://docs.openagent.dev/security"
+        // Allow environment to override docs base URL for org-specific documentation
+        let base_url_owned = if let Ok(env_url) = std::env::var("OPENAGENT_SECURITY_DOCS_BASE_URL") {
+            env_url
+        } else if self.policy.docs_base_url.is_empty() {
+            "https://docs.openagent.dev/security".to_string()
         } else {
-            &self.policy.docs_base_url
+            self.policy.docs_base_url.clone()
         };
+        let base_url = base_url_owned.as_str();
 
         for factor in factors {
             match factor.category.as_str() {
