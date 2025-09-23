@@ -6446,25 +6446,25 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
-    fn workspace_tab_bar_hit(
+    fn workspace_tab_bar_click(
         &mut self,
-        mouse_x: usize,
-        mouse_y: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
     ) -> Option<crate::display::warp_ui::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
         self.display.handle_tab_bar_click(
             self.config,
             &self.workspace.tabs,
             position,
-            mouse_x,
-            mouse_y,
+            mouse_x_px,
+            mouse_y_px,
         )
     }
 
     fn workspace_tab_bar_drag_press(
         &mut self,
-        mouse_x: usize,
-        mouse_y: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
         button: MouseButton,
     ) -> bool {
         let position = self.config.workspace.tab_bar.position;
@@ -6472,8 +6472,8 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             self.config,
             &self.workspace.tabs,
             position,
-            mouse_x,
-            mouse_y,
+            mouse_x_px,
+            mouse_y_px,
             button,
         ) {
             use crate::display::warp_ui::TabBarAction as TBA;
@@ -6507,9 +6507,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         false
     }
 
-    fn workspace_tab_bar_drag_move(&mut self, mouse_x: usize, mouse_y: usize) -> bool {
+    fn workspace_tab_bar_drag_move(&mut self, mouse_x_px: usize, mouse_y_px: usize) -> bool {
         if let Some(action) =
-            self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x, mouse_y)
+            self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x_px, mouse_y_px)
         {
             use crate::display::warp_ui::TabBarAction as TBA;
             if let TBA::DragMove(tab_id, new_pos) = action {

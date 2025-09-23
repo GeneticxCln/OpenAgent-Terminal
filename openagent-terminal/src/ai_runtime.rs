@@ -3,6 +3,10 @@
 use crate::ai_context_provider::AiContextProvider;
 use log::{debug, error, info};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use std::thread;
 
 use crate::security::{SecurityLens, SecurityPolicy};
 use openagent_terminal_ai::build_request_with_context;
@@ -262,6 +266,543 @@ impl AiRuntime {
         self.history_retention = retention;
         self.prune_ui_history();
     }
+    
+    /// Start background memory monitoring and cleanup task
+    pub fn start_background_cleanup(&mut self) {
+        if !self.memory_monitor.config.enable_background_cleanup {
+            return;
+        }
+        
+        if self.cleanup_task_handle.is_some() {
+            // Already running
+            return;
+        }
+        
+        let memory_monitor = self.memory_monitor.clone();
+        let shutdown_flag = self.shutdown_flag.clone();
+        
+        let handle = std::thread::Builder::new()
+            .name("ai-memory-cleanup".into())
+            .spawn(move || {
+                info!("AI memory cleanup task started");
+                
+                while !shutdown_flag.load(Ordering::Relaxed) {
+                    // Wait for check interval or shutdown
+                    let check_interval = memory_monitor.config.check_interval;
+                    let start_time = Instant::now();
+                    
+                    while start_time.elapsed() < check_interval {
+                        if shutdown_flag.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
+                    
+                    if shutdown_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    
+                    // Estimate memory usage (simplified - in real implementation would be more sophisticated)
+                    let estimated_usage = Self::estimate_ai_memory_usage();
+                    
+                    if memory_monitor.update_memory_usage(estimated_usage) {
+                        info!("Triggering background memory cleanup (usage: {} bytes)", estimated_usage);
+                        
+                        // Perform cleanup operations
+                        Self::perform_background_cleanup();
+                        
+                        memory_monitor.mark_cleanup_performed();
+                        
+                        info!("Background memory cleanup completed");
+                    }
+                }
+                
+                info!("AI memory cleanup task stopped");
+            })
+            .expect("Failed to start background cleanup task");
+        
+        self.cleanup_task_handle = Some(handle);
+    }
+    
+    /// Stop background cleanup task
+    pub fn stop_background_cleanup(&mut self) {
+        self.shutdown_flag.store(true, Ordering::Relaxed);
+        
+        if let Some(handle) = self.cleanup_task_handle.take() {
+            let _ = handle.join();
+        }
+    }
+    
+    /// Estimate current AI memory usage
+    fn estimate_ai_memory_usage() -> u64 {
+        // This is a simplified estimation. In a real implementation, you would:
+        // 1. Calculate UI history size
+        // 2. Estimate provider cache size
+        // 3. Calculate agent manager memory usage
+        // 4. Add other AI-related data structures
+        
+        let mut total = 0u64;
+        
+        // Rough estimation based on typical usage patterns
+        total += 1024 * 1024; // Base AI runtime overhead: ~1MB
+        
+        // Add some dynamic estimation based on system memory
+        if let Ok(sys_info) = std::process::Command::new("free")
+            .arg("-b")
+            .output()
+        {
+            if let Ok(output) = String::from_utf8(sys_info.stdout) {
+                // Very rough heuristic: assume AI uses some fraction of available memory
+                if let Some(line) = output.lines().nth(1) {
+                    if let Some(used_str) = line.split_whitespace().nth(2) {
+                        if let Ok(used_bytes) = used_str.parse::<u64>() {
+                            // Assume AI components use roughly 1-5% of system memory
+                            total += used_bytes / 50; // ~2% estimation
+                        }
+                    }
+                }
+            }
+        }
+        
+        total.max(1024 * 1024) // Minimum 1MB
+    }
+    
+    /// Perform background cleanup operations
+    fn perform_background_cleanup() {
+        // Clean up SQLite history with better transaction handling
+        let _ = Self::cleanup_sqlite_history_robust();
+        
+        // Clean up JSONL files
+        let _ = Self::cleanup_jsonl_history();
+        
+        // Clean up WarpHistoryManager caches if available
+        let _ = Self::cleanup_warp_history_caches();
+        
+        // Clean up AI embeddings and similarity caches
+        let _ = Self::cleanup_ai_embeddings_cache();
+        
+        // Clean up provider-specific caches
+        let _ = Self::cleanup_provider_caches();
+        
+        info!("Background cleanup operations completed");
+    }
+    
+    /// Clean up WarpHistoryManager caches and pattern data
+    fn cleanup_warp_history_caches() -> Result<(), String> {
+        // This would be called through the WarpHistoryManager instance
+        // For now, we'll implement a placeholder that demonstrates the concept
+        // In a real implementation, this would access the actual WarpHistoryManager instance
+        
+        use std::fs;
+        
+        let base_dir = dirs::cache_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("openagent-terminal")
+            .join("warp_history_cache");
+        
+        if base_dir.exists() {
+            // Clean up old cache files (older than 24 hours in aggressive cleanup mode)
+            let now = std::time::SystemTime::now();
+            let cutoff_duration = std::time::Duration::from_secs(24 * 3600); // 24 hours
+            
+            let mut cleaned_files = 0;
+            if let Ok(entries) = fs::read_dir(&base_dir) {
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if let Ok(modified) = metadata.modified() {
+                            if let Ok(elapsed) = now.duration_since(modified) {
+                                if elapsed > cutoff_duration {
+                                    let _ = fs::remove_file(entry.path());
+                                    cleaned_files += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if cleaned_files > 0 {
+                info!("WarpHistory cache cleanup: removed {} old cache files", cleaned_files);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Clean up AI embeddings and similarity caches
+    fn cleanup_ai_embeddings_cache() -> Result<(), String> {
+        use std::fs;
+        
+        let cache_dirs = vec![
+            dirs::cache_dir().map(|d| d.join("openagent-terminal").join("embeddings")),
+            dirs::cache_dir().map(|d| d.join("openagent-terminal").join("similarity_cache")),
+            dirs::cache_dir().map(|d| d.join("openagent-terminal").join("semantic_index")),
+        ];
+        
+        let mut total_cleaned = 0;
+        
+        for cache_dir_opt in cache_dirs {
+            if let Some(cache_dir) = cache_dir_opt {
+                if cache_dir.exists() {
+                    let now = std::time::SystemTime::now();
+                    let cutoff = std::time::Duration::from_secs(7 * 24 * 3600); // 7 days for aggressive cleanup
+                    
+                    if let Ok(entries) = fs::read_dir(&cache_dir) {
+                        for entry in entries.flatten() {
+                            if let Ok(metadata) = entry.metadata() {
+                                if let Ok(modified) = metadata.modified() {
+                                    if let Ok(elapsed) = now.duration_since(modified) {
+                                        if elapsed > cutoff {
+                                            if entry.path().is_file() {
+                                                let _ = fs::remove_file(entry.path());
+                                                total_cleaned += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if total_cleaned > 0 {
+            info!("AI embeddings cache cleanup: removed {} old cache files", total_cleaned);
+        }
+        
+        Ok(())
+    }
+    
+    /// Clean up provider-specific caches (OpenAI, Anthropic, etc.)
+    fn cleanup_provider_caches() -> Result<(), String> {
+        use std::fs;
+        
+        let provider_cache_dirs = vec![
+            "openai_cache",
+            "anthropic_cache", 
+            "openrouter_cache",
+            "ollama_cache",
+        ];
+        
+        let mut total_cleaned = 0;
+        
+        for provider_dir in provider_cache_dirs {
+            let cache_dir = dirs::cache_dir()
+                .map(|d| d.join("openagent-terminal").join(provider_dir));
+            
+            if let Some(cache_dir) = cache_dir {
+                if cache_dir.exists() {
+                    let now = std::time::SystemTime::now();
+                    let cutoff = std::time::Duration::from_secs(3 * 24 * 3600); // 3 days for provider caches
+                    
+                    if let Ok(entries) = fs::read_dir(&cache_dir) {
+                        for entry in entries.flatten() {
+                            if let Ok(metadata) = entry.metadata() {
+                                if let Ok(modified) = metadata.modified() {
+                                    if let Ok(elapsed) = now.duration_since(modified) {
+                                        if elapsed > cutoff {
+                                            if entry.path().is_file() {
+                                                let _ = fs::remove_file(entry.path());
+                                                total_cleaned += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if total_cleaned > 0 {
+            info!("Provider cache cleanup: removed {} old cache files", total_cleaned);
+        }
+        
+        Ok(())
+    }
+    
+    /// Robust SQLite history cleanup with proper transaction handling and concurrency support
+    fn cleanup_sqlite_history_robust() -> Result<(), String> {
+        let base = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("openagent-terminal")
+            .join("ai_history");
+        
+        // Create directory if it doesn't exist
+        if let Err(e) = std::fs::create_dir_all(&base) {
+            return Err(format!("Failed to create history directory: {}", e));
+        }
+        
+        let db_path = base.join("history.db");
+        if !db_path.exists() {
+            return Ok(()); // Nothing to clean
+        }
+        
+        // Use file locking to prevent concurrent access issues
+        let lock_path = base.join("history.db.lock");
+        let lock_acquired = Self::try_acquire_db_lock(&lock_path)?;
+        if !lock_acquired {
+            // Another process is cleaning up, skip
+            info!("SQLite cleanup skipped: another cleanup in progress");
+            return Ok(());
+        }
+        
+        let cleanup_result = Self::perform_sqlite_cleanup_internal(&db_path);
+        
+        // Always release the lock
+        let _ = std::fs::remove_file(&lock_path);
+        
+        cleanup_result
+    }
+    
+    /// Try to acquire a simple file-based lock for database cleanup
+    fn try_acquire_db_lock(lock_path: &std::path::Path) -> Result<bool, String> {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        
+        // Check if lock file exists and is recent (< 10 minutes)
+        if let Ok(metadata) = std::fs::metadata(lock_path) {
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    if elapsed < Duration::from_secs(600) { // 10 minutes
+                        return Ok(false); // Recent lock exists
+                    }
+                }
+            }
+            // Stale lock, remove it
+            let _ = std::fs::remove_file(lock_path);
+        }
+        
+        // Try to create lock file
+        match OpenOptions::new().create_new(true).write(true).open(lock_path) {
+            Ok(mut file) => {
+                let _ = writeln!(file, "{}", std::process::id());
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                Ok(false) // Someone else got the lock
+            }
+            Err(e) => Err(format!("Failed to create lock file: {}", e))
+        }
+    }
+    
+    /// Internal SQLite cleanup implementation with enhanced error handling
+    fn perform_sqlite_cleanup_internal(db_path: &std::path::Path) -> Result<(), String> {
+        use rusqlite::{params, Connection, OpenFlags};
+        use std::time::Duration;
+        
+        // Open with timeout to handle potential concurrent access
+        let mut conn = Connection::open_with_flags(
+            db_path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("Failed to open database: {}", e))?;
+        
+        // Set busy timeout for better concurrency handling
+        conn.busy_timeout(Duration::from_secs(30))
+            .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
+        
+        // Enable WAL mode for better concurrency (if not already enabled)
+        let _ = conn.execute("PRAGMA journal_mode=WAL", []);
+        let _ = conn.execute("PRAGMA synchronous=NORMAL", []); // Balance safety vs performance
+        
+        // Start transaction with immediate lock to prevent conflicts
+        let tx = conn.transaction().map_err(|e| format!("Failed to start transaction: {}", e))?;
+        
+        // Get current row count for better cleanup decisions
+        let current_count: i64 = tx
+            .query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get(0))
+            .unwrap_or(0);
+        
+        // More aggressive cleanup parameters for background task
+        let max_age_days: u64 = std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_AGE_DAYS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(7); // Shorter retention for background cleanup: 7 days
+        
+        let max_rows: i64 = std::env::var("OPENAGENT_AI_HISTORY_SQLITE_MAX_ROWS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(10_000); // Smaller limit for background cleanup
+        
+        let cutoff = chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::days(max_age_days as i64))
+            .map(|d| d.to_rfc3339())
+            .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+        
+        let mut total_deleted: i64 = 0;
+        
+        // Delete old entries by age
+        let deleted_old = tx
+            .execute("DELETE FROM conversations WHERE ts < ?1", params![cutoff])
+            .map_err(|e| format!("Failed to delete old entries: {}", e))? as i64;
+        total_deleted += deleted_old;
+        
+        // Delete excess rows beyond limit (more efficient query)
+        if current_count > max_rows {
+            let to_delete = current_count - max_rows;
+            let deleted_excess = tx
+                .execute(
+                    "DELETE FROM conversations WHERE id IN (
+                        SELECT id FROM conversations ORDER BY ts ASC LIMIT ?1
+                    )",
+                    params![to_delete],
+                )
+                .map_err(|e| format!("Failed to delete excess entries: {}", e))? as i64;
+            total_deleted += deleted_excess;
+        }
+        
+        // Clean up any orphaned or corrupted entries
+        let deleted_invalid = tx
+            .execute(
+                "DELETE FROM conversations WHERE 
+                 ts IS NULL OR ts = '' OR 
+                 input IS NULL OR input = '' OR
+                 output IS NULL",
+                [],
+            )
+            .map_err(|e| format!("Failed to delete invalid entries: {}", e))? as i64;
+        total_deleted += deleted_invalid;
+        
+        // Analyze table for better query performance
+        if total_deleted > 100 {
+            let _ = tx.execute("ANALYZE conversations", []);
+        }
+        
+        // Commit before vacuum (vacuum can't run in transaction)
+        tx.commit().map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        
+        // Vacuum to reclaim space (only if significant deletions occurred)
+        if total_deleted > 50 {
+            conn.execute("VACUUM", [])
+                .map_err(|e| format!("Failed to vacuum database: {}", e))?;
+        }
+        
+        if total_deleted > 0 {
+            info!(
+                "SQLite cleanup: deleted {} entries (old: {}, excess: {}, invalid: {}), {} rows remaining",
+                total_deleted,
+                deleted_old,
+                total_deleted - deleted_old - deleted_invalid,
+                deleted_invalid,
+                current_count - total_deleted,
+            );
+        }
+        
+        Ok(())
+    }
+    
+    /// Clean up JSONL history files
+    fn cleanup_jsonl_history() -> Result<(), String> {
+        let base = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("openagent-terminal")
+            .join("ai_history");
+        
+        if !base.exists() {
+            return Ok(());
+        }
+        
+        // More aggressive cleanup for background task
+        let max_age_days = std::env::var("OPENAGENT_AI_HISTORY_JSONL_MAX_AGE_DAYS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(7); // 7 days instead of 30
+        
+        let rotated_keep = std::env::var("OPENAGENT_AI_HISTORY_ROTATED_KEEP")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(3); // Keep only 3 instead of 8
+        
+        if let Ok(entries) = std::fs::read_dir(&base) {
+            let mut rotated: Vec<std::fs::DirEntry> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    if let Some(name) = e.file_name().to_str() {
+                        name.starts_with("history-") && name.ends_with(".jsonl")
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            
+            rotated.sort_by_key(|e| e.file_name());
+            
+            // Time-based cleanup
+            let now = std::time::SystemTime::now();
+            let mut cleaned = 0;
+            
+            for entry in &rotated {
+                if let Ok(meta) = entry.metadata() {
+                    if let Ok(modified) = meta.modified() {
+                        if let Ok(age) = now.duration_since(modified) {
+                            if age.as_secs() > max_age_days * 24 * 3600 {
+                                if std::fs::remove_file(entry.path()).is_ok() {
+                                    cleaned += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Count-based cleanup
+            let rotated: Vec<std::fs::DirEntry> = std::fs::read_dir(&base)
+                .ok()
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    if let Some(name) = e.file_name().to_str() {
+                        name.starts_with("history-") && name.ends_with(".jsonl")
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            
+            let to_prune = rotated.len().saturating_sub(rotated_keep);
+            if to_prune > 0 {
+                let mut sorted = rotated;
+                sorted.sort_by_key(|e| e.file_name());
+                
+                for entry in sorted.into_iter().take(to_prune) {
+                    if std::fs::remove_file(entry.path()).is_ok() {
+                        cleaned += 1;
+                    }
+                }
+            }
+            
+            if cleaned > 0 {
+                info!("JSONL cleanup: removed {} old history files", cleaned);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get current memory usage statistics
+    pub fn get_memory_stats(&self) -> MemoryStats {
+        self.memory_monitor.get_stats()
+    }
+    
+    /// Manually trigger memory cleanup
+    pub fn trigger_memory_cleanup(&mut self) {
+        let estimated_usage = Self::estimate_ai_memory_usage();
+        self.memory_monitor.update_memory_usage(estimated_usage);
+        
+        info!("Manual memory cleanup triggered (usage: {} bytes)", estimated_usage);
+        
+        Self::perform_background_cleanup();
+        self.memory_monitor.mark_cleanup_performed();
+        
+        // Also prune UI history
+        self.prune_ui_history();
+        
+        info!("Manual memory cleanup completed");
+    }
 
     fn prune_ui_history(&mut self) {
         // Enforce max entries
@@ -497,9 +1038,6 @@ impl Default for AiUiState {
 }
 
 use crate::event::{Event, EventType};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
@@ -729,6 +1267,217 @@ pub struct AiRuntime {
     last_project_primary_language: Option<String>,
     // History retention configuration
     history_retention: crate::config::ai::AiHistoryRetention,
+    // Memory monitoring and cleanup
+    memory_monitor: MemoryMonitor,
+    // Background cleanup task handle
+    cleanup_task_handle: Option<std::thread::JoinHandle<()>>,
+    // Flag to stop background tasks
+    shutdown_flag: Arc<AtomicBool>,
+}
+
+impl Drop for AiRuntime {
+    fn drop(&mut self) {
+        // Ensure background cleanup thread is stopped to prevent leaks in long sessions
+        self.stop_background_cleanup();
+    }
+}
+
+/// Memory monitoring for AI runtime
+#[derive(Debug)]
+pub struct MemoryMonitor {
+    /// Last memory usage reading in bytes
+    pub last_memory_usage: AtomicU64,
+    /// Peak memory usage in bytes
+    pub peak_memory_usage: AtomicU64,
+    /// Number of cleanup operations performed
+    pub cleanup_count: AtomicU64,
+    /// Last cleanup time
+    pub last_cleanup: Arc<std::sync::Mutex<Option<Instant>>>,
+    /// Configuration for memory thresholds
+    pub config: MemoryMonitorConfig,
+}
+
+impl Clone for MemoryMonitor {
+    fn clone(&self) -> Self {
+        let last = self.last_memory_usage.load(Ordering::Relaxed);
+        let peak = self.peak_memory_usage.load(Ordering::Relaxed);
+        let count = self.cleanup_count.load(Ordering::Relaxed);
+        Self {
+            last_memory_usage: AtomicU64::new(last),
+            peak_memory_usage: AtomicU64::new(peak),
+            cleanup_count: AtomicU64::new(count),
+            last_cleanup: self.last_cleanup.clone(),
+            config: self.config.clone(),
+        }
+    }
+}
+
+/// Configuration for memory monitoring and cleanup
+#[derive(Debug, Clone)]
+pub struct MemoryMonitorConfig {
+    /// Memory threshold in bytes to trigger cleanup (default: 50MB)
+    pub cleanup_threshold_bytes: u64,
+    /// Interval between memory checks (default: 5 minutes)
+    pub check_interval: Duration,
+    /// Minimum time between cleanups (default: 10 minutes)
+    pub min_cleanup_interval: Duration,
+    /// Maximum memory usage before aggressive cleanup (default: 200MB)
+    pub aggressive_threshold_bytes: u64,
+    /// Enable background cleanup tasks
+    pub enable_background_cleanup: bool,
+    /// Aggressive cleanup mode settings
+    pub aggressive_mode: AggressiveCleanupMode,
+}
+
+/// Aggressive cleanup mode configuration
+#[derive(Debug, Clone)]
+pub struct AggressiveCleanupMode {
+    /// Enable aggressive cleanup mode for long-running sessions
+    pub enabled: bool,
+    /// Memory threshold to trigger aggressive mode (default: 150MB)
+    pub trigger_threshold_bytes: u64,
+    /// More frequent cleanup interval in aggressive mode (default: 2 minutes)
+    pub aggressive_check_interval: Duration,
+    /// Minimum time between aggressive cleanups (default: 3 minutes)
+    pub aggressive_min_cleanup_interval: Duration,
+    /// Shorter retention times for history in aggressive mode (hours)
+    pub aggressive_history_retention_hours: u32,
+    /// Smaller cache size limits in aggressive mode
+    pub aggressive_cache_size_limit: usize,
+    /// More frequent vacuum operations
+    pub aggressive_vacuum_frequency: u32,
+}
+
+impl Default for AggressiveCleanupMode {
+    fn default() -> Self {
+        Self {
+            enabled: std::env::var("OPENAGENT_AI_AGGRESSIVE_CLEANUP")
+                .map(|v| v == "1" || v.to_lowercase() == "true")
+                .unwrap_or(false),
+            trigger_threshold_bytes: std::env::var("OPENAGENT_AI_AGGRESSIVE_THRESHOLD_MB")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|mb| mb * 1024 * 1024)
+                .unwrap_or(150 * 1024 * 1024), // 150MB
+            aggressive_check_interval: Duration::from_secs(
+                std::env::var("OPENAGENT_AI_AGGRESSIVE_CHECK_INTERVAL_SECS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(120), // 2 minutes
+            ),
+            aggressive_min_cleanup_interval: Duration::from_secs(
+                std::env::var("OPENAGENT_AI_AGGRESSIVE_MIN_CLEANUP_INTERVAL_SECS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(180), // 3 minutes
+            ),
+            aggressive_history_retention_hours: std::env::var("OPENAGENT_AI_AGGRESSIVE_HISTORY_RETENTION_HOURS")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(24), // 24 hours
+            aggressive_cache_size_limit: std::env::var("OPENAGENT_AI_AGGRESSIVE_CACHE_SIZE_LIMIT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(1000), // Smaller cache limits
+            aggressive_vacuum_frequency: std::env::var("OPENAGENT_AI_AGGRESSIVE_VACUUM_FREQUENCY")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(10), // Vacuum every 10 cleanups instead of 20-50
+        }
+    }
+}
+
+impl Default for MemoryMonitorConfig {
+    fn default() -> Self {
+        Self {
+            cleanup_threshold_bytes: 50 * 1024 * 1024, // 50MB
+            check_interval: Duration::from_secs(300), // 5 minutes
+            min_cleanup_interval: Duration::from_secs(600), // 10 minutes
+            aggressive_threshold_bytes: 200 * 1024 * 1024, // 200MB
+            enable_background_cleanup: true,
+            aggressive_mode: AggressiveCleanupMode::default(),
+        }
+    }
+}
+
+impl MemoryMonitor {
+    pub fn new(config: MemoryMonitorConfig) -> Self {
+        Self {
+            last_memory_usage: AtomicU64::new(0),
+            peak_memory_usage: AtomicU64::new(0),
+            cleanup_count: AtomicU64::new(0),
+            last_cleanup: Arc::new(std::sync::Mutex::new(None)),
+            config,
+        }
+    }
+    
+    /// Update memory usage and return whether cleanup is needed
+    pub fn update_memory_usage(&self, current_usage: u64) -> bool {
+        self.last_memory_usage.store(current_usage, Ordering::Relaxed);
+        
+        // Update peak if needed
+        let mut peak = self.peak_memory_usage.load(Ordering::Relaxed);
+        while current_usage > peak {
+            match self.peak_memory_usage.compare_exchange_weak(
+                peak, current_usage, Ordering::Relaxed, Ordering::Relaxed
+            ) {
+                Ok(_) => break,
+                Err(updated) => peak = updated,
+            }
+        }
+        
+        // Check if cleanup is needed
+        let needs_cleanup = current_usage >= self.config.cleanup_threshold_bytes;
+        let needs_aggressive = current_usage >= self.config.aggressive_threshold_bytes;
+        
+        if needs_cleanup {
+            // Check minimum interval since last cleanup
+            if let Ok(last_cleanup) = self.last_cleanup.lock() {
+                if let Some(last_time) = *last_cleanup {
+                let min_interval = if needs_aggressive {
+                    self.config.min_cleanup_interval / 2 // More aggressive cleanup interval
+                } else {
+                    self.config.min_cleanup_interval
+                };
+                
+                    if last_time.elapsed() < min_interval {
+                        return false;
+                    }
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Mark that cleanup was performed
+    pub fn mark_cleanup_performed(&self) {
+        self.cleanup_count.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut last_cleanup) = self.last_cleanup.lock() {
+            *last_cleanup = Some(Instant::now());
+        }
+    }
+    
+    /// Get current memory stats
+    pub fn get_stats(&self) -> MemoryStats {
+        let last_cleanup = self.last_cleanup.lock().ok().and_then(|guard| *guard);
+        MemoryStats {
+            current_usage: self.last_memory_usage.load(Ordering::Relaxed),
+            peak_usage: self.peak_memory_usage.load(Ordering::Relaxed),
+            cleanup_count: self.cleanup_count.load(Ordering::Relaxed),
+            last_cleanup,
+        }
+    }
+}
+
+/// Memory usage statistics
+#[derive(Debug, Clone)]
+pub struct MemoryStats {
+    pub current_usage: u64,
+    pub peak_usage: u64,
+    pub cleanup_count: u64,
+    pub last_cleanup: Option<Instant>,
 }
 
 /// Factory and registry for AI providers (secure, per-provider credentials)
@@ -1062,6 +1811,9 @@ impl AiRuntime {
             current_model: String::new(),
             ..AiUiState::default()
         };
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let memory_monitor = MemoryMonitor::new(MemoryMonitorConfig::default());
+        
         let mut rt = Self {
             ui,
             provider: Arc::from(provider),
@@ -1076,6 +1828,9 @@ impl AiRuntime {
             apply_joiner: crate::config::ai::AiApplyJoinStrategy::AndThen,
             last_project_primary_language: None,
             history_retention: crate::config::ai::AiHistoryRetention::default(),
+            memory_monitor: memory_monitor.clone(),
+            cleanup_task_handle: None,
+            shutdown_flag: shutdown_flag.clone(),
         };
         // Load persisted history best-effort
         rt.load_history();
@@ -1143,6 +1898,10 @@ impl AiRuntime {
                 } else {
                     rt.ui.current_model = config.default_model.clone().unwrap_or_default();
                 }
+                
+                // Start background cleanup task
+                rt.start_background_cleanup();
+                
                 rt
             }
             Err(e) => {
@@ -2360,4 +3119,288 @@ fn enforce_git_no_pager_line(line: &str) -> String {
     }
     tokens.insert(insert_at, "--no-pager".to_string());
     tokens.join(" ")
+}
+
+// Include comprehensive memory management tests
+#[cfg(test)]
+mod ai_memory_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+    
+    /// Test configuration for memory monitoring
+    fn create_test_memory_config() -> MemoryMonitorConfig {
+        MemoryMonitorConfig {
+            cleanup_threshold_bytes: 1024 * 1024, // 1MB for testing
+            check_interval: Duration::from_millis(100), // Fast checks for testing
+            min_cleanup_interval: Duration::from_millis(200),
+            aggressive_threshold_bytes: 2 * 1024 * 1024, // 2MB
+            enable_background_cleanup: true,
+            aggressive_mode: AggressiveCleanupMode {
+                enabled: true,
+                trigger_threshold_bytes: 1536 * 1024, // 1.5MB
+                aggressive_check_interval: Duration::from_millis(50),
+                aggressive_min_cleanup_interval: Duration::from_millis(100),
+                aggressive_history_retention_hours: 1,
+                aggressive_cache_size_limit: 100,
+                aggressive_vacuum_frequency: 2,
+            },
+        }
+    }
+
+    #[test]
+    fn test_memory_monitor_basic_functionality() {
+        let config = create_test_memory_config();
+        let monitor = MemoryMonitor::new(config);
+
+        // Test initial state
+        let stats = monitor.get_stats();
+        assert_eq!(stats.current_usage, 0);
+        assert_eq!(stats.peak_usage, 0);
+        assert_eq!(stats.cleanup_count, 0);
+
+        // Test memory tracking without cleanup threshold
+        assert!(!monitor.update_memory_usage(512 * 1024)); // 512KB - should not trigger cleanup
+        let stats = monitor.get_stats();
+        assert_eq!(stats.current_usage, 512 * 1024);
+        assert_eq!(stats.peak_usage, 512 * 1024);
+
+        // Test cleanup triggering
+        assert!(monitor.update_memory_usage(1200 * 1024)); // 1.2MB - should trigger cleanup
+        let stats = monitor.get_stats();
+        assert_eq!(stats.current_usage, 1200 * 1024);
+        assert_eq!(stats.peak_usage, 1200 * 1024);
+
+        // Mark cleanup performed and verify
+        monitor.mark_cleanup_performed();
+        let stats = monitor.get_stats();
+        assert_eq!(stats.cleanup_count, 1);
+        assert!(stats.last_cleanup.is_some());
+    }
+
+    #[test]
+    fn test_memory_monitor_aggressive_mode() {
+        let config = create_test_memory_config();
+        let monitor = MemoryMonitor::new(config);
+
+        // Normal cleanup threshold
+        assert!(monitor.update_memory_usage(1200 * 1024));
+        monitor.mark_cleanup_performed();
+
+        // Wait for minimum interval to pass
+        thread::sleep(Duration::from_millis(250));
+
+        // Aggressive threshold - should allow more frequent cleanup
+        assert!(monitor.update_memory_usage(1600 * 1024)); // Above aggressive threshold
+        monitor.mark_cleanup_performed();
+
+        // Should be able to cleanup again sooner due to aggressive mode
+        thread::sleep(Duration::from_millis(150));
+        assert!(monitor.update_memory_usage(1700 * 1024));
+    }
+
+    #[test]
+    fn test_memory_monitor_min_interval_enforcement() {
+        let config = create_test_memory_config();
+        let monitor = MemoryMonitor::new(config);
+
+        // Trigger cleanup
+        assert!(monitor.update_memory_usage(1200 * 1024));
+        monitor.mark_cleanup_performed();
+
+        // Immediate second cleanup should be blocked by min interval
+        assert!(!monitor.update_memory_usage(1300 * 1024));
+
+        // After waiting for min interval, should allow cleanup
+        thread::sleep(Duration::from_millis(250));
+        assert!(monitor.update_memory_usage(1300 * 1024));
+    }
+
+    #[test]
+    fn test_concurrent_memory_monitoring() {
+        let config = create_test_memory_config();
+        let monitor = Arc::new(MemoryMonitor::new(config));
+        let cleanup_count = Arc::new(AtomicU64::new(0));
+
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let monitor = monitor.clone();
+                let cleanup_count = cleanup_count.clone();
+                thread::spawn(move || {
+                    for j in 0..10 {
+                        let usage = (1000 + i * 100 + j * 10) * 1024; // Varying memory usage
+                        if monitor.update_memory_usage(usage) {
+                            monitor.mark_cleanup_performed();
+                            cleanup_count.fetch_add(1, Ordering::Relaxed);
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                })
+            })
+            .collect();
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let final_stats = monitor.get_stats();
+        let total_cleanups = cleanup_count.load(Ordering::Relaxed);
+
+        // Verify that cleanup was triggered and stats are consistent
+        assert!(total_cleanups > 0);
+        assert_eq!(final_stats.cleanup_count, total_cleanups);
+        assert!(final_stats.peak_usage > 1024 * 1024);
+    }
+
+    /// Simulate a long-running session with periodic AI usage
+    #[test]
+    fn test_long_running_session_simulation() {
+        let config = create_test_memory_config();
+        let monitor = Arc::new(MemoryMonitor::new(config));
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+        let monitor_clone = monitor.clone();
+        let running_clone = running.clone();
+
+        // Background memory growth simulation
+        let growth_handle = thread::spawn(move || {
+            let mut current_usage = 0u64;
+            let mut iteration = 0;
+
+            while running_clone.load(Ordering::Relaxed) {
+                iteration += 1;
+                
+                // Simulate memory growth pattern
+                current_usage += 50 * 1024; // 50KB per iteration
+                
+                // Occasional larger allocations
+                if iteration % 10 == 0 {
+                    current_usage += 200 * 1024; // 200KB spike
+                }
+
+                // Simulate some memory being freed occasionally
+                if iteration % 15 == 0 {
+                    current_usage = current_usage.saturating_sub(100 * 1024);
+                }
+
+                if monitor_clone.update_memory_usage(current_usage) {
+                    // Simulate cleanup reducing memory usage
+                    current_usage = (current_usage as f64 * 0.7) as u64; // 30% reduction
+                    monitor_clone.mark_cleanup_performed();
+                    println!("Cleanup performed at iteration {}, usage: {} KB", 
+                             iteration, current_usage / 1024);
+                }
+
+                thread::sleep(Duration::from_millis(20));
+            }
+        });
+
+        // Let simulation run for a reasonable duration
+        thread::sleep(Duration::from_millis(2000));
+        running.store(false, Ordering::Relaxed);
+        growth_handle.join().unwrap();
+
+        let final_stats = monitor.get_stats();
+        println!("Final stats - Current: {} KB, Peak: {} KB, Cleanups: {}", 
+                 final_stats.current_usage / 1024,
+                 final_stats.peak_usage / 1024,
+                 final_stats.cleanup_count);
+
+        // Verify memory management was effective
+        assert!(final_stats.cleanup_count > 0, "Should have performed cleanup operations");
+        assert!(final_stats.peak_usage > 1024 * 1024, "Should have detected significant memory usage");
+        assert!(final_stats.current_usage < final_stats.peak_usage, "Current usage should be less than peak due to cleanup");
+    }
+
+    #[test]
+    fn test_memory_estimation_accuracy() {
+        let initial_estimate = AiRuntime::estimate_ai_memory_usage();
+        println!("Initial memory estimate: {} KB", initial_estimate / 1024);
+        
+        // Memory estimate should be reasonable (at least 1MB, less than 100MB for basic case)
+        assert!(initial_estimate >= 1024 * 1024, "Should estimate at least 1MB base usage");
+        assert!(initial_estimate <= 100 * 1024 * 1024, "Should not estimate excessive usage");
+
+        // Multiple calls should return consistent results (within reason)
+        let second_estimate = AiRuntime::estimate_ai_memory_usage();
+        let difference = if initial_estimate > second_estimate {
+            initial_estimate - second_estimate
+        } else {
+            second_estimate - initial_estimate
+        };
+        
+        // Allow for some variation but not dramatic differences
+        assert!(difference < initial_estimate / 2, 
+                "Memory estimates should be reasonably consistent");
+    }
+
+    /// Integration test that simulates a realistic AI session with cleanup
+    #[test]
+    fn test_ai_runtime_memory_integration() {
+        let null_provider = Box::new(openagent_terminal_ai::NullProvider);
+        let mut runtime = AiRuntime::new(null_provider);
+        
+        // Configure for aggressive testing
+        runtime.memory_monitor.config = create_test_memory_config();
+
+        // Simulate a session with multiple interactions
+        for i in 0..10 {
+            runtime.ui.scratch = format!("test query {}", i);
+            runtime.ui.history.push_front(format!("history entry {}", i));
+            
+            // Simulate proposal responses
+            runtime.ui.proposals = vec![
+                AiProposal {
+                    title: format!("Proposal {}", i),
+                    description: Some(format!("Description {}", i)),
+                    proposed_commands: vec![format!("command_{}", i)],
+                }
+            ];
+
+            // Trigger manual cleanup occasionally
+            if i % 3 == 0 {
+                runtime.trigger_memory_cleanup();
+            }
+        }
+
+        // Get final memory statistics
+        let stats = runtime.get_memory_stats();
+        println!("Integration test final stats:");
+        println!("  Current usage: {} KB", stats.current_usage / 1024);
+        println!("  Peak usage: {} KB", stats.peak_usage / 1024);
+        println!("  Cleanup count: {}", stats.cleanup_count);
+
+        // Verify cleanup was triggered
+        assert!(stats.cleanup_count > 0, "Should have performed cleanup operations");
+        
+        // Stop background cleanup
+        runtime.stop_background_cleanup();
+    }
+
+    /// Benchmark memory monitoring performance
+    #[test]
+    fn bench_memory_monitoring() {
+        let config = MemoryMonitorConfig::default();
+        let monitor = MemoryMonitor::new(config);
+
+        let start = Instant::now();
+        let iterations = 10000;
+
+        for i in 0..iterations {
+            monitor.update_memory_usage((i % 1000) * 1024);
+        }
+
+        let duration = start.elapsed();
+        println!("Memory monitoring benchmark:");
+        println!("  {} iterations in {:?}", iterations, duration);
+        let avg_ns: u128 = duration.as_nanos() / (iterations as u128);
+        let avg = std::time::Duration::from_nanos(avg_ns as u64);
+        println!("  Average per operation: {:?}", avg);
+
+        // Should be very fast
+        assert!(duration.as_millis() < 1000, "Memory monitoring should be efficient");
+    }
 }

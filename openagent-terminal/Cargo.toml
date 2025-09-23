@@ -136,6 +136,9 @@ pollster = "0.4"
 proptest = "1.8"
 serial_test = "3"
 insta = "1.34"
+# Memory testing dependencies
+filetime = "0.2"
+tempfile = "3.12.0"
 
 [target.'cfg(not(windows))'.dependencies]
 xdg = "3.0.0"

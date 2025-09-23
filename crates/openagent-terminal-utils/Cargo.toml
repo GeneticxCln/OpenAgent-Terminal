@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Utility functions for OpenAgent Terminal (themes, snippets, migration)"
+readme = "README.md"
 
 [dependencies]
 # Core dependencies

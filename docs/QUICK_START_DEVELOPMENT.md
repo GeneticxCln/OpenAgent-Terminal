@@ -362,7 +362,7 @@ cargo test -p openagent-terminal --features ai-ollama -- --include-ignored
 - [Rust Async Book](https://rust-lang.github.io/async-book/)
 - [Ollama API Docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
 - [Terminal Emulator Specs](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)
-- [Alacritty Architecture](https://github.com/alacritty/alacritty/blob/master/docs/architecture.md)
+- [Alacritty README](https://github.com/alacritty/alacritty/blob/master/README.md)
 
 ---
 

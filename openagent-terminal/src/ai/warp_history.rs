@@ -712,6 +712,168 @@ impl WarpHistoryManager {
         }
     }
     
+    /// Perform aggressive memory cleanup for long-running sessions
+    pub async fn cleanup_memory(&mut self) -> Result<MemoryCleanupReport> {
+        let start_time = std::time::Instant::now();
+        let initial_memory = self.estimate_memory_usage();
+        
+        // Clean up search engine caches
+        let search_cleanup = self.search_engine.cleanup_caches().await?;
+        
+        // Clean up pattern analyzer data
+        let pattern_cleanup = self.pattern_analyzer.cleanup_old_patterns();
+        
+        // Clean up context matcher caches
+        let context_cleanup = self.context_matcher.cleanup_similarity_cache().await?;
+        
+        // Prune old entries more aggressively if needed
+        let entries_removed = self.aggressive_history_prune();
+        
+        // Update metrics and clear old performance data
+        self.cleanup_metrics();
+        
+        let final_memory = self.estimate_memory_usage();
+        let cleanup_time = start_time.elapsed();
+        
+        let report = MemoryCleanupReport {
+            initial_memory_bytes: initial_memory,
+            final_memory_bytes: final_memory,
+            memory_freed_bytes: initial_memory.saturating_sub(final_memory),
+            entries_removed,
+            search_cache_cleared: search_cleanup.entries_cleared,
+            pattern_data_cleared: pattern_cleanup,
+            similarity_cache_cleared: context_cleanup,
+            cleanup_duration: cleanup_time,
+        };
+        
+        tracing::info!("Memory cleanup completed: freed {} bytes in {:?}", 
+                      report.memory_freed_bytes, cleanup_time);
+        
+        Ok(report)
+    }
+    
+    /// Estimate current memory usage
+    pub fn estimate_memory_usage(&self) -> usize {
+        let mut total = 0;
+        
+        // History entries
+        for entry in &self.history {
+            total += std::mem::size_of_val(entry);
+            total += entry.command.capacity();
+            total += entry.normalized_command.capacity();
+            for part in &entry.command_parts {
+                total += std::mem::size_of_val(part);
+                total += part.text.capacity();
+            }
+            if let Some(ref embedding) = entry.ai_insights.embedding {
+                total += embedding.len() * std::mem::size_of::<f32>();
+            }
+        }
+        
+        // Search engine memory
+        total += self.search_engine.estimate_memory_usage();
+        
+        // Pattern analyzer memory
+        total += self.pattern_analyzer.estimate_memory_usage();
+        
+        // Context matcher memory
+        total += self.context_matcher.estimate_memory_usage();
+        
+        // Metrics memory
+        total += self.metrics.memory_usage;
+        
+        total
+    }
+    
+    /// Perform aggressive history pruning based on age, relevance, and frequency
+    fn aggressive_history_prune(&mut self) -> usize {
+        let initial_len = self.history.len();
+        let now = chrono::Utc::now();
+        let old_threshold = now - chrono::Duration::hours(24); // Keep only last 24 hours in aggressive mode
+        
+        // Remove old entries with low usage stats
+        self.history.retain(|entry| {
+            let recent_enough = entry.context.time_context.timestamp > old_threshold;
+            let frequently_used = entry.usage_stats.usage_count > 3;
+            let successful = entry.usage_stats.success_rate > 0.5;
+            
+            recent_enough || (frequently_used && successful)
+        });
+        
+        // Ensure we don't go below minimum entries
+        let min_entries = (self.config.max_entries / 4).max(50); // Keep at least 25% or 50 entries
+        while self.history.len() > min_entries {
+            // Remove entries with lowest combined score (frequency + recency + success)
+            if let Some(worst_index) = self.find_worst_entry_index() {
+                let entry = self.history.remove(worst_index).unwrap();
+                self.search_engine.remove_entry(&entry.id);
+            } else {
+                break;
+            }
+        }
+        
+        initial_len.saturating_sub(self.history.len())
+    }
+    
+    /// Find the index of the entry with the worst relevance score
+    fn find_worst_entry_index(&self) -> Option<usize> {
+        if self.history.is_empty() {
+            return None;
+        }
+        
+        let now = chrono::Utc::now();
+        let mut worst_index = 0;
+        let mut worst_score = f32::INFINITY;
+        
+        for (index, entry) in self.history.iter().enumerate() {
+            let age_hours = (now - entry.context.time_context.timestamp).num_hours() as f32;
+            let age_penalty = (age_hours / 24.0).min(10.0); // Max penalty of 10x
+            
+            let frequency_score = entry.usage_stats.usage_count as f32;
+            let success_score = entry.usage_stats.success_rate * 10.0;
+            let recency_score = (1.0 / (age_penalty + 1.0)) * 10.0;
+            
+            let combined_score = frequency_score + success_score + recency_score;
+            
+            if combined_score < worst_score {
+                worst_score = combined_score;
+                worst_index = index;
+            }
+        }
+        
+        Some(worst_index)
+    }
+    
+    /// Clean up old metrics data
+    fn cleanup_metrics(&mut self) {
+        // Keep only recent performance data
+        let max_samples = 100;
+        
+        if self.metrics.search_times.len() > max_samples {
+            let excess = self.metrics.search_times.len() - max_samples;
+            for _ in 0..excess {
+                self.metrics.search_times.pop_front();
+            }
+        }
+        
+        if self.metrics.index_update_times.len() > max_samples {
+            let excess = self.metrics.index_update_times.len() - max_samples;
+            for _ in 0..excess {
+                self.metrics.index_update_times.pop_front();
+            }
+        }
+        
+        if self.metrics.ai_analysis_times.len() > max_samples {
+            let excess = self.metrics.ai_analysis_times.len() - max_samples;
+            for _ in 0..excess {
+                self.metrics.ai_analysis_times.pop_front();
+            }
+        }
+        
+        // Update memory usage estimate
+        self.metrics.memory_usage = self.estimate_memory_usage();
+    }
+    
     /// Add command to history
     pub async fn add_command(&mut self, command: String, context: CommandContext) -> Result<()> {
         let entry = self.create_history_entry(command, context).await?;
@@ -1150,6 +1312,34 @@ impl HistorySearchEngine {
         }
     }
     
+    /// Cleanup caches and free memory
+    async fn cleanup_caches(&mut self) -> Result<SearchCacheCleanupReport> {
+        let initial_memory = self.estimate_memory_usage();
+        
+        // Clean up semantic similarity cache
+        let similarity_entries_cleared = self.semantic_index.cleanup_similarity_cache();
+        
+        // Clean up text index n-gram cache if it's too large
+        let ngram_entries_cleared = self.text_index.cleanup_ngram_cache();
+        
+        // Clean up context index old time buckets
+        let time_buckets_cleared = self.context_index.cleanup_old_time_buckets();
+        
+        let final_memory = self.estimate_memory_usage();
+        
+        Ok(SearchCacheCleanupReport {
+            entries_cleared: similarity_entries_cleared + ngram_entries_cleared + time_buckets_cleared,
+            memory_freed: initial_memory.saturating_sub(final_memory),
+        })
+    }
+    
+    /// Estimate memory usage of search engine
+    fn estimate_memory_usage(&self) -> usize {
+        self.text_index.estimate_memory_usage() +
+        self.semantic_index.estimate_memory_usage() +
+        self.context_index.estimate_memory_usage()
+    }
+    
     async fn add_entry(&mut self, entry: &HistoryEntry) -> Result<()> {
         self.text_index.add_entry(entry);
         self.semantic_index.add_entry(entry).await?;
@@ -1241,6 +1431,52 @@ impl TextIndex {
             .map(|s| s.to_lowercase())
             .collect()
     }
+    
+    /// Clean up n-gram cache to free memory
+    fn cleanup_ngram_cache(&mut self) -> usize {
+        let initial_size = self.ngram_index.len();
+        
+        // Remove n-grams with very low frequency (less than 2 occurrences)
+        self.ngram_index.retain(|_, entries| entries.len() >= 2);
+        
+        initial_size.saturating_sub(self.ngram_index.len())
+    }
+    
+    /// Estimate memory usage of text index
+    fn estimate_memory_usage(&self) -> usize {
+        let mut total = 0;
+        
+        // Forward index
+        for (key, tokens) in &self.forward_index {
+            total += key.capacity();
+            total += tokens.capacity() * std::mem::size_of::<String>();
+            for token in tokens {
+                total += token.capacity();
+            }
+        }
+        
+        // Inverted index
+        for (key, entries) in &self.inverted_index {
+            total += key.capacity();
+            total += entries.capacity() * std::mem::size_of::<String>();
+            for entry in entries {
+                total += entry.capacity();
+            }
+        }
+        
+        // N-gram index
+        for (key, entries) in &self.ngram_index {
+            total += key.capacity();
+            total += entries.capacity() * std::mem::size_of::<String>();
+        }
+        
+        // Token frequencies
+        for (key, _) in &self.token_frequencies {
+            total += key.capacity() + std::mem::size_of::<f32>();
+        }
+        
+        total
+    }
 }
 
 impl SemanticIndex {
@@ -1264,6 +1500,58 @@ impl SemanticIndex {
         self.embeddings.remove(entry_id);
         // Also clean up similarity cache entries involving this ID
         self.similarity_cache.retain(|(a, b), _| a != entry_id && b != entry_id);
+    }
+    
+    /// Clean up similarity cache to free memory
+    fn cleanup_similarity_cache(&mut self) -> usize {
+        let initial_size = self.similarity_cache.len();
+        
+        // Keep only cache entries for entries that still exist
+        let valid_entry_ids: std::collections::HashSet<String> = self.embeddings.keys().cloned().collect();
+        
+        self.similarity_cache.retain(|(a, b), _| {
+            valid_entry_ids.contains(a) && valid_entry_ids.contains(b)
+        });
+        
+        // Also limit cache size to prevent unbounded growth
+        const MAX_CACHE_SIZE: usize = 10000;
+        if self.similarity_cache.len() > MAX_CACHE_SIZE {
+            // Remove oldest entries (this is a simplified approach)
+            let to_remove = self.similarity_cache.len() - MAX_CACHE_SIZE;
+            let mut keys_to_remove: Vec<_> = self.similarity_cache.keys().take(to_remove).cloned().collect();
+            for key in keys_to_remove {
+                self.similarity_cache.remove(&key);
+            }
+        }
+        
+        initial_size.saturating_sub(self.similarity_cache.len())
+    }
+    
+    /// Estimate memory usage of semantic index
+    fn estimate_memory_usage(&self) -> usize {
+        let mut total = 0;
+        
+        // Embeddings
+        for (key, embedding) in &self.embeddings {
+            total += key.capacity();
+            total += embedding.capacity() * std::mem::size_of::<f32>();
+        }
+        
+        // Similarity cache
+        for ((a, b), _) in &self.similarity_cache {
+            total += a.capacity() + b.capacity() + std::mem::size_of::<f32>();
+        }
+        
+        // Clusters
+        for (key, cluster) in &self.clusters {
+            total += key.capacity();
+            total += cluster.capacity() * std::mem::size_of::<String>();
+            for entry in cluster {
+                total += entry.capacity();
+            }
+        }
+        
+        total
     }
 }
 
@@ -1332,6 +1620,68 @@ impl ContextIndex {
         // Create time bucket (e.g., "2023-12-25-14" for hour-based buckets)
         format!("{}-{:02}", timestamp.format("%Y-%m-%d"), timestamp.hour())
     }
+    
+    /// Clean up old time buckets to free memory
+    fn cleanup_old_time_buckets(&mut self) -> usize {
+        let now = chrono::Utc::now();
+        let cutoff = now - chrono::Duration::days(7); // Keep only last 7 days
+        let cutoff_bucket = self.get_time_bucket(&cutoff);
+        
+        let initial_size = self.time_index.len();
+        
+        // Remove time buckets older than cutoff
+        self.time_index.retain(|time_bucket, _| time_bucket >= &cutoff_bucket);
+        
+        // Clean up empty entries in other indexes
+        self.directory_index.retain(|_, entries| !entries.is_empty());
+        self.project_index.retain(|_, entries| !entries.is_empty());
+        self.git_index.retain(|_, entries| !entries.is_empty());
+        
+        initial_size.saturating_sub(self.time_index.len())
+    }
+    
+    /// Estimate memory usage of context index
+    fn estimate_memory_usage(&self) -> usize {
+        let mut total = 0;
+        
+        // Directory index
+        for (key, entries) in &self.directory_index {
+            total += key.as_os_str().len();
+            total += entries.capacity() * std::mem::size_of::<String>();
+            for entry in entries {
+                total += entry.capacity();
+            }
+        }
+        
+        // Time index
+        for (key, entries) in &self.time_index {
+            total += key.capacity();
+            total += entries.capacity() * std::mem::size_of::<String>();
+            for entry in entries {
+                total += entry.capacity();
+            }
+        }
+        
+        // Project index
+        for (key, entries) in &self.project_index {
+            total += key.capacity();
+            total += entries.capacity() * std::mem::size_of::<String>();
+            for entry in entries {
+                total += entry.capacity();
+            }
+        }
+        
+        // Git index
+        for (key, entries) in &self.git_index {
+            total += key.capacity();
+            total += entries.capacity() * std::mem::size_of::<String>();
+            for entry in entries {
+                total += entry.capacity();
+            }
+        }
+        
+        total
+    }
 }
 
 impl CommandPatternAnalyzer {
@@ -1371,6 +1721,79 @@ impl CommandPatternAnalyzer {
     fn get_patterns(&self) -> Vec<CommandSequence> {
         self.command_sequences.values().cloned().collect()
     }
+    
+    /// Clean up old pattern data
+    fn cleanup_old_patterns(&mut self) -> usize {
+        let now = chrono::Utc::now();
+        let cutoff = now - chrono::Duration::days(30); // Keep patterns from last 30 days
+        
+        let mut removed_count = 0;
+        
+        // Clean up temporal patterns
+        let initial_temporal_size = self.temporal_patterns.len();
+        self.temporal_patterns.retain(|_, pattern| {
+            // Keep pattern if it's still relevant (this is a simplified check)
+            pattern.time_distribution.values().any(|&freq| freq > 0.1)
+        });
+        removed_count += initial_temporal_size.saturating_sub(self.temporal_patterns.len());
+        
+        // Clean up command sequences with low frequency
+        let initial_seq_size = self.command_sequences.len();
+        self.command_sequences.retain(|_, seq| seq.frequency >= 2);
+        removed_count += initial_seq_size.saturating_sub(self.command_sequences.len());
+        
+        // Clean up error patterns that are too old or infrequent
+        let initial_error_size = self.error_patterns.len();
+        self.error_patterns.retain(|_, pattern| {
+            pattern.success_rate > 0.1 // Keep patterns that have some success
+        });
+        removed_count += initial_error_size.saturating_sub(self.error_patterns.len());
+        
+        removed_count
+    }
+    
+    /// Estimate memory usage
+    fn estimate_memory_usage(&self) -> usize {
+        let mut total = 0;
+        
+        // Command sequences
+        for (key, seq) in &self.command_sequences {
+            total += key.capacity();
+            total += std::mem::size_of_val(seq);
+            for cmd in &seq.commands {
+                total += cmd.capacity();
+            }
+        }
+        
+        // Temporal patterns
+        for (key, pattern) in &self.temporal_patterns {
+            total += key.capacity();
+            total += std::mem::size_of_val(pattern);
+            total += pattern.time_distribution.capacity() * (std::mem::size_of::<u8>() + std::mem::size_of::<f32>());
+            total += pattern.day_distribution.capacity() * (std::mem::size_of::<u8>() + std::mem::size_of::<f32>());
+            total += pattern.seasonal_trends.capacity() * std::mem::size_of::<f32>();
+        }
+        
+        // Context patterns
+        for (key, pattern) in &self.context_patterns {
+            total += key.capacity();
+            total += std::mem::size_of_val(pattern);
+            for env_dep in &pattern.environment_dependencies {
+                total += env_dep.capacity();
+            }
+        }
+        
+        // Error patterns
+        for (key, pattern) in &self.error_patterns {
+            total += key.capacity();
+            total += std::mem::size_of_val(pattern);
+            for recovery_cmd in &pattern.recovery_commands {
+                total += recovery_cmd.capacity();
+            }
+        }
+        
+        total
+    }
 }
 
 impl ContextMatcher {
@@ -1405,6 +1828,20 @@ impl ContextMatcher {
     async fn get_contextual_suggestions(&self, context: &CommandContext, limit: usize) -> Result<Vec<HistoryEntry>> {
         // Get suggestions based on current context
         Ok(Vec::new()) // Placeholder
+    }
+    
+    /// Clean up similarity cache
+    async fn cleanup_similarity_cache(&mut self) -> Result<usize> {
+        // This would clean up cached similarity calculations in the context analyzer
+        // For now, return 0 as this is a placeholder implementation
+        Ok(0)
+    }
+    
+    /// Estimate memory usage
+    fn estimate_memory_usage(&self) -> usize {
+        // This would estimate the memory used by context analysis caches
+        // For now, return a reasonable estimate
+        std::mem::size_of::<ContextMatcher>() + 1024 // Base size + estimated cache
     }
 }
 
@@ -1460,6 +1897,26 @@ impl Default for SearchConfig {
             frequency_bias: 0.3,
         }
     }
+}
+
+/// Memory cleanup report
+#[derive(Debug, Clone)]
+pub struct MemoryCleanupReport {
+    pub initial_memory_bytes: usize,
+    pub final_memory_bytes: usize,
+    pub memory_freed_bytes: usize,
+    pub entries_removed: usize,
+    pub search_cache_cleared: usize,
+    pub pattern_data_cleared: usize,
+    pub similarity_cache_cleared: usize,
+    pub cleanup_duration: Duration,
+}
+
+/// Search cache cleanup report
+#[derive(Debug, Clone)]
+pub struct SearchCacheCleanupReport {
+    pub entries_cleared: usize,
+    pub memory_freed: usize,
 }
 
 /// Type alias for compatibility with IDE manager

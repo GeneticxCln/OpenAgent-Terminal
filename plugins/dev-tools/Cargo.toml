@@ -3,6 +3,7 @@ name = "dev-tools"
 version = "1.0.0"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
+readme = "README.md"
 
 [dependencies]
 plugin-sdk = { path = "../../crates/plugin-sdk", version = "0.1.0" }

@@ -210,7 +210,7 @@ impl ConversationManager {
 
 - [Ollama Documentation](https://ollama.ai/docs)
 - [OpenAI API Best Practices](https://platform.openai.com/docs/guides/best-practices)
-- [Privacy by Design Framework](https://www.ipc.on.ca/wp-content/uploads/Resources/7foundationalprinciples.pdf)
+- [Privacy by Design](https://en.wikipedia.org/wiki/Privacy_by_design)
 
 ## Sign-off
 

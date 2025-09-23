@@ -76,6 +76,22 @@ Before opening a pull request, please run these checks locally to catch issues e
 
 ### Testing
 
+Headless GUI test suite (winit + WGPU)
+- Opt-in with env var to avoid running GUI tests by default.
+- Requires a running X11/Wayland session.
+- Run:
+  - OPENAGENT_HEADLESS_GUI_TESTS=1 cargo test -p openagent-terminal --features "native-extras wgpu" --test keyboard_headless -- --nocapture
+
+Workspace tests and lints
+- Run all tests (default features):
+  - cargo test --workspace
+- Run all tests with all features (useful for CI/local verification):
+  - cargo test --workspace --all-features
+- Lints (deny warnings):
+  - cargo clippy --workspace --all-targets --all-features -D warnings
+- Format check:
+  - cargo fmt --all -- --check
+
 Privacy redaction tests
 - Run: `cargo test -p openagent-terminal-ai -- --nocapture`
 
@@ -108,6 +124,26 @@ some new files should have been generated in the working directory. Those can th
 `./tests/ref/NEW_TEST_NAME` directory and the test can be enabled by editing the `ref_tests!` macro
 in the `./tests/ref.rs` file. When fixing a bug, it should be checked that the ref test does not
 complete correctly with the unpatched version, to make sure the test case is covered properly.
+
+### Feature Flags
+
+Major flags (see docs/features.md for comprehensive list):
+- wgpu: GPU renderer backend (default)
+- ide: umbrella for editor, lsp, indexer, dap (enable with openagent-terminal-ide)
+- ai: enable AI integration; pair with exactly one provider umbrella (ai-openai, ai-ollama, ai-anthropic, ai-openrouter)
+- plugins: enable WASM plugin runtime + SDK
+- security-lens[-full]: enable security analysis tooling
+- native-extras: additional native modules used by tests and experimental features
+
+Examples:
+- Build with WGPU + IDE + AI (OpenAI):
+  - cargo build -p openagent-terminal --features "wgpu ide ai-openai"
+- Run tests for AI crate with Ollama support:
+  - cargo test -p openagent-terminal-ai --features ai-ollama
+
+See also:
+- ../features.md
+- ../TESTING.md
 
 ### Performance
 

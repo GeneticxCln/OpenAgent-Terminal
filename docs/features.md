@@ -4,6 +4,63 @@ This document gives an overview over OpenAgent Terminal's features beyond its te
 emulation capabilities. To get a list with supported control sequences take a
 look at [OpenAgent Terminal's escape sequence support](./escape_support.md).
 
+## Build-time Feature Flags
+
+OpenAgent Terminal uses Cargo features to include optional modules at build time. Common flags:
+
+- Core/UI
+  - `wgpu` / `renderer-wgpu`: Enable the WGPU renderer (default; the only supported renderer)
+  - Platform: `x11`, `wayland` (Linux platform integrations)
+  - `native-extras`: Extra native capabilities used by some local tests/tools
+  - `png`: PNG snapshot support for testing/diagnostics
+  - `editor`: Enable the lightweight in-terminal editor overlay
+  - `preview_ui`, `experimental`, `nightly`: Experimental/UI previews
+
+- AI
+  - `ai`: Enable the AI runtime (umbrella)
+  - Providers (choose one): `ai-ollama`, `ai-openai`, `ai-anthropic`, `ai-openrouter`
+
+- IDE / Dev UX
+  - `ide`: IDE integration umbrella
+  - `ide-lsp`: Language Server Protocol client
+  - `ide-indexer`: Project indexer
+  - `ide-editor`: Editor-specific helpers
+  - `ide-dap`: Debug Adapter Protocol (if present)
+  - `web-editors`: Minimal web editors server (dev/testing)
+
+- UX features
+  - `completions`: Command completions overlay
+  - `blocks`: Command blocks UI and history grouping
+  - `workflow`: Workflows panel and runtime
+  - `lsp`: LSP-enabled editor overlay features
+
+- Plugins
+  - `plugins`: WASI (WebAssembly) plugin runtime (Wasmtime-based)
+
+- Security Lens
+  - `security-lens`: Enable Security Lens
+  - Variants (internal policy presets): `security-lens-advanced`, `security-lens-extended`, `security-lens-full`, `security-lens-platform`, `security-lens-dev`
+
+- Meta
+  - `full`: Convenience meta-feature commonly used in local dev
+  - `atlas`: Internal compatibility/meta feature used during consolidation
+
+Typical build examples:
+
+```bash
+# Terminal only
+cargo build -p openagent-terminal
+
+# Local AI with Ollama
+cargo build -p openagent-terminal --features ai-ollama
+
+# Plugins + Workflows
+cargo build -p openagent-terminal --features "plugins,workflow"
+
+# Full local dev (WGPU + completions + workflows + plugins + Security Lens)
+cargo build -p openagent-terminal --features "full,ai-ollama"
+```
+
 ## Vi Mode
 
 The vi mode allows moving around OpenAgent Terminal's viewport and scrollback using the

@@ -1052,16 +1052,15 @@ impl Display {
         config: &UiConfig,
         _tab_manager: &TabManager,
         position: TabBarPosition,
-        mouse_x_cols: usize,
-        mouse_y_line: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
     ) -> Option<TabBarAction> {
-        // Map grid coords to pixels
-        let cw = self.size_info.cell_width();
-        let ch = self.size_info.cell_height();
-        let x_px = (mouse_x_cols as f32) * cw;
-        let y_px = (mouse_y_line as f32) * ch;
-        // Apply a small hit slop to be forgiving on high-DPI rounding
-        let hit_slop = 2.0_f32;
+        // Use pixel coordinates directly for precise hit testing
+        let x_px = mouse_x_px as f32;
+        let y_px = mouse_y_px as f32;
+        // Apply a small hit slop scaled by DPI to be forgiving on high-DPI rounding
+        let scale = self.window.scale_factor as f32;
+        let hit_slop = (2.0 * scale).clamp(2.0, 8.0);
         // First: settings gear bounds
         if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
             if x_px + hit_slop >= gx
@@ -1113,21 +1112,20 @@ impl Display {
         config: &UiConfig,
         tab_manager: &TabManager,
         position: TabBarPosition,
-        mouse_x: usize,
-        mouse_y: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
         button: winit::event::MouseButton,
     ) -> Option<TabBarAction> {
         if button != winit::event::MouseButton::Left {
-            return self.handle_tab_bar_click(config, tab_manager, position, mouse_x, mouse_y);
+            return self.handle_tab_bar_click(config, tab_manager, position, mouse_x_px, mouse_y_px);
         }
-        // Convert to pixels
-        let cw = self.size_info.cell_width();
-        let ch = self.size_info.cell_height();
-        let x_px = (mouse_x as f32) * cw;
-        let y_px = (mouse_y as f32) * ch;
+        // Use pixel coordinates directly for precise hit testing
+        let x_px = mouse_x_px as f32;
+        let y_px = mouse_y_px as f32;
         // First: precise check settings gear bounds
         // Apply a small hit slop to account for high-DPI rounding
-        let hit_slop = 2.0_f32;
+        let scale = self.window.scale_factor as f32;
+        let hit_slop = (2.0 * scale).clamp(2.0, 8.0);
         if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
             if x_px + hit_slop >= gx
                 && x_px <= gx + gw + hit_slop
@@ -1167,30 +1165,35 @@ impl Display {
             Some(TabBarAction::CreateTab) => return Some(TabBarAction::CreateTab),
             Some(TabBarAction::CloseTab(id)) => return Some(TabBarAction::CloseTab(id)),
             Some(TabBarAction::SelectTab(id)) => {
-                // Begin potential drag on a tab selection
+                // Check for close button click in the last N px of the tab (scaled for DPI)
                 if let Some((tab_id, x, w)) =
                     self.tab_bounds_px.iter().copied().find(|(tid, _, _)| *tid == id)
                 {
-                    if config.workspace.tab_bar.show_close_button && x_px >= x + w - 20.0 {
+                    let coarse_close_w = (20.0 * scale).clamp(16.0, 32.0);
+                    if config.workspace.tab_bar.show_close_button && x_px >= x + w - coarse_close_w {
                         // Start fade-out since a close is about to happen via coarse region
                         self.start_tab_close_fade(config, position, tab_manager, id);
                         return Some(TabBarAction::CloseTab(id));
                     }
+                    // Set up drag state for potential future dragging, but return SelectTab immediately
+                    // This allows immediate tab switching while still enabling drag functionality
+                    let drag_threshold_px = (10.0 * scale).clamp(8.0, 24.0);
                     self.tab_drag_active = Some(super::TabDragState {
                         tab_id,
                         original_position: self.get_tab_position(tab_manager, tab_id),
                         current_position: self.get_tab_position(tab_manager, tab_id),
                         target_position: None,
-                        start_mouse_x: mouse_x,
-                        start_mouse_y: mouse_y,
-                        current_mouse_x: mouse_x,
-                        current_mouse_y: mouse_y,
+                        start_mouse_x: mouse_x_px,
+                        start_mouse_y: mouse_y_px,
+                        current_mouse_x: mouse_x_px,
+                        current_mouse_y: mouse_y_px,
                         visual_offset_x: 0.0,
                         visual_offset_y: 0.0,
                         is_active: false,
-                        drag_threshold: 10.0,
+                        drag_threshold: drag_threshold_px,
                     });
-                    return Some(TabBarAction::BeginDrag(tab_id));
+                    // Return SelectTab immediately to fix click responsiveness
+                    return Some(TabBarAction::SelectTab(id));
                 }
             }
             _ => {}
@@ -1201,14 +1204,14 @@ impl Display {
     pub fn handle_tab_bar_mouse_move(
         &mut self,
         _tab_manager: &TabManager,
-        mouse_x: usize,
-        mouse_y: usize,
+        mouse_x_px: usize,
+        mouse_y_px: usize,
     ) -> Option<TabBarAction> {
         if let Some(ref mut drag) = self.tab_drag_active {
-            drag.current_mouse_x = mouse_x;
-            drag.current_mouse_y = mouse_y;
-            let dx = (mouse_x as i32 - drag.start_mouse_x as i32).abs() as f32;
-            let dy = (mouse_y as i32 - drag.start_mouse_y as i32).abs() as f32;
+            drag.current_mouse_x = mouse_x_px;
+            drag.current_mouse_y = mouse_y_px;
+            let dx = (mouse_x_px as i32 - drag.start_mouse_x as i32).abs() as f32;
+            let dy = (mouse_y_px as i32 - drag.start_mouse_y as i32).abs() as f32;
             let dist = (dx * dx + dy * dy).sqrt();
             if !drag.is_active && dist > drag.drag_threshold {
                 drag.is_active = true;
@@ -1218,8 +1221,7 @@ impl Display {
             if drag.is_active {
                 // Choose new position by nearest tab center
                 if !self.tab_bounds_px.is_empty() {
-                    let cw = self.size_info.cell_width();
-                    let x_px = mouse_x as f32 * cw;
+                    let x_px = mouse_x_px as f32;
                     let mut idx = 0usize;
                     let mut best = f32::MAX;
                     for (i, (_tid, x, w)) in self.tab_bounds_px.iter().enumerate() {
