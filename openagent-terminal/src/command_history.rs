@@ -1,34 +1,19 @@
 //! Command History Integration
-//! Bridges the blocks_v2 system with the terminal for command/history tracking
+//! Simple command history tracking without blocks dependency
 
 use std::path::PathBuf;
-#[cfg(feature = "blocks")]
-use std::sync::Arc;
 use std::time::Duration;
-#[cfg(feature = "blocks")]
-use tokio::sync::Mutex;
 
 use tracing::{debug, info};
 
-#[cfg(feature = "blocks")]
-use crate::blocks_v2::{BlockId, BlockManager, CreateBlockParams, ShellType};
-
-
-/// Unified timestamp type for history entries (chrono when blocks enabled; SystemTime otherwise)
-#[cfg(feature = "blocks")]
-pub type HistoryTimestamp = chrono::DateTime<chrono::Utc>;
-#[cfg(not(feature = "blocks"))]
+/// Timestamp type for history entries
 pub type HistoryTimestamp = std::time::SystemTime;
 
-/// Command history manager that integrates with the blocks system
+/// Simple command history manager
 pub struct CommandHistory {
-    #[cfg(feature = "blocks")]
-    block_manager: Option<Arc<Mutex<BlockManager>>>,
-
-    // Fallback history when blocks feature is disabled
-    #[cfg(not(feature = "blocks"))]
+    // Simple history storage
     simple_history: Vec<HistoryEntry>,
-
+    
     // Current command tracking
     current_command: Option<ActiveCommand>,
 }
@@ -45,8 +30,6 @@ pub struct HistoryEntry {
 
 #[derive(Debug, Clone)]
 pub struct ActiveCommand {
-    #[cfg(feature = "blocks")]
-    pub block_id: Option<BlockId>,
     pub command: String,
     pub working_dir: PathBuf,
     pub start_time: std::time::Instant,
@@ -54,32 +37,11 @@ pub struct ActiveCommand {
 
 impl CommandHistory {
     /// Create new command history manager
-    pub async fn new(data_dir: Option<PathBuf>) -> Self {
-        #[cfg(feature = "blocks")]
-        {
-            let block_manager = if let Some(dir) = data_dir {
-                match BlockManager::new(dir).await {
-                    Ok(manager) => {
-                        info!("Command history initialized with blocks storage");
-                        Some(Arc::new(Mutex::new(manager)))
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to initialize block manager: {}, using fallback", e);
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-            Self { block_manager, current_command: None }
-        }
-
-        #[cfg(not(feature = "blocks"))]
-        {
-            let _ = &data_dir; // silence unused variable when feature is disabled
-            info!("Command history initialized with simple fallback (blocks feature disabled)");
-            Self { simple_history: Vec::new(), current_command: None }
+    pub async fn new(_data_dir: Option<PathBuf>) -> Self {
+        info!("Command history initialized with simple storage");
+        Self { 
+            simple_history: Vec::new(), 
+            current_command: None 
         }
     }
 
@@ -94,57 +56,11 @@ impl CommandHistory {
 
         debug!("Starting command: {} in {}", command, working_dir.display());
 
-        #[cfg(feature = "blocks")]
-        if let Some(ref block_manager) = self.block_manager {
-            let mut manager = block_manager.lock().await;
-            let params = CreateBlockParams {
-                command: command.clone(),
-                directory: Some(working_dir.clone()),
-                environment: None,
-                shell: Some(self.detect_shell()),
-                tags: None,
-                parent_id: None,
-                metadata: None,
-            };
-
-            match manager.create_block(params).await {
-                Ok(block) => {
-                    self.current_command = Some(ActiveCommand {
-                        block_id: Some(block.id),
-                        command: command.clone(),
-                        working_dir,
-                        start_time: std::time::Instant::now(),
-                    });
-                    info!("Created block {} for command", block.id);
-                }
-                    Err(e) => {
-                        tracing::error!("Failed to create block: {}", e);
-                        // Fallback to simple tracking
-                    self.current_command = Some(ActiveCommand {
-                        block_id: None,
-                        command: command.clone(),
-                        working_dir,
-                        start_time: std::time::Instant::now(),
-                    });
-                }
-            }
-        } else {
-            self.current_command = Some(ActiveCommand {
-                block_id: None,
-                command: command.clone(),
-                working_dir,
-                start_time: std::time::Instant::now(),
-            });
-        }
-
-        #[cfg(not(feature = "blocks"))]
-        {
-            self.current_command = Some(ActiveCommand {
-                command: command.clone(),
-                working_dir,
-                start_time: std::time::Instant::now(),
-            });
-        }
+        self.current_command = Some(ActiveCommand {
+            command,
+            working_dir,
+            start_time: std::time::Instant::now(),
+        });
 
         Ok(())
     }
@@ -159,46 +75,19 @@ impl CommandHistory {
             let duration = active.start_time.elapsed();
             debug!("Completing command with exit_code={}, duration={:?}", exit_code, duration);
 
-            #[cfg(feature = "blocks")]
-            if let (Some(ref block_manager), Some(block_id)) =
-                (&self.block_manager, active.block_id)
-            {
-                let mut manager = block_manager.lock().await;
-                match manager
-                    .update_block_output(
-                        block_id,
-                        output.clone(),
-                        exit_code,
-                        duration.as_millis() as u64,
-                    )
-                    .await
-                {
-                    Ok(_) => {
-                        info!("Updated block {} with output", block_id);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to update block: {}", e);
-                    }
-                }
-            }
+            let entry = HistoryEntry {
+                command: active.command,
+                exit_code: Some(exit_code),
+                output,
+                working_dir: active.working_dir,
+                timestamp: std::time::SystemTime::now(),
+                duration: Some(duration),
+            };
+            self.simple_history.push(entry);
 
-            // Add to simple history as fallback
-            #[cfg(not(feature = "blocks"))]
-            {
-                let entry = HistoryEntry {
-                    command: active.command,
-                    exit_code: Some(exit_code),
-                    output,
-                    working_dir: active.working_dir,
-                    timestamp: std::time::SystemTime::now(),
-                    duration: Some(duration),
-                };
-                self.simple_history.push(entry);
-
-                // Keep only last 1000 entries
-                if self.simple_history.len() > 1000 {
-                    self.simple_history.remove(0);
-                }
+            // Keep only last 1000 entries
+            if self.simple_history.len() > 1000 {
+                self.simple_history.remove(0);
             }
         }
 
@@ -206,39 +95,6 @@ impl CommandHistory {
     }
 
     /// Search command history
-    #[cfg(feature = "blocks")]
-    pub async fn search(&self, query: &str, max_results: usize) -> Vec<HistoryEntry> {
-        if let Some(ref block_manager) = self.block_manager {
-            let manager = block_manager.lock().await;
-            let search_query = crate::blocks_v2::SearchQuery {
-                text: Some(query.to_string()),
-                limit: Some(max_results),
-                ..Default::default()
-            };
-
-            match manager.search(search_query).await {
-                Ok(blocks) => {
-                    return blocks
-                        .into_iter()
-                        .map(|block| HistoryEntry {
-                            command: block.command.clone(),
-                            exit_code: block.exit_code,
-                            output: block.output.clone(),
-                            working_dir: block.directory.clone(),
-                            timestamp: block.created_at,
-                            duration: block.duration_ms.map(Duration::from_millis),
-                        })
-                        .collect();
-                }
-                Err(e) => {
-                    tracing::error!("Search failed: {}", e);
-                }
-            }
-        }
-        Vec::new()
-    }
-
-    #[cfg(not(feature = "blocks"))]
     pub async fn search(&self, query: &str, max_results: usize) -> Vec<HistoryEntry> {
         let query_lower = query.to_lowercase();
         let mut results: Vec<_> = self
@@ -253,40 +109,6 @@ impl CommandHistory {
     }
 
     /// Get recent command history
-    #[cfg(feature = "blocks")]
-    pub async fn get_recent(&self, limit: usize) -> Vec<HistoryEntry> {
-        if let Some(ref block_manager) = self.block_manager {
-            let manager = block_manager.lock().await;
-            let search_query = crate::blocks_v2::SearchQuery {
-                limit: Some(limit),
-                sort_by: crate::blocks_v2::SortField::CreatedAt,
-                sort_order: crate::blocks_v2::SortOrder::Descending,
-                ..Default::default()
-            };
-
-            match manager.search(search_query).await {
-                Ok(blocks) => {
-                    return blocks
-                        .into_iter()
-                        .map(|block| HistoryEntry {
-                            command: block.command.clone(),
-                            exit_code: block.exit_code,
-                            output: block.output.clone(),
-                            working_dir: block.directory.clone(),
-                            timestamp: block.created_at,
-                            duration: block.duration_ms.map(Duration::from_millis),
-                        })
-                        .collect();
-                }
-                Err(e) => {
-                    tracing::error!("Failed to get recent commands: {}", e);
-                }
-            }
-        }
-        Vec::new()
-    }
-
-    #[cfg(not(feature = "blocks"))]
     pub async fn get_recent(&self, limit: usize) -> Vec<HistoryEntry> {
         let mut recent: Vec<_> = self.simple_history.iter().cloned().collect();
         recent.reverse(); // Most recent first
@@ -294,23 +116,6 @@ impl CommandHistory {
         recent
     }
 
-    /// Detect current shell type
-    #[cfg(feature = "blocks")]
-    fn detect_shell(&self) -> ShellType {
-        if let Ok(shell) = std::env::var("SHELL") {
-            if shell.contains("zsh") {
-                ShellType::Zsh
-            } else if shell.contains("bash") {
-                ShellType::Bash
-            } else if shell.contains("fish") {
-                ShellType::Fish
-            } else {
-                ShellType::Bash // Default fallback
-            }
-        } else {
-            ShellType::Bash
-        }
-    }
 
     /// Get the current active command if any
     pub fn get_current_command(&self) -> Option<&ActiveCommand> {
@@ -321,13 +126,6 @@ impl CommandHistory {
     pub fn cancel_current_command(&mut self) {
         if let Some(active) = self.current_command.take() {
             debug!("Cancelling command: {}", active.command);
-
-            #[cfg(feature = "blocks")]
-            if let (Some(_block_manager), Some(block_id)) = (&self.block_manager, active.block_id) {
-                // Note: In a full implementation, we'd update the block status to Cancelled
-                // For now, just log it
-                info!("Cancelled block {}", block_id);
-            }
         }
     }
 }

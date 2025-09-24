@@ -6,7 +6,6 @@ use std::time::Duration;
 use winit::event_loop::EventLoopProxy;
 
 use crate::event::{Event, EventType};
-use crate::security::SecurityPolicy;
 
 #[cfg(test)]
 mod test_helpers {
@@ -66,7 +65,6 @@ struct ConfirmState {
     proxy: Option<EventLoopProxy<Event>>,
     default_window: Option<winit::window::WindowId>,
     pending: HashMap<String, mpsc::Sender<bool>>,
-    policy: SecurityPolicy,
 }
 
 static STATE: once_cell::sync::Lazy<Mutex<ConfirmState>> =
@@ -87,19 +85,6 @@ pub fn set_default_window_id(id: winit::window::WindowId) {
     }
 }
 
-pub fn set_security_policy(policy: SecurityPolicy) {
-    if let Ok(mut s) = STATE.lock() {
-        s.policy = policy;
-    }
-}
-
-#[allow(dead_code)]
-pub fn get_security_policy() -> SecurityPolicy {
-    if let Ok(s) = STATE.lock() {
-        return s.policy.clone();
-    }
-    SecurityPolicy::default()
-}
 
 #[allow(dead_code)]
 pub fn generate_id() -> String {
@@ -372,16 +357,16 @@ mod tests {
             enabled: true,
             block_critical,
             require_confirmation,
-            #[cfg(feature = "security-lens")]
+            #[cfg(feature = "never")]
             require_reason: HashMap::new(),
-            #[cfg(feature = "security-lens")]
+            #[cfg(feature = "never")]
             custom_patterns: Vec::new(),
-            #[cfg(feature = "security-lens")]
+            #[cfg(feature = "never")]
             platform_groups: Vec::new(),
             gate_paste_events: false,
-            #[cfg(feature = "security-lens")]
+            #[cfg(feature = "never")]
             rate_limit: crate::security::RateLimitConfig::default(),
-            #[cfg(feature = "security-lens")]
+            #[cfg(feature = "never")]
             docs_base_url: String::new(),
         }
     }
@@ -398,7 +383,7 @@ mod tests {
         timeout_ms: u64,
         accept: Option<bool>,
     ) -> Result<Option<bool>, String> {
-        #[cfg(feature = "security-lens")]
+        #[cfg(feature = "never")]
         {
             use crate::security::{RiskLevel, SecurityLens};
             let mut lens = SecurityLens::new(policy.clone());

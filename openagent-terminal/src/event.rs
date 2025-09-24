@@ -19,38 +19,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-fn write_security_audit_event_core(command: &str, action: &str, detail: Option<&str>) {
-    // Best-effort; never panic
-    if let Some(base) = dirs::data_dir() {
-        let dir = base.join("openagent-terminal").join("security");
-        if std::fs::create_dir_all(&dir).is_ok() {
-            let path = dir.join("audit.log");
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let entry = match detail {
-                Some(d) => serde_json::json!({
-                    "ts_ms": now_ms,
-                    "source": "core",
-                    "action": action,
-                    "command": command,
-                    "detail": d,
-                }),
-                None => serde_json::json!({
-                    "ts_ms": now_ms,
-                    "source": "core",
-                    "action": action,
-                    "command": command,
-                }),
-            };
-            let line = format!("{}\n", entry);
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-                let _ = std::io::Write::write_all(&mut f, line.as_bytes());
-            }
-        }
-    }
-}
 use std::{env, f32, mem};
 
 use ahash::RandomState;
@@ -89,7 +57,7 @@ use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
 use crate::display::color::Rgb;
 use crate::display::hint::HintMatch;
-#[cfg(feature = "blocks")]
+#[cfg(feature = "never")]
 use crate::display::notebook_panel::{NotebookCellItem, NotebookListItem};
 use crate::display::palette::{PaletteEntry, PaletteItem};
 use crate::display::window::Window;
@@ -100,12 +68,11 @@ use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::security::{RiskLevel, SecurityLens, SecurityPolicy};
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
-#[cfg(feature = "plugins")]
+#[cfg(feature = "never")]
 use crate::plugins_api::PluginEvent;
-#[cfg(feature = "plugins")]
+#[cfg(feature = "never")]
 use serde_json::json;
 
 #[cfg(test)]
@@ -146,6 +113,7 @@ pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
 const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 
 /// Debounce delay for Blocks Search typing.
+#[allow(dead_code)]
 pub const BLOCKS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Debounce delay for Workflows Search typing.
 pub const WORKFLOWS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
@@ -185,15 +153,8 @@ pub struct Processor {
     cli_options: CliOptions,
     config: Rc<UiConfig>,
 
-    // Pending security confirmation for AI apply-to-command flow
-    #[cfg(feature = "ai")]
-    pending_security_ai: std::collections::HashMap<String, (String, bool, WindowId)>,
-
     // Pending workflow confirmations (workflow name, window id)
     pending_workflow_confirms: HashMap<String, (String, WindowId)>,
-
-    // Pending security confirmation for Paste gating (paste text, window id)
-    pending_security_paste: HashMap<String, (String, WindowId)>,
 }
 
 static PRIVACY_EXTENDED_FLAG: once_cell::sync::OnceCell<bool> = once_cell::sync::OnceCell::new();
@@ -447,9 +408,8 @@ impl Processor {
     ) -> Processor {
         PRIVACY_EXTENDED_FLAG.set(config.privacy.extended_redaction).ok();
         let proxy = event_loop.create_proxy();
-        // Initialize confirmation broker hooks (proxy + initial policy)
+        // Initialize confirmation broker hooks (proxy)
         crate::ui_confirm::set_event_proxy(proxy.clone());
-        crate::ui_confirm::set_security_policy(config.security.clone());
         let scheduler = Scheduler::new(proxy.clone());
         let initial_window_options = Some(cli_options.window_options.clone());
 
@@ -483,10 +443,7 @@ impl Processor {
             #[cfg(unix)]
             global_ipc_options: Default::default(),
             config_monitor,
-            #[cfg(feature = "ai")]
-            pending_security_ai: Default::default(),
             pending_workflow_confirms: Default::default(),
-            pending_security_paste: Default::default(),
         }
     }
 
@@ -519,7 +476,7 @@ impl Processor {
             if let Some(components) = &self.components {
                 window_context.set_components(components.clone());
                 // Wire Blocks -> Workspace PTY collection when Warp is enabled and initialized
-                #[cfg(feature = "blocks")]
+                #[cfg(feature = "never")]
                 {
                     if window_context.config().workspace.warp_style {
                         if let Some(warp) = &window_context.workspace.warp {
@@ -564,20 +521,12 @@ impl Processor {
                     .push(format!("wgpu:{}", if cfg!(feature = "wgpu") { "on" } else { "off" }));
                 features.push(format!("ai:{}", if cfg!(feature = "ai") { "on" } else { "off" }));
                 features.push(format!(
-                    "blocks:{}",
-                    if cfg!(feature = "blocks") { "on" } else { "off" }
-                ));
-                features.push(format!(
                     "workflow:{}",
                     if cfg!(feature = "workflow") { "on" } else { "off" }
                 ));
                 features.push(format!(
                     "completions:{}",
                     if cfg!(feature = "completions") { "on" } else { "off" }
-                ));
-                features.push(format!(
-                    "security-lens:{}",
-                    if cfg!(feature = "security-lens") { "on" } else { "off" }
                 ));
                 let banner = format!("Features: {}", features.join("  "));
                 let level = self
@@ -733,10 +682,10 @@ impl Processor {
             let cfg = ComponentConfig {
                 enable_wgpu: cfg!(feature = "wgpu"),
                 enable_harfbuzz: cfg!(feature = "harfbuzz"),
-                enable_blocks: cfg!(feature = "blocks"),
+                enable_blocks: false,
                 enable_workflows: cfg!(feature = "workflow"),
-                // Always enable when the cargo feature is present
-                enable_plugins: cfg!(feature = "plugins"),
+                // Always disable plugins
+                enable_plugins: false,
                 ..Default::default()
             };
             match tokio::runtime::Builder::new_current_thread().enable_all().build() {
@@ -774,10 +723,10 @@ impl Processor {
         let config = ComponentConfig {
             enable_wgpu: cfg!(feature = "wgpu"),
             enable_harfbuzz: cfg!(feature = "harfbuzz"),
-            enable_blocks: cfg!(feature = "blocks"),
+            enable_blocks: false,
             enable_workflows: cfg!(feature = "workflow"),
-            // Always enable plugin system when the cargo feature is enabled
-            enable_plugins: cfg!(feature = "plugins"),
+            // Always disable plugin system 
+            enable_plugins: false,
             ..Default::default()
         };
 
@@ -835,7 +784,7 @@ impl Processor {
     }
 }
 
-#[cfg(feature = "blocks")]
+#[cfg(feature = "never")]
 impl Processor {
     fn process_blocks_search_perform(&mut self, query: String, window_id: WindowId) {
         self.process_blocks_search_with_state(query, window_id, None);
@@ -1016,7 +965,7 @@ impl Processor {
     }
 }
 
-#[cfg(feature = "blocks")]
+#[cfg(feature = "never")]
 impl Processor {
     fn notebooks_open(&mut self, window_id: WindowId) {
         if let Some(win) = self.windows.get_mut(&window_id) {
@@ -1329,8 +1278,6 @@ impl ApplicationHandler<Event> for Processor {
                 if let Ok(config) = config::reload(&path, &mut self.cli_options) {
                     self.config = Rc::new(config);
 
-                    // Update confirmation broker security policy
-                    crate::ui_confirm::set_security_policy(self.config.security.clone());
 
                     // Restart config monitor if imports changed.
                     if let Some(monitor) = self.config_monitor.take() {
@@ -1380,169 +1327,8 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Process events affecting all windows.
-            #[cfg(feature = "ai")]
-            (EventType::SecurityCheckAiApply { command, dry_run }, Some(window_id)) => {
-                // Security Lens analysis and interactive confirmation logic
-                let policy: SecurityPolicy = self.config.security.clone();
-                let mut lens = SecurityLens::new(policy.clone());
-                let risk = lens.analyze_command(&command);
-
-                if lens.should_block(&risk) {
-                    // Telemetry: core blocked command
-                    write_security_audit_event_core(&command, "blocked", Some(&risk.explanation));
-                    let _msg = self.config.theme.resolve().tokens.warning; // color not directly used here
-                    let message = crate::message_bar::Message::new(
-                        format!(
-                            "Blocked risky command ({}). {}",
-                            match risk.level {
-                                RiskLevel::Critical => "CRITICAL",
-                                RiskLevel::Warning => "WARNING",
-                                RiskLevel::Caution => "CAUTION",
-                                RiskLevel::Safe => "SAFE",
-                            },
-                            risk.explanation
-                        ),
-                        crate::message_bar::MessageType::Warning,
-                    );
-                    if let Err(e) =
-                        self.proxy.send_event(Event::new(EventType::Message(message), *window_id))
-                    {
-                        tracing::warn!("failed to post SecurityLens block Message: {:?}", e);
-                    }
-                    return;
-                }
-
-                let require_confirm =
-                    *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
-
-                if require_confirm && risk.level != RiskLevel::Safe {
-                    // Create a confirmation overlay request for this window
-                    let id = crate::ui_confirm::generate_id();
-                    // Prepare body with explanation and mitigations
-                    let mut body = String::new();
-                    body.push_str(&format!("{}\n\n", risk.explanation));
-                    if !risk.mitigations.is_empty() {
-                        body.push_str("Suggested mitigations:\n");
-                        for m in &risk.mitigations {
-                            body.push_str(&format!("  • {}\n", m));
-                        }
-                        body.push('\n');
-                    }
-                    body.push_str(&format!("Command:\n  {}", command));
-
-                    // Track pending AI action by id
-                    self.pending_security_ai
-                        .insert(id.clone(), (command.clone(), dry_run, *window_id));
-
-                    if let Err(e) = self.proxy.send_event(Event::new(
-                        EventType::ConfirmOpen {
-                            id: id.clone(),
-                            title: match risk.level {
-                                RiskLevel::Critical => "CRITICAL: Confirm running command".into(),
-                                RiskLevel::Warning => "Warning: Confirm running command".into(),
-                                RiskLevel::Caution => "Caution: Confirm running command".into(),
-                                RiskLevel::Safe => "Confirm running command".into(),
-                            },
-                            body,
-                            confirm_label: Some("Run".into()),
-                            cancel_label: Some("Cancel".into()),
-                        },
-                        *window_id,
-                    )) {
-                        tracing::warn!("failed to post ConfirmOpen: {:?}", e);
-                    }
-                } else {
-                    // Even if not required by policy, show a preview confirmation before executing
-                    let id = crate::ui_confirm::generate_id();
-                    let mut body = String::new();
-                    body.push_str("Command preview:\n");
-                    body.push_str("  $");
-                    body.push(' ');
-                    body.push_str(&command);
-
-                    // Track pending AI action by id
-                    self.pending_security_ai
-                        .insert(id.clone(), (command.clone(), dry_run, *window_id));
-
-                    if let Err(e) = self.proxy.send_event(Event::new(
-                        EventType::ConfirmOpen {
-                            id: id.clone(),
-                            title: "Confirm running command".into(),
-                            body,
-                            confirm_label: Some("Execute".into()),
-                            cancel_label: Some("Cancel".into()),
-                        },
-                        *window_id,
-                    )) {
-                        tracing::warn!("failed to post ConfirmOpen (preview): {:?}", e);
-                    }
-                }
-            }
-            // Intercept paste commands for Security Lens gating before forwarding to windows
+            // Forward paste commands directly
             (EventType::PasteCommand(text), Some(window_id)) => {
-                let policy: SecurityPolicy = self.config.security.clone();
-                if policy.gate_paste_events {
-                    let mut lens = SecurityLens::new(policy.clone());
-                    if let Some(risk) = lens.analyze_paste_content(&text) {
-                        if lens.should_block(&risk) {
-                            // Telemetry: blocked paste
-                            write_security_audit_event_core(
-                                &text,
-                                "blocked_paste",
-                                Some(&risk.explanation),
-                            );
-                            let message = crate::message_bar::Message::new(
-                                format!("Blocked risky paste: {}", risk.explanation),
-                                crate::message_bar::MessageType::Warning,
-                            );
-                            if let Err(e) = self
-                                .proxy
-                                .send_event(Event::new(EventType::Message(message), *window_id))
-                            {
-                                tracing::warn!("failed to post paste block Message: {:?}", e);
-                            }
-                            return;
-                        }
-                        // Require confirmation path
-                        if *policy.require_confirmation.get(&risk.level).unwrap_or(&false) {
-                            let id = crate::ui_confirm::generate_id();
-                            // Track pending paste action
-                            self.pending_security_paste
-                                .insert(id.clone(), (text.clone(), *window_id));
-                            // Build body
-                            let mut body = String::new();
-                            body.push_str(&format!("{}\n\n", risk.explanation));
-                            if !risk.mitigations.is_empty() {
-                                body.push_str("Suggested mitigations:\n");
-                                for m in &risk.mitigations {
-                                    body.push_str(&format!("  • {}\n", m));
-                                }
-                                body.push('\n');
-                            }
-                            body.push_str("Pasted content will be inserted into the prompt.");
-                            let title = match risk.level {
-                                RiskLevel::Critical => "CRITICAL: Confirm paste".into(),
-                                RiskLevel::Warning => "Warning: Confirm paste".into(),
-                                RiskLevel::Caution => "Caution: Confirm paste".into(),
-                                RiskLevel::Safe => "Confirm paste".into(),
-                            };
-                            if let Err(e) = self.proxy.send_event(Event::new(
-                                EventType::ConfirmOpen {
-                                    id: id.clone(),
-                                    title,
-                                    body,
-                                    confirm_label: Some("Paste".into()),
-                                    cancel_label: Some("Cancel".into()),
-                                },
-                                *window_id,
-                            )) {
-                                tracing::warn!("failed to post ConfirmOpen (paste): {:?}", e);
-                            }
-                            return;
-                        }
-                    }
-                }
-                // No gating needed or safe: forward as checked
                 if let Err(e) = self
                     .proxy
                     .send_event(Event::new(EventType::PasteCommandChecked(text), *window_id))
@@ -1576,11 +1362,11 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Notebooks UI events
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksOpen, Some(window_id)) => {
                 self.notebooks_open(*window_id);
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksList(items), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.notebooks = items;
@@ -1592,7 +1378,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksSelect(id), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.selected_notebook = Some(id.clone());
@@ -1600,7 +1386,7 @@ impl ApplicationHandler<Event> for Processor {
                 }
                 self.notebooks_load_cells(*window_id, id);
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksCells(cells), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.cells = cells;
@@ -1610,7 +1396,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksRunCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1626,7 +1412,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksRunNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1642,7 +1428,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksAddCommand(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1670,7 +1456,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksAddMarkdown(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1692,7 +1478,7 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
 
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksDeleteCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1709,7 +1495,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksConvertCellToMarkdown(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1729,7 +1515,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksConvertCellToCommand(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1749,7 +1535,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksExportNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1773,7 +1559,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::NotebooksEditApply { cell_id, content }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1895,11 +1681,11 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Blocks search events handled at processor level
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, *window_id);
             }
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::BlocksSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.blocks_search.results = items;
@@ -2579,46 +2365,6 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             (EventType::ConfirmRespond { id, accepted }, Some(_window_id)) => {
-                // If this is an AI pending confirm, handle it
-                #[cfg(feature = "ai")]
-                if let Some((cmd, dry_run, win)) = self.pending_security_ai.remove(&id) {
-                    if accepted {
-                        // Telemetry: confirmed command
-                        write_security_audit_event_core(&cmd, "confirmed", None);
-                        let _ = self.proxy.send_event(Event::new(
-                            EventType::AiApplyAsCommandChecked { command: cmd, dry_run },
-                            win,
-                        ));
-                    } else {
-                        // Telemetry: denied command
-                        write_security_audit_event_core(&cmd, "denied_user", None);
-                        // Show canceled message
-                        let message = crate::message_bar::Message::new(
-                            "Command canceled".into(),
-                            crate::message_bar::MessageType::Warning,
-                        );
-                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
-                    }
-                }
-                // If this is a pending paste confirmation, handle it
-                if let Some((text, win)) = self.pending_security_paste.remove(&id) {
-                    if accepted {
-                        // Telemetry: confirmed paste
-                        write_security_audit_event_core(&text, "confirmed_paste", None);
-                        let _ = self
-                            .proxy
-                            .send_event(Event::new(EventType::PasteCommandChecked(text), win));
-                    } else {
-                        // Telemetry: denied paste
-                        write_security_audit_event_core(&text, "denied_paste", None);
-                        let message = crate::message_bar::Message::new(
-                            "Paste canceled".into(),
-                            crate::message_bar::MessageType::Warning,
-                        );
-                        let _ = self.proxy.send_event(Event::new(EventType::Message(message), win));
-                    }
-                }
-
                 // If this is a pending guarded workflow confirmation, handle it
                 if let Some((wf_name, win)) = self.pending_workflow_confirms.remove(&id) {
                     if accepted {
@@ -2701,7 +2447,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PaletteRequestPluginCommands, Some(_window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2714,7 +2460,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PluginsRunCommand { plugin, command }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2778,7 +2524,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PluginsSearchPerform(query), Some(window_id)) => {
                 // Build items from loaded plugins and discovered files; simple case-insensitive match
                 if let Some(components) = &self.components {
@@ -2836,7 +2582,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PluginsSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.plugins_panel.results = items;
@@ -2846,7 +2592,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PluginsLoadFromPath(path), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2882,7 +2628,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PluginsUnloadByName(name), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2918,7 +2664,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             (EventType::PluginsInstallFromUrl { url }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     // Compute user plugins dir similar to initialize_plugin_manager
@@ -3169,29 +2915,29 @@ pub enum EventType {
     BlocksRerunUnderCursor,
 
     // Blocks Search panel events
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     BlocksSearchPerform(String),
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     BlocksToggleStar(String),
 
     // Notebooks panel events (UI + data)
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksOpen,
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksList(Vec<NotebookListItem>),
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksSelect(String), // notebook id
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksCells(Vec<NotebookCellItem>),
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksRunCell(String), // cell id
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksRunNotebook(String), // notebook id
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksAddCommand(String), // notebook id
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     NotebooksAddMarkdown(String), // notebook id
     // New editing and export actions
     NotebooksDeleteCell(String),            // cell id
@@ -3208,25 +2954,25 @@ pub enum EventType {
     WorkflowsSearchPerform(String),
 
     // Plugin palette integration and execution
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PaletteRequestPluginCommands,
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PaletteAppendPluginCommands(Vec<(String, String, Option<String>)>), // (plugin, command, subtitle)
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginsRunCommand {
         plugin: String,
         command: String,
     },
     // Plugins panel events
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginsSearchPerform(String),
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginsSearchResults(Vec<crate::display::plugin_panel::PluginItem>),
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginsLoadFromPath(String), // path to .wasm
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginsUnloadByName(String), // plugin id/name
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginsInstallFromUrl {
         url: String,
     },
@@ -3442,7 +3188,7 @@ pub struct ActionContext<'a, N, T> {
     pub shell_pid: u32,
     #[cfg(feature = "ai")]
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     pub components: Option<&'a std::sync::Arc<InitializedComponents>>,
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
     /// Last started command captured during CommandStart
@@ -3933,7 +3679,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.palette.open(items);
 
         // Ask to append plugin commands if plugin system is enabled
-        #[cfg(feature = "plugins")]
+        #[cfg(feature = "never")]
         {
             let _ = self.event_proxy.send_event(Event::new(
                 EventType::PaletteRequestPluginCommands,
@@ -4209,9 +3955,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         self.paste(&cmd, true);
                     }
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(feature = "never")]
                 PaletteEntry::PluginCommand { plugin, command } => {
-                    #[cfg(feature = "plugins")]
+                    #[cfg(feature = "never")]
                     {
                         // Security Lens gating is enforced inside the plugin host when plugins execute external commands.
                         let _ = self.event_proxy.send_event(Event::new(
@@ -4310,7 +4056,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Blocks Search panel controls
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn open_blocks_search_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4323,18 +4069,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         ));
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn close_blocks_search_panel(&mut self) {
         self.display.blocks_search.close();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_active(&self) -> bool {
         self.display.blocks_search.active
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_input(&mut self, c: char) {
         self.display.blocks_search.query.push(c);
         self.display.blocks_search.selected = 0;
@@ -4350,7 +4096,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_backspace(&mut self) {
         self.display.blocks_search.query.pop();
         self.display.blocks_search.selected = 0;
@@ -4366,13 +4112,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_move_selection(&mut self, delta: isize) {
         self.display.blocks_search.move_selection(delta);
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_confirm(&mut self) {
         if !self.display.blocks_search.results.is_empty() {
             let idx = self
@@ -4387,56 +4133,56 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_cancel(&mut self) {
         self.display.blocks_search.close();
         self.mark_dirty();
     }
 
     // Enhanced blocks search functionality
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_cycle_mode(&mut self) {
         self.display.blocks_search.cycle_search_mode();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_cycle_sort_field(&mut self) {
         self.display.blocks_search.cycle_sort_field();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_toggle_sort_order(&mut self) {
         self.display.blocks_search.toggle_sort_order();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_toggle_starred(&mut self) {
         self.display.blocks_search.toggle_starred_filter();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_clear_filters(&mut self) {
         self.display.blocks_search.clear_all_filters();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_next_page(&mut self) {
         self.display.blocks_search.next_page();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_prev_page(&mut self) {
         self.display.blocks_search.prev_page();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_toggle_star_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let block_id = item.id.clone();
@@ -4446,13 +4192,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_show_actions(&mut self) {
         self.display.blocks_search.open_actions_menu();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_delete_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let block_id = item.id.clone();
@@ -4468,14 +4214,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_copy_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_copy_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4484,7 +4230,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_rerun_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let command = item.command.clone();
@@ -4495,7 +4241,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_insert_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4507,13 +4253,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_show_help(&mut self) {
         self.display.blocks_search.open_help();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_export_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let content = format!(
@@ -4525,14 +4271,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_toggle_tag(&mut self) {
         // Placeholder for tag functionality - would need tag management system
         // For now, just mark dirty to acknowledge the input
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_copy_both(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let both = format!(
@@ -4544,7 +4290,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_insert_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let command = item.command.clone();
@@ -4552,7 +4298,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_view_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4563,7 +4309,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_share_block(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let share_content = format!(
@@ -4576,7 +4322,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_create_snippet(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             // Create snippet from command - would integrate with snippet system
@@ -4585,7 +4331,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_insert_heredoc_custom(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4600,7 +4346,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_insert_json_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4613,7 +4359,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_insert_shell_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4629,12 +4375,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Actions menu support
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_actions_menu_active(&self) -> bool {
         self.display.blocks_search.actions_menu_active()
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_execute_action(&mut self) {
         if let Some(action) = self.display.blocks_search.get_selected_action() {
             use crate::display::blocks_search_actions::BlockAction;
@@ -4687,31 +4433,31 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_close_actions_menu(&mut self) {
         self.display.blocks_search.close_actions_menu();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_move_actions_selection(&mut self, delta: isize) {
         self.display.blocks_search.move_actions_selection(delta);
         self.mark_dirty();
     }
 
     // Help overlay support
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_help_active(&self) -> bool {
         self.display.blocks_search.help_active()
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_close_help(&mut self) {
         self.display.blocks_search.close_help();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn blocks_search_navigate_help(&mut self, forward: bool) {
         self.display.blocks_search.navigate_help(forward);
         self.mark_dirty();
@@ -4733,7 +4479,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn open_plugins_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4754,7 +4500,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_cancel(&mut self) {
         self.display.plugins_panel.close();
         self.mark_dirty();
@@ -4765,7 +4511,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.workflows_panel.active
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_active(&self) -> bool {
         self.display.plugins_panel.active
     }
@@ -4784,7 +4530,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_input(&mut self, c: char) {
         self.display.plugins_panel.query.push(c);
         self.display.plugins_panel.selected = 0;
@@ -4812,7 +4558,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_backspace(&mut self) {
         self.display.plugins_panel.query.pop();
         self.display.plugins_panel.selected = 0;
@@ -4832,7 +4578,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_move_selection(&mut self, delta: isize) {
         self.display.plugins_panel.move_selection(delta);
         self.mark_dirty();
@@ -4854,7 +4600,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_confirm(&mut self) {
         // If query looks like a URL, request install from URL
         let q = self.display.plugins_panel.query.trim().to_string();
@@ -5137,7 +4883,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Notebooks panel controls (feature = "blocks")
-    #[cfg(feature = "blocks")]
+        #[cfg(feature = "never")]
     fn open_notebooks_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -5151,18 +4897,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::NotebooksOpen, self.display.window.id()));
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_active(&self) -> bool {
         self.display.notebooks_panel.active
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_close(&mut self) {
         self.display.notebooks_panel.close();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_move_selection(&mut self, delta: isize) {
         use std::cmp::min;
         // If a notebook is selected, move within cells; else move within notebooks
@@ -5213,7 +4959,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_confirm(&mut self) {
         // If no notebook selected, treat as selecting the first notebook
         if self.display.notebooks_panel.selected_notebook.is_none() {
@@ -5238,7 +4984,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_rerun_selected(&mut self) {
         if !self.display.notebooks_panel.active {
             return;
@@ -5252,7 +4998,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_add_command_cell(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5262,7 +5008,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_add_markdown_cell(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5272,7 +5018,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_run_all(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5282,7 +5028,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_focus_next(&mut self) {
         if self.display.notebooks_panel.active {
             self.display.notebooks_panel.toggle_focus();
@@ -5290,7 +5036,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_focus_prev(&mut self) {
         if self.display.notebooks_panel.active {
             self.display.notebooks_panel.toggle_focus();
@@ -7757,7 +7503,9 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         // Enable blocks manager on first event and update index.
                         self.ctx.display().blocks.enabled = true;
                         let total_lines = { self.ctx.terminal().grid().total_lines() };
-                        self.ctx.display().blocks.on_event(total_lines, &ev);
+                        // Convert CommandBlockEvent to string for blocks stub API
+                        let event_str = format!("{:?}", &ev);
+                        self.ctx.display().blocks.on_event(total_lines, &event_str);
 
                         // Track last started command for IDE error suggestions
                         if let CoreCommandBlockEvent::CommandStart { cmd } = &ev {
@@ -7846,7 +7594,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
 
                         // Broadcast plugin hooks for pre/post command and directory changes.
-                        #[cfg(feature = "plugins")]
+                        #[cfg(feature = "never")]
                         if let Some(components) = &self.ctx.components {
                             if let Some(pm) = &components.plugin_manager {
                                 let pm = pm.clone();
@@ -8013,7 +7761,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     self.ctx.display.palette.add_items_unique(items);
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(feature = "never")]
                 EventType::PaletteAppendPluginCommands(entries) => {
                     // Convert plugin entries to palette items
                     let items: Vec<PaletteItem> = entries
@@ -8056,14 +7804,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::ConfirmOpen { .. }
                 | EventType::ConfirmRespond { .. }
                 | EventType::ConfirmResolved { .. } => (),
-                #[cfg(feature = "blocks")]
+                #[cfg(feature = "never")]
                 EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
-                #[cfg(feature = "blocks")]
+                #[cfg(feature = "never")]
                 EventType::BlocksToggleStar(_block_id) => {
                     // Star toggling is handled at the processor level, not in input processor
                     // This event should already be processed there
                 }
-                #[cfg(feature = "blocks")]
+                #[cfg(feature = "never")]
                 EventType::NotebooksOpen
                 | EventType::NotebooksList(_)
                 | EventType::NotebooksSelect(_)
@@ -8091,7 +7839,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             .ctx
                             .display()
                             .blocks
-                            .toggle_fold_header_at_viewport_line(display_offset, vp.line)
+                            .toggle_fold_header_at_viewport_line(display_offset, vp.line.into())
                         {
                             self.ctx.display.damage_tracker.frame().mark_fully_damaged();
                             *self.ctx.dirty = true;
@@ -8110,7 +7858,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             let display = self.ctx.display();
                             if let Some(block) = display
                                 .blocks
-                                .block_at_header_viewport_line(display_offset, vp.line)
+                                .block_at_header_viewport_line(display_offset, vp.line.into())
                             {
                                 let start = block.start_total_line.saturating_add(1); // skip header
                                 let end = block.end_total_line.unwrap_or_else(|| {
@@ -8163,7 +7911,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             let display = self.ctx.display();
                             if let Some(block) = display
                                 .blocks
-                                .block_at_header_viewport_line(display_offset, vp.line)
+                                .block_at_header_viewport_line(display_offset, vp.line.into())
                             {
                                 let start = block.start_total_line.saturating_add(1);
                                 let end = block.end_total_line.unwrap_or_else(|| {
@@ -8215,7 +7963,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             let display = self.ctx.display();
                             if let Some(block) = display
                                 .blocks
-                                .block_at_header_viewport_line(display_offset, vp.line)
+                                .block_at_header_viewport_line(display_offset, vp.line.into())
                             {
                                 if let Some(cmd) = block.cmd.clone() {
                                     let cwd = block.cwd.clone().unwrap_or_else(|| {
@@ -8730,17 +8478,25 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::WorkflowsCancelParams => {
                     // Params form open/submit/cancel handled at processor level
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(feature = "never")]
                 EventType::PaletteRequestPluginCommands | EventType::PluginsRunCommand { .. } => {
                     // Already handled at Processor level; ignore here
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(feature = "never")]
                 EventType::PluginsSearchPerform(_)
                 | EventType::PluginsSearchResults(_)
                 | EventType::PluginsLoadFromPath(_)
                 | EventType::PluginsUnloadByName(_)
                 | EventType::PluginsInstallFromUrl { .. } => {
                     // Plugins panel events are handled in the window context processor; nothing to do here
+                }
+                // Notebook events (feature = "never") - stub handling
+                EventType::NotebooksDeleteCell(_)
+                | EventType::NotebooksConvertCellToMarkdown(_)
+                | EventType::NotebooksConvertCellToCommand(_)
+                | EventType::NotebooksExportNotebook(_)
+                | EventType::NotebooksEditApply { .. } => {
+                    // Notebook events are handled at processor level; ignore here
                 }
             },
             WinitEvent::WindowEvent { event, .. } => {
@@ -8977,13 +8733,13 @@ pub(crate) mod test_posted_events {
     }
 }
 
-#[cfg(all(test, feature = "blocks"))]
-impl Processor {
+#[cfg(all(test, feature = "never"))]
+mod test_blocks_search_cancel {
     /// Lightweight event delivery helper for tests to emulate ApplicationHandler::user_event
     /// without requiring an ActiveEventLoop.
     pub(crate) fn handle_user_event_for_test(&mut self, event: Event) {
         match (event.payload, event.window_id) {
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, window_id);
             }
@@ -8992,15 +8748,4 @@ impl Processor {
     }
 }
 
-#[cfg(all(test, feature = "blocks"))]
-pub(crate) fn schedule_blocks_search_for_test(
-    scheduler: &mut Scheduler,
-    window_id: WindowId,
-    query: String,
-) {
-    let timer_id = TimerId::new(Topic::BlocksSearchTyping, window_id);
-    scheduler.unschedule(timer_id);
-    let evt = Event::new(EventType::BlocksSearchPerform(query), window_id);
-    scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
-}
 

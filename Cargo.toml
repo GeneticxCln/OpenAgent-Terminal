@@ -7,13 +7,7 @@ members = [
     "openagent-terminal-config-derive",
     "openagent-terminal-sync",
     "openagent-terminal-ai",
-    # Plugin crates consolidated
-    "crates/plugin-runtime",  # loader + system
-    "crates/plugin-sdk",      # api + sdk (enhanced)
     "crates/workflow-engine",
-    "plugins/git-context",
-    "plugins/docker-helper",
-    "plugins/dev-tools",
     # Utility crates consolidated into single crate
     "crates/openagent-terminal-utils",
     # IDE crates consolidated into single crate
@@ -47,10 +41,6 @@ codegen-units = 1
 panic = "unwind" # Keep unwind for better error reporting
 overflow-checks = false
 
-# Per-package overrides moved from plugin manifests
-[profile.release.package."git-context"]
-opt-level = "s"
-debug = false
 
 # Optimized release profile for maximum performance
 [profile.release-optimized]
@@ -87,35 +77,6 @@ debug = 2
 incremental = true
 overflow-checks = true
 
-# Security Lens development profile - optimized for fast iteration
-[profile.security-lens-dev]
-inherits = "dev"
-opt-level = 1
-debug = true
-incremental = true
-# Enable debug assertions for Security Lens testing
-debug-assertions = true
-overflow-checks = true
-
-# Security Lens testing profile - optimized for test performance
-[profile.security-lens-test]
-inherits = "test"
-opt-level = 2
-debug = true
-# Keep symbols for better debugging of Security Lens patterns
-debug-assertions = true
-overflow-checks = true
-
-# Security Lens release profile - optimized for Security Lens performance
-[profile.security-lens-release]
-inherits = "release"
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-# Optimize regex compilation for Security Lens patterns
-opt-level = 3
-overflow-checks = false
-debug = false
 
 # AI-optimized profile for AI feature builds
 [profile.ai-optimized]

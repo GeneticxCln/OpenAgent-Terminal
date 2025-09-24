@@ -13,7 +13,7 @@ pub enum PaletteEntry {
         #[allow(dead_code)]
         exit: Option<i32>,
     },
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     PluginCommand {
         plugin: String,
         command: String,
@@ -218,11 +218,11 @@ impl PaletteState {
                     (PaletteEntry::Action(_), "action") => {}
                     (PaletteEntry::Workflow(_), "workflow") => {}
                     (PaletteEntry::File(_), "file") => {}
-                    #[cfg(feature = "plugins")]
+                    #[cfg(feature = "never")]
                     (PaletteEntry::PluginCommand { .. }, "plugin") => {}
                     #[cfg(not(feature = "plugins"))]
                     _ => {}
-                    #[cfg(feature = "plugins")]
+                    #[cfg(feature = "never")]
                     _ => {}
                 }
             }
@@ -839,7 +839,7 @@ impl Display {
                         PaletteEntry::Workflow(_) => uv_for_slot(1),
                         PaletteEntry::File(_) => uv_for_slot(2),
                         PaletteEntry::Command { .. } => uv_for_slot(0),
-                        #[cfg(feature = "plugins")]
+                        #[cfg(feature = "never")]
                         PaletteEntry::PluginCommand { .. } => uv_for_slot(8),
                         PaletteEntry::Action(a) => {
                             use BindingAction as BA;
@@ -1054,7 +1054,7 @@ impl Display {
                         PaletteEntry::Workflow(_) => " [⚡ Workflow]",
                         PaletteEntry::File(_) => " [📄 File]",
                         PaletteEntry::Command { .. } => " [› Command]",
-                        #[cfg(feature = "plugins")]
+                        #[cfg(feature = "never")]
                         PaletteEntry::PluginCommand { .. } => " [🔌 Plugin]",
                     };
                     if col_cursor < row_start_col + content_max_cols - chip.width() {

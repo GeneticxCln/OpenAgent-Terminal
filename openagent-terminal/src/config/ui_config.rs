@@ -40,7 +40,6 @@ use crate::config::theme::{ResolvedTheme, ThemeConfig};
 use crate::config::window::WindowConfig;
 use crate::config::workspace::WorkspaceConfig;
 use crate::config::LOG_TARGET_CONFIG;
-use crate::security::SecurityPolicy;
 
 /// Regex used for the default URL hint.
 #[rustfmt::skip]
@@ -110,9 +109,6 @@ pub struct UiConfig {
     #[serde(default)]
     pub ai: AiConfig,
 
-    /// Security Lens policy configuration.
-    #[serde(default)]
-    pub security: SecurityPolicy,
 
     /// Privacy configuration (sanitization behavior).
     #[serde(default)]

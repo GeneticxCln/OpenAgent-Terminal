@@ -23,10 +23,6 @@ pub mod ai_context_provider;
 #[cfg(feature = "ai")]
 pub mod ai_runtime;
 pub mod cli;
-#[cfg(feature = "plugins")]
-pub mod cli_plugins;
-#[cfg(feature = "plugins")]
-pub mod plugins_api;
 pub mod clipboard;
 pub mod command_history;
 pub mod command_pipeline;
@@ -47,24 +43,12 @@ pub mod migrate;
 pub mod panic;
 pub mod renderer;
 pub mod scheduler;
-#[cfg(feature = "blocks")]
-pub mod storage;
 pub mod string;
 pub mod utils;
 pub mod window_context;
 
 // New component modules
-#[cfg(feature = "blocks")]
-pub mod blocks_v2;
 pub mod components_init;
-#[cfg(feature = "blocks")]
-pub mod notebooks;
-pub mod security; // Feature-gated security module
-pub mod security_config;
-#[cfg(feature = "security-lens")]
-pub use security::security_lens;
-#[cfg(not(feature = "security-lens"))]
-pub use security::stub as security_lens;
 pub mod text_shaping;
 pub mod ui_confirm;
 pub mod workflow_persistence;

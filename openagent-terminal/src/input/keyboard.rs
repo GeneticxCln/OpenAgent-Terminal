@@ -838,7 +838,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Notebooks panel input handling (if active)
-        #[cfg(feature = "blocks")]
+        #[cfg(feature = "never")]
         if self.ctx.notebooks_panel_active() {
             // If the editor overlay is currently active (editing a notebook cell),
             // handle basic save/close controls here.
@@ -951,7 +951,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("d") =>
                 {
                     // Delete selected cell
-                    #[cfg(feature = "blocks")]
+                    #[cfg(feature = "never")]
                     {
                         let cell_id_opt = {
                             let d = self.ctx.display();
@@ -970,7 +970,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("m") =>
                 {
                     // Convert selected cell to Markdown
-                    #[cfg(feature = "blocks")]
+                    #[cfg(feature = "never")]
                     {
                         let cell_id_opt = {
                             let d = self.ctx.display();
@@ -989,7 +989,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("c") =>
                 {
                     // Convert selected cell to Command
-                    #[cfg(feature = "blocks")]
+                    #[cfg(feature = "never")]
                     {
                         let cell_id_opt = {
                             let d = self.ctx.display();
@@ -1008,7 +1008,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("x") =>
                 {
                     // Export current notebook to Markdown and paste to prompt (fallback)
-                    #[cfg(feature = "blocks")]
+                    #[cfg(feature = "never")]
                     {
                         let nb_id_opt =
                             { self.ctx.display().notebooks_panel.selected_notebook.clone() };
@@ -1078,7 +1078,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Plugins panel input handling (if active)
-        #[cfg(feature = "plugins")]
+        #[cfg(feature = "never")]
         if self.ctx.plugins_panel_active() {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
@@ -1472,7 +1472,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Global toggles: Notebooks and AI
         if mods.control_key() && mods.shift_key() {
             match key.logical_key.as_ref() {
-                #[cfg(feature = "blocks")]
+                #[cfg(feature = "never")]
                 Key::Character(c) if c.eq_ignore_ascii_case("n") => {
                     self.ctx.open_notebooks_panel();
                     return;

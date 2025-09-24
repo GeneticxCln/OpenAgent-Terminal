@@ -2335,7 +2335,7 @@ impl AiRuntime {
                         "# Security Lens: {:?} - {}\n",
                         risk.level, risk.explanation
                     ));
-                    #[cfg(feature = "security-lens")]
+                    #[cfg(feature = "never")]
                     if !risk.mitigations.is_empty() {
                         annotated.push_str("# Suggested mitigations:\n");
                         for m in &risk.mitigations {

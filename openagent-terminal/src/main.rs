@@ -46,12 +46,8 @@ mod ai_runtime;
 mod cli;
 #[cfg(feature = "ai")]
 mod cli_ai;
-#[cfg(feature = "plugins")]
-mod cli_plugins;
-#[cfg(feature = "plugins")]
+#[cfg(feature = "never")]
 mod plugins_api;
-#[cfg(feature = "security-lens")]
-mod cli_security;
 #[cfg(feature = "sync")]
 mod cli_sync;
 mod clipboard;
@@ -77,7 +73,6 @@ mod string;
 mod window_context;
 
 // New component modules
-mod blocks_v2;
 mod command_pipeline; // Native command execution pipeline
 mod components_init;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
@@ -88,18 +83,13 @@ mod native_persistence; // Native persistence layer (experimental)
 mod native_renderer; // Native UI rendering system (experimental)
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_search; // Native search and filtering (experimental)
-#[cfg(feature = "blocks")]
+#[cfg(feature = "never")]
 mod notebooks;
-mod security;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
-mod shell_integration; // Native shell integration (experimental) // Feature-gated security module wrapper
-#[cfg(feature = "security-lens")]
-pub use security::security_lens;
-#[cfg(not(feature = "security-lens"))]
-pub use security::stub as security_lens;
+mod shell_integration; // Native shell integration (experimental)
 #[cfg(feature = "completions")]
 mod completions_spec;
-#[cfg(feature = "blocks")]
+#[cfg(feature = "never")]
 mod storage;
 mod text_shaping;
 mod ui_confirm;
@@ -165,51 +155,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 std::process::exit(code)
             };
         }
-        #[cfg(feature = "security-lens")]
-        Some(Subcommands::Security(ref sec_opts)) => {
-            let mut tmp = Options::new();
-            tmp.subcommands = None;
-            let cfg = config::load(&mut tmp);
-            let code = cli_security::run_security_cli(sec_opts, &cfg)?;
-            if code != 0 {
-                std::process::exit(code)
-            };
-        }
-        #[cfg(feature = "blocks")]
-        Some(Subcommands::Notebook(ref nb_opts)) => {
-            // Run notebooks CLI in a lightweight runtime
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-            let code = rt.block_on(crate::notebooks::run_cli(nb_opts))?;
-            // Return the code by exiting early
-            if code != 0 {
-                // Map non-zero to an error to drive process exit code via main's Ok(()).
-                // We print nothing here; stdout/stderr was handled by run_cli.
-                std::process::exit(code);
-            }
-        }
-        #[cfg(feature = "plugins")]
-        Some(Subcommands::Plugins(ref plugin_opts)) => {
-            // Lightweight current-thread runtime for CLI-only operations
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-            let code = rt.block_on(crate::cli_plugins::run_plugins_cli(plugin_opts))?;
-            if code != 0 {
-                std::process::exit(code)
-            };
-        }
-        #[cfg(feature = "web-editors")]
-        Some(Subcommands::WebEdit(ref opts)) => {
-            let code = web_edit_run(opts)?;
-            if code != 0 {
-                std::process::exit(code);
-            }
-        }
-        #[cfg(feature = "ide-indexer")]
-        Some(Subcommands::IdeIndex(ref opts)) => {
-            let code = ide_index_run(opts)?;
-            if code != 0 {
-                std::process::exit(code);
-            }
-        }
         #[cfg(feature = "ide-lsp")]
         Some(Subcommands::IdeLspHover(ref opts)) => {
             let code = ide_lsp_hover_run(opts)?;
@@ -223,38 +168,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[cfg(feature = "web-editors")]
-fn web_edit_run(opts: &crate::cli::WebEditOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_ide::web_editors as webedit;
-    // Start minimal web editor server (placeholder implementation in IDE crate)
-    let mut mgr = webedit::WebEditorManager::new();
-    // Use a default port; in a full implementation this would choose an available port
-    mgr.start_server(8080)?;
-    println!(
-        "Started web editor server for file {} (title: {:?})",
-        opts.file.display(), opts.title
-    );
-    Ok(0)
-}
 
-#[cfg(feature = "ide-indexer")]
-fn ide_index_run(opts: &crate::cli::IdeIndexOptions) -> Result<i32, Box<dyn Error>> {
-    use openagent_terminal_ide::indexer as ide_indexer;
-    let cfg = ide_indexer::ProjectIndexConfig::new(opts.root.clone());
-    let index = ide_indexer::ProjectIndex::build(&cfg)?;
-    if opts.json {
-        let tree = index.snapshot_tree();
-        println!("{}", serde_json::to_string_pretty(&tree)?);
-    } else {
-        let files = index.snapshot_files();
-        println!("Indexed {} items under {}", files.len(), index.root.display());
-        for f in files {
-            let marker = if f.is_dir { "[D]" } else { "[F]" };
-            println!("{} {}", marker, f.path.display());
-        }
-    }
-    Ok(0)
-}
 
 #[cfg(feature = "ide-lsp")]
 fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<dyn Error>> {

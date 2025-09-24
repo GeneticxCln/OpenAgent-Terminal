@@ -23,43 +23,15 @@ pub struct EditorOverlayState {
     #[cfg(feature = "editor")]
     pub buffer: Option<EditorBuffer>,
     pub scroll_line: usize,
-    // LSP integration (optional)
-#[cfg(feature = "lsp")]
-pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
+    // Minimal LSP - only basic completions
+    #[cfg(feature = "lsp")]
+    pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
     #[cfg(feature = "lsp")]
     pub lsp_uri: Option<lsp_types::Url>,
-    #[cfg(feature = "lsp")]
-    pub language_id: Option<String>,
-    // Completion UI state
+    // Simple completion UI
     pub completion_active: bool,
     pub completion_items: Vec<String>,
     pub completion_selected: usize,
-    #[cfg(feature = "lsp")]
-    pub completion_items_full: Vec<lsp_types::CompletionItem>,
-    // Diagnostics for current file
-    #[cfg(feature = "lsp")]
-    pub diagnostics: Vec<lsp_types::Diagnostic>,
-    // References UI
-    #[cfg(feature = "lsp")]
-    pub references_active: bool,
-    #[cfg(feature = "lsp")]
-    pub references: Vec<lsp_types::Location>,
-    #[cfg(feature = "lsp")]
-    pub references_selected: usize,
-    // Rename UI
-    #[cfg(feature = "lsp")]
-    pub rename_active: bool,
-    #[cfg(feature = "lsp")]
-    pub rename_text: String,
-    // Hover and signature help
-    #[cfg(feature = "lsp")]
-    pub hover_active: bool,
-    #[cfg(feature = "lsp")]
-    pub hover_text: String,
-    #[cfg(feature = "lsp")]
-    pub signature_active: bool,
-    #[cfg(feature = "lsp")]
-    pub signature_label: String,
 }
 
 #[cfg(feature = "lsp")]

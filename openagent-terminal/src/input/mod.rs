@@ -6,10 +6,11 @@
 //! determine what to do when a non-modifier key is pressed.
 
 use std::borrow::Cow;
-use std::cmp::{max, min, Ordering};
 use std::collections::HashSet;
+use std::cmp::{max, min, Ordering};
 use std::ffi::OsStr;
 use std::fmt::Debug;
+use crate::display::blocks::Blocks;
 use std::marker::PhantomData;
 use std::mem;
 use std::time::{Duration, Instant};
@@ -28,7 +29,7 @@ use winit::window::CursorIcon;
 
 use openagent_terminal_core::event::EventListener;
 use openagent_terminal_core::grid::{Dimensions, Scroll};
-use openagent_terminal_core::index::{Boundary, Column, Direction, Point, Side};
+use openagent_terminal_core::index::{Boundary, Column, Direction, Line, Point, Side};
 use openagent_terminal_core::selection::SelectionType;
 use openagent_terminal_core::term::search::Match;
 use openagent_terminal_core::term::{ClipboardType, Term, TermMode};
@@ -47,7 +48,6 @@ use crate::event::{
 };
 use crate::message_bar::{self, Message};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::security::{RiskLevel, SecurityLens};
 
 // Preview sanitization helpers for paste/confirm dialogs
 fn strip_ansi(input: &str) -> String {
@@ -497,30 +497,30 @@ pub trait ActionContext<T: EventListener> {
     fn workflows_params_confirm(&mut self) {}
     fn workflows_params_cancel(&mut self) {}
 
-    // Notebooks panel controls (feature = "blocks")
-    #[cfg(feature = "blocks")]
+    // Notebooks panel controls (feature = "never")
+    #[cfg(feature = "never")]
     fn open_notebooks_panel(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_active(&self) -> bool {
         false
     }
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_close(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_move_selection(&mut self, _delta: isize) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_confirm(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_run_all(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_focus_next(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_focus_prev(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_rerun_selected(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_add_command_cell(&mut self) {}
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     fn notebooks_panel_add_markdown_cell(&mut self) {}
 
     // Settings panel controls
@@ -559,21 +559,21 @@ pub trait ActionContext<T: EventListener> {
     }
 
     // Plugins panel controls (feature = "plugins"). Default to no-op/false when disabled.
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn open_plugins_panel(&mut self) {}
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_cancel(&mut self) {}
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_active(&self) -> bool {
         false
     }
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_input(&mut self, _c: char) {}
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_backspace(&mut self) {}
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_move_selection(&mut self, _delta: isize) {}
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     fn plugins_panel_confirm(&mut self) {}
 
     // Workflows progress overlay controls
@@ -1075,86 +1075,13 @@ impl<T: EventListener> Execute<T> for Action {
             Action::ClearSelection => ctx.clear_selection(),
             Action::Paste => {
                 let text = ctx.clipboard_mut().load(ClipboardType::Clipboard);
-                if !text.is_empty() && ctx.config().security.gate_paste_events {
-                    // Analyze paste content with Security Lens
-                    let policy = ctx.config().security.clone();
-                    let mut lens = SecurityLens::new(policy.clone());
-                    if let Some(risk) = lens.analyze_paste_content(&text) {
-                        // Block if policy requires blocking critical
-                        if lens.should_block(&risk) {
-                            let message = message_bar::Message::new(
-                                format!(
-                                    "Blocked risky paste ({}). {}",
-                                    match risk.level {
-                                        RiskLevel::Critical => "CRITICAL",
-                                        RiskLevel::Warning => "WARNING",
-                                        RiskLevel::Caution => "CAUTION",
-                                        RiskLevel::Safe => "SAFE",
-                                    },
-                                    risk.explanation
-                                ),
-                                message_bar::MessageType::Error,
-                            );
-                            ctx.send_user_event(crate::event::EventType::Message(message));
-                            return;
-                        }
-
-                        // Require confirmation if policy says so
-                        let requires_confirmation =
-                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
-
-                        if requires_confirmation {
-                            // Prepare confirmation body
-                            let mut body = String::new();
-                            body.push_str(&format!("{}\n\n", risk.explanation));
-                            if !risk.mitigations.is_empty() {
-                                body.push_str("Suggested mitigations:\n");
-                                for m in &risk.mitigations {
-                                    body.push_str(&format!("  • {}\n", m));
-                                }
-                                body.push('\n');
-                            }
-                            // Show sanitized preview of pasted content for safety
-                            let preview = sanitize_preview(&text, 10, 1200);
-                            body.push_str(&format!("Pasted content (preview):\n{}", preview));
-
-                            let title = match risk.level {
-                                RiskLevel::Critical => "CRITICAL: Confirm paste".into(),
-                                RiskLevel::Warning => "Warning: Confirm paste".into(),
-                                RiskLevel::Caution => "Caution: Confirm paste".into(),
-                                RiskLevel::Safe => "Confirm paste".into(),
-                            };
-
-                            match crate::ui_confirm::request_confirm(
-                                title,
-                                body,
-                                Some("Paste".into()),
-                                Some("Cancel".into()),
-                                Some(30_000),
-                            ) {
-                                Ok(true) => {
-                                    ctx.paste(&text, true);
-                                }
-                                Ok(false) => {
-                                    // User canceled: do nothing
-                                }
-                                Err(e) => {
-                                    // On error, surface a message and do not paste
-                                    let message = message_bar::Message::new(
-                                        format!("Paste confirmation failed: {}", e),
-                                        message_bar::MessageType::Warning,
-                                    );
-                                    ctx.send_user_event(crate::event::EventType::Message(message));
-                                }
-                            }
-                            return;
-                        }
-                    }
+                if text.is_empty() {
+                    return;
                 }
-                // Default path: if multi-line, show quick Run/Cancel; else paste directly
+                
+                // For multi-line pastes, offer confirmation with preview
                 let is_multiline = text.contains('\n');
                 if is_multiline {
-                    // Build sanitized preview of the multi-line content (first 10 lines)
                     let preview = sanitize_preview(&text, 10, 1200);
                     let title = "Multi-line paste".to_string();
                     let body = format!(
@@ -1169,16 +1096,13 @@ impl<T: EventListener> Execute<T> for Action {
                         Some(20_000),
                     ) {
                         Ok(true) => {
-                            // Paste and run
                             ctx.paste(&text, true);
                             ctx.write_to_pty("\n".as_bytes());
                         }
                         Ok(false) => {
-                            // Paste only
                             ctx.paste(&text, true);
                         }
                         Err(_e) => {
-                            // On error or dismiss, default to insert-only
                             ctx.paste(&text, true);
                         }
                     }
@@ -1191,170 +1115,30 @@ impl<T: EventListener> Execute<T> for Action {
                 if text.is_empty() {
                     return;
                 }
-                // Always present a preview before executing even if safe
-                let mut require_preview = true;
-                if ctx.config().security.gate_paste_events {
-                    let policy = ctx.config().security.clone();
-                    let mut lens = SecurityLens::new(policy.clone());
-                    if let Some(risk) = lens.analyze_paste_content(&text) {
-                        if lens.should_block(&risk) {
-                            let message = message_bar::Message::new(
-                                format!(
-                                    "Blocked risky paste ({}). {}",
-                                    match risk.level {
-                                        RiskLevel::Critical => "CRITICAL",
-                                        RiskLevel::Warning => "WARNING",
-                                        RiskLevel::Caution => "CAUTION",
-                                        RiskLevel::Safe => "SAFE",
-                                    },
-                                    risk.explanation
-                                ),
-                                message_bar::MessageType::Error,
-                            );
-                            ctx.send_user_event(crate::event::EventType::Message(message));
-                            return;
-                        }
-                        let requires_confirmation =
-                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
-                        if requires_confirmation {
-                            let mut body = String::new();
-                            body.push_str(&format!("{}\n\n", risk.explanation));
-                            if !risk.mitigations.is_empty() {
-                                body.push_str("Suggested mitigations:\n");
-                                for m in &risk.mitigations {
-                                    body.push_str(&format!("  • {}\n", m));
-                                }
-                                body.push('\n');
-                            }
-                            let preview = sanitize_preview(&text, 10, 1200);
-                            body.push_str(&format!("Pasted content (preview):\n{}", preview));
-                            let title = match risk.level {
-                                RiskLevel::Critical => "CRITICAL: Confirm paste & run".into(),
-                                RiskLevel::Warning => "Warning: Confirm paste & run".into(),
-                                RiskLevel::Caution => "Caution: Confirm paste & run".into(),
-                                RiskLevel::Safe => "Confirm paste & run".into(),
-                            };
-                            match crate::ui_confirm::request_confirm(
-                                title,
-                                body,
-                                Some("Paste & Run".into()),
-                                Some("Cancel".into()),
-                                Some(30_000),
-                            ) {
-                                Ok(true) => {
-                                    ctx.paste(&text, true);
-                                    ctx.write_to_pty("\n".as_bytes());
-                                }
-                                Ok(false) => {}
-                                Err(e) => {
-                                    let message = message_bar::Message::new(
-                                        format!("Paste & run confirmation failed: {}", e),
-                                        message_bar::MessageType::Warning,
-                                    );
-                                    ctx.send_user_event(crate::event::EventType::Message(message));
-                                }
-                            }
-                            return;
-                        }
-                        // If a risk-level confirmation was already shown, we won't show the preview again
-                        require_preview = !requires_confirmation;
+                
+                // Always show preview confirmation before executing
+                let preview = sanitize_preview(&text, 10, 1200);
+                let title = "Paste & Run".to_string();
+                let body = format!("About to paste and run:\n\n{}", preview);
+                match crate::ui_confirm::request_confirm(
+                    title,
+                    body,
+                    Some("Paste & Run".into()),
+                    Some("Cancel".into()),
+                    Some(20_000),
+                ) {
+                    Ok(true) => {
+                        ctx.paste(&text, true);
+                        ctx.write_to_pty("\n".as_bytes());
                     }
-                }
-                // Show preview confirmation when required (safe or not prompted yet)
-                if require_preview {
-                    let preview = sanitize_preview(&text, 10, 1200);
-                    let title = "Paste & Run".to_string();
-                    let body = format!("About to paste and run:\n\n{}", preview);
-                    match crate::ui_confirm::request_confirm(
-                        title,
-                        body,
-                        Some("Paste & Run".into()),
-                        Some("Cancel".into()),
-                        Some(20_000),
-                    ) {
-                        Ok(true) => {
-                            ctx.paste(&text, true);
-                            ctx.write_to_pty("\n".as_bytes());
-                        }
-                        _ => { /* Cancelled: do nothing */ }
-                    }
-                } else {
-                    // Already confirmed by security gating; proceed
-                    ctx.paste(&text, true);
-                    ctx.write_to_pty("\n".as_bytes());
+                    _ => { /* Cancelled: do nothing */ }
                 }
             }
             Action::PasteSelection => {
                 let text = ctx.clipboard_mut().load(ClipboardType::Selection);
-                if !text.is_empty() && ctx.config().security.gate_paste_events {
-                    // Analyze paste content with Security Lens
-                    let policy = ctx.config().security.clone();
-                    let mut lens = SecurityLens::new(policy.clone());
-                    if let Some(risk) = lens.analyze_paste_content(&text) {
-                        if lens.should_block(&risk) {
-                            let message = message_bar::Message::new(
-                                format!(
-                                    "Blocked risky paste ({}). {}",
-                                    match risk.level {
-                                        RiskLevel::Critical => "CRITICAL",
-                                        RiskLevel::Warning => "WARNING",
-                                        RiskLevel::Caution => "CAUTION",
-                                        RiskLevel::Safe => "SAFE",
-                                    },
-                                    risk.explanation
-                                ),
-                                message_bar::MessageType::Error,
-                            );
-                            ctx.send_user_event(crate::event::EventType::Message(message));
-                            return;
-                        }
-                        let requires_confirmation =
-                            policy.require_confirmation.get(&risk.level).copied().unwrap_or(false);
-                        if requires_confirmation {
-                            let mut body = String::new();
-                            body.push_str(&format!("{}\n\n", risk.explanation));
-                            if !risk.mitigations.is_empty() {
-                                body.push_str("Suggested mitigations:\n");
-                                for m in &risk.mitigations {
-                                    body.push_str(&format!("  • {}\n", m));
-                                }
-                                body.push('\n');
-                            }
-                            let preview: String =
-                                text.lines().take(10).collect::<Vec<_>>().join("\n");
-                            body.push_str(&format!("Pasted content (preview):\n{}", preview));
-
-                            let title = match risk.level {
-                                RiskLevel::Critical => "CRITICAL: Confirm paste".into(),
-                                RiskLevel::Warning => "Warning: Confirm paste".into(),
-                                RiskLevel::Caution => "Caution: Confirm paste".into(),
-                                RiskLevel::Safe => "Confirm paste".into(),
-                            };
-
-                            match crate::ui_confirm::request_confirm(
-                                title,
-                                body,
-                                Some("Paste".into()),
-                                Some("Cancel".into()),
-                                Some(30_000),
-                            ) {
-                                Ok(true) => {
-                                    ctx.paste(&text, true);
-                                }
-                                Ok(false) => {}
-                                Err(e) => {
-                                    let message = message_bar::Message::new(
-                                        format!("Paste confirmation failed: {}", e),
-                                        message_bar::MessageType::Warning,
-                                    );
-                                    ctx.send_user_event(crate::event::EventType::Message(message));
-                                }
-                            }
-                            return;
-                        }
-                    }
+                if !text.is_empty() {
+                    ctx.paste(&text, true);
                 }
-                ctx.paste(&text, true);
             }
             Action::ToggleFullscreen => ctx.window().toggle_fullscreen(),
             Action::ToggleMaximized => ctx.window().toggle_maximized(),
@@ -1540,7 +1324,7 @@ impl<T: EventListener> Execute<T> for Action {
                         // Compute display offset without holding the display borrow.
                         let display_offset = { ctx.terminal().grid().display_offset() };
                         let display = ctx.display();
-                        display.blocks.toggle_fold_at_viewport_point(display_offset, viewport_point)
+                        display.blocks.toggle_fold_at_viewport_point(display_offset, Point::new(Line(viewport_point.line as i32), viewport_point.column))
                     };
 
                     if toggled {
@@ -1555,7 +1339,7 @@ impl<T: EventListener> Execute<T> for Action {
                     let display_offset = ctx.terminal().grid().display_offset();
                     let target = { ctx.display().blocks.next_block_after(display_offset) };
                     if let Some(new_offset) = target {
-                        let delta = new_offset as i32 - display_offset as i32;
+                        let delta = new_offset.0 as i32 - display_offset as i32;
                         ctx.scroll(Scroll::Delta(delta));
                     }
                 }
@@ -1565,7 +1349,7 @@ impl<T: EventListener> Execute<T> for Action {
                     let display_offset = ctx.terminal().grid().display_offset();
                     let target = { ctx.display().blocks.prev_block_before(display_offset) };
                     if let Some(new_offset) = target {
-                        let delta = new_offset as i32 - display_offset as i32;
+                        let delta = new_offset.0 as i32 - display_offset as i32;
                         ctx.scroll(Scroll::Delta(delta));
                     }
                 }
@@ -2117,12 +1901,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 }
             }
         };
-        if line >= lines {
-            line = lines.saturating_sub(1);
-        }
-        if point.line != line {
-            return false;
-        }
+                if line >= lines {
+                    line = lines.saturating_sub(1);
+                }
+                if point.line.0 as usize != line {
+                    return false;
+                }
 
         // Build label hitboxes; match drawing logic and AI enablement
         let mut labels: Vec<&str> = vec!["[Workflows]", "[Blocks]"];
@@ -2151,7 +1935,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return true;
                     }
                     "[Blocks]" => {
-                        #[cfg(feature = "blocks")]
+                        #[cfg(feature = "never")]
                         {
                             self.ctx.open_blocks_search_panel();
                         }
@@ -2160,7 +1944,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return true;
                     }
                     "[Plugins]" => {
-                        #[cfg(feature = "plugins")]
+                        #[cfg(feature = "never")]
                         {
                             self.ctx.open_plugins_panel();
                         }
@@ -2341,7 +2125,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             {
                 let header = {
                     let display = self.ctx.display();
-                    display.blocks.header_at_viewport_line(display_offset, view.line)
+                    display.blocks.header_at_viewport_line(display_offset, view.line.into())
                 };
                 let prev = self.ctx.display().blocks_header_hover_line;
                 let new_hover = header.map(|_| view.line);
@@ -2645,11 +2429,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             {
                 let header = {
                     let display = self.ctx.display();
-                    display.blocks.header_at_viewport_line(display_offset, view.line)
+                    display.blocks.header_at_viewport_line(display_offset, view.line.into())
                 };
                 let mut new_chip_hover: Option<usize> = None;
                 if let Some(header) = header {
-                    use crate::display::blocks::Blocks;
+                    // use crate::display::blocks::Blocks; // Removed blocks system
                     use unicode_width::UnicodeWidthStr as _;
                     let mouse_col = point.column.0;
                     // Reserve right-most columns for the duration, mirroring draw logic
@@ -2658,7 +2442,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             .ctx
                             .display()
                             .blocks
-                            .block_at_header_viewport_line(display_offset, view.line)
+                            .block_at_header_viewport_line(display_offset, view.line.into())
                         {
                             let elapsed = if let Some(ended_at) = b.ended_at {
                                 ended_at.duration_since(b.started_at)
@@ -2792,7 +2576,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
 
         // Assure the mouse point is not in the scrollback.
-        if point.line < 0 {
+        if point.line.0 < 0 {
             return;
         }
 
@@ -2972,7 +2756,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             let display = self.ctx.display();
                             display
                                 .blocks
-                                .toggle_fold_header_at_viewport_line(display_offset, view.line)
+                                .toggle_fold_header_at_viewport_line(display_offset, view.line.into())
                         };
                         if toggled {
                             // Fully damage and mark dirty; skip normal selection behavior.
@@ -2984,10 +2768,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         // 2) If not toggled, check if clicking on block header action chips
                         let header = {
                             let display = self.ctx.display();
-                            display.blocks.header_at_viewport_line(display_offset, view.line)
+                        display.blocks.header_at_viewport_line(display_offset, view.line.into())
                         };
                         if let Some(header) = header {
-                            use crate::display::blocks::Blocks;
+                                   // use crate::display::blocks::Blocks; // Removed blocks system
                             let mouse_col = point.column.0;
                             let cols = self.ctx.size_info().columns();
                             let hit = Blocks::chip_hit_at(&header, mouse_col, cols);
@@ -3012,7 +2796,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                                     .blocks
                                                     .block_at_header_viewport_line(
                                                         display_offset,
-                                                        view.line,
+                                                        view.line.into(),
                                                     )
                                                     .and_then(|b| b.cmd.clone())
                                             };
@@ -4054,7 +3838,7 @@ mod tests {
         mods: ModifiersState::empty(),
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     #[test]
     fn blocks_search_binding_toggle_via_action() {
         // Build EventLoop for scheduler proxy

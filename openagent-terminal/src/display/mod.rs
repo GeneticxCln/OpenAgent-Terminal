@@ -63,9 +63,8 @@ pub mod ai_drawing;
 pub mod ai_panel;
 pub mod animation;
 pub mod blocks;
-#[cfg(feature = "blocks")]
+#[cfg(feature = "never")]
 pub mod blocks_search_actions;
-pub mod blocks_search_panel;
 pub mod color;
 #[cfg(feature = "completions")]
 pub mod completions;
@@ -77,11 +76,9 @@ pub mod dap_overlay;
 #[cfg(feature = "editor")]
 pub mod editor_overlay;
 pub mod hint;
-#[cfg(feature = "blocks")]
-pub mod notebook_panel;
 pub mod palette;
 pub mod pane_drag_drop;
-#[cfg(feature = "plugins")]
+#[cfg(feature = "never")]
 pub mod plugin_panel;
 pub mod settings_panel;
 pub mod tab_bar;
@@ -570,7 +567,7 @@ pub struct Display {
     pub blocks: blocks::Blocks,
 
     /// Blocks Search panel UI state.
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     pub blocks_search: blocks_search_panel::BlocksSearchState,
 
     /// Confirmation overlay state.
@@ -580,7 +577,7 @@ pub struct Display {
     pub palette: palette::PaletteState,
 
     // Active notebook edit session (temporary file based), if any
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     #[allow(dead_code)]
     pub notebooks_edit_session: Option<crate::display::notebook_panel::NotebookEditSession>,
 
@@ -618,10 +615,10 @@ pub struct Display {
     #[cfg(feature = "workflow")]
     pub workflows_params: workflow_panel::WorkflowParamsState,
     /// Plugins panel state.
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "never")]
     pub plugins_panel: crate::display::plugin_panel::PluginPanelState,
     /// Notebooks panel state (feature="blocks")
-    #[cfg(feature = "blocks")]
+    #[cfg(feature = "never")]
     pub notebooks_panel: notebook_panel::NotebookPanelState,
 
     /// Settings panel state (for in-app configuration like API keys)
@@ -921,7 +918,7 @@ impl Display {
         if config.workspace.quick_actions.show_palette {
             labels.push("[Palette]");
         }
-        #[cfg(feature = "plugins")]
+        #[cfg(feature = "never")]
         {
             labels.push("[Plugins]");
         }
@@ -1057,7 +1054,7 @@ impl Display {
     // Fallback helper: draw text using the renderer. This is available when the `blocks` feature is
     // disabled to satisfy calls from overlays/palette that rely on a common text drawing helper.
     // When `blocks` is enabled, a similar helper exists in the blocks_search_panel module.
-#[cfg(all(not(feature = "blocks"), feature = "wgpu"))]
+#[cfg(all(not(feature = "never"), feature = "wgpu"))]
     pub(crate) fn draw_ai_text(
         &mut self,
         point: Point<usize>,
@@ -1089,7 +1086,7 @@ impl Display {
     }
 
     // Provide a no-op draw_ai_text stub when WGPU is not enabled
-    #[cfg(all(not(feature = "blocks"), not(feature = "wgpu")))]
+    #[cfg(all(not(feature = "never"), not(feature = "wgpu")))]
     pub(crate) fn draw_ai_text(
         &mut self,
         _point: Point<usize>,
@@ -1208,9 +1205,9 @@ impl Display {
         let mut damage_tracker = DamageTracker::new(size_info.screen_lines(), size_info.columns());
         damage_tracker.debug = config.debug.highlight_damage;
 
-        // Initialize command blocks manager.
-        let mut blocks = blocks::Blocks::new();
-        blocks.enabled = config.debug.blocks;
+        // Initialize command blocks manager (simplified - removed blocks system).
+        let blocks = blocks::Blocks::new();
+        // blocks.enabled = config.debug.blocks; // Removed blocks system
 
         Ok(Self {
             backend: Backend::Wgpu { renderer: wgpu_renderer },
@@ -1227,7 +1224,7 @@ impl Display {
             // Clean startup tracking
             startup_clean_mode: config.workspace.clean_startup,
             startup_nonempty_seen: false,
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             notebooks_panel: notebook_panel::NotebookPanelState::new(),
             pending_renderer_update: Default::default(),
             composer_focused: false,
@@ -1285,7 +1282,7 @@ impl Display {
             meter: Default::default(),
             ime: Default::default(),
             blocks,
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
             #[cfg(feature = "completions")]
             completions: completions::CompletionsState::new(),
@@ -1314,7 +1311,7 @@ impl Display {
             workflows_progress: Default::default(),
             #[cfg(feature = "workflow")]
             workflows_params: Default::default(),
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             plugins_panel: crate::display::plugin_panel::PluginPanelState::new(),
             settings_panel: settings_panel::SettingsPanelState::new(),
             quick_actions_press_flash_until: None,
@@ -1335,7 +1332,7 @@ impl Display {
                 p.load_mru_from_config(config);
                 p
             },
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             notebooks_edit_session: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
             last_mouse_x: 0,
@@ -2638,7 +2635,7 @@ impl Display {
         }
 
         // Draw Blocks Search panel overlay if active.
-        #[cfg(feature = "blocks")]
+        #[cfg(feature = "never")]
         if self.blocks_search.active {
             let bs_state = self.blocks_search.clone();
             self.draw_blocks_search_overlay(config, &bs_state);
@@ -2743,13 +2740,13 @@ impl Display {
                 self.draw_workflows_panel_overlay(config, &st);
             }
             // Plugins panel overlay if active
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             if self.plugins_panel.active {
                 let st = self.plugins_panel.clone();
                 self.draw_plugins_panel_overlay(config, &st);
             }
             // Notebooks panel overlay if active
-            #[cfg(feature = "blocks")]
+            #[cfg(feature = "never")]
             if self.notebooks_panel.active {
                 let st = self.notebooks_panel.clone();
                 self.draw_notebooks_panel_overlay(config, &st);
@@ -2864,7 +2861,7 @@ impl Display {
                     }
 
                     // Unfolded block header overlay.
-                    if let Some(header) = self.blocks.header_at_viewport_line(display_offset, line)
+                    if let Some(header) = self.blocks.header_at_viewport_line(display_offset, line.into())
                     {
                         let damage = LineDamageBounds::new(line, 0, self.size_info.columns());
                         self.damage_tracker.frame().damage_line(damage);
@@ -2886,7 +2883,7 @@ impl Display {
                         // Attempt to fetch the block for richer UI (status/cwd/time)
                         let block_opt = self
                             .blocks
-                            .block_at_header_viewport_line(display_offset, line)
+                            .block_at_header_viewport_line(display_offset, line.into())
                             .cloned();
 
                         // Modern header background: subtle rounded strip behind the header

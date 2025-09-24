@@ -275,21 +275,6 @@ pub enum Subcommands {
     /// Sync utilities: import/export settings and history
     #[cfg(feature = "sync")]
     Sync(SyncCliOptions),
-    /// Security Lens utilities: validate policies, run tests
-    #[cfg(feature = "security-lens")]
-    Security(SecurityCliOptions),
-    /// Plugins CLI (list/discover/load/unload/send event)
-    #[cfg(feature = "plugins")]
-    Plugins(super::cli_plugins::PluginsOptions),
-    /// Command notebooks (create/list/add/run)
-    #[cfg(feature = "blocks")]
-    Notebook(crate::notebooks::NotebookOptions),
-    /// Open file in Web Editor (Monaco)
-    #[cfg(feature = "web-editors")]
-    WebEdit(WebEditOptions),
-    /// Build a project index and optionally print as JSON
-    #[cfg(feature = "ide-indexer")]
-    IdeIndex(IdeIndexOptions),
     /// Query hover information via LSP for a given file position
     #[cfg(feature = "ide-lsp")]
     IdeLspHover(IdeLspHoverOptions),
@@ -392,27 +377,7 @@ impl WindowOptions {
 }
 
 // === IDE CLI ===
-#[cfg(feature = "web-editors")]
-#[derive(Args, Debug, Clone)]
-pub struct WebEditOptions {
-    /// File to open in web editor
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub file: PathBuf,
-    /// Optional editor title
-    #[clap(long)]
-    pub title: Option<String>,
-}
 
-#[cfg(feature = "ide-indexer")]
-#[derive(Args, Debug, Clone)]
-pub struct IdeIndexOptions {
-    /// Project root directory to index
-    #[clap(long, value_hint = ValueHint::DirPath)]
-    pub root: PathBuf,
-    /// Output JSON tree to stdout
-    #[clap(long, action = ArgAction::SetTrue)]
-    pub json: bool,
-}
 
 #[cfg(feature = "ide-lsp")]
 #[derive(Args, Debug, Clone)]
@@ -613,51 +578,6 @@ pub enum TrustSubcommand {
     },
 }
 
-// === Security Lens CLI ===
-#[cfg(feature = "security-lens")]
-#[derive(Args, Debug, Clone)]
-pub struct SecurityCliOptions {
-    #[clap(subcommand)]
-    pub command: SecurityCommand,
-}
-
-#[cfg(feature = "security-lens")]
-#[derive(Subcommand, Debug, Clone)]
-pub enum SecurityCommand {
-    /// Validate a Security Lens policy file and run sample tests
-    Validate {
-        /// Policy file path (TOML)
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        policy: PathBuf,
-        /// Dry run: print findings only
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        dry_run: bool,
-        /// Output JSON report
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-    /// Assess a single command string against the current policy (or an override policy)
-    Assess {
-        /// Command to assess
-        #[clap(value_hint = ValueHint::Other)]
-        command: String,
-        /// Optional policy file path (TOML) to override loaded config
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        policy: Option<PathBuf>,
-        /// Output JSON report
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-    /// List active security patterns (built-in, platform, and custom)
-    ListPatterns {
-        /// Optional policy file path (TOML) to override loaded config
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        policy: Option<PathBuf>,
-        /// Output JSON
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-}
 
 /// Parameters to the `config` IPC subcommand.
 #[cfg(unix)]

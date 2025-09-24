@@ -713,7 +713,7 @@ impl WindowContext {
             shell_pid: self.shell_pid,
             #[cfg(feature = "ai")]
             ai_runtime: self.ai_runtime.as_mut(),
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "never")]
             components: self.components.as_ref(),
             workspace: &mut self.workspace,
             ide: &mut self.ide,
