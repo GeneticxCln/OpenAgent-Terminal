@@ -171,7 +171,7 @@ impl NaturalLanguageAgent {
             original_text: input.to_string(),
             intent: Some(intent),
             entities,
-            confidence: 0.85, // TODO: Implement proper confidence calculation
+            confidence: Self::compute_confidence(intent.confidence, entities.len()),
             suggested_agent: None, // Will be set based on intent
         })
     }
@@ -198,29 +198,37 @@ impl NaturalLanguageAgent {
             }
         }
         
-        // Programming languages
+        // Programming languages with proper span tracking
         let languages = ["rust", "python", "javascript", "typescript", "go", "java", "c++"];
+        let text_lower = text.to_lowercase();
         for lang in &languages {
-            if text.to_lowercase().contains(lang) {
+            if let Some(pos) = text_lower.find(lang) {
                 entities.push(Entity {
                     entity_type: EntityType::Language,
                     value: lang.to_string(),
                     confidence: 0.8,
-                    span: (0, 0), // TODO: Find actual position
+                    span: (pos, pos + lang.len()),
                 });
             }
         }
         
-        // Commands (words that look like shell commands)
+        // Commands (words that look like shell commands) with proper span tracking
         let command_patterns = ["git", "npm", "cargo", "docker", "kubectl", "ls", "cd", "mkdir"];
         for cmd in &command_patterns {
-            if text.contains(cmd) {
-                entities.push(Entity {
-                    entity_type: EntityType::Command,
-                    value: cmd.to_string(),
-                    confidence: 0.7,
-                    span: (0, 0), // TODO: Find actual position
-                });
+            if let Some(pos) = text.find(cmd) {
+                // Ensure it's a word boundary to avoid false matches
+                let is_word_start = pos == 0 || !text.chars().nth(pos - 1).unwrap_or(' ').is_alphanumeric();
+                let is_word_end = pos + cmd.len() >= text.len() || 
+                    !text.chars().nth(pos + cmd.len()).unwrap_or(' ').is_alphanumeric();
+                
+                if is_word_start && is_word_end {
+                    entities.push(Entity {
+                        entity_type: EntityType::Command,
+                        value: cmd.to_string(),
+                        confidence: 0.7,
+                        span: (pos, pos + cmd.len()),
+                    });
+                }
             }
         }
         

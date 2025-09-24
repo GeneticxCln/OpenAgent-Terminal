@@ -420,7 +420,30 @@ impl AgentCommunicationCoordinator {
                 }
                 Err(e) => {
                     error!("Agent {} failed to handle request: {}", agent_id, e);
-                    // TODO: Send error response
+                    if let Some(reply_agent) = reply_to {
+                        // Send error response back to requesting agent
+                        let error_response = AgentResponse {
+                            request_id: request.id,
+                            agent_id: agent_id.to_string(),
+                            success: false,
+                            data: None,
+                            error: Some(format!("Request processing failed: {}", e)),
+                            artifacts: Vec::new(),
+                            suggested_actions: Vec::new(),
+                            metadata: std::collections::HashMap::new(),
+                        };
+                        
+                        if let Err(send_err) = self.event_bus.send_message(
+                            AgentMessage::Response {
+                                response: error_response,
+                                original_sender: reply_agent.to_string(),
+                            },
+                            agent_id.to_string(),
+                            MessagePriority::Normal,
+                        ).await {
+                            error!("Failed to send error response: {}", send_err);
+                        }
+                    }
                 }
             }
         }
@@ -440,11 +463,116 @@ impl AgentCommunicationCoordinator {
         match event {
             AgentEvent::AssistanceRequested { task_id, required_capability, context } => {
                 info!("Agent {} requested assistance for capability {}", source_agent, required_capability);
-                // TODO: Find agents with the required capability and coordinate
+                
+                // Find agents with the required capability
+                let agents = self.agents.read().await;
+                let capable_agents: Vec<String> = agents
+                    .iter()
+                    .filter(|(id, agent)| {
+                        *id != source_agent && agent.capabilities().contains(&required_capability)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                
+                if capable_agents.is_empty() {
+                    warn!("No agents found with capability {:?} for task {}", required_capability, task_id);
+                    return Ok(());
+                }
+                
+                // Create coordination request for capable agents
+                let coordination_request = AgentRequest {
+                    id: Uuid::new_v4(),
+                    request_type: AgentRequestType::AssistanceRequest,
+                    content: format!("Assistance needed for task {} with capability {:?}", task_id, required_capability),
+                    context: context.clone(),
+                    priority: crate::ai::agents::RequestPriority::High,
+                    metadata: {
+                        let mut meta = std::collections::HashMap::new();
+                        meta.insert("original_task_id".to_string(), task_id.to_string());
+                        meta.insert("requesting_agent".to_string(), source_agent.to_string());
+                        meta.insert("required_capability".to_string(), format!("{:?}", required_capability));
+                        meta
+                    },
+                };
+                
+                // Send assistance request to the most suitable agent (first in list for now)
+                // In a more sophisticated system, this could use load balancing or agent scoring
+                if let Some(target_agent) = capable_agents.first() {
+                    if let Err(e) = self.event_bus.send_message(
+                        AgentMessage::DirectRequest {
+                            request: coordination_request,
+                            reply_to: Some(source_agent.to_string()),
+                        },
+                        target_agent.clone(),
+                        MessagePriority::High,
+                    ).await {
+                        error!("Failed to send assistance request to {}: {}", target_agent, e);
+                    } else {
+                        info!("Coordinated assistance request from {} to {} for task {}", source_agent, target_agent, task_id);
+                    }
+                }
             }
             AgentEvent::SecurityRiskDetected { risk_level, description, .. } => {
                 warn!("Security risk detected by {}: {} - {}", source_agent, risk_level, description);
-                // TODO: Notify security-aware agents or take protective actions
+                
+                // Find security-aware agents (those with Security capability)
+                let agents = self.agents.read().await;
+                let security_agents: Vec<String> = agents
+                    .iter()
+                    .filter(|(id, agent)| {
+                        *id != source_agent && agent.capabilities().contains(&AgentCapability::Security)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                
+                // Create security alert request
+                let security_alert = AgentRequest {
+                    id: Uuid::new_v4(),
+                    request_type: AgentRequestType::SecurityAlert,
+                    content: format!("Security risk detected: {} (Level: {:?})", description, risk_level),
+                    context: std::collections::HashMap::new(),
+                    priority: match risk_level {
+                        crate::ai::agents::SecurityRiskLevel::Critical => crate::ai::agents::RequestPriority::Critical,
+                        crate::ai::agents::SecurityRiskLevel::High => crate::ai::agents::RequestPriority::High,
+                        crate::ai::agents::SecurityRiskLevel::Medium => crate::ai::agents::RequestPriority::Normal,
+                        crate::ai::agents::SecurityRiskLevel::Low => crate::ai::agents::RequestPriority::Low,
+                    },
+                    metadata: {
+                        let mut meta = std::collections::HashMap::new();
+                        meta.insert("reporting_agent".to_string(), source_agent.to_string());
+                        meta.insert("risk_level".to_string(), format!("{:?}", risk_level));
+                        meta.insert("detection_time".to_string(), chrono::Utc::now().to_rfc3339());
+                        meta
+                    },
+                };
+                
+                // Notify all security agents
+                for security_agent in security_agents {
+                    if let Err(e) = self.event_bus.send_message(
+                        AgentMessage::DirectRequest {
+                            request: security_alert.clone(),
+                            reply_to: None, // Security alerts don't require responses
+                        },
+                        security_agent.clone(),
+                        MessagePriority::High,
+                    ).await {
+                        error!("Failed to notify security agent {}: {}", security_agent, e);
+                    }
+                }
+                
+                // For critical risks, also broadcast to all agents
+                if matches!(risk_level, crate::ai::agents::SecurityRiskLevel::Critical) {
+                    if let Err(e) = self.event_bus.send_message(
+                        AgentMessage::BroadcastRequest {
+                            request: security_alert,
+                            exclude_agents: vec![source_agent.to_string()],
+                        },
+                        "security-coordinator".to_string(),
+                        MessagePriority::Critical,
+                    ).await {
+                        error!("Failed to broadcast critical security alert: {}", e);
+                    }
+                }
             }
             _ => {
                 debug!("Received event from {}: {:?}", source_agent, event);
@@ -487,7 +615,50 @@ impl AgentCommunicationCoordinator {
             }
             CoordinationType::StepComplete => {
                 debug!("Workflow {} step completed by agent {}", workflow_id, agent_id);
-                // TODO: Handle step completion logic
+                
+                let mut workflows = self.active_workflows.write().await;
+                if let Some(workflow) = workflows.get_mut(&workflow_id) {
+                    workflow.updated_at = chrono::Utc::now();
+                    
+                    // Extract step information from payload
+                    if let Ok(step_info) = serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(payload) {
+                        if let Some(step_id) = step_info.get("step_id").and_then(|v| v.as_str()) {
+                            // Update workflow context with step completion
+                            workflow.context.insert(
+                                format!("step_{}_completed", step_id),
+                                serde_json::Value::Bool(true),
+                            );
+                            workflow.context.insert(
+                                format!("step_{}_completed_by", step_id),
+                                serde_json::Value::String(agent_id.to_string()),
+                            );
+                            workflow.context.insert(
+                                format!("step_{}_completed_at", step_id),
+                                serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+                            );
+                            
+                            // If step has results, store them
+                            if let Some(results) = step_info.get("results") {
+                                workflow.context.insert(
+                                    format!("step_{}_results", step_id),
+                                    results.clone(),
+                                );
+                            }
+                            
+                            info!("Workflow {} step {} completed by agent {}", workflow_id, step_id, agent_id);
+                            
+                            // Check if this was the final step
+                            if let Some(is_final) = step_info.get("is_final_step").and_then(|v| v.as_bool()) {
+                                if is_final {
+                                    workflow.status = WorkflowStatus::Completed;
+                                    info!("Workflow {} marked as completed after final step", workflow_id);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    warn!("Received step completion for unknown workflow {}", workflow_id);
+                }
             }
             _ => {
                 debug!("Coordination message for workflow {}: {:?}", workflow_id, coordination_type);

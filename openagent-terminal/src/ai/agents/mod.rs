@@ -17,7 +17,7 @@ pub mod conversation_manager;
 pub mod enhanced_plugin_system;
 pub mod natural_language;
 pub mod privacy_content_filter;
-pub mod security_lens;
+// pub mod security_lens; // TODO: Implement security lens agent
 pub mod terminal_ui_integration;
 pub mod workflow_orchestrator;
 

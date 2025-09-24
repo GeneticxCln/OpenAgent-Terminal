@@ -117,6 +117,7 @@ clap_complete = "4.2.3"
 image = "0.25"
 sha2 = "0.10"
 criterion = { version = "0.7", features = ["html_reports"] }
+futures = "0.3.31"
 # Ensure examples/tests can directly depend on wgpu APIs regardless of optional feature plumbing
 wgpu = "26.0"
 pollster = "0.4"

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::thread;
 
-use crate::security::{SecurityLens, SecurityPolicy};
+// use crate::security::{SecurityLens, SecurityPolicy}; // TODO: Implement security module
 use openagent_terminal_ai::build_request_with_context;
 use openagent_terminal_ai::context::{
     BasicEnvProvider, ContextManager, FileTreeProvider, FileTreeRootStrategy, GitProvider,
@@ -1250,7 +1250,7 @@ pub struct AiRuntime {
     // Registered provider factories and helpers
     provider_registry: ProviderRegistry,
     cancel_flag: Arc<AtomicBool>,
-    security_lens: SecurityLens,
+    // security_lens: SecurityLens, // TODO: Implement security module
     // Config-driven context collection policy
     context_cfg: crate::config::ai::AiContextConfig,
     // Optional agent manager for capability-based routing (lazy init)
@@ -1819,7 +1819,7 @@ impl AiRuntime {
             provider: Arc::from(provider),
             provider_registry: ProviderRegistry::new(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
-            security_lens: SecurityLens::new(SecurityPolicy::default()),
+            // security_lens: SecurityLens::new(SecurityPolicy::default()), // TODO: Implement security module
             context_cfg: crate::config::ai::AiContextConfig::default(),
             agent_manager: None,
             agent_rt: None,
@@ -2307,12 +2307,11 @@ impl AiRuntime {
                 if cmds.len() > 1 {
                     annotated.push_str("# Multiple commands suggested:\n");
                     for (i, c) in cmds.iter().enumerate() {
-                        let risk = self.security_lens.analyze_command(c);
+                        // let risk = self.security_lens.analyze_command(c); // TODO: Re-enable when security module is implemented
                         annotated.push_str(&format!(
-                            "# [{}] {:?}: {}\n",
+                            "# [{}] Safe: Command analysis placeholder\n",
                             i + 1,
-                            risk.level,
-                            risk.explanation
+                            // risk.level, risk.explanation // TODO: Re-enable when security module is implemented
                         ));
                         annotated.push_str(&format!("#     {}\n", c));
                     }
@@ -2330,10 +2329,10 @@ impl AiRuntime {
                     (annotated, true)
                 } else {
                     let cmd = cmds.first().cloned().unwrap_or_default();
-                    let risk = self.security_lens.analyze_command(&cmd);
+                    // let risk = self.security_lens.analyze_command(&cmd); // TODO: Re-enable when security module is implemented
                     annotated.push_str(&format!(
-                        "# Security Lens: {:?} - {}\n",
-                        risk.level, risk.explanation
+                        "# Security Lens: Safe - Analysis placeholder\n",
+                        // risk.level, risk.explanation // TODO: Re-enable when security module is implemented
                     ));
                     #[cfg(feature = "never")]
                     if !risk.mitigations.is_empty() {

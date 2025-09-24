@@ -8713,14 +8713,17 @@ impl EventListener for EventProxy {
 #[cfg(test)]
 pub(crate) mod test_posted_events {
     use super::*;
+    #[allow(dead_code)] // Only used in tests
     static SENT: once_cell::sync::Lazy<std::sync::Mutex<Vec<EventType>>> =
         once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
 
+    #[allow(dead_code)] // Only used in tests
     pub fn record(ev: EventType) {
         let mut g = SENT.lock().unwrap();
         g.push(ev);
     }
 
+    #[allow(dead_code)] // Only used in tests
     pub fn take() -> Vec<EventType> {
         let mut g = SENT.lock().unwrap();
         let v = g.clone();
@@ -8728,6 +8731,7 @@ pub(crate) mod test_posted_events {
         v
     }
 
+    #[allow(dead_code)] // Only used in tests
     pub fn clear() {
         SENT.lock().unwrap().clear();
     }

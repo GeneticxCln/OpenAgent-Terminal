@@ -252,7 +252,7 @@ impl NaturalLanguageAgent {
             let ai_request = openagent_terminal_ai::AiRequest {
                 scratch_text: prompt,
                 working_directory: Some(context.current_directory.clone()),
-                shell_kind: Some("zsh".to_string()), // TODO: Get from context
+                shell_kind: Some("zsh".to_string()), // TODO: Get from context when shell_kind field is available
                 context: vec![
                     ("mode".to_string(), "conversation".to_string()),
                     ("agent".to_string(), "natural-language".to_string()),

@@ -3431,6 +3431,7 @@ dependencies = [
  "embed-resource",
  "filetime",
  "fontdb",
+ "futures",
  "harfbuzz_rs",
  "home",
  "image",
