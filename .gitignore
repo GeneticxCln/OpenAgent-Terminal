@@ -1,9 +1,66 @@
-target
+# Rust build artifacts
+target/
 
-# Node.js and TypeScript
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Node.js and TypeScript (for dev tools)
 node_modules/
 dist/
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
+
+# Test and coverage files
+cobertura.xml
+*.profraw
+*.profdata
+default_*.profraw
+lcov.info
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+desktop.ini
+
+# Local configuration and secrets
+.env
+.env.local
+.env.*.local
+
+# Build and packaging
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Backup files
+*.backup
+*.bak
+
+# Performance profiling
+flamegraph.svg
+perf.data*
+
+# Database files (if any)
+*.db
+*.sqlite
+*.sqlite3
