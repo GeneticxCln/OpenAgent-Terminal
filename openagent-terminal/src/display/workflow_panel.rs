@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Workflows Panel UI: state and rendering
 // Feature-gated under `workflow`
 

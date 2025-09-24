@@ -7,8 +7,19 @@ Features:
 - editor
 - indexer
 - dap
-- web-editors
+- web-editors (GTK4 + WebKitGTK backend)
 - all (enables all of the above)
+
+Build (Linux / GTK4 + WebKitGTK):
+- Install system libs
+  - Arch/EndeavourOS: pacman -S gtk4 webkit2gtk-4.1
+  - Ubuntu/Debian: apt-get install libgtk-4-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libglib2.0-dev pkg-config
+- Build with feature:
+  - PKG_CONFIG_PATH="$PWD/build-support/pkgconfig:$PKG_CONFIG_PATH" \
+    cargo check -p openagent-terminal-ide --no-default-features --features web-editors
+- Clippy (warnings-as-errors):
+  - PKG_CONFIG_PATH="$PWD/build-support/pkgconfig:$PKG_CONFIG_PATH" \
+    cargo clippy -p openagent-terminal-ide --no-default-features --features web-editors -- -D warnings
 
 Testing:
 - cargo test -p openagent-terminal-ide

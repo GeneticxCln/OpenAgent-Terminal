@@ -21,9 +21,6 @@ serde_json.workspace = true
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
 
-# JSON-RPC for plugin communication
-jsonrpc-core.workspace = true
-jsonrpc-ipc-server.workspace = true
 
 # Security and sandboxing
 parking_lot.workspace = true

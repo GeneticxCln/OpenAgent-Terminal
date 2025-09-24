@@ -41,7 +41,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets --locked
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   clippy-ide:
     name: Clippy (IDE coverage)
@@ -54,11 +54,11 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: cargo clippy (openagent-terminal with ide feature)
-        run: cargo clippy -p openagent-terminal --all-targets --features ide --locked
+        run: cargo clippy -p openagent-terminal --all-targets --features ide --locked -- -D warnings
       - name: cargo clippy (ide-lsp crate)
-        run: cargo clippy -p openagent-terminal-ide-lsp --all-targets --locked
+        run: cargo clippy -p openagent-terminal-ide-lsp --all-targets --locked -- -D warnings
       - name: cargo clippy (ide-indexer crate)
-        run: cargo clippy -p openagent-terminal-ide-indexer --all-targets --locked
+        run: cargo clippy -p openagent-terminal-ide-indexer --all-targets --locked -- -D warnings
 
   test:
     name: Build and Test

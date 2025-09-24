@@ -3,7 +3,9 @@
 //! This module provides persistence capabilities for the workflow engine,
 //! allowing workflow execution history to be stored and retrieved.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+#[cfg(feature = "sqlite")]
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -475,17 +477,19 @@ impl SqliteWorkflowPersistence {
     }
 }
 
-impl WorkflowExecutionStatus {
-    pub fn to_string(&self) -> String {
+impl core::fmt::Display for WorkflowExecutionStatus {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Pending => "pending".to_string(),
-            Self::Running => "running".to_string(),
-            Self::Success => "success".to_string(),
-            Self::Failed => "failed".to_string(),
-            Self::Cancelled => "cancelled".to_string(),
+            Self::Pending => write!(f, "pending"),
+            Self::Running => write!(f, "running"),
+            Self::Success => write!(f, "success"),
+            Self::Failed => write!(f, "failed"),
+            Self::Cancelled => write!(f, "cancelled"),
         }
     }
+}
 
+impl WorkflowExecutionStatus {
     pub fn from_string(s: &str) -> Self {
         match s {
             "pending" => Self::Pending,

@@ -252,9 +252,9 @@ mod copy_export_tests {
         let mut grid: Grid<Cell> = Grid::new(3, 3, 0);
         // Leave line 0 blank (len=0 -> newline)
         // Put content on line 1
-        for c in 0..3 {
-            grid[Line(1)][Column(c)].c = ['A', 'B', 'C'][c as usize];
-        }
+            for c in 0..3 {
+                grid[Line(1)][Column(c)].c = ['A', 'B', 'C'][c];
+            }
         // Leave line 2 blank as well
         let out = crate::event::collect_block_output_from_grid(&grid, 0, 2);
         // Should include blank line, then 'ABC', then blank line
@@ -416,10 +416,7 @@ mod basic_event_tests {
     fn mouse_point_maps_from_pixels_to_grid() {
         // Size: 3x2 cells, 10x20 px cell, 5 px padding
         let si = crate::display::SizeInfo::new(35.0, 50.0, 10.0, 20.0, 5.0, 5.0, false);
-        let mut mouse = Mouse::default();
-        // Put mouse inside first cell after padding
-        mouse.x = 6; // padding_x + 1
-        mouse.y = 6; // padding_y + 1
+        let mut mouse = Mouse { x: 6, y: 6, ..Default::default() }; // padding + 1
         let p = mouse.point(&si, 0);
         assert_eq!(p.line, Line(0));
         assert_eq!(p.column, Column(0));

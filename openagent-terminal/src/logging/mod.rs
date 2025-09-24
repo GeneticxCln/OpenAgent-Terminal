@@ -270,7 +270,7 @@ impl OnDemandLogFile {
         path.push(format!("OpenAgentTerminal-{}.log", process::id()));
 
         // Set log path as an environment variable.
-        unsafe { env::set_var(OPENAGENT_TERMINAL_LOG_ENV, path.as_os_str()) };
+        env::set_var(OPENAGENT_TERMINAL_LOG_ENV, path.as_os_str());
 
         let (encrypt, key_b64, cipher) = Self::load_cipher();
         let retention_days =

@@ -1,0 +1,4 @@
+Name: javascriptcoregtk-6.0
+Description: Compatibility alias to Arch's javascriptcoregtk-4.1 for GTK4 builds
+Version: 2.50.0
+Requires: javascriptcoregtk-4.1

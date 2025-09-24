@@ -52,7 +52,45 @@ highlight = "all"
 deny = [
 ]
 # Allow listed duplicates (crate name and optional version requirement) if unavoidable.
+# These are known to coexist across major versions due to upstream semver breaks.
 skip = [
+    { name = "bitflags" },
+    { name = "core-foundation" },
+    { name = "core-graphics-types" },
+    { name = "foreign-types" },
+    { name = "foreign-types-shared" },
+    { name = "getrandom" },
+    { name = "hashbrown" },
+    { name = "hashlink" },
+    { name = "linux-raw-sys" },
+    { name = "objc2" },
+    { name = "objc2-app-kit" },
+    { name = "objc2-foundation" },
+    { name = "parking_lot" },
+    { name = "parking_lot_core" },
+    { name = "rand" },
+    { name = "rand_chacha" },
+    { name = "rand_core" },
+    { name = "rustc-hash" },
+    { name = "rustix" },
+    # Additional duplicate families observed in the workspace
+    { name = "serde_spanned" },
+    { name = "thiserror" },
+    { name = "thiserror-impl" },
+    { name = "tokio-util" },
+    { name = "toml" },
+    { name = "toml_edit" },
+    { name = "toml_datetime" },
+    { name = "wast" },
+    { name = "windows-core" },
+    { name = "windows-implement" },
+    { name = "windows-interface" },
+    { name = "windows-link" },
+    { name = "windows-result" },
+    { name = "windows-strings" },
+    { name = "windows-sys" },
+    { name = "windows-targets" },
+    { name = "windows_x86_64_gnu" },
 ]
 
 [licenses]
@@ -66,7 +104,6 @@ allow = [
     "ISC",
     "MPL-2.0",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
     "BSL-1.0",
     "CC0-1.0",

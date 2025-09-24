@@ -25,6 +25,9 @@ pub mod dap;
 #[cfg(feature = "web-editors")]
 pub mod web_editors;
 
+#[cfg(feature = "web-editors")]
+mod gtk4_ui;
+
 /// Common IDE error types
 #[derive(Debug, thiserror::Error)]
 pub enum IdeError {

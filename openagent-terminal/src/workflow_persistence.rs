@@ -22,17 +22,20 @@ pub enum WorkflowExecutionStatus {
     Cancelled,
 }
 
-impl WorkflowExecutionStatus {
-    pub fn to_string(&self) -> String {
-        match self {
-            Self::Pending => "pending".to_string(),
-            Self::Running => "running".to_string(),
-            Self::Success => "success".to_string(),
-            Self::Failed => "failed".to_string(),
-            Self::Cancelled => "cancelled".to_string(),
-        }
+impl std::fmt::Display for WorkflowExecutionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Success => "success",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        };
+        f.write_str(s)
     }
+}
 
+impl WorkflowExecutionStatus {
     pub fn from_string(s: &str) -> Self {
         match s {
             "pending" => Self::Pending,
@@ -252,7 +255,7 @@ impl WorkflowPersistence {
         };
 
         // Calculate duration if workflow is finishing
-        let duration_ms = if finished_at.is_some() {
+        let duration_ms = if let Some(fin) = finished_at {
             // Get started_at to calculate duration
             let started_at: Option<i64> = self
                 .conn
@@ -262,12 +265,7 @@ impl WorkflowPersistence {
                     |row| row.get(0),
                 )
                 .optional()?;
-
-            if let Some(start_timestamp) = started_at {
-                Some((finished_at.unwrap() - start_timestamp) * 1000) // Convert to milliseconds
-            } else {
-                None
-            }
+            started_at.map(|start_timestamp| (fin - start_timestamp) * 1000)
         } else {
             None
         };
@@ -422,7 +420,7 @@ impl WorkflowPersistence {
                 workflow_name: row.get(1)?,
                 status: WorkflowExecutionStatus::from_string(&row.get::<_, String>(2)?),
                 started_at: DateTime::from_timestamp(row.get(3)?, 0)
-                    .unwrap_or_else(|| Utc::now()),
+                    .unwrap_or_else(Utc::now),
                 duration_ms: row.get(4)?,
                 parameters_count: parameters.len(),
                 has_outputs: !outputs.is_empty(),
@@ -530,7 +528,7 @@ impl WorkflowPersistence {
             workflow_name: row.get(2)?,
             status: WorkflowExecutionStatus::from_string(&row.get::<_, String>(3)?),
             parameters,
-            started_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(|| Utc::now()),
+            started_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(Utc::now),
             finished_at: row
                 .get::<_, Option<i64>>(6)?
                 .and_then(|ts| DateTime::from_timestamp(ts, 0)),

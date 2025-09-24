@@ -366,66 +366,6 @@ fn fuzzy_highlight_positions(query: &str, text: &str) -> Vec<usize> {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn add_items_unique_dedupes() {
-        let mut ps = PaletteState::new();
-        ps.add_items_unique(vec![PaletteItem {
-            key: "k1".into(),
-            title: "T1".into(),
-            subtitle: None,
-            entry: PaletteEntry::File("/tmp/a".into()),
-        }]);
-        // Attempt to add duplicate key and a new key
-        ps.add_items_unique(vec![
-            PaletteItem {
-                key: "k1".into(),
-                title: "T1 dup".into(),
-                subtitle: None,
-                entry: PaletteEntry::File("/tmp/a2".into()),
-            },
-            PaletteItem {
-                key: "k2".into(),
-                title: "T2".into(),
-                subtitle: Some("S".into()),
-                entry: PaletteEntry::Workflow("w1".into()),
-            },
-        ]);
-        assert_eq!(ps.items.len(), 2, "should keep only unique keys");
-        let keys: Vec<_> = ps.items.iter().map(|i| i.key.as_str()).collect();
-        assert!(keys.contains(&"k1") && keys.contains(&"k2"));
-    }
-
-    #[test]
-    fn recent_file_paths_respects_mru() {
-        let mut ps = PaletteState::new();
-        // Simulate usage
-        ps.note_used("file:/a");
-        ps.note_used("file:/b");
-        ps.note_used("file:/b");
-        ps.note_used("file:/c");
-        ps.note_used("file:/c");
-        ps.note_used("file:/c");
-        let out = ps.recent_file_paths(2);
-        assert_eq!(out, vec!["/c".to_string(), "/b".to_string()]);
-    }
-
-    #[test]
-    fn fuzzy_helpers_basic() {
-        // Contains for 1-char query
-        assert!(fuzzy_score("a", "abc").is_some());
-        assert!(fuzzy_score("z", "abc").is_none());
-
-        // Subsequence scoring should exist for ordered letters
-        assert!(fuzzy_score("abc", "a_b_c").is_some());
-        // Highlight positions are indices in the lowercased text
-        let pos = fuzzy_highlight_positions("abc", "a_b_c");
-        assert_eq!(pos, vec![0, 2, 4]);
-}
-}
 
 use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
 use crate::display::{Display, SizeInfo};
@@ -1380,5 +1320,66 @@ impl Display {
                 panel_cols.saturating_sub(4),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_items_unique_dedupes() {
+        let mut ps = PaletteState::new();
+        ps.add_items_unique(vec![PaletteItem {
+            key: "k1".into(),
+            title: "T1".into(),
+            subtitle: None,
+            entry: PaletteEntry::File("/tmp/a".into()),
+        }]);
+        // Attempt to add duplicate key and a new key
+        ps.add_items_unique(vec![
+            PaletteItem {
+                key: "k1".into(),
+                title: "T1 dup".into(),
+                subtitle: None,
+                entry: PaletteEntry::File("/tmp/a2".into()),
+            },
+            PaletteItem {
+                key: "k2".into(),
+                title: "T2".into(),
+                subtitle: Some("S".into()),
+                entry: PaletteEntry::Workflow("w1".into()),
+            },
+        ]);
+        assert_eq!(ps.items.len(), 2, "should keep only unique keys");
+        let keys: Vec<_> = ps.items.iter().map(|i| i.key.as_str()).collect();
+        assert!(keys.contains(&"k1") && keys.contains(&"k2"));
+    }
+
+    #[test]
+    fn recent_file_paths_respects_mru() {
+        let mut ps = PaletteState::new();
+        // Simulate usage
+        ps.note_used("file:/a");
+        ps.note_used("file:/b");
+        ps.note_used("file:/b");
+        ps.note_used("file:/c");
+        ps.note_used("file:/c");
+        ps.note_used("file:/c");
+        let out = ps.recent_file_paths(2);
+        assert_eq!(out, vec!["/c".to_string(), "/b".to_string()]);
+    }
+
+    #[test]
+    fn fuzzy_helpers_basic() {
+        // Contains for 1-char query
+        assert!(fuzzy_score("a", "abc").is_some());
+        assert!(fuzzy_score("z", "abc").is_none());
+
+        // Subsequence scoring should exist for ordered letters
+        assert!(fuzzy_score("abc", "a_b_c").is_some());
+        // Highlight positions are indices in the lowercased text
+        let pos = fuzzy_highlight_positions("abc", "a_b_c");
+        assert_eq!(pos, vec![0, 2, 4]);
     }
 }

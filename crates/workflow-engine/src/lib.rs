@@ -272,6 +272,7 @@ pub struct WorkflowEngine {
     #[allow(dead_code)]
     template_engine: Tera,
     /// Persistence layer for workflow history (optional)
+    #[allow(dead_code)]
     persistence: Option<Box<dyn crate::persistence::WorkflowPersistenceInterface>>,
 }
 
