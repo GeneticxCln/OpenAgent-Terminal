@@ -111,20 +111,27 @@ Security note: Always review install scripts before piping curl to sh. Prefer yo
 
 **Cloud AI:**
 ```bash
-# OpenAI
-export OPENAGENT_OPENAI_API_KEY="your-key"
+# OpenAI (provider-native)
+export OPENAI_API_KEY="your-key"
+# Optional endpoint/model overrides
+export OPENAI_API_BASE="https://api.openai.com/v1"
+export OPENAI_MODEL="gpt-4o-mini"
 
-# Anthropic  
-export OPENAGENT_ANTHROPIC_API_KEY="your-key"
+# Anthropic (provider-native)
+export ANTHROPIC_API_KEY="your-key"
+# Optional endpoint/model overrides
+export ANTHROPIC_API_BASE="https://api.anthropic.com/v1"
+export ANTHROPIC_MODEL="claude-3-haiku-20240307"
 ```
 
-Client environment variables (preferred)
-- For local Ollama client config, set:
+Provider-native client environment variables (local Ollama)
+- For local Ollama config, set:
 ```bash
-export OPENAGENT_OLLAMA_ENDPOINT="http://localhost:11434"
-export OPENAGENT_OLLAMA_MODEL="codellama:7b"
+export OLLAMA_HOST="http://localhost:11434"
+# Optional convenience for model selection (app reads this if set)
+export OLLAMA_MODEL="codellama:7b"
 ```
-Note: OLLAMA_HOST configures the Ollama server process/container; it is not read by OpenAgent Terminal. Use OPENAGENT_OLLAMA_* on the client side.
+Note: You can also map alternate OPENAGENT_* names via config (e.g., ai.providers.ollama.endpoint_env = "OPENAGENT_OLLAMA_ENDPOINT"). Provider-native envs are preferred.
 
 ### 🎮 Usage & Keyboard Shortcuts
 

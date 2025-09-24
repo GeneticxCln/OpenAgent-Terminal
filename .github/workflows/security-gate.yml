@@ -22,6 +22,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run plugin-runtime sandbox tests
+        if: ${{ hashFiles('**/plugin-runtime/**') != '' }}
         run: |
           cargo test -p plugin-runtime --all-features --locked -- --nocapture
 

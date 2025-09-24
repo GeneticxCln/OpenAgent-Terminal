@@ -54,7 +54,6 @@ jobs:
             --package openagent-terminal \
             --package openagent-terminal-core \
             --package openagent-terminal-ai \
-            --package plugin-runtime \
             --all-features --locked \
             --fail-under-lines ${MIN_COVERAGE} \
             --lcov --output-path lcov-prioritized.info

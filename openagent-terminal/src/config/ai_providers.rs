@@ -162,56 +162,58 @@ impl ProviderCredentials {
     }
 }
 
-/// Default provider configurations with secure environment variable names
+/// Default provider configurations with provider-native environment variable names
 pub fn get_default_provider_configs() -> HashMap<String, ProviderConfig> {
     let mut configs = HashMap::new();
 
-    // OpenAI configuration
+    // OpenAI configuration (provider-native)
     configs.insert(
         "openai".to_string(),
         ProviderConfig {
-            api_key_env: Some("OPENAGENT_OPENAI_API_KEY".to_string()),
-            endpoint_env: Some("OPENAGENT_OPENAI_ENDPOINT".to_string()),
-            model_env: Some("OPENAGENT_OPENAI_MODEL".to_string()),
+            api_key_env: Some("OPENAI_API_KEY".to_string()),
+            endpoint_env: Some("OPENAI_API_BASE".to_string()),
+            model_env: Some("OPENAI_MODEL".to_string()),
             default_endpoint: Some("https://api.openai.com/v1".to_string()),
             default_model: Some("gpt-3.5-turbo".to_string()),
             extra: HashMap::new(),
         },
     );
 
-    // Anthropic configuration
+    // Anthropic configuration (provider-native)
     configs.insert(
         "anthropic".to_string(),
         ProviderConfig {
-            api_key_env: Some("OPENAGENT_ANTHROPIC_API_KEY".to_string()),
-            endpoint_env: Some("OPENAGENT_ANTHROPIC_ENDPOINT".to_string()),
-            model_env: Some("OPENAGENT_ANTHROPIC_MODEL".to_string()),
+            api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
+            endpoint_env: Some("ANTHROPIC_API_BASE".to_string()),
+            model_env: Some("ANTHROPIC_MODEL".to_string()),
             default_endpoint: Some("https://api.anthropic.com/v1".to_string()),
             default_model: Some("claude-3-haiku-20240307".to_string()),
             extra: HashMap::new(),
         },
     );
 
-    // Ollama configuration
+    // Ollama configuration (provider-native).
+    // Note: Ollama doesn't define a model env var; OLLAMA_MODEL is supported as a convenience.
     configs.insert(
         "ollama".to_string(),
         ProviderConfig {
             api_key_env: None, // Ollama typically doesn't require API keys
-            endpoint_env: Some("OPENAGENT_OLLAMA_ENDPOINT".to_string()),
-            model_env: Some("OPENAGENT_OLLAMA_MODEL".to_string()),
+            // Prefer OLLAMA_HOST; fall back handled in provider impl
+            endpoint_env: Some("OLLAMA_HOST".to_string()),
+            model_env: Some("OLLAMA_MODEL".to_string()),
             default_endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("codellama".to_string()),
             extra: HashMap::new(),
         },
     );
 
-    // OpenRouter configuration
+    // OpenRouter configuration (provider-native)
     configs.insert(
         "openrouter".to_string(),
         ProviderConfig {
-            api_key_env: Some("OPENAGENT_OPENROUTER_API_KEY".to_string()),
-            endpoint_env: Some("OPENAGENT_OPENROUTER_ENDPOINT".to_string()),
-            model_env: Some("OPENAGENT_OPENROUTER_MODEL".to_string()),
+            api_key_env: Some("OPENROUTER_API_KEY".to_string()),
+            endpoint_env: Some("OPENROUTER_API_BASE".to_string()),
+            model_env: Some("OPENROUTER_MODEL".to_string()),
             default_endpoint: Some("https://openrouter.ai/api/v1".to_string()),
             default_model: None, // Force explicit model configuration by default
             extra: HashMap::new(),
@@ -221,28 +223,31 @@ pub fn get_default_provider_configs() -> HashMap<String, ProviderConfig> {
     configs
 }
 
-/// Legacy environment variable compatibility (with deprecation warnings)
+/// OPENAGENT_* compatibility mapping detection (with guidance to prefer provider-native envs)
 #[allow(dead_code)]
 pub fn check_legacy_env_vars() {
-    let legacy_vars = [
-        "OPENAI_API_KEY",
-        "OPENAI_API_BASE",
-        "OPENAI_MODEL",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_API_BASE",
-        "ANTHROPIC_MODEL",
-        "OLLAMA_ENDPOINT",
-        "OLLAMA_MODEL",
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_API_BASE",
-        "OPENROUTER_MODEL",
+    // These are the alternate, namespaced variables that we still accept via configuration,
+    // but we encourage users to prefer provider-native env vars.
+    let compat_vars = [
+        "OPENAGENT_OPENAI_API_KEY",
+        "OPENAGENT_OPENAI_ENDPOINT",
+        "OPENAGENT_OPENAI_MODEL",
+        "OPENAGENT_ANTHROPIC_API_KEY",
+        "OPENAGENT_ANTHROPIC_ENDPOINT",
+        "OPENAGENT_ANTHROPIC_MODEL",
+        "OPENAGENT_OLLAMA_ENDPOINT",
+        "OPENAGENT_OLLAMA_MODEL",
+        "OPENAGENT_OPENROUTER_API_KEY",
+        "OPENAGENT_OPENROUTER_ENDPOINT",
+        "OPENAGENT_OPENROUTER_MODEL",
     ];
 
-    for var in &legacy_vars {
+    for var in &compat_vars {
         if std::env::var(var).is_ok() {
             warn!(
-                "Legacy environment variable '{}' detected. Please migrate to namespaced \
-                 variables (OPENAGENT_*). See docs/AI_ENVIRONMENT_SECURITY.md for migration guide.",
+                "Compatibility environment variable '{}' detected. Prefer provider-native envs \
+                 (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, OLLAMA_HOST). You can also map \
+                 OPENAGENT_* names via config if required.",
                 var
             );
         }

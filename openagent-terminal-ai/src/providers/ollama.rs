@@ -112,14 +112,15 @@ impl OllamaProvider {
 
     pub fn from_env() -> Result<Self, String> {
         let endpoint = std::env::var("OPENAGENT_OLLAMA_ENDPOINT")
+            .or_else(|_| std::env::var("OLLAMA_HOST"))
             .or_else(|_| std::env::var("OLLAMA_ENDPOINT"))
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
         let model = std::env::var("OPENAGENT_OLLAMA_MODEL")
             .or_else(|_| std::env::var("OLLAMA_MODEL"))
             .map_err(|_| {
-                "Model environment variable not set. Prefer OPENAGENT_OLLAMA_MODEL (or legacy \
-                 OLLAMA_MODEL). Configure via config.ai.providers.ollama.model_env or export the \
-                 variable before launching."
+                "Model environment variable not set. Prefer OLLAMA_MODEL (or map an alternate \
+                 OPENAGENT_OLLAMA_MODEL via config). Configure via \
+                 config.ai.providers.ollama.model_env or export the variable before launching."
                     .to_string()
             })?;
 

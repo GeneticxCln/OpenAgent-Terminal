@@ -253,16 +253,16 @@ mod legacy_detection_tests {
     #[test]
     #[serial]
     fn test_legacy_detection() {
-        // Set some legacy variables
-        std::env::set_var("OPENAI_API_KEY", "legacy-key");
-        std::env::set_var("OLLAMA_ENDPOINT", "legacy-endpoint");
+        // Set some compatibility (OPENAGENT_*) variables which should be detected
+        std::env::set_var("OPENAGENT_OPENAI_API_KEY", "compat-key");
+        std::env::set_var("OPENAGENT_OLLAMA_ENDPOINT", "compat-endpoint");
 
         // This should trigger warnings (we can't easily test the warning output here)
         // but the function should not panic
         check_legacy_env_vars();
 
         // Clean up
-        std::env::remove_var("OPENAI_API_KEY");
-        std::env::remove_var("OLLAMA_ENDPOINT");
+        std::env::remove_var("OPENAGENT_OPENAI_API_KEY");
+        std::env::remove_var("OPENAGENT_OLLAMA_ENDPOINT");
     }
 }

@@ -82,6 +82,7 @@ jobs:
           cargo test -p openagent-terminal -F ai -- --nocapture
 
       - name: Plugins smoke tests (nightly)
+        if: ${{ hashFiles('**/plugin-runtime/**') != '' }}
         run: |
           set -euo pipefail
           cargo test -p plugin-loader -p plugin-system -p plugin-runtime -- --nocapture

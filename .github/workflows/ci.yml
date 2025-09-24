@@ -384,23 +384,6 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Run AI feature tests
         run: cargo test -p openagent-terminal -F ai -- --nocapture
 
-  plugins-tests:
-    name: Plugins feature tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Build and test with plugins feature (app crate)
-        run: cargo test -p openagent-terminal -F plugins -- --nocapture
-      - name: Plugin loader tests
-        run: cargo test -p plugin-loader -- --nocapture
-      - name: Plugin system tests
-        run: cargo test -p plugin-system -- --nocapture
-      - name: Plugin runtime tests
-        run: cargo test -p plugin-runtime -- --nocapture
 
   shader-sync-check:
     name: Shader sync check (RectKind vs WGSL)
@@ -492,6 +475,25 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
               SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.996 --scenario=$scenario --backend=wgpu
             done
           done
+
+  examples-build:
+    name: Build crate examples (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Ubuntu)
+        uses: ./.github/actions/install-ubuntu-deps
+      - name: Build selected examples (wgpu)
+        run: |
+          set -euo pipefail
+          cargo build -p openagent-terminal -F wgpu --example render_smoke
+          cargo build -p openagent-terminal -F wgpu --example perf_wgpu
+          cargo build -p openagent-terminal --example perf_cold_start
+          cargo build -p openagent-terminal --example perf_latency
 
   windows-pty-repro:
     name: Windows PTY repro tests

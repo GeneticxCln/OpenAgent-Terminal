@@ -113,20 +113,22 @@ ollama pull deepseek-coder  # Specialized for code
 ### OpenAI (Cloud)
 
 ```bash
-# Set your API key
+# Set your API key (provider-native)
 export OPENAI_API_KEY="your-api-key-here"
 
-# Optional: Set a specific model
-export OPENAI_MODEL="gpt-4"  # or "gpt-3.5-turbo"
+# Optional: Set endpoint/model
+export OPENAI_API_BASE="https://api.openai.com/v1"
+export OPENAI_MODEL="gpt-4"  # or "gpt-4o-mini"
 ```
 
 ### Anthropic (Cloud)
 
 ```bash
-# Set your API key
+# Set your API key (provider-native)
 export ANTHROPIC_API_KEY="your-api-key-here"
 
-# Optional: Set a specific model
+# Optional: Set endpoint/model
+export ANTHROPIC_API_BASE="https://api.anthropic.com/v1"
 export ANTHROPIC_MODEL="claude-3-opus-20240229"  # or "claude-3-sonnet-20240229"
 ```
 
