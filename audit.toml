@@ -1,0 +1,12 @@
+# cargo-audit configuration for OpenAgent Terminal
+# See: https://github.com/RustSec/rustsec/tree/main/cargo-audit
+
+[advisories]
+# Only ignore advisories we have analyzed and accepted temporarily.
+# Tracked for removal in Phase 3 (dependency upgrades).
+ignore = [
+    # RUSTSEC-2023-0071: rsa timing sidechannel (Marvin)
+    # Justification: sqlx-mysql uses RSA public key encryption during MySQL auth; no private key operations are performed
+    # by this client. Side-channel concerns target private key operations. We will re-evaluate during DB feature hardening.
+    "RUSTSEC-2023-0071",
+]

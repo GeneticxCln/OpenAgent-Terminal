@@ -10,8 +10,35 @@ targets = [
 
 [advisories]
 yanked = "deny"
-# If any advisories must be temporarily ignored, add entries here with notes and expiry dates.
+# Temporary ignores with justification and expiry. These are tracked for Phase 3 dependency upgrades.
 ignore = [
+    # RUSTSEC-2023-0071: rsa timing sidechannel (Marvin)
+    # Justification: sqlx-mysql uses RSA public key encryption during MySQL auth; no private key operations are performed
+    # by this client, so the timing sidechannel does not apply in our usage. We will re-evaluate in Phase 3 and aim to
+    # remove mysql from default builds or move to a fixed version once available.
+{ id = "RUSTSEC-2023-0071", reason = "rsa used only for public-key ops via sqlx-mysql auth; no private key timing risk" },
+
+    # Unmaintained crates (to be addressed in Phase 3 upgrades)
+{ id = "RUSTSEC-2024-0384", reason = "instant unmaintained via parking_lot 0.11 transitively in jsonrpc stack" },
+{ id = "RUSTSEC-2024-0436", reason = "paste unmaintained via wgpu/metal or rav1e; will be resolved by display stack upgrades" },
+{ id = "RUSTSEC-2025-0057", reason = "fxhash unmaintained via wasmtime and wry selector stack; plan to upgrade/remove in Phase 3" },
+
+    # GTK3 bindings unmaintained via wry (IDE webview); plan to upgrade to GTK4/wry alt in Phase 3
+{ id = "RUSTSEC-2024-0412", reason = "gdk GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0413", reason = "atk GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0414", reason = "gdkx11-sys GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0415", reason = "gtk GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0416", reason = "atk-sys GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0417", reason = "gdkx11 GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0418", reason = "gdk-sys GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0419", reason = "gtk3-macros GTK3 unmaintained (wry transitively)" },
+{ id = "RUSTSEC-2024-0420", reason = "gtk-sys GTK3 unmaintained (wry transitively)" },
+
+    # glib unsound advisory affects GTK3 stack; will be addressed with GTK4/wry upgrades
+{ id = "RUSTSEC-2024-0429", reason = "glib VariantStrIter unsound (affects GTK3 stack via wry); planning migration" },
+
+    # proc-macro-error unmaintained via glib-macros/gtk3-macros
+{ id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained via GTK3 stack; will be upgraded with GTK4 migration" }
 ]
 
 [bans]
