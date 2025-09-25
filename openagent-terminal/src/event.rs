@@ -3941,6 +3941,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                     }
                     #[cfg(not(feature = "workflow"))]
                     {
+                        let _ = name; // Use the variable to avoid warning
                         // Workflow feature not enabled; ignore selection or surface a small message
                     }
                 }

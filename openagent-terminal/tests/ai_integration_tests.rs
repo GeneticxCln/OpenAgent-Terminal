@@ -20,6 +20,7 @@ use openagent_terminal::ai::{
 };
 
 // Helper functions for test setup
+#[cfg(feature = "ai")]
 fn create_test_context() -> AgentContext {
     AgentContext {
         project_root: Some("/tmp/test-project".to_string()),
@@ -43,6 +44,7 @@ fn create_test_context() -> AgentContext {
     }
 }
 
+#[cfg(feature = "ai")]
 fn create_test_request(request_type: AgentRequestType, content: String) -> AgentRequest {
     AgentRequest {
         id: Uuid::new_v4(),

@@ -12,6 +12,7 @@ use openagent_terminal::ai::agents::{
     communication_hub::AgentCommunicationHub,
 };
 
+#[cfg(feature = "ai")]
 fn setup_test_context() -> AgentContext {
     AgentContext {
         project_root: Some("/tmp/test-project".to_string()),
@@ -224,6 +225,11 @@ criterion_group!(
 );
 
 #[cfg(not(feature = "ai"))]
-criterion_group!(ai_benches,);
+criterion_group!(ai_benches, bench_noop);
+
+#[cfg(not(feature = "ai"))]
+fn bench_noop(c: &mut Criterion) {
+    c.bench_function("noop", |b| b.iter(|| {}));
+}
 
 criterion_main!(ai_benches);

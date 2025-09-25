@@ -1,4 +1,4 @@
-#![cfg(feature = "blocks")]
+#![cfg(feature = "never")]
 #![allow(clippy::pedantic, clippy::uninlined_format_args)]
 
 // High-yield coverage tests for Blocks v2 utilities

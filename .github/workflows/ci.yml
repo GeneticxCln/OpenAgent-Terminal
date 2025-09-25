@@ -152,7 +152,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        feature-set: [default, core-no-default, wgpu, ai-ollama, sync, security-lens]
+        feature-set: [default, minimal-terminal, ai-ollama, ai-openai, ai-anthropic, ai-openrouter, full, atlas, wayland, x11]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -187,14 +187,32 @@ jobs:
             wgpu)
               echo "args=-p openagent-terminal -F wgpu" >> $GITHUB_OUTPUT
               ;;
+            minimal-terminal)
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,wayland,x11" >> $GITHUB_OUTPUT
+              ;;
             ai-ollama)
-              echo "args=-p openagent-terminal -F ai-ollama" >> $GITHUB_OUTPUT
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,wayland,x11,ai-ollama" >> $GITHUB_OUTPUT
               ;;
-            sync)
-              echo "args=-p openagent-terminal -F sync" >> $GITHUB_OUTPUT
+            ai-openai)
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,wayland,x11,ai-openai" >> $GITHUB_OUTPUT
               ;;
-            security-lens)
-              echo "args=-p openagent-terminal -F security-lens" >> $GITHUB_OUTPUT
+            ai-anthropic)
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,wayland,x11,ai-anthropic" >> $GITHUB_OUTPUT
+              ;;
+            ai-openrouter)
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,wayland,x11,ai-openrouter" >> $GITHUB_OUTPUT
+              ;;
+            full)
+              echo "args=-p openagent-terminal --no-default-features -F full,wayland,x11" >> $GITHUB_OUTPUT
+              ;;
+            atlas)
+              echo "args=-p openagent-terminal --no-default-features -F atlas,wayland,x11" >> $GITHUB_OUTPUT
+              ;;
+            wayland)
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,wayland" >> $GITHUB_OUTPUT
+              ;;
+            x11)
+              echo "args=-p openagent-terminal --no-default-features -F wgpu,x11" >> $GITHUB_OUTPUT
               ;;
             *)
               echo "Unknown feature-set" >&2; exit 1
@@ -370,6 +388,34 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           # Run perf with explicit threshold; rely on exit code
           xvfb-run -a cargo run -p openagent-terminal --release --example perf_latency -- --max-ms=16.0
 
+  display-backend-tests:
+    name: Display backend tests (wayland/x11)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [wayland-only, x11-only, both]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Ubuntu)
+        uses: ./.github/actions/install-ubuntu-deps
+      - name: Test display backend compilation
+        run: |
+          case "${{ matrix.backend }}" in
+            wayland-only)
+              cargo check --no-default-features --features "wgpu,wayland"
+              ;;
+            x11-only)
+              cargo check --no-default-features --features "wgpu,x11,png"
+              ;;
+            both)
+              cargo check --no-default-features --features "wgpu,wayland,x11,png"
+              ;;
+          esac
+
   ai-tests:
     name: AI feature tests
     runs-on: ubuntu-latest
@@ -494,6 +540,43 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           cargo build -p openagent-terminal -F wgpu --example perf_wgpu
           cargo build -p openagent-terminal --example perf_cold_start
           cargo build -p openagent-terminal --example perf_latency
+
+  packaging-smoke-tests:
+    name: Packaging smoke tests
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install scdoc
+          rustup target add aarch64-apple-darwin
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: Test MSIX packaging (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo install cargo-msix --locked
+          cargo msix bundle -p openagent-terminal --output test-package.msix
+          test -f test-package.msix
+      
+      - name: Test DMG creation (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Test that DMG creation setup works (don't actually build universal)
+          cargo build --release --target=aarch64-apple-darwin
+          test -f target/release/openagent-terminal
+          test -f target/aarch64-apple-darwin/release/openagent-terminal
 
   windows-pty-repro:
     name: Windows PTY repro tests
