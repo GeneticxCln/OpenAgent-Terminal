@@ -7503,9 +7503,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         // Enable blocks manager on first event and update index.
                         self.ctx.display().blocks.enabled = true;
                         let total_lines = { self.ctx.terminal().grid().total_lines() };
-                        // Convert CommandBlockEvent to string for blocks stub API
-                        let event_str = format!("{:?}", &ev);
-                        self.ctx.display().blocks.on_event(total_lines, &event_str);
+                        // Feed structured event directly to blocks manager
+                        self.ctx.display().blocks.on_event(total_lines, &ev);
 
                         // Track last started command for IDE error suggestions
                         if let CoreCommandBlockEvent::CommandStart { cmd } = &ev {

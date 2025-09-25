@@ -2467,7 +2467,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     };
                     let cols = self.ctx.size_info().columns();
                     let clip_cols = cols.saturating_sub(time_cols + 1);
-                    new_chip_hover = Blocks::chip_hit_at(&header, mouse_col, clip_cols);
+                    new_chip_hover = Blocks::chip_hit_at(&header.content, mouse_col, clip_cols);
                 }
                 if self.ctx.display().blocks_header_hover_chip != new_chip_hover {
                     self.ctx.display().blocks_header_hover_chip = new_chip_hover;
@@ -2774,7 +2774,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                                    // use crate::display::blocks::Blocks; // Removed blocks system
                             let mouse_col = point.column.0;
                             let cols = self.ctx.size_info().columns();
-                            let hit = Blocks::chip_hit_at(&header, mouse_col, cols);
+let hit = Blocks::chip_hit_at(&header.content, mouse_col, cols);
                             if let Some(i) = hit {
                                 match i {
                                     0 => {
