@@ -56,6 +56,17 @@ resize_increment = 5
 # prefer_wgpu is kept for compatibility and should remain true.
 prefer_wgpu = true
 
+# WGPU safe-mode and diagnostics (optional)
+# When enabled, the renderer requests a fallback adapter and conservative limits, and prefers vsync
+# to maximize compatibility at the cost of performance.
+# wgpu_safe_mode = false
+# Force a fallback adapter (e.g., software) even if safe_mode is off.
+# wgpu_force_fallback_adapter = false
+# Prefer integrated/low-power adapter when available.
+# wgpu_low_power = false
+# Require a vsync-capable present mode (Fifo/AutoVsync) to avoid tearing.
+# wgpu_require_vsync = false
+
 # --- AI (optional) ---
 # [ai]
 # enabled = true

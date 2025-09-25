@@ -130,6 +130,21 @@ pub struct Debug {
     /// When true, include damage rect metrics in the HUD (count and total invalidated pixels).
     pub renderer_perf_hud_damage_metrics: bool,
 
+    /// Safe-mode for WGPU initialization. When enabled, the renderer will request a fallback adapter,
+    /// use conservative device limits, and require vsync to maximize compatibility at the cost of performance.
+    /// Use this when adapter/device creation fails on certain drivers or headless setups.
+    pub wgpu_safe_mode: bool,
+
+    /// Force requesting a fallback (software/WARP) adapter where available.
+    /// This can help on systems with broken/outdated drivers.
+    pub wgpu_force_fallback_adapter: bool,
+
+    /// Prefer a low-power adapter (integrated GPU) when available.
+    pub wgpu_low_power: bool,
+
+    /// Require a vsync-capable present mode (Fifo/AutoVsync).
+    pub wgpu_require_vsync: bool,
+
     /// Record ref test.
     #[config(skip)]
     #[serde(skip_serializing)]
@@ -180,6 +195,10 @@ impl Default for Debug {
             theme_block_cursor: false,
             theme_text_cursors: false,
             theme_selection: false,
+            wgpu_safe_mode: false,
+            wgpu_force_fallback_adapter: false,
+            wgpu_low_power: false,
+            wgpu_require_vsync: false,
             #[cfg(feature = "completions")]
             completions: false,
         }

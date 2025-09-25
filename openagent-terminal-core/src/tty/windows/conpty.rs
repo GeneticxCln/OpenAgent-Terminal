@@ -111,6 +111,17 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
     let api = ConptyApi::new();
     let mut pty_handle: HPCON = 0;
 
+    let diagnostics = std::env::var("OPENAGENT_WINDOWS_PTY_DIAGNOSTICS")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if diagnostics {
+        info!(
+            "ConPTY diagnostics enabled: cols={}, lines={}, shell={:?}",
+            window_size.num_cols, window_size.num_lines, config.shell
+        );
+    }
+
     // Passing 0 as the size parameter allows the "system default" buffer
     // size to be used. There may be small performance and memory advantages
     // to be gained by tuning this in the future, but it's likely a reasonable
@@ -128,6 +139,14 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
             &mut pty_handle as *mut _,
         )
     };
+
+    if diagnostics {
+        if result == S_OK {
+            info!("ConPTY created successfully (HPCON={:?})", pty_handle as usize);
+        } else {
+            info!("ConPTY create returned HRESULT={:?}", result);
+        }
+    }
 
     assert_eq!(result, S_OK);
 
@@ -202,10 +221,17 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
     }
 
     // Prepare child process creation arguments.
-    let cmdline = win32_string(&cmdline(config));
+    let cmd_line_str = cmdline(config);
+    if diagnostics {
+        info!("Command line: {}", cmd_line_str);
+    }
+    let cmdline = win32_string(&cmd_line_str);
     let cwd = config.working_directory.as_ref().map(win32_string);
     let mut creation_flags = EXTENDED_STARTUPINFO_PRESENT;
     let custom_env_block = convert_custom_env(&config.env);
+    if diagnostics {
+        info!("Custom env vars provided: {}", config.env.len());
+    }
     let custom_env_block_pointer = match &custom_env_block {
         Some(custom_env_block) => {
             creation_flags |= CREATE_UNICODE_ENVIRONMENT;
@@ -237,6 +263,12 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
     let conin = UnblockedWriter::new(conin, PIPE_CAPACITY);
     let conout = UnblockedReader::new(conout, PIPE_CAPACITY);
 
+    if diagnostics {
+        info!(
+            "Created child process: hProcess={:?} hThread={:?}",
+            proc_info.hProcess, proc_info.hThread
+        );
+    }
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
     let conpty = Conpty { handle: pty_handle as HPCON, api };
 

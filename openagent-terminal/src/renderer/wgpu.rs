@@ -604,6 +604,10 @@ impl WgpuRenderer {
         policy: AtlasEvictionPolicy,
         atlas_report_interval_frames: u32,
         renderer_report_interval_frames: u32,
+        wgpu_safe_mode: bool,
+        wgpu_force_fallback_adapter: bool,
+        wgpu_low_power: bool,
+        wgpu_require_vsync: bool,
     ) -> Result<Self, Error> {
         // Prefer Vulkan backend explicitly. This build is WGPU-only; no other graphics API fallback.
         // changed later.
@@ -613,26 +617,42 @@ impl WgpuRenderer {
         });
         let surface = instance
             .create_surface(window_handle)
-            .map_err(|e| Error::Init(format!("surface: {e}")))?;
+            .map_err(|e| Error::Init(format!(
+                "surface: {e}. Hints: ensure a display server with swapchain support is available (Wayland/X11); try setting [debug] wgpu_require_vsync=true; if running headless, use the offscreen snapshot example instead."
+            )))?;
+
+        let power_preference = if wgpu_low_power { wgpu::PowerPreference::LowPower } else { wgpu::PowerPreference::HighPerformance };
+        let force_fallback = wgpu_safe_mode || wgpu_force_fallback_adapter;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference,
                 compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
+                force_fallback_adapter: force_fallback,
             })
             .await
-            .map_err(|e| Error::Init(format!("adapter: {e}")))?;
+            .map_err(|e| Error::Init(format!(
+                "adapter: {e}. Hints: update graphics drivers; set [debug] wgpu_safe_mode=true or wgpu_force_fallback_adapter=true; try [debug] wgpu_low_power=true; on Windows ensure DirectX 12 is enabled; optionally set env WGPU_BACKEND=vulkan|dx12|metal."
+            )))?;
+
+        // Choose conservative limits in safe mode to maximize compatibility.
+        let required_limits = if wgpu_safe_mode {
+            wgpu::Limits::downlevel_defaults()
+        } else {
+            wgpu::Limits::default()
+        };
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("wgpu-device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits,
                 memory_hints: wgpu::MemoryHints::Performance,
                 trace: Default::default(),
             })
             .await
-            .map_err(|e| Error::Init(format!("device: {e}")))?;
+            .map_err(|e| Error::Init(format!(
+                "device: {e}. Hints: try [debug] wgpu_safe_mode=true (downlevel limits), or reduce required features; verify that your GPU backend supports the chosen surface format/present mode."
+            )))?;
 
         let surface_caps = surface.get_capabilities(&adapter);
         // Choose surface format based on preference.
@@ -643,7 +663,15 @@ impl WgpuRenderer {
         let is_srgb_surface = false;
 
         // Prefer vsync-capable present modes when available to avoid tearing.
-        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
+        let present_mode = if wgpu_require_vsync || wgpu_safe_mode {
+            if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
+                wgpu::PresentMode::AutoVsync
+            } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
+                wgpu::PresentMode::Fifo
+            } else {
+                surface_caps.present_modes[0]
+            }
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
             wgpu::PresentMode::AutoVsync
         } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
             wgpu::PresentMode::Fifo

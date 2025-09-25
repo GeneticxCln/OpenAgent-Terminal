@@ -1153,6 +1153,10 @@ impl Display {
             config.debug.atlas_eviction_policy,
             config.debug.atlas_report_interval_frames,
             config.debug.renderer_report_interval_frames,
+            config.debug.wgpu_safe_mode,
+            config.debug.wgpu_force_fallback_adapter,
+            config.debug.wgpu_low_power,
+            config.debug.wgpu_require_vsync,
         ))
         .map_err(|e| Error::Render(renderer::Error::Other(format!("wgpu init failed: {:?}", e))))?;
 

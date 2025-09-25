@@ -33,6 +33,13 @@ pub struct Pty {
 }
 
 pub fn new(config: &Options, window_size: WindowSize, _window_id: u64) -> Result<Pty> {
+    if let Ok(backend) = std::env::var("OPENAGENT_WINDOWS_PTY_BACKEND") {
+        if backend.eq_ignore_ascii_case("winpty") {
+            log::warn!(
+                "OPENAGENT_WINDOWS_PTY_BACKEND=winpty ignored; using windows-sys/conpty backend. WinPTY is not supported."
+            );
+        }
+    }
     conpty::new(config, window_size)
 }
 

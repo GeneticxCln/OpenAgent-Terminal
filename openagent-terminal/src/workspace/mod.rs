@@ -144,6 +144,11 @@ impl WorkspaceManager {
             let size_info = self.size_info;
             warp.initialize_for_tests(window_id, size_info, restore_on_startup)?;
         }
+        // In test mode without an event loop, ensure the native TabManager has a default active tab
+        if self.tabs.active_tab().is_none() {
+            let title = "Tab 1".to_string();
+            self.tabs.create_tab(title, None);
+        }
         Ok(())
     }
 

@@ -179,6 +179,34 @@ Runtime shortcuts (default):
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+…)
 - Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R (Cmd+Shift+… on macOS)
 
+### WGPU Safe-mode and Troubleshooting
+
+Use these toggles under the [debug] section to maximize compatibility when the WGPU adapter or device fails to initialize.
+
+- wgpu_safe_mode: Enables a conservative profile: requests a fallback adapter when available, uses downlevel device limits, and prefers vsync-capable present modes. Use this when adapter/device creation fails on certain drivers or virtualized environments.
+- wgpu_force_fallback_adapter: Force a fallback (software) adapter where available, even without wgpu_safe_mode.
+- wgpu_low_power: Prefer integrated/low-power GPU when available.
+- wgpu_require_vsync: Require vsync-capable present modes (AutoVsync/Fifo) to avoid tearing.
+
+Keybindings (defaults):
+- Toggle subpixel text: Ctrl+Shift+L (Cmd+Shift+L on macOS)
+- Cycle RGB/BGR orientation: Ctrl+Shift+Y (Cmd+Shift+Y on macOS)
+- Gamma +/−/reset: Ctrl+Shift+G / Ctrl+Shift+H / Ctrl+Shift+R
+
+If you encounter initialization errors:
+- Update your graphics drivers and ensure Vulkan/DirectX/Metal is supported.
+- Try setting wgpu_safe_mode = true.
+- Try wgpu_force_fallback_adapter = true or wgpu_low_power = true.
+- On Linux/Wayland/X11, ensure a display server is available; for headless use, prefer the offscreen WGPU snapshot example.
+
+## Windows PTY Diagnostics
+
+OpenAgent Terminal uses the Windows conpty backend (windows-sys/conpty). WinPTY is not supported. Set the following environment variable to enable diagnostics during CI or troubleshooting:
+
+- OPENAGENT_WINDOWS_PTY_DIAGNOSTICS=1: Logs the selected backend path, window size, command line, and child process handles.
+
+If OPENAGENT_WINDOWS_PTY_BACKEND=winpty is set, it is ignored with a warning; conpty remains the only supported backend.
+
 ## AI: History Retention
 
 You can control how much AI prompt history is kept in memory and how persisted conversation logs are retained/pruned.

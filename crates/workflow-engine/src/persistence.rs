@@ -160,13 +160,13 @@ impl WorkflowPersistenceInterface for NullWorkflowPersistence {
 /// SQLite-based workflow persistence
 #[cfg(feature = "sqlite")]
 pub struct SqliteWorkflowPersistence {
-    conn: rusqlite::Connection,
+    conn: std::sync::Mutex<rusqlite::Connection>,
 }
 
 #[cfg(feature = "sqlite")]
 impl SqliteWorkflowPersistence {
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self> {
-        use rusqlite::{params, Connection};
+        use rusqlite::Connection;
         
         let conn = Connection::open(db_path.as_ref())
             .with_context(|| format!("Failed to open database at {:?}", db_path.as_ref()))?;
@@ -176,16 +176,16 @@ impl SqliteWorkflowPersistence {
         conn.execute("PRAGMA journal_mode = WAL", [])?;
         conn.execute("PRAGMA synchronous = NORMAL", [])?;
 
-        let mut persistence = Self { conn };
+        let mut persistence = Self { conn: std::sync::Mutex::new(conn) };
         persistence.initialize_schema()?;
         Ok(persistence)
     }
 
     fn initialize_schema(&mut self) -> Result<()> {
-        use rusqlite::params;
+        let conn = self.conn.lock().unwrap();
         
         // Main executions table
-        self.conn.execute(
+        conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS workflow_executions (
                 id TEXT PRIMARY KEY,
@@ -205,7 +205,7 @@ impl SqliteWorkflowPersistence {
         )?;
 
         // Logs table
-        self.conn.execute(
+        conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS workflow_execution_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,7 +221,7 @@ impl SqliteWorkflowPersistence {
         )?;
 
         // Artifacts table
-        self.conn.execute(
+        conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS workflow_execution_artifacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -235,17 +235,17 @@ impl SqliteWorkflowPersistence {
         )?;
 
         // Indexes
-        self.conn.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_name ON workflow_executions(workflow_name)",
             [],
         )?;
         
-        self.conn.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)",
             [],
         )?;
         
-        self.conn.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_workflow_executions_started_at ON workflow_executions(started_at)",
             [],
         )?;
@@ -262,27 +262,30 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
         let parameters_json = serde_json::to_string(&execution.parameters)?;
         let outputs_json = serde_json::to_string(&execution.outputs)?;
 
-        self.conn.execute(
-            r#"
-            INSERT OR REPLACE INTO workflow_executions 
-            (id, workflow_id, workflow_name, status, parameters, started_at, finished_at, 
-             duration_ms, outputs, error_message, created_by)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-            "#,
-            params![
-                execution.id,
-                execution.workflow_id,
-                execution.workflow_name,
-                execution.status.to_string(),
-                parameters_json,
-                execution.started_at.timestamp(),
-                execution.finished_at.map(|dt| dt.timestamp()),
-                execution.duration_ms,
-                outputs_json,
-                execution.error_message,
-                execution.created_by,
-            ],
-        )?;
+        {
+            let conn = self.conn.lock().unwrap();
+            conn.execute(
+                r#"
+                INSERT OR REPLACE INTO workflow_executions 
+                (id, workflow_id, workflow_name, status, parameters, started_at, finished_at, 
+                 duration_ms, outputs, error_message, created_by)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                "#,
+                params![
+                    execution.id,
+                    execution.workflow_id,
+                    execution.workflow_name,
+                    execution.status.to_string(),
+                    parameters_json,
+                    execution.started_at.timestamp(),
+                    execution.finished_at.map(|dt| dt.timestamp()),
+                    execution.duration_ms,
+                    outputs_json,
+                    execution.error_message,
+                    execution.created_by,
+                ],
+            )?;
+        }
 
         // Save logs
         for log_entry in &execution.logs {
@@ -309,14 +312,17 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
             None
         };
 
-        self.conn.execute(
-            r#"
-            UPDATE workflow_executions 
-            SET status = ?1, finished_at = ?2, error_message = ?3
-            WHERE id = ?4
-            "#,
-            params![status.to_string(), finished_at, error_message, execution_id],
-        )?;
+        {
+            let conn = self.conn.lock().unwrap();
+            conn.execute(
+                r#"
+                UPDATE workflow_executions 
+                SET status = ?1, finished_at = ?2, error_message = ?3
+                WHERE id = ?4
+                "#,
+                params![status.to_string(), finished_at, error_message, execution_id],
+            )?;
+        }
 
         Ok(())
     }
@@ -324,34 +330,37 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
     fn get_execution(&self, execution_id: &str) -> Result<Option<PersistedWorkflowExecution>> {
         use rusqlite::{params, OptionalExtension};
         
-        let execution = self.conn.query_row(
-            r#"
-            SELECT id, workflow_id, workflow_name, status, parameters, started_at, finished_at,
-                   duration_ms, outputs, error_message, created_by
-            FROM workflow_executions WHERE id = ?1
-            "#,
-            params![execution_id],
-            |row| {
-                let parameters_json: String = row.get(4)?;
-                let outputs_json: String = row.get(8)?;
+        let execution = {
+            let conn = self.conn.lock().unwrap();
+            conn.query_row(
+                r#"
+                SELECT id, workflow_id, workflow_name, status, parameters, started_at, finished_at,
+                       duration_ms, outputs, error_message, created_by
+                FROM workflow_executions WHERE id = ?1
+                "#,
+                params![execution_id],
+                |row| {
+                    let parameters_json: String = row.get(4)?;
+                    let outputs_json: String = row.get(8)?;
 
-                Ok(PersistedWorkflowExecution {
-                    id: row.get(0)?,
-                    workflow_id: row.get(1)?,
-                    workflow_name: row.get(2)?,
-                    status: WorkflowExecutionStatus::from_string(&row.get::<_, String>(3)?),
-                    parameters: serde_json::from_str(&parameters_json).unwrap_or_default(),
-                    started_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(|| Utc::now()),
-                    finished_at: row.get::<_, Option<i64>>(6)?.and_then(|ts| DateTime::from_timestamp(ts, 0)),
-                    duration_ms: row.get(7)?,
-                    outputs: serde_json::from_str(&outputs_json).unwrap_or_default(),
-                    logs: Vec::new(), // Load separately
-                    error_message: row.get(9)?,
-                    artifacts: Vec::new(), // Load separately
-                    created_by: row.get(10)?,
-                })
-            },
-        ).optional()?;
+                    Ok(PersistedWorkflowExecution {
+                        id: row.get(0)?,
+                        workflow_id: row.get(1)?,
+                        workflow_name: row.get(2)?,
+                        status: WorkflowExecutionStatus::from_string(&row.get::<_, String>(3)?),
+                        parameters: serde_json::from_str(&parameters_json).unwrap_or_default(),
+                        started_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(|| Utc::now()),
+                        finished_at: row.get::<_, Option<i64>>(6)?.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                        duration_ms: row.get(7)?,
+                        outputs: serde_json::from_str(&outputs_json).unwrap_or_default(),
+                        logs: Vec::new(), // Load separately
+                        error_message: row.get(9)?,
+                        artifacts: Vec::new(), // Load separately
+                        created_by: row.get(10)?,
+                    })
+                },
+            ).optional()?
+        };
 
         if let Some(mut exec) = execution {
             // Load logs
@@ -365,8 +374,6 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
     }
 
     fn search_executions(&self, filters: &WorkflowSearchFilters) -> Result<Vec<WorkflowExecutionSummary>> {
-        use rusqlite::params;
-        
         let mut query = r#"
             SELECT id, workflow_name, status, started_at, duration_ms, parameters, outputs, error_message
             FROM workflow_executions WHERE 1=1
@@ -384,7 +391,6 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
         if let Some(status) = &filters.status {
             query.push_str(&format!(" AND status = ?{}", param_index));
             sql_params.push(status.to_string());
-            param_index += 1;
         }
 
         query.push_str(" ORDER BY started_at DESC");
@@ -393,11 +399,14 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
             query.push_str(&format!(" LIMIT {}", limit));
         }
 
-        let mut stmt = self.conn.prepare(&query)?;
         let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
-        let rows = stmt.query_map(&param_refs[..], |row| {
-            let parameters_json: String = row.get(5)?;
+        let results = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(&query)?;
+
+            let rows = stmt.query_map(&param_refs[..], |row| {
+                let parameters_json: String = row.get(5)?;
             let outputs_json: String = row.get(6)?;
 
             let parameters: HashMap<String, serde_json::Value> =
@@ -419,10 +428,12 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
             })
         })?;
 
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
+            let mut res = Vec::new();
+            for row in rows {
+                res.push(row?);
+            }
+            res
+        };
 
         Ok(results)
     }
@@ -436,7 +447,8 @@ impl WorkflowPersistenceInterface for SqliteWorkflowPersistence {
     ) -> Result<()> {
         use rusqlite::params;
         
-        self.conn.execute(
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
             r#"
             INSERT INTO workflow_execution_logs (execution_id, timestamp, level, step_id, message)
             VALUES (?1, strftime('%s', 'now'), ?2, ?3, ?4)
@@ -453,12 +465,15 @@ impl SqliteWorkflowPersistence {
     fn get_execution_logs(&self, execution_id: &str) -> Result<Vec<String>> {
         use rusqlite::params;
         
-        let mut stmt = self.conn.prepare(
-            "SELECT message FROM workflow_execution_logs WHERE execution_id = ?1 ORDER BY timestamp ASC",
-        )?;
+        let logs = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT message FROM workflow_execution_logs WHERE execution_id = ?1 ORDER BY timestamp ASC",
+            )?;
 
-        let logs = stmt.query_map(params![execution_id], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
+            stmt.query_map(params![execution_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
 
         Ok(logs)
     }
@@ -466,12 +481,15 @@ impl SqliteWorkflowPersistence {
     fn get_execution_artifacts(&self, execution_id: &str) -> Result<Vec<String>> {
         use rusqlite::params;
         
-        let mut stmt = self.conn.prepare(
-            "SELECT artifact_path FROM workflow_execution_artifacts WHERE execution_id = ?1",
-        )?;
+        let artifacts = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT artifact_path FROM workflow_execution_artifacts WHERE execution_id = ?1",
+            )?;
 
-        let artifacts = stmt.query_map(params![execution_id], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
+            stmt.query_map(params![execution_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
 
         Ok(artifacts)
     }

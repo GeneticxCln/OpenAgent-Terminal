@@ -728,6 +728,9 @@ fn common_keybindings() -> Vec<KeyBinding> {
         "g",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::IncreaseSubpixelGamma;
         "h",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::DecreaseSubpixelGamma;
         "r",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResetSubpixelGamma;
+        // Subpixel toggles: on/off and RGB/BGR
+        "l",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleSubpixelText;
+        "y",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::CycleSubpixelOrientation;
         // Command Palette
         "p",    ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH;                   Action::OpenCommandPalette;
         // Clipboard
@@ -777,6 +780,9 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "g",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::IncreaseSubpixelGamma;
         "h",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::DecreaseSubpixelGamma;
         "r",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ResetSubpixelGamma;
+        // Subpixel toggles: on/off and RGB/BGR
+        "l",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::ToggleSubpixelText;
+        "y",    ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::CycleSubpixelOrientation;
         // Command Palette on macOS
         "p",    ModifiersState::SUPER, ~BindingMode::SEARCH;                    Action::OpenCommandPalette;
         // Settings on macOS: Cmd+,

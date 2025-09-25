@@ -234,6 +234,11 @@ persistent_logging = false
 log_level = "Info"
 # WGPU-only. OpenGL fallback has been removed.
 prefer_wgpu = true
+# WGPU safe-mode and diagnostics (optional)
+wgpu_safe_mode = false
+wgpu_force_fallback_adapter = false
+wgpu_low_power = false
+wgpu_require_vsync = false
 # Preview: enable plugin system (WASI sandbox) if built with `--features plugins`
 plugins_preview = false
 

@@ -590,6 +590,7 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
       - name: Run Windows PTY repro tests (core crate)
         env:
           RUST_BACKTRACE: 1
+          OPENAGENT_WINDOWS_PTY_DIAGNOSTICS: 1
         run: |
           cargo test -p openagent-terminal-core --test windows_pty_repro -- --nocapture --test-threads=1
 

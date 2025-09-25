@@ -353,6 +353,39 @@ mod tests {
         let result = shaper.shape_text("Hello after clear", "Arial", 14.0);
         assert!(result.is_ok());
     }
+
+    /// Stress test shaping of large Arabic text to catch panics/regressions
+    #[test]
+    fn test_large_arabic_stress() {
+        let config = ShapingConfig::default();
+        let mut shaper = HarfBuzzShaper::new(config).unwrap();
+
+        // 1000-chars Arabic sequence
+        let base = "مرحبا";
+        let text = base.repeat(200);
+        let shaped = shaper.shape_text_with_fallback(&text, "Noto Sans Arabic", 14.0);
+        assert!(shaped.is_ok());
+        let out = shaped.unwrap();
+        assert!(out.glyphs.len() > 0);
+    }
+
+    /// Stress test large multi-script string to validate fallback paths
+    #[test]
+    #[ignore]
+    fn test_large_multiscript_stress() {
+        let config = ShapingConfig::default();
+        let mut shaper = HarfBuzzShaper::new(config).unwrap();
+        let blob = [
+            "Hello 你好 مرحبا नमस्ते こんにちは 안녕하세요 สวัสดี",
+            "😀👨‍💻🏳️‍🌈👍🏽",
+        ]
+        .join(" ");
+        let text = blob.repeat(200);
+        let shaped = shaper.shape_text_with_fallback(&text, "Noto Sans", 13.0);
+        assert!(shaped.is_ok());
+        let out = shaped.unwrap();
+        assert!(out.glyphs.len() > 0);
+    }
 }
 
 /// Integration tests that require a full terminal setup
