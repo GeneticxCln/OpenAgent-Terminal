@@ -554,7 +554,7 @@ impl Display {
         self.draw_warp_tab_text(text_point, text_color, bg_color, &rendered_title, effective_max);
 
         // Zoom indicator badge (Warp-style) on active tab when zoomed
-        if is_active && tab.zoom_saved_layout.is_some() {
+        if tab_cfg.show_tab_indicators && is_active && tab.zoom_saved_layout.is_some() {
             let badge_x = x + 6.0;
             let badge_y = y + height / 2.0 - 3.0;
             let badge = UiRoundedRect::new(badge_x, badge_y, 6.0, 6.0, 3.0, style.active_fg, 0.95);
@@ -562,7 +562,7 @@ impl Display {
         }
 
         // Error indicator (red) if last command exited non-zero
-        if tab.last_exit_nonzero {
+        if tab_cfg.show_tab_indicators && tab.last_exit_nonzero {
             let dot_x = x + width - 12.0;
             let dot_y = y + height / 2.0 - 3.0;
             let err_dot =
@@ -579,7 +579,7 @@ impl Display {
         }
 
         // Sync indicator (accent) if panes are synced
-        if tab.panes_synced {
+        if tab_cfg.show_tab_indicators && tab.panes_synced {
             let dot_x = x + width - 28.0;
             let dot_y = y + height / 2.0 - 3.0;
             let sync_dot = UiRoundedRect::new(dot_x, dot_y, 6.0, 6.0, 3.0, style.active_fg, 1.0);
@@ -1370,6 +1370,52 @@ mod hit_tests {
             8.0,
         );
         assert!(matches!(close, Some(TabBarAction::CloseTab(id)) if id == tid));
+    }
+
+    #[test]
+    fn hit_bottom_tab_bar_regions() {
+        // Validate hit-testing when the tab bar is positioned at the bottom of the window
+        let mut cfg = UiConfig::default();
+        cfg.workspace.tab_bar.show = true;
+        cfg.workspace.tab_bar.show_close_button = true;
+        cfg.workspace.tab_bar.position = TabBarPosition::Bottom;
+        let total_height = 720.0f32;
+        let tid = TabId(5);
+        let tabs = vec![(tid, 20.0, 180.0)];
+        // Y coordinate inside bottom bar band; x near center -> select
+        let sel = hit_test_tab_bar_cached(
+            total_height,
+            &tabs,
+            None,
+            &cfg,
+            TabBarPosition::Bottom,
+            110.0,
+            total_height - WarpTabStyle::from_theme(&cfg).tab_height + 6.0,
+        );
+        assert!(matches!(sel, Some(TabBarAction::SelectTab(id)) if id == tid));
+        // Right edge -> close
+        let close = hit_test_tab_bar_cached(
+            total_height,
+            &tabs,
+            None,
+            &cfg,
+            TabBarPosition::Bottom,
+            20.0 + 180.0 - 2.0,
+            total_height - WarpTabStyle::from_theme(&cfg).tab_height + 6.0,
+        );
+        assert!(matches!(close, Some(TabBarAction::CloseTab(id)) if id == tid));
+        // New tab area at bottom
+        let btn = Some((260.0, total_height - WarpTabStyle::from_theme(&cfg).tab_height + 2.0, 20.0, 16.0));
+        let create = hit_test_tab_bar_cached(
+            total_height,
+            &tabs,
+            btn,
+            &cfg,
+            TabBarPosition::Bottom,
+            268.0,
+            total_height - WarpTabStyle::from_theme(&cfg).tab_height + 8.0,
+        );
+        assert!(matches!(create, Some(TabBarAction::CreateTab)));
     }
 
     #[test]

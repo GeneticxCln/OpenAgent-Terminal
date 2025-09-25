@@ -72,6 +72,8 @@ pub struct WindowContext {
     pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
     /// Native Warp-style IDE manager
     pub ide: crate::ide::IdeManager,
+    /// Native search integration (blocks, files, commands)
+    pub search: crate::native_search::SearchIntegration,
     /// Last started command captured from OSC 133; used for IDE error suggestions
     last_command: Option<String>,
 }
@@ -369,7 +371,8 @@ impl WindowContext {
                 }
             },
             ide: crate::ide::IdeManager::new(),
-            last_command: None,
+            search: crate::native_search::SearchIntegration::new(),
+            last_command: None
         };
 
         // Apply effective reduce-motion preference from config: override takes precedence over
@@ -718,6 +721,7 @@ impl WindowContext {
             workspace: &mut self.workspace,
             ide: &mut self.ide,
             last_command: &mut self.last_command,
+            search: &mut self.search,
         };
         let mut processor = input::Processor::new(context);
 

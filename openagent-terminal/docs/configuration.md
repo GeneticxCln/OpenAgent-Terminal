@@ -77,7 +77,7 @@ Configure or change the gesture:
 [workspace.drag]
 # Enable Alt+Left‑drag to move panes between splits/tabs (default: true)
 enable_pane_drag = true
-# Modifier required to start a pane drag: "Alt" | "Ctrl" | "Shift" | "None"
+# Modifier required to start a pane drag: "Alt" | "Ctrl" | "Shift" | "Meta" | "None"
 pane_drag_modifier = "Alt"
 # Mouse button used to start a pane drag: "Left" | "Middle" | "Right"
 pane_drag_button = "Left"
@@ -95,6 +95,19 @@ pane_drag_button = "Middle"
 Behavioral notes:
 - When dragging over the tab bar, OpenAgent Terminal uses precise, cached pixel bounds of tabs computed during rendering to select the correct drop target. If unavailable (rare), it falls back to even‑width approximations.
 - When dropping into a split, visual edge zones (left/right/top/bottom) determine the split direction and placement (before/after).
+- The "Meta" modifier maps to Command on macOS and the Windows/Logo key on Windows/Linux (via winit's super modifier).
+
+## Native Search
+
+OpenAgent Terminal includes a native search overlay for quickly finding content in finalized command block outputs.
+
+- Open the search panel: use your “Open Blocks Search Panel” binding (default is exposed via the palette; you can bind it directly if desired).
+- Type to refine the query; results update instantly from the native quick index.
+- Navigation: Up/Down to move selection; Enter copies the selected result content to clipboard; Esc closes.
+
+Notes:
+- The quick index includes only finalized block stdout captured from the command pipeline.
+- Scoped indexing by tab is supported internally; the default search scans all tabs.
 
 ## Tab Bar
 
@@ -103,6 +116,37 @@ The Warp-style tab bar is drawn as an overlay by default and no longer reserves 
 - Always: Tab bar is always visible.
 - Hover: Tab bar appears when the mouse is near the configured edge (Top/Bottom), within a small tolerance band. Close button rendering also supports hover-only via `workspace.tab_bar.close_button_on_hover`.
 - Auto: Behaves like Always, except on fullscreen where it behaves like Hover.
+
+Tab indicators:
+- Modified indicator (orange): controlled by `workspace.tab_bar.show_modified_indicator`.
+- Other indicators (zoom/sync/error): controlled by `workspace.tab_bar.show_tab_indicators`.
+  - Zoom: Shows when the current tab is zoomed (full-size pane).
+  - Sync: Shows when panes/tabs are synchronized.
+  - Error: Shows when the last completed command in the tab exited non-zero.
+
+Accessibility and keyboard shortcuts:
+- Block header chip actions are accessible via keyboard when the cursor is on the block header line:
+  - Ctrl+Alt+C: Copy
+  - Ctrl+Alt+R: Retry
+  - Ctrl+Alt+F: Fix (AI)
+  - Ctrl+Alt+D: Diff
+  - Ctrl+Alt+X: Explain (AI)
+
+Example configuration:
+
+```toml
+[workspace.tab_bar]
+show = true
+position = "Top"           # "Top" | "Bottom" | "Hidden"
+visibility = "Auto"        # "Auto" | "Always" | "Hover"
+show_close_button = true
+close_button_on_hover = false
+show_modified_indicator = true
+show_tab_indicators = true
+show_new_tab_button = true
+show_tab_numbers = false
+max_title_length = 20
+```
 
 ## Rendering (WGPU): Subpixel Text and Gamma
 

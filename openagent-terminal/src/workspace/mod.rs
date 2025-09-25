@@ -105,6 +105,20 @@ impl WorkspaceManager {
         }
     }
 
+    /// Broadcast input bytes to all panes in the active tab (Warp mode only), skipping `skip`.
+    /// Returns (attempted_writes, successful_writes).
+    pub fn broadcast_input_active_tab(
+        &mut self,
+        bytes: &[u8],
+        skip: Option<PaneId>,
+    ) -> (usize, usize) {
+        if let Some(warp) = &mut self.warp {
+            warp.broadcast_input_active_tab(bytes, skip)
+        } else {
+            (0, 0)
+        }
+    }
+
     /// Initialize Warp functionality if enabled
     pub fn initialize_warp(
         &mut self,

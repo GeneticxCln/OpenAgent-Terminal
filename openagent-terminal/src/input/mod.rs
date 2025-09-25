@@ -228,6 +228,24 @@ mod sanitization_tests {
     use super::*;
 
     #[test]
+    fn pane_drag_gesture_matching_variants() {
+        use crate::config::workspace::{DragButton, DragConfig, DragModifier};
+        let base = DragConfig::default();
+        let mut cfg = base.clone();
+        // None + Right (no modifiers set)
+        cfg.pane_drag_modifier = DragModifier::None;
+        cfg.pane_drag_button = DragButton::Right;
+        let mods = ModifiersState::empty();
+        assert!(pane_drag_gesture_matches(&cfg, mods, MouseButton::Right));
+        assert!(!pane_drag_gesture_matches(&cfg, mods, MouseButton::Left));
+        // None + Left
+        cfg.pane_drag_modifier = DragModifier::None;
+        cfg.pane_drag_button = DragButton::Left;
+        let mods2 = ModifiersState::empty();
+        assert!(pane_drag_gesture_matches(&cfg, mods2, MouseButton::Left));
+    }
+
+    #[test]
     fn strip_ansi_removes_csi_and_osc() {
         let s = "\x1b[31mred\x1b[0m and \x1b]0;title\x07name \x1b]133;A\x07rest";
         let out = strip_ansi(s);
@@ -307,6 +325,8 @@ pub struct Processor<T: EventListener, A: ActionContext<T>> {
 #[allow(dead_code)]
 pub trait ActionContext<T: EventListener> {
     fn write_to_pty<B: Into<Cow<'static, [u8]>>>(&self, _data: B) {}
+    /// Write input to the focused pane's PTY, and if pane sync is enabled, broadcast to other panes too.
+    fn write_terminal_input<B: Into<Cow<'static, [u8]>>>(&mut self, _data: B) {}
     fn mark_dirty(&mut self) {}
     fn size_info(&self) -> SizeInfo;
     fn copy_selection(&mut self, _ty: ClipboardType) {}
@@ -647,6 +667,11 @@ pub trait ActionContext<T: EventListener> {
     fn workspace_next_tab(&mut self) {}
     fn workspace_previous_tab(&mut self) {}
     fn workspace_switch_to_tab(&mut self, _tab_id: crate::workspace::TabId) {}
+
+    // Keyboard-only pane moves across tabs
+    fn workspace_move_pane_to_prev_tab(&mut self) {}
+    fn workspace_move_pane_to_next_tab(&mut self) {}
+    fn workspace_move_pane_to_new_tab(&mut self) {}
 
     // Toggle zoom of active pane in active tab
     fn workspace_toggle_zoom(&mut self) {}
@@ -1408,6 +1433,28 @@ impl<T: EventListener> Execute<T> for Action {
             _ => (),
         }
     }
+}
+
+fn pane_drag_gesture_matches(
+    dcfg: &crate::config::workspace::DragConfig,
+    mods: winit::keyboard::ModifiersState,
+    button: MouseButton,
+) -> bool {
+    let modifier_ok = match dcfg.pane_drag_modifier {
+        crate::config::workspace::DragModifier::None => {
+            !mods.alt_key() && !mods.control_key() && !mods.shift_key() && !mods.super_key()
+        }
+        crate::config::workspace::DragModifier::Alt => mods.alt_key(),
+        crate::config::workspace::DragModifier::Ctrl => mods.control_key(),
+        crate::config::workspace::DragModifier::Shift => mods.shift_key(),
+        crate::config::workspace::DragModifier::Meta => mods.super_key(),
+    };
+    let button_ok = match dcfg.pane_drag_button {
+        crate::config::workspace::DragButton::Left => button == MouseButton::Left,
+        crate::config::workspace::DragButton::Middle => button == MouseButton::Middle,
+        crate::config::workspace::DragButton::Right => button == MouseButton::Right,
+    };
+    modifier_ok && button_ok
 }
 
 impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
@@ -2751,45 +2798,59 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if let Some(view) =
                         openagent_terminal_core::term::point_to_viewport(display_offset, point)
                     {
-                        // 1) Try toggling fold at header
-                        let toggled = {
+                        // Check if clicking on block header action chips first (take precedence over folding)
+                        let header_opt = {
                             let display = self.ctx.display();
-                            display
-                                .blocks
-                                .toggle_fold_header_at_viewport_line(display_offset, view.line.into())
+                            display.blocks.header_at_viewport_line(display_offset, view.line.into())
                         };
-                        if toggled {
-                            // Fully damage and mark dirty; skip normal selection behavior.
-                            self.ctx.display().damage_tracker.frame().mark_fully_damaged();
-                            self.ctx.mark_dirty();
-                            return;
-                        }
-
-                        // 2) If not toggled, check if clicking on block header action chips
-                        let header = {
-                            let display = self.ctx.display();
-                        display.blocks.header_at_viewport_line(display_offset, view.line.into())
-                        };
-                        if let Some(header) = header {
-                                   // use crate::display::blocks::Blocks; // Removed blocks system
-                            let mouse_col = point.column.0;
+                        if let Some(header) = header_opt {
+                            use unicode_width::UnicodeWidthStr as _;
+                            // Compute reserved time columns to clip chips consistently with draw/hover
+                            let time_cols = {
+                                if let Some(b) = self
+                                    .ctx
+                                    .display()
+                                    .blocks
+                                    .block_at_header_viewport_line(display_offset, view.line.into())
+                                {
+                                    let elapsed = if let Some(ended_at) = b.ended_at {
+                                        ended_at.duration_since(b.started_at)
+                                    } else {
+                                        std::time::Instant::now().duration_since(b.started_at)
+                                    };
+                                    let s = if elapsed.as_secs() < 60 {
+                                        format!("{:.1}s", elapsed.as_secs_f32())
+                                    } else if elapsed.as_secs() < 3600 {
+                                        format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                                    } else {
+                                        format!(
+                                            "{}h{}m",
+                                            elapsed.as_secs() / 3600,
+                                            (elapsed.as_secs() % 3600) / 60
+                                        )
+                                    };
+                                    s.width()
+                                } else {
+                                    0
+                                }
+                            };
                             let cols = self.ctx.size_info().columns();
-let hit = Blocks::chip_hit_at(&header.content, mouse_col, cols);
+                            let clip_cols = cols.saturating_sub(time_cols + 1);
+                            let mouse_col = point.column.0;
+                            let hit = Blocks::chip_hit_at(&header.content, mouse_col, clip_cols);
                             if let Some(i) = hit {
                                 match i {
                                     0 => {
-                                        // Copy header under cursor for now (acts as Copy for block header)
+                                        // Copy full block output under cursor
                                         self.ctx.send_user_event(
                                             crate::event::EventType::BlocksCopyHeaderUnderCursor,
                                         );
                                     }
                                     1 => {
-                                        // Rerun or Edit & Run: Alt+Click pre-fills composer for editing
+                                        // Retry (Rerun) or Edit & Run via Alt+Click prefill
                                         let mods = self.ctx.modifiers().state();
                                         if mods.alt_key() {
-                                            // Pre-fill composer with command under cursor and focus composer
-                                            let display_offset =
-                                                self.ctx.terminal().grid().display_offset();
+                                            let display_offset = self.ctx.terminal().grid().display_offset();
                                             let cmd_opt = {
                                                 let display = self.ctx.display();
                                                 display
@@ -2809,17 +2870,25 @@ let hit = Blocks::chip_hit_at(&header.content, mouse_col, cols);
                                                 self.ctx.display().composer_focused = true;
                                             }
                                         } else {
-                                            // Immediate rerun
                                             self.ctx.send_user_event(
                                                 crate::event::EventType::BlocksRerunUnderCursor,
                                             );
                                         }
                                     }
                                     2 => {
-                                        // Export header text under cursor (acts as Export for now)
-                                        self.ctx.send_user_event(
-                                            crate::event::EventType::BlocksExportHeaderUnderCursor,
-                                        );
+                                        // Fix via AI (or message if AI disabled)
+                                        self.ctx
+                                            .send_user_event(crate::event::EventType::BlocksFixUnderCursor);
+                                    }
+                                    3 => {
+                                        // Diff against previous run
+                                        self.ctx
+                                            .send_user_event(crate::event::EventType::BlocksDiffUnderCursor);
+                                    }
+                                    4 => {
+                                        // Explain via AI (or message if AI disabled)
+                                        self.ctx
+                                            .send_user_event(crate::event::EventType::BlocksExplainUnderCursor);
                                     }
                                     _ => {}
                                 }
@@ -2832,6 +2901,20 @@ let hit = Blocks::chip_hit_at(&header.content, mouse_col, cols);
                                 self.ctx.display().pending_update.dirty = true;
                                 self.ctx.mark_dirty();
                                 return;
+                            } else {
+                                // Clicked header line but not on a chip: toggle fold
+                                let toggled = {
+                                    let display = self.ctx.display();
+                                    display.blocks.toggle_fold_header_at_viewport_line(
+                                        display_offset,
+                                        view.line.into(),
+                                    )
+                                };
+                                if toggled {
+                                    self.ctx.display().damage_tracker.frame().mark_fully_damaged();
+                                    self.ctx.mark_dirty();
+                                    return;
+                                }
                             }
                         }
                     }
@@ -3236,30 +3319,7 @@ let hit = Blocks::chip_hit_at(&header.content, mouse_col, cols);
                             };
                             if dcfg.enable_pane_drag {
                                 let mods = self.ctx.modifiers().state();
-                                let modifier_ok = match dcfg.pane_drag_modifier {
-                                    crate::config::workspace::DragModifier::None => {
-                                        !mods.alt_key() && !mods.control_key() && !mods.shift_key()
-                                    }
-                                    crate::config::workspace::DragModifier::Alt => mods.alt_key(),
-                                    crate::config::workspace::DragModifier::Ctrl => {
-                                        mods.control_key()
-                                    }
-                                    crate::config::workspace::DragModifier::Shift => {
-                                        mods.shift_key()
-                                    }
-                                };
-                                let button_ok = match dcfg.pane_drag_button {
-                                    crate::config::workspace::DragButton::Left => {
-                                        button == MouseButton::Left
-                                    }
-                                    crate::config::workspace::DragButton::Middle => {
-                                        button == MouseButton::Middle
-                                    }
-                                    crate::config::workspace::DragButton::Right => {
-                                        button == MouseButton::Right
-                                    }
-                                };
-                                if modifier_ok && button_ok {
+                                if pane_drag_gesture_matches(&dcfg, mods, button) {
                                     let mx = self.ctx.display().last_mouse_x as f32;
                                     let my = self.ctx.display().last_mouse_y as f32;
                                     if self.ctx.workspace_pane_drag_press(mx, my, button) {

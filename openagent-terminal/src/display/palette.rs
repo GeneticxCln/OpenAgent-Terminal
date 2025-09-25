@@ -96,6 +96,27 @@ impl PaletteState {
         self.refilter();
     }
 
+    /// Populate with curated workflow templates grouped by category
+    pub fn open_workflows_catalog(&mut self) {
+        let mut items = Vec::new();
+        let catalog = vec![
+            ("Build", vec!["cargo build", "npm run build", "go build ./..."]),
+            ("Test", vec!["cargo test", "npm test", "go test ./..."]),
+            ("Deploy", vec!["kubectl apply -f manifests/", "terraform apply"]),
+        ];
+        for (cat, cmds) in catalog {
+            for cmd in cmds {
+                items.push(PaletteItem {
+                    key: format!("workflow:{}:{}", cat, cmd),
+                    title: format!("{} • {}", cat, cmd),
+                    subtitle: Some("Workflow template".into()),
+                    entry: PaletteEntry::Workflow(cmd.into()),
+                });
+            }
+        }
+        self.open(items);
+    }
+
     pub fn close(&mut self) {
         self.active = false;
     }

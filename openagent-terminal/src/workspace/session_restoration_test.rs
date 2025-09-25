@@ -312,6 +312,47 @@ fn test_session_save_load_cycle() {
 
 /// Test session restoration with corrupted data
 #[test]
+fn test_large_session_save_load_with_splits_and_dirs() {
+    use tempfile::tempdir;
+
+    let temp_dir = tempdir().expect("Should create temp directory");
+    let session_path = temp_dir.path().join("large_session.json");
+
+    let mut manager = WarpTabManager::with_session_file(&session_path);
+
+    // Create multiple tabs with mixed working directories
+    let dirs = vec!["/tmp", "/home", "/var", "/", "/usr"].into_iter().map(PathBuf::from);
+    let mut created_tabs: Vec<TabId> = Vec::new();
+    for d in dirs {
+        let id = manager.create_warp_tab(Some(d));
+        created_tabs.push(id);
+        // Simulate a few commands per tab
+        manager.update_tab_for_command(id, "ls");
+        manager.update_tab_for_command(id, "echo hello");
+    }
+
+    // Build some split structures in the first tab
+    if let Some(&first) = created_tabs.first() {
+        // Duplicate a few times to create Horizontal/Vertical structure
+        let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Right);
+        let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Down);
+        let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Right);
+    }
+
+    // Save and reload
+    manager.save_session().expect("Should save large session");
+    assert!(session_path.exists());
+
+    let mut loader = WarpTabManager::with_session_file(&session_path);
+    let loaded = loader.load_session().expect("Should load large session");
+    assert!(loaded);
+
+    // Verify tab count and that an active tab exists
+    assert!(loader.tab_count() >= created_tabs.len());
+    assert!(loader.active_tab().is_some());
+}
+
+#[test]
 fn test_corrupted_session_handling() {
     use tempfile::tempdir;
 

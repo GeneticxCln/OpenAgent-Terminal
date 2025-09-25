@@ -74,6 +74,8 @@ pub struct CommandPipeline {
 pub enum CommandPipelineEvent {
     CommandStarted { block_id: BlockId, command: String, working_dir: PathBuf },
     OutputReceived { block_id: BlockId, output: String, is_stderr: bool },
+    /// Finalized outputs aggregated at the end of the run (for indexing/diff)
+    BlockOutputFinalized { block_id: BlockId, stdout: String, stderr: String },
     CommandCompleted { block_id: BlockId, exit_code: i32, duration: std::time::Duration },
     CommandFailed { block_id: BlockId, error: String },
     BlockCreated { block_id: BlockId, tab_id: Option<TabId> },
@@ -433,11 +435,25 @@ timestamp: now_ts(),
         duration: std::time::Duration,
     ) -> Result<()> {
         if let Some(execution) = self.active_commands.remove(&block_id) {
-            #[cfg(feature = "never")]
-            let output = {
+            // Gather finalized outputs
+            let stdout_final = {
                 let buffer = execution.output_buffer.lock().await;
                 buffer.clone()
             };
+            let stderr_final = {
+                let buffer = execution.error_buffer.lock().await;
+                buffer.clone()
+            };
+
+            // Emit finalized outputs for downstream consumers
+            self.emit_event(CommandPipelineEvent::BlockOutputFinalized {
+                block_id,
+                stdout: stdout_final.clone(),
+                stderr: stderr_final.clone(),
+            });
+
+            #[cfg(feature = "never")]
+            let output = stdout_final.clone();
 
             // Update block immediately - no lazy updates
             #[cfg(feature = "never")]

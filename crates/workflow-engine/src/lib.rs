@@ -274,6 +274,8 @@ pub struct WorkflowEngine {
     /// Persistence layer for workflow history (optional)
     #[allow(dead_code)]
     persistence: Option<Box<dyn crate::persistence::WorkflowPersistenceInterface>>,
+    /// Track which file loaded which workflow id to support hot-reload/unload
+    paths: Arc<RwLock<HashMap<PathBuf, String>>>,
 }
 
 impl WorkflowEngine {
@@ -296,12 +298,13 @@ impl WorkflowEngine {
             }
         });
 
-        Ok(Self {
+Ok(Self {
             workflows: Arc::new(RwLock::new(HashMap::new())),
             states: Arc::new(RwLock::new(HashMap::new())),
             event_sender,
             template_engine,
             persistence,
+            paths: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -330,18 +333,19 @@ impl WorkflowEngine {
     }
 
     /// Create a shallow clone that shares state but uses a fresh template engine
-    fn shallow_clone(&self) -> Self {
+fn shallow_clone(&self) -> Self {
         Self {
             workflows: self.workflows.clone(),
             states: self.states.clone(),
             event_sender: self.event_sender.clone(),
             template_engine: Tera::default(),
             persistence: None, // Fresh clone doesn't copy persistence layer
+            paths: self.paths.clone(),
         }
     }
 
     /// Load a workflow from YAML file
-    pub async fn load_workflow(&self, path: &Path) -> Result<String> {
+pub async fn load_workflow(&self, path: &Path) -> Result<String> {
         let content = tokio::fs::read_to_string(path).await?;
         let workflow: WorkflowDefinition = serde_yaml::from_str(&content)?;
 
@@ -352,7 +356,40 @@ impl WorkflowEngine {
         let workflow_id = format!("{}-{}", workflow.name, workflow.version);
         self.workflows.write().await.insert(workflow_id.clone(), workflow);
 
+        // Track origin file -> workflow id mapping (canonicalize best-effort)
+        let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.paths.write().await.insert(canon, workflow_id.clone());
+
         Ok(workflow_id)
+    }
+
+    /// Remove a workflow by its canonical file path, returning true if a workflow was removed
+    pub async fn remove_workflow_by_path(&self, path: &Path) -> bool {
+        let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let opt_id = { self.paths.write().await.remove(&canon) };
+        if let Some(id) = opt_id {
+            self.workflows.write().await.remove(&id).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Remove a workflow by id, returning true if it existed
+    pub async fn remove_workflow(&self, workflow_id: &str) -> bool {
+        let removed = self.workflows.write().await.remove(workflow_id).is_some();
+        if removed {
+            // Also purge any path entries pointing to this id
+            let mut map = self.paths.write().await;
+            let keys: Vec<PathBuf> = map
+                .iter()
+                .filter(|(_, v)| v.as_str() == workflow_id)
+                .map(|(k, _)| k.clone())
+                .collect();
+            for k in keys {
+                map.remove(&k);
+            }
+        }
+        removed
     }
 
     /// Execute a workflow
@@ -1233,6 +1270,7 @@ impl Clone for WorkflowEngine {
             event_sender: self.event_sender.clone(),
             template_engine: Tera::default(),
             persistence: None, // Clone doesn't copy persistence layer for thread safety
+            paths: self.paths.clone(),
         }
     }
 }

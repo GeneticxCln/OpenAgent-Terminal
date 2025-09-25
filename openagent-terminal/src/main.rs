@@ -81,8 +81,8 @@ mod native_input; // Native keyboard/mouse integration (experimental)
 mod native_persistence; // Native persistence layer (experimental)
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_renderer; // Native UI rendering system (experimental)
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
-mod native_search; // Native search and filtering (experimental)
+// Re-export library native_search so crate::native_search is available in bin
+pub use openagent_terminal::native_search;
 #[cfg(feature = "never")]
 mod notebooks;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]

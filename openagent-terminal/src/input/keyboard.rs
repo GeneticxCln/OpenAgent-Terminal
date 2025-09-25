@@ -58,7 +58,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Quick blocks actions via keyboard (when not in AI panel / palette)
-        // Ctrl+Alt+B toggle fold under cursor
+        // Ctrl+Alt+... → block header chip actions
         if mods.control_key() && mods.alt_key() {
             match key.logical_key.as_ref() {
                 Key::Character(c) if (c.eq_ignore_ascii_case("b")) => {
@@ -74,6 +74,30 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         .send_user_event(crate::event::EventType::BlocksExportHeaderUnderCursor);
                     return;
                 }
+                // Rerun (Retry)
+                Key::Character(c) if (c.eq_ignore_ascii_case("r")) => {
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksRerunUnderCursor);
+                    return;
+                }
+                // Fix via AI
+                Key::Character(c) if (c.eq_ignore_ascii_case("f")) => {
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksFixUnderCursor);
+                    return;
+                }
+                // Diff versus previous run
+                Key::Character(c) if (c.eq_ignore_ascii_case("d")) => {
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksDiffUnderCursor);
+                    return;
+                }
+                // Explain via AI (use X to avoid conflict with Export)
+                Key::Character(c) if (c.eq_ignore_ascii_case("x")) => {
+                    self.ctx
+                        .send_user_event(crate::event::EventType::BlocksExplainUnderCursor);
+                    return;
+                }
                 // Ctrl+Alt+M: Cycle debug split overlay (None -> H -> V -> None)
                 Key::Character(c) if (c.eq_ignore_ascii_case("m")) => {
                     let next = match self.ctx.display().debug_split_overlay {
@@ -84,6 +108,39 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.display().debug_split_overlay = next;
                     self.ctx.display().pending_update.dirty = true;
                     return;
+                }
+                _ => {}
+            }
+        }
+
+        // Native search panel handling: if active, capture basic navigation
+        if self.ctx.blocks_search_active() && !self.ctx.palette_active() && !self.ctx.completions_active() {
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.blocks_search_move_selection(-1);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.blocks_search_move_selection(1);
+                    return;
+                }
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.blocks_search_confirm();
+                    return;
+                }
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.blocks_search_cancel();
+                    return;
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.blocks_search_backspace();
+                    return;
+                }
+                Key::Character(c) => {
+                    if !mods.control_key() && !mods.alt_key() && !mods.super_key() {
+                        for ch in c.chars() { self.ctx.blocks_search_input(ch); }
+                        return;
+                    }
                 }
                 _ => {}
             }
@@ -145,6 +202,18 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.completions_clear();
                     return;
                 }
+                _ => {}
+            }
+        }
+
+        // Keyboard-only pane move across tabs: Ctrl+Alt+Shift + [ / ] / T
+        if mods.control_key() && mods.alt_key() && mods.shift_key() {
+            match key.logical_key.as_ref() {
+                // Move active pane to previous/next tab
+                Key::Character(c) if c == "[" => { self.ctx.workspace_move_pane_to_prev_tab(); return; }
+                Key::Character(c) if c == "]" => { self.ctx.workspace_move_pane_to_next_tab(); return; }
+                // Move active pane to a new tab
+                Key::Character(c) if c.eq_ignore_ascii_case("t") => { self.ctx.workspace_move_pane_to_new_tab(); return; }
                 _ => {}
             }
         }
@@ -1026,6 +1095,69 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
+        // Workflows params overlay input handling (if active)
+        #[cfg(feature = "workflow")]
+        if self.ctx.workflows_params_active() {
+            let mods = self.ctx.modifiers().state();
+            match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => {
+                    self.ctx.workflows_params_confirm();
+                    return;
+                }
+                Key::Named(NamedKey::Escape) => {
+                    self.ctx.workflows_params_cancel();
+                    return;
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.ctx.workflows_params_backspace();
+                    return;
+                }
+                Key::Named(NamedKey::Tab) if mods.shift_key() => {
+                    self.ctx.workflows_params_move_selection(-1);
+                    return;
+                }
+                Key::Named(NamedKey::Tab) => {
+                    self.ctx.workflows_params_move_selection(1);
+                    return;
+                }
+                Key::Named(NamedKey::Space) => {
+                    self.ctx.workflows_params_toggle();
+                    return;
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.ctx.workflows_params_move_selection(-1);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.ctx.workflows_params_move_selection(1);
+                    return;
+                }
+                Key::Named(NamedKey::PageUp) => {
+                    self.ctx.workflows_params_move_selection(-5);
+                    return;
+                }
+                Key::Named(NamedKey::PageDown) => {
+                    self.ctx.workflows_params_move_selection(5);
+                    return;
+                }
+                Key::Named(NamedKey::Home) => {
+                    self.ctx.workflows_params_move_selection(-1000);
+                    return;
+                }
+                Key::Named(NamedKey::End) => {
+                    self.ctx.workflows_params_move_selection(1000);
+                    return;
+                }
+                _ => {}
+            }
+            for ch in text.chars() {
+                if !ch.is_control() {
+                    self.ctx.workflows_params_input_char(ch);
+                }
+            }
+            return;
+        }
+
         // Workflows panel input handling (if active)
         #[cfg(feature = "workflow")]
         if self.ctx.workflows_panel_active() {
@@ -1821,7 +1953,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             if !is_modifier_key {
                 self.ctx.on_terminal_input_start();
             }
-            self.ctx.write_to_pty(bytes);
+            self.ctx.write_terminal_input(bytes);
 
             // Schedule AI inline suggestion after typing (debounced), and clear any stale
             // suggestion
@@ -2006,7 +2138,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             _ => build_sequence(key, mods, mode),
         };
 
-        self.ctx.write_to_pty(bytes);
+        self.ctx.write_terminal_input(bytes);
     }
 
     /// Reset search delay.

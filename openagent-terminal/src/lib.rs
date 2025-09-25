@@ -34,7 +34,9 @@ pub mod ide;
 pub mod input;
 #[cfg(unix)]
 pub mod ipc;
+pub mod native_search;
 pub mod logging;
+pub mod shell_integration;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod message_bar;

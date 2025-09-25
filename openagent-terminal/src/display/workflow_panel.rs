@@ -245,11 +245,15 @@ impl Display {
             } else {
                 ("Cancelled", tokens.warning)
             };
+            let mut line_text = label.to_string();
+            if !st.seen_steps.is_empty() {
+                line_text.push_str(&format!("  •  Steps: {}", st.seen_steps.len()));
+            }
             self.draw_ai_text(
                 Point::new(step_line, Column(1)),
                 color,
                 bg,
-                label,
+                &line_text,
                 size_info.columns().saturating_sub(2),
             );
         }

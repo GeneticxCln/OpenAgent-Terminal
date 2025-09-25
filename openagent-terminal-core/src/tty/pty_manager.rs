@@ -5,6 +5,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::io::{self, Write};
 
 use crate::event::WindowSize;
 use crate::tty::{ChildEvent, EventedPty, Options, Shell};
@@ -277,6 +278,20 @@ impl PtyManager {
         events
     }
 
+    /// Write raw bytes to this pane's PTY, if available.
+    /// Returns the number of bytes written on success.
+    pub fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        if let Some(ref mut pty) = self.pty {
+            let n = pty.writer().write(data)?;
+            self.metrics.bytes_written += n as u64;
+            self.metrics.last_io_activity = Some(Instant::now());
+            self.context.last_activity = Instant::now();
+            Ok(n)
+        } else {
+            Err(io::Error::new(io::ErrorKind::NotConnected, "PTY not initialized"))
+        }
+    }
+
     /// Update I/O metrics
     pub fn record_io_activity(&mut self, bytes_read: u64, bytes_written: u64) {
         self.metrics.bytes_read += bytes_read;
@@ -427,6 +442,15 @@ impl PtyManagerCollection {
     /// Get context from a specific PTY for AI integration
     pub fn get_ai_context(&self, pty_id: PtyId) -> Option<PtyAiContext> {
         self.get_manager(pty_id)?.lock().get_ai_context().into()
+    }
+
+    /// Write data to a specific PTY manager by ID. Returns Ok(bytes_written) or an io::Error.
+    pub fn write_to(&self, pty_id: PtyId, data: &[u8]) -> io::Result<usize> {
+        if let Some(manager) = self.get_manager(pty_id) {
+            manager.lock().write(data)
+        } else {
+            Err(io::Error::new(io::ErrorKind::NotFound, format!("PTY {} not found", pty_id)))
+        }
     }
 
     /// Get aggregated metrics for all PTY processes

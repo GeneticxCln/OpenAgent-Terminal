@@ -1,10 +1,11 @@
-use std::cell::{OnceCell, RefCell};
+use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Formatter};
 use std::mem;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::Arc;
+use parking_lot::RwLock;
 
 use log::{error, warn};
 use serde::de::{Error as SerdeError, MapAccess, Visitor};
@@ -117,6 +118,10 @@ pub struct UiConfig {
     /// Feature banner configuration shown at startup.
     #[serde(default)]
     pub feature_banner: FeatureBannerConfig,
+
+    /// Workflow UI configuration (progress overlay behavior)
+    #[serde(default)]
+    pub workflow_ui: WorkflowUiConfig,
 
     /// Theme configuration (design tokens, UI visuals).
     #[serde(default)]
@@ -393,14 +398,14 @@ pub struct Hints {
     alphabet: HintsAlphabet,
 
     /// All configured terminal hints.
-    pub enabled: Vec<Rc<Hint>>,
+    pub enabled: Vec<Arc<Hint>>,
 }
 
 impl Default for Hints {
     fn default() -> Self {
         // Add URL hint by default when no other hint is present.
         let pattern = LazyRegexVariant::Pattern(String::from(URL_REGEX));
-        let regex = LazyRegex(Rc::new(RefCell::new(pattern)));
+        let regex = LazyRegex(Arc::new(RwLock::new(pattern)));
         let content = HintContent::new(Some(regex), true);
 
         #[cfg(not(any(target_os = "macos", windows)))]
@@ -413,8 +418,8 @@ impl Default for Hints {
             args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
         });
 
-        Self {
-            enabled: vec![Rc::new(Hint {
+Self {
+            enabled: vec![Arc::new(Hint {
                 content,
                 action,
                 persist: false,
@@ -541,6 +546,15 @@ impl HintContent {
     }
 }
 
+impl PartialEq for LazyRegex {
+    fn eq(&self, other: &Self) -> bool {
+        let a = self.0.read();
+        let b = other.0.read();
+        *a == *b
+    }
+}
+impl Eq for LazyRegex {}
+
 impl<'de> Deserialize<'de> for HintContent {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -618,7 +632,7 @@ pub struct HintBinding {
 
 impl HintBinding {
     /// Get the key binding for a hint.
-    pub fn key_binding(&self, hint: &Rc<Hint>) -> &KeyBinding {
+    pub fn key_binding(&self, hint: &Arc<Hint>) -> &KeyBinding {
         self.cache.get_or_init(|| KeyBinding {
             trigger: self.key.clone(),
             mods: self.mods.0,
@@ -651,35 +665,36 @@ pub struct HintMouse {
 }
 
 /// Lazy regex with interior mutability.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LazyRegex(Rc<RefCell<LazyRegexVariant>>);
+#[derive(Clone, Debug)]
+pub struct LazyRegex(Arc<RwLock<LazyRegexVariant>>);
 
 impl LazyRegex {
     /// Execute a function with the compiled regex DFAs as parameter.
-    pub fn with_compiled<T, F>(&self, f: F) -> Option<T>
+pub fn with_compiled<T, F>(&self, mut f: F) -> Option<T>
     where
         F: FnMut(&mut RegexSearch) -> T,
     {
-        self.0.borrow_mut().compiled().map(f)
+        let mut guard = self.0.write();
+        guard.compiled().map(|re| f(re))
     }
 }
 
 impl<'de> Deserialize<'de> for LazyRegex {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let regex = LazyRegexVariant::Pattern(String::deserialize(deserializer)?);
-        Ok(Self(Rc::new(RefCell::new(regex))))
+        Ok(Self(Arc::new(RwLock::new(regex))))
     }
 }
 
 impl Serialize for LazyRegex {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let variant = self.0.borrow();
+        let variant = self.0.read();
         let regex = match &*variant {
             LazyRegexVariant::Compiled(regex, _) => regex,
             LazyRegexVariant::Uncompilable(regex) => regex,
@@ -801,6 +816,20 @@ impl From<Program> for Shell {
             Program::Just(program) => Shell::new(program, Vec::new()),
             Program::WithArgs { program, args } => Shell::new(program, args),
         }
+    }
+}
+
+#[derive(ConfigDeserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct WorkflowUiConfig {
+    /// Retention time for the workflows progress overlay after completion (ms)
+    pub overlay_retain_ms: u64,
+    /// Maximum number of log lines to keep in the progress overlay
+    pub max_log_lines: usize,
+}
+
+impl Default for WorkflowUiConfig {
+    fn default() -> Self {
+        Self { overlay_retain_ms: 3000, max_log_lines: 500 }
     }
 }
 

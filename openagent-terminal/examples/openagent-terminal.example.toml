@@ -16,7 +16,7 @@ position = "Top" # "Top" | "Bottom" | "Hidden"
 [workspace.drag]
 # Enable pane drag-and-drop between splits and tabs.
 enable_pane_drag = true
-# Modifier required to start a drag: "Alt" | "Ctrl" | "Shift" | "None"
+# Modifier required to start a drag: "Alt" | "Ctrl" | "Shift" | "Meta" | "None"
 pane_drag_modifier = "Alt"
 # Mouse button to start the drag: "Left" | "Middle" | "Right"
 pane_drag_button = "Left"

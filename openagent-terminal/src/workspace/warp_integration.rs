@@ -545,6 +545,38 @@ impl WarpIntegration {
         self.pty_managers.clone()
     }
 
+    /// Broadcast raw input bytes to all panes in the active tab, skipping the optional `skip` pane.
+    /// Returns (attempted_writes, successful_writes).
+    pub fn broadcast_input_active_tab(&mut self, bytes: &[u8], skip: Option<PaneId>) -> (usize, usize) {
+        let Some(active_tab) = self.tab_manager.active_tab() else { return (0, 0); };
+        let pane_ids = active_tab.split_layout.collect_pane_ids();
+        let mut attempted = 0usize;
+        let mut ok_count = 0usize;
+        for pid in pane_ids {
+            if Some(pid) == skip {
+                continue;
+            }
+            // Skip panes in alternate screen to avoid corrupting TUIs
+            let in_alt = self
+                .terminals
+                .get(&pid)
+                .map(|t| t.lock().mode().contains(openagent_terminal_core::term::TermMode::ALT_SCREEN))
+                .unwrap_or(false);
+            if in_alt {
+                continue;
+            }
+            attempted += 1;
+            if let Some(pty_id) = self.pty_by_pane.get(&pid).copied() {
+                if let Some(mgr) = self.pty_managers.lock().get_manager(pty_id) {
+                    if mgr.lock().write(bytes).is_ok() {
+                        ok_count += 1;
+                    }
+                }
+            }
+        }
+        (attempted, ok_count)
+    }
+
     /// Handle tab creation
     fn handle_create_tab(&mut self) -> WarpResult<bool> {
         let start = Instant::now();

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 // use tokio::process::Child; // not used currently
 // use tokio::sync::mpsc; // not used currently
 
-use crate::blocks_v2::ShellType;
+use crate::command_pipeline::ShellType;
 
 /// Callback type for shell events to reduce type complexity
 pub type ShellEventCallback = Box<dyn Fn(&ShellEvent) + Send + Sync>;

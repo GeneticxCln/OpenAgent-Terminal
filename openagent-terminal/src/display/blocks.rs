@@ -243,8 +243,9 @@ impl Blocks {
 
     /// Compute [start,end) ranges for header action chips in columns based on header width.
     pub fn compute_header_chip_ranges(header: &str) -> Vec<(usize, usize)> {
-        // Chips in fixed order; keep short labels to fit in narrow terminals.
-        const CHIPS: [&str; 3] = ["[Copy]", "[Rerun]", "[Export]"];
+        // Expanded chips for richer inline actions. Order optimized for small widths.
+        // Copy (safe subset), Retry, Fix, Diff, Explain
+        const CHIPS: [&str; 5] = ["[Copy]", "[Retry]", "[Fix]", "[Diff]", "[Explain]"];
         let base = header.width() + 2; // two spaces after header text
         let mut col = base;
         let mut out = Vec::with_capacity(CHIPS.len());
@@ -292,6 +293,67 @@ impl Blocks {
             }
         }
         false
+    }
+}
+
+/// Additional per-block content tracking for channel splitting and actions.
+#[derive(Debug, Default, Clone)]
+pub struct BlockContent {
+    pub stdout: Vec<String>,
+    pub stderr: Vec<String>,
+    pub collapsed_stdout: bool,
+    pub collapsed_stderr: bool,
+    /// Last completed run’s combined stdout for diffing
+    pub last_stdout: Option<String>,
+}
+
+impl BlockContent {
+    pub fn toggle_stdout(&mut self) { self.collapsed_stdout = !self.collapsed_stdout; }
+    pub fn toggle_stderr(&mut self) { self.collapsed_stderr = !self.collapsed_stderr; }
+
+    /// Produce a copy-only "safe subset" by stripping ANSI escapes and common secret patterns.
+    pub fn safe_subset(text: &str) -> String {
+        // Strip ANSI CSI sequences (very simple)
+        let ansi_re = regex::Regex::new(r"\u{001b}\[[0-9;?]*[ -/]*[@-~]").ok();
+        let mut s = if let Some(re) = ansi_re { re.replace_all(text, "").into_owned() } else { text.to_string() };
+        // Redact common secret patterns (very simple heuristic)
+        let secret_re = regex::Regex::new(r"(?i)(api[_-]?key|token|secret)\s*[:=]\s*([A-Za-z0-9\-_]{8,})").ok();
+        if let Some(re) = secret_re {
+            s = re.replace_all(&s, |caps: &regex::Captures<'_>| {
+                format!("{}: {{redacted}}", &caps[1])
+            }).into_owned();
+        }
+        s
+    }
+
+    /// Compute a simple unified diff between previous and current outputs.
+    pub fn diff_previous(&self, current_stdout: &str) -> String {
+        let prev = self.last_stdout.as_deref().unwrap_or("");
+        let mut out = String::new();
+        out.push_str("--- previous\n+++ current\n");
+        let prev_lines: Vec<&str> = prev.lines().collect();
+        let curr_lines: Vec<&str> = current_stdout.lines().collect();
+        let mut i = 0usize;
+        let mut j = 0usize;
+        while i < prev_lines.len() || j < curr_lines.len() {
+            if i < prev_lines.len() && j < curr_lines.len() {
+                if prev_lines[i] == curr_lines[j] {
+                    // context omitted to keep output brief
+                    i += 1; j += 1;
+                } else {
+                    out.push_str(&format!("-{}\n", prev_lines[i]));
+                    out.push_str(&format!("+{}\n", curr_lines[j]));
+                    i += 1; j += 1;
+                }
+            } else if i < prev_lines.len() {
+                out.push_str(&format!("-{}\n", prev_lines[i]));
+                i += 1;
+            } else if j < curr_lines.len() {
+                out.push_str(&format!("+{}\n", curr_lines[j]));
+                j += 1;
+            }
+        }
+        out
     }
 }
 

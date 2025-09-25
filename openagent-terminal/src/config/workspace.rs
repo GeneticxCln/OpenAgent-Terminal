@@ -132,6 +132,10 @@ pub struct TabBarConfig {
     #[config(default = true)]
     pub show_modified_indicator: bool,
 
+    /// Show other tab indicators (zoom/error/sync)
+    #[config(default = true)]
+    pub show_tab_indicators: bool,
+
     /// Show a [+] button to create new tabs when there is remaining space
     #[config(default = true)]
     pub show_new_tab_button: bool,
@@ -198,6 +202,7 @@ impl Default for TabBarConfig {
             show_close_button: true,
             close_button_on_hover: false,
             show_modified_indicator: true,
+            show_tab_indicators: true,
             show_new_tab_button: true,
             show_tab_numbers: false,
             max_title_length: 20,
@@ -656,6 +661,7 @@ pub enum DragModifier {
     Alt,
     Ctrl,
     Shift,
+    Meta,
 }
 
 #[derive(ConfigDeserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -155,6 +155,10 @@ pub struct Processor {
 
     // Pending workflow confirmations (workflow name, window id)
     pending_workflow_confirms: HashMap<String, (String, WindowId)>,
+
+    // Guard to start workflow file watchers once
+    #[cfg(feature = "workflow")]
+    workflows_watch_started: bool,
 }
 
 static PRIVACY_EXTENDED_FLAG: once_cell::sync::OnceCell<bool> = once_cell::sync::OnceCell::new();
@@ -430,7 +434,7 @@ impl Processor {
                 ConfigMonitor::new(config.config_paths.clone(), event_loop.create_proxy());
         }
 
-        Processor {
+Processor {
             initial_window_options,
             initial_window_error: None,
             cli_options,
@@ -444,6 +448,8 @@ impl Processor {
             global_ipc_options: Default::default(),
             config_monitor,
             pending_workflow_confirms: Default::default(),
+            #[cfg(feature = "workflow")]
+            workflows_watch_started: false,
         }
     }
 
@@ -475,6 +481,11 @@ impl Processor {
             }
             if let Some(components) = &self.components {
                 window_context.set_components(components.clone());
+                // Start workflow watchers once components (engine/runtime) are available
+                #[cfg(feature = "workflow")]
+                {
+                    self.start_workflow_watchers();
+                }
                 // Wire Blocks -> Workspace PTY collection when Warp is enabled and initialized
                 #[cfg(feature = "never")]
                 {
@@ -619,6 +630,10 @@ impl Processor {
         if let Some(components) = &self.components {
             if let Some(window_context) = self.windows.get_mut(&window_id) {
                 window_context.set_components(components.clone());
+            }
+            #[cfg(feature = "workflow")]
+            {
+                self.start_workflow_watchers();
             }
         }
 
@@ -1034,6 +1049,86 @@ impl Processor {
                 });
             }
         }
+    }
+}
+
+// Application event handler implementation
+impl Processor {
+    #[cfg(feature = "workflow")]
+    fn start_workflow_watchers(&mut self) {
+        if self.workflows_watch_started {
+            return;
+        }
+        let Some(components) = &self.components else { return; };
+        let Some(engine) = &components.workflow_engine else { return; };
+        let engine = engine.clone();
+        let proxy = self.proxy.clone();
+        // Compute dirs to watch: config workflows + common project dirs
+        let mut dirs_to_watch: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(cfg) = dirs::config_dir().map(|d| d.join("openagent-terminal").join("workflows")) {
+            dirs_to_watch.push(cfg);
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            let d1 = cwd.join(".openagent-terminal").join("workflows");
+            let d2 = cwd.join(".openagent").join("workflows");
+            dirs_to_watch.push(d1);
+            dirs_to_watch.push(d2);
+        }
+        let rt = components.runtime.clone();
+        rt.spawn(async move {
+            use notify::{Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
+            use std::sync::mpsc::channel;
+
+            let (tx, rx) = channel::<Event>();
+            // Construct watcher in this task
+            let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
+                move |res: NotifyResult<Event>| match res {
+                    Ok(ev) => { let _ = tx.send(ev); }
+                    Err(e) => tracing::warn!("workflow watcher error: {}", e),
+                },
+                NotifyConfig::default(),
+            ).expect("failed to create workflow watcher");
+
+            for d in dirs_to_watch {
+                if d.exists() {
+                    if let Err(e) = watcher.watch(&d, RecursiveMode::NonRecursive) {
+                        tracing::warn!("Failed to watch {:?}: {}", d, e);
+                    } else {
+                        tracing::debug!("Watching workflows dir: {:?}", d);
+                    }
+                }
+            }
+
+            // Event loop
+            loop {
+                match rx.recv() {
+                    Ok(event) => {
+                        let mut changed = false;
+                        for p in &event.paths {
+                            let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
+                            if ext != "yaml" && ext != "yml" { continue; }
+                            match &event.kind {
+                                EventKind::Create(_) | EventKind::Modify(_) => {
+                                    if engine.load_workflow(p).await.is_ok() { changed = true; }
+                                }
+                                EventKind::Remove(_) => {
+                                    if engine.remove_workflow_by_path(p).await { changed = true; }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if changed {
+                            let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::WorkflowsFilesChanged, None));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Workflow watcher recv error: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+        self.workflows_watch_started = true;
     }
 }
 
@@ -1680,6 +1775,19 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
+            // Notify all windows to refresh workflows/palette when files change
+            #[cfg(feature = "workflow")]
+            (EventType::WorkflowsFilesChanged, _) => {
+                for (wid, window_context) in self.windows.iter() {
+                    if window_context.display.workflows_panel.active {
+                        let q = window_context.display.workflows_panel.query.clone();
+                        let _ = self.proxy.send_event(Event::new(EventType::WorkflowsSearchPerform(q), *wid));
+                    }
+                    if window_context.display.palette.active() {
+                        let _ = self.proxy.send_event(Event::new(EventType::PaletteRequestWorkflows, *wid));
+                    }
+                }
+            }
             // Blocks search events handled at processor level
             #[cfg(feature = "never")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
@@ -1695,6 +1803,50 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
+            // Command Palette providers: workflows list
+            (EventType::PaletteRequestWorkflows, Some(window_id)) => {
+                #[cfg(feature = "workflow")]
+                if let Some(components) = &self.components {
+                    if let Some(engine) = &components.workflow_engine {
+                        let engine = engine.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            let list = engine.list_workflows().await;
+                            // Map to (name, description)
+                            let items: Vec<(String, Option<String>)> = list
+                                .into_iter()
+                                .map(|(_id, def)| (def.name, Some(def.description)))
+                                .collect();
+                            if !items.is_empty() {
+                                let _ = proxy
+                                    .send_event(Event::new(EventType::PaletteAppendWorkflows(items), win));
+                            }
+                        });
+                    }
+                }
+            }
+            (EventType::PaletteAppendWorkflows(items), Some(window_id)) => {
+                if let Some(window_context) = self.windows.get_mut(window_id) {
+                    // Build PaletteItems from names
+                    let mapped: Vec<crate::display::palette::PaletteItem> = items
+                        .into_iter()
+                        .map(|(name, desc)| crate::display::palette::PaletteItem {
+                            key: format!("workflow:{}", name),
+                            title: format!("Workflow: {}", name),
+                            subtitle: desc,
+                            entry: crate::display::palette::PaletteEntry::Workflow(name),
+                        })
+                        .collect();
+                    window_context.display.palette.add_items_unique(mapped);
+                    window_context.dirty = true;
+                    if window_context.display.window.has_frame {
+                        window_context.display.window.request_redraw();
+                    }
+                }
+            }
+
             // Workflows panel events
             #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
@@ -1949,8 +2101,9 @@ impl ApplicationHandler<Event> for Processor {
                     }
                     if let Some(line) = log {
                         st.logs.push(line);
-                        if st.logs.len() > 500 {
-                            let drop = st.logs.len() - 500;
+                        let cap = self.config.workflow_ui.max_log_lines.max(1);
+                        if st.logs.len() > cap {
+                            let drop = st.logs.len() - cap;
                             st.logs.drain(0..drop);
                         }
                     }
@@ -1966,7 +2119,9 @@ impl ApplicationHandler<Event> for Processor {
                             EventType::WorkflowsProgressClear(execution_id.clone()),
                             *window_id,
                         );
-                        self.scheduler.schedule(evt, WORKFLOWS_OVERLAY_RETAIN, false, tid);
+                        let ms = self.config.workflow_ui.overlay_retain_ms.max(0) as u64;
+                        self.scheduler
+                            .schedule(evt, Duration::from_millis(ms), false, tid);
                     }
 
                     window_context.dirty = true;
@@ -2913,6 +3068,13 @@ pub enum EventType {
     BlocksCopyHeaderUnderCursor,
     BlocksExportHeaderUnderCursor,
     BlocksRerunUnderCursor,
+    BlocksFixUnderCursor,
+    BlocksExplainUnderCursor,
+    BlocksDiffUnderCursor,
+
+    // Command Palette async providers
+    PaletteRequestWorkflows,
+    PaletteAppendWorkflows(Vec<(String, Option<String>)>),
 
     // Blocks Search panel events
     #[cfg(feature = "never")]
@@ -2952,6 +3114,9 @@ pub enum EventType {
     // Workflows panel events
     #[cfg(feature = "workflow")]
     WorkflowsSearchPerform(String),
+    // Files in watched workflows directories changed
+    #[cfg(feature = "workflow")]
+    WorkflowsFilesChanged,
 
     // Plugin palette integration and execution
     #[cfg(feature = "never")]
@@ -3193,6 +3358,7 @@ pub struct ActionContext<'a, N, T> {
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
     /// Last started command captured during CommandStart
     pub last_command: &'a mut Option<String>,
+    pub search: &'a mut crate::native_search::SearchIntegration,
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionContext<'a, N, T> {
@@ -3264,6 +3430,19 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 }
             }
         }
+    }
+
+    // Execute composer text via native command pipeline (paste + Enter), respecting pane sync.
+    fn execute_composer_command(&mut self, text: String) {
+        let cmd = text.trim();
+        if cmd.is_empty() {
+            return;
+        }
+        // Paste command to prompt (handles bracketed paste and broadcast internally)
+        self.paste(cmd, true);
+        // Send newline to execute; mirrors across panes when sync is ON
+        self.write_terminal_input("\n".as_bytes());
+        *self.dirty = true;
     }
     fn workspace_hover_focus(&mut self, mouse_x_px: f32, mouse_y_px: f32) {
         // Compute pane rects and focus the pane under the mouse if different
@@ -3339,6 +3518,41 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     fn write_to_pty<B: Into<Cow<'static, [u8]>>>(&self, val: B) {
         if let Err(e) = self.notifier.try_notify(val) {
             tracing::warn!("notify to PTY failed: {:?}", e);
+        }
+    }
+
+    /// Write input to focused PTY and optionally mirror to synced panes.
+    fn write_terminal_input<B: Into<Cow<'static, [u8]>>>(&mut self, val: B) {
+        let bytes: Cow<'static, [u8]> = val.into();
+        if bytes.is_empty() {
+            return;
+        }
+        // Always write to focused pane first
+        if let Err(e) = self.notifier.try_notify(bytes.clone()) {
+            tracing::warn!("notify to PTY failed: {:?}", e);
+        }
+        // Mirror to other panes when sync is enabled and Warp is active
+        let (sync_on, skip_pid) = {
+            if let Some(tab) = self.workspace.active_tab() {
+                (tab.panes_synced, Some(tab.active_pane))
+            } else {
+                (false, None)
+            }
+        };
+        if sync_on {
+            // Broadcast; surface failures as a transient message
+            let (attempted, ok) = self.workspace.broadcast_input_active_tab(&bytes, skip_pid);
+            if attempted > 0 && ok < attempted {
+                let failed = attempted - ok;
+                let msg = crate::message_bar::Message::new(
+                    format!("Pane sync: {} pane(s) failed to receive input", failed),
+                    crate::message_bar::MessageType::Warning,
+                );
+                let _ = self.event_proxy.send_event(Event::new(
+                    EventType::Message(msg),
+                    self.display.window.id(),
+                ));
+            }
         }
     }
 
@@ -3675,8 +3889,40 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
 
+        // AI: append suggestions from runtime (if available)
+        #[cfg(feature = "ai")]
+        if let Some(rt) = self.ai_runtime.as_mut() {
+            if !rt.ui.proposals.is_empty() {
+                let mut ai_items: Vec<PaletteItem> = Vec::new();
+                for (i, p) in rt.ui.proposals.iter().enumerate() {
+                    let title = format!("AI Suggestion: {}", p.title);
+                    let subtitle = p.description.clone();
+                    let cmd = if p.proposed_commands.is_empty() {
+                        String::new()
+                    } else {
+                        p.proposed_commands.join(" && ")
+                    };
+                    if !cmd.is_empty() {
+                        ai_items.push(PaletteItem {
+                            key: format!("ai:proposal:{}", i),
+                            title,
+                            subtitle,
+                            entry: PaletteEntry::Command { cmd, cwd: None, exit: None },
+                        });
+                    }
+                }
+                if !ai_items.is_empty() {
+                    items.extend(ai_items);
+                }
+            }
+        }
         // Open palette with assembled items
         self.display.palette.open(items);
+
+        // Request append of workflows from engine in background
+        let _ = self
+            .event_proxy
+            .send_event(Event::new(EventType::PaletteRequestWorkflows, self.display.window.id()));
 
         // Ask to append plugin commands if plugin system is enabled
         #[cfg(feature = "never")]
@@ -4065,9 +4311,20 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
         self.display.blocks_search.open();
         self.mark_dirty();
-        self.send_user_event(EventType::BlocksSearchPerform(
-            self.display.blocks_search.query.clone(),
-        ));
+    }
+
+    #[cfg(not(feature = "never"))]
+    fn open_blocks_search_panel(&mut self) {
+        if self.palette_active() {
+            self.display.palette.save_mru_to_config(self.config);
+            self.display.palette.close();
+        }
+        self.display.native_search.active = true;
+        self.display.native_search.query.clear();
+        self.display.native_search.selected_index = 0;
+        self.display.native_search.results.clear();
+        self.display.native_search.last_updated = Some(std::time::Instant::now());
+        self.mark_dirty();
     }
 
     #[cfg(feature = "never")]
@@ -4076,9 +4333,20 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
+    #[cfg(not(feature = "never"))]
+    fn close_blocks_search_panel(&mut self) {
+        self.display.native_search.active = false;
+        self.mark_dirty();
+    }
+
     #[cfg(feature = "never")]
     fn blocks_search_active(&self) -> bool {
         self.display.blocks_search.active
+    }
+
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_active(&self) -> bool {
+        self.display.native_search.active
     }
 
     #[cfg(feature = "never")]
@@ -4097,6 +4365,19 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_input(&mut self, c: char) {
+        if !self.display.native_search.active { return; }
+        if c.is_control() { return; }
+        self.display.native_search.query.push(c);
+        self.display.native_search.selected_index = 0;
+        let q = self.display.native_search.query.clone();
+        let results = self.search.search_blocks_quick(&q, None);
+        self.display.native_search.results = results;
+        self.display.native_search.last_updated = Some(std::time::Instant::now());
+        self.mark_dirty();
+    }
+
     #[cfg(feature = "never")]
     fn blocks_search_backspace(&mut self) {
         self.display.blocks_search.query.pop();
@@ -4113,9 +4394,34 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_backspace(&mut self) {
+        if !self.display.native_search.active { return; }
+        self.display.native_search.query.pop();
+        self.display.native_search.selected_index = 0;
+        let q = self.display.native_search.query.clone();
+        let results = self.search.search_blocks_quick(&q, None);
+        self.display.native_search.results = results;
+        self.display.native_search.last_updated = Some(std::time::Instant::now());
+        self.mark_dirty();
+    }
+
     #[cfg(feature = "never")]
     fn blocks_search_move_selection(&mut self, delta: isize) {
         self.display.blocks_search.move_selection(delta);
+        self.mark_dirty();
+    }
+
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_move_selection(&mut self, delta: isize) {
+        if !self.display.native_search.active { return; }
+        let len = self.display.native_search.results.len();
+        if len == 0 { return; }
+        let cur = self.display.native_search.selected_index as isize;
+        let mut idx = cur + delta;
+        if idx < 0 { idx = 0; }
+        if idx as usize >= len { idx = (len - 1) as isize; }
+        self.display.native_search.selected_index = idx as usize;
         self.mark_dirty();
     }
 
@@ -4134,9 +4440,43 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_confirm(&mut self) {
+        if !self.display.native_search.active { return; }
+        // Extract selection data
+        let (tab_opt, id_opt) = {
+            let idx = self.display.native_search.selected_index;
+            if let Some(sel) = self.display.native_search.results.get(idx) {
+                let tab_str = sel.metadata.get("tab").cloned();
+                (tab_str.and_then(|s| s.parse::<usize>().ok()), Some(sel.id.clone()))
+            } else { return; }
+        };
+        // Switch to target tab if provided
+        if let Some(tnum) = tab_opt { self.workspace_switch_to_tab(crate::workspace::TabId(tnum)); }
+        // Try to parse the block id as a "start..end" total lines range and scroll to header
+        if let Some(id) = id_opt {
+            if let Some((a, b)) = id.split_once("..") {
+                if let (Ok(bstart), _bend_ok) = (a.parse::<usize>(), b.parse::<usize>()) {
+                    let header_total_line = bstart.saturating_sub(1);
+                    let current = self.terminal().grid().display_offset();
+                    let delta = header_total_line as i32 - current as i32;
+                    self.scroll(openagent_terminal_core::grid::Scroll::Delta(delta));
+                }
+            }
+        }
+        self.display.native_search.active = false;
+        self.mark_dirty();
+    }
+
     #[cfg(feature = "never")]
     fn blocks_search_cancel(&mut self) {
         self.display.blocks_search.close();
+        self.mark_dirty();
+    }
+
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_cancel(&mut self) {
+        self.display.native_search.active = false;
         self.mark_dirty();
     }
 
@@ -5580,6 +5920,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     /// Paste a text into the terminal.
     fn paste(&mut self, text: &str, bracketed: bool) {
+        // Determine sync state once
+        let (sync_on, skip_pid) = {
+            if let Some(tab) = self.workspace.active_tab() {
+                (tab.panes_synced, Some(tab.active_pane))
+            } else {
+                (false, None)
+            }
+        };
         if self.search_active() {
             for c in text.chars() {
                 self.search_input(c);
@@ -5589,7 +5937,22 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         } else if bracketed && self.terminal().mode().contains(TermMode::BRACKETED_PASTE) {
             self.on_terminal_input_start();
 
-            self.write_to_pty(&b"\x1b[200~"[..]);
+            let start_seq = &b"\x1b[200~"[..];
+            self.write_to_pty(start_seq);
+            if sync_on {
+                let (attempted, ok) = self.workspace.broadcast_input_active_tab(start_seq, skip_pid);
+                if attempted > 0 && ok < attempted {
+                    let failed = attempted - ok;
+                    let msg = crate::message_bar::Message::new(
+                        format!("Pane sync: {} pane(s) failed to receive input", failed),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self.event_proxy.send_event(Event::new(
+                        EventType::Message(msg),
+                        self.display.window.id(),
+                    ));
+                }
+            }
 
             // Write filtered escape sequences.
             //
@@ -5597,9 +5960,39 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
             // bracketed paste when they receive it.
             let filtered = text.replace(['\x1b', '\x03'], "");
-            self.write_to_pty(filtered.into_bytes());
+            let mid = filtered.into_bytes();
+            self.write_to_pty(mid.clone());
+            if sync_on {
+                let (attempted, ok) = self.workspace.broadcast_input_active_tab(&mid, skip_pid);
+                if attempted > 0 && ok < attempted {
+                    let failed = attempted - ok;
+                    let msg = crate::message_bar::Message::new(
+                        format!("Pane sync: {} pane(s) failed to receive input", failed),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self.event_proxy.send_event(Event::new(
+                        EventType::Message(msg),
+                        self.display.window.id(),
+                    ));
+                }
+            }
 
-            self.write_to_pty(&b"\x1b[201~"[..]);
+            let end_seq = &b"\x1b[201~"[..];
+            self.write_to_pty(end_seq);
+            if sync_on {
+                let (attempted, ok) = self.workspace.broadcast_input_active_tab(end_seq, skip_pid);
+                if attempted > 0 && ok < attempted {
+                    let failed = attempted - ok;
+                    let msg = crate::message_bar::Message::new(
+                        format!("Pane sync: {} pane(s) failed to receive input", failed),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self.event_proxy.send_event(Event::new(
+                        EventType::Message(msg),
+                        self.display.window.id(),
+                    ));
+                }
+            }
         } else {
             self.on_terminal_input_start();
 
@@ -5619,7 +6012,22 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 text.to_owned().into_bytes()
             };
 
-            self.write_to_pty(payload);
+            // Write to focused and optionally broadcast
+            self.write_to_pty(payload.clone());
+            if sync_on {
+                let (attempted, ok) = self.workspace.broadcast_input_active_tab(&payload, skip_pid);
+                if attempted > 0 && ok < attempted {
+                    let failed = attempted - ok;
+                    let msg = crate::message_bar::Message::new(
+                        format!("Pane sync: {} pane(s) failed to receive input", failed),
+                        crate::message_bar::MessageType::Warning,
+                    );
+                    let _ = self.event_proxy.send_event(Event::new(
+                        EventType::Message(msg),
+                        self.display.window.id(),
+                    ));
+                }
+            }
         }
     }
 
@@ -6134,6 +6542,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         *self.dirty = true;
     }
 
+    fn workspace_move_pane_to_prev_tab(&mut self) {
+        self.move_active_pane_to_adjacent_tab(false);
+    }
+
+    fn workspace_move_pane_to_next_tab(&mut self) {
+        self.move_active_pane_to_adjacent_tab(true);
+    }
+
+    fn workspace_move_pane_to_new_tab(&mut self) {
+        self.move_active_pane_to_new_tab();
+    }
+
     fn workspace_toggle_zoom(&mut self) {
         if self.workspace.has_warp() {
             let ok = self
@@ -6163,7 +6583,16 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn workspace_toggle_sync(&mut self) {
         let ok = self.workspace.toggle_active_tab_sync();
-        let msg = if ok { "Toggled pane sync" } else { "Toggle pane sync failed" };
+        let state_label = if let Some(tab) = self.workspace.active_tab() {
+            if tab.panes_synced { "ON" } else { "OFF" }
+        } else {
+            "UNKNOWN"
+        };
+        let msg = if ok {
+            format!("Pane sync {}", state_label)
+        } else {
+            "Toggle pane sync failed".into()
+        };
         self.message_buffer
             .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
@@ -6985,6 +7414,237 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             false
         }
     }
+
+    // Workflows params overlay controls
+    #[cfg(feature = "workflow")]
+    fn workflows_params_active(&self) -> bool {
+        self.display.workflows_params.active
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_params_input_char(&mut self, c: char) {
+        use serde_json::Value;
+        if !self.display.workflows_params.active { return; }
+        let st = &mut self.display.workflows_params;
+        if st.fields.is_empty() { return; }
+        let idx = st.selected.min(st.fields.len() - 1);
+        let field = &mut st.fields[idx];
+        match field.kind {
+            workflow_engine::ParameterType::Boolean => {
+                // ignore character input for booleans; use toggle
+            }
+            _ => {
+                let s = match &mut field.value {
+                    Value::String(s) => s,
+                    Value::Null => { field.value = Value::String(String::new()); if let Value::String(s) = &mut field.value { s } else { unreachable!() } },
+                    other => { let t = other.to_string(); field.value = Value::String(t); if let Value::String(s) = &mut field.value { s } else { unreachable!() } },
+                };
+                if !c.is_control() { s.push(c); }
+            }
+        }
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_params_backspace(&mut self) {
+        use serde_json::Value;
+        if !self.display.workflows_params.active { return; }
+        let st = &mut self.display.workflows_params;
+        if st.fields.is_empty() { return; }
+        let idx = st.selected.min(st.fields.len() - 1);
+        let field = &mut st.fields[idx];
+        match &mut field.value {
+            Value::String(s) => { let _ = s.pop(); }
+            Value::Null => {}
+            other => { let mut t = other.to_string(); let _ = t.pop(); field.value = Value::String(t); }
+        }
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_params_move_selection(&mut self, delta: isize) {
+        let st = &mut self.display.workflows_params;
+        if st.fields.is_empty() { return; }
+        let len = st.fields.len() as isize;
+        let mut idx = st.selected as isize + delta;
+        if idx < 0 { idx = 0; }
+        if idx >= len { idx = len - 1; }
+        st.selected = idx as usize;
+        self.mark_dirty();
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_params_toggle(&mut self) {
+        use serde_json::Value;
+        let st = &mut self.display.workflows_params;
+        if st.fields.is_empty() { return; }
+        let idx = st.selected.min(st.fields.len() - 1);
+        let field = &mut st.fields[idx];
+        if let workflow_engine::ParameterType::Boolean = field.kind {
+            let b = match &field.value {
+                Value::Bool(v) => !*v,
+                _ => true,
+            };
+            field.value = Value::Bool(b);
+            self.mark_dirty();
+        }
+    }
+
+    #[cfg(feature = "workflow")]
+    fn workflows_params_confirm(&mut self) {
+        use std::collections::HashMap;
+        use serde_json::Value;
+        if !self.display.workflows_params.active { return; }
+
+        // Validate in-place; on error, focus the offending field and show a message
+        let st_mut = &mut self.display.workflows_params;
+        if st_mut.fields.is_empty() {
+            // Nothing to validate
+        } else {
+            for (i, field) in st_mut.fields.iter_mut().enumerate() {
+                let name = field.name.clone();
+                let required = field.required;
+                let err = match field.kind {
+                    workflow_engine::ParameterType::String => {
+                        let s = match &field.value {
+                            Value::Null => "".to_string(),
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        if required && s.trim().is_empty() {
+                            Some(format!("Parameter '{}' is required", name))
+                        } else {
+                            // Normalize to string value
+                            field.value = Value::String(s);
+                            None
+                        }
+                    }
+                    workflow_engine::ParameterType::Number => {
+                        let mut num_opt: Option<f64> = None;
+                        match &field.value {
+                            Value::Number(n) => { num_opt = n.as_f64(); }
+                            Value::String(s) => {
+                                if !s.trim().is_empty() { num_opt = s.trim().parse::<f64>().ok(); }
+                            }
+                            Value::Null => {}
+                            _ => {}
+                        }
+                        if required && num_opt.is_none() {
+                            Some(format!("Parameter '{}' must be a number", name))
+                        } else if let Some(n) = num_opt {
+if let Some(min) = field.min { if n < min {
+                                st_mut.selected = i;
+                                let m = crate::message_bar::Message::new(
+                                    format!("Parameter '{}' must be >= {}", name, min),
+                                    crate::message_bar::MessageType::Warning,
+                                );
+                                let _ = self.event_proxy.send_event(crate::event::Event::new(crate::event::EventType::Message(m), self.display.window.id()));
+                                self.mark_dirty();
+                                return;
+                            } }
+                            if let Some(max) = field.max { if n > max {
+                                st_mut.selected = i;
+                                let m = crate::message_bar::Message::new(
+                                    format!("Parameter '{}' must be <= {}", name, max),
+                                    crate::message_bar::MessageType::Warning,
+                                );
+                                let _ = self.event_proxy.send_event(crate::event::Event::new(crate::event::EventType::Message(m), self.display.window.id()));
+                                self.mark_dirty();
+                                return;
+                            } }
+                            field.value = serde_json::Number::from_f64(n).map(Value::Number).unwrap_or(Value::Null);
+                            None
+                        } else {
+                            // Optional and not provided
+                            field.value = Value::Null;
+                            None
+                        }
+                    }
+                    workflow_engine::ParameterType::Boolean => {
+                        match &field.value {
+                            Value::Bool(_) => {}
+                            Value::String(s) => {
+                                let v = matches!(s.to_lowercase().as_str(), "true" | "1" | "yes" | "on");
+                                field.value = Value::Bool(v);
+                            }
+                            Value::Null => {
+                                if required { field.value = Value::Bool(false); }
+                            }
+                            _ => { field.value = Value::Bool(false); }
+                        }
+                        None
+                    }
+                    workflow_engine::ParameterType::Choice => {
+                        let opts = field.options.as_ref().map(|v| v.iter().map(|o| o.value.clone()).collect::<Vec<_>>()).unwrap_or_default();
+                        let s = match &field.value {
+                            Value::String(s) => s.clone(),
+                            Value::Null => String::new(),
+                            other => other.to_string(),
+                        };
+                        if required && s.trim().is_empty() {
+                            Some(format!("Parameter '{}' is required", name))
+                        } else if !s.is_empty() && !opts.is_empty() && !opts.contains(&s) {
+                            Some(format!("Parameter '{}' must be one of: {}", name, opts.join(", ")))
+                        } else {
+                            field.value = Value::String(s);
+                            None
+                        }
+                    }
+                    workflow_engine::ParameterType::File | workflow_engine::ParameterType::Directory => {
+                        let s = match &field.value {
+                            Value::String(s) => s.clone(),
+                            Value::Null => String::new(),
+                            other => other.to_string(),
+                        };
+                        if required && s.trim().is_empty() {
+                            Some(format!("Parameter '{}' is required", name))
+                        } else if !s.trim().is_empty() {
+                            let p = std::path::Path::new(&s);
+                            if !p.exists() {
+                                Some(format!("Path does not exist: {}", s))
+                            } else if matches!(field.kind, workflow_engine::ParameterType::File) && !p.is_file() {
+                                Some(format!("Path is not a file: {}", s))
+                            } else if matches!(field.kind, workflow_engine::ParameterType::Directory) && !p.is_dir() {
+                                Some(format!("Path is not a directory: {}", s))
+                            } else { field.value = Value::String(s); None }
+                        } else { field.value = Value::Null; None }
+                    }
+                };
+                if let Some(msg) = err {
+                    // Focus invalid field and show message
+                    st_mut.selected = i;
+                    let m = crate::message_bar::Message::new(msg, crate::message_bar::MessageType::Warning);
+                    let _ = self.event_proxy.send_event(crate::event::Event::new(crate::event::EventType::Message(m), self.display.window.id()));
+                    self.mark_dirty();
+                    return;
+                }
+            }
+        }
+
+        // Build values map now that validation/normalization has passed
+        let st = self.display.workflows_params.clone();
+        if let Some(wf_id) = st.workflow_id.clone() {
+            let values: HashMap<String, serde_json::Value> = st
+                .fields
+                .into_iter()
+                .map(|f| (f.name, f.value))
+                .collect();
+            let _ = self.event_proxy.send_event(crate::event::Event::new(
+                crate::event::EventType::WorkflowsSubmitParams { workflow_id: wf_id, values },
+                self.display.window.id(),
+            ));
+        }
+    }
+
+
+    #[cfg(feature = "workflow")]
+    fn workflows_params_cancel(&mut self) {
+        if !self.display.workflows_params.active { return; }
+        let _ = self.event_proxy.send_event(crate::event::Event::new(
+            crate::event::EventType::WorkflowsCancelParams,
+            self.display.window.id(),
+        ));
+    }
 }
 
 impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
@@ -7193,6 +7853,75 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
             self.terminal.vi_goto_point(point);
             self.mark_dirty();
         }
+    }
+
+    /// Move the active pane to the previous/next tab
+    fn move_active_pane_to_adjacent_tab(&mut self, next: bool) {
+        // Determine source tab and active pane
+        let (src_id, active_pane) = match self.workspace.active_tab() {
+            Some(tab) => (tab.id, tab.active_pane),
+            None => return,
+        };
+        // Determine destination tab id
+        let order = self.workspace.tabs.tab_order().to_vec();
+        let pos_opt = order.iter().position(|&id| id == src_id);
+        let dest_id = match (pos_opt, !order.is_empty()) {
+            (Some(pos), true) if order.len() > 1 => {
+                if next { order[(pos + 1) % order.len()] } else { order[if pos == 0 { order.len() - 1 } else { pos - 1 }] }
+            }
+            _ => {
+                // Only one tab: move into a new tab instead
+                self.move_active_pane_to_new_tab();
+                return;
+            }
+        };
+        // Remove from source layout and move context
+        if let Some(src_tab) = self.workspace.tabs.get_tab_mut(src_id) {
+            let mut sm = crate::workspace::SplitManager::new();
+            let _ = sm.close_pane(&mut src_tab.split_layout, active_pane);
+        }
+        let _ = self.workspace.tabs.move_pane_context(src_id, dest_id, active_pane);
+        // Insert into destination layout next to its active pane
+        if let Some(dest_tab) = self.workspace.tabs.get_tab_mut(dest_id) {
+            let axis = crate::workspace::split_manager::SplitAxis::Horizontal;
+            let before = true;
+            let sm = crate::workspace::SplitManager::new();
+            let target = dest_tab.active_pane;
+            let _ = sm.insert_pane_with_split(&mut dest_tab.split_layout, target, active_pane, axis, before);
+            sm.normalize(&mut dest_tab.split_layout);
+            dest_tab.active_pane = active_pane;
+        }
+        // Switch focus to destination tab
+        let _ = self.workspace.switch_to_tab(dest_id);
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
+    }
+
+    /// Move the active pane to a brand-new tab
+    fn move_active_pane_to_new_tab(&mut self) {
+        let (src_id, active_pane) = match self.workspace.active_tab() {
+            Some(tab) => (tab.id, tab.active_pane),
+            None => return,
+        };
+        // Create new tab
+        let new_id = self.workspace.create_tab("New Tab".into(), None);
+        // Remove from source layout
+        if let Some(src_tab) = self.workspace.tabs.get_tab_mut(src_id) {
+            let mut sm = crate::workspace::SplitManager::new();
+            let _ = sm.close_pane(&mut src_tab.split_layout, active_pane);
+        }
+        // Move context to new tab
+        let _ = self.workspace.tabs.move_pane_context(src_id, new_id, active_pane);
+        // Initialize new tab layout and focus
+        if let Some(new_tab) = self.workspace.tabs.get_tab_mut(new_id) {
+            new_tab.split_layout = crate::workspace::split_manager::SplitLayout::Single(active_pane);
+            let sm = crate::workspace::SplitManager::new();
+            sm.normalize(&mut new_tab.split_layout);
+            new_tab.active_pane = active_pane;
+        }
+        let _ = self.workspace.switch_to_tab(new_id);
+        self.display.pending_update.dirty = true;
+        *self.dirty = true;
     }
 }
 
@@ -7481,6 +8210,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
+                EventType::WorkflowsFilesChanged => { /* no-op: processor broadcasts refresh */ }
                 EventType::BlinkCursorTimeout => {
                     // Disable blinking after timeout reached.
                     let timer_id = TimerId::new(Topic::BlinkCursor, self.ctx.display.window.id());
@@ -7518,6 +8248,40 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         if let CoreCommandBlockEvent::CommandEnd { exit, .. } = ev {
                             let non_zero = exit.map(|c| c != 0).unwrap_or(false);
                             self.ctx.workspace_mark_active_tab_error(non_zero);
+
+                            // Index full block stdout into native search quick index
+                            if let Some(tab_id) = self.ctx.workspace.active_tab().map(|t| t.id) {
+                                // Determine last block range (skip header line)
+                                let (bstart_opt, bend_opt) = {
+                                    let blocks = &self.ctx.display().blocks.blocks;
+                                    if let Some(last_block) = blocks.last() {
+                                        (Some(last_block.start_total_line + 1), last_block.end_total_line)
+                                    } else {
+                                        (None, None)
+                                    }
+                                };
+                                if let (Some(bstart), Some(bend)) = (bstart_opt, bend_opt) {
+                                    // Collect full block stdout (excluding header)
+                                    let grid = self.ctx.terminal().grid();
+                                    let top = grid.topmost_line();
+                                    let mut stdout = String::new();
+                                    for abs in bstart..=bend {
+                                        let line = top + (abs as i32);
+                                        if line < grid.topmost_line() || line > grid.bottommost_line() {
+                                            continue;
+                                        }
+                                        let row = &grid[line];
+                                        let len = row.line_length().0.min(grid.columns());
+                                        for col in 0..len {
+                                            let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                            stdout.push(ch);
+                                        }
+                                        stdout.push('\n');
+                                    }
+                                    let bid = format!("{}..{}", bstart, bend);
+                                    self.ctx.search.index_block_stdout(tab_id.0, bid, stdout);
+                                }
+                            }
 
                             // IDE: surface basic suggestions for non-zero exits using command and output preview
                             if let Some(code) = exit {
@@ -7985,6 +8749,195 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
+                EventType::BlocksFixUnderCursor => {
+                    #[cfg(feature = "ai")]
+                    {
+                        // Build error/context text from block under cursor and send to AI Fix if available
+                        let display_offset = self.ctx.terminal().grid().display_offset();
+                        let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                        if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                            // Extract block data with limited borrow
+                            let (cmd_opt, start_opt, end_opt) = {
+                                let display = self.ctx.display();
+                                if let Some(block) = display
+                                    .blocks
+                                    .block_at_header_viewport_line(display_offset, vp.line.into())
+                                {
+                                    (block.cmd.clone(), Some(block.start_total_line.saturating_add(1)), block.end_total_line)
+                                } else {
+                                    (None, None, None)
+                                }
+                            };
+                            let end = end_opt.unwrap_or_else(|| {
+                                let grid = self.ctx.terminal().grid();
+                                grid.total_lines().saturating_sub(1)
+                            });
+                            // Build output string
+                            let mut text = String::new();
+                            if let Some(start) = start_opt {
+                                let grid = self.ctx.terminal().grid();
+                                let top = grid.topmost_line();
+                                for abs in start..=end {
+                                    let line = top + (abs as i32);
+                                    if line < grid.topmost_line() || line > grid.bottommost_line() { continue; }
+                                    let row = &grid[line];
+                                    let len = row.line_length().0.min(grid.columns());
+                                    for col in 0..len {
+                                        let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                        text.push(ch);
+                                    }
+                                    text.push('\n');
+                                }
+                            }
+                            if text.trim().is_empty() {
+                                if let Some(cmd) = cmd_opt { text = cmd; }
+                            }
+                            self.ctx.send_user_event(EventType::AiFix(Some(text)));
+                        }
+                    }
+                    #[cfg(not(feature = "ai"))]
+                    {
+                        let message = Message::new(
+                            "AI features are disabled; enable the 'ai' feature to use Fix".into(),
+                            crate::message_bar::MessageType::Warning,
+                        );
+                        let _ = self.ctx.event_proxy.send_event(Event::new(EventType::Message(message), self.ctx.display.window.id()));
+                    }
+                }
+                EventType::BlocksExplainUnderCursor => {
+                    #[cfg(feature = "ai")]
+                    {
+                        // Build context text and send to AI Explain if available
+                        let display_offset = self.ctx.terminal().grid().display_offset();
+                        let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                        if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                            let (cmd_opt, start_opt, end_opt) = {
+                                let display = self.ctx.display();
+                                if let Some(block) = display
+                                    .blocks
+                                    .block_at_header_viewport_line(display_offset, vp.line.into())
+                                {
+                                    (block.cmd.clone(), Some(block.start_total_line.saturating_add(1)), block.end_total_line)
+                                } else {
+                                    (None, None, None)
+                                }
+                            };
+                            let end = end_opt.unwrap_or_else(|| {
+                                let grid = self.ctx.terminal().grid();
+                                grid.total_lines().saturating_sub(1)
+                            });
+                            let mut text = String::new();
+                            if let Some(start) = start_opt {
+                                let grid = self.ctx.terminal().grid();
+                                let top = grid.topmost_line();
+                                for abs in start..=end {
+                                    let line = top + (abs as i32);
+                                    if line < grid.topmost_line() || line > grid.bottommost_line() { continue; }
+                                    let row = &grid[line];
+                                    let len = row.line_length().0.min(grid.columns());
+                                    for col in 0..len {
+                                        let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                        text.push(ch);
+                                    }
+                                    text.push('\n');
+                                }
+                            }
+                            if text.trim().is_empty() { if let Some(cmd) = cmd_opt { text = cmd; } }
+                            self.ctx.send_user_event(EventType::AiExplain(Some(text)));
+                        }
+                    }
+                    #[cfg(not(feature = "ai"))]
+                    {
+                        let message = Message::new(
+                            "AI features are disabled; enable the 'ai' feature to use Explain".into(),
+                            crate::message_bar::MessageType::Warning,
+                        );
+                        let _ = self.ctx.event_proxy.send_event(Event::new(EventType::Message(message), self.ctx.display.window.id()));
+                    }
+                }
+                EventType::BlocksDiffUnderCursor => {
+                    // Compute unified diff between the current block's output and the previous run of the same command
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let grid_point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    if let Some(vp) = openagent_terminal_core::term::point_to_viewport(display_offset, grid_point) {
+                        // Get current block and its output
+                        let (cmd_opt, cur_start_opt, cur_end_opt, cur_start_line) = {
+                            let display = self.ctx.display();
+                            if let Some(block) = display
+                                .blocks
+                                .block_at_header_viewport_line(display_offset, vp.line.into())
+                            {
+                                (block.cmd.clone(), Some(block.start_total_line.saturating_add(1)), block.end_total_line, block.start_total_line)
+                            } else {
+                                (None, None, None, 0usize)
+                            }
+                        };
+                        let cur_end = cur_end_opt.unwrap_or_else(|| {
+                            let grid = self.ctx.terminal().grid();
+                            grid.total_lines().saturating_sub(1)
+                        });
+                        if let (Some(cmd), Some(cur_start)) = (cmd_opt.clone(), cur_start_opt) {
+                            let grid = self.ctx.terminal().grid();
+                            let top = grid.topmost_line();
+                            let mut curr_out = String::new();
+                            for abs in cur_start..=cur_end {
+                                let line = top + (abs as i32);
+                                if line < grid.topmost_line() || line > grid.bottommost_line() { continue; }
+                                let row = &grid[line];
+                                let len = row.line_length().0.min(grid.columns());
+                                for col in 0..len {
+                                    let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                    curr_out.push(ch);
+                                }
+                                curr_out.push('\n');
+                            }
+                            // Find previous run of the same command
+                            let prev_start_end_opt = {
+                                let display = self.ctx.display();
+                                let mut prev: Option<(usize, usize)> = None;
+                                let mut prev_start_line = 0usize;
+                                for b in &display.blocks.blocks {
+                                    if b.cmd.as_ref() == Some(&cmd) {
+                                        if b.start_total_line < cur_start_line {
+                                            if let Some(end) = b.end_total_line {
+                                                // choose the nearest previous by start_total_line
+                                                if prev_start_line < b.start_total_line {
+                                                    prev_start_line = b.start_total_line;
+                                                    prev = Some((b.start_total_line.saturating_add(1), end));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                prev
+                            };
+                            let mut prev_out = String::new();
+                            if let Some((pstart, pend)) = prev_start_end_opt {
+                                let grid = self.ctx.terminal().grid();
+                                let top = grid.topmost_line();
+                                for abs in pstart..=pend {
+                                    let line = top + (abs as i32);
+                                    if line < grid.topmost_line() || line > grid.bottommost_line() { continue; }
+                                    let row = &grid[line];
+                                    let len = row.line_length().0.min(grid.columns());
+                                    for col in 0..len {
+                                        let ch = row[openagent_terminal_core::index::Column(col)].c;
+                                        prev_out.push(ch);
+                                    }
+                                    prev_out.push('\n');
+                                }
+                            }
+                            let bc = crate::display::blocks::BlockContent { last_stdout: if prev_out.is_empty() { None } else { Some(prev_out) }, ..Default::default() };
+                            let diff = bc.diff_previous(&curr_out);
+                            self.ctx.copy_to_clipboard(diff.clone());
+                            let message = Message::new(
+                                format!("Block diff copied to clipboard ({} chars)", diff.len()),
+                                crate::message_bar::MessageType::Warning,
+                            );
+                            let _ = self.ctx.event_proxy.send_event(Event::new(EventType::Message(message), self.ctx.display.window.id()));
+                        }
+                    }
+                }
                 #[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
@@ -8118,8 +9071,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     } else {
                         // Confirmed or safe; paste to prompt and execute with Enter (Warp-like Ctrl+Enter)
                         self.ctx.paste(&command, true);
-                        // Send newline to execute the pasted command
-                        self.ctx.write_to_pty("\n".as_bytes());
+                        // Send newline to execute the pasted command (respect pane sync)
+                        self.ctx.write_terminal_input("\n".as_bytes());
                     }
                     *self.ctx.dirty = true;
                 }
@@ -8454,6 +9407,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::WorkflowsSearchPerform(_) => {
                     // Workflow search is handled at the processor level
                 }
+                // Command palette provider events handled at Processor level
+                EventType::PaletteRequestWorkflows | EventType::PaletteAppendWorkflows(_) => {}
                 #[cfg(feature = "workflow")]
                 EventType::WorkflowsSearchResults(_) => {
                     // Workflow search results are handled at the processor level

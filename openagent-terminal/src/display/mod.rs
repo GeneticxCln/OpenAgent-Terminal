@@ -88,6 +88,22 @@ pub mod window;
 pub mod workflow_panel;
 pub mod workspace_animations;
 
+/// Simple state for the native search overlay panel
+#[derive(Clone, Debug)]
+pub struct NativeSearchPanelState {
+    pub active: bool,
+    pub query: String,
+    pub selected_index: usize,
+    pub results: Vec<crate::native_search::SearchResult>,
+    pub last_updated: Option<Instant>,
+}
+
+impl Default for NativeSearchPanelState {
+    fn default() -> Self {
+        Self { active: false, query: String::new(), selected_index: 0, results: Vec::new(), last_updated: None }
+    }
+}
+
 /// Decide whether the overlay tab bar should be shown based on configuration and mouse position.
 ///
 /// Behavior:
@@ -623,6 +639,9 @@ pub struct Display {
 
     /// Settings panel state (for in-app configuration like API keys)
     pub settings_panel: settings_panel::SettingsPanelState,
+
+    /// Native search panel state (scoped search over block outputs)
+    pub native_search: NativeSearchPanelState,
 
     /// Short press flash effect for Quick Actions capsules
     pub quick_actions_press_flash_until: Option<Instant>,
@@ -1360,7 +1379,73 @@ impl Display {
             blocks_header_hover_chip: None,
             blocks_press_flash_chip: None,
             blocks_header_hover_status: None,
+            native_search: NativeSearchPanelState::default(),
         })
+    }
+
+    /// Draw the native search overlay panel.
+    fn draw_native_search_overlay(&mut self, config: &UiConfig, state: &NativeSearchPanelState) {
+        let theme = config
+            .resolved_theme
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let si = self.size_info;
+        let cw = si.cell_width();
+        let ch = si.cell_height();
+        let width = (si.width() * 0.75).clamp(400.0, si.width() - 20.0);
+        let height = (si.height() * 0.5).clamp(200.0, si.height() - 20.0);
+        let x = (si.width() - width) * 0.5;
+        let y = (si.height() - height) * 0.2 + 12.0; // slightly below top
+
+        // Background pill
+        let bg = UiRoundedRect::new(x, y, width, height, (theme.ui.corner_radius_px * 0.9).min(16.0), tokens.surface, 0.96);
+        self.stage_ui_rounded_rect(bg);
+
+        // Header: title + query string
+        let title = "Native Search";
+        let query_prefix = " > ";
+        let header_cols = ((width - 20.0) / cw) as usize;
+        let header_line = ((y + 10.0) / ch) as usize;
+        let start_col = ((x + 10.0) / cw) as usize;
+        let mut header = String::new();
+        header.push_str(title);
+        header.push_str(query_prefix);
+        header.push_str(&state.query);
+        self.draw_ai_text(Point::new(header_line, Column(start_col)), tokens.text, tokens.surface, &header, header_cols);
+
+        // Results list area
+        let list_top = y + ch * 1.8;
+        let max_rows = ((height - (list_top - y) - 10.0) / ch).max(1.0) as usize;
+        let visible = state.results.iter().take(max_rows);
+        for (i, r) in visible.enumerate() {
+            let line = ((list_top + i as f32 * ch) / ch) as usize;
+            let is_sel = i == state.selected_index;
+            // Row background highlight for selection
+            if is_sel {
+                let row_bg = RenderRect::new(x + 6.0, list_top + i as f32 * ch + 2.0, width - 12.0, ch - 4.0, tokens.overlay, 0.25);
+                let size_copy = self.size_info;
+                let metrics = self.glyph_cache.font_metrics();
+                self.renderer_draw_rects(&size_copy, &metrics, vec![row_bg]);
+            }
+            // Title and snippet (first 80 chars)
+            let title_cols = ((width - 24.0) / cw) as usize;
+            let mut title_line = format!("{}", r.title);
+            if title_line.len() > title_cols { title_line.truncate(title_cols); }
+            self.draw_ai_text(Point::new(line, Column(start_col)), tokens.text, tokens.surface, &title_line, title_cols);
+            // Next line: muted snippet if any
+            let snippet_line = line + 1;
+            let mut snippet = r.content.lines().next().unwrap_or("").to_string();
+            if snippet.len() > title_cols { snippet.truncate(title_cols); }
+            self.draw_ai_text(Point::new(snippet_line, Column(start_col)), tokens.text_muted, tokens.surface, &snippet, title_cols);
+        }
+
+        // Footer hint
+        let footer = "Enter: Copy result • Esc: Close • Typing: Refine";
+        let foot_cols = ((width - 20.0) / cw) as usize;
+        let foot_line = (((y + height - ch - 6.0) / ch).max(0.0)) as usize;
+        self.draw_ai_text(Point::new(foot_line, Column(start_col)), tokens.text_muted, tokens.surface, footer, foot_cols);
     }
 
     /// Update font size and cell dimensions.
@@ -2634,11 +2719,10 @@ impl Display {
             }
         }
 
-        // Draw Blocks Search panel overlay if active.
-        #[cfg(feature = "never")]
-        if self.blocks_search.active {
-            let bs_state = self.blocks_search.clone();
-            self.draw_blocks_search_overlay(config, &bs_state);
+        // Draw native search panel overlay if active.
+        if self.native_search.active {
+            let st = self.native_search.clone();
+            self.draw_native_search_overlay(config, &st);
         }
 
         // Draw always-on completions overlay (experimental) when enabled and applicable.
@@ -3135,8 +3219,8 @@ impl Display {
                         // Compute chip starting column based on the legacy header width to stay in-sync with hit-testing
                         let mut col = header.width() + 2;
 
-                        // Draw action chips: [Copy] [Rerun] [Export], ensuring they don't overlap the right-aligned time
-                        let chips = ["[Copy]", "[Rerun]", "[Export]"];
+                        // Draw action chips: [Copy] [Retry] [Fix] [Diff] [Explain], ensuring they don't overlap the right-aligned time
+                        let chips = ["[Copy]", "[Retry]", "[Fix]", "[Diff]", "[Explain]"];
                         let hover_line = self.blocks_header_hover_line;
                         let hover_chip = self.blocks_header_hover_chip;
                         let press_chip =

@@ -15,8 +15,7 @@ use regex::Regex;
 // use serde::{Deserialize, Serialize}; // retained for future serialization when needed
 // use tokio::sync::mpsc; // not used currently
 use tracing::{debug, info, warn};
-
-use crate::blocks_v2::BlockId;
+use crate::command_pipeline::BlockId;
 use crate::shell_integration::CommandId;
 
 /// Callback type for search events to reduce type complexity
@@ -67,6 +66,8 @@ pub struct SearchIntegration {
 
     /// Performance statistics
     stats: SearchStats,
+    /// Simple per-tab block output index for fast block search (use primitive tab key to avoid cross-crate type issues)
+    quick_block_index: HashMap<(usize, String), String>,
 }
 
 /// Search events for immediate feedback
@@ -1123,6 +1124,7 @@ impl SearchIntegration {
             index_manager: SearchIndexManager::new(),
             event_callbacks: Vec::new(),
             stats: SearchStats { last_reset: Instant::now(), ..Default::default() },
+            quick_block_index: HashMap::new(),
         };
 
         // Initialize indices immediately
@@ -1137,6 +1139,35 @@ impl SearchIntegration {
         F: Fn(&SearchEvent) + Send + Sync + 'static,
     {
         self.event_callbacks.push(Box::new(callback));
+    }
+
+    /// Index a block stdout for a tab/block id into the quick index
+    pub fn index_block_stdout(&mut self, tab_key: usize, block_id: impl Into<String>, stdout: String) {
+        self.quick_block_index.insert((tab_key, block_id.into()), stdout);
+    }
+
+    /// Search quick block index across all tabs or a single tab (simple contains)
+    pub fn search_blocks_quick(&self, query: &str, tab_filter: Option<usize>) -> Vec<SearchResult> {
+        if query.is_empty() { return Vec::new(); }
+        let mut out = Vec::new();
+        for ((tid, bid), content) in &self.quick_block_index {
+            if tab_filter.map(|t| t == *tid).unwrap_or(true) && content.contains(query) {
+                let mut md = HashMap::new();
+                md.insert("tab".to_string(), tid.to_string());
+                out.push(SearchResult {
+                    id: bid.clone(),
+                    title: format!("Block {}", bid),
+                    content: content.clone(),
+                    context: SearchContext::AllBlocks,
+                    relevance_score: 1.0,
+                    match_positions: Vec::new(),
+                    metadata: md,
+                    timestamp: Instant::now(),
+                    created_at: None,
+                });
+            }
+        }
+        out
     }
 
     /// Emit search event immediately
@@ -1839,7 +1870,7 @@ impl TextSearchEngine {
             return Some(Vec::new());
         }
 
-        let mut make_set = |term: &str| -> std::collections::HashSet<String> {
+        let make_set = |term: &str| -> std::collections::HashSet<String> {
             let t = term.trim().to_lowercase();
             let mut set = std::collections::HashSet::new();
             for (doc, terms) in &self.inverted_index.doc_terms {

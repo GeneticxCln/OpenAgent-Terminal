@@ -326,10 +326,23 @@ impl PaneDragManager {
             }
         }
 
-        // Check for new tab creation (empty space in tab bar)
-        let max_tab_x = tab_positions.iter().map(|(_, x, w)| x + w).fold(0.0, f32::max);
-        if mouse_y < 50.0 && mouse_x > max_tab_x {
-            return Some(PaneDropZone::NewTab { position: tab_positions.len() });
+        // If not over any existing tab or split, suggest new tab creation at either end
+        if !tab_positions.is_empty() {
+            // Determine bounds of current tabs
+            let mut min_x = f32::INFINITY;
+            let mut max_end = f32::NEG_INFINITY;
+            for &(_, x, width) in tab_positions {
+                if x < min_x { min_x = x; }
+                if x + width > max_end { max_end = x + width; }
+            }
+            // To the left of the first tab => insert at position 0
+            if mouse_x < min_x {
+                return Some(PaneDropZone::NewTab { position: 0 });
+            }
+            // To the right of the last tab => append after last
+            if mouse_x >= max_end {
+                return Some(PaneDropZone::NewTab { position: tab_positions.len() });
+            }
         }
 
         None
@@ -439,5 +452,38 @@ mod tests {
         let drop_zone = manager.calculate_drop_zone((250.0, 10.0), &tab_positions, &[]);
 
         assert!(matches!(drop_zone, Some(PaneDropZone::NewTab { position: 2 })));
+    }
+
+    #[test]
+    fn test_split_edge_drop_zones() {
+        let manager = PaneDragManager::new();
+        // One split area representing a pane at (100, 100) size 200x120
+        let pane = PaneId(9);
+        let tab = TabId(1);
+        let split_areas = vec![(tab, pane, 100.0, 100.0, 200.0, 120.0)];
+        // Left edge -> Vertical, before
+        let dz = manager.calculate_drop_zone((100.0 + 10.0, 160.0), &[], &split_areas);
+        assert!(matches!(dz,
+            Some(PaneDropZone::Split { tab_id, direction: SplitDirection::Vertical, target_split: Some(pid), before: true })
+            if tab_id == tab && pid == pane
+        ));
+        // Right edge -> Vertical, after
+        let dz = manager.calculate_drop_zone((100.0 + 200.0 - 10.0, 160.0), &[], &split_areas);
+        assert!(matches!(dz,
+            Some(PaneDropZone::Split { tab_id, direction: SplitDirection::Vertical, target_split: Some(pid), before: false })
+            if tab_id == tab && pid == pane
+        ));
+        // Top edge -> Horizontal, before
+        let dz = manager.calculate_drop_zone((200.0, 100.0 + 8.0), &[], &split_areas);
+        assert!(matches!(dz,
+            Some(PaneDropZone::Split { tab_id, direction: SplitDirection::Horizontal, target_split: Some(pid), before: true })
+            if tab_id == tab && pid == pane
+        ));
+        // Bottom edge -> Horizontal, after
+        let dz = manager.calculate_drop_zone((200.0, 100.0 + 120.0 - 8.0), &[], &split_areas);
+        assert!(matches!(dz,
+            Some(PaneDropZone::Split { tab_id, direction: SplitDirection::Horizontal, target_split: Some(pid), before: false })
+            if tab_id == tab && pid == pane
+        ));
     }
 }

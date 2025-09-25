@@ -102,11 +102,12 @@ impl WorkflowPersistence {
             .with_context(|| format!("Failed to open database at {:?}", db_path.as_ref()))?;
 
         // Enable foreign keys and WAL mode for better performance
-        conn.execute("PRAGMA foreign_keys = ON", [])?;
-        conn.execute("PRAGMA journal_mode = WAL", [])?;
-        conn.execute("PRAGMA synchronous = NORMAL", [])?;
-        conn.execute("PRAGMA temp_store = memory", [])?;
-        conn.execute("PRAGMA mmap_size = 268435456", [])?; // 256MB mmap
+        // Use pragma_update APIs to avoid trying to read returned rows via execute.
+        conn.pragma_update(None, "foreign_keys", &true)?;
+        conn.pragma_update(None, "journal_mode", &"WAL")?;
+        conn.pragma_update(None, "synchronous", &"NORMAL")?;
+        conn.pragma_update(None, "temp_store", &"memory")?;
+        conn.pragma_update(None, "mmap_size", &268435456_i64)?; // 256MB mmap
 
         let mut persistence = Self { conn };
         persistence.initialize_schema()?;
