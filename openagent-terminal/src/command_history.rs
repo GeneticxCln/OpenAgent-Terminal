@@ -110,7 +110,7 @@ impl CommandHistory {
 
     /// Get recent command history
     pub async fn get_recent(&self, limit: usize) -> Vec<HistoryEntry> {
-        let mut recent: Vec<_> = self.simple_history.iter().cloned().collect();
+        let mut recent: Vec<_> = self.simple_history.to_vec();
         recent.reverse(); // Most recent first
         recent.truncate(limit);
         recent

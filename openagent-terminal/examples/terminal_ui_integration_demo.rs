@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[cfg(feature = "ai")]
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing for logging

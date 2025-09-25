@@ -68,7 +68,6 @@ pub struct WindowContext {
     components: Option<Arc<InitializedComponents>>,
     /// Workspace manager for tabs and split panes
     pub workspace: crate::workspace::WorkspaceManager,
-    #[cfg(feature = "ai")]
     pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
     /// Native Warp-style IDE manager
     pub ide: crate::ide::IdeManager,
@@ -303,9 +302,7 @@ impl WindowContext {
             touch: Default::default(),
             dirty: Default::default(),
             workspace,
-            #[cfg(feature = "ai")]
             ai_runtime: {
-                #[cfg(feature = "ai")]
                 {
                     if config.ai.enabled {
                         // Export AI log verbosity for provider/runtime side
@@ -477,7 +474,6 @@ impl WindowContext {
         self.event_queue.push(event.into());
 
         // Rebuild AI runtime on config update to apply provider changes immediately (Warp parity)
-        #[cfg(feature = "ai")]
         {
             if self.config.ai.enabled {
                 // Export AI log verbosity for provider/runtime side
@@ -601,7 +597,6 @@ impl WindowContext {
 
         // Redraw the window.
         let terminal = self.terminal.lock();
-        #[cfg(feature = "ai")]
         let ai_state_opt = self.ai_runtime.as_ref().map(|r| &r.ui);
         self.display.draw(
             terminal,
@@ -609,7 +604,6 @@ impl WindowContext {
             &self.message_buffer,
             &self.config,
             &mut self.search_state,
-            #[cfg(feature = "ai")]
             ai_state_opt,
             Some(&self.workspace.tabs),
         );
@@ -671,13 +665,13 @@ impl WindowContext {
                 .map(|it| crate::display::completions::CompletionItem {
                     label: it.text,
                     kind: match it.kind {
-                        crate::ide::warp_ide::CompletionKind::FilePath => {
+                        crate::ide::CompletionKind::FilePath => {
                             crate::display::completions::CompletionKind::File
                         }
-                        crate::ide::warp_ide::CompletionKind::Command => {
+                        crate::ide::CompletionKind::Command => {
                             crate::display::completions::CompletionKind::Command
                         }
-                        crate::ide::warp_ide::CompletionKind::GitRef => {
+                        crate::ide::CompletionKind::GitRef => {
                             crate::display::completions::CompletionKind::Branch
                         }
                     },
@@ -714,7 +708,6 @@ impl WindowContext {
             master_fd: self.master_fd,
             #[cfg(not(windows))]
             shell_pid: self.shell_pid,
-            #[cfg(feature = "ai")]
             ai_runtime: self.ai_runtime.as_mut(),
             #[cfg(feature = "never")]
             components: self.components.as_ref(),

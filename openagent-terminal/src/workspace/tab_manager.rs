@@ -42,7 +42,6 @@ pub struct TabContext {
     pub panes: HashMap<PaneId, PaneContext>,
 
     /// AI runtime state isolated to this tab
-    #[cfg(feature = "ai")]
     pub ai_runtime: Option<crate::ai_runtime::AiRuntime>,
 
     /// Whether this tab has unsaved changes
@@ -323,7 +322,6 @@ impl TabManager {
             split_layout: SplitLayout::Single(pane_id),
             active_pane: pane_id,
             panes: HashMap::new(),
-            #[cfg(feature = "ai")]
             ai_runtime: None,
             modified: false,
             shell_command: None,

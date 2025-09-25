@@ -49,7 +49,6 @@ impl Default for AiDrawConfig {
 impl AiDrawConfig {
     /// Create AiDrawConfig from UiConfig, using AI settings where available
     pub fn from_ui_config(ui_config: &UiConfig) -> Self {
-        #[cfg(feature = "ai")]
         {
             let ai_config = &ui_config.ai;
             Self {
@@ -95,7 +94,6 @@ impl<'a> AiDrawContext<'a> {
     }
 
     /// Draw the AI UI with the specified state
-    #[cfg(feature = "ai")]
     pub fn draw(&mut self, ai_state: &crate::ai_runtime::AiUiState) -> Vec<RenderRect> {
         let mut rects = Vec::new();
 
@@ -169,7 +167,6 @@ impl<'a> AiDrawContext<'a> {
 
     /// Draw the backdrop dim
     fn draw_backdrop(&self, progress: f32, rects: &mut Vec<RenderRect>) {
-        #[cfg(feature = "ai")]
         let backdrop_alpha = (self.config.ai.backdrop_alpha * progress).clamp(0.0, 1.0);
         #[cfg(not(feature = "ai"))]
         let backdrop_alpha = 0.0;
@@ -195,7 +192,6 @@ impl<'a> AiDrawContext<'a> {
         let size_info = self.display.size_info;
         let num_lines = size_info.screen_lines;
 
-        #[cfg(feature = "ai")]
         let fraction = self.config.ai.panel_height_fraction.clamp(0.20, 0.60);
         #[cfg(not(feature = "ai"))]
         let fraction = 0.40;
@@ -497,7 +493,6 @@ impl<'a> AiDrawContext<'a> {
     }
 }
 
-#[cfg(feature = "ai")]
 impl Display {
     /// Draw AI UI using the unified drawing system
     pub fn draw_ai_unified(

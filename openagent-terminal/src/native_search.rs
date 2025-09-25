@@ -15,7 +15,7 @@ use regex::Regex;
 // use serde::{Deserialize, Serialize}; // retained for future serialization when needed
 // use tokio::sync::mpsc; // not used currently
 use tracing::{debug, info, warn};
-use crate::command_pipeline::BlockId;
+use crate::blocks_v2::BlockId;
 use crate::shell_integration::CommandId;
 
 /// Callback type for search events to reduce type complexity

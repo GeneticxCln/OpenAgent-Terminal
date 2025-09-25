@@ -10,8 +10,6 @@ use toml::de::Error as TomlError;
 use toml::ser::Error as TomlSeError;
 use toml::{Table, Value};
 
-#[cfg(feature = "ai")]
-pub mod ai;
 pub mod ai_providers;
 pub mod bell;
 pub mod color;
@@ -33,7 +31,7 @@ pub mod workspace;
 
 mod bindings;
 mod mouse;
-pub mod warp_bindings;
+pub mod shortcuts;
 
 use crate::cli::Options;
 #[cfg(test)]

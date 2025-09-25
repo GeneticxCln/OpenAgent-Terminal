@@ -39,17 +39,7 @@ use openagent_terminal_core::tty;
 // Re-export SerdeReplace at crate root so config derive macros can refer to `crate::SerdeReplace`.
 pub use openagent_terminal_config::SerdeReplace;
 
-#[cfg(feature = "ai")]
-mod ai_context_provider;
-#[cfg(feature = "ai")]
-mod ai_runtime;
 mod cli;
-#[cfg(feature = "ai")]
-mod cli_ai;
-#[cfg(feature = "never")]
-mod plugins_api;
-#[cfg(feature = "sync")]
-mod cli_sync;
 mod clipboard;
 mod config;
 mod daemon;
@@ -73,7 +63,6 @@ mod string;
 mod window_context;
 
 // New component modules
-mod command_pipeline; // Native command execution pipeline
 mod components_init;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_input; // Native keyboard/mouse integration (experimental)
@@ -83,14 +72,10 @@ mod native_persistence; // Native persistence layer (experimental)
 mod native_renderer; // Native UI rendering system (experimental)
 // Re-export library native_search so crate::native_search is available in bin
 pub use openagent_terminal::native_search;
-#[cfg(feature = "never")]
-mod notebooks;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod shell_integration; // Native shell integration (experimental)
 #[cfg(feature = "completions")]
 mod completions_spec;
-#[cfg(feature = "never")]
-mod storage;
 mod text_shaping;
 mod ui_confirm;
 mod utils;
@@ -134,125 +119,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(unix)]
         Some(Subcommands::Msg(options)) => msg(options)?,
         Some(Subcommands::Migrate(options)) => migrate::migrate(options),
-        #[cfg(feature = "ai")]
-        Some(Subcommands::Ai(ref ai_opts)) => {
-            // Load configuration for validation/migration context
-            let mut tmp = Options::new();
-            tmp.subcommands = None;
-            let cfg = config::load(&mut tmp);
-            let code = cli_ai::run_ai_cli(ai_opts, &cfg)?;
-            if code != 0 {
-                std::process::exit(code)
-            };
-        }
-        #[cfg(feature = "sync")]
-        Some(Subcommands::Sync(ref sync_opts)) => {
-            let mut tmp = Options::new();
-            tmp.subcommands = None;
-            let cfg = config::load(&mut tmp);
-            let code = cli_sync::run_sync_cli(sync_opts, &cfg)?;
-            if code != 0 {
-                std::process::exit(code)
-            };
-        }
-        #[cfg(feature = "ide-lsp")]
-        Some(Subcommands::IdeLspHover(ref opts)) => {
-            let code = ide_lsp_hover_run(opts)?;
-            if code != 0 {
-                std::process::exit(code);
-            }
-        }
         None => run_openagent_terminal(options)?,
     }
 
     Ok(())
 }
 
-
-
-#[cfg(feature = "ide-lsp")]
-fn ide_lsp_hover_run(opts: &crate::cli::IdeLspHoverOptions) -> Result<i32, Box<dyn Error>> {
-    use lsp_types as lsp;
-    use openagent_terminal_ide::lsp as ide_lsp;
-    use std::fs;
-
-    // Guess language if not provided
-    fn guess_language_from_path(path: &std::path::Path) -> String {
-        match path.extension().and_then(|s| s.to_str()).unwrap_or("") {
-            "rs" => "rust",
-            "ts" => "typescript",
-            "tsx" => "typescript",
-            "js" => "javascript",
-            "jsx" => "javascript",
-            "json" => "json",
-            "md" => "markdown",
-            "py" => "python",
-            "go" => "go",
-            "c" | "h" => "c",
-            "cpp" | "cc" | "hpp" => "cpp",
-            other => {
-                if other.is_empty() {
-                    "plaintext"
-                } else {
-                    other
-                }
-            }
-        }
-        .into()
-    }
-
-    let lang = opts.language.clone().unwrap_or_else(|| guess_language_from_path(&opts.file));
-
-    // Use default IDE config mapping for language servers
-    let ide_cfg = crate::config::ide::IdeConfig::default();
-    let server = ide_cfg
-        .language_servers
-        .get(&lang)
-        .ok_or_else(|| format!("No language server configured for language '{lang}'"))?;
-
-    let server_cfg = ide_lsp::ServerConfig {
-        command: server.command.clone(),
-        args: server.args.clone(),
-        initialization_options: server.initialization_options.clone(),
-    };
-
-    let root_uri = opts.file.parent().map(|p| lsp::Url::from_file_path(p).unwrap());
-    let client = ide_lsp::LspClient::start(&server_cfg, root_uri)?;
-
-    let uri = lsp::Url::from_file_path(&opts.file).map_err(|_| "invalid file path for LSP URI")?;
-    let text = fs::read_to_string(&opts.file).unwrap_or_default();
-    client.open_document(uri.clone(), &lang, &text)?;
-
-    // Convert 1-based -> 0-based
-    let pos = lsp::Position {
-        line: opts.line.saturating_sub(1),
-        character: opts.character.saturating_sub(1),
-    };
-    let params = lsp::TextDocumentPositionParams {
-        text_document: lsp::TextDocumentIdentifier { uri },
-        position: pos,
-    };
-
-    match client.hover(params)? {
-        Some(hover) => {
-            println!("{}", serde_json::to_string_pretty(&hover)?);
-        }
-        None => {
-            println!("No hover information available at this position");
-        }
-    }
-    Ok(0)
 }
 
-/// `msg` subcommand entrypoint.
 #[cfg(unix)]
-#[allow(unused_mut)]
-fn msg(mut options: MessageOptions) -> Result<(), Box<dyn Error>> {
-    #[cfg(not(any(target_os = "macos", windows)))]
-    if let SocketMessage::CreateWindow(window_options) = &mut options.message {
-        window_options.activation_token =
-            env::var("XDG_ACTIVATION_TOKEN").or_else(|_| env::var("DESKTOP_STARTUP_ID")).ok();
-    }
+fn msg(options: MessageOptions) -> Result<(), Box<dyn Error>> {
     ipc::send_message(options.socket, options.message).map_err(|err| err.into())
 }
 

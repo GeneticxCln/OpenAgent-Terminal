@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::*;
-use openagent_terminal_ai::AiProvider;
 
 /// Specialized agent for code generation tasks
 pub struct CodeGenerationAgent {
@@ -210,7 +209,6 @@ impl CodeGenerationAgent {
             }
         }
 
-        let ai_request = openagent_terminal_ai::AiRequest {
             scratch_text: format!("{}\n\n{}", system_prompt, user_prompt),
             working_directory: Some(context.current_directory.clone()),
             shell_kind: Some("bash".to_string()), // TODO: Get from context
@@ -224,7 +222,6 @@ impl CodeGenerationAgent {
             provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?
         } else {
             // Return a mock response when no AI provider is available
-            vec![openagent_terminal_ai::AiProposal {
                 title: "Mock Code Generation".to_string(),
                 description: Some("Generated mock code response".to_string()),
                 proposed_commands: vec![serde_json::json!({

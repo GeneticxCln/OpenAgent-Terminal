@@ -1,7 +1,7 @@
 //! Tab bar types for OpenAgent Terminal
 //!
 //! This module intentionally contains only data types used by the display layer.
-//! Rendering and interactions are implemented in display/warp_ui.rs.
+//! Rendering and interactions are implemented in display/modern_ui.rs.
 
 use std::time::Instant;
 

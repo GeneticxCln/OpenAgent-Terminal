@@ -258,7 +258,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                             return;
                         }
-                        #[cfg(feature = "ai")]
                         {
                             self.ctx.open_ai_panel();
                             // Empty seed is fine; user starts typing in panel
@@ -275,7 +274,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        #[cfg(feature = "ai")]
                         {
                             self.ctx.open_ai_panel();
                             if let Some(runtime) = self.ctx.ai_runtime_mut() {
@@ -292,7 +290,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     }
                     Key::Named(NamedKey::Delete) => {
-                        #[cfg(feature = "ai")]
                         {
                             // Open panel on Delete too; perform forward delete in panel
                             self.ctx.open_ai_panel();
@@ -309,7 +306,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     }
                     Key::Character(c) if ctrl_or_cmd && c.eq_ignore_ascii_case("v") => {
-                        #[cfg(feature = "ai")]
                         {
                             use openagent_terminal_core::term::ClipboardType;
                             let clip = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
@@ -332,7 +328,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     _ => {}
                 }
                 if !text.is_empty() {
-                    #[cfg(feature = "ai")]
                     {
                         self.ctx.open_ai_panel();
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
@@ -486,7 +481,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     return;
                 }
                 Key::Named(NamedKey::Enter) => {
-                    #[cfg(feature = "ai")]
                     {
                         let text_to_send = self.ctx.display().composer_text.clone();
                         self.ctx.open_ai_panel();
@@ -1096,7 +1090,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Workflows params overlay input handling (if active)
-        #[cfg(feature = "workflow")]
         if self.ctx.workflows_params_active() {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
@@ -1159,7 +1152,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Workflows panel input handling (if active)
-        #[cfg(feature = "workflow")]
         if self.ctx.workflows_panel_active() {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
@@ -1402,7 +1394,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.display().composer_history_stash = None;
                     }
                     // Open AI panel and seed text, then propose
-                    #[cfg(feature = "ai")]
                     {
                         self.ctx.open_ai_panel();
                         let text = self.ctx.display().composer_text.clone();
@@ -1578,7 +1569,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Inline AI suggestions: accept/dismiss when visible and panel not active
-        #[cfg(feature = "ai")]
         if !self.ctx.ai_active() && self.ctx.inline_suggestion_visible() {
             match key.logical_key.as_ref() {
                 Key::Named(NamedKey::Tab) => {
@@ -1609,12 +1599,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     self.ctx.open_notebooks_panel();
                     return;
                 }
-                #[cfg(feature = "ai")]
                 Key::Character(c) if c.eq_ignore_ascii_case("a") => {
                     self.ctx.send_user_event(crate::event::EventType::AiToggle);
                     return;
                 }
-                #[cfg(feature = "ai")]
                 Key::Character(c) if c.eq_ignore_ascii_case("p") => {
                     // Toggle provider dropdown in composer (Warp parity quick-action)
                     let open = self.ctx.display().ai_provider_dropdown_open;
@@ -1627,7 +1615,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // AI panel input handling (if active). Never auto-run; only edit/propose.
-        #[cfg(feature = "ai")]
         if self.ctx.ai_active() {
             let mods = self.ctx.modifiers().state();
 
@@ -1916,7 +1903,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Workflows progress overlay: allow Esc to dismiss when visible
-        #[cfg(feature = "workflow")]
         if self.ctx.workflows_progress_active() && self.ctx.workflows_progress_terminal() {
             if let Key::Named(NamedKey::Escape) = key.logical_key.as_ref() {
                 self.ctx.workflows_progress_dismiss();
@@ -1957,7 +1943,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
             // Schedule AI inline suggestion after typing (debounced), and clear any stale
             // suggestion
-            #[cfg(feature = "ai")]
             {
                 if !self.ctx.ai_active() {
                     self.ctx.clear_inline_suggestion();

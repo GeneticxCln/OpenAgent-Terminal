@@ -1,9 +1,6 @@
 #![allow(dead_code)]
-#[cfg(feature = "ai")]
-use super::ai::ProviderConfig;
-#[cfg(not(feature = "ai"))]
 use serde::{Deserialize, Serialize};
-#[cfg(not(feature = "ai"))]
+use std::collections::HashMap;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub api_key_env: Option<String>,
@@ -13,7 +10,6 @@ pub struct ProviderConfig {
     pub default_model: Option<String>,
     pub extra: HashMap<String, String>,
 }
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, warn};

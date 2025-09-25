@@ -10,10 +10,8 @@
 //! Tests that all three features work together without lazy fallbacks
 
 // Test AI Command Assistance
-#[cfg(feature = "ai")]
 mod ai_tests {
     use openagent_terminal::ai_runtime::AiRuntime;
-    use openagent_terminal_ai::{AiProposal, AiProvider, AiRequest};
 
     pub struct MockProvider;
 
@@ -308,7 +306,6 @@ mod integration_tests {
         let mut ai_runtime = AiRuntime::new(provider);
 
         // Simulate AI proposing a dangerous command
-        ai_runtime.ui.proposals = vec![openagent_terminal_ai::AiProposal {
             title: "Delete files".to_string(),
             description: Some("Delete all files recursively".to_string()),
             proposed_commands: vec!["rm -rf /tmp/*".to_string()],
@@ -480,7 +477,6 @@ mod feature_compatibility_tests {
         // This test exists to ensure different feature combinations compile
         // The actual feature combinations are tested by the CI system
 
-        #[cfg(feature = "ai")]
         {
             // AI-specific functionality should work
             let _ai_available = true;

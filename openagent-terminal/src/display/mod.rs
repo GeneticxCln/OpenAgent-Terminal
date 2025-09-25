@@ -11,7 +11,6 @@ use std::{cmp, mem};
 use log::{debug, info};
 #[cfg(not(feature = "wgpu"))]
 use log::info;
-use parking_lot::MutexGuard;
 use serde::{Deserialize, Serialize};
 use winit::dpi::PhysicalSize;
 use winit::keyboard::ModifiersState;
@@ -57,14 +56,16 @@ use crate::renderer::{self, GlyphCache, LoaderApi};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::string::{ShortenDirection, StrShortener};
 
-#[cfg(feature = "ai")]
 pub mod ai_drawing;
-#[cfg(feature = "ai")]
 pub mod ai_panel;
 pub mod animation;
 pub mod blocks;
 #[cfg(feature = "never")]
 pub mod blocks_search_actions;
+#[cfg(feature = "never")]
+pub mod blocks_search_panel;
+#[cfg(feature = "never")]
+pub mod notebook_panel;
 pub mod color;
 #[cfg(feature = "completions")]
 pub mod completions;
@@ -82,14 +83,14 @@ pub mod pane_drag_drop;
 pub mod plugin_panel;
 pub mod settings_panel;
 pub mod tab_bar;
-pub mod warp_ui;
+pub mod modern_ui;
 pub mod window;
-#[cfg(feature = "workflow")]
 pub mod workflow_panel;
 pub mod workspace_animations;
 
 /// Simple state for the native search overlay panel
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct NativeSearchPanelState {
     pub active: bool,
     pub query: String,
@@ -98,11 +99,6 @@ pub struct NativeSearchPanelState {
     pub last_updated: Option<Instant>,
 }
 
-impl Default for NativeSearchPanelState {
-    fn default() -> Self {
-        Self { active: false, query: String::new(), selected_index: 0, results: Vec::new(), last_updated: None }
-    }
-}
 
 /// Decide whether the overlay tab bar should be shown based on configuration and mouse position.
 ///
@@ -118,7 +114,7 @@ pub(crate) fn should_show_tab_bar_overlay(
     last_mouse_y_px: usize,
     tab_cfg: &crate::config::workspace::TabBarConfig,
     is_fullscreen: bool,
-    style: &crate::display::warp_ui::WarpTabStyle,
+    style: &crate::display::modern_ui::WarpTabStyle,
 ) -> bool {
     use crate::config::workspace::TabBarVisibility as Vis;
 
@@ -489,19 +485,14 @@ pub struct Display {
     // vertical split (top/bottom).
     pub debug_split_overlay: Option<bool>,
 
-    #[cfg(feature = "ai")]
     /// Tracks last-known AI panel visibility to trigger open/close animations.
     pub(crate) ai_panel_last_active: bool,
-    #[cfg(feature = "ai")]
     /// Animation start time for AI panel transitions.
     pub(crate) ai_panel_anim_start: Option<Instant>,
-    #[cfg(feature = "ai")]
     /// True when animating opening, false when closing.
     pub(crate) ai_panel_anim_opening: bool,
-    #[cfg(feature = "ai")]
     /// Animation duration in milliseconds.
     pub(crate) ai_panel_anim_duration_ms: u32,
-    #[cfg(feature = "ai")]
     /// Hovered AI header control (for hover tooltips and cursor), if any.
     pub(crate) ai_hover_control: Option<ai_panel::AiHeaderControl>,
 
@@ -622,13 +613,10 @@ pub struct Display {
     pub completions_anim_start: Option<Instant>,
 
     /// Workflows panel state.
-    #[cfg(feature = "workflow")]
     pub workflows_panel: workflow_panel::WorkflowsPanelState,
     /// Workflows progress overlay state.
-    #[cfg(feature = "workflow")]
     pub workflows_progress: workflow_panel::WorkflowProgressState,
     /// Workflows parameter form overlay state.
-    #[cfg(feature = "workflow")]
     pub workflows_params: workflow_panel::WorkflowParamsState,
     /// Plugins panel state.
     #[cfg(feature = "never")]
@@ -941,7 +929,6 @@ impl Display {
         {
             labels.push("[Plugins]");
         }
-        #[cfg(feature = "ai")]
         if config.ai.enabled {
             labels.push("[AI]");
         }
@@ -1073,7 +1060,7 @@ impl Display {
     // Fallback helper: draw text using the renderer. This is available when the `blocks` feature is
     // disabled to satisfy calls from overlays/palette that rely on a common text drawing helper.
     // When `blocks` is enabled, a similar helper exists in the blocks_search_panel module.
-#[cfg(all(not(feature = "never"), feature = "wgpu"))]
+#[cfg(feature = "wgpu")]
     pub(crate) fn draw_ai_text(
         &mut self,
         point: Point<usize>,
@@ -1105,7 +1092,7 @@ impl Display {
     }
 
     // Provide a no-op draw_ai_text stub when WGPU is not enabled
-    #[cfg(all(not(feature = "never"), not(feature = "wgpu")))]
+    #[cfg(not(feature = "wgpu"))]
     pub(crate) fn draw_ai_text(
         &mut self,
         _point: Point<usize>,
@@ -1262,7 +1249,6 @@ impl Display {
             composer_history_index: None,
             composer_history_stash: None,
             ai_current_provider: {
-                #[cfg(feature = "ai")]
                 {
                     // Align UI default with runtime/config default
                     config.ai.provider.as_deref().unwrap_or("null").to_string()
@@ -1273,7 +1259,6 @@ impl Display {
                 }
             },
             ai_current_model: {
-                #[cfg(feature = "ai")]
                 {
                     let pname = config.ai.provider.as_deref().unwrap_or("openrouter");
                     let prov_cfg = config
@@ -1318,21 +1303,13 @@ impl Display {
             #[cfg(feature = "completions")]
             completions_anim_start: None,
             debug_split_overlay: None,
-            #[cfg(feature = "ai")]
             ai_panel_last_active: false,
-            #[cfg(feature = "ai")]
             ai_panel_anim_start: None,
-            #[cfg(feature = "ai")]
             ai_panel_anim_opening: false,
-            #[cfg(feature = "ai")]
             ai_panel_anim_duration_ms: 0,
-            #[cfg(feature = "ai")]
             ai_hover_control: None,
-            #[cfg(feature = "workflow")]
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
-            #[cfg(feature = "workflow")]
             workflows_progress: Default::default(),
-            #[cfg(feature = "workflow")]
             workflows_params: Default::default(),
             #[cfg(feature = "never")]
             plugins_panel: crate::display::plugin_panel::PluginPanelState::new(),
@@ -1435,7 +1412,7 @@ impl Display {
             }
             // Title and snippet (first 80 chars)
             let title_cols = ((width - 24.0) / cw) as usize;
-            let mut title_line = format!("{}", r.title);
+            let mut title_line = r.title.to_string();
             if title_line.len() > title_cols { title_line.truncate(title_cols); }
             self.draw_ai_text(Point::new(line, Column(start_col)), tokens.text, tokens.surface, &title_line, title_cols);
             // Next line: muted snippet if any
@@ -1621,7 +1598,7 @@ impl Display {
                     }
                     crate::display::pane_drag_drop::PaneDropZone::Tab { tab_id, .. } => {
                         // Highlight hovered tab region in the overlay for feedback
-                        let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
                         // Find tab bounds
                         if let Some((_, x, w)) =
                             self.tab_bounds_px.iter().copied().find(|(tid, _, _)| *tid == tab_id)
@@ -1662,7 +1639,7 @@ impl Display {
                     }
                     crate::display::pane_drag_drop::PaneDropZone::NewTab { .. } => {
                         // Highlight the new-tab area to the right of the last tab within the tab bar band
-                        let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
                         let bar_y = match config.workspace.tab_bar.position {
                             crate::workspace::TabBarPosition::Top => 0.0,
                             crate::workspace::TabBarPosition::Bottom => {
@@ -2008,6 +1985,16 @@ impl Display {
         true
     }
 
+    // No-op notebooks overlay stub for feature="never" builds
+    #[cfg(feature = "never")]
+    fn draw_notebooks_panel_overlay(
+        &mut self,
+        _config: &UiConfig,
+        _state: &crate::display::notebook_panel::NotebookPanelState,
+    ) {
+        // Intentionally left blank; legacy notebooks UI not rendered in this build
+    }
+
     /// Draw the screen.
     ///
     /// A reference to Term whose state is being drawn must be provided.
@@ -2016,18 +2003,18 @@ impl Display {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::vec_init_then_push)]
     #[allow(clippy::if_not_else)]
-    pub fn draw<T: EventListener>(
+    pub fn draw<T: EventListener, G>(
         &mut self,
-        mut terminal: MutexGuard<'_, Term<T>>,
+        mut terminal: G,
         scheduler: &mut Scheduler,
         message_buffer: &MessageBuffer,
         config: &UiConfig,
         search_state: &mut SearchState,
-        #[cfg(feature = "ai")] ai_state: Option<&crate::ai_runtime::AiUiState>,
         tab_manager: Option<&crate::workspace::TabManager>,
-    ) {
+    ) where
+        G: std::ops::Deref<Target = Term<T>> + std::ops::DerefMut,
+    {
         // Compute ai_panel_active flag in a cfg-safe way
-        #[cfg(feature = "ai")]
         let ai_active_flag = ai_state.map(|s| s.active).unwrap_or(false);
         #[cfg(not(feature = "ai"))]
         let ai_active_flag = false;
@@ -2684,7 +2671,6 @@ impl Display {
         }
 
         // Draw inline AI suggestion as subtle ghost text at the prompt (when enabled)
-        #[cfg(feature = "ai")]
         if let Some(ai) = ai_state {
             if !ai.active {
                 if let Some(suffix) = ai.inline_suggestion.as_ref() {
@@ -2713,7 +2699,6 @@ impl Display {
         }
 
         // Draw AI panel using unified drawing system.
-        #[cfg(feature = "ai")]
         if let Some(ai) = ai_state {
             use crate::display::ai_drawing::AiRenderMode;
             let ai_rects = self.draw_ai_unified(config, ai, AiRenderMode::Panel);
@@ -2766,7 +2751,7 @@ impl Display {
         if let Some(tm) = tab_manager {
             let tab_cfg = &config.workspace.tab_bar;
             if tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden {
-                let style = crate::display::warp_ui::WarpTabStyle::from_theme(config);
+let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
                 let is_fs = self.window.is_fullscreen();
                 let show_bar = should_show_tab_bar_overlay(
                     self.size_info,
@@ -2822,7 +2807,6 @@ impl Display {
             }
 
             // Workflows panel overlay if active
-            #[cfg(feature = "workflow")]
             if self.workflows_panel.active {
                 let st = self.workflows_panel.clone();
                 self.draw_workflows_panel_overlay(config, &st);
@@ -2840,13 +2824,11 @@ impl Display {
                 self.draw_notebooks_panel_overlay(config, &st);
             }
             // Workflows progress overlay if active
-            #[cfg(feature = "workflow")]
             if self.workflows_progress.active {
                 let st = self.workflows_progress.clone();
                 self.draw_workflows_progress_overlay(config, &st);
             }
             // Workflows params overlay if active
-            #[cfg(feature = "workflow")]
             if self.workflows_params.active {
                 let st = self.workflows_params.clone();
                 self.draw_workflows_params_overlay(config, &st);

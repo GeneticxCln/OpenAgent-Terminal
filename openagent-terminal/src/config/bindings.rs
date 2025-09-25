@@ -310,11 +310,9 @@ Hint(std::sync::Arc<Hint>),
     ToggleAiPanel,
 
     /// AI Explain mode - explain selected text or last command output [feature: ai].
-    #[cfg(feature = "ai")]
     AiExplain,
 
     /// AI Fix mode - suggest fix for error snippet or failed command [feature: ai].
-    #[cfg(feature = "ai")]
     AiFix,
 
     /// Create a new tab in the current window.
@@ -702,7 +700,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Enter, ModifiersState::SHIFT,       +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
     );
 
-    #[cfg(feature = "ai")]
     {
         bindings.extend(bindings!(
             KeyBinding;

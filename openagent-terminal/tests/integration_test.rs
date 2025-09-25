@@ -5,7 +5,6 @@
     clippy::too_many_lines
 )]
 
-#[cfg(feature = "ai")]
 mod integration_tests {
     use anyhow::Result;
     use chrono::Utc;

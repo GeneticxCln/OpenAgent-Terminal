@@ -15,17 +15,17 @@ use openagent_terminal_core::grid::Dimensions;
 
 pub mod split_manager;
 pub mod tab_manager;
-pub mod warp_integration;
-pub mod warp_split_manager;
-pub mod warp_tab_manager;
+pub mod integration;
+pub mod split_layout_manager;
+pub mod tab_layout_manager;
 // Warp modules
-pub mod warp_bindings {
+pub mod shortcuts_bridge {
     #[allow(unused_imports)]
-    pub use crate::config::warp_bindings::*;
+    pub use crate::config::shortcuts::*;
 }
-pub mod warp_ui {
+pub mod ui_bridge {
     #[allow(unused_imports)]
-    pub use crate::display::warp_ui::*;
+    pub use crate::display::modern_ui::*;
 }
 #[cfg(test)]
 mod session_restoration_test;
@@ -34,7 +34,7 @@ mod warp_integration_test;
 
 pub use split_manager::{PaneId, SplitManager};
 pub use tab_manager::{TabContext, TabId, TabManager};
-pub use warp_integration::{WarpAction, WarpIntegration, WarpIntegrationError, WarpUiUpdateType};
+pub use integration::{WarpAction, WarpIntegration, WarpIntegrationError, WarpUiUpdateType};
 
 /// Unique identifier for a workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -302,7 +302,7 @@ impl WorkspaceManager {
     /// Focus pane in a direction using geometry; returns true if focus changed
     pub fn focus_pane_direction(
         &mut self,
-        dir: crate::workspace::warp_split_manager::WarpNavDirection,
+        dir: crate::workspace::split_layout_manager::WarpNavDirection,
     ) -> bool {
         // Compute content container rect similar to hit_test_split_divider using read-only borrows
         let si = self.size_info;
@@ -371,9 +371,9 @@ impl WorkspaceManager {
     fn find_pane_in_direction(
         rects: &[(PaneId, split_manager::PaneRect)],
         cur: split_manager::PaneRect,
-        dir: crate::workspace::warp_split_manager::WarpNavDirection,
+        dir: crate::workspace::split_layout_manager::WarpNavDirection,
     ) -> Option<PaneId> {
-        use crate::workspace::warp_split_manager::WarpNavDirection as D;
+        use crate::workspace::split_layout_manager::WarpNavDirection as D;
         let cx = cur.x + cur.width / 2.0;
         let cy = cur.y + cur.height / 2.0;
         let mut candidates: Vec<(PaneId, f32, f32)> = Vec::new();
@@ -408,16 +408,16 @@ impl WorkspaceManager {
     }
 
     pub fn focus_pane_left(&mut self) -> bool {
-        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Left)
+        self.focus_pane_direction(crate::workspace::split_layout_manager::WarpNavDirection::Left)
     }
     pub fn focus_pane_right(&mut self) -> bool {
-        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Right)
+        self.focus_pane_direction(crate::workspace::split_layout_manager::WarpNavDirection::Right)
     }
     pub fn focus_pane_up(&mut self) -> bool {
-        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Up)
+        self.focus_pane_direction(crate::workspace::split_layout_manager::WarpNavDirection::Up)
     }
     pub fn focus_pane_down(&mut self) -> bool {
-        self.focus_pane_direction(crate::workspace::warp_split_manager::WarpNavDirection::Down)
+        self.focus_pane_direction(crate::workspace::split_layout_manager::WarpNavDirection::Down)
     }
 
     /// Close the current pane
@@ -634,7 +634,6 @@ pub struct PersistentTabState {
     pub title: String,
     pub working_directory: PathBuf,
     pub shell_command: Option<String>,
-    #[cfg(feature = "ai")]
     pub ai_conversation: Option<Vec<String>>,
 }
 

@@ -124,11 +124,7 @@ impl Blocks {
                     if start_vp == line {
                         let header = Self::header_text_for(b);
                         let _end_vp = end.saturating_sub(display_offset);
-                        let lines = if end >= b.start_total_line {
-                            end - b.start_total_line
-                        } else {
-                            0
-                        };
+                        let lines = end.saturating_sub(b.start_total_line);
                         let status = match b.exit {
                             Some(0) => "✓",
                             Some(_) => "✗",
@@ -161,7 +157,7 @@ impl Blocks {
 
     /// Toggle folding at an arbitrary viewport point (header-only for now).
     pub fn toggle_fold_at_viewport_point(&mut self, display_offset: usize, point: Point) -> bool {
-        self.toggle_fold_header_at_viewport_line(display_offset, point.line.into())
+        self.toggle_fold_header_at_viewport_line(display_offset, point.line)
     }
 
     pub fn next_block_after(&self, display_offset: usize) -> Option<Line> {

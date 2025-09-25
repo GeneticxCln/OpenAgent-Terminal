@@ -5,14 +5,8 @@ members = [
     "openagent-terminal-core",
     "openagent-terminal-config",
     "openagent-terminal-config-derive",
-    "openagent-terminal-sync",
-    "openagent-terminal-ai",
-    "crates/workflow-engine",
     # Utility crates consolidated into single crate
     "crates/openagent-terminal-utils",
-    # IDE crates consolidated into single crate
-    "crates/openagent-terminal-ide",
-    # Note: web-editors functionality moved to openagent-terminal-ide
 ]
 # Speed default builds by excluding plugin examples unless targeted
 default-members = [
@@ -20,9 +14,6 @@ default-members = [
     "openagent-terminal-core",
     "openagent-terminal-config",
     "openagent-terminal-config-derive",
-    "openagent-terminal-sync",
-    "openagent-terminal-ai",
-    "crates/workflow-engine",
     "crates/openagent-terminal-utils",
 ]
 resolver = "2"
@@ -78,15 +69,6 @@ incremental = true
 overflow-checks = true
 
 
-# AI-optimized profile for AI feature builds
-[profile.ai-optimized]
-inherits = "release"
-lto = "thin"
-opt-level = 3
-codegen-units = 1
-# Keep some debug info for AI debugging
-debug = 1
-panic = "unwind"
 
 # Benchmarking profile
 [profile.bench]
@@ -156,17 +138,6 @@ ab-glyph = "0.2"
 sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 
-# AI capabilities
-reqwest = { version = "0.12", features = ["json", "stream"] }
-async-openai = "0.25"
-
-# Plugin system
-wasmtime = "37.0"
-wasmtime-wasi = "37.0"
-
-# Workflow system
-tera = "1.20"
-uuid = { version = "1.18", features = ["v4", "serde"] }
 
 # UI components
 egui = "0.29"

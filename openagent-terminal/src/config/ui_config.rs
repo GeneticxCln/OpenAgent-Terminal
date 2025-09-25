@@ -19,8 +19,6 @@ use openagent_terminal_core::term::search::RegexSearch;
 use openagent_terminal_core::term::Config as TermConfig;
 use openagent_terminal_core::tty::{Options as PtyOptions, Shell};
 
-#[cfg(feature = "ai")]
-use crate::config::ai::AiConfig;
 use crate::config::bell::BellConfig;
 use crate::config::bindings::{
     self, Action, Binding, BindingKey, KeyBinding, KeyLocation, ModeWrapper, ModsWrapper,
@@ -34,7 +32,6 @@ use crate::config::general::General;
 use crate::config::mouse::Mouse;
 use crate::config::scrolling::Scrolling;
 use crate::config::selection::Selection;
-#[cfg(feature = "sync")]
 use crate::config::sync::SyncConfig;
 use crate::config::terminal::Terminal;
 use crate::config::theme::{ResolvedTheme, ThemeConfig};
@@ -106,7 +103,6 @@ pub struct UiConfig {
     pub terminal: Terminal,
 
     /// AI assistant configuration.
-    #[cfg(feature = "ai")]
     #[serde(default)]
     pub ai: AiConfig,
 
@@ -139,7 +135,6 @@ pub struct UiConfig {
     pub resolved_theme: Option<ResolvedTheme>,
 
     /// Sync configuration.
-    #[cfg(feature = "sync")]
     #[serde(default)]
     pub sync: SyncConfig,
 
@@ -262,11 +257,10 @@ impl Default for PluginsConfig {
 }
 
 impl UiConfig {
-    /// Integrate Warp-style keybindings if enabled via config toggle.
+    /// Integrate modern-style keybindings if enabled via config toggle.
     pub fn integrate_warp_style_bindings_if_enabled(&mut self) {
         if self.workspace.warp_style_bindings.enable {
-            // Within the same module, direct access to private fields is allowed.
-            crate::config::warp_bindings::integrate_warp_bindings(&mut self.keyboard.bindings.0);
+            crate::config::shortcuts::integrate_warp_bindings(&mut self.keyboard.bindings.0)
         }
     }
 
@@ -675,7 +669,7 @@ pub fn with_compiled<T, F>(&self, mut f: F) -> Option<T>
         F: FnMut(&mut RegexSearch) -> T,
     {
         let mut guard = self.0.write();
-        guard.compiled().map(|re| f(re))
+        guard.compiled().map(f)
     }
 }
 

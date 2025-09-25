@@ -88,7 +88,6 @@ pub fn spawn_ipc_socket(
                     let event = Event::new(EventType::IpcGetConfig(Arc::new(stream)), window_id);
                     let _ = event_proxy.send_event(event);
                 }
-                #[cfg(feature = "sync")]
                 SocketMessage::SyncStatus(cmd) => {
                     let event = Event::new(
                         EventType::IpcSync(
@@ -99,7 +98,6 @@ pub fn spawn_ipc_socket(
                     );
                     let _ = event_proxy.send_event(event);
                 }
-                #[cfg(feature = "sync")]
                 SocketMessage::SyncPush(cmd) => {
                     let event = Event::new(
                         EventType::IpcSync(
@@ -110,7 +108,6 @@ pub fn spawn_ipc_socket(
                     );
                     let _ = event_proxy.send_event(event);
                 }
-                #[cfg(feature = "sync")]
                 SocketMessage::SyncPull(cmd) => {
                     let event = Event::new(
                         EventType::IpcSync(
@@ -166,12 +163,10 @@ fn handle_reply(stream: &UnixStream, message: &SocketMessage) -> IoResult<()> {
             println!("{config}");
             Ok(())
         }
-        #[cfg(feature = "sync")]
         (SocketMessage::SyncStatus(..), SocketReply::SyncStatus(status)) => {
             println!("{status}");
             Ok(())
         }
-        #[cfg(feature = "sync")]
         (
             SocketMessage::SyncPush(..) | SocketMessage::SyncPull(..),
             SocketReply::SyncResult(result),
@@ -293,8 +288,6 @@ fn socket_prefix() -> String {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketReply {
     GetConfig(String),
-    #[cfg(feature = "sync")]
     SyncStatus(String),
-    #[cfg(feature = "sync")]
     SyncResult(Result<String, String>),
 }

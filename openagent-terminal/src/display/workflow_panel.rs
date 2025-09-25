@@ -78,17 +78,14 @@ pub struct WorkflowParamsState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkflowParamField {
     pub name: String,
-    pub kind: workflow_engine::ParameterType,
     pub description: String,
     pub required: bool,
     pub value: serde_json::Value,
-    pub options: Option<Vec<workflow_engine::ParameterOption>>,
     pub min: Option<f64>,
     pub max: Option<f64>,
 }
 
 impl WorkflowParamsState {
-    pub fn open(&mut self, id: String, name: String, params: Vec<workflow_engine::Parameter>) {
         self.active = true;
         self.workflow_id = Some(id);
         self.workflow_name = Some(name);

@@ -401,21 +401,14 @@ pub trait ActionContext<T: EventListener> {
     fn ide_on_command_end(&mut self, _exit_code: Option<i32>) {}
 
     // Inline AI suggestions (feature = "ai")
-    #[cfg(feature = "ai")]
     fn inline_suggestion_visible(&self) -> bool {
         false
     }
-    #[cfg(feature = "ai")]
     fn accept_inline_suggestion(&mut self) {}
-    #[cfg(feature = "ai")]
     fn accept_inline_suggestion_word(&mut self) {}
-    #[cfg(feature = "ai")]
     fn accept_inline_suggestion_char(&mut self) {}
-    #[cfg(feature = "ai")]
     fn dismiss_inline_suggestion(&mut self) {}
-    #[cfg(feature = "ai")]
     fn schedule_inline_suggest(&mut self) {}
-    #[cfg(feature = "ai")]
     fn clear_inline_suggestion(&mut self) {}
 
     // Command palette API
@@ -635,11 +628,9 @@ pub trait ActionContext<T: EventListener> {
     fn send_user_event(&self, _event: crate::event::EventType) {}
 
     // AI runtime accessors; default to None
-    #[cfg(feature = "ai")]
     fn ai_runtime_mut(&mut self) -> Option<&mut crate::ai_runtime::AiRuntime> {
         None
     }
-    #[cfg(feature = "ai")]
     fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
         None
     }
@@ -687,7 +678,7 @@ pub trait ActionContext<T: EventListener> {
         &mut self,
         _mouse_x: usize,
         _mouse_y: usize,
-    ) -> Option<crate::display::warp_ui::TabBarAction> {
+    ) -> Option<crate::display::modern_ui::TabBarAction> {
         None
     }
     
@@ -696,7 +687,7 @@ pub trait ActionContext<T: EventListener> {
         &mut self,
         _mouse_x_px: usize,
         _mouse_y_px: usize,
-    ) -> Option<crate::display::warp_ui::TabBarAction> {
+    ) -> Option<crate::display::modern_ui::TabBarAction> {
         None
     }
 
@@ -1051,7 +1042,6 @@ impl<T: EventListener> Execute<T> for Action {
                 );
                 ctx.send_user_event(crate::event::EventType::Message(msg));
             }
-            #[cfg(feature = "ai")]
             Action::AiExplain => {
                 // Get selected text or last command output for explanation
                 let text_to_explain = ctx
@@ -1072,7 +1062,6 @@ impl<T: EventListener> Execute<T> for Action {
                 }
                 ctx.mark_dirty();
             }
-            #[cfg(feature = "ai")]
             Action::AiFix => {
                 // Get selected text or error output for fixing suggestions
                 let text_to_fix = ctx
@@ -1364,7 +1353,7 @@ impl<T: EventListener> Execute<T> for Action {
                     let display_offset = ctx.terminal().grid().display_offset();
                     let target = { ctx.display().blocks.next_block_after(display_offset) };
                     if let Some(new_offset) = target {
-                        let delta = new_offset.0 as i32 - display_offset as i32;
+                        let delta = new_offset.0 - display_offset as i32;
                         ctx.scroll(Scroll::Delta(delta));
                     }
                 }
@@ -1374,7 +1363,7 @@ impl<T: EventListener> Execute<T> for Action {
                     let display_offset = ctx.terminal().grid().display_offset();
                     let target = { ctx.display().blocks.prev_block_before(display_offset) };
                     if let Some(new_offset) = target {
-                        let delta = new_offset.0 as i32 - display_offset as i32;
+                        let delta = new_offset.0 - display_offset as i32;
                         ctx.scroll(Scroll::Delta(delta));
                     }
                 }
@@ -1487,7 +1476,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Build style after releasing display_ref borrow
         let style = {
             let cfg = self.ctx.config();
-            crate::display::warp_ui::WarpTabStyle::from_theme(cfg)
+crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
         };
 
         let start_y = match tab_pos {
@@ -1615,7 +1604,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     let end = col + wcols;
                     if mouse_col >= start && mouse_col < end {
                         // Switch provider
-                        #[cfg(feature = "ai")]
                         {
                             self.ctx.send_user_event(crate::event::EventType::AiSwitchProvider(
                                 (*_pid).to_string(),
@@ -1868,7 +1856,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             self.ctx.mark_dirty();
 
             // In instant mode we open AI panel on click; commit mode will just focus
-            #[cfg(feature = "ai")]
             {
                 if matches!(ui.composer_open_mode, crate::config::theme::ComposerOpenMode::Instant)
                 {
@@ -1960,7 +1947,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if cfg.workspace.quick_actions.show_palette {
             labels.push("[Palette]");
         }
-        #[cfg(feature = "ai")]
         if cfg.ai.enabled {
             labels.push("[AI]");
         }
@@ -1973,7 +1959,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             if col >= start && col < end {
                 match label {
                     "[Workflows]" => {
-                        #[cfg(feature = "workflow")]
                         {
                             self.ctx.open_workflows_panel();
                         }
@@ -2006,7 +1991,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return true;
                     }
                     "[AI]" => {
-                        #[cfg(feature = "ai")]
                         {
                             self.ctx.open_ai_panel();
                         }
@@ -2094,7 +2078,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // Update AI header hover state first; override cursor to pointer if hovering controls.
         let ai_hover = {
-            #[cfg(feature = "ai")]
             {
                 self.ctx.ai_update_hover_header()
             }
@@ -2362,7 +2345,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if cfg.workspace.quick_actions.show_palette {
                         labels.push("[Palette]");
                     }
-                    #[cfg(feature = "ai")]
                     if cfg.ai.enabled {
                         labels.push("[AI]");
                     }
@@ -2531,7 +2513,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         {
             // Use pixel coordinates for more accurate hover detection
             if let Some(action) = self.ctx.workspace_tab_bar_click(x, y) {
-                use crate::display::warp_ui::TabBarAction;
+                use crate::display::modern_ui::TabBarAction;
                 match action {
                     TabBarAction::SelectTab(id) => Some(crate::display::TabHoverTarget::Tab(id)),
                     TabBarAction::CloseTab(id) => Some(crate::display::TabHoverTarget::Close(id)),
@@ -2731,7 +2713,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
 
             // Handle AI panel header controls first (stop, regenerate, close).
-            #[cfg(feature = "ai")]
             {
                 if button == MouseButton::Left && self.ctx.ai_try_handle_header_click() {
                     return;

@@ -3,12 +3,12 @@
 //! Replaces traditional IDE features (LSP, DAP, separate editors) with a
 //! streamlined, terminal-integrated inline IDE experience inspired by Warp terminal.
 
-pub mod warp_ide;
+pub mod editor_ui;
 
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-pub use warp_ide::*;
+pub use editor_ui::*;
 
 /// Warp-style inline IDE manager (native only; AI optional and integrated elsewhere)
 pub struct IdeManager {

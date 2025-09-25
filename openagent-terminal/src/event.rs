@@ -57,8 +57,6 @@ use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
 use crate::display::color::Rgb;
 use crate::display::hint::HintMatch;
-#[cfg(feature = "never")]
-use crate::display::notebook_panel::{NotebookCellItem, NotebookListItem};
 use crate::display::palette::{PaletteEntry, PaletteItem};
 use crate::display::window::Window;
 use crate::display::{Display, Preedit, SizeInfo};
@@ -70,10 +68,6 @@ use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
-#[cfg(feature = "never")]
-use crate::plugins_api::PluginEvent;
-#[cfg(feature = "never")]
-use serde_json::json;
 
 #[cfg(test)]
 pub(crate) fn collect_block_output_from_grid(
@@ -118,12 +112,7 @@ pub const BLOCKS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Debounce delay for Workflows Search typing.
 pub const WORKFLOWS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Retention time for workflows progress overlay after completion.
-#[cfg(feature = "workflow")]
 pub const WORKFLOWS_OVERLAY_RETAIN: Duration = Duration::from_millis(3000);
-
-/// Debounce for AI inline suggestions after typing
-#[cfg(feature = "ai")]
-pub const AI_INLINE_SUGGEST_DEBOUNCE: Duration = Duration::from_millis(120);
 
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
@@ -157,7 +146,6 @@ pub struct Processor {
     pending_workflow_confirms: HashMap<String, (String, WindowId)>,
 
     // Guard to start workflow file watchers once
-    #[cfg(feature = "workflow")]
     workflows_watch_started: bool,
 }
 
@@ -448,7 +436,6 @@ Processor {
             global_ipc_options: Default::default(),
             config_monitor,
             pending_workflow_confirms: Default::default(),
-            #[cfg(feature = "workflow")]
             workflows_watch_started: false,
         }
     }
@@ -479,27 +466,26 @@ Processor {
             if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
                 let _ = rt.block_on(self.initialize_components(winit_win));
             }
-            if let Some(components) = &self.components {
-                window_context.set_components(components.clone());
-                // Start workflow watchers once components (engine/runtime) are available
-                #[cfg(feature = "workflow")]
-                {
-                    self.start_workflow_watchers();
-                }
-                // Wire Blocks -> Workspace PTY collection when Warp is enabled and initialized
-                #[cfg(feature = "never")]
-                {
-                    if window_context.config().workspace.warp_style {
-                        if let Some(warp) = &window_context.workspace.warp {
-                            if let Some(blocks) = &components.block_manager {
-                                let handle = warp.pty_collection_handle();
-                                if let Ok(mut mgr) = blocks.try_write() {
-                                    mgr.set_workspace_pty_collection(handle);
+            if self.components.is_some() {
+                let comp_clone = self.components.clone();
+                if let Some(components) = &comp_clone {
+                    window_context.set_components(components.clone());
+                    // Wire Blocks -> Workspace PTY collection when Warp is enabled and initialized
+                    #[cfg(feature = "never")]
+                    {
+                        if window_context.config().workspace.warp_style {
+                            if let Some(warp) = &window_context.workspace.warp {
+                                if let Some(blocks) = &components.block_manager {
+                                    let handle = warp.pty_collection_handle();
+                                    if let Ok(mut mgr) = blocks.try_write() {
+                                        mgr.set_workspace_pty_collection(handle);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                // Start workflow watchers once components (engine/runtime) are available
             }
         }
 
@@ -530,11 +516,8 @@ Processor {
                 let mut features = Vec::new();
                 features
                     .push(format!("wgpu:{}", if cfg!(feature = "wgpu") { "on" } else { "off" }));
-                features.push(format!("ai:{}", if cfg!(feature = "ai") { "on" } else { "off" }));
-                features.push(format!(
-                    "workflow:{}",
-                    if cfg!(feature = "workflow") { "on" } else { "off" }
-                ));
+                features.push(format!("ai:{}", "off"));
+                features.push(format!("workflow:{}", "off"));
                 features.push(format!(
                     "completions:{}",
                     if cfg!(feature = "completions") { "on" } else { "off" }
@@ -562,23 +545,6 @@ Processor {
         }
 
         // Friendly nudge when AI is enabled but provider is 'null'
-        #[cfg(feature = "ai")]
-        {
-            if self.config.ai.enabled {
-                let provider_name = self.config.ai.provider.as_deref().unwrap_or("null");
-                if provider_name.eq_ignore_ascii_case("null") {
-                    let msg = crate::message_bar::Message::new(
-                        "AI is enabled with provider 'null'. Open AI (Ctrl+Shift+A) and switch provider, or configure [ai] in your config.".to_string(),
-                        crate::message_bar::MessageType::Warning,
-                    );
-                    if let Err(e) =
-                        self.proxy.send_event(Event::new(EventType::Message(msg), window_id))
-                    {
-                        tracing::warn!("failed to post AI provider hint Message: {:?}", e);
-                    }
-                }
-            }
-        }
 
         // If there was no user config loaded, show a brief onboarding hint and auto-open Workflows.
         if self.config.config_paths.is_empty() {
@@ -609,31 +575,12 @@ Processor {
                     }
                 }
             }
-            // Auto-open Workflows panel and trigger an initial search
-            #[cfg(feature = "workflow")]
-            if let Some(win) = self.windows.get_mut(&window_id) {
-                win.display.workflows_panel.open();
-                win.dirty = true;
-                if win.display.window.has_frame {
-                    win.display.window.request_redraw();
-                }
-                if let Err(e) = self.proxy.send_event(Event::new(
-                    EventType::WorkflowsSearchPerform(String::new()),
-                    window_id,
-                )) {
-                    tracing::warn!("failed to post WorkflowsSearchPerform: {:?}", e);
-                }
-            }
         }
 
         // If components are already initialized, set them on the new window
         if let Some(components) = &self.components {
             if let Some(window_context) = self.windows.get_mut(&window_id) {
                 window_context.set_components(components.clone());
-            }
-            #[cfg(feature = "workflow")]
-            {
-                self.start_workflow_watchers();
             }
         }
 
@@ -698,7 +645,7 @@ Processor {
                 enable_wgpu: cfg!(feature = "wgpu"),
                 enable_harfbuzz: cfg!(feature = "harfbuzz"),
                 enable_blocks: false,
-                enable_workflows: cfg!(feature = "workflow"),
+                enable_workflows: false,
                 // Always disable plugins
                 enable_plugins: false,
                 ..Default::default()
@@ -923,62 +870,6 @@ impl Processor {
     }
 }
 
-#[cfg(feature = "workflow")]
-impl Processor {
-    fn process_workflows_search_perform(&mut self, query: String, window_id: WindowId) {
-        // Build items from UiConfig.workflows; simple case-insensitive match on name/description
-        let mut items = Vec::new();
-        let q = query.to_lowercase();
-        let cfg = &self.config;
-        for wf in &cfg.workflows {
-            let name = wf.name.clone();
-            let desc = wf.description.clone();
-            let hay = format!("{} {}", name, desc.clone().unwrap_or_default()).to_lowercase();
-            if q.trim().is_empty() || hay.contains(&q) {
-                items.push(crate::display::workflow_panel::WorkflowItem {
-                    name,
-                    description: desc,
-                    source: crate::display::workflow_panel::WorkflowSource::Config,
-                });
-            }
-        }
-        // Also include workflows loaded by the runtime engine when available
-        if let Some(components) = &self.components {
-            if let Some(engine) = &components.workflow_engine {
-                let engine = engine.clone();
-                let proxy = self.proxy.clone();
-                let win = window_id;
-                let mut base = items;
-                components.runtime.spawn(async move {
-                    let mut engine_items = Vec::new();
-                    let list = engine.list_workflows().await;
-                    for (_id, def) in list {
-                        let name = def.name.clone();
-                        let desc = Some(def.description.clone());
-                        let hay = format!("{} {}", name, def.description).to_lowercase();
-                        if q.trim().is_empty() || hay.contains(&q) {
-                            engine_items.push(crate::display::workflow_panel::WorkflowItem {
-                                name,
-                                description: desc,
-                                source: crate::display::workflow_panel::WorkflowSource::Engine,
-                            });
-                        }
-                    }
-                    // Merge and de-duplicate by name preferring engine entries last
-                    base.extend(engine_items);
-                    // De-dup by name keeping first occurrence
-                    let mut seen = std::collections::HashSet::new();
-                    base.retain(|it| seen.insert(it.name.clone()));
-                    let _ =
-                        proxy.send_event(Event::new(EventType::WorkflowsSearchResults(base), win));
-                });
-                return;
-            }
-        }
-        let _ =
-            self.proxy.send_event(Event::new(EventType::WorkflowsSearchResults(items), window_id));
-    }
-}
 
 #[cfg(feature = "never")]
 impl Processor {
@@ -1053,84 +944,6 @@ impl Processor {
 }
 
 // Application event handler implementation
-impl Processor {
-    #[cfg(feature = "workflow")]
-    fn start_workflow_watchers(&mut self) {
-        if self.workflows_watch_started {
-            return;
-        }
-        let Some(components) = &self.components else { return; };
-        let Some(engine) = &components.workflow_engine else { return; };
-        let engine = engine.clone();
-        let proxy = self.proxy.clone();
-        // Compute dirs to watch: config workflows + common project dirs
-        let mut dirs_to_watch: Vec<std::path::PathBuf> = Vec::new();
-        if let Some(cfg) = dirs::config_dir().map(|d| d.join("openagent-terminal").join("workflows")) {
-            dirs_to_watch.push(cfg);
-        }
-        if let Ok(cwd) = std::env::current_dir() {
-            let d1 = cwd.join(".openagent-terminal").join("workflows");
-            let d2 = cwd.join(".openagent").join("workflows");
-            dirs_to_watch.push(d1);
-            dirs_to_watch.push(d2);
-        }
-        let rt = components.runtime.clone();
-        rt.spawn(async move {
-            use notify::{Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
-            use std::sync::mpsc::channel;
-
-            let (tx, rx) = channel::<Event>();
-            // Construct watcher in this task
-            let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
-                move |res: NotifyResult<Event>| match res {
-                    Ok(ev) => { let _ = tx.send(ev); }
-                    Err(e) => tracing::warn!("workflow watcher error: {}", e),
-                },
-                NotifyConfig::default(),
-            ).expect("failed to create workflow watcher");
-
-            for d in dirs_to_watch {
-                if d.exists() {
-                    if let Err(e) = watcher.watch(&d, RecursiveMode::NonRecursive) {
-                        tracing::warn!("Failed to watch {:?}: {}", d, e);
-                    } else {
-                        tracing::debug!("Watching workflows dir: {:?}", d);
-                    }
-                }
-            }
-
-            // Event loop
-            loop {
-                match rx.recv() {
-                    Ok(event) => {
-                        let mut changed = false;
-                        for p in &event.paths {
-                            let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
-                            if ext != "yaml" && ext != "yml" { continue; }
-                            match &event.kind {
-                                EventKind::Create(_) | EventKind::Modify(_) => {
-                                    if engine.load_workflow(p).await.is_ok() { changed = true; }
-                                }
-                                EventKind::Remove(_) => {
-                                    if engine.remove_workflow_by_path(p).await { changed = true; }
-                                }
-                                _ => {}
-                            }
-                        }
-                        if changed {
-                            let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::WorkflowsFilesChanged, None));
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Workflow watcher recv error: {}", e);
-                        break;
-                    }
-                }
-            }
-        });
-        self.workflows_watch_started = true;
-    }
-}
 
 // Application event handler implementation
 impl ApplicationHandler<Event> for Processor {
@@ -1254,111 +1067,6 @@ impl ApplicationHandler<Event> for Processor {
                 if let Ok(mut stream) = stream.try_clone() {
                     ipc::send_reply(&mut stream, SocketReply::GetConfig(config_json));
                 }
-            }
-            // Process sync IPC commands.
-            #[cfg(all(unix, feature = "sync"))]
-            (EventType::IpcSync(sync_type, stream), _) => {
-                use openagent_terminal_sync::{LocalFsProvider, SyncProvider, SyncScope};
-
-                // Create sync provider based on config.
-                // For now, always use LocalFsProvider.
-                let sync_config = openagent_terminal_sync::SyncConfig {
-                    provider: "local_fs".to_string(),
-                    data_dir: None,
-                    endpoint_env: None,
-                    encryption_key_env: None,
-                };
-
-                let provider = match LocalFsProvider::new(&sync_config) {
-                    Ok(provider) => provider,
-                    Err(err) => {
-                        if let Ok(mut stream) = stream.try_clone() {
-                            let reply = ipc::SocketReply::SyncResult(Err(format!(
-                                "Failed to create sync provider: {:?}",
-                                err
-                            )));
-                            ipc::send_reply(&mut stream, reply);
-                        }
-                        return;
-                    }
-                };
-
-                // Convert scope argument to sync scope.
-                let scope = sync_type.scope().map(|s| match s {
-                    crate::cli::SyncScopeArg::Settings => SyncScope::Settings,
-                    crate::cli::SyncScopeArg::History => SyncScope::History,
-                });
-
-                // Execute sync operation.
-                match sync_type {
-                    IpcSyncType::Status(_) => match provider.status() {
-                        Ok(status) => {
-                            let status_json = serde_json::to_string_pretty(&status)
-                                .unwrap_or_else(|_| "Error serializing status".to_string());
-                            if let Ok(mut stream) = stream.try_clone() {
-                                ipc::send_reply(
-                                    &mut stream,
-                                    ipc::SocketReply::SyncStatus(status_json),
-                                );
-                            }
-                        }
-                        Err(err) => {
-                            if let Ok(mut stream) = stream.try_clone() {
-                                let reply = ipc::SocketReply::SyncResult(Err(format!(
-                                    "Failed to get sync status: {:?}",
-                                    err
-                                )));
-                                ipc::send_reply(&mut stream, reply);
-                            }
-                        }
-                    },
-                    IpcSyncType::Push(_) => {
-                        let scope = scope.unwrap_or(SyncScope::Settings);
-                        match provider.push(scope) {
-                            Ok(()) => {
-                                if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Ok(format!(
-                                        "Successfully pushed {:?}",
-                                        scope
-                                    )));
-                                    ipc::send_reply(&mut stream, reply);
-                                }
-                            }
-                            Err(err) => {
-                                if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Err(format!(
-                                        "Failed to push: {:?}",
-                                        err
-                                    )));
-                                    ipc::send_reply(&mut stream, reply);
-                                }
-                            }
-                        }
-                    }
-                    IpcSyncType::Pull(_) => {
-                        let scope = scope.unwrap_or(SyncScope::Settings);
-                        match provider.pull(scope) {
-                            Ok(()) => {
-                                if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Ok(format!(
-                                        "Successfully pulled {:?}",
-                                        scope
-                                    )));
-                                    ipc::send_reply(&mut stream, reply);
-                                }
-                            }
-                            Err(err) => {
-                                if let Ok(mut stream) = stream.try_clone() {
-                                    let reply = ipc::SocketReply::SyncResult(Err(format!(
-                                        "Failed to pull: {:?}",
-                                        err
-                                    )));
-                                    ipc::send_reply(&mut stream, reply);
-                                }
-                            }
-                        }
-                    }
-                };
             }
             (EventType::ConfigReload(path), _) => {
                 // Clear config logs from message bar for all terminals.
@@ -1776,7 +1484,6 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Notify all windows to refresh workflows/palette when files change
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsFilesChanged, _) => {
                 for (wid, window_context) in self.windows.iter() {
                     if window_context.display.workflows_panel.active {
@@ -1805,7 +1512,6 @@ impl ApplicationHandler<Event> for Processor {
             }
             // Command Palette providers: workflows list
             (EventType::PaletteRequestWorkflows, Some(window_id)) => {
-                #[cfg(feature = "workflow")]
                 if let Some(components) = &self.components {
                     if let Some(engine) = &components.workflow_engine {
                         let engine = engine.clone();
@@ -1848,11 +1554,9 @@ impl ApplicationHandler<Event> for Processor {
             }
 
             // Workflows panel events
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
                 self.process_workflows_search_perform(query, *window_id);
             }
-            #[cfg(feature = "workflow")]
             (
                 EventType::WorkflowsOpenParamsForm { workflow_id, workflow_name, params },
                 Some(window_id),
@@ -1869,7 +1573,6 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsCancelParams, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.workflows_params.close();
@@ -1879,7 +1582,6 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsSubmitParams { workflow_id, values }, Some(window_id)) => {
                 // Execute with provided params via engine
                 if let Some(components) = &self.components {
@@ -1925,7 +1627,6 @@ impl ApplicationHandler<Event> for Processor {
                                     // Subscribe to updates
                                     let mut rx = engine.subscribe();
                                     loop {
-                                        use workflow_engine::WorkflowEvent;
                                         match rx.recv().await {
                                             Ok(ev) => match ev {
                                                 WorkflowEvent::Started { execution_id }
@@ -2053,7 +1754,6 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.workflows_panel.results = items;
@@ -2063,7 +1763,6 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "workflow")]
             (
                 EventType::WorkflowsProgressUpdate {
                     execution_id,
@@ -2130,7 +1829,6 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsProgressClear(execution_id), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     let st = &mut window_context.display.workflows_progress;
@@ -2143,7 +1841,6 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "workflow")]
             (EventType::WorkflowsExecuteByName(name), Some(window_id)) => {
                 // Try engine first; if workflow has parameters, open params form; else execute.
                 if let Some(components) = &self.components {
@@ -2198,7 +1895,6 @@ impl ApplicationHandler<Event> for Processor {
                                         // Subscribe to workflow engine events and forward updates
                                         let mut rx = engine.subscribe();
                                         loop {
-                                            use workflow_engine::WorkflowEvent;
                                             match rx.recv().await {
                                                 Ok(ev) => match ev {
                                                     WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
@@ -2312,7 +2008,6 @@ impl ApplicationHandler<Event> for Processor {
                                     // Subscribe to workflow engine events and forward updates
                                     let mut rx = engine.subscribe();
                                     loop {
-                                        use workflow_engine::WorkflowEvent;
                                         match rx.recv().await {
                                             Ok(ev) => match ev {
                                                 WorkflowEvent::Started { execution_id }
@@ -2968,14 +2663,6 @@ impl From<Event> for WinitEvent<Event> {
     }
 }
 
-/// AI copy output formats.
-#[cfg(feature = "ai")]
-#[derive(Debug, Clone)]
-pub enum AiCopyFormat {
-    Text,
-    Code,
-    Markdown,
-}
 
 /// OpenAgent Terminal events.
 #[derive(Debug, Clone)]
@@ -2994,74 +2681,10 @@ pub enum EventType {
     IpcConfig(IpcConfig),
     #[cfg(unix)]
     IpcGetConfig(Arc<UnixStream>),
-    #[cfg(all(unix, feature = "sync"))]
-    IpcSync(IpcSyncType, Arc<UnixStream>),
     BlinkCursor,
     BlinkCursorTimeout,
     SearchNext,
     Frame,
-    #[cfg(feature = "ai")]
-    AiStreamChunk(String),
-    #[cfg(feature = "ai")]
-    AiStreamFinished,
-    #[cfg(feature = "ai")]
-    AiStreamError(String),
-    #[cfg(feature = "ai")]
-    AiProposals(Vec<openagent_terminal_ai::AiProposal>),
-    #[cfg(feature = "ai")]
-    AiRegenerate,
-    #[cfg(feature = "ai")]
-    AiStop,
-    #[cfg(feature = "ai")]
-    AiInsertToPrompt(String),
-    #[cfg(feature = "ai")]
-    AiApplyAsCommand {
-        command: String,
-        dry_run: bool,
-    },
-    // Security Lens: check AI apply before pasting to prompt
-    #[cfg(feature = "ai")]
-    SecurityCheckAiApply {
-        command: String,
-        dry_run: bool,
-    },
-    #[cfg(feature = "ai")]
-    AiApplyAsCommandChecked {
-        command: String,
-        dry_run: bool,
-    },
-    #[cfg(feature = "ai")]
-    AiCopyOutput {
-        format: AiCopyFormat,
-    },
-    // New AI panel events
-    #[cfg(feature = "ai")]
-    AiToggle,
-    #[cfg(feature = "ai")]
-    AiSubmit,
-    #[cfg(feature = "ai")]
-    AiClose,
-    #[cfg(feature = "ai")]
-    AiSelectNext,
-    #[cfg(feature = "ai")]
-    AiSelectPrev,
-    #[cfg(feature = "ai")]
-    AiApplyDryRun,
-    #[cfg(feature = "ai")]
-    AiCopyCode,
-    #[cfg(feature = "ai")]
-    AiCopyAll,
-    #[cfg(feature = "ai")]
-    AiSwitchProvider(String),
-    // Inline AI suggestions
-    #[cfg(feature = "ai")]
-    AiInlineDebounced,
-    #[cfg(feature = "ai")]
-    AiInlineSuggestionReady(String),
-    #[cfg(feature = "ai")]
-    AiExplain(Option<String>),
-    #[cfg(feature = "ai")]
-    AiFix(Option<String>),
     ComponentsInitialized(Arc<InitializedComponents>),
     // Blocks quick actions
     BlocksToggleFoldUnderCursor,
@@ -3111,12 +2734,6 @@ pub enum EventType {
         content: String,
     },
 
-    // Workflows panel events
-    #[cfg(feature = "workflow")]
-    WorkflowsSearchPerform(String),
-    // Files in watched workflows directories changed
-    #[cfg(feature = "workflow")]
-    WorkflowsFilesChanged,
 
     // Plugin palette integration and execution
     #[cfg(feature = "never")]
@@ -3141,35 +2758,6 @@ pub enum EventType {
     PluginsInstallFromUrl {
         url: String,
     },
-    #[cfg(feature = "workflow")]
-    WorkflowsSearchResults(Vec<crate::display::workflow_panel::WorkflowItem>),
-    #[cfg(feature = "workflow")]
-    WorkflowsExecuteByName(String),
-    // Parameters form for workflows
-    #[cfg(feature = "workflow")]
-    WorkflowsOpenParamsForm {
-        workflow_id: String,
-        workflow_name: String,
-        params: Vec<workflow_engine::Parameter>,
-    },
-    #[cfg(feature = "workflow")]
-    WorkflowsSubmitParams {
-        workflow_id: String,
-        values: std::collections::HashMap<String, serde_json::Value>,
-    },
-    #[cfg(feature = "workflow")]
-    WorkflowsCancelParams,
-    #[cfg(feature = "workflow")]
-    WorkflowsProgressUpdate {
-        execution_id: String,
-        workflow_name: Option<String>,
-        status: Option<String>,
-        current_step: Option<String>,
-        log: Option<String>,
-        done: bool,
-    },
-    #[cfg(feature = "workflow")]
-    WorkflowsProgressClear(String),
 
     // Generic paste utility for fallbacks
     PasteCommand(String),
@@ -3201,26 +2789,6 @@ pub enum EventType {
     PaletteAppendFiles(Vec<String>),
 }
 
-/// Sync IPC event types.
-#[cfg(all(unix, feature = "sync"))]
-#[derive(Debug, Clone)]
-pub enum IpcSyncType {
-    Status(Option<crate::cli::SyncScopeArg>),
-    Push(Option<crate::cli::SyncScopeArg>),
-    Pull(Option<crate::cli::SyncScopeArg>),
-}
-
-#[cfg(all(unix, feature = "sync"))]
-impl IpcSyncType {
-    /// Get the scope argument from the sync type.
-    pub fn scope(&self) -> Option<crate::cli::SyncScopeArg> {
-        match self {
-            IpcSyncType::Status(scope) | IpcSyncType::Push(scope) | IpcSyncType::Pull(scope) => {
-                *scope
-            }
-        }
-    }
-}
 
 impl From<TerminalEvent> for EventType {
     fn from(event: TerminalEvent) -> Self {
@@ -3351,7 +2919,6 @@ pub struct ActionContext<'a, N, T> {
     pub master_fd: RawFd,
     #[cfg(not(windows))]
     pub shell_pid: u32,
-    #[cfg(feature = "ai")]
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
     #[cfg(feature = "never")]
     pub components: Option<&'a std::sync::Arc<InitializedComponents>>,
@@ -3890,7 +3457,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
 
         // AI: append suggestions from runtime (if available)
-        #[cfg(feature = "ai")]
         if let Some(rt) = self.ai_runtime.as_mut() {
             if !rt.ui.proposals.is_empty() {
                 let mut ai_items: Vec<PaletteItem> = Vec::new();
@@ -4178,7 +3744,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 }
                 PaletteEntry::Workflow(name) => {
                     // Ask processor to execute via engine if available
-                    #[cfg(feature = "workflow")]
                     {
                         let _ = self.event_proxy.send_event(Event::new(
                             EventType::WorkflowsExecuteByName(name),
@@ -4727,7 +4292,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             use crate::display::blocks_search_actions::BlockAction;
 
             match action {
-                #[cfg(feature = "ai")]
                 BlockAction::ExplainError => {
                     if let Some(item) = self.display.blocks_search.get_selected_item() {
                         let text = if item.output.is_empty() {
@@ -4738,7 +4302,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         self.send_user_event(EventType::AiExplain(Some(text)));
                     }
                 }
-                #[cfg(feature = "ai")]
                 BlockAction::FixError => {
                     if let Some(item) = self.display.blocks_search.get_selected_item() {
                         let error_text = if item.output.is_empty() {
@@ -4805,7 +4368,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Workflows panel controls
-    #[cfg(feature = "workflow")]
     fn open_workflows_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4835,7 +4397,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::PluginsSearchPerform(q), self.display.window.id()));
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_panel_cancel(&mut self) {
         self.display.workflows_panel.close();
         self.mark_dirty();
@@ -4847,7 +4408,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_panel_active(&self) -> bool {
         self.display.workflows_panel.active
     }
@@ -4857,7 +4417,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.plugins_panel.active
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_panel_input(&mut self, c: char) {
         self.display.workflows_panel.query.push(c);
         self.display.workflows_panel.selected = 0;
@@ -4885,7 +4444,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_panel_backspace(&mut self) {
         self.display.workflows_panel.query.pop();
         self.display.workflows_panel.selected = 0;
@@ -4913,7 +4471,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_panel_move_selection(&mut self, delta: isize) {
         self.display.workflows_panel.move_selection(delta);
         self.mark_dirty();
@@ -4925,7 +4482,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_panel_confirm(&mut self) {
         if !self.display.workflows_panel.results.is_empty() {
             let idx = self
@@ -5096,7 +4652,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 );
 
                 // Hot-apply AI provider changes: reconfigure runtime with new model/endpoint
-                #[cfg(feature = "ai")]
                 if matches!(category, crate::display::settings_panel::SettingsCategory::Ai) {
                     // Build provider selection and config without holding a mutable borrow
                     let name = self.display.settings_panel.provider.to_ascii_lowercase();
@@ -5164,12 +4719,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Workflows progress overlay controls
-    #[cfg(feature = "workflow")]
     fn workflows_progress_active(&self) -> bool {
         self.display.workflows_progress.active
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_progress_dismiss(&mut self) {
         if let Some(exec) = self.display.workflows_progress.execution_id.clone() {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5186,7 +4739,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_progress_terminal(&self) -> bool {
         // Treat the workflow progress overlay as a terminal-level overlay only when
         // no other modal/panel UI has focus. This prevents Esc from dismissing the
@@ -5390,12 +4942,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let _ = self.event_proxy.send_event(Event::new(event, self.display.window.id()));
     }
 
-    #[cfg(feature = "ai")]
     fn ai_runtime_mut(&mut self) -> Option<&mut crate::ai_runtime::AiRuntime> {
         self.ai_runtime.as_deref_mut()
     }
 
-    #[cfg(feature = "ai")]
     fn ai_runtime_ref(&self) -> Option<&crate::ai_runtime::AiRuntime> {
         self.ai_runtime.as_deref()
     }
@@ -6213,7 +5763,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let ok = self
                 .workspace
                 .execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
-                    crate::workspace::warp_split_manager::WarpNavDirection::Right,
+crate::workspace::split_layout_manager::WarpNavDirection::Right,
                 ))
                 .unwrap_or(false);
             let msg = if ok { "Focused next pane (Warp)" } else { "Focus next pane failed" };
@@ -6239,7 +5789,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let ok = self
                 .workspace
                 .execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
-                    crate::workspace::warp_split_manager::WarpNavDirection::Left,
+crate::workspace::split_layout_manager::WarpNavDirection::Left,
                 ))
                 .unwrap_or(false);
             let msg =
@@ -6290,7 +5840,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let ok = self
                 .workspace
                 .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
-                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandLeft,
+crate::workspace::split_layout_manager::WarpResizeDirection::ExpandLeft,
                 ))
                 .unwrap_or(false);
             let msg = if ok { "Resized pane left (Warp)" } else { "Resize left failed" };
@@ -6314,7 +5864,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let ok = self
                 .workspace
                 .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
-                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandRight,
+crate::workspace::split_layout_manager::WarpResizeDirection::ExpandRight
                 ))
                 .unwrap_or(false);
             let msg = if ok { "Resized pane right (Warp)" } else { "Resize right failed" };
@@ -6338,7 +5888,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let ok = self
                 .workspace
                 .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
-                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandUp,
+crate::workspace::split_layout_manager::WarpResizeDirection::ExpandUp
                 ))
                 .unwrap_or(false);
             let msg = if ok { "Resized pane up (Warp)" } else { "Resize up failed" };
@@ -6362,7 +5912,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             let ok = self
                 .workspace
                 .execute_warp_action(&crate::workspace::WarpAction::ResizePane(
-                    crate::workspace::warp_split_manager::WarpResizeDirection::ExpandDown,
+crate::workspace::split_layout_manager::WarpResizeDirection::ExpandDown
                 ))
                 .unwrap_or(false);
             let msg = if ok { "Resized pane down (Warp)" } else { "Resize down failed" };
@@ -6386,7 +5936,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if self.workspace.has_warp() {
             let _ =
                 self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
-                    crate::workspace::warp_split_manager::WarpNavDirection::Left,
+crate::workspace::split_layout_manager::WarpNavDirection::Left
                 ));
         } else {
             let _ = self.workspace.focus_pane_left();
@@ -6399,7 +5949,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if self.workspace.has_warp() {
             let _ =
                 self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
-                    crate::workspace::warp_split_manager::WarpNavDirection::Right,
+crate::workspace::split_layout_manager::WarpNavDirection::Right
                 ));
         } else {
             let _ = self.workspace.focus_pane_right();
@@ -6412,7 +5962,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if self.workspace.has_warp() {
             let _ =
                 self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
-                    crate::workspace::warp_split_manager::WarpNavDirection::Up,
+crate::workspace::split_layout_manager::WarpNavDirection::Up
                 ));
         } else {
             let _ = self.workspace.focus_pane_up();
@@ -6425,7 +5975,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if self.workspace.has_warp() {
             let _ =
                 self.workspace.execute_warp_action(&crate::workspace::WarpAction::NavigatePane(
-                    crate::workspace::warp_split_manager::WarpNavDirection::Down,
+crate::workspace::split_layout_manager::WarpNavDirection::Down
                 ));
         } else {
             let _ = self.workspace.focus_pane_down();
@@ -6594,7 +6144,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             "Toggle pane sync failed".into()
         };
         self.message_buffer
-            .push(Message::new(msg.into(), crate::message_bar::MessageType::Warning));
+            .push(Message::new(msg, crate::message_bar::MessageType::Warning));
         self.display.pending_update.dirty = true;
         *self.dirty = true;
     }
@@ -6623,7 +6173,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         &mut self,
         mouse_x_px: usize,
         mouse_y_px: usize,
-    ) -> Option<crate::display::warp_ui::TabBarAction> {
+    ) -> Option<crate::display::modern_ui::TabBarAction> {
         let position = self.config.workspace.tab_bar.position;
         self.display.handle_tab_bar_click(
             self.config,
@@ -6649,7 +6199,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             mouse_y_px,
             button,
         ) {
-            use crate::display::warp_ui::TabBarAction as TBA;
+            use crate::display::modern_ui::TabBarAction as TBA;
             match action {
                 TBA::SelectTab(id) => {
                     self.workspace_switch_to_tab(id);
@@ -6684,7 +6234,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         if let Some(action) =
             self.display.handle_tab_bar_mouse_move(&self.workspace.tabs, mouse_x_px, mouse_y_px)
         {
-            use crate::display::warp_ui::TabBarAction as TBA;
+            use crate::display::modern_ui::TabBarAction as TBA;
             if let TBA::DragMove(tab_id, new_pos) = action {
                 let moved = self.workspace.tabs.move_tab(tab_id, new_pos);
                 if moved {
@@ -6711,7 +6261,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     fn workspace_tab_bar_drag_release(&mut self, button: MouseButton) -> bool {
         if let Some(action) = self.display.handle_tab_bar_mouse_release(button) {
-            use crate::display::warp_ui::TabBarAction as TBA;
+            use crate::display::modern_ui::TabBarAction as TBA;
             match action {
                 TBA::EndDrag(_) => {
                     self.display.pending_update.dirty = true;
@@ -6858,7 +6408,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
 
         // Determine if the cursor is inside the tab bar band (supports Top/Bottom)
-        let style = crate::display::warp_ui::WarpTabStyle::from_theme(self.config);
+let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
         let consider_tabs =
             tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden;
         let bar_y = match tab_cfg.position {
@@ -7079,12 +6629,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Inline AI suggestions integration
-    #[cfg(feature = "ai")]
     fn inline_suggestion_visible(&self) -> bool {
         self.ai_runtime.as_ref().map(|rt| rt.ui.inline_suggestion.is_some()).unwrap_or(false)
     }
 
-    #[cfg(feature = "ai")]
     fn accept_inline_suggestion(&mut self) {
         if let Some(rt) = &mut self.ai_runtime {
             if let Some(text) = rt.ui.inline_suggestion.take() {
@@ -7095,7 +6643,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn accept_inline_suggestion_word(&mut self) {
         let suggestion_data =
             if let Some(rt) = &mut self.ai_runtime { rt.ui.inline_suggestion.take() } else { None };
@@ -7138,7 +6685,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn accept_inline_suggestion_char(&mut self) {
         let suggestion_data =
             if let Some(rt) = &mut self.ai_runtime { rt.ui.inline_suggestion.take() } else { None };
@@ -7157,7 +6703,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn dismiss_inline_suggestion(&mut self) {
         if let Some(rt) = &mut self.ai_runtime {
             if rt.ui.inline_suggestion.take().is_some() {
@@ -7166,7 +6711,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn schedule_inline_suggest(&mut self) {
         // Debounce scheduling
         if !(self.config.ai.enabled && self.config.ai.inline_suggestions) {
@@ -7179,7 +6723,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, AI_INLINE_SUGGEST_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "ai")]
     fn clear_inline_suggestion(&mut self) {
         if let Some(rt) = &mut self.ai_runtime {
             if rt.ui.inline_suggestion.take().is_some() {
@@ -7190,7 +6733,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     // Command palette has been removed; placeholder methods were deleted.
 
-    #[cfg(feature = "ai")]
     fn open_ai_panel(&mut self) {
         if let Some(runtime) = &mut self.ai_runtime {
             runtime.toggle_panel();
@@ -7198,7 +6740,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn close_ai_panel(&mut self) {
         if let Some(runtime) = &mut self.ai_runtime {
             runtime.cancel();
@@ -7207,7 +6748,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn ai_active(&self) -> bool {
         if let Some(runtime) = &self.ai_runtime {
             runtime.ui.active
@@ -7216,7 +6756,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn ai_input(&mut self, c: char) {
         if let Some(runtime) = &mut self.ai_runtime {
             let mut buf = [0; 4];
@@ -7226,7 +6765,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn ai_backspace(&mut self) {
         if let Some(runtime) = &mut self.ai_runtime {
             runtime.backspace();
@@ -7234,7 +6772,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "ai")]
     fn ai_propose(&mut self) {
         if let Some(runtime) = &mut self.ai_runtime {
             let proxy = self.event_proxy.clone();
@@ -7247,7 +6784,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn ai_try_handle_header_click(&mut self) -> bool {
-        #[cfg(feature = "ai")]
         {
             // Precompute values requiring only &self to avoid borrow conflicts.
             let display_offset = self.terminal.grid().display_offset();
@@ -7321,7 +6857,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     fn ai_update_hover_header(&mut self) -> bool {
-        #[cfg(feature = "ai")]
         {
             // Default to no hover
             let mut hovered: Option<crate::display::ai_panel::AiHeaderControl> = None;
@@ -7416,12 +6951,10 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Workflows params overlay controls
-    #[cfg(feature = "workflow")]
     fn workflows_params_active(&self) -> bool {
         self.display.workflows_params.active
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_params_input_char(&mut self, c: char) {
         use serde_json::Value;
         if !self.display.workflows_params.active { return; }
@@ -7430,7 +6963,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         let idx = st.selected.min(st.fields.len() - 1);
         let field = &mut st.fields[idx];
         match field.kind {
-            workflow_engine::ParameterType::Boolean => {
                 // ignore character input for booleans; use toggle
             }
             _ => {
@@ -7445,7 +6977,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_params_backspace(&mut self) {
         use serde_json::Value;
         if !self.display.workflows_params.active { return; }
@@ -7461,7 +6992,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_params_move_selection(&mut self, delta: isize) {
         let st = &mut self.display.workflows_params;
         if st.fields.is_empty() { return; }
@@ -7473,14 +7003,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_params_toggle(&mut self) {
         use serde_json::Value;
         let st = &mut self.display.workflows_params;
         if st.fields.is_empty() { return; }
         let idx = st.selected.min(st.fields.len() - 1);
         let field = &mut st.fields[idx];
-        if let workflow_engine::ParameterType::Boolean = field.kind {
             let b = match &field.value {
                 Value::Bool(v) => !*v,
                 _ => true,
@@ -7490,7 +7018,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "workflow")]
     fn workflows_params_confirm(&mut self) {
         use std::collections::HashMap;
         use serde_json::Value;
@@ -7505,7 +7032,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 let name = field.name.clone();
                 let required = field.required;
                 let err = match field.kind {
-                    workflow_engine::ParameterType::String => {
                         let s = match &field.value {
                             Value::Null => "".to_string(),
                             Value::String(s) => s.clone(),
@@ -7519,7 +7045,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                             None
                         }
                     }
-                    workflow_engine::ParameterType::Number => {
                         let mut num_opt: Option<f64> = None;
                         match &field.value {
                             Value::Number(n) => { num_opt = n.as_f64(); }
@@ -7560,7 +7085,6 @@ if let Some(min) = field.min { if n < min {
                             None
                         }
                     }
-                    workflow_engine::ParameterType::Boolean => {
                         match &field.value {
                             Value::Bool(_) => {}
                             Value::String(s) => {
@@ -7574,7 +7098,6 @@ if let Some(min) = field.min { if n < min {
                         }
                         None
                     }
-                    workflow_engine::ParameterType::Choice => {
                         let opts = field.options.as_ref().map(|v| v.iter().map(|o| o.value.clone()).collect::<Vec<_>>()).unwrap_or_default();
                         let s = match &field.value {
                             Value::String(s) => s.clone(),
@@ -7590,7 +7113,6 @@ if let Some(min) = field.min { if n < min {
                             None
                         }
                     }
-                    workflow_engine::ParameterType::File | workflow_engine::ParameterType::Directory => {
                         let s = match &field.value {
                             Value::String(s) => s.clone(),
                             Value::Null => String::new(),
@@ -7602,9 +7124,7 @@ if let Some(min) = field.min { if n < min {
                             let p = std::path::Path::new(&s);
                             if !p.exists() {
                                 Some(format!("Path does not exist: {}", s))
-                            } else if matches!(field.kind, workflow_engine::ParameterType::File) && !p.is_file() {
                                 Some(format!("Path is not a file: {}", s))
-                            } else if matches!(field.kind, workflow_engine::ParameterType::Directory) && !p.is_dir() {
                                 Some(format!("Path is not a directory: {}", s))
                             } else { field.value = Value::String(s); None }
                         } else { field.value = Value::Null; None }
@@ -7637,7 +7157,6 @@ if let Some(min) = field.min { if n < min {
     }
 
 
-    #[cfg(feature = "workflow")]
     fn workflows_params_cancel(&mut self) {
         if !self.display.workflows_params.active { return; }
         let _ = self.event_proxy.send_event(crate::event::Event::new(
@@ -8210,7 +7729,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                EventType::WorkflowsFilesChanged => { /* no-op: processor broadcasts refresh */ }
                 EventType::BlinkCursorTimeout => {
                     // Disable blinking after timeout reached.
                     let timer_id = TimerId::new(Topic::BlinkCursor, self.ctx.display.window.id());
@@ -8481,7 +7999,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 },
                 #[cfg(unix)]
                 EventType::IpcConfig(_) | EventType::IpcGetConfig(..) => (),
-                #[cfg(all(unix, feature = "sync"))]
                 EventType::IpcSync(..) => (),
                 EventType::Message(_)
                 | EventType::ConfigReload(_)
@@ -8750,7 +8267,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                 }
                 EventType::BlocksFixUnderCursor => {
-                    #[cfg(feature = "ai")]
                     {
                         // Build error/context text from block under cursor and send to AI Fix if available
                         let display_offset = self.ctx.terminal().grid().display_offset();
@@ -8805,7 +8321,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                 }
                 EventType::BlocksExplainUnderCursor => {
-                    #[cfg(feature = "ai")]
                     {
                         // Build context text and send to AI Explain if available
                         let display_offset = self.ctx.terminal().grid().display_offset();
@@ -8897,8 +8412,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 let mut prev: Option<(usize, usize)> = None;
                                 let mut prev_start_line = 0usize;
                                 for b in &display.blocks.blocks {
-                                    if b.cmd.as_ref() == Some(&cmd) {
-                                        if b.start_total_line < cur_start_line {
+                                    if b.cmd.as_ref() == Some(&cmd)
+                                        && b.start_total_line < cur_start_line {
                                             if let Some(end) = b.end_total_line {
                                                 // choose the nearest previous by start_total_line
                                                 if prev_start_line < b.start_total_line {
@@ -8907,7 +8422,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                                 }
                                             }
                                         }
-                                    }
                                 }
                                 prev
                             };
@@ -8938,7 +8452,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let prev = runtime.ui.streaming_text.len();
@@ -8986,7 +8499,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiStreamFinished => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         if matches!(
@@ -9003,7 +8515,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiStreamError(err) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         log::error!("ai_event_stream_error err={}", err);
@@ -9013,7 +8524,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiProposals(props) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         if matches!(
@@ -9028,7 +8538,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiRegenerate => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let proxy = self.ctx.event_proxy.clone();
@@ -9037,20 +8546,17 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiStop => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.cancel();
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiInsertToPrompt(text) => {
                     // Insert generated content into the shell prompt via paste
                     self.ctx.paste(&text, true);
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiApplyAsCommand { command, dry_run } => {
                     // Route through Security Lens check
                     let _ = self.ctx.event_proxy.send_event(Event::new(
@@ -9059,11 +8565,9 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     ));
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "ai")]
                 EventType::SecurityCheckAiApply { .. } => {
                     // Handled at Processor level to avoid duplicate prompts
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiApplyAsCommandChecked { command, dry_run } => {
                     if dry_run {
                         // Dry-run should not execute; just paste annotated content
@@ -9076,7 +8580,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiCopyOutput { format } => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
                         if let Some(text) = runtime.copy_output(format) {
@@ -9085,33 +8588,27 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                 }
                 // New AI panel events
-                #[cfg(feature = "ai")]
                 EventType::AiToggle => {
                     self.ctx.open_ai_panel();
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiSubmit => {
                     self.ctx.ai_propose();
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiClose => {
                     self.ctx.close_ai_panel();
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiSelectNext => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.next_proposal();
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiSelectPrev => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         runtime.previous_proposal();
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiApplyDryRun => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         if let Some((cmd, _)) = runtime.apply_command(true) {
@@ -9136,7 +8633,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiCopyCode => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
                         if let Some(text) = runtime.copy_output(crate::event::AiCopyFormat::Code) {
@@ -9144,7 +8640,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiCopyAll => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
                         if let Some(text) = runtime.copy_output(crate::event::AiCopyFormat::Text) {
@@ -9152,7 +8647,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiSwitchProvider(provider_name) => {
                     // Warp-like: hot-swap runtime provider immediately, preserve scratch/cursor.
                     let name = provider_name.to_ascii_lowercase();
@@ -9265,7 +8759,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiInlineDebounced => {
                     // Only compute when inline suggestions are enabled and panel is not active
                     let can_offer = self.ctx.config.ai.enabled
@@ -9275,7 +8768,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         && !self.ctx.palette_active()
                         && !self.ctx.confirm_overlay_active()
                         && {
-                            #[cfg(feature = "workflow")]
                             {
                                 !self.ctx.workflows_panel_active()
                             }
@@ -9323,7 +8815,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiInlineSuggestionReady(suffix) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         if suffix.trim().is_empty() {
@@ -9334,7 +8825,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiExplain(target) => {
                     // Extract selection before mutable borrow
                     let text_to_explain = target.clone().unwrap_or_else(|| {
@@ -9361,7 +8851,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                #[cfg(feature = "ai")]
                 EventType::AiFix(target) => {
                     // Extract selection before mutable borrow
                     let error_text = target.clone().unwrap_or_else(|| {
@@ -9403,31 +8892,25 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     }
                 }
                 // Workflow panel events
-                #[cfg(feature = "workflow")]
                 EventType::WorkflowsSearchPerform(_) => {
                     // Workflow search is handled at the processor level
                 }
                 // Command palette provider events handled at Processor level
                 EventType::PaletteRequestWorkflows | EventType::PaletteAppendWorkflows(_) => {}
-                #[cfg(feature = "workflow")]
                 EventType::WorkflowsSearchResults(_) => {
                     // Workflow search results are handled at the processor level
                 }
-                #[cfg(feature = "workflow")]
                 EventType::WorkflowsExecuteByName(_) => {
                     // Workflow execution is handled at the processor level
                 }
-                #[cfg(feature = "workflow")]
                 EventType::WorkflowsProgressUpdate { .. } => {
                     // Workflow progress updates are handled at the processor level
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "workflow")]
                 EventType::WorkflowsProgressClear(_) => {
                     // Workflow progress clearing is handled at the processor level
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "workflow")]
                 EventType::WorkflowsOpenParamsForm { .. }
                 | EventType::WorkflowsSubmitParams { .. }
                 | EventType::WorkflowsCancelParams => {
@@ -9558,7 +9041,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             if self.ctx.display.composer_focused && !self.ctx.palette_active() {
                                 match open_mode {
                                     crate::config::theme::ComposerOpenMode::Instant => {
-                                        #[cfg(feature = "ai")]
                                         {
                                             self.ctx.open_ai_panel();
                                             if let Some(runtime) = &mut self.ctx.ai_runtime {

@@ -34,7 +34,6 @@ const SUGGESTION_PREFIX: &str = "$ ";
 #[allow(dead_code)]
 const SELECTION_INDICATOR: &str = "▶ ";
 
-#[cfg(feature = "ai")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiHeaderControl {
     Stop,
@@ -42,7 +41,6 @@ pub enum AiHeaderControl {
     Close,
 }
 
-#[cfg(feature = "ai")]
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub struct AiPanelGeometry {
@@ -55,7 +53,6 @@ pub struct AiPanelGeometry {
     pub controls_col_end: usize,
 }
 
-#[cfg(feature = "ai")]
 impl Display {
     /// Draw the AI panel if it's active (legacy helper using caller-owned rect list)
     #[allow(dead_code)]
@@ -112,7 +109,6 @@ impl Display {
         // Backdrop dim behind the panel using theme overlay color with configurable alpha
         #[allow(unused_variables)]
         let backdrop_alpha = {
-            #[cfg(feature = "ai")]
             {
                 (config.ai.backdrop_alpha * progress).clamp(0.0, 1.0)
             }
@@ -135,7 +131,6 @@ impl Display {
 
         // Calculate panel dimensions (animated height) using fraction of viewport.
         let fraction = {
-            #[cfg(feature = "ai")]
             {
                 config.ai.panel_height_fraction.clamp(0.20, 0.60)
             }

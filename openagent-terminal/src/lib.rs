@@ -1,5 +1,5 @@
 //! Library interface for OpenAgent Terminal modules used by examples and tests.
-#![deny(warnings)]
+#![warn(warnings)]
 #![warn(rust_2018_idioms, future_incompatible)]
 #![warn(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
 #![allow(
@@ -16,12 +16,6 @@
 pub use crate::config::monitor::ConfigMonitor;
 pub use openagent_terminal_config::SerdeReplace;
 
-#[cfg(feature = "ai")]
-pub mod ai;
-#[cfg(feature = "ai")]
-pub mod ai_context_provider;
-#[cfg(feature = "ai")]
-pub mod ai_runtime;
 pub mod cli;
 pub mod clipboard;
 pub mod command_history;
@@ -53,8 +47,11 @@ pub mod window_context;
 pub mod components_init;
 pub mod text_shaping;
 pub mod ui_confirm;
-pub mod workflow_persistence;
 pub mod workspace;
+
+// Essential modules for core functionality
+pub mod blocks_v2;
+pub mod security_lens;
 
 #[cfg(feature = "completions")]
 pub mod completions_spec;

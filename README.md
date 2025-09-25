@@ -2,16 +2,16 @@
 
 # 🚀 OpenAgent Terminal
 
-**The Next-Generation AI-Enhanced Terminal Emulator**
+**The Fast, Modern Terminal Emulator**
 
-*Blazing fast, privacy-focused, and intelligent. Experience the future of command-line interfaces.*
+*Blazing fast, GPU-accelerated terminal with Warp-inspired features. Built for performance and simplicity.*
 
 [![CI](https://img.shields.io/github/actions/workflow/status/GeneticxCln/OpenAgent-Terminal/ci.yml?branch=main&style=for-the-badge&logo=github)](https://github.com/GeneticxCln/OpenAgent-Terminal/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/GeneticxCln/OpenAgent-Terminal?include_prereleases&sort=semver&style=for-the-badge&logo=github)](https://github.com/GeneticxCln/OpenAgent-Terminal/releases)
 [![License](https://img.shields.io/badge/License-Apache%202.0%20%7C%20MIT-blue?style=for-the-badge)](https://github.com/GeneticxCln/OpenAgent-Terminal/blob/main/LICENSE-APACHE)
 [![Stars](https://img.shields.io/github/stars/GeneticxCln/OpenAgent-Terminal?style=for-the-badge)](https://github.com/GeneticxCln/OpenAgent-Terminal/stargazers)
 
-[🎯 Features](#-key-features) • [⚡ Quick Start](#-quick-start) • [🤖 AI Setup](#-ai-integration) • [📚 Documentation](#-documentation) • [💬 Community](#-community)
+[🎯 Features](#-key-features) • [⚡ Quick Start](#-quick-start) • [📚 Documentation](#-documentation) • [💬 Community](#-community)
 
 ---
 
@@ -23,8 +23,8 @@
 <tr>
 <td width="33%" align="center">
 
-### 🧠 **AI-Powered Intelligence**
-Transform natural language into precise shell commands with advanced AI assistance
+### 🖥️ **Modern Interface**
+Clean, Warp-inspired UI with command blocks, tabs, and intelligent completions
 
 </td>
 <td width="33%" align="center">
@@ -36,19 +36,13 @@ GPU-accelerated rendering with <50MB memory usage and <100ms startup time
 <td width="33%" align="center">
 
 ### 🔒 **Privacy-First Design**
-Local AI by default, zero telemetry, complete transparency and control
+No telemetry, no data collection, complete transparency and control
 
 </td>
 </tr>
 </table>
 
 ## 🎯 Key Features
-
-### 🤖 **Intelligent AI Assistant**
-- **Natural Language Processing**: Type `"find all Python files modified last week"` and get precise shell commands
-- **Multiple AI Providers**: Ollama (local), OpenAI, Anthropic, OpenRouter support
-- **Context-Aware Suggestions**: Understands your current directory, shell, and command history
-- **Safety First**: Never auto-executes commands - you're always in control
 
 ### ⚡ **Performance Excellence**
 - **GPU-Accelerated Rendering**: Powered by WGPU for smooth, responsive UI
@@ -58,15 +52,13 @@ Local AI by default, zero telemetry, complete transparency and control
 
 ### 🎨 **Modern Terminal Experience**
 - **Command Blocks**: Visual command history with collapsible output
-- **Workflow Engine**: Automate complex task sequences
 - **Smart Completions**: Intelligent command and argument completion
 - **Warp-Style Interface**: Modern tabs, panes, and workspace management
 
 ### 🔒 **Security & Privacy**
-- **Local-First**: Ollama runs entirely on your machine
 - **Zero Telemetry**: No data collection or tracking
 - **Open Source**: Fully auditable codebase
-- **Command Review**: Built-in safety checks for AI suggestions
+- **Privacy-First**: No external dependencies for core functionality
 
 ## ⚡ Quick Start
 
@@ -89,49 +81,14 @@ cd OpenAgent-Terminal
 # Basic build
 cargo build --release
 
-# Full featured build with AI
-cargo build --release --features "ai-ollama,workflow,completions"
+# Build with completions
+cargo build --release --features "completions"
 ```
 
 #### **Option 3: Cargo Install**
 ```bash
-cargo install --git https://github.com/GeneticxCln/OpenAgent-Terminal.git --features "ai-ollama"
+cargo install --git https://github.com/GeneticxCln/OpenAgent-Terminal.git
 ```
-
-### 🤖 AI Integration
-
-**Local AI (Recommended):**
-```bash
-curl -fsSL https://ollama.ai/install.sh | sh
-ollama serve
-ollama pull codellama
-```
-
-Security note: Always review install scripts before piping curl to sh. Prefer your OS package manager or the official installer when available. See docs/AI_ENVIRONMENT_SECURITY.md.
-
-**Cloud AI:**
-```bash
-# OpenAI (provider-native)
-export OPENAI_API_KEY="your-key"
-# Optional endpoint/model overrides
-export OPENAI_API_BASE="https://api.openai.com/v1"
-export OPENAI_MODEL="gpt-4o-mini"
-
-# Anthropic (provider-native)
-export ANTHROPIC_API_KEY="your-key"
-# Optional endpoint/model overrides
-export ANTHROPIC_API_BASE="https://api.anthropic.com/v1"
-export ANTHROPIC_MODEL="claude-3-haiku-20240307"
-```
-
-Provider-native client environment variables (local Ollama)
-- For local Ollama config, set:
-```bash
-export OLLAMA_HOST="http://localhost:11434"
-# Optional convenience for model selection (app reads this if set)
-export OLLAMA_MODEL="codellama:7b"
-```
-Note: You can also map alternate OPENAGENT_* names via config (e.g., ai.providers.ollama.endpoint_env = "OPENAGENT_OLLAMA_ENDPOINT"). Provider-native envs are preferred.
 
 ### 🎮 Usage & Keyboard Shortcuts
 
@@ -139,15 +96,7 @@ Note: You can also map alternate OPENAGENT_* names via config (e.g., ai.provider
 <tr>
 <td width="50%">
 
-#### **🤖 AI Features**
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+A` | Open AI Assistant |
-| `Ctrl+Shift+E` | Explain Command/Output |
-| `Ctrl+Shift+F` | Fix Last Error |
-| `Tab` | Accept AI Suggestion |
-
-#### **📋 Command Management**  
+#### **📋 Command Management**
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+Shift+P` | Command Palette |
@@ -166,72 +115,16 @@ Note: You can also map alternate OPENAGENT_* names via config (e.g., ai.provider
 | `Ctrl+Shift+Shift+D` | Split Vertical |
 | `Ctrl+Shift+W` | Close Pane |
 
-#### **⚙️ Workflows**
+#### **⚙️ General**
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+W` | Workflows Panel |
-| `Ctrl+Shift+R` | Run Workflow |
+| `Ctrl+Shift+P` | Command Palette |
 | `F5` | Refresh/Restart |
 
 </td>
 </tr>
 </table>
 
-### 💡 **Try These AI Commands:**
-```bash
-# Open AI assistant and try:
-"find all Python files larger than 1MB"
-"show me disk usage for each directory"
-"create a backup of my home directory"
-"list all running processes using more than 100MB RAM"
-```
-
-## 📓 Workflow Engine
-
-**Automate complex command sequences with intelligent workflow management.**
-
-<table>
-<tr>
-<td width="50%">
-
-### **Create & Manage Workflows**
-```bash
-# Create a new workflow
-openagent-terminal workflow create "deploy"
-
-# Add commands to workflow
-openagent-terminal workflow add-step deploy \
-  --command "npm run build" \
-  --description "Build application"
-
-# Run workflow
-openagent-terminal workflow run deploy
-```
-
-</td>
-<td width="50%">
-
-### **Interactive Workflow Builder**
-```bash
-# Open workflow panel
-Ctrl+Shift+W
-
-# Or use natural language
-"Create a workflow to deploy my app"
-"Show me all available workflows"
-"Run the backup workflow"
-```
-
-</td>
-</tr>
-</table>
-
-### **Workflow Features:**
-- 🔄 **Conditional Logic**: Skip steps based on conditions
-- 📊 **Progress Tracking**: Real-time execution status
-- 🔍 **Error Handling**: Automatic retry and rollback options
-- 📝 **Documentation**: Built-in step descriptions and help
-- 🎯 **Templates**: Pre-built workflows for common tasks
 
 ## ⚙️ Configuration & Customization
 
@@ -251,23 +144,6 @@ background = "#1e1e2e"
 foreground = "#cdd6f4"
 ```
 
-### 🤖 **AI Configuration**
-```toml
-[ai]
-enabled = true
-provider = "ollama"  # "ollama", "openai", "anthropic", "openrouter"
-trigger_key = "Ctrl+Shift+A"
-never_auto_run = true  # Safety first
-
-# Provider-specific settings
-[ai.providers.ollama]
-endpoint = "http://localhost:11434"
-model = "codellama:7b"
-
-[ai.providers.openai]
-model = "gpt-4"
-max_tokens = 2048
-```
 
 ### 🚀 **Performance Tuning**
 ```toml
@@ -278,23 +154,10 @@ subpixel_text = "Enabled"
 subpixel_orientation = "RGB"
 subpixel_gamma = 2.2
 
-# AI streaming optimization
-stream_redraw_ms = 16  # Lower = more responsive, higher = less CPU
+# General optimization
+# stream_redraw_ms = 16  # Lower = more responsive, higher = less CPU
 ```
 
-### AI streaming, logs, and history storage
-
-- OPENAGENT_AI_STREAM_REDRAW_MS: Throttle AI streaming redraws and batch chunk flushes; default 16 ms.
-  - Lower values (e.g., 8) update more frequently during AI streaming; higher (e.g., 32) reduce redraw load.
-- Paste preview privacy: Previews strip ANSI escape codes, truncate to 10 lines (~1200 chars), and redact obvious secrets (e.g., Authorization: Bearer ..., api_key=..., password: ...).
-- Verbose AI logs: Set OPENAGENT_AI_LOG_VERBOSITY=summary or verbose to log AI streaming events and proposal outcomes. Frame timings are logged with render.frame and render.frame_complete spans via tracing.
-
-AI history storage and export
-- Location: Linux: ~/.local/share/openagent-terminal/ai_history/
-- Files:
-  - history.db (SQLite) — primary store
-  - history.jsonl (JSON Lines) — append-only log with one JSON object per line
-- CLI export: If the SQLite database isn’t available, the CLI automatically falls back to exporting from history.jsonl (supports --format json or csv).
 
 ### Workspace pane drag and precise tab drop targets
 
@@ -334,14 +197,6 @@ Rendering backend:
 - WGPU only. OpenGL fallback has been removed.
 - If WGPU initialization fails on your system, the app will exit with an error explaining why.
 
-Minimal AI config (`~/.config/openagent-terminal/openagent-terminal.toml`):
-
-```toml
-[ai]
-enabled = true
-provider = "ollama"  # or "openai", "anthropic", "openrouter"
-trigger_key = "Ctrl+Shift+A"
-never_auto_run = true  # Safety first
 ```
 
 See `examples/openagent-terminal.example.toml` for a fuller starter configuration.
@@ -356,55 +211,35 @@ Choose the build that matches your needs:
 <tr>
 <td width="50%">
 
-#### **📱 Minimal Terminal**
+#### **📱 Standard Terminal**
 ```bash
-# Just the terminal, no AI
+# Standard build
 cargo build --release
 ```
-*Perfect for resource-constrained environments*
+*Full-featured terminal emulator*
 
-#### **🤖 AI-Enhanced (Local)**
+#### **🔧 With Completions**
 ```bash
-# With Ollama (recommended)
-cargo build --release --features "ai-ollama"
+# With completions support
+cargo build --release --features "completions"
 ```
-*Privacy-first AI assistance*
-
-#### **☁️ AI-Enhanced (Cloud)**
-```bash
-# OpenAI
-cargo build --release --features "ai-openai"
-
-# Anthropic
-cargo build --release --features "ai-anthropic"
-
-# OpenRouter
-cargo build --release --features "ai-openrouter"
-```
-*Cloud AI providers*
+*Enhanced command completion*
 
 </td>
 <td width="50%">
 
-#### **🎆 Full Featured**
+#### **🎆 Advanced Text**
 ```bash
-# Everything included
-cargo build --release --features "full,ai-ollama"
+# With advanced text shaping
+cargo build --release --features "harfbuzz"
 ```
-*Complete development experience*
-
-#### **🔧 Developer Build**
-```bash
-# All features for contributors
-cargo build --release --features "atlas"
-```
-*Includes IDE, workflows, advanced text shaping*
+*Enhanced font rendering*
 
 #### **🎯 Custom Build**
 ```bash
 # Pick specific features
 cargo build --release --features \
-  "workflow,completions,harfbuzz"
+  "completions,harfbuzz"
 ```
 *Tailor to your exact needs*
 
@@ -413,12 +248,11 @@ cargo build --release --features \
 </table>
 
 ### 📝 **Available Features**
-- `ai-*` - AI providers (ollama, openai, anthropic, openrouter)
-- `workflow` - Workflow automation engine  
 - `completions` - Smart command completion
 - `harfbuzz` - Advanced text shaping
-- `ide` - Integrated development features
-- `sync` - Configuration synchronization
+- `wayland` - Wayland display server support
+- `x11` - X11 display server support
+- `wgpu` - GPU-accelerated rendering
 
 ## 💬 Community
 
@@ -473,10 +307,8 @@ No cloud accounts or sync
 - Any synchronization is strictly optional, disabled by default, and intended for local or self-hosted setups only (behind a feature flag).
 - The project is open-source and local-first by design.
 
-- **Local by default** - Ollama runs entirely on your machine
 - **No telemetry** - Zero data collection
-- **Command analysis** - Built-in Security Lens reviews AI suggestions
-- **Never auto-executes** - You approve every command
+- **Privacy-first** - Local-only operation
 - **Open source** - Audit the code yourself
 
 ## 📚 Documentation
@@ -496,7 +328,7 @@ No cloud accounts or sync
 ### ⚙️ **Configuration**
 [![Config Manual](https://img.shields.io/badge/Config-Manual-orange?style=for-the-badge)](docs/configuration.md)
 [![Themes](https://img.shields.io/badge/Themes-purple?style=for-the-badge)](docs/themes.md)
-[![AI Setup](https://img.shields.io/badge/AI-Setup-red?style=for-the-badge)](docs/ai-setup.md)
+[![Keybindings](https://img.shields.io/badge/Keybindings-red?style=for-the-badge)](docs/keybindings.md)
 
 </td>
 <td width="33%" align="center">
@@ -513,7 +345,7 @@ No cloud accounts or sync
 ### 📎 **Quick Links**
 - 📦 **[Installation Guide](INSTALL.md)** - Platform-specific installation instructions
 - ⚙️ **[Configuration Manual](docs/configuration.md)** - Complete configuration reference
-- 🤖 **[AI Setup Guide](docs/ai-setup.md)** - Set up AI providers and features
+- ⌨️ **[Keybindings Guide](docs/keybindings.md)** - Keyboard shortcuts and customization
 - 🔒 **[Privacy & Security](docs/privacy-security.md)** - Data handling and security practices
 - 🎨 **[Themes & Customization](docs/themes.md)** - Create and share custom themes
 - 🔧 **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
@@ -526,13 +358,12 @@ No cloud accounts or sync
 <summary><strong>How is OpenAgent Terminal different from other AI terminals?</strong></summary>
 <br>
 
-OpenAgent Terminal is a **complete terminal emulator** with built-in AI, not just a wrapper or chat interface. Key differences:
+OpenAgent Terminal is a **modern terminal emulator** with Warp-inspired features. Key differences:
 
-- ⭐ **Native Integration**: AI is built into the terminal core, not an external overlay
 - 🎨 **Full Terminal**: Complete VT100/xterm compatibility, works with any shell
 - ⚡ **Performance**: Based on Alacritty's proven architecture for maximum speed
-- 🔒 **Privacy**: Local-first with Ollama, no data leaves your machine by default
-- 🎯 **Context-Aware**: Understands your environment, not just text completion
+- 🔒 **Privacy**: No telemetry, privacy-first design
+- 🎯 **Modern UI**: Command blocks, tabs, and intelligent completions
 
 </details>
 

@@ -14,9 +14,9 @@ use crate::display::SizeInfo;
 use super::{WarpAction, WarpIntegration, WorkspaceId, WorkspaceManager};
 use crate::config::workspace::WorkspaceConfig;
 use crate::config::Action;
-use crate::workspace::warp_integration::ActionExt;
-use crate::workspace::warp_split_manager::{WarpNavDirection, WarpResizeDirection};
-use crate::workspace::warp_tab_manager::SplitDirection;
+use crate::workspace::integration::ActionExt;
+use crate::workspace::split_layout_manager::{WarpNavDirection, WarpResizeDirection};
+use crate::workspace::tab_layout_manager::SplitDirection;
 
 /// Helper to create a test configuration
 fn test_config() -> Rc<UiConfig> {
@@ -239,7 +239,7 @@ fn test_config_validation() {
 fn test_tab_bar_config_defaults() {
     let mut cfg = UiConfig::default();
     // Use default tab bar values
-    let style = crate::display::warp_ui::WarpTabStyle::from_theme(&cfg);
+let style = crate::display::modern_ui::WarpTabStyle::from_theme(&cfg);
     // Sanity-check style derives from theme; this primarily guards against panics
     assert!(style.tab_height >= 16.0);
 
@@ -429,7 +429,7 @@ fn test_equalize_splits_ratios() {
     // Nudge ratios away from 0.5 via a resize operation
     let _ = workspace
         .execute_warp_action(&super::WarpAction::ResizePane(
-            crate::workspace::warp_split_manager::WarpResizeDirection::ExpandRight,
+crate::workspace::split_layout_manager::WarpResizeDirection::ExpandRight,
         ))
         .unwrap();
 
@@ -476,12 +476,12 @@ fn test_recent_pane_cycling() {
     // Navigate to build up recent history: Right then Down
     let _ = workspace
         .execute_warp_action(&super::WarpAction::NavigatePane(
-            crate::workspace::warp_split_manager::WarpNavDirection::Right,
+crate::workspace::split_layout_manager::WarpNavDirection::Right,
         ))
         .unwrap();
     let _ = workspace
         .execute_warp_action(&super::WarpAction::NavigatePane(
-            crate::workspace::warp_split_manager::WarpNavDirection::Down,
+crate::workspace::split_layout_manager::WarpNavDirection::Down,
         ))
         .unwrap();
 

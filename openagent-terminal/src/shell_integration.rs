@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 // use tokio::process::Child; // not used currently
 // use tokio::sync::mpsc; // not used currently
 
-use crate::command_pipeline::ShellType;
+use crate::blocks_v2::ShellType;
 
 /// Callback type for shell events to reduce type complexity
 pub type ShellEventCallback = Box<dyn Fn(&ShellEvent) + Send + Sync>;
@@ -187,6 +187,12 @@ pub struct ShellHooks {
 /// Unique command identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CommandId(u64);
+
+impl Default for CommandId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CommandId {
     pub fn new() -> Self {

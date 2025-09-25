@@ -17,9 +17,8 @@ use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "never")]
-pub(crate) use plugin_sdk::{CommandOutput, PluginError};
-#[cfg(feature = "workflow")]
-use workflow_engine::WorkflowEngine;
+pub(crate) use crate::plugins_api::{CommandOutput, PluginError};
+#[cfg(feature = "never")]
 
 /// Component initialization configuration
 #[allow(dead_code)]
@@ -68,7 +67,7 @@ pub struct InitializedComponents {
     pub block_manager: Option<Arc<tokio::sync::RwLock<BlockManager>>>,
     #[cfg(feature = "never")]
     pub notebook_manager: Option<Arc<tokio::sync::RwLock<crate::notebooks::NotebookManager>>>,
-    #[cfg(feature = "workflow")]
+    #[cfg(feature = "never")]
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     #[cfg(feature = "never")]
     pub plugin_manager: Option<Arc<PluginManager>>,
@@ -88,7 +87,7 @@ impl std::fmt::Debug for InitializedComponents {
         {
             let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some"));
         }
-        #[cfg(feature = "workflow")]
+        #[cfg(feature = "never")]
         {
             let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some"));
         }
@@ -207,7 +206,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize workflow engine
-    #[cfg(feature = "workflow")]
+    #[cfg(feature = "never")]
     let workflow_engine = if config.enable_workflows {
         match initialize_workflow_engine(&config.config_dir).await {
             Ok(engine) => {
@@ -297,7 +296,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
         block_manager,
         #[cfg(feature = "never")]
         notebook_manager,
-        #[cfg(feature = "workflow")]
+        #[cfg(feature = "never")]
         workflow_engine,
         #[cfg(feature = "never")]
         plugin_manager,
@@ -331,7 +330,7 @@ async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
 }
 
 /// Initialize workflow engine
-#[cfg(feature = "workflow")]
+#[cfg(feature = "never")]
 async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<WorkflowEngine> {
     let engine = WorkflowEngine::new().context("Failed to create workflow engine")?;
 
@@ -387,7 +386,7 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
     Ok(engine)
 }
 
-#[cfg(feature = "workflow")]
+#[cfg(feature = "never")]
 async fn seed_default_workflows(dir: &std::path::Path) -> Result<()> {
     let rust = r#"name: Cargo Build
 version: "1.0.0"
@@ -825,7 +824,6 @@ impl<'a> ComponentIntegration<'a> {
     }
 
     /// Execute a workflow
-    #[cfg(feature = "workflow")]
     pub async fn execute_workflow(
         &self,
         workflow_id: &str,

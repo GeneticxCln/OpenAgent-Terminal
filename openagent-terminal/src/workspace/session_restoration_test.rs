@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::workspace::split_manager::PaneId;
-use crate::workspace::warp_tab_manager::{
+use crate::workspace::tab_layout_manager::{
     WarpPaneSession, WarpSession, WarpSplitLayoutSession, WarpTabManager, WarpTabSession,
 };
 use crate::workspace::TabId;
@@ -334,8 +334,8 @@ fn test_large_session_save_load_with_splits_and_dirs() {
     // Build some split structures in the first tab
     if let Some(&first) = created_tabs.first() {
         // Duplicate a few times to create Horizontal/Vertical structure
-        let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Right);
-        let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Down);
+let _ = manager.duplicate_tab_as_split(first, super::tab_layout_manager::SplitDirection::Right);
+let _ = manager.duplicate_tab_as_split(first, super::tab_layout_manager::SplitDirection::Down);
         let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Right);
     }
 

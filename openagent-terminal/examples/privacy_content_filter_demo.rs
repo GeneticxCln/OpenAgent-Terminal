@@ -20,7 +20,6 @@ use openagent_terminal::ai::agents::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[cfg(feature = "ai")]
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing for logging

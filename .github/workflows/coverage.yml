@@ -53,7 +53,6 @@ jobs:
           cargo llvm-cov \
             --package openagent-terminal \
             --package openagent-terminal-core \
-            --package openagent-terminal-ai \
             --all-features --locked \
             --fail-under-lines ${MIN_COVERAGE} \
             --lcov --output-path lcov-prioritized.info

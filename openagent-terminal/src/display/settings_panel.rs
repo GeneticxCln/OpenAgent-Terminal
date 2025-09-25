@@ -8,8 +8,6 @@ use std::path::PathBuf;
 
 use unicode_width::UnicodeWidthStr;
 
-#[cfg(feature = "ai")]
-use crate::config::ai::{AiApplyJoinStrategy, AiRoutingMode};
 use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
 #[cfg(not(feature = "ai"))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -206,7 +204,6 @@ impl SettingsPanelState {
         self.provider = current_provider_from_config(config);
         self.load_ai_from_secrets();
         // AI enabled and privacy options
-        #[cfg(feature = "ai")]
         {
             self.ai_enabled = config.ai.enabled;
             self.routing = config.ai.routing;
@@ -694,9 +691,7 @@ impl SettingsPanelState {
 
     pub fn test_connection(&mut self, _config: &UiConfig) {
         // Validate credentials for the selected provider using secure loader
-        #[cfg(feature = "ai")]
         let provider = self.provider.to_ascii_lowercase();
-        #[cfg(feature = "ai")]
         {
             let prov_cfg = _config.ai.providers.get(&provider).cloned().unwrap_or_else(|| {
                 // Fallback to defaults if not present
@@ -1061,7 +1056,6 @@ fn save_general_to_config(
 }
 
 fn current_provider_from_config(_config: &UiConfig) -> String {
-    #[cfg(feature = "ai")]
     {
         _config.ai.provider.as_deref().unwrap_or("openrouter").to_string()
     }

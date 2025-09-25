@@ -30,9 +30,7 @@ pub struct NativePersistence {
     data_dir: PathBuf,
 
     /// Optional sync provider (enabled only when the `sync` feature is on)
-    #[cfg(feature = "sync")]
     sync_provider:
-        std::sync::Arc<tokio::sync::Mutex<Option<openagent_terminal_sync::LocalFsProvider>>>,
 
     /// Block persistence state
     block_persistence: BlockPersistence,
@@ -358,9 +356,7 @@ impl NativePersistence {
         };
 
         // Initialize optional sync provider behind feature flag
-        #[cfg(feature = "sync")]
         let sync_provider = {
-            use openagent_terminal_sync::{LocalFsProvider, SyncConfig};
             let cfg = SyncConfig {
                 provider: "local_fs".to_string(),
                 data_dir: Some(data_dir.join("sync")),
@@ -390,7 +386,6 @@ impl NativePersistence {
             event_callbacks: Vec::new(),
             wal,
             backup_manager,
-            #[cfg(feature = "sync")]
             sync_provider,
             sync_sender: None,
             perf_stats: PersistenceStats { last_reset: Instant::now(), ..Default::default() },
@@ -404,11 +399,9 @@ impl NativePersistence {
         persistence.sync_sender = Some(sync_tx);
 
         // Spawn sync worker for immediate processing
-        #[cfg(feature = "sync")]
         {
             let provider_arc = persistence.sync_provider.clone();
             tokio::spawn(async move {
-                use openagent_terminal_sync::{SyncProvider, SyncScope};
                 while let Some(operation) = sync_rx.recv().await {
                     debug!("Processing sync operation: {:?}", operation);
                     let guard = provider_arc.lock().await;
@@ -952,7 +945,6 @@ mod tests {
                 last_backup: Instant::now(),
                 backup_queue: Vec::new(),
             },
-            #[cfg(feature = "sync")]
             sync_provider: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             sync_sender: None,
             perf_stats: PersistenceStats::default(),

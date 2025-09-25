@@ -15,6 +15,7 @@ use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
 use openagent_terminal_core::index::{Column, Point};
 use std::path::Path;
+use std::str::FromStr;
 
 #[derive(Default)]
 pub struct EditorOverlayState {
@@ -26,12 +27,37 @@ pub struct EditorOverlayState {
     // Minimal LSP - only basic completions
     #[cfg(feature = "lsp")]
     pub lsp: Option<openagent_terminal_ide::lsp::LspClient>,
+#[cfg(feature = "lsp")]
+    pub lsp_uri: Option<lsp_types::Uri>,
     #[cfg(feature = "lsp")]
-    pub lsp_uri: Option<lsp_types::Url>,
+    pub language_id: Option<String>,
     // Simple completion UI
     pub completion_active: bool,
     pub completion_items: Vec<String>,
     pub completion_selected: usize,
+    // Extended LSP state used by overlay features
+    #[cfg(feature = "lsp")]
+    pub completion_items_full: Vec<lsp_types::CompletionItem>,
+    #[cfg(feature = "lsp")]
+    pub diagnostics: Vec<lsp_types::Diagnostic>,
+    #[cfg(feature = "lsp")]
+    pub references_active: bool,
+    #[cfg(feature = "lsp")]
+    pub references: Vec<lsp_types::Location>,
+    #[cfg(feature = "lsp")]
+    pub references_selected: usize,
+    #[cfg(feature = "lsp")]
+    pub rename_active: bool,
+    #[cfg(feature = "lsp")]
+    pub rename_text: String,
+    #[cfg(feature = "lsp")]
+    pub hover_active: bool,
+    #[cfg(feature = "lsp")]
+    pub hover_text: String,
+    #[cfg(feature = "lsp")]
+    pub signature_active: bool,
+    #[cfg(feature = "lsp")]
+    pub signature_label: String,
 }
 
 #[cfg(feature = "lsp")]
@@ -91,11 +117,15 @@ impl Display {
 
     #[cfg(feature = "lsp")]
     pub fn editor_overlay_request_completion(&mut self) {
-        if let (Some(client), Some(uri), Some(buf)) = (
+if let (Some(client), Some(url), Some(buf)) = (
             self.editor_overlay.lsp.as_ref(),
             self.editor_overlay.lsp_uri.clone(),
             self.editor_overlay.buffer.as_ref(),
         ) {
+            let uri = match lsp_types::Uri::from_str(url.as_str()) {
+                Ok(u) => u,
+                Err(_) => return,
+            };
             let pos = lsp_types::Position {
                 line: buf.cursor.read().line as u32,
                 character: buf.cursor.read().column as u32,
@@ -270,18 +300,24 @@ impl EditorOverlayState {
                     {
                         let lang = guess_language_from_path(&path);
                         self.language_id = Some(lang.clone());
-if let Ok(uri) = lsp_types::Url::from_file_path(&path) {
-                            self.lsp_uri = Some(uri.clone());
-                            let cfg = lsp_server_config_for_language(&lang);
-                            if let Some(cfg) = cfg {
-if let Ok(client) = openagent_terminal_ide::lsp::LspClient::start(
-                                    &cfg,
-                                    Some(uri.clone()),
-                                ) {
-                                    let text =
-                                        self.buffer.as_ref().map(|b| b.text()).unwrap_or_default();
-                                    let _ = client.open_document(uri.clone(), &lang, &text);
-                                    self.lsp = Some(client);
+{
+                            let uri_str = format!("file://{}", path.display());
+                            if let Ok(uri) = uri_str.parse::<lsp_types::Uri>() {
+                                self.lsp_uri = Some(uri.clone());
+                                let cfg = lsp_server_config_for_language(&lang);
+                                if let Some(cfg) = cfg {
+                                    if let Ok(client) = openagent_terminal_ide::lsp::LspClient::start(
+                                        &cfg,
+                                        Some(uri.clone()),
+                                    ) {
+                                        let text = self
+                                            .buffer
+                                            .as_ref()
+                                            .map(|b| b.text())
+                                            .unwrap_or_default();
+                                        let _ = client.open_document(uri.clone(), &lang, &text);
+                                        self.lsp = Some(client);
+                                    }
                                 }
                             }
                         }
@@ -399,7 +435,7 @@ impl Display {
                 }
             }
             // Full sync
-            if let (Some(client), Some(uri)) =
+if let (Some(client), Some(uri)) =
                 (self.editor_overlay.lsp.as_ref(), self.editor_overlay.lsp_uri.clone())
             {
                 let version = buf.meta.read().version;
@@ -629,12 +665,15 @@ impl Display {
                     .references
                     .get(idx)
                     .map(|loc| {
-                        format!(
-                            "{}:{}:{}",
-                            loc.uri.path().rsplit('/').next().unwrap_or(""),
-                            loc.range.start.line + 1,
-                            loc.range.start.character + 1
-                        )
+{
+                            let p = loc.uri.to_string();
+                            format!(
+                                "{}:{}:{}",
+                                p.rsplit('/').next().unwrap_or(""),
+                                loc.range.start.line + 1,
+                                loc.range.start.character + 1
+                            )
+                        }
                     })
                     .unwrap_or_default();
                 let mut text = label;
@@ -808,7 +847,7 @@ impl Display {
         self.pending_update.dirty = true;
     }
 
-    #[cfg(feature = "lsp")]
+#[cfg(feature = "lsp")]
     fn lsp_tdpp_at_cursor(&self) -> Option<lsp_types::TextDocumentPositionParams> {
         let uri = self.editor_overlay.lsp_uri.clone()?;
         let buf = self.editor_overlay.buffer.as_ref()?;
@@ -861,8 +900,13 @@ impl Display {
                 return;
             }
         }
-        if let Ok(path) = loc.uri.to_file_path() {
-            self.editor_overlay_open(path);
+{
+            // Convert Uri -> Url -> PathBuf best-effort
+let s = loc.uri.to_string();
+            if let Some(p) = s.strip_prefix("file://") {
+                let pb = std::path::PathBuf::from(p);
+                self.editor_overlay_open(pb);
+            }
         }
     }
 
@@ -1008,7 +1052,7 @@ buf: &openagent_terminal_ide::editor::EditorBuffer,
 
     #[cfg(feature = "lsp")]
     pub fn editor_overlay_format_document(&mut self) {
-        if let (Some(client), Some(uri), Some(buf)) = (
+if let (Some(client), Some(uri), Some(buf)) = (
             self.editor_overlay.lsp.as_ref(),
             self.editor_overlay.lsp_uri.clone(),
             self.editor_overlay.buffer.as_ref(),
@@ -1046,11 +1090,9 @@ buf: &openagent_terminal_ide::editor::EditorBuffer,
                         range_length: None,
                         text: rope.to_string(),
                     };
-                    let _ = client.change_document(
-                        self.editor_overlay.lsp_uri.clone().unwrap(),
-                        version,
-                        vec![change],
-                    );
+if let Some(uri) = self.editor_overlay.lsp_uri.clone() {
+                        let _ = client.change_document(uri, version, vec![change]);
+                    }
                 }
                 self.pending_update.dirty = true;
             }
@@ -1122,7 +1164,7 @@ buf: &openagent_terminal_ide::editor::EditorBuffer,
         // Send LSP didChange (full sync)
         #[cfg(feature = "lsp")]
         {
-            if let (Some(client), Some(uri), Some(_lang), Some(buf)) = (
+if let (Some(client), Some(uri), Some(_lang), Some(buf)) = (
                 self.editor_overlay.lsp.as_ref(),
                 self.editor_overlay.lsp_uri.clone(),
                 self.editor_overlay.language_id.clone(),
@@ -1134,7 +1176,7 @@ buf: &openagent_terminal_ide::editor::EditorBuffer,
                     range_length: None,
                     text: buf.text(),
                 };
-                let _ = client.change_document(uri, version, vec![change]);
+let _ = client.change_document(uri, version, vec![change]);
             }
             if ch == '(' {
                 self.editor_overlay_signature_help();
@@ -1150,7 +1192,7 @@ buf: &openagent_terminal_ide::editor::EditorBuffer,
         }
         #[cfg(feature = "lsp")]
         {
-            if let (Some(client), Some(uri), Some(buf)) = (
+if let (Some(client), Some(uri), Some(buf)) = (
                 self.editor_overlay.lsp.as_ref(),
                 self.editor_overlay.lsp_uri.clone(),
                 self.editor_overlay.buffer.as_ref(),
@@ -1161,7 +1203,7 @@ buf: &openagent_terminal_ide::editor::EditorBuffer,
                     range_length: None,
                     text: buf.text(),
                 };
-                let _ = client.change_document(uri, version, vec![change]);
+let _ = client.change_document(uri, version, vec![change]);
             }
         }
         self.pending_update.dirty = true;

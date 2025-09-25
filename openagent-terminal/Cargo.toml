@@ -28,34 +28,13 @@ version = "0.2.5-dev"
 path = "../openagent-terminal-config"
 version = "0.2.3-dev"
 
-[dependencies.openagent-terminal-sync]
-path = "../openagent-terminal-sync"
-version = "0.1.0"
-optional = true
-
-[dependencies.openagent-terminal-ai]
-path = "../openagent-terminal-ai"
-version = "0.1.0"
-optional = true
-
-[dependencies.workflow-engine]
-path = "../crates/workflow-engine"
-version = "0.1.0"
-optional = true
 
 
 
 [dependencies]
 chrono = { version = "0.4.42", features = ["std", "serde", "clock"] }
-# Consolidated IDE umbrella crate
-openagent-terminal-ide = { path = "../crates/openagent-terminal-ide", version = "0.1.0", optional = true }
 
-# Networking for plugin tooling and other optional components
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
-
-lsp-types = { version = "0.95.1", optional = true }
 ahash = { version = "0.8.6", features = ["no-rng"] }
-wat = "1.238.1"
 bitflags = { workspace = true }
 clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
@@ -99,8 +78,6 @@ toml_edit.workspace = true
 unicode-width = "0.2.0"
 winit = { workspace = true, features = ["serde"] }
 uuid = "1.0"
-# Optional SQLite for AI history (best-effort logging)
-rusqlite = { workspace = true }
 csv = "1.3"
 # Observability
 metrics-exporter-prometheus = { workspace = true }
@@ -163,21 +140,8 @@ embed-resource = "3.0.2"
 
 [features]
 # WGPU-only default. No OpenGL backend.
-# Cloud sync and account features are excluded by default in this open-source project.
-# Optional local/self-hosted sync remains available behind the `sync` feature flag.
-default = ["wayland", "x11", "workflow", "wgpu", "completions"]
-# Convenience alias for a comprehensive local dev build (no provider-specific AI by default)
-full = ["wgpu", "workflow", "completions", "harfbuzz"]
-# Convenience alias for a sensible "everything-in-one" setup with a single AI backend to keep size reasonable
-# Usage: cargo build -p openagent-terminal --features atlas
-atlas = [
-    "wgpu",
-    "ide",
-    "workflow",
-    "harfbuzz",
-    # Choose exactly one AI backend to avoid enabling all providers at once
-    "ai-openai",
-]
+# Warp-only alignment: remove AI/workflow/sync/IDE/plugin toggles from defaults.
+default = ["wayland", "x11", "wgpu", "completions"]
 # Preview-only UI helpers used by examples/demos
 preview_ui = []
 # Experimental placeholders/scaffolding that is planned but not yet actively used
@@ -191,15 +155,6 @@ renderer-wgpu = ["wgpu"]
 # Experimental always-on completions overlay (gated until stable)
 completions = []
 
-# IDE features consolidated via umbrella crate
-# Umbrella to enable editor + LSP (Warp-style minimal IDE)
-ide = ["dep:openagent-terminal-ide", "openagent-terminal-ide/all"]
-# Individual toggles mapped to umbrella features (also provide short aliases used in code)
-ide-editor = ["dep:openagent-terminal-ide", "openagent-terminal-ide/editor"]
-ide-lsp = ["dep:openagent-terminal-ide", "openagent-terminal-ide/lsp", "dep:lsp-types"]
-# Short aliases used in code modules
-editor = ["ide-editor"]
-lsp = ["ide-lsp"]
 
 x11 = [
     "copypasta/x11",
@@ -215,30 +170,8 @@ wayland = [
     "winit/wayland-csd-adwaita-crossfont",
 ]
 nightly = []
-# Optional AI integration for command assistance
-ai = [
-    "dep:openagent-terminal-ai",
-    # Enable agents subsystem and provider backends
-    "openagent-terminal-ai/agents",
-    "openagent-terminal-ai/ai-openai",
-    "openagent-terminal-ai/ai-anthropic",
-    "openagent-terminal-ai/ai-ollama",
-    "openagent-terminal-ai/ai-openrouter",
-]
-# Optional sync feature for settings/history sync
-sync = ["dep:openagent-terminal-sync"]
-# Optional workflow engine for automated task execution
-workflow = ["dep:workflow-engine"]
 # Enhanced text shaping with HarfBuzz
 harfbuzz = ["dep:harfbuzz_rs", "dep:fontdb", "dep:unicode-bidi"]
-
-
-# Umbrella features for AI backends (one-flag builds)
-# Example: cargo build -p openagent-terminal --features ai-ollama
-ai-ollama = ["ai", "openagent-terminal-ai/ai-ollama"]
-ai-openai = ["ai", "openagent-terminal-ai/ai-openai"]
-ai-anthropic = ["ai", "openagent-terminal-ai/ai-anthropic"]
-ai-openrouter = ["ai", "openagent-terminal-ai/ai-openrouter"]
 # Experimental native modules (input, renderer, search, persistence)
 # Disabled by default until stabilized
 native-extras = []
@@ -285,35 +218,6 @@ name = "wgpu_snapshot"
 path = "examples/wgpu_snapshot.rs"
 required-features = ["wgpu"]
 
-[[example]]
-name = "natural_language_agent_demo"
-path = "examples/natural_language_agent_demo.rs"
-required-features = ["ai"]
-
-[[example]]
-name = "blitzy_project_context_demo"
-path = "examples/blitzy_project_context_demo.rs"
-required-features = ["ai"]
-
-[[example]]
-name = "workflow_orchestrator_demo"
-path = "examples/workflow_orchestrator_demo.rs"
-required-features = ["ai"]
-
-[[example]]
-name = "advanced_conversation_demo"
-path = "examples/advanced_conversation_demo.rs"
-required-features = ["ai"]
-
-[[example]]
-name = "privacy_content_filter_demo"
-path = "examples/privacy_content_filter_demo.rs"
-required-features = ["ai"]
-
-[[example]]
-name = "terminal_ui_integration_demo"
-path = "examples/terminal_ui_integration_demo.rs"
-required-features = ["ai"]
 
 [[bench]]
 name = "terminal_startup"

@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           t0=$(date +%s)
-          cargo build -p openagent-terminal --features "ai" --release --locked
+          cargo build -p openagent-terminal --release --locked
           t1=$(date +%s)
           dt=$((t1 - t0))
           echo "seconds=$dt" >> "$GITHUB_OUTPUT"
@@ -45,14 +45,14 @@ jobs:
           set -euo pipefail
           cargo run -p openagent-terminal --example perf_cold_start -- --max-ms=100
 
-      - name: Idle memory KPI (<= 150MB) with AI enabled
+      - name: Idle memory KPI (<= 150MB)
         shell: bash
         run: |
           set -euo pipefail
-          cargo run -p openagent-terminal --features "ai" --example perf_idle_memory -- --max-mb=150
+          cargo run -p openagent-terminal --example perf_idle_memory -- --max-mb=150
 
       - name: Enforce perf_smoke tests
         shell: bash
         run: |
           set -euo pipefail
-          cargo test -p openagent-terminal --features "ai" --locked perf_smoke -- --nocapture
+          cargo test -p openagent-terminal --locked perf_smoke -- --nocapture

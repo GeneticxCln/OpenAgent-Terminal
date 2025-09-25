@@ -18,7 +18,6 @@ pub struct NaturalLanguageAgent {
     conversation_history: Vec<ConversationTurn>,
     intent_classifier: IntentClassifier,
     context_manager: ConversationContextManager,
-    ai_provider: Option<Box<dyn openagent_terminal_ai::AiProvider>>,
     is_initialized: bool,
 }
 
@@ -249,7 +248,6 @@ impl NaturalLanguageAgent {
         if let Some(provider) = &self.ai_provider {
             let prompt = self.build_prompt(processed_input, context);
 
-            let ai_request = openagent_terminal_ai::AiRequest {
                 scratch_text: prompt,
                 working_directory: Some(context.current_directory.clone()),
                 shell_kind: Some("zsh".to_string()), // TODO: Get from context when shell_kind field is available

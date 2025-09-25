@@ -4,8 +4,6 @@ use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-#[cfg(feature = "ai")]
-use clap::builder::TypedValueParser as _;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
 use log::{error, LevelFilter};
 use openagent_terminal_config::SerdeReplace;
@@ -27,14 +25,6 @@ pub struct Options {
     #[clap(long)]
     pub print_events: bool,
 
-    /// AI logging verbosity: off | summary | verbose (overrides config.ai.log_verbosity)
-    #[clap(long = "ai-log-verbosity", value_enum)]
-    #[cfg(feature = "ai")]
-    pub ai_log_verbosity: Option<crate::config::ai::AiLogVerbosity>,
-    #[cfg(not(feature = "ai"))]
-    #[clap(skip)]
-    #[allow(dead_code)]
-    pub ai_log_verbosity: Option<()>,
 
     /// Generates ref test.
     #[clap(long, conflicts_with("daemon"))]
@@ -131,15 +121,6 @@ impl Options {
         // Replace CLI options.
         self.config_options.override_config(config);
 
-        // Override AI log verbosity via CLI flag by setting the env used by providers/event code.
-        #[cfg(feature = "ai")]
-        if let Some(v) = self.ai_log_verbosity {
-            std::env::set_var("OPENAGENT_AI_LOG_VERBOSITY", v.to_string());
-            {
-                // If AI is built-in, also update the config to keep UI-consistent.
-                config.ai.log_verbosity = v;
-            }
-        }
     }
 
     /// Logging filter level.
@@ -269,15 +250,6 @@ pub enum Subcommands {
     #[cfg(unix)]
     Msg(MessageOptions),
     Migrate(MigrateOptions),
-    /// AI utilities: validate configuration, migrate env vars
-    #[cfg(feature = "ai")]
-    Ai(AiOptions),
-    /// Sync utilities: import/export settings and history
-    #[cfg(feature = "sync")]
-    Sync(SyncCliOptions),
-    /// Query hover information via LSP for a given file position
-    #[cfg(feature = "ide-lsp")]
-    IdeLspHover(IdeLspHoverOptions),
 }
 
 /// Send a message to the OpenAgent Terminal socket.
@@ -306,17 +278,6 @@ pub enum SocketMessage {
     /// Read runtime OpenAgent Terminal configuration.
     GetConfig(IpcGetConfig),
 
-    /// Get sync status.
-    #[cfg(feature = "sync")]
-    SyncStatus(IpcSyncCommand),
-
-    /// Push local settings/history to sync storage.
-    #[cfg(feature = "sync")]
-    SyncPush(IpcSyncCommand),
-
-    /// Pull settings/history from sync storage.
-    #[cfg(feature = "sync")]
-    SyncPull(IpcSyncCommand),
 }
 
 /// Migrate the configuration file.
@@ -376,208 +337,6 @@ impl WindowOptions {
     }
 }
 
-// === IDE CLI ===
-
-
-#[cfg(feature = "ide-lsp")]
-#[derive(Args, Debug, Clone)]
-pub struct IdeLspHoverOptions {
-    /// Source file path
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub file: PathBuf,
-    /// 1-based line number
-    #[clap(long)]
-    pub line: u32,
-    /// 1-based character offset
-    #[clap(long)]
-    pub character: u32,
-    /// Optional language id override (e.g., rust, typescript)
-    #[clap(long)]
-    pub language: Option<String>,
-}
-
-// === AI CLI ===
-#[cfg(feature = "ai")]
-#[derive(Args, Debug, Clone)]
-pub struct AiOptions {
-    #[clap(subcommand)]
-    pub command: AiCommand,
-}
-
-#[cfg(feature = "ai")]
-#[derive(Subcommand, Debug, Clone)]
-pub enum AiCommand {
-    /// Validate AI provider configuration (all or a specific provider)
-    Validate {
-        /// Provider to validate (e.g., openai, anthropic, ollama). If omitted, validate all.
-        #[clap(long)]
-        provider: Option<String>,
-        /// Use example/default provider configurations even if not present in config
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        include_defaults: bool,
-        /// Output JSON report (machine-readable)
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-    /// Manage AI providers (list/set)
-    Provider {
-        #[clap(subcommand)]
-        command: AiProviderCommand,
-    },
-    /// Migrate legacy environment variables to secure, provider-specific ones
-    Migrate {
-        /// Path to write updated config with provider sections; if omitted, prints to stdout
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        config_out: Option<PathBuf>,
-        /// Apply non-interactively: write config_out if specified and exit 0 on success
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        apply: bool,
-        /// Also generate a shell snippet file with secure env var exports (values redacted)
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        write_env_snippet: Option<PathBuf>,
-    },
-    /// Export AI conversation history (SQLite with JSONL fallback)
-    HistoryExport {
-        /// Format: json or csv
-        #[clap(long, value_parser = clap::builder::PossibleValuesParser::new(["json", "csv"]).map(|s| s.to_string()))]
-        format: String,
-        /// Output file path
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        to: PathBuf,
-    },
-    /// Purge AI conversation history, keeping at most the last N entries
-    HistoryPurge {
-        /// Keep last N entries (use 0 to delete all)
-        #[clap(long, default_value_t = 1000)]
-        keep_last: usize,
-    },
-    /// Show AI history retention and storage status (limits, file sizes, row counts)
-    HistoryStatus {
-        /// Output machine-readable JSON
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-        /// Show verbose rotated file details
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        verbose: bool,
-    },
-    /// Update AI history retention settings in your config file
-    HistoryConfig {
-        /// key=value pairs to set (repeatable). Keys: ui_max_entries, ui_max_bytes, conversation_jsonl_max_bytes, conversation_rotated_keep, conversation_max_rows, conversation_max_age_days
-        #[clap(long = "set", num_args = 1..)]
-        set: Vec<String>,
-        /// Optional explicit config file path to write (defaults to loaded config path)
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        config_file: Option<PathBuf>,
-        /// Do not write file; print the would-be changes
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        dry_run: bool,
-        /// JSON output for dry-run or result summary
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-}
-
-#[cfg(feature = "ai")]
-#[derive(Subcommand, Debug, Clone)]
-pub enum AiProviderCommand {
-    /// List available AI providers
-    List {
-        /// Include built-in default providers in addition to configured ones
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        include_defaults: bool,
-        /// Output JSON
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-    /// Set the active AI provider
-    Set {
-        /// Provider name to activate (e.g., openai, anthropic, ollama, openrouter, null)
-        name: String,
-        /// Optional explicit config file path to write (defaults to loaded config path)
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        config_file: Option<PathBuf>,
-        /// Dry run: do not write, print the would-be change
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        dry_run: bool,
-        /// Output JSON
-        #[clap(long, action=clap::ArgAction::SetTrue)]
-        json: bool,
-    },
-}
-
-// === Sync CLI ===
-#[cfg(feature = "sync")]
-#[derive(Args, Debug, Clone)]
-pub struct SyncCliOptions {
-    #[clap(subcommand)]
-    pub command: SyncCommand,
-}
-
-#[cfg(feature = "sync")]
-#[derive(Subcommand, Debug, Clone)]
-pub enum SyncCommand {
-    /// Export settings or history to a file (optionally encrypted by local provider)
-    Export {
-        /// Scope to export: settings or history
-        #[clap(long, value_enum)]
-        scope: super::cli::SyncScopeArg,
-        /// Output file path
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        to: PathBuf,
-    },
-    /// Import settings or history from a file (optionally encrypted by local provider)
-    Import {
-        /// Scope to import: settings or history
-        #[clap(long, value_enum)]
-        scope: super::cli::SyncScopeArg,
-        /// Input file path
-        #[clap(long, value_hint = ValueHint::FilePath)]
-        from: PathBuf,
-    },
-    /// Manage trusted peers (add/list/revoke/remove/rotate)
-    Trust(SyncTrustOptions),
-}
-
-#[cfg(feature = "sync")]
-#[derive(Args, Debug, Clone)]
-pub struct SyncTrustOptions {
-    #[clap(subcommand)]
-    pub command: TrustSubcommand,
-}
-
-#[cfg(feature = "sync")]
-#[derive(Subcommand, Debug, Clone)]
-pub enum TrustSubcommand {
-    /// Add a trusted peer
-    Add {
-        /// Peer installation ID
-        installation_id: String,
-        /// Display name for this peer
-        #[clap(long, short = 'n')]
-        display_name: Option<String>,
-        /// Public key hex (raw Ed25519 bytes in hex)
-        #[clap(long, short = 'k')]
-        public_key_hex: String,
-    },
-    /// List peers (non-revoked by default)
-    List {
-        /// Include revoked peers in output
-        #[clap(long, action = ArgAction::SetTrue)]
-        all: bool,
-    },
-    /// Remove a peer entirely from trust store
-    Remove { installation_id: String },
-    /// Revoke a peer (kept in trust store, marked untrusted)
-    Revoke { installation_id: String },
-    /// Rotate a peer's public key
-    Rotate {
-        installation_id: String,
-        /// New public key hex (raw Ed25519 bytes)
-        #[clap(long, short = 'k')]
-        new_public_key_hex: String,
-    },
-}
-
 
 /// Parameters to the `config` IPC subcommand.
 #[cfg(unix)]
@@ -609,22 +368,6 @@ pub struct IpcGetConfig {
     pub window_id: Option<i128>,
 }
 
-/// Parameters to sync IPC subcommands.
-#[cfg(all(unix, feature = "sync"))]
-#[derive(Args, Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-pub struct IpcSyncCommand {
-    /// Sync scope (settings or history).
-    #[clap(short, long, value_enum)]
-    pub scope: Option<SyncScopeArg>,
-}
-
-/// Sync scope argument for CLI.
-#[cfg(all(unix, feature = "sync"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
-pub enum SyncScopeArg {
-    Settings,
-    History,
-}
 
 /// Parsed CLI config overrides.
 #[derive(Debug, Default)]

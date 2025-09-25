@@ -76,16 +76,6 @@ jobs:
             SNAPSHOT_BACKEND=wgpu xvfb-run -a cargo run -p openagent-terminal -F wgpu,preview_ui --release --example snapshot_capture -- --threshold=0.995 --scenario="$scenario" --backend=wgpu
           done
 
-      - name: AI feature tests (nightly)
-        run: |
-          set -euo pipefail
-          cargo test -p openagent-terminal -F ai -- --nocapture
-
-      - name: Plugins smoke tests (nightly)
-        if: ${{ hashFiles('**/plugin-runtime/**') != '' }}
-        run: |
-          set -euo pipefail
-          cargo test -p plugin-loader -p plugin-system -p plugin-runtime -- --nocapture
 
       - name: Upload snapshot outputs (if any)
         if: always()

@@ -19,29 +19,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-#[cfg(feature = "never")]
-use crate::blocks_v2::{BlockId, BlockManager, CreateBlockParams, ShellType};
-#[cfg(not(feature = "never"))]
-mod blocks_stub {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-    pub struct BlockId(pub u64);
-    impl std::fmt::Display for BlockId {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.0)
-        }
-    }
-    #[derive(Debug, Clone, Copy)]
-    pub enum ShellType {
-        Bash,
-        Zsh,
-        Fish,
-        PowerShell,
-        Nushell,
-        Custom(u32),
-    }
-}
-#[cfg(not(feature = "never"))]
-pub use blocks_stub::{BlockId, ShellType};
+use crate::blocks_v2::{BlockId, BlockManager, ShellType};
 use crate::workspace::{TabId, TabManager};
 use openagent_terminal_core::event::CommandBlockEvent;
 
@@ -50,7 +28,6 @@ type CommandPipelineEventCallback = Box<dyn Fn(&CommandPipelineEvent) + Send + S
 /// Native command execution pipeline
 pub struct CommandPipeline {
     /// Block manager for immediate block operations
-    #[cfg(feature = "never")]
     block_manager: Option<Arc<tokio::sync::Mutex<BlockManager>>>,
 
     /// Tab manager for context tracking
@@ -125,7 +102,6 @@ impl CommandPipeline {
     /// Create new native command pipeline
     pub fn new() -> Self {
         Self {
-            #[cfg(feature = "never")]
             block_manager: None,
             tab_manager: None,
             active_commands: HashMap::new(),
@@ -136,7 +112,6 @@ impl CommandPipeline {
     }
 
     /// Set block manager for immediate block operations
-    #[cfg(feature = "never")]
     pub fn set_block_manager(&mut self, block_manager: Arc<tokio::sync::Mutex<BlockManager>>) {
         self.block_manager = Some(block_manager);
     }
@@ -402,8 +377,8 @@ timestamp: now_ts(),
     pub async fn cancel_command(&mut self, block_id: BlockId) -> Result<()> {
         if let Some(mut execution) = self.active_commands.remove(&block_id) {
             // Attempt to kill the running process if still alive
-            if let Some(ref mut process) = execution.process {
-                let _ = process.kill().await;
+            if let Some(child) = execution.process.as_mut() {
+                let _ = child.start_kill().ok();
             }
 
             // Update block status to cancelled immediately

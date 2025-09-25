@@ -57,18 +57,15 @@ pub enum Topic {
     #[cfg(feature = "never")]
     BlocksSearchTyping,
     // Debounced Workflows Search typing
-    #[cfg(feature = "workflow")]
     WorkflowsSearchTyping,
     // Debounced Plugins Search typing (only when plugins feature is enabled)
     #[cfg(feature = "never")]
     PluginsSearchTyping,
     // Retain workflows progress overlay briefly after completion
-    #[cfg(feature = "workflow")]
     WorkflowsProgressRetain,
     // Autosave workspace sessions periodically
     WorkspaceSessionAutosave,
     // Debounced AI inline suggestion trigger
-    #[cfg(feature = "ai")]
     AiInlineTyping,
 }
 
