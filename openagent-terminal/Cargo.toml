@@ -33,7 +33,7 @@ version = "0.2.3-dev"
 
 [dependencies]
 chrono = { version = "0.4.42", features = ["std", "serde", "clock"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 
 ahash = { version = "0.8.6", features = ["no-rng"] }
 bitflags = { workspace = true }
@@ -89,6 +89,8 @@ metrics-exporter-prometheus = { workspace = true }
 aes-gcm = { version = "0.10", features = ["aes"] }
 base64 = { workspace = true }
 rand = "0.9"
+# Streaming utilities for HTTP bodies
+futures-util = { workspace = true }
 
 
 [build-dependencies]

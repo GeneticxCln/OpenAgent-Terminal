@@ -13,6 +13,7 @@ use crate::event::{Event, EventType};
 
 // HTTP client for providers
 use reqwest::Client;
+use futures_util::StreamExt;
 
 /// Stub agent types for AI runtime
 #[derive(Debug, Clone)]
@@ -184,8 +185,13 @@ pub struct AiRuntime {
     /// Event sender for UI updates
     event_sender: Option<mpsc::UnboundedSender<Event>>,
     
-    /// Conversation history
+    /// Conversation history: conversation_id -> Vec<(prompt, response)>
     conversations: HashMap<String, Vec<(String, String)>>,
+    
+    /// Global prompt history (MRU order, 0 = most recent)
+    prompt_history: Vec<String>,
+    /// Current navigation position in prompt history (None = not navigating)
+    prompt_history_index: Option<usize>,
     
     /// Response streaming state
     streaming_response: Option<String>,
@@ -230,6 +236,8 @@ impl AiRuntime {
             active_provider: AiProvider::default(),
             event_sender: None,
             conversations: HashMap::new(),
+            prompt_history: Vec::new(),
+            prompt_history_index: None,
             streaming_response: None,
             http: Client::builder().timeout(Duration::from_secs(45)).build().expect("http client"),
             last_activity: Instant::now(),
@@ -293,7 +301,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         Ok(())
     }
 
-    /// Start AI conversation with given prompt
+    /// Start AI conversation with given prompt (non-streaming)
     pub async fn start_conversation(&mut self, prompt: String) -> Result<String> {
         self.ui.is_loading = true;
         self.ui.streaming_active = true;
@@ -304,10 +312,11 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         let conversation_id = uuid::Uuid::new_v4().to_string();
         self.ui.conversation_id = Some(conversation_id.clone());
         
-        // Initialize conversation history
+        // Initialize conversation history and prompt history
         self.conversations.insert(conversation_id.clone(), vec![(prompt.clone(), String::new())]);
+        self.push_prompt_history(&prompt);
         
-        // Perform provider request (non-streaming for now)
+        // Perform provider request (non-streaming fallback)
         let reply = self.provider_chat(&prompt).await?;
         
         // Push as a complete stream chunk
@@ -495,13 +504,62 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         }
     }
     
-    /// History navigation methods (stubs)
+    /// Push a prompt into the global history (deduplicated, MRU at index 0)
+    fn push_prompt_history(&mut self, prompt: &str) {
+        if prompt.trim().is_empty() { return; }
+        // Remove duplicates of exact same prompt
+        self.prompt_history.retain(|p| p != prompt);
+        self.prompt_history.insert(0, prompt.to_string());
+        // Cap size
+        if self.prompt_history.len() > 200 {
+            self.prompt_history.truncate(200);
+        }
+        // Reset navigation when a new prompt is inserted
+        self.prompt_history_index = None;
+    }
+
+    /// History navigation methods
     pub fn history_previous(&mut self) {
-        // TODO: Implement history navigation
+        if self.prompt_history.is_empty() { return; }
+        let new_index = match self.prompt_history_index {
+            None => Some(0),
+            Some(i) => Some((i + 1).min(self.prompt_history.len().saturating_sub(1))),
+        };
+        if let Some(i) = new_index {
+            if let Some(prompt) = self.prompt_history.get(i) {
+                self.ui.scratch = prompt.clone();
+                self.ui.cursor_position = self.ui.scratch.len();
+                self.prompt_history_index = Some(i);
+            }
+        }
+        self.last_activity = Instant::now();
     }
     
     pub fn history_next(&mut self) {
-        // TODO: Implement history navigation  
+        if self.prompt_history.is_empty() { return; }
+        match self.prompt_history_index {
+            None => {
+                // Already at newest; clear
+                self.ui.scratch.clear();
+                self.ui.cursor_position = 0;
+            }
+            Some(i) => {
+                if i == 0 {
+                    // Move to empty (beyond newest)
+                    self.prompt_history_index = None;
+                    self.ui.scratch.clear();
+                    self.ui.cursor_position = 0;
+                } else {
+                    let new_i = i - 1;
+                    if let Some(prompt) = self.prompt_history.get(new_i) {
+                        self.ui.scratch = prompt.clone();
+                        self.ui.cursor_position = self.ui.scratch.len();
+                        self.prompt_history_index = Some(new_i);
+                    }
+                }
+            }
+        }
+        self.last_activity = Instant::now();
     }
     
     /// Toggle panel alias
@@ -547,8 +605,12 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
         window_id: winit::window::WindowId,
     ) {
-        let prompt = format!("Given the working directory '{}' and recent commands count {}, suggest the next 3 useful commands with brief reasons.", context.terminal_context.working_directory.display(), context.terminal_context.recent_commands.len());
-        // Snapshot provider and client to avoid capturing &mut self across threads
+        let prompt = format!(
+            "Given the working directory '{}' and recent commands count {}, suggest the next 3 useful commands with brief reasons.",
+            context.terminal_context.working_directory.display(),
+            context.terminal_context.recent_commands.len()
+        );
+        // Snapshot provider/client/config to avoid capturing &mut self across threads
         let prov = self.active_provider.clone();
         let cfg = self
             .providers
@@ -557,30 +619,16 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
         tokio::spawn(async move {
-            match AiRuntime::provider_chat_owned(http, prov, cfg, prompt).await {
-                Ok(text) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamChunk(AiStreamChunk {
-                            content: text,
-                            is_complete: true,
-                            metadata: HashMap::new(),
-                        }),
-                        window_id,
-                    ));
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamFinished,
-                        window_id,
-                    ));
-                }
-                Err(e) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamError(e.to_string()),
-                        window_id,
-                    ));
-                }
+            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                let _ = proxy.send_event(crate::event::Event::new(
+                    crate::event::EventType::AiStreamError(e.to_string()),
+                    window_id,
+                ));
             }
         });
         self.ui.is_loading = true;
+        self.ui.streaming_active = true;
+        self.ui.streaming_text.clear();
     }
     
     /// Start inline suggest (provider-backed)
@@ -621,6 +669,45 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         self.ui.is_loading = true;
     }
     
+    /// Start AI conversation with streaming (preferred in UI contexts)
+    pub fn start_conversation_stream(
+        &mut self,
+        prompt: String,
+        proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
+        window_id: winit::window::WindowId,
+    ) -> Result<String> {
+        self.ui.is_loading = true;
+        self.ui.streaming_active = true;
+        self.ui.error_message = None;
+        self.ui.streaming_text.clear();
+        self.last_activity = Instant::now();
+
+        // Generate conversation ID and record history
+        let conversation_id = uuid::Uuid::new_v4().to_string();
+        self.ui.conversation_id = Some(conversation_id.clone());
+        self.conversations.insert(conversation_id.clone(), vec![(prompt.clone(), String::new())]);
+        self.push_prompt_history(&prompt);
+
+        // Snapshot provider and config
+        let prov = self.active_provider.clone();
+        let cfg = self
+            .providers
+            .get(&prov)
+            .cloned()
+            .unwrap_or_else(|| AiProviderConfig::default());
+        let http = self.http.clone();
+        tokio::spawn(async move {
+            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                let _ = proxy.send_event(crate::event::Event::new(
+                    crate::event::EventType::AiStreamError(e.to_string()),
+                    window_id,
+                ));
+            }
+        });
+
+        Ok(conversation_id)
+    }
+
     /// Propose explain
     pub fn propose_explain(
         &mut self,
@@ -630,7 +717,11 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
         window_id: winit::window::WindowId,
     ) {
-        let prompt = format!("Explain this output encountered in {}: \n{}\nProvide cause and next steps.", working_dir.display(), text);
+        let prompt = format!(
+            "Explain this output encountered in {}: \n{}\nProvide cause and next steps.",
+            working_dir.display(),
+            text
+        );
         let prov = self.active_provider.clone();
         let cfg = self
             .providers
@@ -639,30 +730,16 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
         tokio::spawn(async move {
-            match AiRuntime::provider_chat_owned(http, prov, cfg, prompt).await {
-                Ok(s) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamChunk(AiStreamChunk {
-                            content: s,
-                            is_complete: true,
-                            metadata: HashMap::new(),
-                        }),
-                        window_id,
-                    ));
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamFinished,
-                        window_id,
-                    ));
-                }
-                Err(_) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamError("Explain failed".to_string()),
-                        window_id,
-                    ));
-                }
+            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                let _ = proxy.send_event(crate::event::Event::new(
+                    crate::event::EventType::AiStreamError(format!("Explain failed: {}", e)),
+                    window_id,
+                ));
             }
         });
         self.ui.is_loading = true;
+        self.ui.streaming_active = true;
+        self.ui.streaming_text.clear();
     }
     
     /// Propose fix
@@ -675,7 +752,12 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
         window_id: winit::window::WindowId,
     ) {
-        let prompt = format!("Given this error in {}: \n{}\nContext: {}\nProvide 1-3 concrete shell commands to fix, with brief justification.", working_dir.display(), error_text, context);
+        let prompt = format!(
+            "Given this error in {}: \n{}\nContext: {}\nProvide 1-3 concrete shell commands to fix, with brief justification.",
+            working_dir.display(),
+            error_text,
+            context
+        );
         let prov = self.active_provider.clone();
         let cfg = self
             .providers
@@ -684,30 +766,16 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
         tokio::spawn(async move {
-            match AiRuntime::provider_chat_owned(http, prov, cfg, prompt).await {
-                Ok(s) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamChunk(AiStreamChunk {
-                            content: s,
-                            is_complete: true,
-                            metadata: HashMap::new(),
-                        }),
-                        window_id,
-                    ));
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamFinished,
-                        window_id,
-                    ));
-                }
-                Err(_) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamError("Fix proposal failed".to_string()),
-                        window_id,
-                    ));
-                }
+            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                let _ = proxy.send_event(crate::event::Event::new(
+                    crate::event::EventType::AiStreamError(format!("Fix proposal failed: {}", e)),
+                    window_id,
+                ));
             }
         });
         self.ui.is_loading = true;
+        self.ui.streaming_active = true;
+        self.ui.streaming_text.clear();
     }
     
     /// Reconfigure provider using env-based provider config, resolving credentials/endpoints
@@ -771,7 +839,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         self.last_activity = Instant::now();
     }
 
-    /// Regenerate last response
+    /// Regenerate last response (non-streaming fallback)
     pub async fn regenerate(&mut self) -> Result<()> {
         if let Some(conversation_id) = &self.ui.conversation_id {
             if let Some(history) = self.conversations.get(conversation_id) {
@@ -783,6 +851,45 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             }
         }
         Ok(())
+    }
+
+    /// Regenerate last response using streaming (preferred for UI)
+    pub fn regenerate_streaming(
+        &mut self,
+        proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
+        window_id: winit::window::WindowId,
+    ) {
+        if let Some(conversation_id) = &self.ui.conversation_id {
+            if let Some(history) = self.conversations.get(conversation_id) {
+                if let Some((prompt, _)) = history.last() {
+                    let prompt = prompt.clone();
+                    // Reset UI state for streaming
+                    self.ui.current_response.clear();
+                    self.ui.streaming_text.clear();
+                    self.ui.is_loading = true;
+                    self.ui.streaming_active = true;
+                    self.ui.error_message = None;
+                    self.last_activity = Instant::now();
+
+                    // Snapshot provider and config
+                    let prov = self.active_provider.clone();
+                    let cfg = self
+                        .providers
+                        .get(&prov)
+                        .cloned()
+                        .unwrap_or_else(|| AiProviderConfig::default());
+                    let http = self.http.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                            let _ = proxy.send_event(crate::event::Event::new(
+                                crate::event::EventType::AiStreamError(e.to_string()),
+                                window_id,
+                            ));
+                        }
+                    });
+                }
+            }
+        }
     }
     
     /// Configure a specific AI provider with custom config type
@@ -919,6 +1026,251 @@ let resp = http.post(url).bearer_auth(key).json(&req).send().await?;
                 Ok(data.message.map(|m| m.content).unwrap_or_default())
             }
             AiProvider::Custom(_) => Err(anyhow!("Custom provider not implemented")),
+        }
+    }
+
+    /// Streaming variant that emits AiStreamChunk events as content arrives.
+    async fn provider_chat_stream_owned(
+        http: Client,
+        prov: AiProvider,
+        cfg: AiProviderConfig,
+        user_prompt: String,
+        proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
+        window_id: winit::window::WindowId,
+    ) -> Result<()> {
+        match prov {
+            AiProvider::OpenAI => {
+                #[derive(serde::Serialize)] struct Msg<'a>{role:&'a str, content:&'a str}
+                #[derive(serde::Serialize)] struct Req<'a>{model:&'a str, messages:Vec<Msg<'a>>, temperature: f32, stream: bool}
+                let key = cfg.api_key.clone().ok_or_else(|| anyhow!("OPENAI api_key missing"))?;
+                let req = Req{
+                    model:&cfg.model,
+                    messages: vec![
+                        Msg{role:"system", content:"You are an expert terminal assistant."},
+                        Msg{role:"user", content:&user_prompt}
+                    ],
+                    temperature: cfg.temperature.unwrap_or(0.2),
+                    stream: true,
+                };
+                let resp = http
+                    .post("https://api.openai.com/v1/chat/completions")
+                    .bearer_auth(key)
+                    .json(&req)
+                    .send()
+                    .await?;
+                if !resp.status().is_success() {
+                    return Err(anyhow!("OpenAI {}", resp.text().await.unwrap_or_default()));
+                }
+                let mut stream = resp.bytes_stream();
+                // Buffer for partial lines
+                let mut buf = Vec::<u8>::new();
+                while let Some(next) = stream.next().await {
+                    let chunk = next?;
+                    buf.extend_from_slice(&chunk);
+                    // Process complete lines
+                    let mut start = 0usize;
+                    for i in 0..buf.len() {
+                        if buf[i] == b'\n' {
+                            let line = &buf[start..i];
+                            start = i + 1;
+                            // Skip keepalive or empty lines
+                            if line.is_empty() || line[0] == b':' { continue; }
+                            // Expect lines like: b"data: {...}" or b"data: [DONE]"
+                            const DATA: &str = "data: ";
+                            if line.len() >= DATA.len() && &line[..DATA.len()] == DATA.as_bytes() {
+                                let payload = &line[DATA.len()..];
+                                if payload == b"[DONE]" { continue; }
+                                // Parse JSON with delta content
+                                #[derive(serde::Deserialize)] struct Choice { delta: Delta }
+                                #[derive(serde::Deserialize)] struct Delta { content: Option<String> }
+                                #[derive(serde::Deserialize)] struct SResp { choices: Vec<Choice> }
+                                if let Ok(sr) = serde_json::from_slice::<SResp>(payload) {
+                                    if let Some(text) = sr.choices.into_iter().filter_map(|c| c.delta.content).next() {
+                                        let _ = proxy.send_event(crate::event::Event::new(
+                                            crate::event::EventType::AiStreamChunk(AiStreamChunk { content: text, is_complete: false, metadata: HashMap::new() }),
+                                            window_id,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Retain trailing partial
+                    if start > 0 { buf.drain(0..start); }
+                }
+                let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::AiStreamFinished, window_id));
+                Ok(())
+            }
+            AiProvider::Anthropic => {
+                // Anthropic Messages API streaming over SSE
+                // We stream events and extract text from content_block_delta events
+                #[derive(serde::Serialize)] struct Msg<'a>{role:&'a str, content:&'a str}
+                #[derive(serde::Serialize)] struct Req<'a>{model:&'a str, system:&'a str, messages:Vec<Msg<'a>>, max_tokens:u32, stream: bool}
+                // Event payloads have a type and may include delta or content_block
+                #[derive(serde::Deserialize)] struct ADelta{ #[serde(default)] text: Option<String> }
+                #[derive(serde::Deserialize)] struct AContentBlock{ #[serde(default)] text: Option<String> }
+                #[derive(serde::Deserialize)] struct AEvent{ #[serde(rename="type")] etype: String, delta: Option<ADelta>, content_block: Option<AContentBlock> }
+                let key = cfg.api_key.clone().ok_or_else(|| anyhow!("ANTHROPIC api_key missing"))?;
+                let base = cfg.base_url.clone().unwrap_or_else(|| "https://api.anthropic.com".to_string());
+                let url = format!("{}/v1/messages", base);
+                let req = Req{ model: &cfg.model, system: "You are an expert terminal assistant.", messages: vec![Msg{role:"user", content:&user_prompt}], max_tokens: cfg.max_tokens.unwrap_or(1024), stream: true };
+                let resp = http.post(url)
+                    .header("x-api-key", key)
+                    .header("anthropic-version", "2023-06-01")
+                    .json(&req)
+                    .send()
+                    .await?;
+                if !resp.status().is_success(){ return Err(anyhow!("Anthropic {}", resp.text().await.unwrap_or_default())); }
+                let mut stream = resp.bytes_stream();
+                let mut buf = Vec::<u8>::new();
+                while let Some(next) = stream.next().await {
+                    let chunk = next?;
+                    buf.extend_from_slice(&chunk);
+                    let mut start = 0usize;
+                    for i in 0..buf.len() {
+                        if buf[i] == b'\n' {
+                            let line = &buf[start..i];
+                            start = i + 1;
+                            if line.is_empty() { continue; }
+                            // We expect SSE lines with either "event:" or "data:". Focus on data lines.
+                            const DATA: &str = "data: ";
+                            if line.len() >= DATA.len() && &line[..DATA.len()] == DATA.as_bytes() {
+                                let payload = &line[DATA.len()..];
+                                if payload == b"[DONE]" { continue; }
+                                if let Ok(ev) = serde_json::from_slice::<AEvent>(payload) {
+                                    // content_block_delta -> delta.text
+                                    if ev.etype == "content_block_delta" {
+                                        if let Some(ADelta{ text: Some(t) }) = ev.delta { if !t.is_empty() {
+                                            let _ = proxy.send_event(crate::event::Event::new(
+                                                crate::event::EventType::AiStreamChunk(AiStreamChunk { content: t, is_complete: false, metadata: HashMap::new() }),
+                                                window_id,
+                                            ));
+                                        }}
+                                    // content_block_start may include initial text (rare but allowed)
+                                    } else if ev.etype == "content_block_start" {
+                                        if let Some(AContentBlock{ text: Some(t) }) = ev.content_block { if !t.is_empty() {
+                                            let _ = proxy.send_event(crate::event::Event::new(
+                                                crate::event::EventType::AiStreamChunk(AiStreamChunk { content: t, is_complete: false, metadata: HashMap::new() }),
+                                                window_id,
+                                            ));
+                                        }}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if start > 0 { buf.drain(0..start); }
+                }
+                let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::AiStreamFinished, window_id));
+                Ok(())
+            }
+            AiProvider::OpenRouter => {
+                // OpenRouter is OpenAI-compatible for chat completions streaming
+                #[derive(serde::Serialize)] struct Msg<'a>{role:&'a str, content:&'a str}
+                #[derive(serde::Serialize)] struct Req<'a>{model:&'a str, messages:Vec<Msg<'a>>, stream: bool}
+                #[derive(serde::Deserialize)] struct Choice{ delta: OM }
+                #[derive(serde::Deserialize)] struct OM{ content: Option<String> }
+                #[derive(serde::Deserialize)] struct SResp{ choices: Vec<Choice> }
+                let key = cfg.api_key.clone().ok_or_else(|| anyhow!("OPENROUTER api_key missing"))?;
+                let base = cfg.base_url.clone().unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
+                let url = format!("{}/chat/completions", base);
+                let req = Req{ model: &cfg.model, messages: vec![ Msg{role:"system", content:"You are an expert terminal assistant."}, Msg{role:"user", content:&user_prompt} ], stream: true };
+                let resp = http.post(url)
+                    .bearer_auth(key)
+                    .json(&req)
+                    .send()
+                    .await?;
+                if !resp.status().is_success(){ return Err(anyhow!("OpenRouter {}", resp.text().await.unwrap_or_default())); }
+                let mut stream = resp.bytes_stream();
+                let mut buf = Vec::<u8>::new();
+                while let Some(next) = stream.next().await {
+                    let chunk = next?;
+                    buf.extend_from_slice(&chunk);
+                    let mut start = 0usize;
+                    for i in 0..buf.len() {
+                        if buf[i] == b'\n' {
+                            let line = &buf[start..i];
+                            start = i + 1;
+                            if line.is_empty() || line[0] == b':' { continue; }
+                            const DATA: &str = "data: ";
+                            if line.len() >= DATA.len() && &line[..DATA.len()] == DATA.as_bytes() {
+                                let payload = &line[DATA.len()..];
+                                if payload == b"[DONE]" { continue; }
+                                if let Ok(sr) = serde_json::from_slice::<SResp>(payload) {
+                                    if let Some(text) = sr.choices.into_iter().filter_map(|c| c.delta.content).next() {
+                                        let _ = proxy.send_event(crate::event::Event::new(
+                                            crate::event::EventType::AiStreamChunk(AiStreamChunk { content: text, is_complete: false, metadata: HashMap::new() }),
+                                            window_id,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if start > 0 { buf.drain(0..start); }
+                }
+                let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::AiStreamFinished, window_id));
+                Ok(())
+            }
+            AiProvider::Ollama => {
+                // Stream JSON lines from Ollama chat API
+                #[derive(serde::Serialize)] struct Msg<'a>{role:&'a str, content:&'a str}
+                #[derive(serde::Serialize)] struct Req<'a>{model:&'a str, messages:Vec<Msg<'a>>, stream: bool}
+                #[derive(serde::Deserialize)] struct M{content: String}
+                #[derive(serde::Deserialize)] struct Line{message: Option<M>, response: Option<String>, done: Option<bool>}
+                let base = cfg.base_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+                let url = format!("{}/api/chat", base);
+                let req = Req{model:&cfg.model, messages: vec![Msg{role:"system", content:"You are an expert terminal assistant."}, Msg{role:"user", content:&user_prompt}], stream: true};
+                let resp = http.post(url).json(&req).send().await?;
+                if !resp.status().is_success() {
+                    return Err(anyhow!("Ollama {}", resp.text().await.unwrap_or_default()));
+                }
+                let mut stream = resp.bytes_stream();
+                let mut buf = Vec::<u8>::new();
+                while let Some(next) = stream.next().await {
+                    let chunk = next?;
+                    buf.extend_from_slice(&chunk);
+                    let mut start = 0usize;
+                    for i in 0..buf.len() {
+                        if buf[i] == b'\n' {
+                            let line = &buf[start..i];
+                            start = i + 1;
+                            if line.is_empty() { continue; }
+                            if let Ok(l) = serde_json::from_slice::<Line>(line) {
+                                if let Some(done) = l.done { if done { continue; } }
+                                if let Some(m) = l.message { if !m.content.is_empty() {
+                                    let _ = proxy.send_event(crate::event::Event::new(
+                                        crate::event::EventType::AiStreamChunk(AiStreamChunk { content: m.content, is_complete: false, metadata: HashMap::new() }),
+                                        window_id,
+                                    ));
+                                }} else if let Some(resp) = l.response { if !resp.is_empty() {
+                                    let _ = proxy.send_event(crate::event::Event::new(
+                                        crate::event::EventType::AiStreamChunk(AiStreamChunk { content: resp, is_complete: false, metadata: HashMap::new() }),
+                                        window_id,
+                                    ));
+                                }}
+                            }
+                        }
+                    }
+                    if start > 0 { buf.drain(0..start); }
+                }
+                let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::AiStreamFinished, window_id));
+                Ok(())
+            }
+            // For other providers, fall back to non-streaming for now
+            _ => {
+                match AiRuntime::provider_chat_owned(http, prov, cfg, user_prompt).await {
+                    Ok(text) => {
+                        let _ = proxy.send_event(crate::event::Event::new(
+                            crate::event::EventType::AiStreamChunk(AiStreamChunk { content: text, is_complete: true, metadata: HashMap::new() }),
+                            window_id,
+                        ));
+                        let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::AiStreamFinished, window_id));
+                        Ok(())
+                    }
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
 }

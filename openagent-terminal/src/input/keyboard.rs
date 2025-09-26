@@ -243,9 +243,29 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         return;
                     }
                     Key::Named(NamedKey::Enter) => {
-                        // Shift+Enter: accept current composer text and run
-                        if mods.shift_key() {
-                            let text = self.ctx.display().composer_text.clone();
+                        // New behavior: Enter executes command; Shift+Enter or Alt+Enter opens AI streaming chat
+                        let text = self.ctx.display().composer_text.clone();
+                        if mods.alt_key() || mods.shift_key() {
+                            // Open AI panel and start streaming with current text (if any)
+                            self.ctx.open_ai_panel();
+                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
+                                if !text.is_empty() {
+                                    runtime.ui.scratch = text.clone();
+                                    runtime.ui.cursor_position = runtime.ui.scratch.len();
+                                }
+                            }
+                            // Trigger streaming/proposal in AI panel
+                            self.ctx.ai_propose();
+                            // Clear composer state
+                            self.ctx.display().composer_text.clear();
+                            self.ctx.display().composer_cursor = 0;
+                            self.ctx.display().composer_sel_anchor = None;
+                            self.ctx.display().composer_view_col_offset = 0;
+                            self.ctx.display().composer_focused = false;
+                            self.ctx.mark_dirty();
+                            return;
+                        } else {
+                            // Execute command directly (native pipeline)
                             if !text.trim().is_empty() {
                                 self.ctx.execute_composer_command(text);
                             }
@@ -258,20 +278,6 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                             self.ctx.mark_dirty();
                             return;
                         }
-                        {
-                            self.ctx.open_ai_panel();
-                            // Empty seed is fine; user starts typing in panel
-                            if let Some(runtime) = self.ctx.ai_runtime_mut() {
-                                runtime.ui.cursor_position = runtime.ui.scratch.len();
-                            }
-                            self.ctx.display().composer_text.clear();
-                            self.ctx.display().composer_cursor = 0;
-                            self.ctx.display().composer_sel_anchor = None;
-                            self.ctx.display().composer_view_col_offset = 0;
-                            self.ctx.display().composer_focused = false;
-                            self.ctx.mark_dirty();
-                        }
-                        return;
                     }
                     Key::Named(NamedKey::Backspace) => {
                         {
@@ -481,24 +487,39 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     return;
                 }
                 Key::Named(NamedKey::Enter) => {
-                    {
-                        let text_to_send = self.ctx.display().composer_text.clone();
+                    let text_to_send = self.ctx.display().composer_text.clone();
+                    if mods.alt_key() || mods.shift_key() {
+                        // Open AI panel and stream using current text
                         self.ctx.open_ai_panel();
                         if let Some(runtime) = self.ctx.ai_runtime_mut() {
                             if !text_to_send.is_empty() {
-                                runtime.ui.scratch = text_to_send;
+                                runtime.ui.scratch = text_to_send.clone();
                                 runtime.ui.cursor_position = runtime.ui.scratch.len();
                             }
                         }
-                        // Reset composer state after commit
+                        self.ctx.ai_propose();
+                        // Reset composer state after opening AI
                         self.ctx.display().composer_text.clear();
                         self.ctx.display().composer_cursor = 0;
                         self.ctx.display().composer_sel_anchor = None;
                         self.ctx.display().composer_view_col_offset = 0;
                         self.ctx.display().composer_focused = false;
                         self.ctx.mark_dirty();
+                        return;
+                    } else {
+                        // Execute command directly
+                        if !text_to_send.trim().is_empty() {
+                            self.ctx.execute_composer_command(text_to_send);
+                        }
+                        // Reset composer state after run
+                        self.ctx.display().composer_text.clear();
+                        self.ctx.display().composer_cursor = 0;
+                        self.ctx.display().composer_sel_anchor = None;
+                        self.ctx.display().composer_view_col_offset = 0;
+                        self.ctx.display().composer_focused = false;
+                        self.ctx.mark_dirty();
+                        return;
                     }
-                    return;
                 }
                 Key::Named(NamedKey::Backspace) => {
                     if has_selection(&mut self.ctx) {
@@ -1358,22 +1379,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
                 // Submit via Enter: behaves like clicking [Run]
-                Key::Named(NamedKey::Enter) if mods.shift_key() => {
-                    // Shift+Enter: accept and run composer text via native command pipeline
-                    let text = self.ctx.display().composer_text.clone();
-                    if !text.trim().is_empty() {
-                        self.ctx.execute_composer_command(text);
-                    }
-                    // Reset composer state
-                    self.ctx.display().composer_text.clear();
-                    self.ctx.display().composer_cursor = 0;
-                    self.ctx.display().composer_sel_anchor = None;
-                    self.ctx.display().composer_view_col_offset = 0;
-                    self.ctx.display().composer_focused = false;
-                    self.ctx.mark_dirty();
-                    return;
-                }
-                Key::Named(NamedKey::Enter) => {
+                Key::Named(NamedKey::Enter) if mods.alt_key() || mods.shift_key() => {
+                    // Alt+Enter or Shift+Enter: open AI panel and start streaming/proposal
                     // Push composer text into history before submission
                     let txt = self.ctx.display().composer_text.trim().to_string();
                     if !txt.is_empty() {
@@ -1406,6 +1413,39 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                         self.ctx.ai_propose();
                     }
                     // Reset composer state regardless of AI feature
+                    self.ctx.display().composer_text.clear();
+                    self.ctx.display().composer_cursor = 0;
+                    self.ctx.display().composer_sel_anchor = None;
+                    self.ctx.display().composer_view_col_offset = 0;
+                    self.ctx.display().composer_focused = false;
+                    self.ctx.mark_dirty();
+                    return;
+                }
+                Key::Named(NamedKey::Enter) => {
+                    // Enter: accept and run composer text via native command pipeline
+                    let text = self.ctx.display().composer_text.clone();
+                    if !text.trim().is_empty() {
+                        // Also push into history on run
+                        let txt = text.trim().to_string();
+                        if self
+                            .ctx
+                            .display()
+                            .composer_history
+                            .front()
+                            .map(|s| s != &txt)
+                            .unwrap_or(true)
+                        {
+                            self.ctx.display().composer_history.push_front(txt);
+                            while self.ctx.display().composer_history.len() > 100 {
+                                self.ctx.display().composer_history.pop_back();
+                            }
+                        }
+                        self.ctx.display().composer_history_index = None;
+                        self.ctx.display().composer_history_stash = None;
+
+                        self.ctx.execute_composer_command(text);
+                    }
+                    // Reset composer state
                     self.ctx.display().composer_text.clear();
                     self.ctx.display().composer_cursor = 0;
                     self.ctx.display().composer_sel_anchor = None;

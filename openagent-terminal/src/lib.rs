@@ -71,6 +71,7 @@ pub mod security_lens;
 pub mod session_persistence;
 pub mod session_service;
 pub mod session_cli;
+pub mod storage;
 
 #[cfg(feature = "completions")]
 pub mod completions_spec;

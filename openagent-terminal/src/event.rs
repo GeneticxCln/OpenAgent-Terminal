@@ -2816,11 +2816,8 @@ pub enum EventType {
     PaletteAppendWorkflows(Vec<(String, Option<String>)>),
 
     // Blocks Search panel events
-    #[cfg(feature = "never")]
     BlocksSearchPerform(String),
-    #[cfg(feature = "never")]
     BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
-    #[cfg(feature = "never")]
     BlocksToggleStar(String),
 
     // Notebooks panel events (UI + data)
@@ -8325,8 +8322,72 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::ConfirmOpen { .. }
                 | EventType::ConfirmRespond { .. }
                 | EventType::ConfirmResolved { .. } => (),
-                #[cfg(feature = "never")]
-                EventType::BlocksSearchPerform(_) | EventType::BlocksSearchResults(_) => (),
+                EventType::BlocksSearchPerform(query) => {
+                    // Perform async search via BlockStorage and return results to UI
+                    let proxy = self.ctx.event_proxy.clone();
+                    tokio::spawn(async move {
+                        use crate::storage::blocks::{BlockStorage, BlockFilter, BlockSort};
+                        use crate::display::blocks_search_panel::BlocksSearchItem;
+                        let mut items: Vec<BlocksSearchItem> = Vec::new();
+                        match BlockStorage::new_default().await {
+                            Ok(storage) => {
+                                let filter = BlockFilter { text: Some(query), limit: Some(100), offset: Some(0) };
+                                let sort = BlockSort { field: Some("date".to_string()), order: Some("desc".to_string()) };
+                                match storage.search_blocks(&filter, &sort).await {
+                                    Ok(rows) => {
+                                        items = rows.into_iter().map(|r| BlocksSearchItem {
+                                            id: r.id.to_string(),
+                                            command: r.command,
+                                            output: r.output_preview,
+                                            directory: String::new(),
+                                            created_at: String::new(),
+                                            modified_at: String::new(),
+                                            exit_code: 0,
+                                            duration_ms: 0,
+                                            starred: false,
+                                            tags: Vec::new(),
+                                            shell: String::new(),
+                                            status: String::new(),
+                                        }).collect();
+                                    }
+                                    Err(e) => {
+                                        log::error!("Blocks search failed: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Blocks storage init failed: {}", e);
+                            }
+                        }
+                        let _ = proxy.send_event(Event::new(
+                            EventType::BlocksSearchResults(items),
+                            winit::window::WindowId::dummy(),
+                        ));
+                    });
+                }
+                EventType::BlocksSearchResults(items) => {
+                    // Populate display state and open the panel
+                    // If the display does not have the panel enabled, we still no-op gracefully
+                    #[allow(unused_mut)]
+                    let mut opened = false;
+                    {
+                        // Update results
+                        #[cfg(not(feature = "never"))]
+                        {
+                            self.ctx.display.blocks_search.results = items;
+                            self.ctx.display.blocks_search.active = true;
+                            self.ctx.display.blocks_search.selected = 0;
+                            self.ctx.display.blocks_search.current_page = 0;
+                            opened = true;
+                        }
+                    }
+                    if opened {
+                        *self.ctx.dirty = true;
+                    }
+                }
+                EventType::BlocksToggleStar(_id) => {
+                    // TODO: Wire to BlockManager::toggle_starred via storage; for now, no-op
+                }
                 #[cfg(feature = "never")]
                 EventType::BlocksToggleStar(_block_id) => {
                     // Star toggling is handled at the processor level, not in input processor
@@ -8750,6 +8811,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 runtime.ui.streaming_text.len()
                             );
                         }
+                        // Persist the streamed text into the main response buffer so copy/export work
+                        runtime.ui.current_response = runtime.ui.streaming_text.clone();
                         runtime.ui.streaming_active = false;
                         runtime.ui.is_loading = false;
                         *self.ctx.dirty = true;
@@ -8790,7 +8853,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let proxy = self.ctx.event_proxy.clone();
                         let window_id = self.ctx.display.window.id();
-                        let _ = runtime.regenerate();
+                        runtime.regenerate_streaming(proxy, window_id);
                         *self.ctx.dirty = true;
                     }
                 }

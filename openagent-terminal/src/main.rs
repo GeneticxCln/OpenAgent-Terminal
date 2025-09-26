@@ -83,6 +83,7 @@ mod text_shaping;
 mod ui_confirm;
 mod utils;
 mod workspace;
+mod storage;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;

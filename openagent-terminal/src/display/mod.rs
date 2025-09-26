@@ -60,9 +60,7 @@ pub mod ai_drawing;
 pub mod ai_panel;
 pub mod animation;
 pub mod blocks;
-#[cfg(feature = "never")]
 pub mod blocks_search_actions;
-#[cfg(feature = "never")]
 pub mod blocks_search_panel;
 #[cfg(feature = "never")]
 pub mod notebook_panel;
@@ -574,7 +572,6 @@ pub struct Display {
     pub blocks: blocks::Blocks,
 
     /// Blocks Search panel UI state.
-    #[cfg(feature = "never")]
     pub blocks_search: blocks_search_panel::BlocksSearchState,
 
     /// Confirmation overlay state.
@@ -1282,7 +1279,6 @@ ai_current_model: if cfg!(feature = "ai") {
             meter: Default::default(),
             ime: Default::default(),
             blocks,
-            #[cfg(feature = "never")]
             blocks_search: blocks_search_panel::BlocksSearchState::new(),
             #[cfg(feature = "completions")]
             completions: completions::CompletionsState::new(),
