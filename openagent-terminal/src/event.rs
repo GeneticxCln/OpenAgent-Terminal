@@ -68,6 +68,8 @@ use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+#[cfg(feature = "never")]
+use serde_json::json;
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 
@@ -9529,6 +9531,22 @@ impl EventListener for EventProxy {
     fn send_event(&self, event: TerminalEvent) {
         let _ = self.proxy.send_event(Event::new(event.into(), self.window_id));
     }
+}
+
+// Test helper to schedule Blocks Search events with debounce
+#[cfg(test)]
+pub fn schedule_blocks_search_for_test(
+    scheduler: &mut Scheduler,
+    window_id: WindowId,
+    query: String,
+) {
+    use std::time::Duration as StdDuration;
+    // Use the same debounce used by the UI typing path where applicable
+    let delay = BLOCKS_SEARCH_DEBOUNCE;
+    let event = Event::new(EventType::BlocksSearchPerform(query), window_id);
+    let timer_id = TimerId::new(Topic::DelayedSearch, window_id);
+    let _ = scheduler.unschedule(timer_id);
+    scheduler.schedule(event, StdDuration::from_millis(delay.as_millis() as u64), false, timer_id);
 }
 
 #[cfg(test)]

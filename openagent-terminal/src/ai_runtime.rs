@@ -413,17 +413,34 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
         match format {
             AiCopyFormat::Text => Some(self.ui.current_response.clone()),
             AiCopyFormat::Code => {
-                // Extract code blocks from markdown
+                // Extract code blocks from markdown and strip language identifiers if present
                 let code_blocks: Vec<&str> = self.ui.current_response
                     .split("```")
                     .skip(1)
                     .step_by(2)
                     .collect();
-                
+
                 if code_blocks.is_empty() {
                     Some(self.ui.current_response.clone())
                 } else {
-                    Some(code_blocks.join("\n\n"))
+                    let cleaned: Vec<String> = code_blocks
+                        .into_iter()
+                        .map(|block| {
+                            // If the first line looks like a language tag (e.g., "rust"), drop it
+                            let mut s = block.to_string();
+                            if let Some(pos) = s.find('\n') {
+                                let first = s[..pos].trim();
+                                let is_lang = !first.is_empty()
+                                    && first.len() <= 32
+                                    && first.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+                                if is_lang {
+                                    s = s[pos + 1..].to_string();
+                                }
+                            }
+                            s.trim().to_string()
+                        })
+                        .collect();
+                    Some(cleaned.join("\n\n"))
                 }
             }
             AiCopyFormat::Markdown => Some(self.ui.current_response.clone()),

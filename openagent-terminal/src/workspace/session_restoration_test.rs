@@ -336,7 +336,7 @@ fn test_large_session_save_load_with_splits_and_dirs() {
         // Duplicate a few times to create Horizontal/Vertical structure
 let _ = manager.duplicate_tab_as_split(first, super::tab_layout_manager::SplitDirection::Right);
 let _ = manager.duplicate_tab_as_split(first, super::tab_layout_manager::SplitDirection::Down);
-        let _ = manager.duplicate_tab_as_split(first, super::warp_tab_manager::SplitDirection::Right);
+let _ = manager.duplicate_tab_as_split(first, super::tab_layout_manager::SplitDirection::Right);
     }
 
     // Save and reload

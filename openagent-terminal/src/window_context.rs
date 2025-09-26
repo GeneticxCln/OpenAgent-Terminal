@@ -608,6 +608,53 @@ let rt_res =
 
         // Redraw the window.
         let terminal = self.terminal.lock();
+
+        // Align external (IDE) completions with the exact prefix used by the overlay.
+        // This computes the current line's prefix up to the cursor and queries the
+        // inline IDE synchronously, then injects mapped items into the display so the
+        // completions overlay can merge them with local suggestions.
+        #[cfg(feature = "completions")]
+        {
+            use openagent_terminal_core::index::Column as Col;
+            use openagent_terminal_core::term::cell::Flags as CellFlags;
+            let cursor_point = terminal.grid().cursor.point;
+            let row = &terminal.grid()[cursor_point.line];
+            let mut prefix = String::new();
+            for x in 0..cursor_point.column.0 {
+                let cell = &row[Col(x)];
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                let ch = cell.c;
+                if ch != '\u{0}' {
+                    prefix.push(ch);
+                }
+            }
+            let cursor_pos = prefix.chars().count();
+            let ide_items = self.ide.handle_input(&prefix, cursor_pos);
+            let mapped: Vec<crate::display::completions::CompletionItem> = ide_items
+                .into_iter()
+                .map(|it| crate::display::completions::CompletionItem {
+                    label: it.text,
+                    kind: match it.kind {
+                        crate::ide::CompletionKind::FilePath => {
+                            crate::display::completions::CompletionKind::File
+                        }
+                        crate::ide::CompletionKind::Command => {
+                            crate::display::completions::CompletionKind::Command
+                        }
+                        crate::ide::CompletionKind::GitRef => {
+                            crate::display::completions::CompletionKind::Branch
+                        }
+                    },
+                    details: it.description,
+                    icon: it.icon,
+                    score: it.confidence.max(0.0),
+                })
+                .collect();
+            self.display.set_external_completions(mapped);
+        }
+
         let ai_state_opt = self.ai_runtime.as_ref().map(|r| &r.ui);
         self.display.draw(
             terminal,

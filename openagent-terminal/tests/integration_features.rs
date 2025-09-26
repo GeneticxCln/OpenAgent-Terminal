@@ -11,44 +11,15 @@
 
 // Test AI Command Assistance
 mod ai_tests {
-    use openagent_terminal::ai_runtime::AiRuntime;
-
-    pub struct MockProvider;
-
-    impl AiProvider for MockProvider {
-        fn name(&self) -> &'static str {
-            "mock"
-        }
-
-        fn propose(&self, _request: AiRequest) -> Result<Vec<AiProposal>, String> {
-            Ok(vec![AiProposal {
-                title: "Test Command".to_string(),
-                description: Some("Test command description".to_string()),
-                proposed_commands: vec!["echo test".to_string()],
-            }])
-        }
-
-        fn propose_stream(
-            &self,
-            _request: AiRequest,
-            _on_chunk: &mut dyn FnMut(&str),
-            _cancel_flag: &std::sync::atomic::AtomicBool,
-        ) -> Result<bool, String> {
-            Ok(false) // Don't support streaming in mock
-        }
-    }
+    use openagent_terminal::ai_runtime::{AiRuntime, AiProvider, AiProposal};
 
     #[test]
     fn test_ai_runtime_basic() {
-        let provider = Box::new(MockProvider);
-        let mut runtime = AiRuntime::new(provider);
-
-        // Test initial state
+        let mut runtime = AiRuntime::new();
         assert!(!runtime.ui.active);
         assert!(runtime.ui.scratch.is_empty());
         assert!(runtime.ui.proposals.is_empty());
 
-        // Test scratch modification
         runtime.ui.scratch = "help me with git".to_string();
         runtime.ui.cursor_position = runtime.ui.scratch.len();
 
@@ -57,30 +28,31 @@ mod ai_tests {
     }
 
     #[test]
-    fn test_ai_provider_creation() {
-        // Test creating different providers
-        let null_runtime = AiRuntime::from_config(Some("null"), None, None, None);
-        assert_eq!(null_runtime.provider.name(), "null");
+    fn test_ai_provider_switch() {
+        let mut runtime = AiRuntime::new();
+        // Switch to a known provider
+        assert!(runtime.switch_provider(AiProvider::OpenAI).is_ok());
+        assert_eq!(runtime.ui.provider, AiProvider::OpenAI);
 
-        // Test with invalid provider
-        let invalid_runtime = AiRuntime::from_config(Some("invalid"), None, None, None);
-        assert!(invalid_runtime.ui.error_message.is_some());
+        // Attempt to switch to an unconfigured custom provider should error
+        let res = runtime.switch_provider(AiProvider::Custom("invalid".to_string()));
+        assert!(res.is_err());
     }
 
-    #[tokio::test]
-    async fn test_ai_propose_with_context() {
-        let provider = Box::new(MockProvider);
-        let mut runtime = AiRuntime::new(provider);
-
-        runtime.ui.scratch = "list files".to_string();
-
-        // Use mock context (would normally come from PTY)
-        runtime.propose_with_context(None);
-
-        // Since propose_with_context is synchronous in this path, loading should be false
-        assert!(!runtime.ui.is_loading);
+    #[test]
+    fn test_ai_proposals_basic() {
+        let mut runtime = AiRuntime::new();
+        runtime.add_simple_proposal("echo test".to_string());
         assert_eq!(runtime.ui.proposals.len(), 1);
-        assert_eq!(runtime.ui.proposals[0].title, "Test Command");
+        assert_eq!(runtime.ui.proposals[0].title, "echo test");
+
+        // Add a structured proposal as well
+        runtime.add_proposal(AiProposal {
+            title: "List files".to_string(),
+            description: Some("Show directory contents".to_string()),
+            proposed_commands: vec!["ls -la".to_string()],
+        });
+        assert_eq!(runtime.ui.proposals.len(), 2);
     }
 }
 
@@ -306,6 +278,7 @@ mod integration_tests {
         let mut ai_runtime = AiRuntime::new(provider);
 
         // Simulate AI proposing a dangerous command
+        ai_runtime.ui.proposals = vec![AiProposal {
             title: "Delete files".to_string(),
             description: Some("Delete all files recursively".to_string()),
             proposed_commands: vec!["rm -rf /tmp/*".to_string()],

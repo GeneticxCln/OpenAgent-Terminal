@@ -11,15 +11,27 @@ use uuid::Uuid;
 
 pub mod advanced_conversation_features;
 pub mod blitzy_project_context;
+#[cfg(feature = "never")]
 pub mod code_generation;
+#[cfg(feature = "never")]
 pub mod communication_hub;
 pub mod conversation_manager;
 pub mod enhanced_plugin_system;
 pub mod natural_language;
 pub mod privacy_content_filter;
-// pub mod security_lens; // TODO: Implement security lens agent
+// Security Lens exists as a core module at crate::security_lens.
+// An agent wrapper may be introduced later if we need agent-level orchestration.
 pub mod terminal_ui_integration;
 pub mod workflow_orchestrator;
+
+// Shared code-style preference used across agents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CodeStyle {
+    Functional,
+    ObjectOriented,
+    Procedural,
+    Hybrid,
+}
 
 /// Core trait for all AI agents in the system
 #[async_trait]

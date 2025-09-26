@@ -75,6 +75,8 @@ mod native_persistence; // Native persistence layer (experimental)
 mod native_renderer; // Native UI rendering system (experimental)
 // Re-export library native_search so crate::native_search is available in bin
 pub use openagent_terminal::native_search;
+// Re-export security_lens so tests in shared modules can reference crate::security_lens in both lib and bin contexts
+pub use openagent_terminal::security_lens;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod shell_integration; // Native shell integration (experimental)
 #[cfg(feature = "completions")]

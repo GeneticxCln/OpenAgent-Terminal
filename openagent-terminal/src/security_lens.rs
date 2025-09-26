@@ -52,9 +52,19 @@ impl SecurityLens {
         let mut level = RiskLevel::Safe;
         let lc = cmd.trim().to_lowercase();
 
+        fn severity_value(l: RiskLevel) -> u8 {
+            match l {
+                RiskLevel::Safe => 0,
+                RiskLevel::Low => 1,
+                RiskLevel::Medium => 2,
+                RiskLevel::High => 3,
+                RiskLevel::Critical => 4,
+            }
+        }
+
         let mut push = |cat: &str, desc: &str, lvl: RiskLevel| {
             factors.push(CommandRiskFactor { category: cat.to_string(), description: desc.to_string() });
-            if lvl > level { level = lvl; }
+            if severity_value(lvl) > severity_value(level) { level = lvl; }
         };
 
         if lc.starts_with("sudo ") { push("privilege", "Runs with elevated privileges (sudo)", RiskLevel::High); }
@@ -63,7 +73,18 @@ impl SecurityLens {
 
         if lc.contains(" rm -rf ") || lc.starts_with("rm -rf") || lc.contains(" rm -r ") || lc.starts_with("rm -r") {
             push("filesystem", "Recursive remove detected (rm -r/-rf)", RiskLevel::High);
-            if lc.contains(" /*") || lc.ends_with("/*") || lc.contains(" / ") { push("filesystem", "Dangerous global path pattern", RiskLevel::Critical); }
+            // Escalate to CRITICAL for dangerous global patterns, including root path removals
+            if lc.contains(" /*")
+                || lc.ends_with("/*")
+                || lc.contains(" / ")
+                || lc.ends_with(" /")
+                || lc.starts_with("rm -rf /")
+                || lc.starts_with("rm -r /")
+                || lc.contains(" rm -rf /")
+                || lc.contains(" rm -r /")
+            {
+                push("filesystem", "Dangerous global path pattern", RiskLevel::Critical);
+            }
             mitigations.push("Use explicit paths (e.g., rm -rf ./target) and review globs".to_string());
         }
 

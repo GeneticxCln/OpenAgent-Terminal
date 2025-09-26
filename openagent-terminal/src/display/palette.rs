@@ -540,6 +540,19 @@ impl Display {
 
         // Pixel coordinates for rectangles
         let panel_x = panel_start_col as f32 * size_info.cell_width();
+
+        // Expose overlay bounds and results row start for input/hover handling
+        {
+            let start_line = panel_start_line;
+            let end_line = panel_start_line + panel_lines - 1;
+            let start_col = panel_start_col;
+            let end_col = panel_start_col + panel_cols;
+            // Safe: single-threaded UI draw
+            // Store for hit testing on mouse input
+            // Note: end_line includes footer; rows start at panel_start_line + 3
+            self.palette_overlay_bounds_set((start_line, end_line, start_col, end_col));
+            self.palette_rows_start_set(panel_start_line.saturating_add(3));
+        }
         let panel_y = panel_start_line as f32 * size_info.cell_height();
         let panel_w = panel_cols as f32 * size_info.cell_width();
         let panel_h = panel_lines as f32 * size_info.cell_height();
@@ -779,6 +792,30 @@ impl Display {
 
         // Results list (reserve one line for footer)
         let footer_line = panel_start_line + panel_lines - 1;
+        // Compute hovered viewport line inside panel for hover highlight
+        let hover_vline_opt: Option<usize> = {
+            let mx = self.last_mouse_x as f32;
+            let my = self.last_mouse_y as f32;
+            let px = size_info.padding_x();
+            let py = size_info.padding_y();
+            let cw = size_info.cell_width();
+            let ch = size_info.cell_height();
+            if my >= py && mx >= px {
+                let vline = ((my - py) / ch).floor() as usize;
+                let vcol = ((mx - px) / cw).floor() as usize;
+                if vline >= panel_start_line
+                    && vline <= footer_line
+                    && vcol >= panel_start_col
+                    && vcol < panel_start_col + panel_cols
+                {
+                    Some(vline)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
 
         // Empty state when no results
         if count == 0 {
@@ -827,8 +864,9 @@ impl Display {
                 break;
             }
 
-            // Selected row background highlight
-            if idx == selected_visible {
+            // Selected/hovered row background highlight
+            let is_hover = hover_vline_opt.is_some_and(|vl| vl == line);
+            if idx == selected_visible || is_hover {
                 let y = line as f32 * size_info.cell_height();
                 let x = panel_x + size_info.cell_width();
                 let w = (panel_cols.saturating_sub(2)) as f32 * size_info.cell_width();

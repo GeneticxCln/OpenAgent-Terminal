@@ -601,7 +601,11 @@ impl super::Display {
             0.96
         } else if let Some(ts) = self.completions_anim_start {
             let ms = now.saturating_duration_since(ts).as_millis() as f32;
-            (ms / 120.0).clamp(0.0, 1.0) * 0.96
+            let dur = 140.0_f32;
+            let t = (ms / dur).clamp(0.0, 1.0);
+            // ease-out cubic: 1 - (1 - t)^3
+            let eased = 1.0 - (1.0 - t).powi(3);
+            0.96 * eased
         } else {
             0.96
         };
@@ -682,6 +686,50 @@ impl super::Display {
         self.completions_overlay_bounds =
             Some((start_line, end_line, start_col, start_col + box_width_cols));
 
+        // Compute hovered viewport line using mouse position; item detection occurs per-row
+        let hover_vline_opt: Option<usize> = {
+            let mx = self.last_mouse_x as f32;
+            let my = self.last_mouse_y as f32;
+            let px = self.size_info.padding_x();
+            let py = self.size_info.padding_y();
+            let cw = self.size_info.cell_width();
+            let ch = self.size_info.cell_height();
+            // Convert to viewport line/col if inside overlay bounds
+            if my >= py && mx >= px {
+                let vline = ((my - py) / ch).floor() as usize;
+                let vcol = ((mx - px) / cw).floor() as usize;
+                if vline >= start_line
+                    && vline <= end_line
+                    && vcol >= start_col
+                    && vcol < start_col + box_width_cols
+                {
+                    Some(vline)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        // Selection animation setup (Warp-like)
+        let mut sel_anim_eased = 1.0_f32;
+        {
+            let sel_idx = self.completions.selected_index;
+            if self.completions_sel_last_index != Some(sel_idx) {
+                self.completions_sel_last_index = Some(sel_idx);
+                self.completions_sel_anim_start = if reduce_motion { None } else { Some(now) };
+            }
+            if !reduce_motion {
+                if let Some(t0) = self.completions_sel_anim_start {
+                    let ms = now.saturating_duration_since(t0).as_millis() as f32;
+                    let dur = 140.0_f32;
+                    let t = (ms / dur).clamp(0.0, 1.0);
+                    sel_anim_eased = 1.0 - (1.0 - t).powi(3);
+                }
+            }
+        }
+
         let mut line = start_line + 1;
         use std::collections::HashSet;
         let mut seen_kinds: HashSet<CompletionKind> = HashSet::new();
@@ -734,24 +782,25 @@ impl super::Display {
             row.push_str(&item.label);
             let avail = box_width_cols;
 
-            // Background highlight for selected item (row capsule)
-            if self.completions.selected_index == current_item_display_idx {
+            // Background highlight for selected/hovered item (row capsule)
+            let is_selected = self.completions.selected_index == current_item_display_idx;
+            let is_hover = hover_vline_opt.is_some_and(|vl| vl == line);
+            if is_selected || is_hover {
                 let y_row = (line as f32) * self.size_info.cell_height();
                 let x_row = (start_col as f32) * self.size_info.cell_width();
                 let w_row = (box_width_cols as f32) * self.size_info.cell_width();
                 let h_row = self.size_info.cell_height();
-                let row_bg = RenderRect::new(x_row, y_row, w_row, h_row, tokens.overlay, 0.20);
+                // Boost selected row alpha with selection animation ease; hover uses lighter alpha
+                let base = if is_selected { 0.20 } else { 0.14 };
+                let alpha = if is_selected { (base + 0.10 * sel_anim_eased).min(0.5) } else { base };
+                let row_bg = RenderRect::new(x_row, y_row, w_row, h_row, tokens.overlay, alpha);
                 let size_copy = self.size_info;
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_copy, &metrics, vec![row_bg]);
             }
 
-            // Highlight selected item text using accent
-            let color = if self.completions.selected_index == current_item_display_idx {
-                accent
-            } else {
-                fg
-            };
+            // Highlight selected/hovered item text using accent
+            let color = if is_selected || is_hover { accent } else { fg };
             self.draw_ai_text(
                 Point::new(line, Column(start_col)),
                 color,

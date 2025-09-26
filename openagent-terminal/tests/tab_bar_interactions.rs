@@ -3,7 +3,7 @@
 #[test]
 fn tab_bar_hit_test_integration() {
     use openagent_terminal as termapp;
-    use termapp::display::warp_ui::{hit_test_tab_bar_cached, TabBarAction};
+    use termapp::display::modern_ui::{hit_test_tab_bar_cached, TabBarAction};
     use termapp::workspace::TabBarPosition;
 
     let mut cfg = termapp::config::UiConfig::default();

@@ -54,6 +54,12 @@ pub mod window_context;
 pub mod ui_confirm;
 pub mod components_init;
 
+// Expose AI module for integration tests and external consumers
+pub mod ai;
+
+// Expose text shaping module for library consumers and internal modules (e.g., renderer/text/shaped_renderer)
+pub mod text_shaping;
+
 // New component modules
 pub mod ai_context_provider;
 pub mod ai_runtime;

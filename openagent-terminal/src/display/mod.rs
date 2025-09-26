@@ -582,6 +582,11 @@ pub struct Display {
     /// Command Palette state.
     pub palette: palette::PaletteState,
 
+    /// Palette overlay bounds: (start_line, end_line, start_col, end_col)
+    pub palette_overlay_bounds: Option<(usize, usize, usize, usize)>,
+    /// Palette rows start viewport line (first result row)
+    pub palette_rows_start_line: Option<usize>,
+
     // Active notebook edit session (temporary file based), if any
     #[cfg(feature = "never")]
     #[allow(dead_code)]
@@ -610,6 +615,11 @@ pub struct Display {
     /// Animation start timestamp for fade-in
     #[cfg(feature = "completions")]
     pub completions_anim_start: Option<Instant>,
+    /// Selection animation: last index and start time
+    #[cfg(feature = "completions")]
+    pub completions_sel_last_index: Option<usize>,
+    #[cfg(feature = "completions")]
+    pub completions_sel_anim_start: Option<Instant>,
 
     /// Workflows panel state.
     pub workflows_panel: workflow_panel::WorkflowsPanelState,
@@ -1237,6 +1247,8 @@ impl Display {
             notebooks_panel: notebook_panel::NotebookPanelState::new(),
             pending_renderer_update: Default::default(),
             composer_focused: false,
+            palette_overlay_bounds: None,
+            palette_rows_start_line: None,
             composer_press_flash_until: None,
             composer_text: String::new(),
             composer_cursor: 0,
@@ -1273,6 +1285,10 @@ ai_current_model: if cfg!(feature = "ai") {
             ai_provider_dropdown_open: false,
             vi_highlighted_hint_age: Default::default(),
             highlighted_hint_age: Default::default(),
+            #[cfg(feature = "completions")]
+            completions_sel_last_index: None,
+            #[cfg(feature = "completions")]
+            completions_sel_anim_start: None,
             vi_highlighted_hint: Default::default(),
             highlighted_hint: Default::default(),
             hint_mouse_point: Default::default(),
@@ -3504,6 +3520,20 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
         renderer.stage_ui_rounded_rect(&self.size_info, rect)
     }
 
+    // Helper setters for palette overlay info (to avoid exposing palette internals widely)
+    #[allow(dead_code)]
+    pub(crate) fn palette_overlay_bounds_set(
+        &mut self,
+        bounds: (usize, usize, usize, usize),
+    ) {
+        self.palette_overlay_bounds = Some(bounds);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn palette_rows_start_set(&mut self, start_line: usize) {
+        self.palette_rows_start_line = Some(start_line);
+    }
+
     fn renderer_draw_rects(
         &mut self,
         size_info: &SizeInfo,
@@ -4670,7 +4700,7 @@ mod tests {
             visibility: crate::config::workspace::TabBarVisibility::Always,
             ..Default::default()
         };
-        let style = crate::display::warp_ui::WarpTabStyle::default();
+let style = crate::workspace::ui_bridge::WarpTabStyle::default();
         // Far from the top; should still show because Always
         assert!(should_show_tab_bar_overlay(si, 400, &cfg, false, &style));
     }
@@ -4679,7 +4709,7 @@ mod tests {
     fn tab_bar_overlay_visibility_hover_top_and_bottom() {
         let si = SizeInfo::new(1000.0, 700.0, 10.0, 20.0, 0.0, 0.0, false);
         let mut cfg = crate::config::workspace::TabBarConfig::default();
-        let style = crate::display::warp_ui::WarpTabStyle::default();
+let style = crate::workspace::ui_bridge::WarpTabStyle::default();
 
         // Top position
         cfg.position = crate::workspace::TabBarPosition::Top;
@@ -4705,7 +4735,7 @@ mod tests {
             visibility: crate::config::workspace::TabBarVisibility::Auto,
             ..Default::default()
         };
-        let style = crate::display::warp_ui::WarpTabStyle::default();
+let style = crate::workspace::ui_bridge::WarpTabStyle::default();
 
         // Not fullscreen -> treated as Always
         assert!(should_show_tab_bar_overlay(si, 400, &cfg, false, &style));

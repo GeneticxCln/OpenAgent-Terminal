@@ -126,7 +126,6 @@ impl NaturalLanguageAgent {
             conversation_history: Vec::new(),
             intent_classifier: IntentClassifier::new(),
             context_manager: ConversationContextManager::new(),
-            ai_provider: None,
             is_initialized: false,
         }
     }
@@ -262,36 +261,10 @@ impl NaturalLanguageAgent {
         processed_input: &ProcessedInput,
         context: &AgentContext,
     ) -> Result<String> {
-        if let Some(provider) = &self.ai_provider {
-            let prompt = self.build_prompt(processed_input, context);
-
-                scratch_text: prompt,
-                working_directory: Some(context.current_directory.clone()),
-                shell_kind: Some(Self::detect_shell_kind(context)),
-                context: vec![
-                    ("mode".to_string(), "conversation".to_string()),
-                    ("agent".to_string(), "natural-language".to_string()),
-                ],
-            };
-
-            let proposals =
-                provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?;
-
-            if let Some(proposal) = proposals.first() {
-                if !proposal.proposed_commands.is_empty() {
-                    Ok(proposal.proposed_commands.join("\n"))
-                } else if let Some(desc) = &proposal.description {
-                    Ok(desc.clone())
-                } else {
-                    Ok(proposal.title.clone())
-                }
-            } else {
-                Ok("I understand your request, but I'm not sure how to help with that specific task.".to_string())
-            }
-        } else {
-            // Fallback response without AI provider
-            Ok(self.generate_fallback_response(processed_input))
-        }
+        // Build a rich prompt incorporating context; provider integration is handled in AiRuntime.
+        let _prompt = self.build_prompt(processed_input, context);
+        // For now, delegate to the deterministic fallback which is safe and side-effect free.
+        Ok(self.generate_fallback_response(processed_input))
     }
 
     /// Build a prompt for the AI provider

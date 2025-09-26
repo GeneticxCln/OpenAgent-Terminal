@@ -6,7 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use super::code_generation::CodeStyle;
+use super::CodeStyle;
 use super::natural_language::*;
 use super::*;
 

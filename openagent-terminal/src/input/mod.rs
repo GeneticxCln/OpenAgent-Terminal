@@ -2406,7 +2406,8 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                 || tab_hover
                 || quick_actions_hover
                 || completions_hover
-                || self.ctx.display().blocks_header_hover_line.is_some()
+                || self.ctx.display().blocks_header_hover_chip.is_some()
+                || self.ctx.display().blocks_header_hover_status.is_some()
             {
                 self.ctx.window().set_mouse_cursor(CursorIcon::Pointer);
             } else {
@@ -2982,7 +2983,83 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
     }
 
     pub fn mouse_wheel_input(&mut self, delta: MouseScrollDelta, phase: TouchPhase) {
+        // Warp-like: scroll within completions overlay moves selection
+        #[cfg(feature = "completions")]
+        {
+            if self.ctx.display().completions_active() {
+                if let Some((start_line, end_line, start_col, end_col)) =
+                    self.ctx.display().completions_overlay_bounds
+                {
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    let inside = point.line >= start_line
+                        && point.line <= end_line
+                        && point.column.0 >= start_col
+                        && point.column.0 < end_col;
+                    if inside {
+                        // Determine direction and steps
+                        let mut steps: i32 = 0;
+                        match delta {
+                            MouseScrollDelta::LineDelta(_cx, ly) => {
+                                // Positive ly typically means scroll up -> move selection up
+                                steps = if ly > 0.0 { -1 } else if ly < 0.0 { 1 } else { 0 };
+                            }
+                            MouseScrollDelta::PixelDelta(lpos) => {
+                                // Map pixels to row steps roughly by cell height
+                                let ch = self.ctx.size_info().cell_height() as f64;
+                                if ch > 0.0 {
+                                    let lines = (lpos.y / ch).round() as i32;
+                                    steps = if lines > 0 { -1 } else if lines < 0 { 1 } else { 0 };
+                                }
+                            }
+                        }
+                        if steps != 0 {
+                            self.ctx.completions_move_selection(steps as isize);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         let multiplier = self.ctx.config().scrolling.multiplier;
+
+        // Warp-like: mouse wheel over palette navigates selection
+        {
+            if self.ctx.palette_active() {
+                if let (Some((psl, pel, psc, pec)), Some(rows_start_line)) = (
+                    self.ctx.display().palette_overlay_bounds,
+                    self.ctx.display().palette_rows_start_line,
+                ) {
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                    let inside = point.line >= psl
+                        && point.line <= pel
+                        && point.column.0 >= psc
+                        && point.column.0 < pec;
+                    if inside {
+                        let mut steps: i32 = 0;
+                        match delta {
+                            MouseScrollDelta::LineDelta(_cx, ly) => {
+                                steps = if ly > 0.0 { -1 } else if ly < 0.0 { 1 } else { 0 };
+                            }
+                            MouseScrollDelta::PixelDelta(lpos) => {
+                                let ch = self.ctx.size_info().cell_height() as f64;
+                                if ch > 0.0 {
+                                    let lines = (lpos.y / ch).round() as i32;
+                                    steps = if lines > 0 { -1 } else if lines < 0 { 1 } else { 0 };
+                                }
+                            }
+                        }
+                        if steps != 0 {
+                            self.ctx.palette_move_selection(steps as isize);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         match delta {
             MouseScrollDelta::LineDelta(columns, lines) => {
                 let new_scroll_px_x = columns * self.ctx.size_info().cell_width();
@@ -3279,6 +3356,26 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                 ElementState::Pressed => {
                     #[cfg(not(test))]
                     {
+                        // If completions overlay is open and click is outside it, close it (Warp-like)
+                        #[cfg(feature = "completions")]
+                        {
+                            if self.ctx.display().completions_active() {
+                                let bounds_opt = { self.ctx.display().completions_overlay_bounds };
+                                if let Some((start_line, end_line, start_col, end_col)) = bounds_opt {
+                                    let display_offset = self.ctx.terminal().grid().display_offset();
+                                    let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                                    let inside = point.line >= start_line
+                                        && point.line <= end_line
+                                        && point.column.0 >= start_col
+                                        && point.column.0 < end_col;
+                                    if !inside {
+                                        self.ctx.completions_clear();
+                                        // Do not return; allow the click to proceed to its target
+                                    }
+                                }
+                            }
+                        }
+
                         // Start split drag if hovering a divider
                         if let Some(hit) = self.ctx.display().split_hover.clone() {
                             self.ctx.display().split_drag = Some(hit);
@@ -3313,6 +3410,46 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                         if self.process_tab_bar_click() {
                             return;
                         }
+                        // Palette: click to select and accept (Warp-like)
+                        {
+                            let pal_bounds = self.ctx.display().palette_overlay_bounds;
+                            let rows_start = self.ctx.display().palette_rows_start_line;
+                            if self.ctx.palette_active() {
+                                if let (Some((psl, pel, psc, pec)), Some(rows_start_line)) =
+                                    (pal_bounds, rows_start)
+                                {
+                                    let display_offset = self.ctx.terminal().grid().display_offset();
+                                    let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                                    if let Some(view) = openagent_terminal_core::term::point_to_viewport(display_offset, point) {
+                                        let inside = view.line >= psl
+                                            && view.line <= pel
+                                            && point.column.0 >= psc
+                                            && point.column.0 < pec;
+                                        if inside {
+                                            // Map clicked viewport line to view index
+                                            if view.line >= rows_start_line && view.line < pel {
+                                                let clicked_idx: usize = view.line.saturating_sub(rows_start_line);
+                                                // Fetch current view and compute delta
+                                                let (_f, selected_visible, views) = self.ctx.display().palette.view();
+                                                if clicked_idx < views.len() {
+                                                    let delta = clicked_idx as isize - selected_visible as isize;
+                                                    if delta != 0 {
+                                                        self.ctx.palette_move_selection(delta);
+                                                    }
+                                                    self.ctx.palette_confirm();
+                                                    return;
+                                                }
+                                            }
+                                        } else {
+                                            // Click outside closes palette (like Warp)
+                                            self.ctx.palette_cancel();
+                                            // Continue processing click
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Bottom composer click handling (opens AI panel)
                         if self.process_bottom_composer_click() {
                             return;
@@ -3320,6 +3457,47 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                         // Quick Actions bar click handling (bottom line)
                         if self.process_quick_actions_click() {
                             return;
+                        }
+                    }
+
+                    // Warp-style completions overlay: mouse select/accept
+                    #[cfg(all(feature = "completions", not(test)))]
+                    {
+                        // Snapshot overlay bounds immutably
+                        let bounds_opt = { self.ctx.display().completions_overlay_bounds };
+                        if let Some((start_line, end_line, start_col, end_col)) = bounds_opt {
+                            // Translate current mouse position to viewport point
+                            let display_offset = self.ctx.terminal().grid().display_offset();
+                            let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
+                            let inside = point.line >= start_line
+                                && point.line <= end_line
+                                && point.column.0 >= start_col
+                                && point.column.0 < end_col;
+                            if inside {
+                                // Find the item row mapping for this viewport line
+                                let target_idx_opt = {
+                                    let lines = &self.ctx.display().completions_overlay_item_lines;
+                                    let mut found: Option<usize> = None;
+                                    for (vp_line, idx) in lines.iter().copied() {
+                                        if point.line == vp_line {
+                                            found = Some(idx);
+                                            break;
+                                        }
+                                    }
+                                    found
+                                };
+                                if let Some(target_idx) = target_idx_opt {
+                                    // Select the clicked item
+                                    let len = self.ctx.display().completions.items.len();
+                                    if target_idx < len {
+                                        self.ctx.display().completions.selected_index = target_idx;
+                                        self.ctx.mark_dirty();
+                                    }
+                                    // Accept on click (Warp-like)
+                                    self.ctx.completions_confirm();
+                                    return;
+                                }
+                            }
                         }
                     }
 
@@ -3406,14 +3584,53 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
 
         if let Some(mouse_state) = self.message_bar_cursor_state() {
             mouse_state
-        } else if cfg!(not(test))
-            && self.ctx.display().highlighted_hint.as_ref().is_some_and(hint_highlighted)
-        {
-            CursorIcon::Pointer
-        } else if !self.ctx.modifiers().state().shift_key() && self.ctx.mouse_mode() {
-            CursorIcon::Default
         } else {
-            CursorIcon::Text
+            // Warp-style: when hovering overlays, show pointer (completions/palette)
+            #[cfg(feature = "completions")]
+            {
+                if let Some((start_line, end_line, start_col, end_col)) =
+                    self.ctx.display().completions_overlay_bounds
+                {
+                    let inside = point.line >= start_line
+                        && point.line <= end_line
+                        && point.column.0 >= start_col
+                        && point.column.0 < end_col;
+                    if inside {
+                        return CursorIcon::Pointer;
+                    }
+                }
+            }
+            {
+                if let Some((psl, pel, psc, pec)) = self.ctx.display().palette_overlay_bounds {
+                    let inside = point.line >= psl
+                        && point.line <= pel
+                        && point.column.0 >= psc
+                        && point.column.0 < pec;
+                    if inside {
+                        return CursorIcon::Pointer;
+                    }
+                }
+            }
+            // Pointer on block header chips or status pill (Warp-like)
+            if self.ctx.display().blocks_header_hover_chip.is_some()
+                || self.ctx.display().blocks_header_hover_status.is_some()
+            {
+                return CursorIcon::Pointer;
+            }
+            if cfg!(not(test))
+                && self
+                    .ctx
+                    .display()
+                    .highlighted_hint
+                    .as_ref()
+                    .is_some_and(hint_highlighted)
+            {
+                CursorIcon::Pointer
+            } else if !self.ctx.modifiers().state().shift_key() && self.ctx.mouse_mode() {
+                CursorIcon::Default
+            } else {
+                CursorIcon::Text
+            }
         }
     }
 

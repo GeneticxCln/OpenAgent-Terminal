@@ -1,6 +1,6 @@
 #![allow(clippy::pedantic)]
 
-use openagent_terminal::workspace::warp_tab_manager::WarpTabManager;
+use openagent_terminal::workspace::tab_layout_manager::WarpTabManager;
 use openagent_terminal::workspace::TabId;
 use std::fs;
 use std::path::PathBuf;

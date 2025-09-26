@@ -160,6 +160,10 @@ wgpu = ["dep:wgpu", "dep:pollster"]
 renderer-wgpu = ["wgpu"]
 # Experimental always-on completions overlay (gated until stable)
 completions = []
+# Placeholder toggles used by cfg checks in code; intentionally empty feature flags to silence unexpected cfg warnings
+ai = []
+workflow = []
+ide = []
 
 # Gate demos/integration code that isn't production-ready
 # Enable with: cargo build -p openagent-terminal --features demos
