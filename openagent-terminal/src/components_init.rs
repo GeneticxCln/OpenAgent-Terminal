@@ -18,7 +18,6 @@ use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
 #[cfg(feature = "never")]
 pub(crate) use crate::plugins_api::{CommandOutput, PluginError};
-#[cfg(feature = "never")]
 
 /// Component initialization configuration
 #[allow(dead_code)]
@@ -59,6 +58,245 @@ impl Default for ComponentConfig {
     }
 }
 
+/// Workflow search result for the UI
+#[derive(Debug, Clone)]
+pub struct WorkflowSearchResult {
+    pub id: String,                     // unique id, typically file path
+    pub name: String,                   // display name
+    pub description: Option<String>,    // optional description
+    pub tags: Vec<String>,              // optional tags (from metadata)
+    pub parameters: Vec<crate::display::workflow_panel::WorkflowParam>, // parsed params
+}
+
+/// Workflow events for event system
+#[derive(Debug, Clone)]
+pub enum WorkflowEvent {
+    Started { execution_id: String },
+    StepStarted { execution_id: String, step_id: String },
+    StepCompleted { execution_id: String, step_id: String },
+    StepFailed { execution_id: String, step_id: String, error: String },
+    Completed { execution_id: String, status: String },
+    Log { execution_id: String, step_id: Option<String>, message: String },
+}
+
+/// Real workflows engine: scans YAML in project and user config
+pub struct WorkflowEngine {
+    roots: Vec<std::path::PathBuf>,
+    event_tx: tokio::sync::broadcast::Sender<WorkflowEvent>,
+}
+
+impl WorkflowEngine {
+    pub fn new() -> anyhow::Result<Self> {
+        let (event_tx, _) = tokio::sync::broadcast::channel(1000);
+        let mut roots: Vec<std::path::PathBuf> = Vec::new();
+        // Project roots (prefer user project-local definitions)
+        if let Ok(cwd) = std::env::current_dir() {
+            roots.push(cwd.join(".openagent-terminal").join("workflows"));
+            roots.push(cwd.join(".warp").join("workflows")); // Warp-compatible
+        }
+        // User config roots
+        if let Some(cfg) = dirs::config_dir() {
+            roots.push(cfg.join("openagent-terminal").join("workflows"));
+        }
+        // Warp user dir for compatibility
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join(".warp").join("workflows"));
+        }
+        Ok(Self { roots, event_tx })
+    }
+
+    /// Read all workflow files and return search results
+    pub async fn list_workflows(&self) -> anyhow::Result<Vec<WorkflowSearchResult>> {
+        use tokio::fs;
+        let mut results: Vec<WorkflowSearchResult> = Vec::new();
+        for root in &self.roots {
+            if fs::metadata(root).await.is_err() { continue; }
+            let mut dir = match fs::read_dir(root).await { Ok(d) => d, Err(_) => continue };
+            while let Ok(Some(entry)) = dir.next_entry().await {
+                let path = entry.path();
+                let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                if ext != "yaml" && ext != "yml" { continue; }
+                if let Ok(text) = fs::read_to_string(&path).await {
+                    if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
+                        if let Some(ws) = Self::to_search_result(&path, &doc) {
+                            results.push(ws);
+                        }
+                    }
+                }
+            }
+        }
+        // Deduplicate by (name, id)
+        results.sort_by(|a,b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+        results.dedup_by(|a,b| a.id == b.id);
+        Ok(results)
+    }
+
+    /// Get workflow JSON definition by name (case-insensitive)
+    pub async fn get_workflow_by_name(&self, name: &str) -> Option<(String, serde_json::Value)> {
+        let target = name.to_lowercase();
+        if let Ok(list) = self.list_workflows().await {
+            for w in list {
+                if w.name.to_lowercase() == target {
+                    if let Some((id, json)) = self.load_workflow_json(std::path::Path::new(&w.id)).await.ok().flatten() {
+                        return Some((id, json));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Execute a workflow by id with provided params; Emits progress via broadcast channel.
+    /// This executes logically (emits step events) and does not run shell commands directly;
+    /// actual insertion/execution is handled by higher-level UI paths.
+    pub async fn execute_workflow(
+        &self,
+        id: &str,
+        _params: std::collections::HashMap<String, serde_json::Value>,
+    ) -> anyhow::Result<String> {
+        let execution_id = uuid::Uuid::new_v4().to_string();
+        let _ = self.event_tx.send(WorkflowEvent::Started { execution_id: execution_id.clone() });
+        if let Some((_wid, json)) = self.load_workflow_json(&std::path::PathBuf::from(id)).await? {
+            // Iterate steps: support steps[*].id, steps[*].name, steps[*].commands (array of strings)
+            if let Some(steps) = json.get("steps").and_then(|v| v.as_array()) {
+                for step in steps {
+                    let step_id = step
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| step.get("name").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string();
+                    let label = if step_id.is_empty() { "step".to_string() } else { step_id.clone() };
+                    let _ = self.event_tx.send(WorkflowEvent::StepStarted {
+                        execution_id: execution_id.clone(),
+                        step_id: label.clone(),
+                    });
+                    // Emit a simple log for preview; actual command execution is external
+                    let _ = self.event_tx.send(WorkflowEvent::Log {
+                        execution_id: execution_id.clone(),
+                        step_id: Some(label.clone()),
+                        message: "Prepared commands".to_string(),
+                    });
+                    let _ = self.event_tx.send(WorkflowEvent::StepCompleted {
+                        execution_id: execution_id.clone(),
+                        step_id: label,
+                    });
+                }
+            }
+        }
+        let _ = self.event_tx.send(WorkflowEvent::Completed {
+            execution_id: execution_id.clone(),
+            status: "Success".to_string(),
+        });
+        Ok(execution_id)
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<WorkflowEvent> {
+        self.event_tx.subscribe()
+    }
+
+    fn to_search_result(path: &std::path::Path, doc: &serde_yaml::Value) -> Option<WorkflowSearchResult> {
+        use crate::display::workflow_panel::{WorkflowParam, WorkflowParamOption, WorkflowParamType};
+        let name = doc.get("name").and_then(|v| v.as_str()).map(|s| s.to_string())
+            .or_else(|| path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()))?;
+        let description = doc.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let tags: Vec<String> = doc.get("metadata")
+            .and_then(|m| m.get("tags"))
+            .and_then(|t| t.as_sequence())
+            .map(|seq| seq.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        // Parse parameters
+        let mut parameters: Vec<WorkflowParam> = Vec::new();
+        if let Some(params) = doc.get("parameters").and_then(|v| v.as_sequence()) {
+            for p in params {
+                let pname = p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if pname.is_empty() { continue; }
+                let ty = p.get("type").and_then(|v| v.as_str()).unwrap_or("string").to_lowercase();
+                let param_type = match ty.as_str() {
+                    "number" => WorkflowParamType::Number,
+                    "bool" | "boolean" => WorkflowParamType::Boolean,
+                    "select" => WorkflowParamType::Select,
+                    _ => WorkflowParamType::String,
+                };
+                let description = p.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let required = p.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
+                let default = p.get("default").map(|v| Self::yaml_to_json(v));
+                let options = p.get("options").and_then(|v| v.as_sequence()).map(|seq| {
+                    seq.iter().filter_map(|opt| {
+                        let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let value = opt.get("value").map(|vv| Self::yaml_to_json(vv)).unwrap_or(serde_json::Value::Null);
+                        if label.is_empty() { None } else { Some(WorkflowParamOption { value, label }) }
+                    }).collect::<Vec<_>>()
+                });
+                let min = p.get("min").and_then(|v| v.as_f64());
+                let max = p.get("max").and_then(|v| v.as_f64());
+                parameters.push(WorkflowParam { name: pname, param_type, description, required, default, options, min, max });
+            }
+        }
+        Some(WorkflowSearchResult { id: path.to_string_lossy().to_string(), name, description, tags, parameters })
+    }
+
+    /// Convert serde_yaml::Value to serde_json::Value (best-effort)
+    fn yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
+        match v {
+            serde_yaml::Value::Null => serde_json::Value::Null,
+            serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+            serde_yaml::Value::Number(n) => {
+                if let Some(i) = n.as_i64() { serde_json::Value::Number(i.into()) }
+                else if let Some(u) = n.as_u64() { serde_json::Value::Number(serde_json::Number::from(u)) }
+                else if let Some(f) = n.as_f64() { serde_json::json!(f) }
+                else { serde_json::Value::Null }
+            }
+            serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+            serde_yaml::Value::Sequence(seq) => serde_json::Value::Array(seq.iter().map(Self::yaml_to_json).collect()),
+            serde_yaml::Value::Mapping(map) => {
+                let mut obj = serde_json::Map::new();
+                for (k, v2) in map.iter() {
+                    let key = match k {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        _ => format!("{}", Self::yaml_to_json(k)),
+                    };
+                    obj.insert(key, Self::yaml_to_json(v2));
+                }
+                serde_json::Value::Object(obj)
+            }
+            _ => serde_json::Value::Null,
+        }
+    }
+
+    async fn load_workflow_json(&self, id_or_path: &std::path::Path) -> anyhow::Result<Option<(String, serde_json::Value)>> {
+        use tokio::fs;
+        let path = if id_or_path.is_absolute() || id_or_path.exists() { id_or_path.to_path_buf() } else { std::path::PathBuf::from(id_or_path) };
+        if fs::metadata(&path).await.is_err() {
+            // Try to resolve by name across roots
+            let name_lower = path.to_string_lossy().to_string().to_lowercase();
+            for root in &self.roots {
+                if fs::metadata(root).await.is_err() { continue; }
+                let mut dir = match fs::read_dir(root).await { Ok(d) => d, Err(_) => continue };
+                while let Ok(Some(entry)) = dir.next_entry().await {
+                    let p = entry.path();
+                    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    if ext != "yaml" && ext != "yml" { continue; }
+                    if let Ok(text) = fs::read_to_string(&p).await {
+                        if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) {
+                            let nm = doc.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                            if !nm.is_empty() && nm == name_lower {
+                                let json = serde_json::to_value(doc).unwrap_or(serde_json::json!({}));
+                                return Ok(Some((p.to_string_lossy().to_string(), json)));
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(None);
+        }
+        let text = fs::read_to_string(&path).await?;
+        let doc: serde_yaml::Value = serde_yaml::from_str(&text)?;
+        let json = serde_json::to_value(doc).unwrap_or(serde_json::json!({}));
+        Ok(Some((path.to_string_lossy().to_string(), json)))
+    }
+}
+
 /// Initialized components container
 pub struct InitializedComponents {
     #[cfg(feature = "harfbuzz")]
@@ -67,7 +305,6 @@ pub struct InitializedComponents {
     pub block_manager: Option<Arc<tokio::sync::RwLock<BlockManager>>>,
     #[cfg(feature = "never")]
     pub notebook_manager: Option<Arc<tokio::sync::RwLock<crate::notebooks::NotebookManager>>>,
-    #[cfg(feature = "never")]
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     #[cfg(feature = "never")]
     pub plugin_manager: Option<Arc<PluginManager>>,
@@ -206,9 +443,8 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize workflow engine
-    #[cfg(feature = "never")]
     let workflow_engine = if config.enable_workflows {
-        match initialize_workflow_engine(&config.config_dir).await {
+        match WorkflowEngine::new() {
             Ok(engine) => {
                 info!("✓ Workflow engine initialized");
                 Some(Arc::new(engine))
@@ -296,7 +532,6 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
         block_manager,
         #[cfg(feature = "never")]
         notebook_manager,
-        #[cfg(feature = "never")]
         workflow_engine,
         #[cfg(feature = "never")]
         plugin_manager,

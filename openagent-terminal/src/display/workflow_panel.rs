@@ -76,16 +76,45 @@ pub struct WorkflowParamsState {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum WorkflowParamType {
+    String,
+    Number,
+    Boolean,
+    Select,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkflowParamOption {
+    pub value: serde_json::Value,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkflowParam {
+    pub name: String,
+    pub param_type: WorkflowParamType,
+    pub description: String,
+    pub required: bool,
+    pub default: Option<serde_json::Value>,
+    pub options: Option<Vec<WorkflowParamOption>>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkflowParamField {
     pub name: String,
+    pub kind: WorkflowParamType,
     pub description: String,
     pub required: bool,
     pub value: serde_json::Value,
+    pub options: Option<Vec<WorkflowParamOption>>,
     pub min: Option<f64>,
     pub max: Option<f64>,
 }
 
 impl WorkflowParamsState {
+    pub fn setup(&mut self, id: String, name: String, params: Vec<WorkflowParam>) {
         self.active = true;
         self.workflow_id = Some(id);
         self.workflow_name = Some(name);
@@ -104,6 +133,10 @@ impl WorkflowParamsState {
             })
             .collect();
     }
+    pub fn open(&mut self, id: String, name: String, params: Vec<WorkflowParam>) {
+        self.setup(id, name, params);
+    }
+    
     pub fn close(&mut self) {
         self.active = false;
         self.workflow_id = None;

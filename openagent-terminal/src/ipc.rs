@@ -88,36 +88,6 @@ pub fn spawn_ipc_socket(
                     let event = Event::new(EventType::IpcGetConfig(Arc::new(stream)), window_id);
                     let _ = event_proxy.send_event(event);
                 }
-                SocketMessage::SyncStatus(cmd) => {
-                    let event = Event::new(
-                        EventType::IpcSync(
-                            crate::event::IpcSyncType::Status(cmd.scope),
-                            Arc::new(stream),
-                        ),
-                        None,
-                    );
-                    let _ = event_proxy.send_event(event);
-                }
-                SocketMessage::SyncPush(cmd) => {
-                    let event = Event::new(
-                        EventType::IpcSync(
-                            crate::event::IpcSyncType::Push(cmd.scope),
-                            Arc::new(stream),
-                        ),
-                        None,
-                    );
-                    let _ = event_proxy.send_event(event);
-                }
-                SocketMessage::SyncPull(cmd) => {
-                    let event = Event::new(
-                        EventType::IpcSync(
-                            crate::event::IpcSyncType::Pull(cmd.scope),
-                            Arc::new(stream),
-                        ),
-                        None,
-                    );
-                    let _ = event_proxy.send_event(event);
-                }
             }
         }
     });
@@ -163,24 +133,7 @@ fn handle_reply(stream: &UnixStream, message: &SocketMessage) -> IoResult<()> {
             println!("{config}");
             Ok(())
         }
-        (SocketMessage::SyncStatus(..), SocketReply::SyncStatus(status)) => {
-            println!("{status}");
-            Ok(())
-        }
-        (
-            SocketMessage::SyncPush(..) | SocketMessage::SyncPull(..),
-            SocketReply::SyncResult(result),
-        ) => match result {
-            Ok(msg) => {
-                println!("{msg}");
-                Ok(())
-            }
-            Err(err) => {
-                eprintln!("Sync error: {err}");
-                Err(IoError::other(err.clone()))
-            }
-        },
-        // Ignore requests without reply.
+        // Ignore other requests without reply for now.
         _ => Ok(()),
     }
 }

@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use std::{env, f32, mem};
+use std::str::FromStr as _;
 
 use ahash::RandomState;
 use crossfont::Size as FontSize;
@@ -49,7 +50,8 @@ use openagent_terminal_core::vte::ansi::NamedColor;
 use crate::cli::{IpcConfig, ParsedOptions};
 use crate::cli::{Options as CliOptions, WindowOptions};
 use crate::clipboard::Clipboard;
-use crate::components_init::{ComponentConfig, InitializedComponents};
+use crate::components_init::{ComponentConfig, InitializedComponents, WorkflowSearchResult};
+use crate::ai_runtime::{AI_INLINE_SUGGEST_DEBOUNCE, AiCopyFormat};
 use crate::config::ui_config::{HintAction, HintInternalAction};
 use crate::config::{self, Action as BindingAction, UiConfig};
 #[cfg(not(windows))]
@@ -1519,15 +1521,29 @@ impl ApplicationHandler<Event> for Processor {
                         let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            let list = engine.list_workflows().await;
-                            // Map to (name, description)
-                            let items: Vec<(String, Option<String>)> = list
-                                .into_iter()
-                                .map(|(_id, def)| (def.name, Some(def.description)))
-                                .collect();
-                            if !items.is_empty() {
-                                let _ = proxy
-                                    .send_event(Event::new(EventType::PaletteAppendWorkflows(items), win));
+                            match engine.list_workflows().await {
+                                Ok(list) => {
+                                    // Map to (name, description)
+                                    let items: Vec<(String, Option<String>)> = list
+                                        .into_iter()
+                                        .map(|def| (def.name, def.description))
+                                        .collect();
+                                    if !items.is_empty() {
+                                        let _ = proxy.send_event(Event::new(
+                                            EventType::PaletteAppendWorkflows(items),
+                                            win,
+                                        ));
+                                    }
+                                }
+                                Err(e) => {
+                                    let _ = proxy.send_event(Event::new(
+                                        EventType::Message(crate::message_bar::Message::new(
+                                            format!("Failed to list workflows: {}", e),
+                                            crate::message_bar::MessageType::Warning,
+                                        )),
+                                        win,
+                                    ));
+                                }
                             }
                         });
                     }
@@ -1555,7 +1571,45 @@ impl ApplicationHandler<Event> for Processor {
 
             // Workflows panel events
             (EventType::WorkflowsSearchPerform(query), Some(window_id)) => {
-                self.process_workflows_search_perform(query, *window_id);
+                if let Some(components) = &self.components {
+                    if let Some(engine) = &components.workflow_engine {
+                        let engine = engine.clone();
+                        let proxy = self.proxy.clone();
+                        let win = *window_id;
+                        let rt = components.runtime.clone();
+                        rt.spawn(async move {
+                            match engine.list_workflows().await {
+                                Ok(list) => {
+                                    let q = query.to_lowercase();
+                                    let filtered: Vec<crate::components_init::WorkflowSearchResult> = list
+                                        .into_iter()
+                                        .filter(|d| {
+                                            d.name.to_lowercase().contains(&q)
+                                                || d
+                                                    .description
+                                                    .as_ref()
+                                                    .map(|s| s.to_lowercase().contains(&q))
+                                                    .unwrap_or(false)
+                                        })
+                                        .collect();
+                                    let _ = proxy.send_event(Event::new(
+                                        EventType::WorkflowsSearchResults(filtered),
+                                        win,
+                                    ));
+                                }
+                                Err(e) => {
+                                    let _ = proxy.send_event(Event::new(
+                                        EventType::Message(crate::message_bar::Message::new(
+                                            format!("Workflow search failed: {}", e),
+                                            crate::message_bar::MessageType::Warning,
+                                        )),
+                                        win,
+                                    ));
+                                }
+                            }
+                        });
+                    }
+                }
             }
             (
                 EventType::WorkflowsOpenParamsForm { workflow_id, workflow_name, params },
@@ -1595,12 +1649,12 @@ impl ApplicationHandler<Event> for Processor {
                                 Ok(exec_id) => {
                                     // Try fetch workflow name for UI
                                     let wf_name = {
-                                        let wf = engine
+                                        engine
                                             .list_workflows()
                                             .await
-                                            .into_iter()
-                                            .find(|(id, _)| id == &workflow_id);
-                                        wf.map(|(_, d)| d.name)
+                                            .ok()
+                                            .and_then(|list| list.into_iter().find(|d| d.id == workflow_id))
+                                            .map(|d| d.name)
                                             .unwrap_or_else(|| workflow_id.clone())
                                     };
                                     let message = crate::message_bar::Message::new(
@@ -1614,12 +1668,13 @@ impl ApplicationHandler<Event> for Processor {
                                         .send_event(Event::new(EventType::Message(message), win));
                                     let _ = proxy.send_event(Event::new(
                                         EventType::WorkflowsProgressUpdate {
-                                            execution_id: exec_id.clone(),
-                                            workflow_name: Some(wf_name.clone()),
-                                            status: Some("Starting".to_string()),
-                                            current_step: None,
-                                            log: None,
-                                            done: false,
+                            execution_id: exec_id.clone(),
+                            workflow_name: Some(wf_name.clone()),
+                            status: Some("Started".to_string()),
+                            current_step: None,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![],
                                         },
                                         win,
                                     ));
@@ -1629,7 +1684,7 @@ impl ApplicationHandler<Event> for Processor {
                                     loop {
                                         match rx.recv().await {
                                             Ok(ev) => match ev {
-                                                WorkflowEvent::Started { execution_id }
+                                                crate::components_init::WorkflowEvent::Started { execution_id }
                                                     if execution_id == exec_id =>
                                                 {
                                                     let _ = proxy.send_event(Event::new(
@@ -1638,13 +1693,14 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: Some(wf_name.clone()),
                                                             status: Some("Running".to_string()),
                                                             current_step: None,
-                                                            log: None,
-                                                            done: false,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepStarted {
+                                                crate::components_init::WorkflowEvent::StepStarted {
                                                     execution_id,
                                                     step_id,
                                                 } if execution_id == exec_id => {
@@ -1654,13 +1710,14 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: Some("Running".to_string()),
                                                             current_step: Some(step_id),
-                                                            log: None,
-                                                            done: false,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepCompleted {
+                                                crate::components_init::WorkflowEvent::StepCompleted {
                                                     execution_id,
                                                     step_id,
                                                 } if execution_id == exec_id => {
@@ -1671,15 +1728,17 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: None,
                                                             current_step: None,
-                                                            log: Some(msg),
-                                                            done: false,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![msg],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepFailed {
+                                                crate::components_init::WorkflowEvent::StepFailed {
                                                     execution_id,
                                                     step_id,
+                                                    error: _,
                                                 } if execution_id == exec_id => {
                                                     let msg = format!("Failed step {step_id}");
                                                     let _ = proxy.send_event(Event::new(
@@ -1688,13 +1747,14 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: Some("Failed".to_string()),
                                                             current_step: Some(step_id),
-                                                            log: Some(msg),
-                                                            done: false,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![msg],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::Completed {
+                                                crate::components_init::WorkflowEvent::Completed {
                                                     execution_id,
                                                     status,
                                                 } if execution_id == exec_id => {
@@ -1704,13 +1764,14 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: Some(wf_name.clone()),
                                                             status: Some(format!("{:?}", status)),
                                                             current_step: None,
-                                                            log: None,
-                                                            done: true,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::Log {
+                                                crate::components_init::WorkflowEvent::Log {
                                                     execution_id,
                                                     step_id: _,
                                                     message,
@@ -1721,8 +1782,9 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: None,
                                                             current_step: None,
-                                                            log: Some(message),
-                                                            done: false,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![message],
                                                         },
                                                         win,
                                                     ));
@@ -1756,7 +1818,15 @@ impl ApplicationHandler<Event> for Processor {
             }
             (EventType::WorkflowsSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
-                    window_context.display.workflows_panel.results = items;
+                    let mapped: Vec<crate::display::workflow_panel::WorkflowItem> = items
+                        .into_iter()
+                        .map(|d| crate::display::workflow_panel::WorkflowItem {
+                            name: d.name,
+                            description: d.description,
+                            source: crate::display::workflow_panel::WorkflowSource::Engine,
+                        })
+                        .collect();
+                    window_context.display.workflows_panel.results = mapped;
                     window_context.dirty = true;
                     if window_context.display.window.has_frame {
                         window_context.display.window.request_redraw();
@@ -1769,8 +1839,9 @@ impl ApplicationHandler<Event> for Processor {
                     workflow_name,
                     status,
                     current_step,
-                    log,
-                    done,
+                    step_index,
+                    total_steps,
+                    logs,
                 },
                 Some(window_id),
             ) => {
@@ -1788,8 +1859,8 @@ impl ApplicationHandler<Event> for Processor {
                     if let Some(name) = workflow_name {
                         st.workflow_name = Some(name);
                     }
-                    if let Some(s) = status {
-                        st.status = Some(s);
+                    if let Some(ref s) = status {
+                        st.status = Some(s.clone());
                     }
                     if let Some(step) = current_step {
                         st.current_step = Some(step.clone());
@@ -1798,17 +1869,24 @@ impl ApplicationHandler<Event> for Processor {
                             st.step_index = st.seen_steps.len();
                         }
                     }
-                    if let Some(line) = log {
+                    if let Some(step_idx) = step_index {
+                        st.step_index = step_idx;
+                    }
+                    if let Some(total) = total_steps {
+                        st.total_steps = Some(total);
+                    }
+                    for line in logs {
                         st.logs.push(line);
-                        let cap = self.config.workflow_ui.max_log_lines.max(1);
-                        if st.logs.len() > cap {
-                            let drop = st.logs.len() - cap;
-                            st.logs.drain(0..drop);
-                        }
+                    }
+                    let cap = self.config.workflow_ui.max_log_lines.max(1);
+                    if st.logs.len() > cap {
+                        let drop = st.logs.len() - cap;
+                        st.logs.drain(0..drop);
                     }
 
-                    // If done, schedule a quick clear to retain UI briefly
-                    if done {
+                    // Check if workflow is completed based on status
+                    let is_done = status.as_ref().map(|s| s.contains("completed") || s.contains("failed")).unwrap_or(false);
+                    if is_done {
                         let tid = crate::scheduler::TimerId::new(
                             crate::scheduler::Topic::WorkflowsProgressRetain,
                             *window_id,
@@ -1859,13 +1937,16 @@ impl ApplicationHandler<Event> for Processor {
                         runtime.spawn(async move {
                             // Check if engine has this by name
                             if let Some((wf_id, def)) = engine.get_workflow_by_name(&name).await {
-                                if !def.parameters.is_empty() {
+                                // Extract params from JSON (best-effort)
+                                let params = crate::event::parse_workflow_params(&def);
+                                if !params.is_empty() {
                                     // Open params form
+                                    let wf_name = crate::event::workflow_name_from_json(&def, &wf_id);
                                     let _ = proxy.send_event(Event::new(
                                         EventType::WorkflowsOpenParamsForm {
                                             workflow_id: wf_id,
-                                            workflow_name: def.name.clone(),
-                                            params: def.parameters.clone(),
+                                            workflow_name: wf_name,
+                                            params,
                                         },
                                         win,
                                     ));
@@ -1875,19 +1956,21 @@ impl ApplicationHandler<Event> for Processor {
                                 use std::collections::HashMap;
                                 match engine.execute_workflow(&wf_id, HashMap::new()).await {
                                     Ok(exec_id) => {
+                                        let wf_name = crate::event::workflow_name_from_json(&def, &wf_id);
                                         let message = crate::message_bar::Message::new(
-                                            format!("Started workflow '{}' (execution {})", def.name, exec_id),
+                                            format!("Started workflow '{}' (execution {})", wf_name, exec_id),
                                             crate::message_bar::MessageType::Warning,
                                         );
                                         let _ = proxy.send_event(Event::new(EventType::Message(message), win));
                                         let _ = proxy.send_event(Event::new(
                                             EventType::WorkflowsProgressUpdate {
                                                 execution_id: exec_id.clone(),
-                                                workflow_name: Some(def.name.clone()),
+workflow_name: Some(crate::event::workflow_name_from_json(&def, &wf_id)),
                                                 status: Some("Starting".to_string()),
                                                 current_step: None,
-                                                log: None,
-                                                done: false,
+                                                step_index: None,
+                                                total_steps: None,
+                                                logs: Vec::new(),
                                             },
                                             win,
                                         ));
@@ -1897,33 +1980,35 @@ impl ApplicationHandler<Event> for Processor {
                                         loop {
                                             match rx.recv().await {
                                                 Ok(ev) => match ev {
-                                                    WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
+                                                    crate::components_init::WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
                                                         let _ = proxy.send_event(Event::new(
                                                             EventType::WorkflowsProgressUpdate {
                                                                 execution_id,
-                                                                workflow_name: Some(def.name.clone()),
-                                                                status: Some("Running".to_string()),
-                                                                current_step: None,
-                                                                log: None,
-                                                                done: false,
+                                                            workflow_name: Some(crate::event::workflow_name_from_json(&def, &wf_id)),
+                                                            status: Some("Running".to_string()),
+                                                            current_step: None,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: Vec::new(),
                                                             },
                                                             win,
                                                         ));
                                                     }
-                                                    WorkflowEvent::StepStarted { execution_id, step_id } if execution_id == exec_id => {
+                                                    crate::components_init::WorkflowEvent::StepStarted { execution_id, step_id } if execution_id == exec_id => {
                                                         let _ = proxy.send_event(Event::new(
                                                             EventType::WorkflowsProgressUpdate {
-                                                                execution_id,
-                                                                workflow_name: None,
-                                                                status: Some("Running".to_string()),
-                                                                current_step: Some(step_id),
-                                                                log: None,
-                                                                done: false,
+                                            execution_id,
+                                            workflow_name: None,
+                                            status: Some("Starting".to_string()),
+                                            current_step: None,
+                                            step_index: None,
+                                            total_steps: None,
+                                            logs: Vec::new(),
                                                             },
                                                             win,
                                                         ));
                                                     }
-                                                    WorkflowEvent::StepCompleted { execution_id, step_id } if execution_id == exec_id => {
+                                                    crate::components_init::WorkflowEvent::StepCompleted { execution_id, step_id } if execution_id == exec_id => {
                                                         let msg = format!("Completed step {step_id}");
                                                         let _ = proxy.send_event(Event::new(
                                                             EventType::WorkflowsProgressUpdate {
@@ -1931,34 +2016,37 @@ impl ApplicationHandler<Event> for Processor {
                                                                 workflow_name: None,
                                                                 status: None,
                                                                 current_step: None,
-                                                                log: Some(msg),
-                                                                done: false,
+                                                                step_index: None,
+                                                                total_steps: None,
+                                                                logs: vec![msg],
                                                             },
                                                             win,
                                                         ));
                                                     }
-                                                    WorkflowEvent::Completed { execution_id, status } if execution_id == exec_id => {
+                                                    crate::components_init::WorkflowEvent::Completed { execution_id, status } if execution_id == exec_id => {
                                                         let _ = proxy.send_event(Event::new(
-                                                            EventType::WorkflowsProgressUpdate {
+EventType::WorkflowsProgressUpdate {
                                                                 execution_id,
-                                                                workflow_name: Some(def.name.clone()),
+                                                                workflow_name: Some(crate::event::workflow_name_from_json(&def, &wf_id)),
                                                                 status: Some(format!("{:?}", status)),
                                                                 current_step: None,
-                                                                log: None,
-                                                                done: true,
+                                                                step_index: None,
+                                                                total_steps: None,
+                                                                logs: Vec::new(),
                                                             },
                                                             win,
                                                         ));
                                                     }
-                                                    WorkflowEvent::Log { execution_id, step_id: _, message } if execution_id == exec_id => {
+                                                    crate::components_init::WorkflowEvent::Log { execution_id, step_id: _, message } if execution_id == exec_id => {
                                                         let _ = proxy.send_event(Event::new(
                                                             EventType::WorkflowsProgressUpdate {
                                                                 execution_id,
                                                                 workflow_name: None,
                                                                 status: None,
                                                                 current_step: None,
-                                                                log: Some(message),
-                                                                done: false,
+                                                                step_index: None,
+                                                                total_steps: None,
+                                                                logs: vec![message],
                                                             },
                                                             win,
                                                         ));
@@ -1995,12 +2083,13 @@ impl ApplicationHandler<Event> for Processor {
                                         .send_event(Event::new(EventType::Message(message), win));
                                     let _ = proxy.send_event(Event::new(
                                         EventType::WorkflowsProgressUpdate {
-                                            execution_id: exec_id.clone(),
-                                            workflow_name: Some(name.clone()),
-                                            status: Some("Starting".to_string()),
-                                            current_step: None,
-                                            log: None,
-                                            done: false,
+                            execution_id: exec_id.clone(),
+                            workflow_name: Some(name.clone()),
+                            status: Some("Started".to_string()),
+                            current_step: None,
+                            step_index: None,
+                            total_steps: None,
+                            logs: vec![],
                                         },
                                         win,
                                     ));
@@ -2010,7 +2099,7 @@ impl ApplicationHandler<Event> for Processor {
                                     loop {
                                         match rx.recv().await {
                                             Ok(ev) => match ev {
-                                                WorkflowEvent::Started { execution_id }
+                                                crate::components_init::WorkflowEvent::Started { execution_id }
                                                     if execution_id == exec_id =>
                                                 {
                                                     let _ = proxy.send_event(Event::new(
@@ -2019,13 +2108,14 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: Some(name.clone()),
                                                             status: Some("Running".to_string()),
                                                             current_step: None,
-                                                            log: None,
-                                                            done: false,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: Vec::new(),
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepStarted {
+                                                crate::components_init::WorkflowEvent::StepStarted {
                                                     execution_id,
                                                     step_id,
                                                 } if execution_id == exec_id => {
@@ -2035,13 +2125,14 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: Some("Running".to_string()),
                                                             current_step: Some(step_id),
-                                                            log: None,
-                                                            done: false,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: Vec::new(),
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepCompleted {
+                                                crate::components_init::WorkflowEvent::StepCompleted {
                                                     execution_id,
                                                     step_id,
                                                 } if execution_id == exec_id => {
@@ -2052,30 +2143,33 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: None,
                                                             current_step: None,
-                                                            log: Some(msg),
-                                                            done: false,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: vec![msg],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::StepFailed {
+                                                crate::components_init::WorkflowEvent::StepFailed {
                                                     execution_id,
                                                     step_id,
+                                                    error: _,
                                                 } if execution_id == exec_id => {
                                                     let msg = format!("Step failed: {step_id}");
                                                     let _ = proxy.send_event(Event::new(
-                                                        EventType::WorkflowsProgressUpdate {
+                                                            EventType::WorkflowsProgressUpdate {
                                                             execution_id,
                                                             workflow_name: None,
                                                             status: Some("Failed".to_string()),
                                                             current_step: Some(step_id),
-                                                            log: Some(msg),
-                                                            done: false,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: vec![msg],
                                                         },
                                                         win,
                                                     ));
                                                 }
-                                                WorkflowEvent::Completed {
+                                                crate::components_init::WorkflowEvent::Completed {
                                                     execution_id,
                                                     status,
                                                 } if execution_id == exec_id => {
@@ -2086,14 +2180,15 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: Some(status_str),
                                                             current_step: None,
-                                                            log: None,
-                                                            done: true,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: Vec::new(),
                                                         },
                                                         win,
                                                     ));
                                                     break;
                                                 }
-                                                WorkflowEvent::Log {
+                                                crate::components_init::WorkflowEvent::Log {
                                                     execution_id,
                                                     step_id: _,
                                                     message,
@@ -2104,8 +2199,9 @@ impl ApplicationHandler<Event> for Processor {
                                                             workflow_name: None,
                                                             status: None,
                                                             current_step: None,
-                                                            log: Some(message),
-                                                            done: false,
+                                                            step_index: None,
+                                                            total_steps: None,
+                                                            logs: vec![message],
                                                         },
                                                         win,
                                                     ));
@@ -2664,6 +2760,26 @@ impl From<Event> for WinitEvent<Event> {
 }
 
 
+
+/// IPC synchronization types
+#[derive(Debug, Clone)]
+pub enum IpcSyncType {
+    Status(String),
+    Push(String),
+    Pull(String),
+}
+
+/// Workflow event types
+#[derive(Debug, Clone)]
+pub enum WorkflowEvent {
+    Started { execution_id: String },
+    StepStarted { execution_id: String, step_id: String },
+    StepCompleted { execution_id: String, step_id: String },
+    StepFailed { execution_id: String, step_id: String, error: String },
+    Completed { execution_id: String, status: String },
+    Log { execution_id: String, step_id: Option<String>, message: String },
+}
+
 /// OpenAgent Terminal events.
 #[derive(Debug, Clone)]
 pub enum EventType {
@@ -2787,8 +2903,108 @@ pub enum EventType {
 
     // Command Palette: append files (e.g. async recursive scan results). Each entry is a path.
     PaletteAppendFiles(Vec<String>),
+    
+    // AI Events
+    AiToggle,
+    AiSubmit,
+    AiClose,
+    AiRegenerate,
+    AiStop,
+    AiSelectNext,
+    AiSelectPrev,
+    AiApplyDryRun,
+    AiInsertToPrompt(String),
+    AiApplyAsCommand { command: String, dry_run: bool },
+    AiCopyOutput { format: crate::ai_runtime::AiCopyFormat },
+    AiCopyCode,
+    AiCopyAll,
+    AiSwitchProvider(String),
+    AiStreamChunk(crate::ai_runtime::AiStreamChunk),
+    AiStreamFinished,
+    AiStreamError(String),
+    AiProposals(Vec<String>),
+    AiInlineDebounced,
+    AiInlineSuggestionReady(String),
+    AiExplain(Option<String>),
+    AiFix(Option<String>),
+    
+    // Security events
+    SecurityCheckAiApply { command: String, dry_run: bool },
+    AiApplyAsCommandChecked { command: String, dry_run: bool },
+    
+    // Workflow Events
+    WorkflowsFilesChanged,
+    WorkflowsSearchPerform(String),
+    WorkflowsOpenParamsForm {
+        workflow_id: String,
+        workflow_name: String,
+        params: Vec<crate::display::workflow_panel::WorkflowParam>,
+    },
+    WorkflowsCancelParams,
+    WorkflowsSubmitParams {
+        workflow_id: String,
+        values: std::collections::HashMap<String, serde_json::Value>,
+    },
+    WorkflowsSearchResults(Vec<WorkflowSearchResult>),
+    WorkflowsProgressUpdate {
+        execution_id: String,
+        workflow_name: Option<String>,
+        status: Option<String>,
+        current_step: Option<String>,
+        step_index: Option<usize>,
+        total_steps: Option<usize>,
+        logs: Vec<String>,
+    },
+    WorkflowsProgressClear(String),
+    WorkflowsExecuteByName(String),
+    
+    // IPC Events
+    IpcSync(IpcSyncType),
 }
 
+// Helpers to parse workflow JSON definitions from engines that return serde_json::Value
+pub fn workflow_name_from_json(value: &serde_json::Value, fallback: &str) -> String {
+    value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+pub fn parse_workflow_params(value: &serde_json::Value) -> Vec<crate::display::workflow_panel::WorkflowParam> {
+    use crate::display::workflow_panel::{WorkflowParam, WorkflowParamOption, WorkflowParamType};
+    let mut out = Vec::new();
+    let arr = value
+        .get("parameters")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for p in arr {
+        let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if name.is_empty() { continue; }
+        let ty = p.get("type").and_then(|v| v.as_str()).unwrap_or("string").to_lowercase();
+        let param_type = match ty.as_str() {
+            "number" => WorkflowParamType::Number,
+            "bool" | "boolean" => WorkflowParamType::Boolean,
+            "select" => WorkflowParamType::Select,
+            _ => WorkflowParamType::String,
+        };
+        let description = p.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let required = p.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
+        let default = p.get("default").cloned();
+        let options = p.get("options").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter().filter_map(|opt| {
+                let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let value = opt.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                if label.is_empty() { None } else { Some(WorkflowParamOption { value, label }) }
+            }).collect::<Vec<_>>()
+        });
+        let min = p.get("min").and_then(|v| v.as_f64());
+        let max = p.get("max").and_then(|v| v.as_f64());
+        out.push(WorkflowParam { name, param_type, description, required, default, options, min, max });
+    }
+    out
+}
 
 impl From<TerminalEvent> for EventType {
     fn from(event: TerminalEvent) -> Self {
@@ -6778,8 +6994,19 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
             let window_id = self.display.window.id();
             // Prefer full PTY/workspace context when available (Warp parity)
             let ai_ctx = self.workspace.warp.as_ref().and_then(|w| w.get_current_ai_context());
-            runtime.start_propose_stream_with_context(ai_ctx, proxy, window_id);
-            *self.dirty = true;
+            if let Some(ai_ctx) = ai_ctx {
+                // Convert core PtyAiContext to local AI context provider type (best-effort)
+                let mut tctx = crate::ai_context_provider::TerminalContext::default();
+                tctx.working_directory = ai_ctx.working_directory.clone();
+                let conv = crate::ai_context_provider::PtyAiContext {
+                    terminal_context: tctx,
+                    current_input: None,
+                    last_output: None,
+                    error_context: None,
+                };
+                runtime.start_propose_stream_with_context(conv, proxy, window_id);
+                *self.dirty = true;
+            }
         }
     }
 
@@ -6848,11 +7075,11 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                 *self.dirty = true;
                 return true;
             }
-            false
+            return false
         }
         #[cfg(not(feature = "ai"))]
         {
-            false
+            return false;
         }
     }
 
@@ -6942,11 +7169,11 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                 }
             }
 
-            hovered.is_some()
+            return hovered.is_some();
         }
         #[cfg(not(feature = "ai"))]
         {
-            false
+            return false;
         }
     }
 
@@ -6957,15 +7184,17 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
 
     fn workflows_params_input_char(&mut self, c: char) {
         use serde_json::Value;
+        use crate::display::workflow_panel::WorkflowParamType;
         if !self.display.workflows_params.active { return; }
         let st = &mut self.display.workflows_params;
         if st.fields.is_empty() { return; }
         let idx = st.selected.min(st.fields.len() - 1);
         let field = &mut st.fields[idx];
         match field.kind {
+            WorkflowParamType::Boolean => {
                 // ignore character input for booleans; use toggle
             }
-            _ => {
+            WorkflowParamType::String | WorkflowParamType::Number | WorkflowParamType::Select => {
                 let s = match &mut field.value {
                     Value::String(s) => s,
                     Value::Null => { field.value = Value::String(String::new()); if let Value::String(s) = &mut field.value { s } else { unreachable!() } },
@@ -7009,18 +7238,18 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
         if st.fields.is_empty() { return; }
         let idx = st.selected.min(st.fields.len() - 1);
         let field = &mut st.fields[idx];
-            let b = match &field.value {
-                Value::Bool(v) => !*v,
-                _ => true,
-            };
-            field.value = Value::Bool(b);
-            self.mark_dirty();
-        }
+        let b = match &field.value {
+            Value::Bool(v) => !*v,
+            _ => true,
+        };
+        field.value = Value::Bool(b);
+        self.mark_dirty();
     }
 
     fn workflows_params_confirm(&mut self) {
         use std::collections::HashMap;
         use serde_json::Value;
+        use crate::display::workflow_panel::WorkflowParamType;
         if !self.display.workflows_params.active { return; }
 
         // Validate in-place; on error, focus the offending field and show a message
@@ -7032,6 +7261,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                 let name = field.name.clone();
                 let required = field.required;
                 let err = match field.kind {
+                    WorkflowParamType::String => {
                         let s = match &field.value {
                             Value::Null => "".to_string(),
                             Value::String(s) => s.clone(),
@@ -7045,6 +7275,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                             None
                         }
                     }
+                    WorkflowParamType::Number => {
                         let mut num_opt: Option<f64> = None;
                         match &field.value {
                             Value::Number(n) => { num_opt = n.as_f64(); }
@@ -7057,7 +7288,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                         if required && num_opt.is_none() {
                             Some(format!("Parameter '{}' must be a number", name))
                         } else if let Some(n) = num_opt {
-if let Some(min) = field.min { if n < min {
+                            if let Some(min) = field.min { if n < min {
                                 st_mut.selected = i;
                                 let m = crate::message_bar::Message::new(
                                     format!("Parameter '{}' must be >= {}", name, min),
@@ -7085,6 +7316,7 @@ if let Some(min) = field.min { if n < min {
                             None
                         }
                     }
+                    WorkflowParamType::Boolean => {
                         match &field.value {
                             Value::Bool(_) => {}
                             Value::String(s) => {
@@ -7098,6 +7330,7 @@ if let Some(min) = field.min { if n < min {
                         }
                         None
                     }
+                    WorkflowParamType::Select => {
                         let opts = field.options.as_ref().map(|v| v.iter().map(|o| o.value.clone()).collect::<Vec<_>>()).unwrap_or_default();
                         let s = match &field.value {
                             Value::String(s) => s.clone(),
@@ -7106,28 +7339,13 @@ if let Some(min) = field.min { if n < min {
                         };
                         if required && s.trim().is_empty() {
                             Some(format!("Parameter '{}' is required", name))
-                        } else if !s.is_empty() && !opts.is_empty() && !opts.contains(&s) {
-                            Some(format!("Parameter '{}' must be one of: {}", name, opts.join(", ")))
+                        } else if !s.is_empty() && !opts.is_empty() && !opts.contains(&Value::String(s.clone())) {
+                            let opts_str: Vec<String> = opts.iter().map(|v| v.to_string()).collect();
+                            Some(format!("Parameter '{}' must be one of: {}", name, opts_str.join(", ")))
                         } else {
                             field.value = Value::String(s);
                             None
                         }
-                    }
-                        let s = match &field.value {
-                            Value::String(s) => s.clone(),
-                            Value::Null => String::new(),
-                            other => other.to_string(),
-                        };
-                        if required && s.trim().is_empty() {
-                            Some(format!("Parameter '{}' is required", name))
-                        } else if !s.trim().is_empty() {
-                            let p = std::path::Path::new(&s);
-                            if !p.exists() {
-                                Some(format!("Path does not exist: {}", s))
-                                Some(format!("Path is not a file: {}", s))
-                                Some(format!("Path is not a directory: {}", s))
-                            } else { field.value = Value::String(s); None }
-                        } else { field.value = Value::Null; None }
                     }
                 };
                 if let Some(msg) = err {
@@ -7162,6 +7380,27 @@ if let Some(min) = field.min { if n < min {
         let _ = self.event_proxy.send_event(crate::event::Event::new(
             crate::event::EventType::WorkflowsCancelParams,
             self.display.window.id(),
+        ));
+    }
+    
+    fn process_workflows_search_perform(&mut self, query: String, window_id: winit::window::WindowId) {
+        // Stub implementation for workflow search
+        // In a full implementation, this would search through available workflows
+        // and send back results via WorkflowsSearchResults event
+        
+        let results = vec![
+            WorkflowSearchResult {
+                id: "example-workflow".to_string(),
+                name: "Example Workflow".to_string(),
+                description: Some("An example workflow for demonstration".to_string()),
+                tags: vec!["example".to_string()],
+                parameters: Vec::new(),
+            },
+        ];
+        
+        let _ = self.event_proxy.send_event(crate::event::Event::new(
+            crate::event::EventType::WorkflowsSearchResults(results),
+            window_id,
         ));
     }
 }
@@ -8004,6 +8243,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::ConfigReload(_)
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
+                EventType::WorkflowsFilesChanged => (),
                 EventType::PasteCommand(text) => {
                     // Legacy direct paste path (may be gated in Processor before reaching here)
                     self.ctx.paste(&text, true);
@@ -8455,7 +8695,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::AiStreamChunk(chunk) => {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let prev = runtime.ui.streaming_text.len();
-                        let new = chunk.len();
+                        let new = chunk.content.len();
                         if matches!(
                             std::env::var("OPENAGENT_AI_LOG_VERBOSITY").ok().as_deref(),
                             Some("verbose")
@@ -8467,7 +8707,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                 prev + new
                             );
                         }
-                        runtime.ui.streaming_text.push_str(&chunk);
+                        runtime.ui.streaming_text.push_str(&chunk.content);
                         // Cap in-memory streaming buffer to avoid unbounded growth in long sessions
                         let cap_bytes: usize = std::env::var("OPENAGENT_AI_STREAM_MAX_BYTES")
                             .ok()
@@ -8534,7 +8774,15 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
                         runtime.ui.streaming_active = false;
                         runtime.ui.is_loading = false;
-                        runtime.ui.proposals = props;
+                        let mapped: Vec<crate::ai_runtime::AiProposal> = props
+                            .into_iter()
+                            .map(|s| crate::ai_runtime::AiProposal {
+                                title: s.clone(),
+                                description: None,
+                                proposed_commands: vec![s],
+                            })
+                            .collect();
+                        runtime.ui.proposals = mapped;
                         *self.ctx.dirty = true;
                     }
                 }
@@ -8542,7 +8790,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
                         let proxy = self.ctx.event_proxy.clone();
                         let window_id = self.ctx.display.window.id();
-                        runtime.regenerate(proxy, window_id);
+                        let _ = runtime.regenerate();
                         *self.ctx.dirty = true;
                     }
                 }
@@ -8635,14 +8883,14 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 }
                 EventType::AiCopyCode => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
-                        if let Some(text) = runtime.copy_output(crate::event::AiCopyFormat::Code) {
+                        if let Some(text) = runtime.copy_output(AiCopyFormat::Code) {
                             self.ctx.copy_to_clipboard(text);
                         }
                     }
                 }
                 EventType::AiCopyAll => {
                     if let Some(runtime) = &self.ctx.ai_runtime {
-                        if let Some(text) = runtime.copy_output(crate::event::AiCopyFormat::Text) {
+                        if let Some(text) = runtime.copy_output(AiCopyFormat::Text) {
                             self.ctx.copy_to_clipboard(text);
                         }
                     }
@@ -8767,15 +9015,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         && !self.ctx.search_active()
                         && !self.ctx.palette_active()
                         && !self.ctx.confirm_overlay_active()
-                        && {
-                            {
-                                !self.ctx.workflows_panel_active()
-                            }
-                            #[cfg(not(feature = "workflow"))]
-                            {
-                                true
-                            }
-                        };
+                        && !self.ctx.workflows_panel_active();
 
                     // Extract all terminal data before taking mutable borrow
                     let (not_altscreen, ime_off, prefix) = {
@@ -8837,17 +9077,31 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                     // Gather AI context from the active workspace/pane if available
                     let (working_directory, shell_kind) = {
-                        let ai_ctx = self
+                        if let Some(ai_ctx) = self
                             .ctx
                             .workspace
                             .warp
                             .as_ref()
-                            .and_then(|w| w.get_current_ai_context());
-                        crate::ai_context_provider::context_to_ai_params(&ai_ctx)
+                            .and_then(|w| w.get_current_ai_context())
+                        {
+                            use std::str::FromStr;
+                            let (wd_str, sk_str) = ai_ctx.to_strings();
+                            let wd = std::path::PathBuf::from(wd_str);
+                            let sk = crate::blocks_v2::ShellType::from_str(&sk_str)
+                                .unwrap_or_default();
+                            (wd, sk)
+                        } else {
+                            (
+                                std::env::current_dir().unwrap_or_default(),
+                                crate::blocks_v2::ShellType::default(),
+                            )
+                        }
                     };
 
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
-                        runtime.propose_explain(text_to_explain, working_directory, shell_kind);
+                        let proxy = self.ctx.event_proxy.clone();
+                        let window_id = self.ctx.display.window.id();
+                        runtime.propose_explain(text_to_explain, working_directory, shell_kind, proxy, window_id);
                         *self.ctx.dirty = true;
                     }
                 }
@@ -8872,21 +9126,31 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             .as_ref()
                             .and_then(|w| w.get_current_ai_context())
                         {
-                            let (wd, sk) = crate::ai_context_provider::context_to_ai_params(&Some(
-                                ai_ctx.clone(),
-                            ));
+                            use std::str::FromStr;
+                            let (wd_str, sk_str) = ai_ctx.to_strings();
+                            let wd = std::path::PathBuf::from(wd_str);
+                            let sk = crate::blocks_v2::ShellType::from_str(&sk_str)
+                                .unwrap_or_default();
                             (wd, sk, ai_ctx.last_command)
                         } else {
-                            (None, None, None)
+                            (
+                                std::env::current_dir().unwrap_or_default(),
+                                crate::blocks_v2::ShellType::default(),
+                                None,
+                            )
                         }
                     };
 
                     if let Some(runtime) = &mut self.ctx.ai_runtime {
+                        let proxy = self.ctx.event_proxy.clone();
+                        let window_id = self.ctx.display.window.id();
                         runtime.propose_fix(
                             error_text,
-                            last_command,
+                            last_command.unwrap_or_default(),
                             working_directory,
                             shell_kind,
+                            proxy,
+                            window_id,
                         );
                         *self.ctx.dirty = true;
                     }

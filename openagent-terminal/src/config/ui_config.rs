@@ -19,6 +19,7 @@ use openagent_terminal_core::term::search::RegexSearch;
 use openagent_terminal_core::term::Config as TermConfig;
 use openagent_terminal_core::tty::{Options as PtyOptions, Shell};
 
+use crate::config::ai::AiConfig;
 use crate::config::bell::BellConfig;
 use crate::config::bindings::{
     self, Action, Binding, BindingKey, KeyBinding, KeyLocation, ModeWrapper, ModsWrapper,

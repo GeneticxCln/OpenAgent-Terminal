@@ -274,7 +274,7 @@ impl Display {
         };
 
         // Draw background with gradient
-        self.draw_warp_tab_background(start_y, style.tab_height, style);
+        self.draw_warp_tab_background(config, start_y, style.tab_height, style);
 
         // Draw tabs with Warp styling
         let tab_order = tab_manager.tab_order();
@@ -302,8 +302,56 @@ impl Display {
         let mut current_x = style.tab_padding;
         let mut overflowed = false;
 
+        // Determine if a drag is active and which tab is being dragged
+        let dragging = self.tab_drag_active.as_ref().filter(|d| d.is_active).cloned();
+        let dragged_tab_id = dragging.as_ref().map(|d| d.tab_id);
+        let gap = 8.0f32;
+        // Precompute animation progress and index range affected by the drag for smooth shifting
+        let (anim_p_tabs, from_idx, to_idx) = if let Some(d) = dragging.as_ref() {
+            let theme = config
+                .resolved_theme
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| config.theme.resolve());
+            let reduce_motion = theme.ui.reduce_motion || config.theme.reduce_motion;
+            let p = if reduce_motion {
+                1.0
+            } else if let Some(t0) = self.tab_drag_anim_start {
+                let elapsed = t0.elapsed().as_millis() as f32;
+                let dur = WarpTabStyle::from_theme(config).animation_duration_ms.max(140) as f32;
+                (elapsed / dur).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            (p, d.current_position, d.target_position.unwrap_or(d.current_position))
+        } else {
+            (1.0, 0usize, 0usize)
+        };
+
+        // Track last drawn tab X to position the new-tab button
+        let mut last_drawn_x: Option<f32> = None;
         for (index, &tab_id) in tab_order.iter().enumerate() {
-            if current_x + tab_width > size_info.width() {
+            // Compute base X for this ordinal index
+            let mut x = style.tab_padding + (tab_width + gap) * (index as f32);
+
+            // Compute shift due to an active drag operation (smooth via anim_p_tabs)
+            if let Some(d) = dragging.as_ref() {
+                let from = from_idx;
+                let to = to_idx;
+                if to > from {
+                    // Moving right: tabs between (from+1..=to) shift left by one slot
+                    if index > from && index <= to {
+                        x -= (tab_width + gap) * anim_p_tabs;
+                    }
+                } else if to < from {
+                    // Moving left: tabs between (to..=from-1) shift right by one slot
+                    if index >= to && index < from {
+                        x += (tab_width + gap) * anim_p_tabs;
+                    }
+                }
+            }
+
+            if x + tab_width > size_info.width() {
                 overflowed = true;
                 break;
             }
@@ -313,37 +361,116 @@ impl Display {
                 None => continue,
             };
 
+            // Skip drawing the dragged tab in-place; we'll draw it as a ghost later
+            if Some(tab.id) == dragged_tab_id {
+                // Still reserve its bounds for hit testing continuity
+                self.tab_bounds_px.push((tab_id, x, tab_width));
+                last_drawn_x = Some(x);
+                continue;
+            }
+
             let is_active = Some(tab_id) == active_tab_id;
             // Cache tab bounds in pixels
-            self.tab_bounds_px.push((tab_id, current_x, tab_width));
+            self.tab_bounds_px.push((tab_id, x, tab_width));
 
             self.draw_warp_tab(
-                current_x, start_y, tab_width, tab, is_active, style, index, tab_cfg,
+                x, start_y, tab_width, tab, is_active, style, index, tab_cfg,
             );
 
             // Cache close button bounds for precise hit testing if enabled
             if tab_cfg.show_close_button {
                 let close_w = 16.0;
                 let close_h = 16.0;
-                let close_x = current_x + tab_width - 25.0;
+                let close_x = x + tab_width - 25.0;
                 let close_y = start_y + style.tab_height / 2.0 - 8.0;
                 self.close_button_bounds_px.push((tab_id, close_x, close_y, close_w, close_h));
             }
 
-            current_x += tab_width + 8.0; // 8px gap between tabs
+            last_drawn_x = Some(x);
         }
 
         // Draw "+" button for new tab (hover-aware)
         if tab_cfg.show_new_tab_button {
             let create_hover =
                 matches!(self.tab_hover, Some(crate::display::TabHoverTarget::Create));
-            // Cache button bounds for precise hit testing
             let button_size = (style.tab_height * 0.6).clamp(12.0, style.tab_height);
             let button_y = start_y + (style.tab_height - button_size) * 0.5;
-            self.new_tab_button_bounds = Some((current_x, button_y, button_size, button_size));
-            self.draw_new_tab_button(current_x, start_y, style, create_hover);
+            let after_tabs_x = if let Some(last_x) = last_drawn_x {
+                last_x + tab_width + gap
+            } else {
+                style.tab_padding
+            };
+            self.new_tab_button_bounds = Some((after_tabs_x, button_y, button_size, button_size));
+            self.draw_new_tab_button(after_tabs_x, start_y, style, create_hover);
         } else {
             self.new_tab_button_bounds = None;
+        }
+
+        // If a tab drag is active, draw a placeholder slot and a ghost tab following the cursor
+        if let Some(drag) = dragging {
+            let theme =
+                config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+            let tokens = theme.tokens;
+            let gap = 8.0f32;
+            let target_pos = drag.target_position.unwrap_or(drag.current_position);
+            // Reduce-motion aware animation factor for gap expansion and ghost opacity
+            let reduce_motion = theme.ui.reduce_motion || config.theme.reduce_motion;
+            let anim_p = if reduce_motion {
+                1.0
+            } else if let Some(t0) = self.tab_drag_anim_start {
+                let elapsed = t0.elapsed().as_millis() as f32;
+                let dur = style.animation_duration_ms.max(140) as f32;
+                (elapsed / dur).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+
+            let placeholder_x = style.tab_padding + (tab_width + gap) * (target_pos as f32);
+            // Animate placeholder width slightly for visual cue
+            let ph_w = tab_width * (0.9 + 0.1 * anim_p);
+            // Placeholder slot
+            let placeholder = UiRoundedRect::new(
+                placeholder_x - (ph_w - tab_width) * 0.5,
+                start_y + 3.0,
+                ph_w,
+                style.tab_height - 6.0,
+                style.corner_radius,
+                tokens.surface_muted,
+                0.35 + 0.25 * anim_p,
+            );
+            self.stage_ui_rounded_rect(placeholder);
+
+            // Ghost tab following the cursor with animated opacity and subtle drop shadow
+            let mx = (self.last_mouse_x as f32).clamp(
+                style.tab_padding + tab_width * 0.5,
+                self.size_info.width() - style.tab_padding - tab_width * 0.5,
+            );
+            let ghost_x = mx - tab_width * 0.5;
+            if theme.ui.shadow {
+                let spread = theme.ui.shadow_size_px.max(1) as f32 * 0.8;
+                let offset_y = (theme.ui.shadow_size_px as f32 * 0.25).round();
+                let shadow = UiRoundedRect::new(
+                    ghost_x - spread,
+                    start_y + offset_y - spread,
+                    tab_width + spread * 2.0,
+                    style.tab_height + spread * 2.0,
+                    style.corner_radius + spread,
+                    tokens.overlay,
+                    (theme.ui.shadow_alpha * 0.6 * anim_p).min(0.5),
+                );
+                self.stage_ui_rounded_rect(shadow);
+            }
+            let ghost_alpha = 0.4 + 0.3 * anim_p;
+            let ghost = UiRoundedRect::new(
+                ghost_x,
+                start_y,
+                tab_width,
+                style.tab_height,
+                style.corner_radius,
+                style.active_bg,
+                ghost_alpha,
+            );
+            self.stage_ui_rounded_rect(ghost);
         }
 
         // Draw settings gear on far right using sprite atlas, aligned with previous text region
@@ -416,7 +543,7 @@ impl Display {
             );
         }
 
-        // Hover tooltip for tab title/cwd
+        // Hover tooltip for tab title/cwd only; hotspot tooltips are drawn at the end of the frame
         if let Some(hover_id) = match self.tab_hover {
             Some(crate::display::TabHoverTarget::Tab(id)) => Some(id),
             Some(crate::display::TabHoverTarget::Close(id)) => Some(id),
@@ -437,35 +564,49 @@ impl Display {
     }
 
     /// Draw Warp-style tab background
-    fn draw_warp_tab_background(&mut self, y: f32, height: f32, style: &WarpTabStyle) {
+    fn draw_warp_tab_background(&mut self, config: &UiConfig, y: f32, height: f32, style: &WarpTabStyle) {
         let size_info = self.size_info;
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let ui = theme.ui;
 
-        // Main background with subtle top highlight to simulate gradient
+        // Main background band
         let bg_rect = RenderRect::new(0.0, y, size_info.width(), height, style.inactive_bg, 1.0);
-        // Top highlight strip
+
+        // Top highlight strip with light-theme tuning
+        let is_light = {
+            let (r, g, b) = tokens.surface.as_tuple();
+            let luminance = 0.2126 * (r as f32) + 0.7152 * (g as f32) + 0.0722 * (b as f32);
+            luminance > 140.0
+        };
+        let highlight_alpha = if is_light { 0.65 } else { 0.85 };
         let highlight = RenderRect::new(
             0.0,
             y,
             size_info.width(),
             2.0,
             lerp_rgb(style.inactive_bg, style.active_bg, 0.12),
-            0.85,
+            highlight_alpha,
         );
         let metrics = self.glyph_cache.font_metrics();
         self.renderer_draw_rects(&size_info, &metrics, vec![bg_rect, highlight]);
 
-        // Drop shadow if enabled
-        if style.drop_shadow {
-            let shadow = UiRoundedRect::new(
-                0.0,
-                y + height,
-                size_info.width(),
-                4.0,
-                0.0,
-                Rgb::new(0, 0, 0),
-                0.1,
-            );
-            self.stage_ui_rounded_rect(shadow);
+        // Drop shadow using ThemeUi parameters
+        if style.drop_shadow && ui.shadow {
+            let spread = ui.shadow_size_px.max(1) as f32;
+            let shadow_alpha = ui.shadow_alpha;
+            if shadow_alpha > 0.0 {
+                let shadow = UiRoundedRect::new(
+                    -spread,
+                    y + height - (spread * 0.25),
+                    size_info.width() + spread * 2.0,
+                    spread,
+                    0.0,
+                    tokens.overlay,
+                    shadow_alpha,
+                );
+                self.stage_ui_rounded_rect(shadow);
+            }
         }
     }
 
@@ -506,6 +647,23 @@ impl Display {
         let tab_bg = UiRoundedRect::new(x, y, width, height, corner_radius, bg_color, 1.0);
         self.stage_ui_rounded_rect(tab_bg);
 
+        // Subtle hover glow bezel around inactive tab (Warp-like)
+        if is_hover_tab && !is_active {
+            let glow_alpha = 0.12 * hover_progress;
+            if glow_alpha > 0.0 {
+                let glow = UiRoundedRect::new(
+                    x,
+                    y,
+                    width,
+                    height,
+                    corner_radius.max(4.0),
+                    style.active_fg,
+                    glow_alpha,
+                );
+                self.stage_ui_rounded_rect(glow);
+            }
+        }
+
         // Active tab indicator (bottom border)
         if is_active {
             let p = if let Some(t0) = self.tab_anim_switch_start {
@@ -521,7 +679,7 @@ impl Display {
                 y + height - 3.0,
                 ind_w,
                 3.0,
-                Rgb::new(100, 150, 250), // Accent color
+                style.active_fg, // Use theme accent color
                 1.0,
             );
             let size_info = self.size_info;
@@ -599,32 +757,42 @@ impl Display {
                 let close_y = y + height / 2.0 - 8.0;
                 let close_w = 16.0;
                 let close_h = 16.0;
+                // Hover detection for close button
+                let px = self.last_mouse_x as f32;
+                let py = self.last_mouse_y as f32;
+                let close_hovered = px >= close_x && px <= close_x + close_w && py >= close_y && py <= close_y + close_h;
+
+                // Background capsule for close button (stronger on hover)
+                let (btn_bg, btn_alpha) = if close_hovered {
+                    (style.hover_bg, 0.95)
+                } else {
+                    (Rgb::new(220, 220, 220), 0.8)
+                };
                 let close_button = UiRoundedRect::new(
                     close_x,
                     close_y,
                     close_w,
                     close_h,
                     8.0,
-                    Rgb::new(220, 220, 220),
-                    0.8,
+                    btn_bg,
+                    btn_alpha,
                 );
                 self.stage_ui_rounded_rect(close_button);
 
-                // Draw a simple 'x' using small diagonal squares (approximate)
+                // Draw a simple 'x' with color feedback (accent on hover)
                 let stroke = 2.0f32; // thickness of the diagonal
                 let steps = 6usize;
+                let line_color = if close_hovered { style.active_fg } else { Rgb::new(80, 80, 80) };
                 for i in 0..steps {
                     let t = i as f32 / steps as f32;
                     // Diagonal 1: top-left to bottom-right
                     let dx1 = close_x + 3.0 + t * (close_w - 6.0);
                     let dy1 = close_y + 3.0 + t * (close_h - 6.0);
-                    let diag1 =
-                        RenderRect::new(dx1, dy1, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
+                    let diag1 = RenderRect::new(dx1, dy1, stroke, stroke, line_color, 0.95);
                     // Diagonal 2: bottom-left to top-right
                     let dx2 = close_x + 3.0 + t * (close_w - 6.0);
                     let dy2 = close_y + close_h - 3.0 - t * (close_h - 6.0);
-                    let diag2 =
-                        RenderRect::new(dx2, dy2, stroke, stroke, Rgb::new(80, 80, 80), 0.9);
+                    let diag2 = RenderRect::new(dx2, dy2, stroke, stroke, line_color, 0.95);
                     let size_info = self.size_info;
                     let metrics = self.glyph_cache.font_metrics();
                     self.renderer_draw_rects(&size_info, &metrics, vec![diag1, diag2]);
@@ -1673,6 +1841,102 @@ impl Display {
             &cwd_str,
             text_cols,
         );
+    }
+
+    /// Draw tooltips for tab bar hotspots like gear and close buttons
+    pub(crate) fn draw_tab_bar_hotspot_tooltips(
+        &mut self,
+        config: &UiConfig,
+        position: TabBarPosition,
+        style: &WarpTabStyle,
+    ) {
+        use unicode_width::UnicodeWidthStr as _;
+        let mouse_x = self.last_mouse_x as f32;
+        let mouse_y = self.last_mouse_y as f32;
+        let theme = config.resolved_theme.as_ref().cloned().unwrap_or_else(|| config.theme.resolve());
+        let tokens = theme.tokens;
+        let cw = self.size_info.cell_width();
+        let ch = self.size_info.cell_height();
+
+        // Helper to render a pill tooltip for given text at anchor
+        let mut render_tooltip_at = |s: &mut Self, text: &str, anchor_x: f32| {
+            let cols = text.width().max(3);
+            let pad_x = (cw * 0.7).max(6.0);
+            let pad_y = (ch * 0.2).max(3.0);
+            let w = cols as f32 * cw + pad_x * 2.0;
+            let h = ch + pad_y * 2.0;
+            let mut x = anchor_x - w * 0.5;
+            x = x.clamp(4.0, s.size_info.width() - w - 4.0);
+            let bar_y = match position {
+                TabBarPosition::Top => 0.0,
+                TabBarPosition::Bottom => s.size_info.height() - style.tab_height,
+                TabBarPosition::Hidden => 0.0,
+            };
+            let y = match position {
+                TabBarPosition::Top => (bar_y + style.tab_height + 6.0).min(s.size_info.height() - h - 4.0),
+                TabBarPosition::Bottom => (bar_y - h - 6.0).max(4.0),
+                TabBarPosition::Hidden => 0.0,
+            };
+            if theme.ui.shadow {
+                let spread = theme.ui.shadow_size_px.max(1) as f32;
+                let shadow = UiRoundedRect::new(
+                    x - spread,
+                    y + (spread * 0.4),
+                    w + spread * 2.0,
+                    h + spread * 2.0,
+                    (theme.ui.corner_radius_px * 0.65).min(h * 0.5) + spread,
+                    tokens.overlay,
+                    theme.ui.shadow_alpha.min(1.0),
+                );
+                s.stage_ui_rounded_rect(shadow);
+            }
+            let pill = UiRoundedRect::new(
+                x,
+                y,
+                w,
+                h,
+                (theme.ui.corner_radius_px * 0.65).min(h * 0.5),
+                tokens.surface,
+                0.95,
+            );
+            s.stage_ui_rounded_rect(pill);
+            let line = ((y + pad_y + ch * 0.1) / ch) as usize;
+            let col = ((x + pad_x) / cw) as usize;
+            s.draw_warp_tab_text(
+                Point::new(line, Column(col)),
+                tokens.text,
+                tokens.surface,
+                text,
+                cols,
+            );
+        };
+
+        // Gear tooltip
+        if let Some((gx, gy, gw, gh)) = self.gear_button_bounds {
+            if mouse_x >= gx && mouse_x <= gx + gw && mouse_y >= gy && mouse_y <= gy + gh {
+                let center_x = gx + gw * 0.5;
+                render_tooltip_at(self, "Settings", center_x);
+                return;
+            }
+        }
+        // New tab tooltip
+        if let Some((bx, by, bw, bh)) = self.new_tab_button_bounds {
+            if mouse_x >= bx && mouse_x <= bx + bw && mouse_y >= by && mouse_y <= by + bh {
+                let center_x = bx + bw * 0.5;
+                render_tooltip_at(self, "New tab", center_x);
+                return;
+            }
+        }
+        // Close tooltip (check any tab's close rect)
+        if let Some((_, bx, by, bw, bh)) = self
+            .close_button_bounds_px
+            .iter()
+            .copied()
+            .find(|(_, x, y, w, h)| mouse_x >= *x && mouse_x <= *x + *w && mouse_y >= *y && mouse_y <= *y + *h)
+        {
+            let center_x = bx + bw * 0.5;
+            render_tooltip_at(self, "Close tab", center_x);
+        }
     }
 }
 

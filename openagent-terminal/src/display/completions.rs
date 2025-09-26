@@ -106,6 +106,60 @@ impl super::Display {
             if prefix.ends_with(' ') { "" } else { tokens.last().copied().unwrap_or("") };
         let is_flag_context = cur_token.starts_with('-');
 
+        // If current token looks like a filesystem path, perform real path completion.
+        // Supported:
+        // - Absolute paths: /usr/loc
+        // - Relative: ./src, ../t, foo/ba
+        // - Tilde: ~, ~/src, ~user/
+        // - Env vars: $HOME/src, ${HOME}/s
+        // - Quoted paths: "./My F", './My F'
+        if !cur_token.is_empty() {
+            let (path_prefix, quoted) = normalize_path_token(cur_token);
+            if path_prefix.is_some() {
+                let (base_dir, partial) = resolve_base_and_partial(path_prefix.unwrap(), cwd.clone());
+                if let Some(base) = base_dir {
+                    if let Ok(rd) = std::fs::read_dir(&base) {
+                        let show_hidden = partial.starts_with('.') || partial.is_empty();
+                        for entry in rd.flatten() {
+                            let path = entry.path();
+                            let file_name = match path.file_name().and_then(|s| s.to_str()) {
+                                Some(s) => s.to_string(),
+                                None => continue,
+                            };
+                            if !show_hidden && file_name.starts_with('.') {
+                                continue;
+                            }
+                            // Filter by partial component
+                            if !file_name.starts_with(&partial) {
+                                // Also allow simple fuzzy as fallback
+                                let score = Self::fuzzy_score(&partial, &file_name);
+                                if score <= 0.0 {
+                                    continue;
+                                }
+                            }
+                            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                            // Reconstruct suggestion label using original token form
+                            let mut label = reconstruct_completion_label(cur_token, &base, &file_name, is_dir);
+                            // If token was quoted, preserve quote style in label only for spaces; editor may handle quoting
+                            if quoted {
+                                // leave as-is; drawing side is pure label
+                            }
+                            let score = if file_name.starts_with(&partial) { 2.0 } else { 1.0 } *
+                                if is_dir { 1.05 } else { 1.0 } *
+                                (1.0 + (file_name.len().min(64) as f32).recip());
+                            out.push(CompletionItem {
+                                label,
+                                kind: if is_dir { CompletionKind::Dir } else { CompletionKind::File },
+                                details: None,
+                                icon: if is_dir { "📁" } else { "📄" },
+                                score,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // 1) Flags: minimal spec for a few common commands, else generic
         if is_flag_context {
             let cmd = first;
@@ -146,31 +200,36 @@ impl super::Display {
             }
         }
 
-        // 2) Files/dirs in cwd
+        // 2) If not in flag context and we didn't detect an explicit path token above,
+        // fall back to cwd listings for simple filename completion when current token
+        // contains path-safe chars but no separators.
         if !is_flag_context {
-            if let Some(dir) = cwd.or_else(|| std::env::current_dir().ok()) {
-                if let Ok(rd) = std::fs::read_dir(&dir) {
-                    for entry in rd.flatten() {
-                        let path = entry.path();
-                        let name = match path.file_name().and_then(|s| s.to_str()) {
-                            Some(s) => s.to_string(),
-                            None => continue,
-                        };
-                        let is_dir = path.is_dir();
-                        let label = if is_dir { format!("{}/", name) } else { name.clone() };
-                        let score = Self::fuzzy_score(cur_token, &name);
-                        if score > 0.0 {
-                            out.push(CompletionItem {
-                                label,
-                                kind: if is_dir {
-                                    CompletionKind::Dir
-                                } else {
-                                    CompletionKind::File
-                                },
-                                details: None,
-                                icon: if is_dir { "📁" } else { "📄" },
-                                score,
-                            });
+            let is_pathy = cur_token.contains('/') || cur_token.starts_with('.') || cur_token.starts_with('~') || cur_token.starts_with('$');
+            if !is_pathy {
+                if let Some(dir) = cwd.or_else(|| std::env::current_dir().ok()) {
+                    if let Ok(rd) = std::fs::read_dir(&dir) {
+                        for entry in rd.flatten() {
+                            let path = entry.path();
+                            let name = match path.file_name().and_then(|s| s.to_str()) {
+                                Some(s) => s.to_string(),
+                                None => continue,
+                            };
+                            // Skip hidden unless user typed dot
+                            if !cur_token.starts_with('.') && name.starts_with('.') {
+                                continue;
+                            }
+                            let is_dir = path.is_dir();
+                            let label = if is_dir { format!("{}/", name) } else { name.clone() };
+                            let score = Self::fuzzy_score(cur_token, &name);
+                            if score > 0.0 {
+                                out.push(CompletionItem {
+                                    label,
+                                    kind: if is_dir { CompletionKind::Dir } else { CompletionKind::File },
+                                    details: None,
+                                    icon: if is_dir { "📁" } else { "📄" },
+                                    score,
+                                });
+                            }
                         }
                     }
                 }
@@ -395,6 +454,7 @@ impl super::Display {
         cursor_point: Point<usize>,
         display_offset: usize,
         alt_screen: bool,
+        cwd_opt: Option<PathBuf>,
     ) {
         // Do not draw in alt-screen or when other modal overlays likely active
         if alt_screen {
@@ -413,8 +473,8 @@ impl super::Display {
         if prefix != self.completions.last_prefix
             || now.duration_since(self.completions.last_compute) > self.completions.debounce
         {
-            let cwd = None::<PathBuf>; // Future: track via shell integration/OSC
-            self.completions.items = self.compute_completions_for_prefix(prefix, cwd);
+            // Use live shell cwd when provided
+            self.completions.items = self.compute_completions_for_prefix(prefix, cwd_opt.clone());
             // Reset selection when prefix changes
             if self.completions.selected_index >= self.completions.items.len() {
                 self.completions.selected_index = 0;
@@ -531,22 +591,77 @@ impl super::Display {
         let w = box_width_cols as f32 * self.size_info.cell_width();
         let h = (needed_rows as f32 + 1.0) * self.size_info.cell_height();
 
-        // Simple fade-in animation on open
+        // Simple fade-in animation on open (respect reduce-motion)
+        let reduce_motion = theme.ui.reduce_motion || config.theme.reduce_motion;
         if !self.completions_last_active {
             self.completions_last_active = true;
-            self.completions_anim_start = Some(now);
+            self.completions_anim_start = if reduce_motion { None } else { Some(now) };
         }
-        let alpha = if let Some(ts) = self.completions_anim_start {
+        let mut alpha = if reduce_motion {
+            0.96
+        } else if let Some(ts) = self.completions_anim_start {
             let ms = now.saturating_duration_since(ts).as_millis() as f32;
             (ms / 120.0).clamp(0.0, 1.0) * 0.96
         } else {
             0.96
         };
-        // Background
-        let rects = vec![RenderRect::new(x, y, w, h, tokens.surface, alpha)];
-        let metrics = self.glyph_cache.font_metrics();
-        let size_copy = self.size_info;
-        self.renderer_draw_rects(&size_copy, &metrics, rects);
+        // Light-theme tuning: slightly reduce overlay opacity to avoid heavy panels
+        let is_light = {
+            let (r, g, b) = tokens.surface.as_tuple();
+            let luminance = 0.2126 * (r as f32) + 0.7152 * (g as f32) + 0.0722 * (b as f32);
+            luminance > 140.0
+        };
+        if is_light {
+            alpha *= 0.94;
+        }
+        // Rounded background with soft shadow (Warp-like)
+        let ui = theme.ui.clone();
+        if ui.shadow {
+            let spread = ui.shadow_size_px.max(1) as f32;
+            let offset_y = (ui.shadow_size_px as f32 * 0.35).round();
+            let mut shadow_alpha = (ui.shadow_alpha * alpha).min(1.0);
+            if is_light {
+                // Slightly soften shadow in light themes
+                shadow_alpha *= 0.9;
+            }
+            if shadow_alpha > 0.0 {
+                let shadow = crate::renderer::ui::UiRoundedRect::new(
+                    x - spread,
+                    y + offset_y - spread,
+                    w + spread * 2.0,
+                    h + spread * 2.0,
+                    if ui.rounded_corners { ui.corner_radius_px + spread } else { 0.0 },
+                    tokens.overlay,
+                    shadow_alpha,
+                );
+                self.stage_ui_rounded_rect(shadow);
+            }
+        }
+        // Acrylic fallback: draw a subtle double-layer background to emulate depth when blur is unavailable
+        let bg_outer = crate::renderer::ui::UiRoundedRect::new(
+            x,
+            y,
+            w,
+            h,
+            if theme.ui.rounded_corners { theme.ui.corner_radius_px } else { 0.0 },
+            tokens.surface,
+            alpha,
+        );
+        self.stage_ui_rounded_rect(bg_outer);
+        // Inner inset layer
+        let inset = (self.size_info.cell_height() * 0.06).clamp(1.0, 3.0);
+        if w > inset * 2.0 && h > inset * 2.0 {
+            let bg_inner = crate::renderer::ui::UiRoundedRect::new(
+                x + inset,
+                y + inset,
+                w - inset * 2.0,
+                h - inset * 2.0,
+                if ui.rounded_corners { (ui.corner_radius_px - inset).max(0.0) } else { 0.0 },
+                tokens.surface_muted,
+                (alpha * 0.85).min(0.95),
+            );
+            self.stage_ui_rounded_rect(bg_inner);
+        }
 
         // Header row: shows context icon and prefix
         let mut header = String::new();
@@ -618,7 +733,20 @@ impl super::Display {
             row.push(' ');
             row.push_str(&item.label);
             let avail = box_width_cols;
-            // Highlight selected item using item index (headers excluded)
+
+            // Background highlight for selected item (row capsule)
+            if self.completions.selected_index == current_item_display_idx {
+                let y_row = (line as f32) * self.size_info.cell_height();
+                let x_row = (start_col as f32) * self.size_info.cell_width();
+                let w_row = (box_width_cols as f32) * self.size_info.cell_width();
+                let h_row = self.size_info.cell_height();
+                let row_bg = RenderRect::new(x_row, y_row, w_row, h_row, tokens.overlay, 0.20);
+                let size_copy = self.size_info;
+                let metrics = self.glyph_cache.font_metrics();
+                self.renderer_draw_rects(&size_copy, &metrics, vec![row_bg]);
+            }
+
+            // Highlight selected item text using accent
             let color = if self.completions.selected_index == current_item_display_idx {
                 accent
             } else {
@@ -702,6 +830,140 @@ impl super::Display {
         self.completions.items.clear();
         self.completions.selected_index = 0;
     }
+}
+
+// Normalize a path-like token by removing quotes and returning the inner token,
+// and whether it was quoted.
+fn normalize_path_token(token: &str) -> (Option<String>, bool) {
+    let t = token.trim();
+    if t.is_empty() {
+        return (None, false);
+    }
+    let (inner, quoted) = if (t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\'')) {
+        (t[1..t.len().saturating_sub(1)].to_string(), true)
+    } else {
+        (t.to_string(), false)
+    };
+    // Consider it a path token if it contains separators or tilde/env/relative markers
+    let looks_path = inner.contains('/') || inner.starts_with('~') || inner.starts_with('.') || inner.starts_with('$');
+    if looks_path {
+        (Some(inner), quoted)
+    } else {
+        (None, quoted)
+    }
+}
+
+// Resolve base directory and last partial component from a path-like token.
+fn resolve_base_and_partial(token: String, cwd: Option<PathBuf>) -> (Option<PathBuf>, String) {
+    let expanded = expand_tilde_and_env(&token);
+    let (base_str, partial) = match expanded.rsplit_once('/') {
+        Some((base, part)) => (base, part.to_string()),
+        None => ("", expanded.as_str().to_string()),
+    };
+    let base = if expanded.starts_with('/') || expanded.starts_with('~') || expanded.starts_with('$') {
+        let p = if base_str.is_empty() { "." } else { base_str };
+        Some(PathBuf::from(p).canonicalize().unwrap_or_else(|_| PathBuf::from(p)))
+    } else {
+        // Relative to cwd or current_dir
+        let root = cwd.or_else(|| std::env::current_dir().ok()).unwrap_or_else(|| PathBuf::from("."));
+        let p = if base_str.is_empty() { root.clone() } else { root.join(base_str) };
+        Some(p)
+    };
+    (base, partial)
+}
+
+fn expand_tilde_and_env(p: &str) -> String {
+    let mut s = p.to_string();
+    // ${VAR} first
+    if s.contains("${") {
+        s = expand_braced_env(&s);
+    }
+    // $VAR simple
+    if s.contains('$') {
+        s = expand_simple_env(&s);
+    }
+    // ~ or ~/path
+    if s.starts_with("~") {
+        if let Some(home) = dirs::home_dir() {
+            if s == "~" {
+                s = home.display().to_string();
+            } else if s.starts_with("~/") {
+                s = home.join(&s[2..]).display().to_string();
+            }
+        }
+    }
+    s
+}
+
+fn expand_braced_env(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    let b = input.as_bytes();
+    while i < b.len() {
+        if b[i] == b'$' && i + 1 < b.len() && b[i + 1] == b'{' {
+            if let Some(end) = input[i + 2..].find('}') {
+                let name = &input[i + 2..i + 2 + end];
+                if let Ok(val) = std::env::var(name) {
+                    out.push_str(&val);
+                }
+                i += 2 + end + 1; // skip ${NAME}
+                continue;
+            }
+        }
+        out.push(b[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn expand_simple_env(input: &str) -> String {
+    // Replace $VAR where VAR is [A-Z0-9_]+
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    let bytes = input.as_bytes();
+    while i < bytes.len() {
+        if bytes[i] == b'$' {
+            let mut j = i + 1;
+            while j < bytes.len() && (bytes[j] as char).is_ascii_alphanumeric() || bytes[j] == b'_' {
+                j += 1;
+            }
+            if j > i + 1 {
+                let name = &input[i + 1..j];
+                if let Ok(val) = std::env::var(name) {
+                    out.push_str(&val);
+                }
+                i = j;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn reconstruct_completion_label(original_token: &str, base: &PathBuf, file_name: &str, is_dir: bool) -> String {
+    // Determine if original token was absolute or had path separators
+    let quoted = (original_token.starts_with('"') && original_token.ends_with('"')) || (original_token.starts_with('\'') && original_token.ends_with('\''));
+    let raw = if quoted { &original_token[1..original_token.len().saturating_sub(1)] } else { original_token };
+    let mut prefix = raw.to_string();
+    if let Some(pos) = raw.rfind('/') {
+        prefix = raw[..=pos].to_string();
+    } else if raw == "~" || raw == "~/" {
+        prefix = raw.to_string();
+    } else if raw.starts_with('$') {
+        // leave prefix as-is
+    } else if raw.is_empty() {
+        prefix.clear();
+    }
+    let mut label = format!("{}{}", prefix, file_name);
+    if is_dir {
+        label.push('/');
+    }
+    if quoted {
+        label = format!("\"{}\"", label);
+    }
+    label
 }
 
 // Lazily compute list of commands available in $PATH. Returns cached vector.

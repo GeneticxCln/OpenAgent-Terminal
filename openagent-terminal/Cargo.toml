@@ -33,6 +33,7 @@ version = "0.2.3-dev"
 
 [dependencies]
 chrono = { version = "0.4.42", features = ["std", "serde", "clock"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 ahash = { version = "0.8.6", features = ["no-rng"] }
 bitflags = { workspace = true }
@@ -77,8 +78,11 @@ toml.workspace = true
 toml_edit.workspace = true
 unicode-width = "0.2.0"
 winit = { workspace = true, features = ["serde"] }
-uuid = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
 csv = "1.3"
+comfy-table = "7.0"
+# Database for blocks
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
 # Observability
 metrics-exporter-prometheus = { workspace = true }
 # Optional at-rest log encryption
@@ -155,6 +159,10 @@ renderer-wgpu = ["wgpu"]
 # Experimental always-on completions overlay (gated until stable)
 completions = []
 
+# Gate demos/integration code that isn't production-ready
+# Enable with: cargo build -p openagent-terminal --features demos
+# Or run examples that depend on it with the same feature enabled
+demos = []
 
 x11 = [
     "copypasta/x11",

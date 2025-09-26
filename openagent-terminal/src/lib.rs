@@ -18,7 +18,16 @@ pub use openagent_terminal_config::SerdeReplace;
 
 pub mod cli;
 pub mod clipboard;
-pub mod command_history;
+pub mod command_assistance;
+pub mod conversation_management;
+#[cfg(feature = "demos")]
+pub mod conversation_demo;
+#[cfg(feature = "demos")]
+pub mod complete_integration_demo;
+#[cfg(feature = "demos")]
+pub mod block_sharing;
+#[cfg(feature = "demos")]
+pub mod block_sharing_demo;
 pub mod command_pipeline;
 pub mod config;
 pub mod daemon;
@@ -42,16 +51,26 @@ pub mod scheduler;
 pub mod string;
 pub mod utils;
 pub mod window_context;
+pub mod ui_confirm;
+pub mod components_init;
 
 // New component modules
-pub mod components_init;
-pub mod text_shaping;
-pub mod ui_confirm;
+pub mod ai_context_provider;
+pub mod ai_runtime;
+#[cfg(feature = "demos")]
+pub mod ai_event_integration;
+#[cfg(feature = "demos")]
+pub mod terminal_event_bridge;
+#[cfg(feature = "demos")]
+pub mod ai_terminal_integration;
 pub mod workspace;
 
 // Essential modules for core functionality
 pub mod blocks_v2;
 pub mod security_lens;
+pub mod session_persistence;
+pub mod session_service;
+pub mod session_cli;
 
 #[cfg(feature = "completions")]
 pub mod completions_spec;

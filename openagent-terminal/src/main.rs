@@ -39,6 +39,8 @@ use openagent_terminal_core::tty;
 // Re-export SerdeReplace at crate root so config derive macros can refer to `crate::SerdeReplace`.
 pub use openagent_terminal_config::SerdeReplace;
 
+mod ai_context_provider;
+mod ai_runtime;
 mod cli;
 mod clipboard;
 mod config;
@@ -64,6 +66,7 @@ mod window_context;
 
 // New component modules
 mod components_init;
+mod blocks_v2;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_input; // Native keyboard/mouse integration (experimental)
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
@@ -125,7 +128,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-}
 
 #[cfg(unix)]
 fn msg(options: MessageOptions) -> Result<(), Box<dyn Error>> {

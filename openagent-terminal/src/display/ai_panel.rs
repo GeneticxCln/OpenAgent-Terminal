@@ -108,14 +108,10 @@ impl Display {
 
         // Backdrop dim behind the panel using theme overlay color with configurable alpha
         #[allow(unused_variables)]
-        let backdrop_alpha = {
-            {
-                (config.ai.backdrop_alpha * progress).clamp(0.0, 1.0)
-            }
-            #[cfg(not(feature = "ai"))]
-            {
-                0.0
-            }
+let backdrop_alpha = if cfg!(feature = "ai") {
+            (config.ai.backdrop_alpha * progress).clamp(0.0, 1.0)
+        } else {
+            0.0
         };
         if backdrop_alpha > 0.0 {
             let full = RenderRect::new(
@@ -130,14 +126,10 @@ impl Display {
         }
 
         // Calculate panel dimensions (animated height) using fraction of viewport.
-        let fraction = {
-            {
-                config.ai.panel_height_fraction.clamp(0.20, 0.60)
-            }
-            #[cfg(not(feature = "ai"))]
-            {
-                0.40
-            }
+let fraction = if cfg!(feature = "ai") {
+            config.ai.panel_height_fraction.clamp(0.20, 0.60)
+        } else {
+            0.40
         };
         let target_lines = ((num_lines as f32 * fraction).round() as usize)
             .clamp(6, MAX_AI_PANEL_LINES.max(6).min(num_lines));
@@ -361,7 +353,7 @@ impl Display {
 
                 // Add selection indicator
                 let mut line_text = String::new();
-                if idx == ai_state.selected_proposal {
+                if ai_state.selected_proposal == Some(idx) {
                     line_text.push_str(SELECTION_INDICATOR);
                 } else {
                     line_text.push_str("  ");
@@ -384,7 +376,7 @@ impl Display {
 
                     let text_point = Point::new(current_line, Column(0));
                     let text_color =
-                        if idx == ai_state.selected_proposal { tokens.success } else { fg };
+                        if ai_state.selected_proposal == Some(idx) { tokens.success } else { fg };
                     self.draw_ai_text(text_point, text_color, bg, &line_text, num_cols);
                     current_line += 1;
 

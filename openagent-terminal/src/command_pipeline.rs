@@ -19,6 +19,9 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
+use crate::security_lens::{SecurityLens, SecurityPolicy};
+use crate::ui_confirm;
+
 use crate::blocks_v2::{BlockId, BlockManager, ShellType};
 use crate::workspace::{TabId, TabManager};
 use openagent_terminal_core::event::CommandBlockEvent;
@@ -154,34 +157,58 @@ impl CommandPipeline {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
         let shell = shell.unwrap_or(ShellType::Bash);
 
-        // Create block immediately - no lazy loading
-        #[cfg(feature = "never")]
+        // Security risk analysis and optional confirmation (Warp-like behavior)
+        let mut lens = SecurityLens::new(SecurityPolicy::with_defaults());
+        let risk = lens.analyze_command(&command);
+        if lens.should_block(&risk) {
+            let title = format!("Security confirmation — {:?}", risk.level);
+            let mut body = format!("{}\n\nCommand:\n{}\n", risk.explanation, command);
+            if !risk.factors.is_empty() {
+                body.push_str("\nRisk factors:\n");
+                for f in &risk.factors {
+                    body.push_str(&format!("- [{}] {}\n", f.category, f.description));
+                }
+            }
+            if !risk.mitigations.is_empty() {
+                body.push_str("\nMitigations:\n");
+                for m in &risk.mitigations { body.push_str(&format!("- {}\n", m)); }
+            }
+            // Block until user confirms or cancels; if no proxy configured, this returns Err
+            match ui_confirm::request_confirm(title, body, Some("Run anyway".into()), Some("Cancel".into()), None) {
+                Ok(true) => { /* proceed */ }
+                Ok(false) => { return Err(anyhow::anyhow!("Command execution cancelled by user")); }
+                Err(e) => {
+                    // If we cannot show confirmation, fail safe by cancelling
+                    return Err(anyhow::anyhow!(format!("Confirmation unavailable: {}; refusing to run high-risk command", e)));
+                }
+            }
+        }
+
+        // Create block immediately with database integration - no lazy loading
         let block_id = if let Some(ref block_manager) = self.block_manager {
             let mut manager = block_manager.lock().await;
-            let params = CreateBlockParams {
+            
+            // Collect current environment variables
+            let mut environment = HashMap::new();
+            for (key, value) in std::env::vars() {
+                environment.insert(key, value);
+            }
+            
+            let params = crate::blocks_v2::CreateBlockParams {
                 command: command.clone(),
                 directory: Some(working_dir.clone()),
-                environment: None, // Will be captured automatically
-                shell: Some(shell),
+                environment: Some(environment),
+                shell: Some(shell.clone()),
                 tags: None,
                 parent_id: None,
                 metadata: None,
             };
 
             let block = manager.create_block(params).await?;
+            debug!("Created database block {} for command: {}", block.id, command);
             block.id
         } else {
-            return Err(anyhow::anyhow!("Block manager not set"));
-        };
-        #[cfg(not(feature = "never"))]
-        let block_id = {
-            // Generate a dummy ID using a timestamp hash for bookkeeping
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            command.hash(&mut h);
-            working_dir.hash(&mut h);
-            let raw = (Instant::now().elapsed().as_nanos() as u64) ^ h.finish();
-            BlockId(raw)
+            return Err(anyhow::anyhow!("Block manager not set - database integration required"));
         };
 
         // Emit immediate block creation event
@@ -260,8 +287,7 @@ impl CommandPipeline {
         let (output_tx, mut output_rx) = mpsc::unbounded_channel();
         self.output_streams.insert(block_id, output_tx.clone());
 
-        // Clone references for async tasks
-        #[cfg(feature = "never")]
+        // Clone references for async tasks - full database integration
         let block_manager = self.block_manager.clone();
         let _event_sender = self.event_sender.clone();
         let _pipeline_callbacks = self.event_callbacks.len(); // We can't clone the callbacks easily
@@ -331,14 +357,15 @@ timestamp: now_ts(),
         // Spawn output processor
         tokio::spawn(async move {
             while let Some(chunk) = output_rx.recv().await {
-                // Process output chunk immediately - no lazy processing
-                debug!("Received output chunk for block {:?}: {:?}", chunk.block_id, chunk);
+                // Process output chunk immediately with database updates - no lazy processing
+                debug!("Received output chunk for block {:?}: {} bytes", chunk.block_id, chunk.content.len());
 
-                // Update block with output immediately if we have a block manager
-                #[cfg(feature = "never")]
+                // Update block with output immediately via database
                 if let Some(ref manager) = block_manager {
                     let mut mgr = manager.lock().await;
-                    let _ = mgr.append_output(block_id, &chunk.content);
+                    if let Err(e) = mgr.append_output(chunk.block_id, &chunk.content).await {
+                        tracing::warn!("Failed to append output to database for block {:?}: {}", chunk.block_id, e);
+                    }
                 }
             }
         });
@@ -381,11 +408,12 @@ timestamp: now_ts(),
                 let _ = child.start_kill().ok();
             }
 
-            // Update block status to cancelled immediately
-            #[cfg(feature = "never")]
+            // Update block status to cancelled immediately via database
             if let Some(ref block_manager) = self.block_manager {
                 let mut mgr = block_manager.lock().await;
-                let _ = mgr.mark_block_cancelled(block_id).await;
+                if let Err(e) = mgr.mark_block_cancelled(block_id).await {
+                    tracing::warn!("Failed to mark block {:?} as cancelled in database: {}", block_id, e);
+                }
             }
 
             // Send terminal event indicating command ended without an exit code
@@ -427,16 +455,24 @@ timestamp: now_ts(),
                 stderr: stderr_final.clone(),
             });
 
-            #[cfg(feature = "never")]
-            let output = stdout_final.clone();
-
-            // Update block immediately - no lazy updates
-            #[cfg(feature = "never")]
+            // Update block immediately with complete output via database - no lazy updates
             if let Some(ref block_manager) = self.block_manager {
                 let mut manager = block_manager.lock().await;
-                manager
-                    .update_block_output(block_id, output, exit_code, duration.as_millis() as u64)
-                    .await?;
+                
+                // Use the comprehensive update method that handles both stdout and stderr
+                if let Err(e) = manager
+                    .update_block_output_with_error(
+                        block_id,
+                        stdout_final.clone(),
+                        stderr_final.clone(),
+                        exit_code,
+                        duration.as_millis() as u64,
+                    )
+                    .await
+                {
+                    tracing::error!("Failed to update block {:?} output in database: {}", block_id, e);
+                    return Err(e.into());
+                }
             }
 
             // Send terminal event immediately

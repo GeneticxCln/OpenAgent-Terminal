@@ -49,9 +49,10 @@ impl Default for AiDrawConfig {
 impl AiDrawConfig {
     /// Create AiDrawConfig from UiConfig, using AI settings where available
     pub fn from_ui_config(ui_config: &UiConfig) -> Self {
+        #[cfg(feature = "ai")]
         {
             let ai_config = &ui_config.ai;
-            Self {
+            return Self {
                 max_panel_lines: (ai_config.propose_max_commands as usize).clamp(5, 20),
                 panel_label: "🤖 AI Assistant: ",
                 loading_text: "⏳ Thinking...",
@@ -59,13 +60,13 @@ impl AiDrawConfig {
                 suggestion_prefix: "$ ",
                 selection_indicator: "▶ ",
                 anim_duration_ms: if ui_config.theme.resolve().ui.reduce_motion { 0 } else { 160 },
-            }
+            };
         }
         #[cfg(not(feature = "ai"))]
         {
             let _ = ui_config; // Silence unused warning
-            Self::default()
         }
+        Self::default()
     }
 }
 
@@ -323,10 +324,10 @@ impl<'a> AiDrawContext<'a> {
             // Error state
             self.draw_error_state(error, current_line, fg, bg, num_cols);
             current_line += 1;
-        } else if !ai_state.streaming_text.is_empty() {
+        } else if !ai_state.current_response.is_empty() {
             // Streaming text
             self.draw_streaming_text(
-                &ai_state.streaming_text,
+                &ai_state.current_response,
                 &mut current_line,
                 separator_line,
                 fg,
@@ -364,9 +365,9 @@ impl<'a> AiDrawContext<'a> {
         }
 
         // Show partial streaming text if available
-        if !ai_state.streaming_text.is_empty() {
+        if !ai_state.current_response.is_empty() {
             self.draw_streaming_text(
-                &ai_state.streaming_text,
+                &ai_state.current_response,
                 current_line,
                 separator_line,
                 fg,
@@ -421,37 +422,24 @@ impl<'a> AiDrawContext<'a> {
 
             // Build line with selection indicator
             let mut line_text = String::new();
-            if idx == ai_state.selected_proposal {
+            let is_selected = ai_state.selected_proposal.map_or(false, |sel| sel == idx);
+            if is_selected {
                 line_text.push_str(self.draw_config.selection_indicator);
             } else {
                 line_text.push_str("  "); // Indent for non-selected
             }
 
-            // Add command
-            if let Some(first_cmd) = proposal.proposed_commands.first() {
-                line_text.push_str(&format!("{}{}", self.draw_config.suggestion_prefix, first_cmd));
-            }
+            // Add command title from proposal
+            line_text.push_str(&format!("{}{}", self.draw_config.suggestion_prefix, proposal.title));
 
             let text_point = Point::new(*current_line, Column(0));
-            let text_color = if idx == ai_state.selected_proposal {
+            let text_color = if is_selected {
                 Rgb::new(100, 255, 100) // Green for selected
             } else {
                 fg
             };
             self.display.draw_ai_panel_text(text_point, text_color, bg, &line_text, num_cols);
             *current_line += 1;
-
-            // Show description if present and space available
-            if let Some(ref description) = proposal.description {
-                if *current_line <= separator_line {
-                    let desc_text = format!("    💡 {}", description);
-                    let desc_point = Point::new(*current_line, Column(0));
-                    let desc_color = Rgb::new(180, 180, 180); // Gray for description
-                    self.display
-                        .draw_ai_panel_text(desc_point, desc_color, bg, &desc_text, num_cols);
-                    *current_line += 1;
-                }
-            }
         }
     }
 

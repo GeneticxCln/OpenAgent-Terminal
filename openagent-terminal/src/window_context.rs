@@ -348,23 +348,27 @@ impl WindowContext {
                                     r.conversation_max_age_days.to_string(),
                                 );
                             }
-                            let mut rt = crate::ai_runtime::AiRuntime::from_secure_config(
+let rt_res = crate::ai_runtime::AiRuntime::from_secure_config_env(
                                 provider_name,
                                 &prov_cfg,
                             );
-                            rt.set_context_config(config.ai.context.clone());
-                            rt.set_routing_mode(config.ai.routing);
-                            rt.set_apply_joiner(config.ai.apply_joiner);
-                            rt.set_history_retention(config.ai.history_retention.clone());
-                            Some(rt)
+                            match rt_res {
+                                Ok(mut rt) => {
+                                    rt.set_context_config(config.ai.context.clone());
+                                    rt.set_routing_mode(config.ai.routing);
+                                    rt.set_apply_joiner(config.ai.apply_joiner);
+                                    rt.set_history_retention(config.ai.history_retention.clone());
+                                    Some(rt)
+                                }
+                                Err(_e) => {
+                                    // If provider config is invalid, disable AI runtime for now
+                                    None
+                                }
+                            }
                         }
                     } else {
                         None
                     }
-                }
-                #[cfg(not(feature = "ai"))]
-                {
-                    None
                 }
             },
             ide: crate::ide::IdeManager::new(),
@@ -521,13 +525,20 @@ impl WindowContext {
                         r.conversation_max_age_days.to_string(),
                     );
                 }
-                let mut rt =
-                    crate::ai_runtime::AiRuntime::from_secure_config(provider_name, &prov_cfg);
-                rt.set_context_config(self.config.ai.context.clone());
-                rt.set_routing_mode(self.config.ai.routing);
-                rt.set_apply_joiner(self.config.ai.apply_joiner);
-                rt.set_history_retention(self.config.ai.history_retention.clone());
-                self.ai_runtime = Some(rt);
+let rt_res =
+                    crate::ai_runtime::AiRuntime::from_secure_config_env(provider_name, &prov_cfg);
+                match rt_res {
+                    Ok(mut rt) => {
+                        rt.set_context_config(self.config.ai.context.clone());
+                        rt.set_routing_mode(self.config.ai.routing);
+                        rt.set_apply_joiner(self.config.ai.apply_joiner);
+                        rt.set_history_retention(self.config.ai.history_retention.clone());
+                        self.ai_runtime = Some(rt);
+                    }
+                    Err(_e) => {
+                        self.ai_runtime = None;
+                    }
+                }
             } else {
                 self.ai_runtime = None;
             }
@@ -604,8 +615,8 @@ impl WindowContext {
             &self.message_buffer,
             &self.config,
             &mut self.search_state,
-            ai_state_opt,
             Some(&self.workspace.tabs),
+            ai_state_opt,
         );
     }
 

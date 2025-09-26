@@ -570,6 +570,7 @@ pub trait ActionContext<T: EventListener> {
     fn workflows_panel_active(&self) -> bool {
         false
     }
+    fn process_workflows_search_perform(&mut self, _query: String, _window_id: winit::window::WindowId) {}
 
     // Plugins panel controls (feature = "plugins"). Default to no-op/false when disabled.
     #[cfg(feature = "never")]
@@ -2077,15 +2078,7 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
         self.ctx.mouse_mut().cell_side = cell_side;
 
         // Update AI header hover state first; override cursor to pointer if hovering controls.
-        let ai_hover = {
-            {
-                self.ctx.ai_update_hover_header()
-            }
-            #[cfg(not(feature = "ai"))]
-            {
-                false
-            }
-        };
+        let ai_hover = self.ctx.ai_update_hover_header();
 
         // Split divider drag handling: if dragging, update ratio and set resize cursor
         if self.ctx.display().split_drag.is_some() {

@@ -9,19 +9,7 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{Action as BindingAction, BindingKey, KeyBinding, UiConfig};
-#[cfg(not(feature = "ai"))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum AiRoutingMode {
-    Auto,
-    Agent,
-    Provider,
-}
-#[cfg(not(feature = "ai"))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum AiApplyJoinStrategy {
-    AndThen,
-    Lines,
-}
+use crate::config::ai::{AiApplyJoinStrategy, AiRoutingMode};
 use crate::display::Display;
 use crate::renderer::rects::RenderRect;
 use openagent_terminal_core::grid::Dimensions;
@@ -1055,14 +1043,14 @@ fn save_general_to_config(
     fs::write(&path, s)
 }
 
+#[cfg(feature = "ai")]
 fn current_provider_from_config(_config: &UiConfig) -> String {
-    {
-        _config.ai.provider.as_deref().unwrap_or("openrouter").to_string()
-    }
-    #[cfg(not(feature = "ai"))]
-    {
-        "null".to_string()
-    }
+    _config.ai.provider.as_deref().unwrap_or("openrouter").to_string()
+}
+
+#[cfg(not(feature = "ai"))]
+fn current_provider_from_config(_config: &UiConfig) -> String {
+    "null".to_string()
 }
 
 impl SettingsPanelState {

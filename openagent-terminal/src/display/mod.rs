@@ -1248,36 +1248,28 @@ impl Display {
             composer_history: std::collections::VecDeque::new(),
             composer_history_index: None,
             composer_history_stash: None,
-            ai_current_provider: {
-                {
-                    // Align UI default with runtime/config default
-                    config.ai.provider.as_deref().unwrap_or("null").to_string()
-                }
-                #[cfg(not(feature = "ai"))]
-                {
-                    "null".to_string()
-                }
+ai_current_provider: if cfg!(feature = "ai") {
+                // Align UI default with runtime/config default
+                config.ai.provider.as_deref().unwrap_or("null").to_string()
+            } else {
+                "null".to_string()
             },
-            ai_current_model: {
-                {
-                    let pname = config.ai.provider.as_deref().unwrap_or("openrouter");
-                    let prov_cfg = config
-                        .ai
-                        .providers
-                        .get(pname)
-                        .cloned()
-                        .or_else(|| {
-                            crate::config::ai_providers::get_default_provider_configs()
-                                .get(pname)
-                                .cloned()
-                        })
-                        .unwrap_or_default();
-                    prov_cfg.default_model.unwrap_or_default()
-                }
-                #[cfg(not(feature = "ai"))]
-                {
-                    String::new()
-                }
+ai_current_model: if cfg!(feature = "ai") {
+                let pname = config.ai.provider.as_deref().unwrap_or("openrouter");
+                let prov_cfg = config
+                    .ai
+                    .providers
+                    .get(pname)
+                    .cloned()
+                    .or_else(|| {
+                        crate::config::ai_providers::get_default_provider_configs()
+                            .get(pname)
+                            .cloned()
+                    })
+                    .unwrap_or_default();
+                prov_cfg.default_model.unwrap_or_default()
+            } else {
+                String::new()
             },
             ai_provider_dropdown_open: false,
             vi_highlighted_hint_age: Default::default(),
@@ -2011,6 +2003,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
         config: &UiConfig,
         search_state: &mut SearchState,
         tab_manager: Option<&crate::workspace::TabManager>,
+        ai_state: Option<&crate::ai_runtime::AiUiState>,
     ) where
         G: std::ops::Deref<Target = Term<T>> + std::ops::DerefMut,
     {
@@ -2724,12 +2717,17 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
             {
                 let cursor_point_usize =
                     Point::new(cursor_point.line.0 as usize, cursor_point.column);
+                // Resolve live cwd from active tab for filesystem completions
+                let completions_cwd = tab_manager
+                    .and_then(|tm| tm.active_tab())
+                    .map(|t| t.working_directory.clone());
                 self.draw_completions_overlay_with_context(
                     config,
                     &completions_prefix,
                     cursor_point_usize,
                     display_offset,
                     completions_alt_screen,
+                    completions_cwd,
                 );
             }
         }
@@ -2832,6 +2830,13 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
             if self.workflows_params.active {
                 let st = self.workflows_params.clone();
                 self.draw_workflows_params_overlay(config, &st);
+            }
+
+            // Draw tab bar hotspot tooltips last for top-most z-order
+            let tab_cfg = &config.workspace.tab_bar;
+            if tab_cfg.show && tab_cfg.position != crate::workspace::TabBarPosition::Hidden {
+                let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
+                self.draw_tab_bar_hotspot_tooltips(config, tab_cfg.position, &style);
             }
 
             // Settings panel overlay if active
@@ -3581,6 +3586,34 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
         } else {
             ui.composer_pill_alpha_unfocused
         };
+        // Shadow behind composer pill for depth consistency
+        if ui.shadow {
+            let spread = ui.shadow_size_px.max(1) as f32;
+            let offset_y = (ui.shadow_size_px as f32 * 0.35).round();
+            let mut shadow_alpha = ui.shadow_alpha;
+            // Light theme tuning: slightly softer shadow
+            let is_light = {
+                let (r, g, b) = tokens.surface.as_tuple();
+                let luminance = 0.2126 * (r as f32) + 0.7152 * (g as f32) + 0.0722 * (b as f32);
+                luminance > 140.0
+            };
+            if is_light {
+                shadow_alpha *= 0.9;
+            }
+            if shadow_alpha > 0.0 {
+                let shadow = UiRoundedRect::new(
+                    x - spread,
+                    y + offset_y - spread,
+                    w + spread * 2.0,
+                    h + spread * 2.0,
+                    ui.composer_pill_radius_px.unwrap_or(ui.palette_pill_radius_px) + spread,
+                    tokens.overlay,
+                    shadow_alpha,
+                );
+                self.stage_ui_rounded_rect(shadow);
+            }
+        }
+
         let pill = UiRoundedRect::new(
             x,
             y,
@@ -3591,6 +3624,24 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
             bg_alpha,
         );
         self.stage_ui_rounded_rect(pill);
+
+        // Accent rail inside the composer pill (Warp-style)
+        let rail_w = (self.size_info.cell_width() * 0.25).clamp(2.0, 4.0);
+        let rail_x = x + 2.0;
+        let rail_y = y + 2.0;
+        let rail_h = (h - 4.0).max(0.0);
+        if rail_h > 0.0 {
+            let rail = UiRoundedRect::new(
+                rail_x,
+                rail_y,
+                rail_w,
+                rail_h,
+                rail_w.min(rail_h) * 0.35,
+                tokens.accent,
+                (bg_alpha + 0.15).min(1.0),
+            );
+            self.stage_ui_rounded_rect(rail);
+        }
 
         // Placeholder text
         let placeholder = ui.composer_placeholder_text.as_deref().unwrap_or(
