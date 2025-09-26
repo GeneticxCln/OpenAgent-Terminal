@@ -4,6 +4,8 @@
 
 use crate::{UtilsError, UtilsResult};
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::fs;
 use std::path::Path;
 
 /// Theme color definition
@@ -47,7 +49,111 @@ impl ThemesManager {
 
     pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
         tracing::info!("Loading themes from directory: {:?}", path);
-        // TODO: Scan directory for .toml theme files and load them
+        if !path.exists() {
+            return Err(UtilsError::Theme(format!(
+                "Theme directory does not exist: {:?}",
+                path
+            )));
+        }
+        if !path.is_dir() {
+            return Err(UtilsError::Theme(format!(
+                "Theme path is not a directory: {:?}",
+                path
+            )));
+        }
+
+        #[derive(serde::Deserialize)]
+        struct ThemesFile {
+            #[serde(default)]
+            themes: Vec<Theme>,
+        }
+
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let file_path = entry.path();
+            if !file_path.is_file() {
+                continue;
+            }
+            let ext = file_path.extension().and_then(OsStr::to_str).unwrap_or("");
+            let content = match fs::read_to_string(&file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("Failed to read theme file {:?}: {}", file_path, e);
+                    continue;
+                }
+            };
+
+            let mut loaded_themes: Vec<Theme> = Vec::new();
+
+            let parse_ok = match ext.to_ascii_lowercase().as_str() {
+                "toml" => {
+                    if let Ok(wrapper) = toml::from_str::<ThemesFile>(&content) {
+                        loaded_themes.extend(wrapper.themes);
+                    } else if let Ok(theme) = toml::from_str::<Theme>(&content) {
+                        loaded_themes.push(theme);
+                    }
+                    true
+                }
+                "json" => {
+                    if let Ok(wrapper) = serde_json::from_str::<ThemesFile>(&content) {
+                        loaded_themes.extend(wrapper.themes);
+                    } else if let Ok(theme) = serde_json::from_str::<Theme>(&content) {
+                        loaded_themes.push(theme);
+                    }
+                    true
+                }
+                "yaml" | "yml" => {
+                    if let Ok(wrapper) = serde_yaml::from_str::<ThemesFile>(&content) {
+                        loaded_themes.extend(wrapper.themes);
+                    } else if let Ok(theme) = serde_yaml::from_str::<Theme>(&content) {
+                        loaded_themes.push(theme);
+                    }
+                    true
+                }
+                _ => {
+                    tracing::debug!("Skipping non-theme file {:?}", file_path);
+                    true
+                }
+            };
+
+            if !parse_ok {
+                tracing::warn!("Failed to parse themes in {:?}", file_path);
+                continue;
+            }
+
+            for theme in loaded_themes {
+                // Validate theme colors
+                if theme.colors.normal.len() != 8 || theme.colors.bright.len() != 8 {
+                    tracing::warn!(
+                        "Theme '{}' has invalid palette lengths (normal={}, bright={})",
+                        theme.name,
+                        theme.colors.normal.len(),
+                        theme.colors.bright.len()
+                    );
+                    continue;
+                }
+                let valid_hex = |s: &str| -> bool {
+                    let bytes = s.as_bytes();
+                    if bytes.len() != 7 || bytes[0] != b'#' { return false; }
+                    bytes[1..].iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F'))
+                };
+                if !valid_hex(&theme.colors.foreground)
+                    || !valid_hex(&theme.colors.background)
+                    || !valid_hex(&theme.colors.cursor)
+                    || theme.colors.selection_foreground.as_ref().is_some_and(|c| !valid_hex(c))
+                    || theme.colors.selection_background.as_ref().is_some_and(|c| !valid_hex(c))
+                    || !theme.colors.normal.iter().all(|c| valid_hex(c))
+                    || !theme.colors.bright.iter().all(|c| valid_hex(c))
+                {
+                    tracing::warn!("Theme '{}' contains invalid hex color(s)", theme.name);
+                    continue;
+                }
+
+                let name = theme.name.clone();
+                self.themes.insert(name, theme);
+            }
+        }
+
         Ok(())
     }
 

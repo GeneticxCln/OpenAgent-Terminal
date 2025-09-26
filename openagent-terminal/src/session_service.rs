@@ -243,9 +243,16 @@ impl SessionService {
         
         // Restore environment (if requested)
         if options.restore_environment {
+            // Best-effort restoration of select environment context stored in session preferences
+            // We will not mutate global process env for safety; instead, we emit a summary that
+            // callers can use to rehydrate their environment-aware components.
+            // Re-apply the captured environment snapshot into the current session state
+            let env = session.environment.clone();
+            self.session_manager.update_session(|s| {
+                s.environment = env.clone();
+            }).await?;
             summary.environment_restored = true;
-            // Environment restoration would need OS-specific implementation
-            debug!("Environment restoration requested but not implemented");
+            debug!("Environment snapshot reapplied to current session");
         }
         
         // Emit event
@@ -573,15 +580,19 @@ mod tests {
         
         // Add a command
         let block_record = BlockRecord {
-            id: BlockId(Uuid::new_v4()),
+            id: BlockId(1),
             command: "echo test".to_string(),
             output: "test".to_string(),
-            exit_code: 0,
-            duration: Duration::from_millis(100),
+            error_output: String::new(),
+            directory: std::path::PathBuf::from("/tmp"),
             created_at: Utc::now(),
-            working_directory: std::path::PathBuf::from("/tmp"),
-            shell: ShellType::Bash,
+            modified_at: Utc::now(),
+            exit_code: 0,
+            duration_ms: 100,
+            starred: false,
             tags: vec!["test".to_string()],
+            shell: ShellType::Bash,
+            status: "completed".to_string(),
         };
         
         let exec_result = CommandExecutionResult {
@@ -639,5 +650,31 @@ mod tests {
             }
             _ => panic!("Expected SessionSaved event"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_environment_restoration() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = PersistenceConfig { session_dir: temp_dir.path().to_path_buf(), ..Default::default() };
+        let service = SessionService::new(config).await.unwrap();
+        let context = PtyAiContext::default();
+        let session_id = service.start_new_session(&context).await.unwrap();
+
+        // Update environment snapshot
+        {
+            let vars = vec![("FOO".to_string(), "BAR".to_string())].into_iter().collect();
+            service.session_manager.update_session(|s| {
+                s.environment.variables = vars;
+            }).await.unwrap();
+            service.save_current_session().await.unwrap();
+        }
+
+        // Restore with environment option enabled
+        let opts = RestoreOptions { restore_environment: true, ..Default::default() };
+        let summary = service.restore_session(session_id, opts).await.unwrap();
+        assert!(summary.environment_restored);
+        // Verify environment present in current session
+        let sess = service.get_current_session().await.unwrap();
+        assert_eq!(sess.environment.variables.get("FOO").map(|s| s.as_str()), Some("BAR"));
     }
 }

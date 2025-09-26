@@ -721,11 +721,13 @@ impl ShellIntegration {
     fn setup_shell_hooks(&mut self) {
         let shell_type = self.detect_shell_type();
 
-        match shell_type {
+        match shell_type.clone() {
             ShellType::Zsh => self.setup_zsh_hooks(),
             ShellType::Bash => self.setup_bash_hooks(),
             ShellType::Fish => self.setup_fish_hooks(),
-            _ => {} // Other shells not implemented yet
+            ShellType::PowerShell | ShellType::Nushell | ShellType::Custom(_) => {
+                self.setup_generic_hooks(shell_type);
+            }
         }
     }
 
@@ -747,20 +749,46 @@ impl ShellIntegration {
             vec!["function __openagent_preexec --on-event fish_preexec".to_string()];
     }
 
-    /// Detect current shell type
+    /// Setup generic hooks for unsupported shells with safe defaults
+    fn setup_generic_hooks(&mut self, shell_type: crate::blocks_v2::ShellType) {
+        // Record detected shell type and warn; do not leave uninitialized
+        self.shell_hooks.shell_config.shell_type = shell_type;
+        tracing::warn!("Generic shell integration in effect; advanced hooks not available for this shell");
+        // Keep hooks empty to avoid breaking user shell; features requiring hooks remain disabled
+        self.shell_hooks.pre_command_hooks.clear();
+        self.shell_hooks.post_command_hooks.clear();
+        self.shell_hooks.cd_hooks.clear();
+        self.shell_hooks.shell_config.prompt_command = None;
+        self.shell_hooks.shell_config.precmd_functions.clear();
+        self.shell_hooks.shell_config.preexec_functions.clear();
+    }
+
+    /// Detect current shell type with explicit warnings for unsupported shells
     fn detect_shell_type(&self) -> ShellType {
-        if let Ok(shell) = std::env::var("SHELL") {
-            if shell.contains("zsh") {
-                ShellType::Zsh
-            } else if shell.contains("bash") {
-                ShellType::Bash
-            } else if shell.contains("fish") {
-                ShellType::Fish
-            } else {
-                ShellType::Bash // Default fallback
+        match std::env::var("SHELL") {
+            Ok(shell) => {
+                let sh = shell.to_ascii_lowercase();
+                if sh.contains("zsh") {
+                    ShellType::Zsh
+                } else if sh.contains("bash") {
+                    ShellType::Bash
+                } else if sh.contains("fish") {
+                    ShellType::Fish
+                } else if sh.contains("pwsh") || sh.contains("powershell") {
+                    ShellType::PowerShell
+                } else if sh.contains("nu") || sh.contains("nushell") {
+                    ShellType::Nushell
+                } else {
+                    // Unknown or custom shell; warn and return Custom to drive generic hooks
+                    tracing::warn!("Unsupported shell detected in SHELL='{}'; falling back to generic hooks", shell);
+                    ShellType::Custom(shell)
+                }
             }
-        } else {
-            ShellType::Bash
+            Err(_) => {
+                // SHELL not set; default to bash but warn
+                tracing::warn!("SHELL environment variable not set; defaulting to Bash integration");
+                ShellType::Bash
+            }
         }
     }
 

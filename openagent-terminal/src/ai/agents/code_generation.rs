@@ -211,29 +211,21 @@ impl CodeGenerationAgent {
 
             scratch_text: format!("{}\n\n{}", system_prompt, user_prompt),
             working_directory: Some(context.current_directory.clone()),
-            shell_kind: Some("bash".to_string()), // TODO: Get from context
+            shell_kind: Some(detect_shell_kind(context)),
             context: vec![
                 ("mode".to_string(), "code_generation".to_string()),
                 ("language".to_string(), request.language.clone().unwrap_or("rust".to_string())),
             ],
         };
 
-        let proposals = if let Some(provider) = &self.ai_provider {
-            provider.propose(ai_request).map_err(|e| anyhow!("AI provider error: {}", e))?
-        } else {
-            // Return a mock response when no AI provider is available
-                title: "Mock Code Generation".to_string(),
-                description: Some("Generated mock code response".to_string()),
-                proposed_commands: vec![serde_json::json!({
-                    "generated_code": "fn example() { println!(\"Hello, World!\"); }",
-                    "language": "rust",
-                    "explanation": "A simple example function that prints Hello World",
-                    "dependencies": [],
-                    "confidence_score": 0.8
-                })
-                .to_string()],
-            }]
-        };
+        let provider = self
+            .ai_provider
+            .as_ref()
+            .ok_or_else(|| anyhow!("AI provider not configured"))?;
+
+        let proposals = provider
+            .propose(ai_request)
+            .map_err(|e| anyhow!("AI provider error: {}", e))?;
         let response = proposals
             .first()
             .ok_or_else(|| anyhow!("No response from AI provider"))?
@@ -358,6 +350,14 @@ impl CodeGenerationAgent {
 }
 
 #[async_trait]
+fn detect_shell_kind(context: &AgentContext) -> String {
+    if let Some(shell) = context.environment_vars.get("SHELL") {
+        let name = std::path::Path::new(shell).file_name().and_then(|s| s.to_str()).unwrap_or(shell);
+        return name.to_string();
+    }
+    "bash".to_string()
+}
+
 impl Agent for CodeGenerationAgent {
     fn id(&self) -> &str {
         &self.id

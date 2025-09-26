@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::task::JoinSet;
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -366,15 +367,244 @@ impl AgentCommunicationHub {
     }
 
     /// Execute workflow tasks in parallel
-    async fn execute_parallel_workflow(&self, _workflow_id: Uuid) -> Result<()> {
-        // TODO: Implement parallel execution using tokio::spawn
-        Err(anyhow!("Parallel workflow execution not yet implemented"))
+    async fn execute_parallel_workflow(&self, workflow_id: Uuid) -> Result<()> {
+        // Snapshot tasks and their criticality
+        let (tasks, critical_map): (HashMap<String, WorkflowTask>, HashMap<String, bool>) = {
+            let coordinator = self.workflow_coordinator.read().await;
+            let workflow = coordinator.get_workflow(workflow_id).await?;
+            let tasks = workflow.tasks.clone();
+            let critical_map = tasks
+                .iter()
+                .map(|(id, t)| (id.clone(), t.template.critical))
+                .collect::<HashMap<_, _>>();
+            (tasks, critical_map)
+        };
+
+        if tasks.is_empty() {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_completed(workflow_id).await?;
+            let _ = self
+                .event_bus
+                .broadcast(AgentEvent::WorkflowCompleted { workflow_id, success: true })
+                .await;
+            return Ok(());
+        }
+
+        let mut set: JoinSet<(String, Result<TaskResult>)> = JoinSet::new();
+        for (task_id, task) in tasks.into_iter() {
+            let this = self;
+            let id_clone = task_id.clone();
+            set.spawn(async move { (id_clone, this.execute_task(workflow_id, task).await) });
+        }
+
+        let mut had_critical_failure = false;
+
+        while let Some(joined) = set.join_next().await {
+            match joined {
+                Ok((task_id, Ok(task_result))) => {
+                    {
+                        let mut coordinator = self.workflow_coordinator.write().await;
+                        coordinator.update_task_result(workflow_id, &task_id, task_result.clone()).await?;
+                    }
+                    let event = AgentEvent::TaskCompleted { workflow_id, task_id: task_id.clone(), result: {
+                        let coordinator = self.workflow_coordinator.read().await;
+                        coordinator.get_task_result(workflow_id, &task_id).await?.unwrap()
+                    }};
+                    let _ = self.event_bus.broadcast(event).await;
+                }
+                Ok((task_id, Err(e))) => {
+                    error!("Task '{}' in workflow {} failed: {}", task_id, workflow_id, e);
+                    let event = AgentEvent::TaskFailed {
+                        workflow_id,
+                        task_id: task_id.clone(),
+                        error: e.to_string(),
+                    };
+                    let _ = self.event_bus.broadcast(event).await;
+
+                    if critical_map.get(&task_id).copied().unwrap_or(false) {
+                        had_critical_failure = true;
+                        // We don't abort already-running tasks; they will finish, but workflow will be marked failed
+                    }
+                }
+                Err(join_err) => {
+                    error!("Join error in parallel workflow {}: {}", workflow_id, join_err);
+                    had_critical_failure = true; // Conservatively fail the workflow
+                }
+            }
+        }
+
+        if had_critical_failure {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_failed(workflow_id).await?;
+            return Err(anyhow!("Parallel workflow {} failed due to critical task failure", workflow_id));
+        }
+
+        {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_completed(workflow_id).await?;
+        }
+        let event = AgentEvent::WorkflowCompleted { workflow_id, success: true };
+        let _ = self.event_bus.broadcast(event).await;
+        Ok(())
     }
 
     /// Execute workflow based on dependency graph
-    async fn execute_dependency_workflow(&self, _workflow_id: Uuid) -> Result<()> {
-        // TODO: Implement dependency-based execution using topological sort
-        Err(anyhow!("Dependency-based workflow execution not yet implemented"))
+    async fn execute_dependency_workflow(&self, workflow_id: Uuid) -> Result<()> {
+        // Snapshot tasks and dependency graph from template
+        let (template_deps, tasks, template_name): (HashMap<String, Vec<String>>, HashMap<String, WorkflowTask>, String) = {
+            let coordinator = self.workflow_coordinator.read().await;
+            let wf = coordinator.get_workflow(workflow_id).await?;
+            let template = coordinator
+                .get_workflow_template(&wf.template_name)
+                .await
+                .cloned()
+                .ok_or_else(|| anyhow!("Workflow template not found: {}", wf.template_name))?;
+            (template.dependencies.clone(), wf.tasks.clone(), wf.template_name.clone())
+        };
+
+        if tasks.is_empty() {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_completed(workflow_id).await?;
+            let _ = self
+                .event_bus
+                .broadcast(AgentEvent::WorkflowCompleted { workflow_id, success: true })
+                .await;
+            return Ok(());
+        }
+
+        // Build indegree and adjacency maps
+        let mut indegree: HashMap<String, usize> = HashMap::new();
+        let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
+
+        for (task_id, _task) in &tasks {
+            indegree.entry(task_id.clone()).or_insert(0);
+            adjacency.entry(task_id.clone()).or_insert_with(Vec::new);
+        }
+
+        for (task_id, deps) in &template_deps {
+            if !tasks.contains_key(task_id) {
+                return Err(anyhow!(
+                    "Dependency graph references unknown task '{}' in template '{}'",
+                    task_id, template_name
+                ));
+            }
+            for dep in deps {
+                if !tasks.contains_key(dep) {
+                    return Err(anyhow!(
+                        "Task '{}' depends on unknown task '{}' in template '{}'",
+                        task_id, dep, template_name
+                    ));
+                }
+                *indegree.entry(task_id.clone()).or_insert(0) += 1;
+                adjacency.entry(dep.clone()).or_insert_with(Vec::new).push(task_id.clone());
+            }
+        }
+
+        // Queue of ready tasks (no unmet dependencies)
+        let mut ready: VecDeque<String> = indegree
+            .iter()
+            .filter_map(|(id, &deg)| if deg == 0 { Some(id.clone()) } else { None })
+            .collect();
+
+        let mut running: HashSet<String> = HashSet::new();
+        let mut set: JoinSet<(String, Result<TaskResult>)> = JoinSet::new();
+        let critical_map: HashMap<String, bool> = tasks
+            .iter()
+            .map(|(id, t)| (id.clone(), t.template.critical))
+            .collect();
+
+        // Helper to spawn a task by id
+        let mut spawn_task = |task_id: String| {
+            if running.contains(&task_id) { return; }
+            if let Some(task) = tasks.get(&task_id).cloned() {
+                let this = self;
+                let id_clone = task_id.clone();
+                running.insert(task_id);
+                set.spawn(async move { (id_clone, this.execute_task(workflow_id, task).await) });
+            }
+        };
+
+        while let Some(id) = ready.pop_front() {
+            spawn_task(id);
+        }
+
+        let mut had_critical_failure = false;
+        let mut completed: HashSet<String> = HashSet::new();
+
+        while let Some(joined) = set.join_next().await {
+            match joined {
+                Ok((task_id, Ok(task_result))) => {
+                    completed.insert(task_id.clone());
+                    {
+                        let mut coordinator = self.workflow_coordinator.write().await;
+                        coordinator.update_task_result(workflow_id, &task_id, task_result.clone()).await?;
+                    }
+                    let event = AgentEvent::TaskCompleted { workflow_id, task_id: task_id.clone(), result: {
+                        let coordinator = self.workflow_coordinator.read().await;
+                        coordinator.get_task_result(workflow_id, &task_id).await?.unwrap()
+                    }};
+                    let _ = self.event_bus.broadcast(event).await;
+
+                    // Decrement indegrees of dependents and schedule newly-ready tasks
+                    if let Some(dependents) = adjacency.get(&task_id) {
+                        for dep_task in dependents {
+                            if let Some(deg) = indegree.get_mut(dep_task) {
+                                if *deg > 0 { *deg -= 1; }
+                                if *deg == 0 && !completed.contains(dep_task) && !running.contains(dep_task) {
+                                    ready.push_back(dep_task.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    while let Some(id) = ready.pop_front() {
+                        spawn_task(id);
+                    }
+                }
+                Ok((task_id, Err(e))) => {
+                    error!("Task '{}' in workflow {} failed: {}", task_id, workflow_id, e);
+                    let event = AgentEvent::TaskFailed {
+                        workflow_id,
+                        task_id: task_id.clone(),
+                        error: e.to_string(),
+                    };
+                    let _ = self.event_bus.broadcast(event).await;
+                    if critical_map.get(&task_id).copied().unwrap_or(false) {
+                        had_critical_failure = true;
+                        break;
+                    }
+                }
+                Err(join_err) => {
+                    error!("Join error in dependency workflow {}: {}", workflow_id, join_err);
+                    had_critical_failure = true;
+                    break;
+                }
+            }
+        }
+
+        if had_critical_failure {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_failed(workflow_id).await?;
+            return Err(anyhow!("Dependency workflow {} failed due to critical task failure", workflow_id));
+        }
+
+        // If there are unfinished tasks due to cycles
+        if completed.len() < indegree.len() {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_failed(workflow_id).await?;
+            return Err(anyhow!(
+                "Dependency cycle detected or tasks left unscheduled in workflow {}",
+                workflow_id
+            ));
+        }
+
+        {
+            let mut coordinator = self.workflow_coordinator.write().await;
+            coordinator.mark_workflow_completed(workflow_id).await?;
+        }
+        let event = AgentEvent::WorkflowCompleted { workflow_id, success: true };
+        let _ = self.event_bus.broadcast(event).await;
+        Ok(())
     }
 
     /// Execute a single task by routing to an appropriate agent
@@ -732,9 +962,19 @@ impl EventBus {
         Ok(())
     }
 
-    pub async fn send_direct_message(&self, _message: AgentMessage) -> Result<()> {
-        // TODO: Implement direct message routing
-        Ok(())
+    pub async fn send_direct_message(&self, message: AgentMessage) -> Result<()> {
+        // Try direct channel first
+        if let Some(tx) = self._direct_channels.get(&message.to) {
+            tx.send(message).map_err(|e| anyhow!("Direct channel send failed: {}", e))?;
+            return Ok(());
+        }
+
+        // Fallback: broadcast as a custom event so listeners can route it
+        let event = AgentEvent::Custom {
+            event_type: "DirectMessageFallback".to_string(),
+            data: serde_json::to_value(message)?,
+        };
+        self.broadcast(event).await
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<AgentEvent> {
@@ -910,6 +1150,39 @@ impl Default for WorkflowCoordinator {
 mod tests {
     use super::*;
 
+    struct DummyAgent {
+        id: String,
+        caps: Vec<AgentCapability>,
+        succeed: bool,
+    }
+
+    #[async_trait]
+    impl Agent for DummyAgent {
+        fn id(&self) -> &str { &self.id }
+        fn name(&self) -> &str { "Dummy" }
+        fn description(&self) -> &str { "Dummy agent for tests" }
+        fn capabilities(&self) -> Vec<AgentCapability> { self.caps.clone() }
+        async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
+            if self.succeed {
+                Ok(AgentResponse {
+                    request_id: request.id,
+                    agent_id: self.id.clone(),
+                    success: true,
+                    payload: serde_json::json!({"ok": true}),
+                    artifacts: Vec::new(),
+                    next_actions: Vec::new(),
+                    metadata: HashMap::new(),
+                })
+            } else {
+                Err(anyhow!("intentional failure"))
+            }
+        }
+        fn can_handle(&self, _request_type: &AgentRequestType) -> bool { true }
+        async fn status(&self) -> AgentStatus { AgentStatus { is_healthy: true, is_busy: false, last_activity: chrono::Utc::now(), current_task: None, error_message: None } }
+        async fn initialize(&mut self, _config: AgentConfig) -> Result<()> { Ok(()) }
+        async fn shutdown(&mut self) -> Result<()> { Ok(()) }
+    }
+
     #[tokio::test]
     async fn test_communication_hub_creation() {
         let hub = AgentCommunicationHub::new();
@@ -940,5 +1213,43 @@ mod tests {
 
         let status = coordinator.get_workflow_status(workflow_id).await.unwrap();
         assert_eq!(status, WorkflowStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn test_parallel_workflow_success() {
+        let hub = AgentCommunicationHub::new();
+        // Register a dummy agent capable of CodeGeneration
+        hub.register_agent(Box::new(DummyAgent { id: "d1".into(), caps: vec![AgentCapability::CodeGeneration], succeed: true })).await.unwrap();
+
+        // Install a parallel template with two tasks
+        let mut coord = hub.workflow_coordinator.write().await;
+        let mut tasks = HashMap::new();
+        tasks.insert("a".to_string(), WorkflowTaskTemplate { name: "A".into(), description: "".into(), required_capability: AgentCapability::CodeGeneration, request_template: serde_json::json!({}), timeout_seconds: 5, retry_count: 0, critical: true });
+        tasks.insert("b".to_string(), WorkflowTaskTemplate { name: "B".into(), description: "".into(), required_capability: AgentCapability::CodeGeneration, request_template: serde_json::json!({}), timeout_seconds: 5, retry_count: 0, critical: true });
+        coord.workflow_templates.insert("par_tpl".into(), WorkflowTemplate { name: "par_tpl".into(), description: "".into(), tasks, execution_strategy: ExecutionStrategy::Parallel, dependencies: HashMap::new() });
+        drop(coord);
+
+        let wf_id = hub.start_workflow("par_tpl", serde_json::json!({})).await.unwrap();
+        let status = hub.get_workflow_status(wf_id).await.unwrap();
+        assert_eq!(status, WorkflowStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_dependency_workflow_failure_on_critical() {
+        let hub = AgentCommunicationHub::new();
+        // Agent will fail
+        hub.register_agent(Box::new(DummyAgent { id: "df".into(), caps: vec![AgentCapability::CodeGeneration], succeed: false })).await.unwrap();
+        // Install a dependency template: b depends on a (critical)
+        let mut coord = hub.workflow_coordinator.write().await;
+        let mut tasks = HashMap::new();
+        tasks.insert("a".to_string(), WorkflowTaskTemplate { name: "A".into(), description: "".into(), required_capability: AgentCapability::CodeGeneration, request_template: serde_json::json!({}), timeout_seconds: 5, retry_count: 0, critical: true });
+        tasks.insert("b".to_string(), WorkflowTaskTemplate { name: "B".into(), description: "".into(), required_capability: AgentCapability::CodeGeneration, request_template: serde_json::json!({}), timeout_seconds: 5, retry_count: 0, critical: false });
+        let mut deps = HashMap::new();
+        deps.insert("b".to_string(), vec!["a".to_string()]);
+        coord.workflow_templates.insert("dep_tpl".into(), WorkflowTemplate { name: "dep_tpl".into(), description: "".into(), tasks, execution_strategy: ExecutionStrategy::Dependency, dependencies: deps });
+        drop(coord);
+
+        let res = hub.start_workflow("dep_tpl", serde_json::json!({})).await;
+        assert!(res.is_err(), "Expected failure due to critical task failure");
     }
 }

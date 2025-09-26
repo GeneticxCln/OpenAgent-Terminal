@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use anyhow::{Result, anyhow, Context};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use crate::event::{Event, EventType};
@@ -179,6 +180,9 @@ pub struct AiRuntime {
     /// Provider configurations
     providers: HashMap<AiProvider, AiProviderConfig>,
     
+    /// Registry of custom providers (name -> provider)
+    custom_providers: HashMap<String, Arc<dyn CustomAiProvider>>, 
+    
     /// Current active provider
     active_provider: AiProvider,
     
@@ -209,6 +213,29 @@ pub struct AiRuntime {
     history_retention: crate::config::ai::AiHistoryRetention,
 }
 
+/// Trait for registering custom AI providers at runtime
+#[async_trait]
+pub trait CustomAiProvider: Send + Sync {
+    async fn chat(&self, http: Client, cfg: AiProviderConfig, prompt: String) -> Result<String>;
+    /// Optional streaming; default implementation falls back to non-streaming and emits a single chunk
+    async fn chat_stream(
+        &self,
+        http: Client,
+        cfg: AiProviderConfig,
+        prompt: String,
+        proxy: winit::event_loop::EventLoopProxy<crate::event::Event>,
+        window_id: winit::window::WindowId,
+    ) -> Result<()> {
+        let text = self.chat(http, cfg, prompt).await?;
+        let _ = proxy.send_event(crate::event::Event::new(
+            crate::event::EventType::AiStreamChunk(AiStreamChunk { content: text, is_complete: true, metadata: HashMap::new() }),
+            window_id,
+        ));
+        let _ = proxy.send_event(crate::event::Event::new(crate::event::EventType::AiStreamFinished, window_id));
+        Ok(())
+    }
+}
+
 impl AiRuntime {
     /// Create a new AI runtime with default configuration
     pub fn new() -> Self {
@@ -233,6 +260,7 @@ impl AiRuntime {
             ui: AiUiState::default(),
             agent_manager: Arc::new(RwLock::new(AgentManager::new())),
             providers,
+            custom_providers: HashMap::new(),
             active_provider: AiProvider::default(),
             event_sender: None,
             conversations: HashMap::new(),
@@ -286,6 +314,16 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
     /// Set event sender for UI updates
     pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<Event>) {
         self.event_sender = Some(sender);
+    }
+
+    /// Register a custom AI provider implementation
+    pub fn register_custom_provider<N: Into<String>>(&mut self, name: N, provider: Arc<dyn CustomAiProvider>) {
+        self.custom_providers.insert(name.into(), provider);
+    }
+
+    /// Unregister a custom AI provider implementation
+    pub fn unregister_custom_provider(&mut self, name: &str) {
+        self.custom_providers.remove(name);
     }
 
     /// Switch to a different AI provider
@@ -618,14 +656,38 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .cloned()
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
-        tokio::spawn(async move {
-            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
-                let _ = proxy.send_event(crate::event::Event::new(
-                    crate::event::EventType::AiStreamError(e.to_string()),
-                    window_id,
-                ));
+        // Handle custom providers by using the registry (non-static dispatch)
+        match prov.clone() {
+            AiProvider::Custom(name) => {
+                let custom = self.custom_providers.get(&name).cloned();
+                if let Some(custom) = custom {
+                    tokio::spawn(async move {
+                        if let Err(e) = custom.chat_stream(http, cfg, prompt, proxy.clone(), window_id).await {
+                            let _ = proxy.send_event(crate::event::Event::new(
+                                crate::event::EventType::AiStreamError(e.to_string()),
+                                window_id,
+                            ));
+                        }
+                    });
+                } else {
+                    // Fallback error event if custom provider missing
+                    let _ = proxy.send_event(crate::event::Event::new(
+                        crate::event::EventType::AiStreamError(format!("Custom provider '{}' not registered", name)),
+                        window_id,
+                    ));
+                }
             }
-        });
+            _ => {
+                tokio::spawn(async move {
+                    if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                        let _ = proxy.send_event(crate::event::Event::new(
+                            crate::event::EventType::AiStreamError(e.to_string()),
+                            window_id,
+                        ));
+                    }
+                });
+            }
+        }
         self.ui.is_loading = true;
         self.ui.streaming_active = true;
         self.ui.streaming_text.clear();
@@ -646,26 +708,60 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .cloned()
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
-        tokio::spawn(async move {
-            match AiRuntime::provider_chat_owned(http, prov, cfg, prompt).await {
-                Ok(s) => {
-                    let suffix = s.lines().next().unwrap_or("").to_string();
+        match prov.clone() {
+            AiProvider::Custom(name) => {
+                if let Some(custom) = self.custom_providers.get(&name).cloned() {
+                    let http = self.http.clone();
+                    tokio::spawn(async move {
+                        match custom.chat(http, cfg, prompt).await {
+                            Ok(s) => {
+                                let suffix = s.lines().next().unwrap_or("").to_string();
+                                let _ = proxy.send_event(crate::event::Event::new(
+                                    crate::event::EventType::AiInlineSuggestionReady(suffix),
+                                    window_id,
+                                ));
+                            }
+                            Err(e) => {
+                                let _ = proxy.send_event(crate::event::Event::new(
+                                    crate::event::EventType::AiStreamError(format!(
+                                        "Inline suggestion failed: {}",
+                                        e
+                                    )),
+                                    window_id,
+                                ));
+                            }
+                        }
+                    });
+                } else {
                     let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiInlineSuggestionReady(suffix),
-                        window_id,
-                    ));
-                }
-                Err(e) => {
-                    let _ = proxy.send_event(crate::event::Event::new(
-                        crate::event::EventType::AiStreamError(format!(
-                            "Inline suggestion failed: {}",
-                            e
-                        )),
+                        crate::event::EventType::AiStreamError(format!("Custom provider '{}' not registered", name)),
                         window_id,
                     ));
                 }
             }
-        });
+            _ => {
+                tokio::spawn(async move {
+                    match AiRuntime::provider_chat_owned(http, prov, cfg, prompt).await {
+                        Ok(s) => {
+                            let suffix = s.lines().next().unwrap_or("").to_string();
+                            let _ = proxy.send_event(crate::event::Event::new(
+                                crate::event::EventType::AiInlineSuggestionReady(suffix),
+                                window_id,
+                            ));
+                        }
+                        Err(e) => {
+                            let _ = proxy.send_event(crate::event::Event::new(
+                                crate::event::EventType::AiStreamError(format!(
+                                    "Inline suggestion failed: {}",
+                                    e
+                                )),
+                                window_id,
+                            ));
+                        }
+                    }
+                });
+            }
+        }
         self.ui.is_loading = true;
     }
     
@@ -696,14 +792,35 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .cloned()
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
-        tokio::spawn(async move {
-            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
-                let _ = proxy.send_event(crate::event::Event::new(
-                    crate::event::EventType::AiStreamError(e.to_string()),
-                    window_id,
-                ));
+        match prov.clone() {
+            AiProvider::Custom(name) => {
+                if let Some(custom) = self.custom_providers.get(&name).cloned() {
+                    tokio::spawn(async move {
+                        if let Err(e) = custom.chat_stream(http, cfg, prompt, proxy.clone(), window_id).await {
+                            let _ = proxy.send_event(crate::event::Event::new(
+                                crate::event::EventType::AiStreamError(format!("Explain failed: {}", e)),
+                                window_id,
+                            ));
+                        }
+                    });
+                } else {
+                    let _ = proxy.send_event(crate::event::Event::new(
+                        crate::event::EventType::AiStreamError(format!("Custom provider '{}' not registered", name)),
+                        window_id,
+                    ));
+                }
             }
-        });
+            _ => {
+                tokio::spawn(async move {
+                    if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                        let _ = proxy.send_event(crate::event::Event::new(
+                            crate::event::EventType::AiStreamError(format!("Explain failed: {}", e)),
+                            window_id,
+                        ));
+                    }
+                });
+            }
+        }
 
         Ok(conversation_id)
     }
@@ -765,14 +882,35 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .cloned()
             .unwrap_or_else(|| AiProviderConfig::default());
         let http = self.http.clone();
-        tokio::spawn(async move {
-            if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
-                let _ = proxy.send_event(crate::event::Event::new(
-                    crate::event::EventType::AiStreamError(format!("Fix proposal failed: {}", e)),
-                    window_id,
-                ));
+        match prov.clone() {
+            AiProvider::Custom(name) => {
+                if let Some(custom) = self.custom_providers.get(&name).cloned() {
+                    tokio::spawn(async move {
+                        if let Err(e) = custom.chat_stream(http, cfg, prompt, proxy.clone(), window_id).await {
+                            let _ = proxy.send_event(crate::event::Event::new(
+                                crate::event::EventType::AiStreamError(format!("Fix proposal failed: {}", e)),
+                                window_id,
+                            ));
+                        }
+                    });
+                } else {
+                    let _ = proxy.send_event(crate::event::Event::new(
+                        crate::event::EventType::AiStreamError(format!("Custom provider '{}' not registered", name)),
+                        window_id,
+                    ));
+                }
             }
-        });
+            _ => {
+                tokio::spawn(async move {
+                    if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
+                        let _ = proxy.send_event(crate::event::Event::new(
+                            crate::event::EventType::AiStreamError(format!("Fix proposal failed: {}", e)),
+                            window_id,
+                        ));
+                    }
+                });
+            }
+        }
         self.ui.is_loading = true;
         self.ui.streaming_active = true;
         self.ui.streaming_text.clear();
@@ -912,16 +1050,29 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
 
 impl AiRuntime {
     async fn provider_chat(&self, user_prompt: &str) -> Result<String> {
-        Self::provider_chat_owned(
-            self.http.clone(),
-            self.active_provider.clone(),
-            self.providers
-                .get(&self.active_provider)
-                .cloned()
-                .ok_or_else(|| anyhow!("Active provider not configured"))?,
-            user_prompt.to_string(),
-        )
-        .await
+        let prov = self.active_provider.clone();
+        let cfg = self
+            .providers
+            .get(&prov)
+            .cloned()
+            .ok_or_else(|| anyhow!("Active provider not configured"))?;
+        match prov.clone() {
+            AiProvider::Custom(name) => {
+                let prov_impl = self
+                    .custom_providers
+                    .get(&name)
+                    .cloned()
+                    .ok_or_else(|| anyhow!(format!("Custom provider '{}' not registered", name)))?;
+                prov_impl.chat(self.http.clone(), cfg, user_prompt.to_string()).await
+            }
+            _ => Self::provider_chat_owned(
+                self.http.clone(),
+                prov,
+                cfg,
+                user_prompt.to_string(),
+            )
+            .await,
+        }
     }
 
     /// Submit a prompt (optionally with serialized context) and get a structured response
@@ -1273,6 +1424,7 @@ let resp = http.post(url).bearer_auth(key).json(&req).send().await?;
             }
         }
     }
+
 }
 
 impl Default for AiRuntime {
@@ -1287,6 +1439,7 @@ pub const AI_INLINE_SUGGEST_DEBOUNCE: Duration = Duration::from_millis(500);
 #[cfg(test)]
 mod tests {
     use super::*;
+
 
     #[test]
     fn test_ai_runtime_creation() {

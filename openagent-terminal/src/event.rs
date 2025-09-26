@@ -2819,6 +2819,7 @@ pub enum EventType {
     BlocksSearchPerform(String),
     BlocksSearchResults(Vec<crate::display::blocks_search_panel::BlocksSearchItem>),
     BlocksToggleStar(String),
+    BlocksStarredUpdated { id: String, starred: bool },
 
     // Notebooks panel events (UI + data)
     #[cfg(feature = "never")]
@@ -4182,6 +4183,15 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.native_search.results = results;
         self.display.native_search.last_updated = Some(std::time::Instant::now());
         self.mark_dirty();
+    }
+
+    #[cfg(not(feature = "never"))]
+    fn blocks_search_toggle_star_selected(&mut self) {
+        if !self.display.native_search.active { return; }
+        let idx = self.display.native_search.selected_index;
+        if let Some(item) = self.display.native_search.results.get(idx) {
+            self.send_user_event(EventType::BlocksToggleStar(item.id.clone()));
+        }
     }
 
     #[cfg(feature = "never")]
@@ -8385,8 +8395,35 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         *self.ctx.dirty = true;
                     }
                 }
-                EventType::BlocksToggleStar(_id) => {
-                    // TODO: Wire to BlockManager::toggle_starred via storage; for now, no-op
+                EventType::BlocksToggleStar(id) => {
+                    // Toggle star for a block in storage asynchronously and emit UI update
+                    let id_str = id.clone();
+                    let proxy = self.ctx.event_proxy.clone();
+                    let window_id = self.ctx.display.window.id();
+                    tokio::spawn(async move {
+                        use crate::storage::blocks::BlockStorage;
+                        match id_str.parse::<i64>() {
+                            Ok(numeric_id) => {
+                                match BlockStorage::new_default().await {
+                                    Ok(storage) => {
+                                        match storage.toggle_starred(numeric_id).await {
+                                            Ok(new_starred) => {
+                                                // Notify UI to update any open results panel
+                                                let _ = proxy.send_event(Event::new(
+                                                    EventType::BlocksStarredUpdated { id: id_str.clone(), starred: new_starred },
+                                                    window_id,
+                                                ));
+                                            }
+                                            Err(e) => log::error!("Failed to toggle star for block {}: {}", numeric_id, e),
+                                        }
+                                    }
+                                    Err(e) => log::error!("Blocks storage init failed: {}", e),
+                                }
+                            }
+                            Err(e) => log::error!("Invalid block id '{}': {}", id_str, e),
+                        }
+                    });
+                    *self.ctx.dirty = true;
                 }
                 #[cfg(feature = "never")]
                 EventType::BlocksToggleStar(_block_id) => {
@@ -8426,6 +8463,26 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.display.damage_tracker.frame().mark_fully_damaged();
                             *self.ctx.dirty = true;
                         }
+                    }
+                }
+                EventType::BlocksStarredUpdated { id, starred } => {
+                    // Update starred state in Blocks Search panel results if present
+                    let mut changed = false;
+                    // Update legacy/stub blocks_search panel state used by event paths
+                    if !self.ctx.display.blocks_search.results.is_empty() {
+                        for item in self.ctx.display.blocks_search.results.iter_mut() {
+                            if item.id == id {
+                                item.starred = starred;
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                    // Update native search star overrides so overlay reflects new state
+                    self.ctx.display.native_search.star_overrides.insert(id, starred);
+                    changed = true;
+                    if changed {
+                        *self.ctx.dirty = true;
                     }
                 }
                 EventType::BlocksCopyHeaderUnderCursor => {

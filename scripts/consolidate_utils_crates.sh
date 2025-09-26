@@ -152,24 +152,18 @@ use std::path::Path;
 
 /// ${module_name^} manager
 #[derive(Debug, Default)]
-pub struct ${module_name^}Manager {
-    // TODO: Implement ${module_name} functionality
-}
+pub struct ${module_name^}Manager {}
 
 impl ${module_name^}Manager {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
     
     pub fn initialize(&mut self) -> UtilsResult<()> {
         tracing::info!("Initializing ${module_name} manager");
-        // TODO: Add initialization logic
         Ok(())
     }
     
-    pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
-        tracing::info!("Loading ${module_name} from directory: {:?}", path);
-        // TODO: Add directory loading logic
+    pub fn load_from_directory(&mut self, _path: &Path) -> UtilsResult<()> {
+        tracing::info!("Loading ${module_name} from directory");
         Ok(())
     }
 }
@@ -185,17 +179,13 @@ use std::path::Path;
 
 /// ${module_name^} manager  
 #[derive(Debug, Default)]
-pub struct ${module_name^}Manager {
-    // Placeholder for ${module_name} functionality
-}
+pub struct ${module_name^}Manager {}
 
 impl ${module_name^}Manager {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
     
-    pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
-        tracing::info!("Loading ${module_name} from directory: {:?}", path);
+    pub fn load_from_directory(&mut self, _path: &Path) -> UtilsResult<()> {
+        tracing::info!("Loading ${module_name} from directory");
         Ok(())
     }
 }

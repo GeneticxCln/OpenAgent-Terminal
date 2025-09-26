@@ -81,4 +81,11 @@ impl BlockStorage {
         mgr.update_block_tags(BlockId(id as u64), tags).await?;
         Ok(())
     }
+
+    /// Toggle starred flag for a block and return the new value
+    pub async fn toggle_starred(&self, id: i64) -> Result<bool> {
+        let mut mgr = self.manager.write().await;
+        let new_starred = mgr.toggle_starred(BlockId(id as u64)).await?;
+        Ok(new_starred)
+    }
 }

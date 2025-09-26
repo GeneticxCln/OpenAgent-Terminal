@@ -95,6 +95,8 @@ pub struct NativeSearchPanelState {
     pub selected_index: usize,
     pub results: Vec<crate::native_search::SearchResult>,
     pub last_updated: Option<Instant>,
+    /// Star overrides for results by id (UI-side, updated via BlocksStarredUpdated events)
+    pub star_overrides: std::collections::HashMap<String, bool>,
 }
 
 
@@ -1398,16 +1400,25 @@ ai_current_model: if cfg!(feature = "ai") {
                 let metrics = self.glyph_cache.font_metrics();
                 self.renderer_draw_rects(&size_copy, &metrics, vec![row_bg]);
             }
+            // Star indicator from overrides
+            let starred = state.star_overrides.get(&r.id).copied().unwrap_or(false);
             // Title and snippet (first 80 chars)
-            let title_cols = ((width - 24.0) / cw) as usize;
+            let mut title_cols = ((width - 24.0) / cw) as usize;
+            if starred && title_cols > 2 { title_cols -= 2; }
             let mut title_line = r.title.to_string();
             if title_line.len() > title_cols { title_line.truncate(title_cols); }
-            self.draw_ai_text(Point::new(line, Column(start_col)), tokens.text, tokens.surface, &title_line, title_cols);
+            // Draw star then title
+            let mut col = start_col;
+            if starred {
+                self.draw_ai_text(Point::new(line, Column(col)), tokens.accent, tokens.surface, "★ ", 2);
+                col += 2;
+            }
+            self.draw_ai_text(Point::new(line, Column(col)), tokens.text, tokens.surface, &title_line, title_cols);
             // Next line: muted snippet if any
             let snippet_line = line + 1;
             let mut snippet = r.content.lines().next().unwrap_or("").to_string();
             if snippet.len() > title_cols { snippet.truncate(title_cols); }
-            self.draw_ai_text(Point::new(snippet_line, Column(start_col)), tokens.text_muted, tokens.surface, &snippet, title_cols);
+            self.draw_ai_text(Point::new(snippet_line, Column(start_col)), tokens.text_muted, tokens.surface, &snippet, ((width - 24.0) / cw) as usize);
         }
 
         // Footer hint

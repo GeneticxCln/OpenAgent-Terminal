@@ -4,6 +4,8 @@
 
 use crate::{UtilsError, UtilsResult};
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::fs;
 use std::path::Path;
 
 /// Code snippet definition
@@ -53,7 +55,107 @@ impl SnippetsManager {
 
     pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
         tracing::info!("Loading snippets from directory: {:?}", path);
-        // TODO: Scan directory for .toml snippet files and load them
+        if !path.exists() {
+            return Err(UtilsError::Snippet(format!(
+                "Snippet directory does not exist: {:?}",
+                path
+            )));
+        }
+        if !path.is_dir() {
+            return Err(UtilsError::Snippet(format!(
+                "Snippet path is not a directory: {:?}",
+                path
+            )));
+        }
+
+        #[derive(serde::Deserialize)]
+        struct SnippetsFile {
+            #[serde(default)]
+            snippets: Vec<Snippet>,
+            #[serde(default)]
+            templates: Vec<Template>,
+        }
+
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let file_path = entry.path();
+            if !file_path.is_file() {
+                continue;
+            }
+            let ext = file_path.extension().and_then(OsStr::to_str).unwrap_or("");
+            let content = match fs::read_to_string(&file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("Failed to read snippet file {:?}: {}", file_path, e);
+                    continue;
+                }
+            };
+
+            let mut loaded_snippets: Vec<Snippet> = Vec::new();
+            let mut loaded_templates: Vec<Template> = Vec::new();
+
+            let parse_attempts: UtilsResult<()> = match ext.to_ascii_lowercase().as_str() {
+                "toml" => {
+                    // Prefer single-object parses first (avoid swallowing by wrapper with unknown fields)
+                    if let Ok(snip) = toml::from_str::<Snippet>(&content) {
+                        loaded_snippets.push(snip);
+                    }
+                    if let Ok(tmpl) = toml::from_str::<Template>(&content) {
+                        loaded_templates.push(tmpl);
+                    }
+                    if let Ok(wrapper) = toml::from_str::<SnippetsFile>(&content) {
+                        loaded_snippets.extend(wrapper.snippets);
+                        loaded_templates.extend(wrapper.templates);
+                    }
+                    Ok(())
+                }
+                "json" => {
+                    if let Ok(snip) = serde_json::from_str::<Snippet>(&content) {
+                        loaded_snippets.push(snip);
+                    }
+                    if let Ok(tmpl) = serde_json::from_str::<Template>(&content) {
+                        loaded_templates.push(tmpl);
+                    }
+                    if let Ok(wrapper) = serde_json::from_str::<SnippetsFile>(&content) {
+                        loaded_snippets.extend(wrapper.snippets);
+                        loaded_templates.extend(wrapper.templates);
+                    }
+                    Ok(())
+                }
+                "yaml" | "yml" => {
+                    if let Ok(snip) = serde_yaml::from_str::<Snippet>(&content) {
+                        loaded_snippets.push(snip);
+                    }
+                    if let Ok(tmpl) = serde_yaml::from_str::<Template>(&content) {
+                        loaded_templates.push(tmpl);
+                    }
+                    if let Ok(wrapper) = serde_yaml::from_str::<SnippetsFile>(&content) {
+                        loaded_snippets.extend(wrapper.snippets);
+                        loaded_templates.extend(wrapper.templates);
+                    }
+                    Ok(())
+                }
+                _ => {
+                    tracing::debug!("Skipping non-snippet file {:?}", file_path);
+                    Ok(())
+                }
+            };
+
+            if parse_attempts.is_err() {
+                tracing::warn!("Failed to parse snippets/templates in {:?}", file_path);
+                continue;
+            }
+
+            for s in loaded_snippets {
+                let name = s.name.clone();
+                self.snippets.insert(name, s);
+            }
+            for t in loaded_templates {
+                let name = t.name.clone();
+                self.templates.insert(name, t);
+            }
+        }
+
         Ok(())
     }
 
@@ -162,16 +264,19 @@ impl SnippetsManager {
 use std::{{imports}};
 
 /// {{struct_description}}
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct {{struct_name}} {
-    // TODO: Add fields
+    pub id: u64,
+    pub name: String,
 }
 
 impl {{struct_name}} {
     pub fn new() -> Self {
-        Self {
-            // TODO: Initialize fields
-        }
+        Self { id: 0, name: String::new() }
+    }
+
+    pub fn with_id_name(id: u64, name: impl Into<String>) -> Self {
+        Self { id, name: name.into() }
     }
 }
 
@@ -181,8 +286,9 @@ mod tests {
 
     #[test]
     fn test_{{test_name}}() {
-        let instance = {{struct_name}}::new();
-        // TODO: Add test assertions
+        let instance = {{struct_name}}::with_id_name(1, "example");
+        assert_eq!(instance.id, 1);
+        assert_eq!(instance.name, "example");
     }
 }
 "#

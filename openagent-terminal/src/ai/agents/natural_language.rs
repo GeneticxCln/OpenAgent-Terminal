@@ -139,6 +139,15 @@ impl Default for NaturalLanguageAgent {
 }
 
 impl NaturalLanguageAgent {
+    /// Detect shell kind from AgentContext environment variables, fallback to bash
+    fn detect_shell_kind(context: &AgentContext) -> String {
+        if let Some(shell) = context.environment_vars.get("SHELL") {
+            let name = std::path::Path::new(shell).file_name().and_then(|s| s.to_str()).unwrap_or(shell);
+            return name.to_string();
+        }
+        "bash".to_string()
+    }
+
     /// Add a conversation turn to history
     pub fn add_conversation_turn(&mut self, role: ConversationRole, content: String) -> Uuid {
         let turn_id = Uuid::new_v4();
@@ -198,41 +207,49 @@ impl NaturalLanguageAgent {
         // Simple pattern-based entity extraction
         // TODO: Replace with more sophisticated NLP
 
-        // File paths
-        if let Some(captures) = regex::Regex::new(r"([~/][\w\-./]+)").unwrap().captures(text) {
-            if let Some(matched) = captures.get(1) {
-                entities.push(Entity {
-                    entity_type: EntityType::FilePath,
-                    value: matched.as_str().to_string(),
-                    confidence: 0.9,
-                    span: (matched.start(), matched.end()),
-                });
-            }
+        // File paths (collect all occurrences)
+        let re = regex::Regex::new(r"([~/][\w\-./]+)").unwrap();
+        for m in re.find_iter(text) {
+            entities.push(Entity {
+                entity_type: EntityType::FilePath,
+                value: m.as_str().to_string(),
+                confidence: 0.9,
+                span: (m.start(), m.end()),
+            });
         }
 
         // Programming languages
         let languages = ["rust", "python", "javascript", "typescript", "go", "java", "c++"];
+        let lower = text.to_lowercase();
         for lang in &languages {
-            if text.to_lowercase().contains(lang) {
+            let mut start_idx = 0usize;
+            while let Some(rel) = lower[start_idx..].find(lang) {
+                let s = start_idx + rel;
+                let e = s + lang.len();
                 entities.push(Entity {
                     entity_type: EntityType::Language,
                     value: lang.to_string(),
                     confidence: 0.8,
-                    span: (0, 0), // TODO: Find actual position
+                    span: (s, e),
                 });
+                start_idx = e;
             }
         }
 
         // Commands (words that look like shell commands)
         let command_patterns = ["git", "npm", "cargo", "docker", "kubectl", "ls", "cd", "mkdir"];
         for cmd in &command_patterns {
-            if text.contains(cmd) {
+            let mut start_idx = 0usize;
+            while let Some(rel) = text[start_idx..].find(cmd) {
+                let s = start_idx + rel;
+                let e = s + cmd.len();
                 entities.push(Entity {
                     entity_type: EntityType::Command,
                     value: cmd.to_string(),
                     confidence: 0.7,
-                    span: (0, 0), // TODO: Find actual position
+                    span: (s, e),
                 });
+                start_idx = e;
             }
         }
 
@@ -250,7 +267,7 @@ impl NaturalLanguageAgent {
 
                 scratch_text: prompt,
                 working_directory: Some(context.current_directory.clone()),
-                shell_kind: Some("zsh".to_string()), // TODO: Get from context when shell_kind field is available
+                shell_kind: Some(Self::detect_shell_kind(context)),
                 context: vec![
                     ("mode".to_string(), "conversation".to_string()),
                     ("agent".to_string(), "natural-language".to_string()),

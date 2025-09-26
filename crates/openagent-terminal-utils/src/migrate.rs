@@ -3,6 +3,8 @@
 //! This module provides migration tools for configuration and data.
 
 use crate::{UtilsError, UtilsResult};
+use std::ffi::OsStr;
+use std::fs;
 use std::path::Path;
 
 /// Migration information
@@ -33,7 +35,94 @@ impl MigrateManager {
 
     pub fn load_from_directory(&mut self, path: &Path) -> UtilsResult<()> {
         tracing::info!("Loading migrations from directory: {:?}", path);
-        // TODO: Scan directory for migration files
+        if !path.exists() {
+            return Err(UtilsError::Migration(format!(
+                "Migration directory does not exist: {:?}",
+                path
+            )));
+        }
+        if !path.is_dir() {
+            return Err(UtilsError::Migration(format!(
+                "Migration path is not a directory: {:?}",
+                path
+            )));
+        }
+
+        // Build a map to de-dupe by ID, allowing filesystem files to override built-ins
+        let mut by_id: std::collections::HashMap<String, Migration> =
+            self.migrations.iter().cloned().map(|m| (m.id.clone(), m)).collect();
+
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let file_path = entry.path();
+            if !file_path.is_file() {
+                continue;
+            }
+            let ext = file_path.extension().and_then(OsStr::to_str).unwrap_or("");
+            let content = match fs::read_to_string(&file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("Failed to read migration file {:?}: {}", file_path, e);
+                    continue;
+                }
+            };
+
+            // Try multiple formats: single Migration or array of Migration
+            let load_result: UtilsResult<Vec<Migration>> = match ext.to_ascii_lowercase().as_str() {
+                "toml" => {
+                    let parsed_single: Result<Migration, toml::de::Error> = toml::from_str(&content);
+                    if let Ok(m) = parsed_single {
+                        Ok(vec![m])
+                    } else {
+                        let parsed_many: Result<Vec<Migration>, toml::de::Error> = toml::from_str(&content);
+                        parsed_many.map_err(UtilsError::from)
+                    }
+                }
+                "yaml" | "yml" => {
+                    let parsed_single: Result<Migration, serde_yaml::Error> = serde_yaml::from_str(&content);
+                    if let Ok(m) = parsed_single {
+                        Ok(vec![m])
+                    } else {
+                        let parsed_many: Result<Vec<Migration>, serde_yaml::Error> = serde_yaml::from_str(&content);
+                        parsed_many.map_err(UtilsError::from)
+                    }
+                }
+                "json" => {
+                    let parsed_single: Result<Migration, serde_json::Error> = serde_json::from_str(&content);
+                    if let Ok(m) = parsed_single {
+                        Ok(vec![m])
+                    } else {
+                        let parsed_many: Result<Vec<Migration>, serde_json::Error> = serde_json::from_str(&content);
+                        parsed_many.map_err(UtilsError::from)
+                    }
+                }
+                _ => {
+                    tracing::debug!("Skipping non-migration file {:?}", file_path);
+                    continue;
+                }
+            };
+
+            match load_result {
+                Ok(migs) => {
+                    for m in migs {
+                        if m.id.trim().is_empty() {
+                            tracing::warn!("Skipping migration with empty id in file {:?}", file_path);
+                            continue;
+                        }
+                        by_id.insert(m.id.clone(), m);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse migrations in {:?}: {}", file_path, e);
+                    continue;
+                }
+            }
+        }
+
+        // Replace internal list with de-duped, stable-sorted by id
+        let mut merged: Vec<Migration> = by_id.into_values().collect();
+        merged.sort_by(|a, b| a.id.cmp(&b.id));
+        self.migrations = merged;
         Ok(())
     }
 

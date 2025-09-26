@@ -851,9 +851,22 @@ impl ContextAnalyzer {
         }
     }
     
+    #[cfg(test)]
+    fn update_directory_context_for_test(&mut self, new_dir: PathBuf) {
+        self.update_directory_context(&new_dir);
+    }
+
     async fn analyze_context(&self) -> Result<f32> {
-        // Context analysis implementation
-        Ok(0.5)
+        // Basic context analysis combining directory and git context presence
+        let mut score = 0.0;
+        if self.directory_context.current_dir.is_some() {
+            score += 0.2;
+            if self.directory_context.project_type.is_some() { score += 0.2; }
+        }
+        if self.git_context.is_git_repo { score += 0.3; }
+        if !self.environment_context.available_tools.is_empty() { score += 0.1; }
+        if !self.command_context.recent_commands.is_empty() { score += 0.2; }
+        Ok(score.min(1.0))
     }
     
     fn update_command_context(&mut self, command: &str, working_dir: &PathBuf) {
@@ -866,8 +879,61 @@ impl ContextAnalyzer {
     }
     
     fn update_directory_context(&mut self, new_dir: &PathBuf) {
+        use std::fs;
+        use std::path::Path;
         self.directory_context.current_dir = Some(new_dir.clone());
-        // TODO: Analyze directory contents and type
+
+        // Classify directory type
+        let dir = new_dir;
+        let dir_name = dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let home = dirs::home_dir();
+        let tmp_dirs = ["/tmp", "/var/tmp"]; // best-effort
+        self.directory_context.directory_type = if let Some(ref h) = home {
+            if dir.starts_with(h) {
+                match dir_name {
+                    "Downloads" | "downloads" => DirectoryType::Downloads,
+                    "Documents" | "documents" => DirectoryType::Documents,
+                    _ => DirectoryType::Home,
+                }
+            } else if tmp_dirs.iter().any(|t| dir.starts_with(t)) {
+                DirectoryType::Temporary
+            } else if dir.starts_with("/etc") || dir.starts_with("/usr") || dir.starts_with("/opt") {
+                DirectoryType::System
+            } else if dir_name == ".config" { DirectoryType::Config } else { DirectoryType::Project }
+        } else {
+            DirectoryType::Project
+        };
+
+        // Read top-level files (non-recursive) for project detection
+        let mut files: Vec<FileInfo> = Vec::new();
+        if let Ok(entries) = fs::read_dir(dir) { 
+            for ent in entries.flatten().take(200) { // cap
+                let path = ent.path();
+                let md = ent.metadata().ok();
+                files.push(FileInfo {
+                    name: ent.file_name().to_string_lossy().to_string(),
+                    is_dir: md.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+                    size: md.as_ref().and_then(|m| if m.is_file(){ Some(m.len()) } else { None }),
+                    modified: md.and_then(|m| m.modified().ok()),
+                });
+            }
+        }
+        self.directory_context.files = files;
+
+        // Detect project type by sentinel files
+        let has = |p: &str| dir.join(p).exists();
+        self.directory_context.project_type = if has("Cargo.toml") {
+            Some(ProjectType::Rust)
+        } else if has("package.json") || has("pnpm-lock.yaml") || has("yarn.lock") {
+            Some(ProjectType::JavaScript)
+        } else if has("pyproject.toml") || has("requirements.txt") || has("Pipfile") {
+            Some(ProjectType::Python)
+        } else if has("go.mod") {
+            Some(ProjectType::Go)
+        } else if has("pom.xml") || has("build.gradle") { Some(ProjectType::Java) }
+        else if has("Dockerfile") { Some(ProjectType::Docker) }
+        else if has("index.html") || dir.join("src").join("index.html").exists() { Some(ProjectType::Web) }
+        else { None };
     }
 }
 
@@ -948,6 +1014,23 @@ struct SysadminPredictor;
 impl PerformanceTracker {
     fn track_command_completion(&mut self, duration: Duration) {
         // Track command completion times
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+
+    #[test]
+    fn test_directory_classification_rust() {
+        let tmp = TempDir::new().unwrap();
+        let cargo = tmp.path().join("Cargo.toml");
+        fs::write(&cargo, "[package]\nname=\"x\"\nversion=\"0.1.0\"").unwrap();
+        let mut ca = ContextAnalyzer::new();
+        ca.update_directory_context_for_test(tmp.path().to_path_buf());
+        assert!(matches!(ca.directory_context.project_type, Some(ProjectType::Rust)));
     }
 }
 

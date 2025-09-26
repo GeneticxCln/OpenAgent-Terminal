@@ -40,3 +40,6 @@ themes = []
 snippets = []
 migrate = ["rusqlite", "chrono"]
 all = ["themes", "snippets", "migrate"]
+
+[dev-dependencies]
+tempfile = "3.12"
