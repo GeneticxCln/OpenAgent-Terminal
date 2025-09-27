@@ -1,0 +1,47 @@
+name: Feature Matrix Clippy
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  clippy-feature-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature-set:
+          - ""
+          - "plugins"
+          - "notebooks-ui"
+          - "plugins,plugins-ui"
+          - "plugins,plugins-ui,notebooks-ui"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: openagent-terminal-feature-matrix
+
+      - name: Clippy -D warnings (openagent-terminal)
+        run: |
+          set -euxo pipefail
+          if [ -z "${{ matrix.feature-set }}" ]; then
+            cargo clippy --manifest-path openagent-terminal/Cargo.toml -- -D warnings
+          else
+            cargo clippy --manifest-path openagent-terminal/Cargo.toml --features "${{ matrix.feature-set }}" -- -D warnings
+          fi
+
+      - name: Build (release)
+        run: |
+          set -euxo pipefail
+          if [ -z "${{ matrix.feature-set }}" ]; then
+            cargo build --manifest-path openagent-terminal/Cargo.toml --release
+          else
+            cargo build --manifest-path openagent-terminal/Cargo.toml --release --features "${{ matrix.feature-set }}"
+          fi

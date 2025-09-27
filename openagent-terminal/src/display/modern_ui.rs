@@ -299,7 +299,7 @@ impl Display {
         let available_width = size_info.width() - style.tab_padding * 2.0;
         let tab_width = (available_width / tab_count as f32).clamp(120.0, 200.0);
 
-        let mut current_x = style.tab_padding;
+        let _current_x = style.tab_padding;
         let mut overflowed = false;
 
         // Determine if a drag is active and which tab is being dragged
@@ -335,7 +335,7 @@ impl Display {
             let mut x = style.tab_padding + (tab_width + gap) * (index as f32);
 
             // Compute shift due to an active drag operation (smooth via anim_p_tabs)
-            if let Some(d) = dragging.as_ref() {
+            if let Some(_d) = dragging.as_ref() {
                 let from = from_idx;
                 let to = to_idx;
                 if to > from {
@@ -1859,7 +1859,7 @@ impl Display {
         let ch = self.size_info.cell_height();
 
         // Helper to render a pill tooltip for given text at anchor
-        let mut render_tooltip_at = |s: &mut Self, text: &str, anchor_x: f32| {
+        let render_tooltip_at = |s: &mut Self, text: &str, anchor_x: f32| {
             let cols = text.width().max(3);
             let pad_x = (cw * 0.7).max(6.0);
             let pad_y = (ch * 0.2).max(3.0);
@@ -1928,7 +1928,7 @@ impl Display {
             }
         }
         // Close tooltip (check any tab's close rect)
-        if let Some((_, bx, by, bw, bh)) = self
+        if let Some((_, bx, _by, bw, _bh)) = self
             .close_button_bounds_px
             .iter()
             .copied()

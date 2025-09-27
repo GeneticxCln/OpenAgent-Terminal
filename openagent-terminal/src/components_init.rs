@@ -9,11 +9,12 @@ use tokio::runtime::Runtime;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
 
+
 // Import production-ready components
 #[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockManager, CreateBlockParams};
 #[cfg(feature = "plugins")]
-use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy, PluginError, CommandOutput};
+use crate::plugins_api::{PluginManager, SignaturePolicy};
 
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
@@ -225,11 +226,11 @@ impl WorkflowEngine {
                 };
                 let description = p.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let required = p.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
-                let default = p.get("default").map(|v| Self::yaml_to_json(v));
+let default = p.get("default").map(Self::yaml_to_json);
                 let options = p.get("options").and_then(|v| v.as_sequence()).map(|seq| {
                     seq.iter().filter_map(|opt| {
                         let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let value = opt.get("value").map(|vv| Self::yaml_to_json(vv)).unwrap_or(serde_json::Value::Null);
+let value = opt.get("value").map(Self::yaml_to_json).unwrap_or(serde_json::Value::Null);
                         if label.is_empty() { None } else { Some(WorkflowParamOption { value, label }) }
                     }).collect::<Vec<_>>()
                 });
@@ -311,7 +312,7 @@ pub struct InitializedComponents {
     #[cfg(feature = "blocks")]
     pub notebook_manager: Option<Arc<tokio::sync::RwLock<crate::notebooks::NotebookManager>>>,
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
-    #[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins"))]
     pub plugin_manager: Option<Arc<PluginManager>>,
     #[cfg(feature = "blocks")]
     pub storage: Option<Arc<crate::storage::Storage>>,
@@ -333,7 +334,7 @@ impl std::fmt::Debug for InitializedComponents {
         {
             let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some"));
         }
-        #[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins"))]
         {
             let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some"));
         }
@@ -382,23 +383,9 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     #[cfg(feature = "blocks")]
     let storage = if config.enable_blocks {
         let db_path = config.data_dir.join("terminal.db");
-        match crate::storage::Storage::new(&db_path).await {
+match crate::storage::Storage::new(&db_path) {
             Ok(storage) => {
                 info!("✓ Storage initialized at {}", db_path.display());
-                // Exercise core interfaces with safe operations to wire code paths
-                let bs = storage.blocks();
-                let _ = bs
-                    .search_blocks(
-                        &crate::storage::blocks::BlockFilter::default(),
-                        &crate::storage::blocks::BlockSort::default(),
-                    )
-                    .await;
-                let _ = bs.get_session_blocks("bootstrap").await;
-
-                let ps = storage.plugins();
-                let _ = ps.get_kv("bootstrap.health", "default", "ping").await;
-                let _ = ps.get_doc("bootstrap.health", "default", "readme").await;
-                let _ = bs.update_block_tags(0, Vec::new()).await;
                 Some(Arc::new(storage))
             }
             Err(e) => {
@@ -432,17 +419,9 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     // Initialize Notebook manager
     #[cfg(feature = "blocks")]
     let notebook_manager = if config.enable_blocks {
-        let notebooks_dir = config.data_dir.join("notebooks");
-        match crate::notebooks::NotebookManager::new(&notebooks_dir, block_manager.clone()).await {
-            Ok(mgr) => {
-                info!("✓ Command Notebooks initialized");
-                Some(Arc::new(tokio::sync::RwLock::new(mgr)))
-            }
-            Err(e) => {
-                error!("Failed to initialize Notebooks: {}", e);
-                None
-            }
-        }
+        let mgr = crate::notebooks::NotebookManager::new();
+        info!("✓ Command Notebooks initialized");
+        Some(Arc::new(tokio::sync::RwLock::new(mgr)))
     } else {
         None
     };
@@ -465,7 +444,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize plugin manager
-    #[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins"))]
     let plugin_manager = if config.enable_plugins {
         let plugins_dir = config.data_dir.join("plugins");
         // Plugin policy toggles (Warp-like defaults with env overrides for releases)
@@ -505,17 +484,6 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
             Ok(manager) => {
                 info!("✓ Plugin system initialized");
                 let pm = Arc::new(manager);
-                if hot_reload {
-                    let watcher_dirs = vec![
-                        PathBuf::from("/usr/share/openagent-terminal/plugins"),
-                        dirs::config_dir()
-                            .map(|d| d.join("openagent-terminal").join("plugins"))
-                            .unwrap_or_default(),
-                        std::env::current_dir().unwrap_or_default().join("plugins"),
-                        plugins_dir.clone(),
-                    ];
-                    spawn_plugin_watchers(Arc::clone(&pm), watcher_dirs);
-                }
                 Some(pm)
             }
             Err(e) => {
@@ -538,7 +506,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
         #[cfg(feature = "blocks")]
         notebook_manager,
         workflow_engine,
-        #[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins"))]
         plugin_manager,
         #[cfg(feature = "blocks")]
         storage,
@@ -571,6 +539,7 @@ async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
 
 /// Initialize workflow engine
 #[cfg(feature = "blocks")]
+#[allow(dead_code)]
 async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<WorkflowEngine> {
     let engine = WorkflowEngine::new().context("Failed to create workflow engine")?;
 
@@ -585,9 +554,9 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
             if path.extension().and_then(|s| s.to_str()) == Some("yaml")
                 || path.extension().and_then(|s| s.to_str()) == Some("yml")
             {
-                match engine.load_workflow(&path).await {
+                match engine.load_workflow_json(&path).await {
                     Ok(id) => {
-                        debug!("Loaded workflow: {}", id);
+                        debug!("Loaded workflow: {:?}", id);
                         count += 1;
                     }
                     Err(e) => {
@@ -608,7 +577,7 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
                 if path.extension().and_then(|s| s.to_str()) == Some("yaml")
                     || path.extension().and_then(|s| s.to_str()) == Some("yml")
                 {
-                    if let Ok(id) = engine.load_workflow(&path).await {
+                    if let Ok(Some((id, _))) = engine.load_workflow_json(&path).await {
                         debug!("Loaded workflow: {}", id);
                     }
                 }
@@ -627,6 +596,7 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
 }
 
 #[cfg(feature = "blocks")]
+#[allow(dead_code)]
 async fn seed_default_workflows(dir: &std::path::Path) -> Result<()> {
     let rust = r#"name: Cargo Build
 version: "1.0.0"
@@ -714,7 +684,7 @@ outputs: []
 }
 
 /// Initialize plugin manager
-#[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins"))]
 pub(crate) async fn initialize_plugin_manager(
     plugins_dir: PathBuf,
     enforce_signatures: bool,
@@ -751,16 +721,6 @@ pub(crate) async fn initialize_plugin_manager(
         warn!("Failed to preinstall bundled plugins: {}", e);
     }
 
-    // Create plugin host with storage dir
-    let storage_dir = if let Some(data) = dirs::data_dir() {
-        data.join("openagent-terminal").join("plugins").join("storage")
-    } else {
-        PathBuf::from("./.openagent-terminal/plugins/storage")
-    };
-    if let Err(e) = tokio::fs::create_dir_all(&storage_dir).await {
-        warn!("Failed to create storage dir: {}", e);
-    }
-    let host = Arc::new(TerminalPluginHost::new(storage_dir));
 
     // Log planned plugin directories and policy
     info!("Plugin directories under management:");
@@ -780,241 +740,33 @@ pub(crate) async fn initialize_plugin_manager(
         path_require_system, path_require_user, path_require_project, hot_reload
     );
 
-    // Create plugin manager with host and directories
-    let mut manager = PluginManager::with_host_and_dirs(dirs_vec, Some(host))
-        .context("Failed to create plugin manager")?;
-    manager.set_enforce_signatures(enforce_signatures);
+    // Determine signature policy
+    let signature_policy = if enforce_signatures && require_signatures_for_all {
+        SignaturePolicy::Required
+    } else if enforce_signatures {
+        SignaturePolicy::Preferred
+    } else {
+        SignaturePolicy::Optional
+    };
 
-    manager.configure_signature_policy(SignaturePolicy::Required);
+    // Create plugin manager
+    let mut manager = PluginManager::new(signature_policy);
 
-    // Discover and load plugins
-    match manager.discover_plugins().await {
-        Ok(plugins) => {
-            info!("Discovered {} plugins", plugins.len());
-            for plugin_path in plugins {
-                match manager.load_plugin(&plugin_path).await {
-                    Ok(id) => debug!("Loaded plugin: {}", id),
-                    Err(e) => warn!("Failed to load plugin {:?}: {}", plugin_path, e),
-                }
-            }
+    // Register search directories
+    for dir in dirs_vec {
+        if let Err(e) = manager.host_mut().add_plugin_directory(&dir) {
+            warn!("Failed to add plugin directory {:?}: {}", dir, e);
         }
-        Err(e) => {
-            warn!("Failed to discover plugins: {}", e);
-        }
+    }
+
+    // Initialize (scan and load)
+    if let Err(e) = manager.initialize().await {
+        warn!("Plugin manager initialization failed: {}", e);
     }
 
     Ok(manager)
 }
 
-/// Terminal plugin host implementation
-/// Plugin host trait for providing services to plugins
-pub trait PluginHostTrait: Send + Sync {
-    fn log(&self, level: LogLevel, message: &str);
-    fn get_storage_dir(&self) -> PathBuf;
-    fn execute_command(&self, command: &str, args: &[String]) -> Result<CommandOutput>;
-    fn read_file(&self, path: &str) -> Result<Vec<u8>, PluginError>;
-    fn write_file(&self, path: &str, data: &[u8]) -> Result<(), PluginError>;
-    fn store_data_for(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), PluginError>;
-    fn retrieve_data_for(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, PluginError>;
-    fn store_document_for(&self, plugin_id: &str, namespace: &str, key: &str, doc: serde_json::Value) -> Result<(), PluginError>;
-    fn retrieve_document_for(&self, plugin_id: &str, namespace: &str, key: &str) -> Result<Option<serde_json::Value>, PluginError>;
-}
-
-#[cfg(feature = "blocks")]
-struct TerminalPluginHost {
-    storage_dir: PathBuf,
-}
-
-#[cfg(feature = "blocks")]
-impl TerminalPluginHost {
-    fn new(storage_dir: PathBuf) -> Self {
-        Self { storage_dir }
-    }
-}
-
-#[cfg(feature = "blocks")]
-impl PluginHostTrait for TerminalPluginHost {
-    fn log(&self, level: LogLevel, message: &str) {
-        match level {
-            LogLevel::Debug => debug!("[Plugin] {}", message),
-            LogLevel::Info => info!("[Plugin] {}", message),
-            LogLevel::Warning => warn!("[Plugin] {}", message),
-            LogLevel::Error => error!("[Plugin] {}", message),
-        }
-    }
-
-    fn read_file(&self, path: &str) -> Result<Vec<u8>, PluginError> {
-        std::fs::read(path).map_err(PluginError::IoError)
-    }
-
-    fn write_file(&self, path: &str, data: &[u8]) -> Result<(), PluginError> {
-        std::fs::write(path, data).map_err(PluginError::IoError)
-    }
-
-    fn execute_command(&self, command: &str) -> Result<CommandOutput, PluginError> {
-        // Security Lens gating for plugin-executed commands.
-        // Read policy from current UiConfig via confirm broker.
-        let policy = crate::ui_confirm::get_security_policy();
-        let mut lens = crate::security_lens::SecurityLens::new(policy.clone());
-        let risk = lens.analyze_command(command);
-        if lens.should_block(&risk) {
-            // Telemetry: record a blocked command event (local-only JSONL)
-            if let Err(e) = write_security_audit_event(
-                None,
-                command,
-                "blocked",
-                &risk.explanation,
-                format!("{:?}", risk.level).as_str(),
-            ) {
-                warn!("Failed to write security audit log: {}", e);
-            }
-            return Err(PluginError::CommandFailed(format!(
-                "Blocked risky plugin command ({}): {}",
-                risk.level as u8, risk.explanation
-            )));
-        }
-        // Interactive confirmation if required by policy
-        let require_confirm = *policy.require_confirmation.get(&risk.level).unwrap_or(&false);
-        if require_confirm {
-            let mut body = String::new();
-            body.push_str(&format!("{}\n\n", risk.explanation));
-            if !risk.mitigations.is_empty() {
-                body.push_str("Suggested mitigations:\n");
-                for m in &risk.mitigations {
-                    body.push_str(&format!("  • {}\n", m));
-                }
-                body.push('\n');
-            }
-            body.push_str(&format!("Command:\n  {}", command));
-            let title = match risk.level {
-                crate::security_lens::RiskLevel::Critical => {
-                    "CRITICAL: Confirm plugin command".into()
-                }
-                crate::security_lens::RiskLevel::Warning => {
-                    "Warning: Confirm plugin command".into()
-                }
-                crate::security_lens::RiskLevel::Caution => {
-                    "Caution: Confirm plugin command".into()
-                }
-                crate::security_lens::RiskLevel::Safe => "Confirm plugin command".into(),
-            };
-            match crate::ui_confirm::request_confirm(
-                title,
-                body,
-                Some("Run".into()),
-                Some("Cancel".into()),
-                Some(30_000),
-            ) {
-                Ok(true) => {
-                    // Accepted: write audit event
-                    if let Err(e) = write_security_audit_event(
-                        None,
-                        command,
-                        "confirmed",
-                        &risk.explanation,
-                        format!("{:?}", risk.level).as_str(),
-                    ) {
-                        warn!("Failed to write security audit log: {}", e);
-                    }
-                }
-                Ok(false) => {
-                    // Canceled: write audit event and abort
-                    if let Err(e) = write_security_audit_event(
-                        None,
-                        command,
-                        "denied_user",
-                        &risk.explanation,
-                        format!("{:?}", risk.level).as_str(),
-                    ) {
-                        warn!("Failed to write security audit log: {}", e);
-                    }
-                    return Err(PluginError::CommandFailed("User canceled command".into()));
-                }
-                Err(e) => {
-                    return Err(PluginError::CommandFailed(format!("Confirmation failed: {}", e)));
-                }
-            }
-        }
-
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .output()
-            .map_err(|e| PluginError::CommandFailed(e.to_string()))?;
-
-        Ok(CommandOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
-            execution_time_ms: 0,
-        })
-    }
-
-    fn store_data_for(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), PluginError> {
-        let dir = self.storage_dir.join(sanitize_key_to_filename(plugin_id));
-        std::fs::create_dir_all(&dir).map_err(PluginError::IoError)?;
-        // Basic quota: cap per-plugin storage to ~50 MiB; reject if exceeding
-        const MAX_BYTES: u64 = 50 * 1024 * 1024;
-        let used = dir_size_bytes(&dir).unwrap_or(0);
-        if used > MAX_BYTES {
-            return Err(PluginError::IoError(std::io::Error::other(
-                "Plugin storage quota exceeded",
-            )));
-        }
-        let file = dir.join(sanitize_key_to_filename(key));
-        std::fs::write(file, value).map_err(PluginError::IoError)
-    }
-
-    fn retrieve_data_for(
-        &self,
-        plugin_id: &str,
-        key: &str,
-    ) -> Result<Option<Vec<u8>>, PluginError> {
-        let dir = self.storage_dir.join(sanitize_key_to_filename(plugin_id));
-        let file = dir.join(sanitize_key_to_filename(key));
-        match std::fs::read(file) {
-            Ok(data) => Ok(Some(data)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(PluginError::IoError(e)),
-        }
-    }
-
-    fn store_document_for(
-        &self,
-        plugin_id: &str,
-        namespace: &str,
-        doc_id: &str,
-        doc_json: &str,
-    ) -> Result<(), PluginError> {
-        let base = self
-            .storage_dir
-            .join(sanitize_key_to_filename(plugin_id))
-            .join("docs")
-            .join(sanitize_key_to_filename(namespace));
-        std::fs::create_dir_all(&base).map_err(PluginError::IoError)?;
-        let file = base.join(format!("{}.json", sanitize_key_to_filename(doc_id)));
-        std::fs::write(file, doc_json.as_bytes()).map_err(PluginError::IoError)
-    }
-
-    fn retrieve_document_for(
-        &self,
-        plugin_id: &str,
-        namespace: &str,
-        doc_id: &str,
-    ) -> Result<Option<String>, PluginError> {
-        let file = self
-            .storage_dir
-            .join(sanitize_key_to_filename(plugin_id))
-            .join("docs")
-            .join(sanitize_key_to_filename(namespace))
-            .join(format!("{}.json", sanitize_key_to_filename(doc_id)));
-        match std::fs::read_to_string(file) {
-            Ok(json) => Ok(Some(json)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(PluginError::IoError(e)),
-        }
-    }
-}
 
 /// Integration helper for using components with the terminal
 pub struct ComponentIntegration<'a> {
@@ -1084,6 +836,7 @@ impl<'a> ComponentIntegration<'a> {
 }
 
 #[cfg(feature = "blocks")]
+#[allow(dead_code)]
 fn count_trusted_keys(dir: Option<PathBuf>) -> usize {
     if let Some(d) = dir {
         if let Ok(entries) = std::fs::read_dir(d) {
@@ -1097,6 +850,7 @@ fn count_trusted_keys(dir: Option<PathBuf>) -> usize {
 }
 
 #[cfg(feature = "blocks")]
+#[allow(dead_code)]
 fn sanitize_key_to_filename(key: &str) -> String {
     let mut s = String::with_capacity(key.len());
     for ch in key.chars() {
@@ -1114,6 +868,7 @@ fn sanitize_key_to_filename(key: &str) -> String {
 }
 
 #[cfg(feature = "blocks")]
+#[allow(dead_code)]
 fn write_security_audit_event(
     plugin_id: Option<&str>,
     command: &str,
@@ -1151,6 +906,7 @@ fn write_security_audit_event(
 }
 
 #[cfg(feature = "blocks")]
+#[allow(dead_code)]
 fn dir_size_bytes(dir: &std::path::Path) -> Option<u64> {
     let mut total: u64 = 0;
     let rd = std::fs::read_dir(dir).ok()?;
@@ -1167,7 +923,7 @@ fn dir_size_bytes(dir: &std::path::Path) -> Option<u64> {
     Some(total)
 }
 
-#[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins"))]
 async fn install_bundled_plugins(dir: &PathBuf) -> Result<(), anyhow::Error> {
     use tokio::fs;
     fs::create_dir_all(dir).await.ok();
@@ -1293,6 +1049,7 @@ timeout_ms=5000
 }
 
 #[cfg(feature = "blocks")]
+#[cfg(all(feature = "blocks", feature = "plugins", feature = "plugins-ui", feature = "never"))]
 fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
     use notify::{
         Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode,
@@ -1403,7 +1160,7 @@ mod tests {
         assert!(config.enable_plugins);
     }
 
-    #[cfg(feature = "blocks")]
+    #[cfg(all(feature = "blocks", feature = "plugins", feature = "plugins-ui"))]
     #[tokio::test]
     async fn test_plugins_manager_discovers_and_loads() {
         // Create a temporary plugins dir and a minimal WASM file

@@ -62,7 +62,7 @@ pub mod animation;
 pub mod blocks;
 pub mod blocks_search_actions;
 pub mod blocks_search_panel;
-#[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
 pub mod notebook_panel;
 pub mod color;
 #[cfg(feature = "completions")]
@@ -94,6 +94,7 @@ pub struct NativeSearchPanelState {
     pub query: String,
     pub selected_index: usize,
     pub results: Vec<crate::native_search::SearchResult>,
+    #[allow(dead_code)]
     pub last_updated: Option<Instant>,
     /// Star overrides for results by id (UI-side, updated via BlocksStarredUpdated events)
     pub star_overrides: std::collections::HashMap<String, bool>,
@@ -588,7 +589,7 @@ pub struct Display {
     pub palette_rows_start_line: Option<usize>,
 
     // Active notebook edit session (temporary file based), if any
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     #[allow(dead_code)]
     pub notebooks_edit_session: Option<crate::display::notebook_panel::NotebookEditSession>,
 
@@ -631,7 +632,7 @@ pub struct Display {
     #[cfg(feature = "plugins")]
     pub plugins_panel: crate::display::plugin_panel::PluginPanelState,
     /// Notebooks panel state (feature="blocks")
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     pub notebooks_panel: notebook_panel::NotebookPanelState,
 
     /// Settings panel state (for in-app configuration like API keys)
@@ -1243,7 +1244,7 @@ impl Display {
             // Clean startup tracking
             startup_clean_mode: config.workspace.clean_startup,
             startup_nonempty_seen: false,
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "notebooks-ui")]
             notebooks_panel: notebook_panel::NotebookPanelState::new(),
             pending_renderer_update: Default::default(),
             composer_focused: false,
@@ -1338,7 +1339,7 @@ ai_current_model: if cfg!(feature = "ai") {
                 p.load_mru_from_config(config);
                 p
             },
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "notebooks-ui")]
             notebooks_edit_session: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
             last_mouse_x: 0,
@@ -2001,7 +2002,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
     }
 
     // No-op notebooks overlay stub for feature="never" builds
-    #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn draw_notebooks_panel_overlay(
         &mut self,
         _config: &UiConfig,
@@ -2031,6 +2032,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
         G: std::ops::Deref<Target = Term<T>> + std::ops::DerefMut,
     {
         // Compute ai_panel_active flag in a cfg-safe way
+        #[cfg(feature = "ai")]
         let ai_active_flag = ai_state.map(|s| s.active).unwrap_or(false);
         #[cfg(not(feature = "ai"))]
         let ai_active_flag = false;
@@ -2839,7 +2841,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
                 self.draw_plugins_panel_overlay(config, &st);
             }
             // Notebooks panel overlay if active
-            #[cfg(feature = "plugins")]
+            #[cfg(feature = "notebooks-ui")]
             if self.notebooks_panel.active {
                 let st = self.notebooks_panel.clone();
                 self.draw_notebooks_panel_overlay(config, &st);

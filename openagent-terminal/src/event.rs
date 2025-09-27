@@ -20,7 +20,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use std::{env, f32, mem};
-use std::str::FromStr as _;
 
 use ahash::RandomState;
 use crossfont::Size as FontSize;
@@ -68,16 +67,12 @@ use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-#[cfg(feature = "plugins")]
-use serde_json::json;
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 
-#[cfg(feature = "notebooks")]
+#[cfg(feature = "notebooks-ui")]
 use crate::notebooks::{NotebookListItem, NotebookCellItem};
 
-#[cfg(feature = "plugins")]
-use crate::plugins_api::{PluginEvent, PluginEventMessage};
 
 #[cfg(test)]
 pub(crate) fn collect_block_output_from_grid(
@@ -122,6 +117,7 @@ pub const BLOCKS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Debounce delay for Workflows Search typing.
 pub const WORKFLOWS_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Retention time for workflows progress overlay after completion.
+#[allow(dead_code)]
 pub const WORKFLOWS_OVERLAY_RETAIN: Duration = Duration::from_millis(3000);
 
 /// Maximum number of search terms stored in the history.
@@ -156,6 +152,7 @@ pub struct Processor {
     pending_workflow_confirms: HashMap<String, (String, WindowId)>,
 
     // Guard to start workflow file watchers once
+    #[allow(dead_code)]
     workflows_watch_started: bool,
 }
 
@@ -775,19 +772,58 @@ impl Processor {
                 let win = window_id;
                 let runtime = components.runtime.clone();
 
-                // Build search query from state or simple text query
-                let search_query = if let Some(state) = state {
-                    self.build_search_query_from_state(state, &query)
-                } else {
-                    let mut sq = crate::blocks_v2::SearchQuery::default();
-                    if !query.trim().is_empty() {
-                        sq.text = Some(query.clone());
-                    }
-                    sq.limit = Some(100);
-                    sq
-                };
+                // Capture filters into owned form for safe use inside async task
+                let filters = state.map(|s| s.filters.clone());
 
                 runtime.spawn(async move {
+                    use crate::blocks_v2::SearchQuery;
+                    use chrono::{DateTime, Utc};
+                    use std::path::Path;
+
+                    // Move owned query into the task and build a borrowed SearchQuery on top of it
+                    let q = query;
+
+                    // Derive optional borrowed fields from owned/captured data
+                    let text_opt = if q.trim().is_empty() { None } else { Some(q.as_str()) };
+
+                    let (tags_opt, directory_opt, starred_opt, from_date_opt, to_date_opt) = if let Some(f) = &filters {
+                        let tags_opt: Option<&[String]> = if f.tags.is_empty() {
+                            None
+                        } else {
+                            Some(f.tags.as_slice())
+                        };
+
+                        let directory_opt: Option<&Path> = f.directory.as_deref().map(Path::new);
+
+                        let from_date_opt: Option<DateTime<Utc>> = f
+                            .date_from
+                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                            .map(|dt| dt.with_timezone(&Utc));
+
+                        let to_date_opt: Option<DateTime<Utc>> = f
+                            .date_to
+                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                            .map(|dt| dt.with_timezone(&Utc));
+
+                        (tags_opt, directory_opt, Some(f.starred_only), from_date_opt, to_date_opt)
+                    } else {
+                        (None, None, None, None, None)
+                    };
+
+                    let search_query = SearchQuery {
+                        text: text_opt,
+                        directory: directory_opt,
+                        shell: None,
+                        tags: tags_opt,
+                        starred: starred_opt,
+                        from_date: from_date_opt,
+                        to_date: to_date_opt,
+                        limit: Some(100),
+                        offset: None,
+                        sort_by: None,
+                        sort_order: None,
+                    };
+
                     let mut items = Vec::new();
                     if let Ok(res) = manager.read().await.search(search_query).await {
                         for b in res {
@@ -801,7 +837,7 @@ impl Processor {
                                 exit_code: b.exit_code,
                                 duration_ms: b.duration_ms,
                                 starred: b.starred,
-                                tags: b.tags.iter().cloned().collect(),
+                                tags: b.tags.to_vec(),
                                 shell: b.shell.to_str().to_string(),
                                 status: format!("{:?}", b.status),
                             });
@@ -811,8 +847,7 @@ impl Processor {
                     {
                         test_posted_events::record(EventType::BlocksSearchResults(items.clone()));
                     }
-                    let _ =
-                        proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
+                    let _ = proxy.send_event(Event::new(EventType::BlocksSearchResults(items), win));
                 });
                 return;
             }
@@ -822,66 +857,18 @@ impl Processor {
         {
             test_posted_events::record(EventType::BlocksSearchResults(Vec::new()));
         }
-        if let Err(e) =
-            self.proxy.send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), window_id))
+        if let Err(e) = self
+            .proxy
+            .send_event(Event::new(EventType::BlocksSearchResults(Vec::new()), window_id))
         {
             tracing::warn!("failed to post empty BlocksSearchResults: {:?}", e);
         }
     }
 
-    fn build_search_query_from_state(
-        &self,
-        state: &crate::display::blocks_search_panel::BlocksSearchState,
-        query: &str,
-    ) -> crate::blocks_v2::SearchQuery {
-        use crate::blocks_v2::SearchQuery;
-        use crate::display::blocks_search_panel::SearchMode;
-
-        let mut sq = SearchQuery {
-            sort_by: state.sort_field,
-            sort_order: state.sort_order,
-            offset: Some(state.current_page * state.items_per_page),
-            limit: Some(state.items_per_page),
-            starred_only: state.filters.starred_only,
-            tags: if state.filters.tags.is_empty() {
-                None
-            } else {
-                Some(state.filters.tags.clone())
-            },
-            directory: state.filters.directory.clone(),
-            shell: state.filters.shell,
-            status: state.filters.status,
-            exit_code: state.filters.exit_code,
-            duration: state.filters.duration,
-            date_from: state.filters.date_from,
-            date_to: state.filters.date_to,
-            ..Default::default()
-        };
-
-        // Set text search based on mode
-        if !query.trim().is_empty() {
-            match state.mode {
-                SearchMode::Basic => {
-                    sq.text = Some(query.to_string());
-                }
-                SearchMode::Command => {
-                    sq.command_text = Some(query.to_string());
-                }
-                SearchMode::Output => {
-                    sq.output_text = Some(query.to_string());
-                }
-                SearchMode::Advanced => {
-                    sq.text = Some(query.to_string());
-                }
-            }
-        }
-
-        sq
-    }
 }
 
 
-#[cfg(feature = "plugins")]
+#[cfg(all(feature = "notebooks-ui", feature = "never"))]
 impl Processor {
     fn notebooks_open(&mut self, window_id: WindowId) {
         if let Some(win) = self.windows.get_mut(&window_id) {
@@ -1175,11 +1162,11 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Notebooks UI events
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksOpen, Some(window_id)) => {
                 self.notebooks_open(*window_id);
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksList(items), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.notebooks = items;
@@ -1191,7 +1178,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksSelect(id), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.selected_notebook = Some(id.clone());
@@ -1199,7 +1186,7 @@ impl ApplicationHandler<Event> for Processor {
                 }
                 self.notebooks_load_cells(*window_id, id);
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksCells(cells), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.cells = cells;
@@ -1209,7 +1196,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksRunCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1225,7 +1212,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksRunNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1241,7 +1228,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksAddCommand(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1269,7 +1256,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksAddMarkdown(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1291,7 +1278,7 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
 
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksDeleteCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1308,7 +1295,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksConvertCellToMarkdown(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1328,7 +1315,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksConvertCellToCommand(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1348,7 +1335,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksExportNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1372,7 +1359,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+            #[cfg(all(feature = "notebooks-ui", feature = "never"))]
             (EventType::NotebooksEditApply { cell_id, content }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1689,9 +1676,8 @@ impl ApplicationHandler<Event> for Processor {
 
                                     // Subscribe to updates
                                     let mut rx = engine.subscribe();
-                                    loop {
-                                        match rx.recv().await {
-                                            Ok(ev) => match ev {
+                                    while let Ok(ev) = rx.recv().await {
+                                        match ev {
                                                 crate::components_init::WorkflowEvent::Started { execution_id }
                                                     if execution_id == exec_id =>
                                                 {
@@ -1798,9 +1784,7 @@ impl ApplicationHandler<Event> for Processor {
                                                     ));
                                                 }
                                                 _ => {}
-                                            },
-                                            Err(_) => break,
-                                        }
+                                            }
                                     }
                                 }
                                 Err(e) => {
@@ -1904,7 +1888,7 @@ impl ApplicationHandler<Event> for Processor {
                             EventType::WorkflowsProgressClear(execution_id.clone()),
                             *window_id,
                         );
-                        let ms = self.config.workflow_ui.overlay_retain_ms.max(0) as u64;
+                        let ms = self.config.workflow_ui.overlay_retain_ms;
                         self.scheduler
                             .schedule(evt, Duration::from_millis(ms), false, tid);
                     }
@@ -1985,9 +1969,8 @@ workflow_name: Some(crate::event::workflow_name_from_json(&def, &wf_id)),
 
                                         // Subscribe to workflow engine events and forward updates
                                         let mut rx = engine.subscribe();
-                                        loop {
-                                            match rx.recv().await {
-                                                Ok(ev) => match ev {
+                                        while let Ok(ev) = rx.recv().await {
+                                            match ev {
                                                     crate::components_init::WorkflowEvent::Started { execution_id } if execution_id == exec_id => {
                                                         let _ = proxy.send_event(Event::new(
                                                             EventType::WorkflowsProgressUpdate {
@@ -2002,7 +1985,7 @@ workflow_name: Some(crate::event::workflow_name_from_json(&def, &wf_id)),
                                                             win,
                                                         ));
                                                     }
-                                                    crate::components_init::WorkflowEvent::StepStarted { execution_id, step_id } if execution_id == exec_id => {
+                                                    crate::components_init::WorkflowEvent::StepStarted { execution_id, step_id: _ } if execution_id == exec_id => {
                                                         let _ = proxy.send_event(Event::new(
                                                             EventType::WorkflowsProgressUpdate {
                                             execution_id,
@@ -2060,9 +2043,7 @@ EventType::WorkflowsProgressUpdate {
                                                         ));
                                                     }
                                                     _ => {}
-                                                },
-                                                Err(_) => break,
-                                            }
+                                                }
                                         }
                                         return;
                                     }
@@ -2104,9 +2085,8 @@ EventType::WorkflowsProgressUpdate {
 
                                     // Subscribe to workflow engine events and forward updates
                                     let mut rx = engine.subscribe();
-                                    loop {
-                                        match rx.recv().await {
-                                            Ok(ev) => match ev {
+                                    while let Ok(ev) = rx.recv().await {
+                                        match ev {
                                                 crate::components_init::WorkflowEvent::Started { execution_id }
                                                     if execution_id == exec_id =>
                                                 {
@@ -2215,12 +2195,7 @@ EventType::WorkflowsProgressUpdate {
                                                     ));
                                                 }
                                                 _ => {}
-                                            },
-                                            Err(_e) => {
-                                                // Receiver closed; stop forwarding
-                                                break;
                                             }
-                                        }
                                     }
                                 }
                                 Err(_e) => {
@@ -2401,142 +2376,97 @@ EventType::WorkflowsProgressUpdate {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PaletteRequestPluginCommands, Some(_window_id)) => {
-                if let Some(components) = &self.components {
-                    if let Some(pm) = &components.plugin_manager {
-                        let pm = pm.clone();
-                        let rt = components.runtime.clone();
-                        rt.spawn(async move {
-                            // Capability metadata is not available in the lightweight runtime; skip appending plugin commands.
-                            let _ids = pm.list_plugins().await;
-                        });
-                    }
-                }
+                // No-op for now; plugin palette commands are not yet implemented in this build
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PluginsRunCommand { plugin, command }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
-                        let pm = pm.clone();
+                        let mgr = pm.clone();
                         let proxy = self.proxy.clone();
                         let win = *window_id;
-                        let plugin_name = plugin.clone();
+                        let plugin_id = plugin.clone();
                         let cmd_name = command.clone();
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            use serde_json::json;
-let evt = PluginEventMessage {
-                                event_type: "command".into(),
-                                data: json!({ "name": cmd_name, "args": [] }),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs(),
+                            // Build a minimal CommandContext
+                            let ctx = crate::plugins_api::CommandContext {
+                                command: cmd_name.clone(),
+                                args: Vec::new(),
+                                working_directory: std::env::current_dir().unwrap_or_default(),
+                                environment: std::env::vars().collect(),
+                                user_id: None,
+                                session_id: uuid::Uuid::new_v4().to_string(),
                             };
-                            let resp = pm.send_event_to_plugin(&plugin_name, &evt).await;
-                            match resp {
-                                Ok(r) if r.success => {
-                                    let msg = if let Some(res) = r.result {
-                                        format!(
-                                            "Plugin '{}' ran command successfully:\n{}",
-                                            plugin_name, res
-                                        )
-                                    } else {
-                                        format!("Plugin '{}' ran command successfully", plugin_name)
-                                    };
-                                    let m = crate::message_bar::Message::new(
-                                        msg,
-                                        crate::message_bar::MessageType::Warning,
-                                    );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(m), win));
-                                }
-                                Ok(r) => {
-                                    let msg = format!(
-                                        "Plugin '{}' command failed: {}",
-                                        plugin_name,
-                                        r.error.unwrap_or_else(|| "Unknown error".into())
-                                    );
-                                    let m = crate::message_bar::Message::new(
-                                        msg,
-                                        crate::message_bar::MessageType::Warning,
-                                    );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(m), win));
-                                }
-                                Err(e) => {
-                                    let m = crate::message_bar::Message::new(
-                                        format!("Plugin '{}' error: {}", plugin_name, e),
-                                        crate::message_bar::MessageType::Warning,
-                                    );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(m), win));
-                                }
-                            }
+                            let result = mgr.host().execute_plugin_command(&plugin_id, &cmd_name, Vec::new(), ctx).await;
+                            let msg = match result {
+                                Ok(out) => format!("Plugin '{}' executed: exit {}\n{}", plugin_id, out.exit_code, out.stdout),
+                                Err(e) => format!("Plugin '{}' command failed: {}", plugin_id, e),
+                            };
+                            let m = crate::message_bar::Message::new(
+                                msg,
+                                crate::message_bar::MessageType::Warning,
+                            );
+                            let _ = proxy.send_event(Event::new(EventType::Message(m), win));
                         });
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PluginsSearchPerform(query), Some(window_id)) => {
-                // Build items from loaded plugins and discovered files; simple case-insensitive match
+                // Build items from loaded plugins and discovered directories; simple case-insensitive match
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
-                        let pm = pm.clone();
+                        let mgr = pm.clone();
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            let mut items: Vec<crate::display::plugin_panel::PluginItem> =
-                                Vec::new();
+                            let host = mgr.host();
+                            let mut items: Vec<crate::display::plugin_panel::PluginItem> = Vec::new();
                             let q = query.to_lowercase();
                             // Loaded plugins
-                            let loaded = pm.list_plugins().await;
-                            for id in loaded {
-                                let hay = id.clone();
+                            for inst in host.list_plugins() {
+                                let name = inst.manifest.id.clone();
+                                let hay = format!("{} {} {}", name, inst.manifest.name, inst.manifest.description);
                                 if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
                                     items.push(crate::display::plugin_panel::PluginItem {
-                                        name: id.clone(),
-                                        version: None,
-                                        description: None,
+                                        name,
+                                        version: Some(inst.manifest.version.clone()),
+                                        description: Some(inst.manifest.description.clone()),
                                         loaded: true,
-                                        path: None,
+                                        path: Some(inst.path.to_string_lossy().to_string()),
                                     });
                                 }
                             }
-                            // Discovered plugins on disk
-                            if let Ok(paths) = pm.discover_plugins().await {
-                                for p in paths {
-                                    let fname = p
-                                        .file_stem()
-                                        .and_then(|s| s.to_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let hay = format!("{} {}", fname, p.display());
+                            // Discovered plugin directories (manifests on disk)
+                            if let Ok(pairs) = host.scan_plugins_with_paths().await {
+                                for (manifest, p) in pairs {
+                                    let name = manifest.id.clone();
+                                    // Skip if already listed as loaded
+                                    if items.iter().any(|it| it.name == name && it.loaded) {
+                                        continue;
+                                    }
+                                    let hay = format!("{} {} {} {}", name, manifest.name, manifest.description, p.to_string_lossy());
                                     if q.trim().is_empty() || hay.to_lowercase().contains(&q) {
-                                        // Skip if already listed as loaded
-                                        if !items.iter().any(|it| it.name == fname && it.loaded) {
-                                            items.push(crate::display::plugin_panel::PluginItem {
-                                                name: fname,
-                                                version: None,
-                                                description: None,
-                                                loaded: false,
-                                                path: Some(p.to_string_lossy().to_string()),
-                                            });
-                                        }
+                                        items.push(crate::display::plugin_panel::PluginItem {
+                                            name,
+                                            version: Some(manifest.version),
+                                            description: Some(manifest.description),
+                                            loaded: false,
+                                            path: Some(p.to_string_lossy().to_string()),
+                                        });
                                     }
                                 }
                             }
-                            let _ = proxy.send_event(Event::new(
-                                EventType::PluginsSearchResults(items),
-                                win,
-                            ));
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchResults(items), win));
                         });
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PluginsSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.plugins_panel.results = items;
@@ -2546,147 +2476,76 @@ let evt = PluginEventMessage {
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PluginsLoadFromPath(path), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
-                        let pm = pm.clone();
+                        let mgr = pm.clone();
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            match pm.load_plugin(std::path::Path::new(&path)).await {
+                            match mgr.load_plugin_from_path(std::path::Path::new(&path)).await {
                                 Ok(id) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Loaded plugin: {}", id),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                                 Err(e) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Load failed: {}", e),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                             }
                             // Refresh list
-                            let _ = proxy.send_event(Event::new(
-                                EventType::PluginsSearchPerform(String::new()),
-                                win,
-                            ));
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
                         });
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PluginsUnloadByName(name), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
-                        let pm = pm.clone();
+                        let mgr = pm.clone();
                         let proxy = self.proxy.clone();
                         let win = *window_id;
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
-                            match pm.unload_plugin(&name).await {
+                            match mgr.host().unload_plugin(&name).await {
                                 Ok(()) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Unloaded plugin: {}", name),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                                 Err(e) => {
                                     let msg = crate::message_bar::Message::new(
                                         format!("Unload failed: {}", e),
                                         crate::message_bar::MessageType::Warning,
                                     );
-                                    let _ =
-                                        proxy.send_event(Event::new(EventType::Message(msg), win));
+                                    let _ = proxy.send_event(Event::new(EventType::Message(msg), win));
                                 }
                             }
                             // Refresh list
-                            let _ = proxy.send_event(Event::new(
-                                EventType::PluginsSearchPerform(String::new()),
-                                win,
-                            ));
+                            let _ = proxy.send_event(Event::new(EventType::PluginsSearchPerform(String::new()), win));
                         });
                     }
                 }
             }
-            #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
             (EventType::PluginsInstallFromUrl { url }, Some(window_id)) => {
-                if let Some(components) = &self.components {
-                    // Compute user plugins dir similar to initialize_plugin_manager
-                    let plugins_dir = if let Some(data) = dirs::data_dir() {
-                        data.join("openagent-terminal").join("plugins")
-                    } else {
-                        std::path::PathBuf::from("./.openagent-terminal/plugins")
-                    };
-                    let _ = std::fs::create_dir_all(&plugins_dir);
-                    let proxy = self.proxy.clone();
-                    let win = *window_id;
-                    let rt = components.runtime.clone();
-                    // Download and save
-                    rt.spawn(async move {
-                        let fname = url.split('/').next_back().unwrap_or("plugin.wasm");
-                        let target = plugins_dir.join(fname);
-                        let client = reqwest::Client::new();
-                        let res = client.get(&url).send().await;
-                        match res {
-                            Ok(resp) => {
-                                match resp.bytes().await {
-                                    Ok(bytes) => {
-                                        if let Err(e) = tokio::fs::write(&target, &bytes).await {
-                                            let m = crate::message_bar::Message::new(
-                                                format!("Install failed: {}", e),
-                                                crate::message_bar::MessageType::Warning,
-                                            );
-                                            let _ = proxy
-                                                .send_event(Event::new(EventType::Message(m), win));
-                                        } else {
-                                            let m = crate::message_bar::Message::new(
-                                                format!(
-                                                    "Downloaded plugin to {}",
-                                                    target.display()
-                                                ),
-                                                crate::message_bar::MessageType::Warning,
-                                            );
-                                            let _ = proxy
-                                                .send_event(Event::new(EventType::Message(m), win));
-                                            // Trigger load
-                                            let _ = proxy.send_event(Event::new(
-                                                EventType::PluginsLoadFromPath(
-                                                    target.to_string_lossy().to_string(),
-                                                ),
-                                                win,
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        let m = crate::message_bar::Message::new(
-                                            format!("Install failed: {}", e),
-                                            crate::message_bar::MessageType::Warning,
-                                        );
-                                        let _ = proxy
-                                            .send_event(Event::new(EventType::Message(m), win));
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                let m = crate::message_bar::Message::new(
-                                    format!("Download failed: {}", e),
-                                    crate::message_bar::MessageType::Warning,
-                                );
-                                let _ = proxy.send_event(Event::new(EventType::Message(m), win));
-                            }
-                        }
-                    });
-                }
+                // URL installation is not implemented in this build; surface a message.
+                let msg = crate::message_bar::Message::new(
+                    format!("Install from URL not supported yet: {}", url),
+                    crate::message_bar::MessageType::Warning,
+                );
+                let _ = self.proxy.send_event(Event::new(EventType::Message(msg), *window_id));
             }
             (payload, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
@@ -2779,6 +2638,7 @@ pub enum IpcSyncType {
 
 /// Workflow event types
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum WorkflowEvent {
     Started { execution_id: String },
     StepStarted { execution_id: String, step_id: String },
@@ -2829,28 +2689,33 @@ pub enum EventType {
     BlocksToggleStar(String),
     BlocksStarredUpdated { id: String, starred: bool },
 
-    // Notebooks panel events (UI + data)
-    #[cfg(feature = "plugins")]
+// Notebooks panel events (UI + data)
+#[cfg(feature = "notebooks-ui")]
     NotebooksOpen,
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksList(Vec<NotebookListItem>),
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksSelect(String), // notebook id
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksCells(Vec<NotebookCellItem>),
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksRunCell(String), // cell id
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksRunNotebook(String), // notebook id
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksAddCommand(String), // notebook id
-    #[cfg(feature = "plugins")]
+#[cfg(feature = "notebooks-ui")]
     NotebooksAddMarkdown(String), // notebook id
     // New editing and export actions
+    #[cfg(feature = "notebooks-ui")]
     NotebooksDeleteCell(String),            // cell id
+    #[cfg(feature = "notebooks-ui")]
     NotebooksConvertCellToMarkdown(String), // cell id
+    #[cfg(feature = "notebooks-ui")]
     NotebooksConvertCellToCommand(String),  // cell id
+    #[cfg(feature = "notebooks-ui")]
     NotebooksExportNotebook(String),        // notebook id
+    #[cfg(feature = "notebooks-ui")]
     NotebooksEditApply {
         cell_id: String,
         content: String,
@@ -2858,25 +2723,25 @@ pub enum EventType {
 
 
     // Plugin palette integration and execution
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PaletteRequestPluginCommands,
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PaletteAppendPluginCommands(Vec<(String, String, Option<String>)>), // (plugin, command, subtitle)
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsRunCommand {
         plugin: String,
         command: String,
     },
     // Plugins panel events
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsSearchPerform(String),
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsSearchResults(Vec<crate::display::plugin_panel::PluginItem>),
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsLoadFromPath(String), // path to .wasm
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsUnloadByName(String), // plugin id/name
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsInstallFromUrl {
         url: String,
     },
@@ -3143,6 +3008,7 @@ pub struct ActionContext<'a, N, T> {
     pub shell_pid: u32,
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
     #[cfg(feature = "plugins")]
+    #[allow(dead_code)]
     pub components: Option<&'a std::sync::Arc<InitializedComponents>>,
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
     /// Last started command captured during CommandStart
@@ -3713,7 +3579,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::PaletteRequestWorkflows, self.display.window.id()));
 
         // Ask to append plugin commands if plugin system is enabled
-        #[cfg(feature = "plugins")]
+        #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
         {
             let _ = self.event_proxy.send_event(Event::new(
                 EventType::PaletteRequestPluginCommands,
@@ -3989,9 +3855,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         self.paste(&cmd, true);
                     }
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                 PaletteEntry::PluginCommand { plugin, command } => {
-                    #[cfg(feature = "plugins")]
+                    #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                     {
                         // Security Lens gating is enforced inside the plugin host when plugins execute external commands.
                         let _ = self.event_proxy.send_event(Event::new(
@@ -3999,7 +3865,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                             self.display.window.id(),
                         ));
                     }
-                    #[cfg(not(feature = "plugins"))]
+                    #[cfg(not(all(feature = "plugins", feature = "plugins-ui")))]
                     {
                         let _ = (plugin, command);
                     }
@@ -4559,9 +4425,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 BlockAction::DeleteBlock => self.blocks_search_delete_selected(),
                 BlockAction::ViewFullOutput => self.blocks_search_view_output(),
                 BlockAction::CreateSnippet => self.blocks_search_create_snippet(),
-                // When AI feature is disabled at compile time, cover variants to satisfy match
-                #[cfg(not(feature = "ai"))]
-                _ => {}
             }
             // Close menu after action
             self.display.blocks_search.close_actions_menu();
@@ -4613,7 +4476,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn open_plugins_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4633,7 +4496,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn plugins_panel_cancel(&mut self) {
         self.display.plugins_panel.close();
         self.mark_dirty();
@@ -4643,7 +4506,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.workflows_panel.active
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn plugins_panel_active(&self) -> bool {
         self.display.plugins_panel.active
     }
@@ -4661,7 +4524,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn plugins_panel_input(&mut self, c: char) {
         self.display.plugins_panel.query.push(c);
         self.display.plugins_panel.selected = 0;
@@ -4688,7 +4551,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn plugins_panel_backspace(&mut self) {
         self.display.plugins_panel.query.pop();
         self.display.plugins_panel.selected = 0;
@@ -4707,7 +4570,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn plugins_panel_move_selection(&mut self, delta: isize) {
         self.display.plugins_panel.move_selection(delta);
         self.mark_dirty();
@@ -4728,7 +4591,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     fn plugins_panel_confirm(&mut self) {
         // If query looks like a URL, request install from URL
         let q = self.display.plugins_panel.query.trim().to_string();
@@ -5008,6 +4871,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
 
     // Notebooks panel controls (feature = "blocks")
         #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn open_notebooks_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -5022,17 +4886,20 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_active(&self) -> bool {
         self.display.notebooks_panel.active
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_close(&mut self) {
         self.display.notebooks_panel.close();
         self.mark_dirty();
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_move_selection(&mut self, delta: isize) {
         use std::cmp::min;
         // If a notebook is selected, move within cells; else move within notebooks
@@ -5084,6 +4951,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_confirm(&mut self) {
         // If no notebook selected, treat as selecting the first notebook
         if self.display.notebooks_panel.selected_notebook.is_none() {
@@ -5109,6 +4977,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_rerun_selected(&mut self) {
         if !self.display.notebooks_panel.active {
             return;
@@ -5123,6 +4992,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_add_command_cell(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5133,6 +5003,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_add_markdown_cell(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5143,6 +5014,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_run_all(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5153,6 +5025,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_focus_next(&mut self) {
         if self.display.notebooks_panel.active {
             self.display.notebooks_panel.toggle_focus();
@@ -5161,6 +5034,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(feature = "plugins")]
+    #[cfg(feature = "notebooks-ui")]
     fn notebooks_panel_focus_prev(&mut self) {
         if self.display.notebooks_panel.active {
             self.display.notebooks_panel.toggle_focus();
@@ -7011,8 +6885,10 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
             let ai_ctx = self.workspace.warp.as_ref().and_then(|w| w.get_current_ai_context());
             if let Some(ai_ctx) = ai_ctx {
                 // Convert core PtyAiContext to local AI context provider type (best-effort)
-                let mut tctx = crate::ai_context_provider::TerminalContext::default();
-                tctx.working_directory = ai_ctx.working_directory.clone();
+                let tctx = crate::ai_context_provider::TerminalContext {
+                    working_directory: ai_ctx.working_directory.clone(),
+                    ..Default::default()
+                };
                 let conv = crate::ai_context_provider::PtyAiContext {
                     terminal_context: tctx,
                     current_input: None,
@@ -7090,11 +6966,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                 *self.dirty = true;
                 return true;
             }
-            return false
-        }
-        #[cfg(not(feature = "ai"))]
-        {
-            return false;
+            false
         }
     }
 
@@ -7184,11 +7056,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
                 }
             }
 
-            return hovered.is_some();
-        }
-        #[cfg(not(feature = "ai"))]
-        {
-            return false;
+            hovered.is_some()
         }
     }
 
@@ -7398,7 +7266,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(self.config);
         ));
     }
     
-    fn process_workflows_search_perform(&mut self, query: String, window_id: winit::window::WindowId) {
+    fn process_workflows_search_perform(&mut self, _query: String, window_id: winit::window::WindowId) {
         // Stub implementation for workflow search
         // In a full implementation, this would search through available workflows
         // and send back results via WorkflowsSearchResults event
@@ -8130,7 +7998,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
 
                         // Broadcast plugin hooks for pre/post command and directory changes.
-                        #[cfg(feature = "plugins")]
+#[cfg(all(feature = "plugins", feature = "plugins-ui", feature = "never"))]
                         if let Some(components) = &self.ctx.components {
                             if let Some(pm) = &components.plugin_manager {
                                 let pm = pm.clone();
@@ -8297,7 +8165,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     self.ctx.display.palette.add_items_unique(items);
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                 EventType::PaletteAppendPluginCommands(entries) => {
                     // Convert plugin entries to palette items
                     let items: Vec<PaletteItem> = entries
@@ -8386,21 +8254,17 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 EventType::BlocksSearchResults(items) => {
                     // Populate display state and open the panel
                     // If the display does not have the panel enabled, we still no-op gracefully
-                    #[allow(unused_mut)]
-                    let mut opened = false;
+                    #[cfg(not(feature = "plugins"))]
                     {
-                        // Update results
-                        #[cfg(not(feature = "plugins"))]
-                        {
-                            self.ctx.display.blocks_search.results = items;
-                            self.ctx.display.blocks_search.active = true;
-                            self.ctx.display.blocks_search.selected = 0;
-                            self.ctx.display.blocks_search.current_page = 0;
-                            opened = true;
-                        }
-                    }
-                    if opened {
+                        self.ctx.display.blocks_search.results = items;
+                        self.ctx.display.blocks_search.active = true;
+                        self.ctx.display.blocks_search.selected = 0;
+                        self.ctx.display.blocks_search.current_page = 0;
                         *self.ctx.dirty = true;
+                    }
+                    #[cfg(feature = "plugins")]
+                    {
+                        let _ = &items; // silence when plugins feature on without blocks panel usage
                     }
                 }
                 EventType::BlocksToggleStar(id) => {
@@ -8433,12 +8297,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     });
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "plugins")]
-                EventType::BlocksToggleStar(_block_id) => {
-                    // Star toggling is handled at the processor level, not in input processor
-                    // This event should already be processed there
-                }
-                #[cfg(feature = "plugins")]
+                #[cfg(feature = "notebooks-ui")]
                 EventType::NotebooksOpen
                 | EventType::NotebooksList(_)
                 | EventType::NotebooksSelect(_)
@@ -8475,23 +8334,17 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 }
                 EventType::BlocksStarredUpdated { id, starred } => {
                     // Update starred state in Blocks Search panel results if present
-                    let mut changed = false;
-                    // Update legacy/stub blocks_search panel state used by event paths
                     if !self.ctx.display.blocks_search.results.is_empty() {
                         for item in self.ctx.display.blocks_search.results.iter_mut() {
                             if item.id == id {
                                 item.starred = starred;
-                                changed = true;
                                 break;
                             }
                         }
                     }
                     // Update native search star overrides so overlay reflects new state
                     self.ctx.display.native_search.star_overrides.insert(id, starred);
-                    changed = true;
-                    if changed {
-                        *self.ctx.dirty = true;
-                    }
+                    *self.ctx.dirty = true;
                 }
                 EventType::BlocksCopyHeaderUnderCursor => {
                     // Copy full block output under cursor (excluding header line)
@@ -9308,11 +9161,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::WorkflowsCancelParams => {
                     // Params form open/submit/cancel handled at processor level
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                 EventType::PaletteRequestPluginCommands | EventType::PluginsRunCommand { .. } => {
                     // Already handled at Processor level; ignore here
                 }
-                #[cfg(feature = "plugins")]
+                #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                 EventType::PluginsSearchPerform(_)
                 | EventType::PluginsSearchResults(_)
                 | EventType::PluginsLoadFromPath(_)
@@ -9320,14 +9173,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::PluginsInstallFromUrl { .. } => {
                     // Plugins panel events are handled in the window context processor; nothing to do here
                 }
-                // Notebook events (feature = "plugins") - stub handling
-                EventType::NotebooksDeleteCell(_)
-                | EventType::NotebooksConvertCellToMarkdown(_)
-                | EventType::NotebooksConvertCellToCommand(_)
-                | EventType::NotebooksExportNotebook(_)
-                | EventType::NotebooksEditApply { .. } => {
-                    // Notebook events are handled at processor level; ignore here
-                }
+                // Notebook events handled earlier; no-op here to avoid duplication
             },
             WinitEvent::WindowEvent { event, .. } => {
                 match event {
@@ -9541,6 +9387,7 @@ impl EventListener for EventProxy {
 
 // Test helper to schedule Blocks Search events with debounce
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn schedule_blocks_search_for_test(
     scheduler: &mut Scheduler,
     window_id: WindowId,

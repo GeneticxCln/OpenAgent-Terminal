@@ -48,24 +48,23 @@ impl Default for AiDrawConfig {
 
 impl AiDrawConfig {
     /// Create AiDrawConfig from UiConfig, using AI settings where available
+    #[cfg(feature = "ai")]
     pub fn from_ui_config(ui_config: &UiConfig) -> Self {
-        #[cfg(feature = "ai")]
-        {
-            let ai_config = &ui_config.ai;
-            return Self {
-                max_panel_lines: (ai_config.propose_max_commands as usize).clamp(5, 20),
-                panel_label: "🤖 AI Assistant: ",
-                loading_text: "⏳ Thinking...",
-                error_prefix: "❌ Error: ",
-                suggestion_prefix: "$ ",
-                selection_indicator: "▶ ",
-                anim_duration_ms: if ui_config.theme.resolve().ui.reduce_motion { 0 } else { 160 },
-            };
+        let ai_config = &ui_config.ai;
+        Self {
+            max_panel_lines: (ai_config.propose_max_commands as usize).clamp(5, 20),
+            panel_label: "🤖 AI Assistant: ",
+            loading_text: "⏳ Thinking...",
+            error_prefix: "❌ Error: ",
+            suggestion_prefix: "$ ",
+            selection_indicator: "▶ ",
+            anim_duration_ms: if ui_config.theme.resolve().ui.reduce_motion { 0 } else { 160 },
         }
-        #[cfg(not(feature = "ai"))]
-        {
-            let _ = ui_config; // Silence unused warning
-        }
+    }
+
+    #[cfg(not(feature = "ai"))]
+    pub fn from_ui_config(ui_config: &UiConfig) -> Self {
+        let _ = ui_config; // Silence unused warning
         Self::default()
     }
 }
@@ -167,7 +166,9 @@ impl<'a> AiDrawContext<'a> {
     }
 
     /// Draw the backdrop dim
+    #[allow(unused_variables)]
     fn draw_backdrop(&self, progress: f32, rects: &mut Vec<RenderRect>) {
+        #[cfg(feature = "ai")]
         let backdrop_alpha = (self.config.ai.backdrop_alpha * progress).clamp(0.0, 1.0);
         #[cfg(not(feature = "ai"))]
         let backdrop_alpha = 0.0;
@@ -193,6 +194,7 @@ impl<'a> AiDrawContext<'a> {
         let size_info = self.display.size_info;
         let num_lines = size_info.screen_lines;
 
+        #[cfg(feature = "ai")]
         let fraction = self.config.ai.panel_height_fraction.clamp(0.20, 0.60);
         #[cfg(not(feature = "ai"))]
         let fraction = 0.40;
@@ -422,7 +424,7 @@ impl<'a> AiDrawContext<'a> {
 
             // Build line with selection indicator
             let mut line_text = String::new();
-            let is_selected = ai_state.selected_proposal.map_or(false, |sel| sel == idx);
+            let is_selected = ai_state.selected_proposal == Some(idx);
             if is_selected {
                 line_text.push_str(self.draw_config.selection_indicator);
             } else {

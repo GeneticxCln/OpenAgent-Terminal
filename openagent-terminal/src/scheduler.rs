@@ -59,7 +59,7 @@ pub enum Topic {
     // Debounced Workflows Search typing
     WorkflowsSearchTyping,
     // Debounced Plugins Search typing (only when plugins feature is enabled)
-    #[cfg(feature = "plugins")]
+    #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginsSearchTyping,
     // Retain workflows progress overlay briefly after completion
     WorkflowsProgressRetain,

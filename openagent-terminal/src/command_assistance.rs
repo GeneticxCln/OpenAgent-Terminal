@@ -9,14 +9,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, RwLock, Mutex};
-use tracing::{debug, info, warn, error};
+use tokio::sync::RwLock;
+use tracing::{debug, info};
 use chrono::Timelike;
 
-use crate::ai_runtime::{AiRuntime, AiProvider, AgentRequest, AgentResponse};
-use crate::ai_context_provider::{PtyAiContext, TerminalContext};
+use crate::ai_runtime::AiRuntime;
+use crate::ai_context_provider::PtyAiContext;
 use crate::blocks_v2::ShellType;
 
 /// Types of command assistance that can be provided
@@ -418,24 +418,19 @@ impl CommandAssistanceEngine {
             });
         }
         
-        // Check for known error patterns first
-        let mut explanation = String::new();
-        let mut fixes = Vec::new();
-        
-        if let Some(pattern) = self.match_error_pattern(error_output).await {
-            explanation = pattern.explanation;
-            fixes = pattern.common_fixes;
+        // Determine explanation and fixes
+        let (explanation, fixes) = if let Some(pattern) = self.match_error_pattern(error_output).await {
+            (pattern.explanation, pattern.common_fixes)
         } else {
             // Use AI to analyze unknown errors
-            let ai_analysis = self.analyze_error_with_ai(command, error_output, exit_code, context).await?;
-            explanation = ai_analysis.explanation;
-            fixes = ai_analysis.fixes;
-            
-            // Learn from this error for future reference
+            let ai_analysis = self
+                .analyze_error_with_ai(command, error_output, exit_code, context)
+                .await?;
             if config.enable_learning {
-                self.learn_error_pattern(error_output, &explanation, &fixes).await;
+                self.learn_error_pattern(error_output, &ai_analysis.explanation, &ai_analysis.fixes).await;
             }
-        }
+            (ai_analysis.explanation, ai_analysis.fixes)
+        };
         
         // Update error statistics
         self.update_error_statistics(command, error_output).await;
@@ -475,7 +470,7 @@ impl CommandAssistanceEngine {
         
         if let Some(project_info) = &context.terminal_context.project_info {
             suggestions.extend(self.suggest_for_project_type(&project_info.project_type).await);
-            reasoning.push_str(&format!("Detected {} project. ", project_info.project_type.to_string()));
+reasoning.push_str(&format!("Detected {} project. ", project_info.project_type));
         }
         
         if let Some(git_status) = &context.terminal_context.git_status {
@@ -826,13 +821,13 @@ impl CommandAssistanceEngine {
         let db = self.command_db.read().await;
         
         for (cmd_name, metadata) in &db.commands {
-            if cmd_name.starts_with(prefix) {
+            if let Some(stripped) = cmd_name.strip_prefix(prefix) {
                 suggestions.push(CompletionSuggestion {
                     completion: cmd_name.clone(),
                     description: metadata.description.clone(),
                     category: CompletionCategory::Command,
                     confidence: 0.9,
-                    insert_text: cmd_name[prefix.len()..].to_string(),
+                    insert_text: stripped.to_string(),
                     cursor_offset: 1, // Add space after command
                 });
             }
@@ -864,7 +859,7 @@ impl CommandAssistanceEngine {
         Ok(suggestions)
     }
     
-    async fn complete_argument(&self, command: &str, flag: Option<&str>, arg_prefix: &str, _context: &PtyAiContext) -> Result<Vec<CompletionSuggestion>> {
+    async fn complete_argument(&self, command: &str, _flag: Option<&str>, arg_prefix: &str, _context: &PtyAiContext) -> Result<Vec<CompletionSuggestion>> {
         let mut suggestions = Vec::new();
         
         let db = self.command_db.read().await;
@@ -873,13 +868,13 @@ impl CommandAssistanceEngine {
             // Find the relevant argument metadata
             for arg in &cmd_metadata.arguments {
                 for value in &arg.possible_values {
-                    if value.starts_with(arg_prefix) {
+                    if let Some(stripped) = value.strip_prefix(arg_prefix) {
                         suggestions.push(CompletionSuggestion {
                             completion: value.clone(),
                             description: format!("{}: {}", arg.name, arg.description),
                             category: CompletionCategory::Argument,
                             confidence: 0.7,
-                            insert_text: value[arg_prefix.len()..].to_string(),
+                            insert_text: stripped.to_string(),
                             cursor_offset: 0,
                         });
                     }
@@ -909,7 +904,7 @@ impl CommandAssistanceEngine {
                             description: if is_dir { "Directory" } else { "File" }.to_string(),
                             category: CompletionCategory::Path,
                             confidence: 0.9,
-                            insert_text: completion[filename_prefix.len()..].to_string(),
+                            insert_text: completion.strip_prefix(filename_prefix).unwrap_or("").to_string(),
                             cursor_offset: 0,
                         });
                     }
@@ -919,7 +914,7 @@ impl CommandAssistanceEngine {
         Ok(suggestions)
     }
     
-    async fn apply_user_preferences(&self, suggestions: &mut Vec<CompletionSuggestion>, _context: &PtyAiContext) {
+    async fn apply_user_preferences(&self, suggestions: &mut [CompletionSuggestion], _context: &PtyAiContext) {
         let patterns = self.user_patterns.read().await;
         
         // Boost confidence for frequently used commands
@@ -968,7 +963,7 @@ impl CommandAssistanceEngine {
     async fn analyze_error_with_ai(&self, command: &str, error_output: &str, exit_code: i32, _context: &PtyAiContext) -> Result<ErrorAnalysis> {
         let prompt = format!("A command failed. Command: {}\nExit code: {}\nError: {}\nExplain the root cause and propose up to 3 shell commands to fix, each with a short justification.", command, exit_code, error_output);
         let mut rt = self.ai_runtime.write().await;
-        let response_id = rt.start_conversation(prompt).await?;
+        let _response_id = rt.start_conversation(prompt).await?;
         // After start_conversation, runtime stores the latest response in ui.current_response
         let explanation = rt.ui.current_response.clone();
         // Simple parsing: extract backticked code blocks or lines starting with $ for fixes, else none.
@@ -1161,18 +1156,19 @@ struct ErrorAnalysis {
     fixes: Vec<FixSuggestion>,
 }
 
-impl crate::ai_context_provider::ProjectType {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Rust => "Rust".to_string(),
-            Self::JavaScript => "JavaScript".to_string(),
-            Self::TypeScript => "TypeScript".to_string(),
-            Self::Python => "Python".to_string(),
-            Self::Go => "Go".to_string(),
-            Self::Java => "Java".to_string(),
-            Self::C => "C".to_string(),
-            Self::Cpp => "C++".to_string(),
-            Self::Unknown => "Unknown".to_string(),
-        }
+impl std::fmt::Display for crate::ai_context_provider::ProjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Rust => "Rust",
+            Self::JavaScript => "JavaScript",
+            Self::TypeScript => "TypeScript",
+            Self::Python => "Python",
+            Self::Go => "Go",
+            Self::Java => "Java",
+            Self::C => "C",
+            Self::Cpp => "C++",
+            Self::Unknown => "Unknown",
+        };
+        write!(f, "{}", s)
     }
 }

@@ -67,6 +67,7 @@ mod window_context;
 // New component modules
 mod components_init;
 mod blocks_v2;
+mod notebooks;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
 mod native_input; // Native keyboard/mouse integration (experimental)
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-extras"))]
@@ -86,11 +87,11 @@ mod ui_confirm;
 mod utils;
 mod workspace;
 mod storage;
+#[cfg(feature = "plugins")]
+mod plugins_api;
 
 #[cfg(unix)]
 use crate::cli::MessageOptions;
-#[cfg(not(any(target_os = "macos", windows)))]
-use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
 use crate::config::monitor::ConfigMonitor;
 use crate::config::UiConfig;

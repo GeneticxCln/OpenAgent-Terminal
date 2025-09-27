@@ -295,14 +295,20 @@ impl Blocks {
 /// Additional per-block content tracking for channel splitting and actions.
 #[derive(Debug, Default, Clone)]
 pub struct BlockContent {
+    #[allow(dead_code)]
     pub stdout: Vec<String>,
+    #[allow(dead_code)]
     pub stderr: Vec<String>,
+    #[allow(dead_code)]
     pub collapsed_stdout: bool,
+    #[allow(dead_code)]
     pub collapsed_stderr: bool,
     /// Last completed run’s combined stdout for diffing
+    #[allow(dead_code)]
     pub last_stdout: Option<String>,
 }
 
+#[allow(dead_code)]
 impl BlockContent {
     pub fn toggle_stdout(&mut self) { self.collapsed_stdout = !self.collapsed_stdout; }
     pub fn toggle_stderr(&mut self) { self.collapsed_stderr = !self.collapsed_stderr; }

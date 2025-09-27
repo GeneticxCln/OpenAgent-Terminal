@@ -55,6 +55,7 @@ pub mod ui_confirm;
 pub mod components_init;
 
 // Expose AI module for integration tests and external consumers
+#[cfg(feature = "ai")]
 pub mod ai;
 
 // Expose text shaping module for library consumers and internal modules (e.g., renderer/text/shaped_renderer)
@@ -77,6 +78,7 @@ pub mod notebooks;
 pub mod security_lens;
 pub mod session_persistence;
 pub mod session_service;
+#[cfg(all(feature = "plugins", feature = "session-cli"))]
 pub mod session_cli;
 pub mod storage;
 

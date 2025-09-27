@@ -7,18 +7,18 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, Duration};
+use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{info, warn, debug, error};
+use tracing::{info, debug};
 use uuid::Uuid;
 
-use crate::blocks_v2::{BlockRecord, BlockId, ShellType};
-use crate::conversation_management::{ConversationId, ConversationMessage, MessageType};
-use crate::ai_context_provider::{PtyAiContext, TerminalContext, ProjectInfo};
+use crate::blocks_v2::{BlockId, ShellType};
+use crate::conversation_management::{ConversationId, ConversationMessage};
+use crate::ai_context_provider::{PtyAiContext, ProjectInfo};
 
 /// Unique identifier for terminal sessions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -27,6 +27,12 @@ pub struct SessionId(pub Uuid);
 impl SessionId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
+    }
+}
+
+impl Default for SessionId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -727,7 +733,7 @@ impl SessionStorage {
         
         Ok(SessionSummary {
             session_id: session.session_id,
-            title: format!("Session {}", session.session_id.0.to_string()[..8].to_string()),
+title: format!("Session {}", &session.session_id.0.to_string()[..8]),
             created_at: session.created_at,
             last_active: session.last_active,
             command_count: session.command_history.len(),

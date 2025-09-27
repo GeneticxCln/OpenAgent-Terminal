@@ -107,17 +107,17 @@ impl BlocksSearchState {
     // Sorting / mode
     pub fn cycle_search_mode(&mut self) { self.mode = match self.mode { SearchMode::Basic => SearchMode::Command, SearchMode::Command => SearchMode::Output, SearchMode::Output => SearchMode::Advanced, SearchMode::Advanced => SearchMode::Basic } }
     pub fn cycle_sort_field(&mut self) {
-        self.sort_field = match self.sort_field.as_deref() {
-            None => Some("date".into()),
-            Some("date") => Some("duration".into()),
-            Some("duration") => Some("exit_code".into()),
+        self.sort_field = match self.sort_field {
+            None => Some("date"),
+            Some("date") => Some("duration"),
+            Some("duration") => Some("exit_code"),
             _ => None,
         };
     }
     pub fn toggle_sort_order(&mut self) {
-        self.sort_order = match self.sort_order.as_deref() {
-            None => Some("desc".into()),
-            Some("desc") => Some("asc".into()),
+        self.sort_order = match self.sort_order {
+            None => Some("desc"),
+            Some("desc") => Some("asc"),
             _ => None,
         };
     }

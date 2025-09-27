@@ -573,21 +573,21 @@ pub trait ActionContext<T: EventListener> {
     fn process_workflows_search_perform(&mut self, _query: String, _window_id: winit::window::WindowId) {}
 
     // Plugins panel controls (feature = "plugins"). Default to no-op/false when disabled.
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn open_plugins_panel(&mut self) {}
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_cancel(&mut self) {}
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_active(&self) -> bool {
         false
     }
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_input(&mut self, _c: char) {}
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_backspace(&mut self) {}
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_move_selection(&mut self, _delta: isize) {}
-    #[cfg(feature = "notebooks")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_confirm(&mut self) {}
 
     // Workflows progress overlay controls
@@ -1968,22 +1968,20 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                         return true;
                     }
                     "[Blocks]" => {
-                        #[cfg(feature = "notebooks")]
-                        {
-                            self.ctx.open_blocks_search_panel();
-                        }
+                        self.ctx.open_blocks_search_panel();
                         self.ctx.display().quick_actions_press_flash_until =
                             Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
                         return true;
                     }
                     "[Plugins]" => {
-                        #[cfg(feature = "notebooks")]
+                        #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                         {
                             self.ctx.open_plugins_panel();
+                            self.ctx.display().quick_actions_press_flash_until =
+                                Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
+                            return true;
                         }
-                        self.ctx.display().quick_actions_press_flash_until =
-                            Some(std::time::Instant::now() + std::time::Duration::from_millis(140));
-                        return true;
+                        // If plugins panel is not compiled in, do nothing.
                     }
                     "[Palette]" => {
                         self.ctx.open_command_palette();
@@ -3027,7 +3025,7 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
         // Warp-like: mouse wheel over palette navigates selection
         {
             if self.ctx.palette_active() {
-                if let (Some((psl, pel, psc, pec)), Some(rows_start_line)) = (
+                if let (Some((psl, pel, psc, pec)), Some(_rows_start_line)) = (
                     self.ctx.display().palette_overlay_bounds,
                     self.ctx.display().palette_rows_start_line,
                 ) {

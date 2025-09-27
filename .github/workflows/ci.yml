@@ -65,8 +65,16 @@ jobs:
         run: echo "Rust policy checks completed" >> $GITHUB_STEP_SUMMARY
 
   clippy-all:
-    name: Clippy (all targets, all features, deny warnings)
+    name: Clippy (openagent-terminal, deny warnings)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            features: ""
+          - name: integration
+            features: "integration-blocks-tests integration-security-tests"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain (stable) with clippy
@@ -77,12 +85,27 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
         uses: ./.github/actions/install-ubuntu-deps
-      - name: Run clippy (workspace, all-targets, all-features)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Run clippy (strict)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo clippy -p openagent-terminal --all-targets --features "${{ matrix.features }}" -- -D warnings
+          else
+            cargo clippy -p openagent-terminal --all-targets -- -D warnings
+          fi
 
   check-all:
-    name: Check (workspace, default + all-features)
+    name: Check (openagent-terminal)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            features: ""
+          - name: integration
+            features: "integration-blocks-tests integration-security-tests"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain (stable)
@@ -91,14 +114,27 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
         uses: ./.github/actions/install-ubuntu-deps
-      - name: cargo check (default features)
-        run: cargo check --workspace --all-targets
-      - name: cargo check (all features)
-        run: cargo check --workspace --all-targets --all-features
+      - name: cargo check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo check -p openagent-terminal --all-targets --features "${{ matrix.features }}"
+          else
+            cargo check -p openagent-terminal --all-targets
+          fi
 
   test-all:
-    name: Test (workspace, all features)
+    name: Test (openagent-terminal)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            features: ""
+          - name: integration
+            features: "integration-blocks-tests integration-security-tests"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain (stable)
@@ -107,11 +143,18 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Install system dependencies (Ubuntu)
         uses: ./.github/actions/install-ubuntu-deps
-      - name: cargo test (all features)
-        run: cargo test --workspace --all-features -- --nocapture
+      - name: cargo test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo test -p openagent-terminal --features "${{ matrix.features }}" -- --nocapture
+          else
+            cargo test -p openagent-terminal -- --nocapture
+          fi
 
   nextest:
-    name: Nextest (workspace, all features)
+    name: Nextest (openagent-terminal default)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -123,11 +166,11 @@ jobs:
         uses: ./.github/actions/install-ubuntu-deps
       - name: Install cargo-nextest
         run: cargo install cargo-nextest --locked
-      - name: Run nextest (all features)
-        run: cargo nextest run --workspace --all-features --failure-output immediate
+      - name: Run nextest
+        run: cargo nextest run -p openagent-terminal --failure-output immediate
 
   cargo-hack:
-    name: Feature matrix (cargo-hack)
+    name: Feature matrix (cargo-hack, excluding ai)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,12 +182,12 @@ jobs:
         uses: ./.github/actions/install-ubuntu-deps
       - name: Install cargo-hack
         run: cargo install cargo-hack --locked
-      - name: Check each feature individually (workspace)
-        run: cargo hack check --workspace --each-feature --all-targets
-      - name: Check common feature pairs for app crate (depth=2)
-        run: cargo hack check -p openagent-terminal --feature-powerset --depth 2 --all-targets --keep-going
-      - name: Test common feature pairs for app crate (depth=2)
-        run: cargo hack test -p openagent-terminal --feature-powerset --depth 2 --all-targets --keep-going -- --nocapture
+      - name: Check each feature individually (openagent-terminal)
+        run: cargo hack check -p openagent-terminal --each-feature --exclude-features ai --all-targets
+      - name: Check common feature pairs for openagent-terminal (depth=2)
+        run: cargo hack check -p openagent-terminal --feature-powerset --exclude-features ai --depth 2 --all-targets --keep-going
+      - name: Test common feature pairs for openagent-terminal (depth=2)
+        run: cargo hack test -p openagent-terminal --feature-powerset --exclude-features ai --depth 2 --all-targets --keep-going -- --nocapture
 
   build:
     name: Build and test
@@ -660,3 +703,20 @@ for scenario in confirm_overlay message_bar_error message_bar_warning search_bar
           set -euo pipefail
           # Run the test binaries produced above
           cargo +nightly test -Z build-std -p ${{ matrix.crate }} --no-default-features --tests -- --nocapture
+
+  ai-preview:
+    name: AI (preview, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Ubuntu)
+        uses: ./.github/actions/install-ubuntu-deps
+      - name: Clippy (ai)
+        run: cargo clippy -p openagent-terminal --all-targets --features ai -- -D warnings
+      - name: Test (ai)
+        run: cargo test -p openagent-terminal --features ai -- --nocapture

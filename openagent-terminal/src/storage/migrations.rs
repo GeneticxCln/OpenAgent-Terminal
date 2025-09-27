@@ -2,9 +2,11 @@ use crate::storage::{StorageError, StorageResult};
 use sqlx::{Pool, Row, Sqlite};
 
 /// Database schema version
+#[allow(dead_code)]
 const CURRENT_VERSION: i32 = 2;
 
 /// Migration definition
+#[allow(dead_code)]
 struct Migration {
     version: i32,
     name: &'static str,
@@ -12,6 +14,7 @@ struct Migration {
 }
 
 /// All database migrations in order
+#[allow(dead_code)]
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -158,6 +161,7 @@ const MIGRATIONS: &[Migration] = &[
 ];
 
 /// Get current schema version from database
+#[allow(dead_code)]
 async fn get_schema_version(pool: &Pool<Sqlite>) -> StorageResult<i32> {
     // Create schema_version table if it doesn't exist
     sqlx::query(
@@ -190,6 +194,7 @@ async fn set_schema_version(pool: &Pool<Sqlite>, version: i32) -> StorageResult<
 }
 
 /// Run all pending migrations
+#[allow(dead_code)]
 pub async fn run_migrations(pool: &Pool<Sqlite>) -> StorageResult<()> {
     let current_version = get_schema_version(pool).await?;
 

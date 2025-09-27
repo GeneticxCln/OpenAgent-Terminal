@@ -11,13 +11,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, RwLock, Semaphore};
-use tokio::time::{timeout, sleep};
+use tokio::time::sleep;
 use uuid::Uuid;
-use tracing::{debug, info, warn, error};
+use tracing::{info, warn, error};
 
 use super::blitzy_project_context::BlitzyProjectContextAgent;
 use super::conversation_manager::ConversationManager;
-use super::natural_language::ConversationRole;
 use super::*;
 
 /// Production workflow orchestration system
@@ -25,14 +24,18 @@ pub struct WorkflowOrchestrator {
     id: String,
     workflows: Arc<RwLock<HashMap<Uuid, WorkflowExecution>>>,
     workflow_templates: Arc<RwLock<HashMap<String, WorkflowTemplate>>>,
+    #[allow(dead_code)]
     agent_registry: Arc<RwLock<HashMap<String, Arc<dyn Agent>>>>,
+    #[allow(dead_code)]
     conversation_manager: Option<Arc<ConversationManager>>,
+    #[allow(dead_code)]
     project_context_agent: Option<Arc<BlitzyProjectContextAgent>>,
     execution_queue: Arc<Mutex<VecDeque<WorkflowTask>>>,
     execution_engine: Arc<WorkflowExecutionEngine>,
+    #[allow(dead_code)]
     config: WorkflowConfig,
     is_initialized: bool,
-    stats: WorkflowStats,
+    stats: Arc<RwLock<WorkflowStats>>,
 }
 
 /// Real workflow execution engine with parallel processing
@@ -50,9 +53,11 @@ pub struct WorkflowExecutionEngine {
     event_dispatcher: EventDispatcher,
     
     /// Retry manager
+    #[allow(dead_code)]
     retry_manager: RetryManager,
     
     /// Performance monitor
+    #[allow(dead_code)]
     performance_monitor: PerformanceMonitor,
 }
 
@@ -156,7 +161,9 @@ pub struct StepArtifact {
 
 /// Retry management system
 pub struct RetryManager {
+    #[allow(dead_code)]
     active_retries: Arc<RwLock<HashMap<String, RetryState>>>,
+    #[allow(dead_code)]
     config: RetryConfig,
 }
 
@@ -170,6 +177,7 @@ pub struct RetryState {
 
 /// Performance monitoring system
 pub struct PerformanceMonitor {
+    #[allow(dead_code)]
     metrics: Arc<RwLock<WorkflowMetrics>>,
 }
 
@@ -562,13 +570,21 @@ impl Agent for WorkflowOrchestrator {
     fn capabilities(&self) -> Vec<AgentCapability> {
         vec![
             AgentCapability::WorkflowOrchestration,
-            AgentCapability::ParallelExecution,
-            AgentCapability::ErrorHandling,
-            AgentCapability::ResourceManagement,
+            AgentCapability::ProjectManagement,
+            AgentCapability::Custom("ParallelExecution".to_string()),
+            AgentCapability::Custom("ErrorHandling".to_string()),
         ]
     }
 
-    async fn initialize(&mut self, config: AgentConfig) -> Result<()> {
+    fn can_handle(&self, request_type: &AgentRequestType) -> bool {
+        match request_type {
+            AgentRequestType::ExecuteWorkflow => true,
+            AgentRequestType::Custom(s) if s == "CreateWorkflow" || s == "GetWorkflowStatus" => true,
+            _ => false,
+        }
+    }
+
+    async fn initialize(&mut self, _config: AgentConfig) -> Result<()> {
         self.execution_engine.initialize().await?;
         self.load_default_templates().await?;
         self.start_execution_loop().await?;
@@ -586,10 +602,10 @@ impl Agent for WorkflowOrchestrator {
             AgentRequestType::ExecuteWorkflow => {
                 self.execute_workflow_from_request(request).await
             }
-            AgentRequestType::CreateWorkflow => {
+            AgentRequestType::Custom(ref t) if t == "CreateWorkflow" => {
                 self.create_workflow_from_request(request).await
             }
-            AgentRequestType::GetWorkflowStatus => {
+            AgentRequestType::Custom(ref t) if t == "GetWorkflowStatus" => {
                 self.get_workflow_status_from_request(request).await
             }
             _ => {
@@ -631,13 +647,13 @@ impl WorkflowOrchestrator {
             execution_engine,
             config,
             is_initialized: false,
-            stats: WorkflowStats::default(),
+            stats: Arc::new(RwLock::new(WorkflowStats::default())),
         }
     }
 
     /// Execute a workflow from a template
     pub async fn execute_workflow(
-        &mut self,
+        &self,
         template_id: &str,
         context: WorkflowContext,
         parameters: HashMap<String, serde_json::Value>,
@@ -661,7 +677,10 @@ impl WorkflowOrchestrator {
         // Queue for execution
         self.queue_workflow(workflow_id).await?;
 
-        self.stats.total_executions += 1;
+        {
+            let mut stats = self.stats.write().await;
+            stats.total_executions += 1;
+        }
         info!("Queued workflow execution: {}", workflow_id);
         
         Ok(workflow_id)
@@ -674,7 +693,7 @@ impl WorkflowOrchestrator {
         context: WorkflowContext,
         parameters: HashMap<String, serde_json::Value>,
     ) -> Result<WorkflowExecution> {
-        let steps = template.steps.iter().map(|step| WorkflowStepExecution {
+        let steps: Vec<WorkflowStepExecution> = template.steps.iter().map(|step| WorkflowStepExecution {
             step_id: step.id.clone(),
             status: StepExecutionStatus::Pending,
             started_at: None,
@@ -815,7 +834,7 @@ impl WorkflowOrchestrator {
                     conditions: vec![],
                     timeout_seconds: Some(180),
                     retry_attempts: 1,
-                    error_handling: StepErrorHandling::Continue,
+                    error_handling: StepErrorHandling::Custom("Continue".to_string()),
                     input_mapping: HashMap::new(),
                     output_mapping: HashMap::new(),
                     parallel_group: Some("analysis".to_string()),
@@ -953,7 +972,7 @@ impl WorkflowOrchestrator {
                     conditions: vec![],
                     timeout_seconds: Some(300),
                     retry_attempts: 1,
-                    error_handling: StepErrorHandling::Continue,
+                    error_handling: StepErrorHandling::Custom("Continue".to_string()),
                     input_mapping: HashMap::new(),
                     output_mapping: HashMap::new(),
                     parallel_group: Some("testing".to_string()),
@@ -971,7 +990,7 @@ impl WorkflowOrchestrator {
                     conditions: vec![],
                     timeout_seconds: Some(600),
                     retry_attempts: 2,
-                    error_handling: StepErrorHandling::Continue,
+                    error_handling: StepErrorHandling::Custom("Continue".to_string()),
                     input_mapping: HashMap::new(),
                     output_mapping: HashMap::new(),
                     parallel_group: Some("testing".to_string()),
@@ -990,47 +1009,47 @@ impl WorkflowOrchestrator {
         }
     }
 
-    async fn execute_workflow_from_request(&mut self, request: AgentRequest) -> Result<AgentResponse> {
-        let template_id = request.metadata.get("template_id")
-            .and_then(|v| v.as_str())
+    async fn execute_workflow_from_request(&self, request: AgentRequest) -> Result<AgentResponse> {
+        let template_id = request
+            .metadata
+            .get("template_id")
+            .map(|s| s.as_str())
             .ok_or_else(|| anyhow!("Missing template_id in request"))?;
 
         let context = WorkflowContext {
-            conversation_session_id: request.metadata.get("session_id")
-                .and_then(|v| v.as_str())
+            conversation_session_id: request
+                .metadata
+                .get("session_id")
                 .and_then(|s| Uuid::parse_str(s).ok()),
-            project_root: request.metadata.get("project_root")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            user_id: request.metadata.get("user_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            environment: HashMap::new(),
-            variables: request.context.clone(),
+            project_root: request.context.project_root.clone(),
+            user_id: request.metadata.get("user_id").cloned(),
+            environment: request.context.environment_vars.clone(),
+            variables: HashMap::new(),
             shared_state: HashMap::new(),
         };
 
         let workflow_id = self.execute_workflow(template_id, context, HashMap::new()).await?;
 
+        let mut metadata: HashMap<String, String> = HashMap::new();
+        metadata.insert("workflow_id".to_string(), workflow_id.to_string());
+
         Ok(AgentResponse {
+            request_id: request.id,
             agent_id: self.id.clone(),
-            content: format!("Started workflow execution with ID: {}", workflow_id),
-            confidence: 1.0,
-            metadata: HashMap::from([
-                ("workflow_id".to_string(), serde_json::Value::String(workflow_id.to_string()))
-            ]),
+            success: true,
+            payload: serde_json::json!({
+                "message": format!("Started workflow execution with ID: {}", workflow_id),
+                "workflow_id": workflow_id
+            }),
             artifacts: vec![],
-            suggested_actions: vec![],
+            next_actions: vec![],
+            metadata,
         })
     }
 
-    async fn create_workflow_from_request(&mut self, request: AgentRequest) -> Result<AgentResponse> {
-        // Parse workflow template from request
-        let template: WorkflowTemplate = serde_json::from_value(
-            request.metadata.get("template")
-                .ok_or_else(|| anyhow!("Missing template in request"))?
-                .clone()
-        )?;
+    async fn create_workflow_from_request(&self, request: AgentRequest) -> Result<AgentResponse> {
+        // Parse workflow template from request payload
+        let template: WorkflowTemplate = serde_json::from_value(request.payload.clone())?;
 
         // Validate template
         self.validate_workflow_template(&template)?;
@@ -1041,21 +1060,27 @@ impl WorkflowOrchestrator {
             templates.insert(template.id.clone(), template.clone());
         }
 
+        let mut metadata: HashMap<String, String> = HashMap::new();
+        metadata.insert("template_id".to_string(), template.id.clone());
+
         Ok(AgentResponse {
+            request_id: request.id,
             agent_id: self.id.clone(),
-            content: format!("Created workflow template: {}", template.name),
-            confidence: 1.0,
-            metadata: HashMap::from([
-                ("template_id".to_string(), serde_json::Value::String(template.id.clone()))
-            ]),
+            success: true,
+            payload: serde_json::json!({
+                "message": format!("Created workflow template: {}", template.name),
+                "template": template
+            }),
             artifacts: vec![],
-            suggested_actions: vec![],
+            next_actions: vec![],
+            metadata,
         })
     }
 
-    async fn get_workflow_status_from_request(&mut self, request: AgentRequest) -> Result<AgentResponse> {
-        let workflow_id_str = request.metadata.get("workflow_id")
-            .and_then(|v| v.as_str())
+    async fn get_workflow_status_from_request(&self, request: AgentRequest) -> Result<AgentResponse> {
+        let workflow_id_str = request
+            .metadata
+            .get("workflow_id")
             .ok_or_else(|| anyhow!("Missing workflow_id in request"))?;
 
         let workflow_id = Uuid::parse_str(workflow_id_str)?;
@@ -1067,15 +1092,20 @@ impl WorkflowOrchestrator {
                 .clone()
         };
 
+        let mut metadata: HashMap<String, String> = HashMap::new();
+        metadata.insert("workflow_id".to_string(), workflow_id.to_string());
+
         Ok(AgentResponse {
+            request_id: request.id,
             agent_id: self.id.clone(),
-            content: format!("Workflow {} is {}", workflow_id, workflow.status),
-            confidence: 1.0,
-            metadata: HashMap::from([
-                ("workflow".to_string(), serde_json::to_value(&workflow)?)
-            ]),
+            success: true,
+            payload: serde_json::json!({
+                "message": format!("Workflow {} is {:?}", workflow_id, workflow.status),
+                "workflow": workflow
+            }),
             artifacts: vec![],
-            suggested_actions: vec![],
+            next_actions: vec![],
+            metadata,
         })
     }
 
@@ -1106,14 +1136,32 @@ impl WorkflowOrchestrator {
     }
 
     /// Get workflow statistics
-    pub fn get_stats(&self) -> &WorkflowStats {
-        &self.stats
+    pub async fn get_stats(&self) -> WorkflowStats {
+        self.stats.read().await.clone()
     }
 
     /// List available workflow templates
     pub async fn list_templates(&self) -> Vec<String> {
         let templates = self.workflow_templates.read().await;
         templates.keys().cloned().collect()
+    }
+
+    /// Register a workflow template (validates and stores)
+    pub async fn register_template(&self, template: WorkflowTemplate) -> Result<()> {
+        self.validate_workflow_template(&template)?;
+        let mut templates = self.workflow_templates.write().await;
+        templates.insert(template.id.clone(), template);
+        Ok(())
+    }
+
+    /// Convenience: create a workflow execution from a template id
+    pub async fn create_workflow(
+        &self,
+        template_id: &str,
+        context: WorkflowContext,
+        parameters: Option<HashMap<String, serde_json::Value>>,
+    ) -> Result<Uuid> {
+        self.execute_workflow(template_id, context, parameters.unwrap_or_default()).await
     }
 
     /// Get workflow execution status
@@ -1221,7 +1269,7 @@ impl WorkflowExecutionEngine {
         }).await?;
 
         // Execute steps (simplified - in production would handle dependencies, parallel execution, etc.)
-        for (index, step) in workflow.steps.iter().enumerate() {
+        for step in workflow.steps.iter() {
             if step.status != StepExecutionStatus::Pending {
                 continue;
             }
@@ -1342,6 +1390,10 @@ impl EventDispatcher {
     }
 }
 
+impl Default for EventDispatcher {
+    fn default() -> Self { Self::new() }
+}
+
 impl RetryManager {
     pub fn new(config: RetryConfig) -> Self {
         Self {
@@ -1357,6 +1409,10 @@ impl PerformanceMonitor {
             metrics: Arc::new(RwLock::new(WorkflowMetrics::default())),
         }
     }
+}
+
+impl Default for PerformanceMonitor {
+    fn default() -> Self { Self::new() }
 }
 
 impl Default for ResourceUsage {

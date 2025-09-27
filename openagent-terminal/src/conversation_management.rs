@@ -8,17 +8,17 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock, Mutex};
 use tracing::{debug, info, warn, error};
 use uuid::Uuid;
 
-use crate::ai_runtime::{AiRuntime, AiProvider, AgentRequest, AgentResponse};
+use crate::ai_runtime::{AiRuntime, AiProvider, AgentResponse};
 use crate::ai_context_provider::PtyAiContext;
-use crate::command_assistance::{AssistanceType, CommandAssistanceEngine};
+use crate::command_assistance::CommandAssistanceEngine;
 
 /// Unique identifier for conversations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -27,6 +27,12 @@ pub struct ConversationId(pub Uuid);
 impl ConversationId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
+    }
+}
+
+impl Default for ConversationId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -408,7 +414,6 @@ pub struct ConversationManager {
     
     /// Event broadcasting
     event_sender: mpsc::UnboundedSender<ConversationEvent>,
-    event_receiver: Arc<Mutex<mpsc::UnboundedReceiver<ConversationEvent>>>,
     
     /// Background task handles
     task_handles: Vec<tokio::task::JoinHandle<()>>,
@@ -422,7 +427,6 @@ struct PendingMessage {
     conversation_id: ConversationId,
     message: ConversationMessage,
     context: Option<PtyAiContext>,
-    priority: u8,
 }
 
 /// Events emitted by the conversation system
@@ -462,7 +466,7 @@ impl ConversationManager {
         ai_runtime: Arc<RwLock<AiRuntime>>,
         command_assistance: Arc<RwLock<CommandAssistanceEngine>>,
     ) -> Result<Self> {
-        let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        let (event_sender, _event_receiver) = mpsc::unbounded_channel();
         
         let manager = Self {
             config: Arc::new(RwLock::new(config)),
@@ -472,7 +476,6 @@ impl ConversationManager {
             command_assistance,
             message_queue: Arc::new(Mutex::new(VecDeque::new())),
             event_sender,
-            event_receiver: Arc::new(Mutex::new(event_receiver)),
             task_handles: Vec::new(),
             stats: Arc::new(RwLock::new(ConversationStats::default())),
         };
@@ -626,7 +629,6 @@ impl ConversationManager {
                 conversation_id,
                 message: message.clone(),
                 context,
-                priority: self.calculate_message_priority(&message).await,
             });
         }
         
@@ -656,7 +658,7 @@ impl ConversationManager {
         let conversation_id = self.get_or_create_current_conversation(context).await?;
         
         // Add user message
-        let user_message_id = self.add_message(
+        let _user_message_id = self.add_message(
             conversation_id,
             MessageType::User,
             input.clone(),
@@ -894,7 +896,7 @@ impl ConversationManager {
                             
                             // Integrate with command assistance if relevant
                             if matches!(pending.message.message_type, MessageType::CommandResult) {
-                                let assistance = command_assistance.read().await;
+                                let _assistance = command_assistance.read().await;
                                 // Could trigger error analysis or suggestions here
                             }
                         }
@@ -1093,17 +1095,13 @@ impl ConversationManager {
     }
     
     async fn extract_git_context(&self, context: &PtyAiContext) -> Option<GitContext> {
-        if let Some(ref git_status) = context.terminal_context.git_status {
-            Some(GitContext {
-                repository_root: context.terminal_context.working_directory.clone(),
-                current_branch: context.terminal_context.git_branch.clone().unwrap_or_default(),
-                status: git_status.clone(),
-                recent_commits: Vec::new(), // Would be populated from git log
-                remote_info: None,
-            })
-        } else {
-            None
-        }
+        context.terminal_context.git_status.as_ref().map(|git_status| GitContext {
+            repository_root: context.terminal_context.working_directory.clone(),
+            current_branch: context.terminal_context.git_branch.clone().unwrap_or_default(),
+            status: git_status.clone(),
+            recent_commits: Vec::new(), // Would be populated from git log
+            remote_info: None,
+        })
     }
     
     async fn extract_message_metadata(&self, context: &Option<PtyAiContext>) -> HashMap<String, String> {
@@ -1164,17 +1162,6 @@ impl ConversationManager {
         }
         
         attachments
-    }
-    
-    async fn calculate_message_priority(&self, message: &ConversationMessage) -> u8 {
-        match message.message_type {
-            MessageType::Error => 90,
-            MessageType::User => 80,
-            MessageType::CommandResult => 70,
-            MessageType::Assistant => 60,
-            MessageType::Suggestion => 50,
-            MessageType::System => 40,
-        }
     }
     
     async fn update_conversation_context(conversation: &mut Conversation, context: &PtyAiContext) {
@@ -1282,7 +1269,7 @@ impl ConversationManager {
     async fn archive_conversation(&self, conversation_id: ConversationId) -> Result<()> {
         let mut active = self.active_conversations.write().await;
         
-        if let Some(conversation) = active.remove(&conversation_id) {
+        if active.remove(&conversation_id).is_some() {
             // In a real implementation, would move to archive storage
             debug!("Archived conversation: {}", conversation_id);
             
@@ -1303,7 +1290,7 @@ async fn save_conversation_to_disk(dir: &PathBuf, conversation: &Conversation) -
     Ok(())
 }
 
-fn expand_tilde(path: &PathBuf) -> PathBuf {
+fn expand_tilde(path: &std::path::Path) -> PathBuf {
     let mut s = path.to_string_lossy().to_string();
     if s.starts_with('~') {
         if let Some(home) = dirs::home_dir() {
@@ -1336,7 +1323,7 @@ impl ConversationManager {
         use tokio::fs;
 
         let cfg = self.config.read().await.clone();
-        let storage_dir = expand_tilde(&cfg.persistence.storage_directory);
+let storage_dir = expand_tilde(&cfg.persistence.storage_directory);
         fs::create_dir_all(&storage_dir).await.ok();
 
         let mut dir = match fs::read_dir(&storage_dir).await {

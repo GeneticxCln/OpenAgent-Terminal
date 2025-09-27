@@ -2,9 +2,10 @@
 //!
 //! Provides Jupyter-like cell-based command execution and visualization.
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::str::FromStr;
 use uuid::Uuid;
 
 /// Type alias for notebook IDs
@@ -13,21 +14,6 @@ pub type NotebookId = String;
 /// Type alias for cell IDs  
 pub type CellId = String;
 
-impl FromStr for NotebookId {
-    type Err = String;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(s.to_string())
-    }
-}
-
-impl FromStr for CellId {
-    type Err = String;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(s.to_string())
-    }
-}
 
 /// Notebook cell types supported
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,7 +174,7 @@ impl NotebookManager {
 
     pub fn delete_notebook(&mut self, id: &str) -> bool {
         if self.notebooks.remove(id).is_some() {
-            if self.current_notebook.as_ref() == Some(id) {
+if self.current_notebook.as_deref() == Some(id) {
                 self.current_notebook = None;
             }
             true
@@ -244,7 +230,7 @@ mod tests {
     #[test]
     fn test_cell_operations() {
         let mut notebook = Notebook::new("Test".to_string());
-        let cell_id = notebook.add_cell(CellType::Code { language: "bash".to_string() });
+        let cell_id = notebook.add_cell(CellType::Command);
         
         assert_eq!(notebook.cells.len(), 1);
         assert!(notebook.get_cell_mut(&cell_id).is_some());
@@ -257,7 +243,7 @@ mod tests {
     #[test]
     fn test_cell_execution() {
         let mut notebook = Notebook::new("Test".to_string());
-        let cell_id = notebook.add_cell(CellType::Code { language: "bash".to_string() });
+        let cell_id = notebook.add_cell(CellType::Command);
         
         notebook.execute_cell(&cell_id, "Hello, world!".to_string(), 1);
         

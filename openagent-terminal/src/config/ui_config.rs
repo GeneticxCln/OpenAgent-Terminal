@@ -665,7 +665,7 @@ pub struct LazyRegex(Arc<RwLock<LazyRegexVariant>>);
 
 impl LazyRegex {
     /// Execute a function with the compiled regex DFAs as parameter.
-pub fn with_compiled<T, F>(&self, mut f: F) -> Option<T>
+pub fn with_compiled<T, F>(&self, f: F) -> Option<T>
     where
         F: FnMut(&mut RegexSearch) -> T,
     {

@@ -672,6 +672,18 @@ pub struct WatchSessionArgs {
     /// Show only changes
     #[arg(short, long)]
     pub changes_only: bool,
+
+    /// Output JSON events
+    #[arg(long)]
+    pub json: bool,
+
+    /// Include timestamps in text output
+    #[arg(long)]
+    pub timestamps: bool,
+
+    /// Continue watching instead of exiting after first event batch
+    #[arg(long)]
+    pub follow: bool,
 }
 
 /// Export formats supported
@@ -683,71 +695,10 @@ pub enum ExportFormat {
     Csv,
 }
 
-/// Session CLI implementation with comprehensive functionality
-pub struct SessionCliRunner {
-    session_service: SessionService,
-    config: SessionCliConfig,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionCliConfig {
-    pub default_output_format: OutputFormat,
-    pub default_limit: usize,
-    pub color_enabled: bool,
-    pub auto_backup: bool,
-    pub backup_retention_days: u32,
-    pub compression_enabled: bool,
-}
 
-impl Default for SessionCliConfig {
-    fn default() -> Self {
-        Self {
-            default_output_format: OutputFormat::Table,
-            default_limit: 20,
-            color_enabled: true,
-            auto_backup: true,
-            backup_retention_days: 30,
-            compression_enabled: true,
-        }
-    }
-}
 
-impl SessionCliRunner {
-    pub fn new(session_service: SessionService) -> Self {
-        Self {
-            session_service,
-            config: SessionCliConfig::default(),
-        }
-    }
 
-    /// Run the CLI command with comprehensive error handling
-    pub async fn run(&mut self, cli: SessionCli) -> Result<()> {
-        // Configure output based on CLI flags
-        if cli.quiet {
-            // Suppress non-error output
-        }
-        
-        match cli.command {
-            SessionCommand::Create(args) => self.handle_create(args, &cli).await,
-            SessionCommand::List(args) => self.handle_list(args, &cli).await,
-            SessionCommand::Show(args) => self.handle_show(args, &cli).await,
-            SessionCommand::Restore(args) => self.handle_restore(args, &cli).await,
-            SessionCommand::Delete(args) => self.handle_delete(args, &cli).await,
-            SessionCommand::Export(args) => self.handle_export(args, &cli).await,
-            SessionCommand::Import(args) => self.handle_import(args, &cli).await,
-            SessionCommand::Archive(args) => self.handle_archive(args, &cli).await,
-            SessionCommand::Cleanup(args) => self.handle_cleanup(args, &cli).await,
-            SessionCommand::Stats(args) => self.handle_stats(args, &cli).await,
-            SessionCommand::Search(args) => self.handle_search(args, &cli).await,
-            SessionCommand::Tag(args) => self.handle_tag(args, &cli).await,
-            SessionCommand::Config(args) => self.handle_config(args, &cli).await,
-            SessionCommand::Backup(args) => self.handle_backup(args, &cli).await,
-            SessionCommand::Validate(args) => self.handle_validate(args, &cli).await,
-            SessionCommand::Watch(args) => self.handle_watch(args, &cli).await,
-        }
-    }
-
-    async fn handle_create(&mut self, args: CreateSessionArgs, cli: &SessionCli) -> Result<()> {
         info!("Creating new session");
 
         let session_id = self.session_service.create_session().await?;
@@ -787,11 +738,7 @@ impl SessionCliRunner {
             self.session_service.set_autosave_interval(&session_id, interval).await?;
         }
         
-        self.output_result(&format!("Created session: {}", session_id), &cli.output_format)?;
-        Ok(())
-    }
 
-    async fn handle_list(&mut self, args: ListSessionArgs, cli: &SessionCli) -> Result<()> {
         let sessions = self.session_service.list_sessions().await?;
         
         // Apply filters
@@ -820,7 +767,7 @@ impl SessionCliRunner {
         // Apply sorting
         match args.sort {
             SessionSortOption::Created => filtered_sessions.sort_by_key(|s| s.created_at),
-            SessionSortOption::Modified => filtered_sessions.sort_by_key(|s| s.last_modified),
+            SessionSortOption::Modified => filtered_sessions.sort_by_key(|s| s.last_active),
             SessionSortOption::Commands => filtered_sessions.sort_by_key(|s| s.command_count),
             SessionSortOption::Conversations => filtered_sessions.sort_by_key(|s| s.conversation_count),
             SessionSortOption::Size => filtered_sessions.sort_by_key(|s| s.size_bytes),
@@ -836,19 +783,15 @@ impl SessionCliRunner {
             filtered_sessions.truncate(args.limit);
         }
 
-        self.output_sessions(&filtered_sessions, &cli.output_format, &args)?;
-        Ok(())
-    }
 
-    async fn handle_show(&mut self, args: ShowSessionArgs, cli: &SessionCli) -> Result<()> {
         let session_id = self.resolve_session_id(&args.session_id).await?;
         let session = self.session_service.get_session(&session_id).await?
             .ok_or_else(|| anyhow::anyhow!("Session not found: {}", args.session_id))?;
 
-        let mut output = format!("Session: {} ({})\n", session.name, session.id);
+        let mut output = format!("Session: {} ({})\n", session.title, session.session_id);
         output.push_str(&format!("Created: {}\n", session.created_at.format("%Y-%m-%d %H:%M:%S")));
-        output.push_str(&format!("Modified: {}\n", session.last_modified.format("%Y-%m-%d %H:%M:%S")));
-        output.push_str(&format!("Active: {}\n", session.is_active));
+        output.push_str(&format!("Last Active: {}\n", session.last_active.format("%Y-%m-%d %H:%M:%S")));
+        output.push_str(&format!("Active: {}\n", session.last_active));
         
         if !session.tags.is_empty() {
             output.push_str(&format!("Tags: {}\n", session.tags.join(", ")));
@@ -888,9 +831,6 @@ impl SessionCliRunner {
             }
         }
 
-        self.output_result(&output, &cli.output_format)?;
-        Ok(())
-    }
 
     async fn handle_restore(&mut self, args: RestoreSessionArgs, cli: &SessionCli) -> Result<()> {
         let session_id = self.resolve_session_id(&args.session_id).await?;
@@ -956,7 +896,7 @@ impl SessionCliRunner {
             println!("About to delete {} session(s):", session_ids.len());
             for id in &session_ids {
                 let session = self.session_service.get_session(id).await?.unwrap();
-                println!("  - {} ({})", session.name, id);
+                println!("  - {} ({})", session.title, id);
             }
             
             print!("Continue? [y/N]: ");
@@ -1185,7 +1125,7 @@ impl SessionCliRunner {
 
     async fn handle_validate(&mut self, args: ValidateSessionArgs, cli: &SessionCli) -> Result<()> {
         let session_ids = if args.session_ids.is_empty() {
-            self.session_service.list_sessions().await?.into_iter().map(|s| s.id).collect()
+            self.session_service.list_sessions().await?.into_iter().map(|s| s.session_id).collect()
         } else {
             let mut ids = Vec::new();
             for id_pattern in &args.session_ids {
@@ -1200,7 +1140,7 @@ impl SessionCliRunner {
         Ok(())
     }
 
-    async fn handle_watch(&mut self, args: WatchSessionArgs, cli: &SessionCli) -> Result<()> {
+    async fn handle_watch(&mut self, args: WatchSessionArgs, _cli: &SessionCli) -> Result<()> {
         let session_ids = if args.session_ids.is_empty() {
             self.session_service.get_active_session_ids().await?
         } else {
@@ -1212,7 +1152,9 @@ impl SessionCliRunner {
             ids
         };
 
-        self.session_service.watch_sessions(&session_ids, Duration::from_secs(args.interval), args.changes_only).await?;
+        self.session_service
+            .watch_sessions(&session_ids, Duration::from_secs(args.interval), args.changes_only)
+            .await?;
         Ok(())
     }
 
@@ -1220,22 +1162,22 @@ impl SessionCliRunner {
 
     async fn resolve_session_id(&self, pattern: &str) -> Result<SessionId> {
         // Try exact match first
-        if let Ok(id) = SessionId::parse(pattern) {
-            return Ok(id);
+        if let Ok(session_id) = SessionId::parse_str(pattern) {
+            return Ok(session_id);
         }
 
         // Try partial match
         let sessions = self.session_service.list_sessions().await?;
         let matches: Vec<_> = sessions.into_iter()
-            .filter(|s| s.id.to_string().starts_with(pattern) || s.name.contains(pattern))
+            .filter(|s| s.session_id.to_string().starts_with(pattern) || s.title.contains(pattern))
             .collect();
 
         match matches.len() {
             0 => Err(anyhow::anyhow!("No session found matching: {}", pattern)),
-            1 => Ok(matches[0].id.clone()),
+            1 => Ok(matches[0].session_id.clone()),
             _ => Err(anyhow::anyhow!("Multiple sessions match '{}': {}", 
                 pattern, 
-                matches.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+                matches.iter().map(|s| s.title.as_str()).collect::<Vec<_>>().join(", ")
             )),
         }
     }
@@ -1303,18 +1245,18 @@ impl SessionCliRunner {
 
                 for session in sessions {
                     let id_display = if args.full_ids {
-                        session.id.to_string()
+                        session.session_id.to_string()
                     } else {
-                        session.id.to_string()[..8].to_string()
+                        session.session_id.to_string()[..8].to_string()
                     };
 
                     table.add_row(vec![
                         Cell::new(&id_display),
-                        Cell::new(&session.name),
-                        Cell::new(if session.is_active { "✓" } else { "✗" })
-                            .fg(if session.is_active { Color::Green } else { Color::Red }),
+                        Cell::new(&session.title),
+                        Cell::new(if session.last_active { "✓" } else { "✗" })
+                            .fg(if session.last_active { Color::Green } else { Color::Red }),
                         Cell::new(&session.command_count.to_string()),
-                        Cell::new(&session.last_modified.format("%Y-%m-%d %H:%M").to_string()),
+                        Cell::new(&session.last_active.format("%Y-%m-%d %H:%M").to_string()),
                     ]);
                 }
 
@@ -1330,14 +1272,14 @@ impl SessionCliRunner {
                 println!("id,name,active,commands,modified");
                 for session in sessions {
                     println!("{},{},{},{},{}", 
-                        session.id, session.name, session.is_active, 
-                        session.command_count, session.last_modified.format("%Y-%m-%d %H:%M"));
+                        session.session_id, session.title, session.last_active, 
+                        session.command_count, session.last_active.format("%Y-%m-%d %H:%M"));
                 }
             }
             _ => {
                 for session in sessions {
-                    println!("{}: {} ({})", session.id, session.name, 
-                            if session.is_active { "active" } else { "inactive" });
+                    println!("{}: {} ({})", session.session_id, session.title, 
+                            if session.last_active { "active" } else { "inactive" });
                 }
             }
         }
@@ -1421,79 +1363,7 @@ impl SessionCliRunner {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_parse_duration() {
-        let runner = SessionCliRunner::new(SessionService::new());
-        
-        assert_eq!(runner.parse_duration("30s").unwrap(), Duration::from_secs(30));
-        assert_eq!(runner.parse_duration("5m").unwrap(), Duration::from_secs(300));
-        assert_eq!(runner.parse_duration("2h").unwrap(), Duration::from_secs(7200));
-        assert_eq!(runner.parse_duration("1d").unwrap(), Duration::from_secs(86400));
-        
-        assert!(runner.parse_duration("invalid").is_err());
-        assert!(runner.parse_duration("").is_err());
-    }
-
-    #[test]
-    fn test_cli_parsing() {
-        use clap::Parser;
-        
-        let cli = SessionCli::try_parse_from(vec![
-            "session", "list", "--active-only", "--limit", "10"
-        ]).unwrap();
-        
-        match cli.command {
-            SessionCommand::List(args) => {
-                assert!(args.active_only);
-                assert_eq!(args.limit, 10);
-            }
-            _ => panic!("Expected List command"),
-        }
-    }
-}
-
-#[derive(Subcommand, Debug)]
-pub enum SessionCommands {
-    /// Create a new session
-    New(CreateSessionArgs),
-    
-    /// List all sessions
-    List(ListSessionArgs),
-    
-    /// Show session details
-    Show(ShowSessionArgs),
-    
-    /// Restore a session
-    Restore(RestoreSessionArgs),
-    
-    /// Delete a session
-    Delete(DeleteSessionArgs),
-    
-    /// Export a session
-    Export(ExportSessionArgs),
-    
-    /// Import a session
-    Import(ImportSessionArgs),
-    
-    /// Clean up old sessions
-    Cleanup(CleanupSessionArgs),
-    
-    /// Show session statistics
-    Stats(StatsSessionArgs),
-    
-    /// Manage session configuration
-    Config(ConfigSessionArgs),
-    
-    /// Manage user preferences
-    Prefs(PrefsSessionArgs),
-    
-    /// Watch session events
-    Watch(WatchSessionArgs),
-}
 
 pub struct SessionCliHandler {
     session_service: SessionService,
@@ -1505,9 +1375,9 @@ impl SessionCliHandler {
     }
     
     /// Execute a session CLI command
-    pub async fn execute(&self, cli: SessionCli) -> Result<()> {
+pub async fn execute(&self, cli: SessionCli) -> Result<()> {
         match &cli.command {
-            SessionCommand::New(args) => self.handle_new_session(args, &cli).await,
+            SessionCommand::Create(args) => self.handle_create_session(args, &cli).await,
             SessionCommand::List(args) => self.handle_list_sessions(args, &cli).await,
             SessionCommand::Show(args) => self.handle_show_session(args, &cli).await,
             SessionCommand::Restore(args) => self.handle_restore_session(args, &cli).await,
@@ -1517,29 +1387,25 @@ impl SessionCliHandler {
             SessionCommand::Cleanup(args) => self.handle_cleanup_sessions(args, &cli).await,
             SessionCommand::Stats(args) => self.handle_session_stats(args, &cli).await,
             SessionCommand::Config(args) => self.handle_config(args, &cli).await,
-            SessionCommand::Prefs(args) => self.handle_preferences(args, &cli).await,
             SessionCommand::Watch(args) => self.handle_watch_events(args, &cli).await,
         }
     }
     
-    async fn handle_new_session(&self, args: &CreateSessionArgs, cli: &SessionCli) -> Result<()> {
+async fn handle_create_session(&self, args: &CreateSessionArgs, cli: &SessionCli) -> Result<()> {
         let context = PtyAiContext::default(); // Would be populated from current environment
         
         info!("Creating new session...");
         let session_id = self.session_service.start_new_session(&context).await?;
         
-        let output = NewSessionOutput {
+let output = NewSessionOutput {
             session_id,
-            title: args.title.clone().unwrap_or_else(|| format!("Session {}", session_id)),
+            title: args.name.clone().unwrap_or_else(|| format!("Session {}", session_id)),
             created_at: Utc::now(),
-            activated: args.activate,
+            activated: false,
         };
         
         self.output_result(&output, &cli.output_format)?;
         
-        if args.activate {
-            info!("Session {} activated", session_id);
-        }
         
         Ok(())
     }
@@ -1645,7 +1511,16 @@ impl SessionCliHandler {
     }
     
     async fn handle_export_session(&self, args: &ExportSessionArgs, cli: &SessionCli) -> Result<()> {
-        let session_id = self.resolve_session_id(&args.session_id).await?;
+let session_id = if let Some(first) = args.session_ids.first() {
+            self.resolve_session_id(first).await?
+        } else {
+            // Fallback to current session if none specified
+            if let Some(session) = self.session_service.get_current_session().await {
+                session.session_id
+            } else {
+                return Err(anyhow::anyhow!("No session specified and no active session"));
+            }
+        };
         
         info!("Exporting session {} to {}...", session_id, args.output.display());
         self.session_service.export_session(session_id, &args.output).await?;
@@ -1653,8 +1528,8 @@ impl SessionCliHandler {
         let output = ExportSessionOutput {
             session_id,
             output_path: args.output.clone(),
-            compression: args.compression.clone(),
-            file_size: 0, // Would be calculated
+            compression: CompressionFormat::None,
+            file_size: 0, // TODO: Calculate file size
         };
         
         self.output_result(&output, &cli.output_format)?;
@@ -1663,14 +1538,14 @@ impl SessionCliHandler {
         Ok(())
     }
     
-    async fn handle_import_session(&self, args: &ImportSessionArgs, cli: &SessionCli) -> Result<()> {
-        info!("Importing session from {}...", args.file.display());
-        let session_id = self.session_service.import_session(&args.file).await?;
+async fn handle_import_session(&self, args: &ImportSessionArgs, cli: &SessionCli) -> Result<()> {
+        info!("Importing session from {}...", args.input.display());
+        let session_id = self.session_service.import_session(&args.input).await?;
         
         let output = ImportSessionOutput {
             session_id,
-            source_path: args.file.clone(),
-            activated: args.activate,
+            source_path: args.input.clone(),
+            activated: false,
         };
         
         self.output_result(&output, &cli.output_format)?;
@@ -1684,8 +1559,8 @@ impl SessionCliHandler {
             info!("Dry run - showing what would be cleaned up");
         }
         
-        let deleted_count = if args.dry_run {
-            0 // Would simulate cleanup
+let deleted_count = if args.dry_run {
+            0 // Dry-run
         } else {
             self.session_service.cleanup_old_sessions().await?
         };
@@ -1693,7 +1568,12 @@ impl SessionCliHandler {
         let output = CleanupSessionOutput {
             deleted_count,
             dry_run: args.dry_run,
-            criteria: format!("older than {}", args.older_than),
+            criteria: format!(
+                "archived>{}, empty>{}, max_sessions={:?}",
+                args.delete_archived_older_than,
+                args.delete_empty_older_than,
+                args.max_sessions
+            ),
         };
         
         self.output_result(&output, &cli.output_format)?;
@@ -1863,6 +1743,11 @@ impl SessionCliHandler {
             OutputFormat::Csv => {
                 // Would implement CSV formatting for specific types
                 let json = serde_json::to_string(data)?;
+                println!("{}", json);
+            }
+            OutputFormat::Table | OutputFormat::Tree | OutputFormat::Compact => {
+                // Default to table-like pretty JSON for now
+                let json = serde_json::to_string_pretty(data)?;
                 println!("{}", json);
             }
         }

@@ -40,6 +40,7 @@ impl BlockStorage {
     }
 
     /// Create storage with an explicit root directory
+    #[allow(dead_code)]
     pub async fn new_with_root(root: std::path::PathBuf) -> Result<Self> {
         let manager = BlockManager::new(root).await?;
         Ok(Self { manager: std::sync::Arc::new(tokio::sync::RwLock::new(manager)) })
@@ -71,11 +72,13 @@ impl BlockStorage {
             .collect())
     }
 
+    #[allow(dead_code)]
     pub async fn get_session_blocks(&self, _session: &str) -> Result<Vec<StoredBlock>> {
         // For now, reuse a search with default query; when session support is added, add WHERE clause.
         self.search_blocks(&BlockFilter::default(), &BlockSort::default()).await
     }
 
+    #[allow(dead_code)]
     pub async fn update_block_tags(&self, id: i64, tags: Vec<String>) -> Result<()> {
         let mut mgr = self.manager.write().await;
         mgr.update_block_tags(BlockId(id as u64), tags).await?;

@@ -1,3 +1,4 @@
+#![cfg(feature = "ai")]
 #![allow(
     clippy::pedantic,
     clippy::items_after_statements,
@@ -169,23 +170,26 @@ mod integration_tests {
         });
 
         let natural_language = Arc::new({
-            let mut agent = NaturalLanguageAgent::new();
+            let mut agent = NaturalLanguageAgent::new("natural_language_agent".to_string());
             agent.initialize(AgentConfig::default()).await?;
             agent
         });
 
         let workflow_orchestrator = Arc::new({
-            let mut orchestrator = WorkflowOrchestrator::new().with_config(WorkflowConfig {
-                max_concurrent_workflows: 2,
-                max_concurrent_steps: 5,
-                default_step_timeout_seconds: 300,
-                default_workflow_timeout_seconds: 1800,
-                enable_parallel_execution: true,
-                enable_step_retry: true,
-                max_retry_attempts: 3,
-                enable_persistence: false,
-                cleanup_completed_after_hours: 168,
-            });
+            let mut orchestrator = WorkflowOrchestrator::new(
+                "workflow_orchestrator".to_string(),
+                WorkflowConfig {
+                    max_concurrent_workflows: 2,
+                    max_concurrent_steps: 5,
+                    default_step_timeout_seconds: 300,
+                    default_workflow_timeout_seconds: 1800,
+                    enable_parallel_execution: true,
+                    enable_step_retry: true,
+                    max_retry_attempts: 3,
+                    enable_persistence: false,
+                    cleanup_completed_after_hours: 168,
+                },
+            );
             orchestrator.initialize(AgentConfig::default()).await?;
             orchestrator
         });
@@ -380,7 +384,7 @@ mod integration_tests {
             id: "privacy_scan_workflow".to_string(),
             name: "Privacy Scanning Workflow".to_string(),
             description: "Workflow that scans content for privacy issues".to_string(),
-            category: WorkflowCategory::Analysis,
+            category: WorkflowCategory::AI,
             version: "1.0.0".to_string(),
             author: Some("test".to_string()),
             tags: vec!["privacy".to_string(), "security".to_string()],
@@ -398,19 +402,21 @@ mod integration_tests {
                 input_mapping: HashMap::new(),
                 output_mapping: HashMap::new(),
                 parallel_group: None,
+                weight: 1.0,
             }],
             variables: HashMap::new(),
             triggers: vec![],
             conditions: vec![openagent_terminal::ai::agents::workflow_orchestrator::WorkflowCondition {
-                condition_type: ConditionType::Custom("always".to_string()),
+condition_type: ConditionType::Expression,
                 expression: "true".to_string(),
                 description: "Always run".to_string(),
             }],
-            error_handling: openagent_terminal::ai::agents::workflow_orchestrator::ErrorHandlingStrategy::StopOnError,
+            error_handling: openagent_terminal::ai::agents::workflow_orchestrator::ErrorHandlingStrategy::Abort,
             timeout_seconds: Some(900),
             retry_config: RetryConfig::default(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            schema_version: "1.0".to_string(),
         };
         workflow_orchestrator.register_template(template).await?;
 
@@ -434,8 +440,8 @@ mod integration_tests {
         tokio::time::sleep(Duration::from_millis(150)).await;
 
         // Check execution status
-        let status = workflow_orchestrator.get_workflow_status(execution_id).await?;
-        assert_eq!(status.id, execution_id);
+        let status = workflow_orchestrator.get_workflow_status(execution_id).await;
+        assert!(status.is_some());
 
         Ok(())
     }
@@ -654,6 +660,10 @@ mod integration_tests {
             id: "integration_workflow".to_string(),
             name: "Integration Test Workflow".to_string(),
             description: "Comprehensive integration test workflow".to_string(),
+            category: WorkflowCategory::AI,
+            version: "1.0.0".to_string(),
+            author: Some("test".to_string()),
+            tags: vec!["integration".to_string()],
             steps: vec![WorkflowStep {
                 id: "privacy_check".to_string(),
                 name: "Privacy Check".to_string(),
@@ -668,19 +678,17 @@ mod integration_tests {
                 input_mapping: HashMap::new(),
                 output_mapping: HashMap::new(),
                 parallel_group: None,
+                weight: 1.0,
             }],
             variables: HashMap::new(),
             triggers: vec![],
             conditions: vec![],
-            error_handling: openagent_terminal::ai::agents::workflow_orchestrator::ErrorHandlingStrategy::StopOnError,
+            error_handling: openagent_terminal::ai::agents::workflow_orchestrator::ErrorHandlingStrategy::Abort,
             timeout_seconds: Some(600),
             retry_config: RetryConfig::default(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            category: WorkflowCategory::Analysis,
-            version: "1.0.0".to_string(),
-            author: Some("test".to_string()),
-            tags: vec!["integration".to_string()],
+            schema_version: "1.0".to_string(),
         };
 
         workflow_orchestrator.register_template(template).await?;

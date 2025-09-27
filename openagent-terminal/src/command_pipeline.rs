@@ -471,7 +471,7 @@ timestamp: now_ts(),
                     .await
                 {
                     tracing::error!("Failed to update block {:?} output in database: {}", block_id, e);
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
 

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use uuid::Uuid;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use super::CodeStyle;
 use super::natural_language::*;
@@ -345,6 +347,9 @@ impl ConversationManager {
             intent: intent.clone(),
             entities: entities.clone(),
             confidence: 1.0,
+            sentiment: SentimentAnalysis { polarity: 0.0, subjectivity: 0.0, emotion: EmotionType::Neutral, confidence: 1.0 },
+            topic_classification: Vec::new(),
+            response_metadata: HashMap::new(),
         };
 
         // Add turn to session
@@ -484,10 +489,11 @@ impl ConversationManager {
             summary.push_str(&format!("Recent turns ({}):\n", recent_turns.len()));
 
             for turn in recent_turns.iter().rev() {
-                let role = match turn.role {
+                let role = match &turn.role {
                     ConversationRole::User => "User",
                     ConversationRole::Assistant => "Assistant",
                     ConversationRole::System => "System",
+                    ConversationRole::Agent(_) => "Agent",
                 };
 
                 let content = if turn.content.len() > 100 {
@@ -581,15 +587,15 @@ impl ConversationManager {
             entities.iter().find(|e| matches!(e.entity_type, EntityType::FilePath))
         {
             // Add to recent files if not already open
-            if !context.open_files.iter().any(|f| f.path == file_entity.value) {
-                if let Ok(metadata) = std::fs::metadata(&file_entity.value) {
+            if !context.open_files.iter().any(|f| f.path == file_entity.text) {
+                if let Ok(metadata) = std::fs::metadata(&file_entity.text) {
                     let file_context = FileContext {
-                        path: file_entity.value.clone(),
+                        path: file_entity.text.clone(),
                         last_modified: DateTime::from(
                             metadata.modified().unwrap_or(std::time::SystemTime::now()),
                         ),
                         size: metadata.len(),
-                        file_type: self.detect_file_type(&file_entity.value),
+                        file_type: self.detect_file_type(&file_entity.text),
                         encoding: None,
                         line_count: None,
                         summary: None,

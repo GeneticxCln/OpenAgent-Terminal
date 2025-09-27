@@ -91,6 +91,7 @@ pub fn set_default_window_id(id: winit::window::WindowId) {
 
 // Security policy accessor used by plugin stubs (feature="never")
 #[cfg(feature = "plugins")]
+#[allow(dead_code)]
 pub fn get_security_policy() -> crate::security_lens::SecurityPolicy {
     crate::security_lens::SecurityPolicy::default()
 }
@@ -429,7 +430,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .join("; ");
                 if !details.is_empty() {
-                    body.push_str("\n");
+                    body.push('\n');
                     body.push_str(&details);
                 }
             }

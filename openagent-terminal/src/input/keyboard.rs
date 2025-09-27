@@ -210,8 +210,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         if mods.control_key() && mods.alt_key() && mods.shift_key() {
             match key.logical_key.as_ref() {
                 // Move active pane to previous/next tab
-                Key::Character(c) if c == "[" => { self.ctx.workspace_move_pane_to_prev_tab(); return; }
-                Key::Character(c) if c == "]" => { self.ctx.workspace_move_pane_to_next_tab(); return; }
+                Key::Character("[") => { self.ctx.workspace_move_pane_to_prev_tab(); return; }
+                Key::Character("]") => { self.ctx.workspace_move_pane_to_next_tab(); return; }
                 // Move active pane to a new tab
                 Key::Character(c) if c.eq_ignore_ascii_case("t") => { self.ctx.workspace_move_pane_to_new_tab(); return; }
                 _ => {}
@@ -922,7 +922,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Notebooks panel input handling (if active)
-        #[cfg(feature = "plugins")]
+        #[cfg(all(feature = "notebooks-ui", feature = "never"))]
         if self.ctx.notebooks_panel_active() {
             // If the editor overlay is currently active (editing a notebook cell),
             // handle basic save/close controls here.
@@ -1035,7 +1035,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("d") =>
                 {
                     // Delete selected cell
-                    #[cfg(feature = "plugins")]
+                    #[cfg(feature = "notebooks-ui")]
                     {
                         let cell_id_opt = {
                             let d = self.ctx.display();
@@ -1054,7 +1054,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     if !mods.control_key() && !mods.alt_key() && c.eq_ignore_ascii_case("m") =>
                 {
                     // Convert selected cell to Markdown
-                    #[cfg(feature = "plugins")]
+                    #[cfg(feature = "notebooks-ui")]
                     {
                         let cell_id_opt = {
                             let d = self.ctx.display();
@@ -1223,7 +1223,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Plugins panel input handling (if active)
-        #[cfg(feature = "plugins")]
+        #[cfg(feature = "plugins-ui")]
         if self.ctx.plugins_panel_active() {
             let mods = self.ctx.modifiers().state();
             match key.logical_key.as_ref() {
@@ -1634,7 +1634,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Global toggles: Notebooks and AI
         if mods.control_key() && mods.shift_key() {
             match key.logical_key.as_ref() {
-                #[cfg(feature = "plugins")]
+                #[cfg(all(feature = "notebooks-ui", feature = "never"))]
                 Key::Character(c) if c.eq_ignore_ascii_case("n") => {
                     self.ctx.open_notebooks_panel();
                     return;

@@ -45,25 +45,26 @@ fn stress_generate_compliance_report(c: &mut Criterion) {
             ];
 
             let start = Instant::now();
-            for _cmd in commands.iter().cycle().take(10_000) {
-                // TODO: Re-enable when security_lens module is implemented
-                // let risk = lens.analyze_command(cmd);
-                report.total_commands_analyzed += 1;
-                // Placeholder analysis result
+        for cmd in commands.iter().cycle().take(10_000) {
+            // Simple heuristic classification to exercise fields without pulling in full security_lens
+            report.total_commands_analyzed += 1;
+            if cmd.contains("rm -rf") {
+                report.critical_findings += 1;
+            } else if cmd.contains("curl") || cmd.contains("aws ") {
+                report.warning_findings += 1;
+            } else if cmd.contains("docker") {
+                report.caution_findings += 1;
+            } else {
                 report.safe_commands += 1;
-                /* TODO: Re-enable when security_lens module is implemented
-                match risk.level {
-                    RiskLevel::Critical => report.critical_findings += 1,
-                    RiskLevel::Warning => report.warning_findings += 1,
-                    RiskLevel::Caution => report.caution_findings += 1,
-                    RiskLevel::Safe => report.safe_commands += 1,
-                }
-                */
             }
-            report.generation_ms = start.elapsed().as_millis();
+        }
+        report.generation_ms = start.elapsed().as_millis();
 
-            // ensure it's used
-            assert!(report.total_commands_analyzed > 0);
+        // sanity checks
+        assert_eq!(
+            report.total_commands_analyzed,
+            report.critical_findings + report.warning_findings + report.caution_findings + report.safe_commands
+        );
         })
     });
 }

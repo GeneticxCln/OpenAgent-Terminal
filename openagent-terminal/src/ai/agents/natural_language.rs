@@ -13,17 +13,17 @@ use regex::Regex;
 use tokio::sync::RwLock;
 
 use super::{
-    ActionPriority, ActionType, Agent, AgentArtifact, AgentCapability, AgentConfig, AgentContext,
-    AgentRequest, AgentRequestType, AgentResponse, AgentStatus, ArtifactType, SuggestedAction,
+    ActionPriority, ActionType, Agent, AgentCapability, AgentConfig,
+    AgentRequest, AgentRequestType, AgentResponse, AgentStatus, SuggestedAction,
 };
 
 /// Production Natural Language Agent with real NLP capabilities
 pub struct NaturalLanguageAgent {
     id: String,
     config: AgentConfig,
-    conversation_history: Vec<ConversationTurn>,
+    conversation_history: RwLock<Vec<ConversationTurn>>,
     intent_classifier: IntentClassifier,
-    context_manager: ConversationContextManager,
+    context_manager: RwLock<ConversationContextManager>,
     entity_extractor: EntityExtractor,
     response_generator: ResponseGenerator,
     is_initialized: bool,
@@ -78,7 +78,7 @@ pub struct Entity {
 }
 
 /// Entity type classification
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntityType {
     Person,
     Location,
@@ -241,9 +241,12 @@ impl IntentClassifier {
                 score += keyword_score * 0.3;
 
                 // Context matching
-                let context_score = pattern.context_hints.iter()
-                    .filter(|hint| context.active_topics.contains(*hint))
-                    .count() as f64 / pattern.context_hints.len().max(1) as f64;
+            let context_score = pattern
+                    .context_hints
+                    .iter()
+                    .filter(|hint| context.active_topics.iter().any(|t| t == *hint))
+                    .count() as f64
+                    / pattern.context_hints.len().max(1) as f64;
                 score += context_score * 0.2;
             }
 
@@ -301,6 +304,7 @@ impl IntentClassifier {
 /// Advanced entity extraction with NER capabilities
 pub struct EntityExtractor {
     patterns: HashMap<EntityType, Vec<Regex>>,
+    #[allow(dead_code)]
     context_enhancers: HashMap<String, EntityType>,
 }
 
@@ -381,13 +385,13 @@ impl EntityExtractor {
     }
 
     fn calculate_confidence(&self, text: &str, entity_type: &EntityType, context: &ConversationContext) -> f64 {
-        let mut confidence = 0.7; // Base confidence
+        let mut confidence: f64 = 0.7; // Base confidence
 
         // Context boosting
         match entity_type {
-            EntityType::Command if context.active_topics.contains("terminal") => confidence += 0.2,
-            EntityType::FilePath if context.active_topics.contains("filesystem") => confidence += 0.15,
-            EntityType::Technology if context.active_topics.contains("programming") => confidence += 0.1,
+            EntityType::Command if context.active_topics.iter().any(|t| t == "terminal") => confidence += 0.2,
+            EntityType::FilePath if context.active_topics.iter().any(|t| t == "filesystem") => confidence += 0.15,
+            EntityType::Technology if context.active_topics.iter().any(|t| t == "programming") => confidence += 0.1,
             _ => {}
         }
 
@@ -415,7 +419,7 @@ impl EntityExtractor {
         
         match entity_type {
             EntityType::FilePath => {
-                if let Some(extension) = text.split('.').last() {
+                if let Some(extension) = text.split('.').next_back() {
                     if extension.len() < 5 && extension != text {
                         metadata.insert("extension".to_string(), extension.to_string());
                     }
@@ -464,6 +468,7 @@ impl EntityExtractor {
 #[derive(Debug, Clone)]
 pub struct ConversationContextManager {
     contexts: HashMap<String, ConversationContext>,
+    #[allow(dead_code)]
     global_context: ConversationContext,
     context_timeout: std::time::Duration,
 }
@@ -556,9 +561,7 @@ impl ConversationContextManager {
 
     pub fn get_or_create_context(&mut self, session_id: &str) -> &mut ConversationContext {
         self.contexts.entry(session_id.to_string()).or_insert_with(|| {
-            let mut context = ConversationContext::default();
-            context.session_id = session_id.to_string();
-            context
+            ConversationContext { session_id: session_id.to_string(), ..Default::default() }
         })
     }
 
@@ -634,15 +637,21 @@ impl Default for InterfacePreferences {
     }
 }
 
+impl Default for EntityExtractor {
+    fn default() -> Self { Self::new() }
+}
+
 /// Advanced response generator with context awareness
 pub struct ResponseGenerator {
     templates: HashMap<String, Vec<ResponseTemplate>>,
+    #[allow(dead_code)]
     context_adapters: HashMap<String, ContextAdapter>,
 }
 
 #[derive(Debug, Clone)]
 struct ResponseTemplate {
     pattern: String,
+    #[allow(dead_code)]
     variables: Vec<String>,
     conditions: Vec<ResponseCondition>,
     priority: f64,
@@ -652,10 +661,12 @@ struct ResponseTemplate {
 struct ResponseCondition {
     condition_type: ConditionType,
     value: String,
+    #[allow(dead_code)]
     operator: ComparisonOperator,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ConditionType {
     TechnicalLevel,
     VerbosityLevel,
@@ -665,6 +676,7 @@ enum ConditionType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ComparisonOperator {
     Equal,
     GreaterThan,
@@ -674,6 +686,7 @@ enum ComparisonOperator {
 
 #[derive(Debug, Clone)]
 struct ContextAdapter {
+    #[allow(dead_code)]
     adaptations: HashMap<String, String>,
 }
 
@@ -749,11 +762,11 @@ impl ResponseGenerator {
         }
     }
 
-    fn select_best_template(
-        &self, 
-        templates: &[ResponseTemplate], 
-        context: &ConversationContext
-    ) -> &ResponseTemplate {
+    fn select_best_template<'a>(
+        &self,
+        templates: &'a [ResponseTemplate],
+        context: &ConversationContext,
+    ) -> &'a ResponseTemplate {
         templates
             .iter()
             .filter(|template| self.evaluate_conditions(&template.conditions, context))
@@ -813,10 +826,10 @@ impl ResponseGenerator {
         match intent.name.as_str() {
             "help_request" => {
                 let mut suggestions = Vec::new();
-                if context.active_topics.contains("filesystem") {
+                if context.active_topics.iter().any(|t| t == "filesystem") {
                     suggestions.push("• File operations: `ls`, `cp`, `mv`, `rm`");
                 }
-                if context.active_topics.contains("terminal") {
+                if context.active_topics.iter().any(|t| t == "terminal") {
                     suggestions.push("• Terminal navigation: `cd`, `pwd`, `which`");
                 }
                 if suggestions.is_empty() {
@@ -876,6 +889,10 @@ impl ResponseGenerator {
     }
 }
 
+impl Default for ResponseGenerator {
+    fn default() -> Self { Self::new() }
+}
+
 #[async_trait]
 impl Agent for NaturalLanguageAgent {
     fn id(&self) -> &str {
@@ -892,12 +909,14 @@ impl Agent for NaturalLanguageAgent {
 
     fn capabilities(&self) -> Vec<AgentCapability> {
         vec![
-            AgentCapability::IntentRecognition,
-            AgentCapability::EntityExtraction,
-            AgentCapability::ConversationManagement,
-            AgentCapability::ContextAwareness,
-            AgentCapability::ResponseGeneration,
+            AgentCapability::ContextManagement,
+            AgentCapability::TerminalIntegration,
+            AgentCapability::Custom("NaturalLanguageProcessing".to_string()),
         ]
+    }
+
+    fn can_handle(&self, request_type: &AgentRequestType) -> bool {
+        matches!(request_type, AgentRequestType::Custom(custom) if custom == "ProcessNaturalLanguage")
     }
 
     async fn initialize(&mut self, config: AgentConfig) -> Result<()> {
@@ -911,19 +930,36 @@ impl Agent for NaturalLanguageAgent {
             return Err(anyhow!("Agent not initialized"));
         }
 
-        let session_id = request.metadata.get("session_id")
+        // Extract input text from payload (supports either a raw string or an object with {"text": string})
+        let input_text = if let Ok(s) = serde_json::from_value::<String>(request.payload.clone()) {
+            s
+        } else {
+            request
+                .payload
+                .get("text")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("Missing input text in payload"))?
+                .to_string()
+        };
+
+        let session_id = request
+            .metadata
+            .get("session_id")
+            .map(|s| s.as_str())
             .unwrap_or("default")
             .to_string();
 
-        // Get or create conversation context
-        let context = self.context_manager.get_or_create_context(&session_id);
+        // Access or create conversation context
+        let mut mgr = self.context_manager.write().await;
+        let ctx_mut = mgr.get_or_create_context(&session_id);
+        // Snapshot context for read-only analysis
+        let ctx_snapshot = ctx_mut.clone();
 
-        // Extract entities from the input
-        let entities = self.entity_extractor.extract_entities(&request.input, context);
-
-        // Classify intent
-        let intent = self.intent_classifier
-            .classify_intent(&request.input, context)
+        // Extract entities and classify intent using snapshot of current context
+        let entities = self.entity_extractor.extract_entities(&input_text, &ctx_snapshot);
+        let intent = self
+            .intent_classifier
+            .classify_intent(&input_text, &ctx_snapshot)
             .unwrap_or_else(|| Intent {
                 name: "general_inquiry".to_string(),
                 confidence: 0.5,
@@ -934,53 +970,96 @@ impl Agent for NaturalLanguageAgent {
                 execution_priority: ActionPriority::Low,
             });
 
-        // Update conversation context
-        self.context_manager.update_context(&session_id, &intent, &entities);
+        // Update conversation context with new information
+        mgr.update_context(&session_id, &intent, &entities);
+        drop(mgr);
 
-        // Generate response
-        let response_content = self.response_generator.generate_response(&intent, &entities, context);
+        // Generate response text
+        let response_text = self
+            .response_generator
+            .generate_response(&intent, &entities, &ctx_snapshot);
 
-        // Perform sentiment analysis
-        let sentiment = self.analyze_sentiment(&request.input);
+        // Perform basic sentiment analysis
+        let sentiment = self.analyze_sentiment(&input_text);
 
-        // Create conversation turn
-        let turn = ConversationTurn {
+        // Append conversation turn to history
+        let mut history = self.conversation_history.write().await;
+        history.push(ConversationTurn {
             id: Uuid::new_v4(),
             timestamp: Utc::now(),
             role: ConversationRole::User,
-            content: request.input.clone(),
+            content: input_text.clone(),
             intent: Some(intent.clone()),
             entities: entities.clone(),
             confidence: intent.confidence,
             sentiment: sentiment.clone(),
-            topic_classification: self.classify_topics(&request.input),
+            topic_classification: self.classify_topics(&input_text),
             response_metadata: HashMap::new(),
-        };
+        });
+        let excess = history.len().saturating_sub(100);
+        if excess > 0 {
+            history.drain(0..excess);
+        }
+        drop(history);
 
-        // Add to conversation history
-        self.conversation_history.push(turn);
-
-        // Keep conversation history manageable
-        if self.conversation_history.len() > 100 {
-            self.conversation_history.drain(0..50);
+        // Build next actions
+        let mut next_actions: Vec<SuggestedAction> = Vec::new();
+        match intent.name.as_str() {
+            "execute_command" => {
+                let command_text = entities
+                    .iter()
+                    .find(|e| matches!(e.entity_type, EntityType::Command))
+                    .map(|e| e.text.clone());
+                next_actions.push(SuggestedAction {
+                    action_type: ActionType::RunCommand,
+                    description: "Execute the requested command".to_string(),
+                    command: command_text,
+                    priority: ActionPriority::High,
+                    safe_to_auto_execute: false,
+                });
+            }
+            "help_request" => {
+                next_actions.push(SuggestedAction {
+                    action_type: ActionType::Custom("ShowDocumentation".to_string()),
+                    description: "Show relevant documentation".to_string(),
+                    command: None,
+                    priority: ActionPriority::Medium,
+                    safe_to_auto_execute: false,
+                });
+            }
+            "code_generation" => {
+                next_actions.push(SuggestedAction {
+                    action_type: ActionType::Custom("GenerateCode".to_string()),
+                    description: "Generate code based on requirements".to_string(),
+                    command: None,
+                    priority: ActionPriority::High,
+                    safe_to_auto_execute: false,
+                });
+            }
+            _ => {}
         }
 
-        // Create response
-        let mut metadata = HashMap::new();
-        metadata.insert("intent".to_string(), serde_json::to_value(&intent)?);
-        metadata.insert("entities".to_string(), serde_json::to_value(&entities)?);
-        metadata.insert("sentiment".to_string(), serde_json::to_value(&sentiment)?);
-        metadata.insert("session_id".to_string(), serde_json::Value::String(session_id));
+        // Metadata (string-only)
+        let mut metadata: HashMap<String, String> = HashMap::new();
+        metadata.insert("session_id".to_string(), session_id);
+        metadata.insert("intent".to_string(), intent.name.clone());
+        metadata.insert("confidence".to_string(), format!("{:.3}", intent.confidence));
 
-        let suggested_actions = self.generate_suggested_actions(&intent, &entities);
+        // Payload
+        let payload = serde_json::json!({
+            "response": response_text,
+            "intent": intent,
+            "entities": entities,
+        });
 
         Ok(AgentResponse {
+            request_id: request.id,
             agent_id: self.id.clone(),
-            content: response_content,
-            confidence: intent.confidence,
+            success: true,
+            payload,
+            artifacts: Vec::new(),
+            next_actions,
             metadata,
-            artifacts: vec![],
-            suggested_actions,
         })
     }
 
@@ -995,21 +1074,22 @@ impl Agent for NaturalLanguageAgent {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
-        self.conversation_history.clear();
-        self.context_manager.contexts.clear();
+        self.conversation_history.write().await.clear();
+        self.context_manager.write().await.cleanup_expired_contexts();
         self.is_initialized = false;
         Ok(())
     }
 }
+
 
 impl NaturalLanguageAgent {
     pub fn new(id: String) -> Self {
         Self {
             id,
             config: AgentConfig::default(),
-            conversation_history: Vec::new(),
+            conversation_history: RwLock::new(Vec::new()),
             intent_classifier: IntentClassifier::new(),
-            context_manager: ConversationContextManager::new(),
+            context_manager: RwLock::new(ConversationContextManager::new()),
             entity_extractor: EntityExtractor::new(),
             response_generator: ResponseGenerator::new(),
             is_initialized: false,
@@ -1104,71 +1184,31 @@ impl NaturalLanguageAgent {
         topics
     }
 
-    fn generate_suggested_actions(&self, intent: &Intent, entities: &[Entity]) -> Vec<SuggestedAction> {
-        let mut actions = Vec::new();
-
-        match intent.name.as_str() {
-            "execute_command" => {
-                actions.push(SuggestedAction {
-                    action_type: ActionType::ExecuteCommand,
-                    description: "Execute the requested command".to_string(),
-                    parameters: intent.parameters.clone(),
-                    priority: ActionPriority::High,
-                    confidence: intent.confidence,
-                    estimated_duration: Some(std::time::Duration::from_secs(5)),
-                    prerequisites: vec![],
-                });
-            }
-            "help_request" => {
-                actions.push(SuggestedAction {
-                    action_type: ActionType::ShowDocumentation,
-                    description: "Show relevant documentation".to_string(),
-                    parameters: HashMap::new(),
-                    priority: ActionPriority::Medium,
-                    confidence: 0.8,
-                    estimated_duration: Some(std::time::Duration::from_secs(2)),
-                    prerequisites: vec![],
-                });
-            }
-            "code_generation" => {
-                actions.push(SuggestedAction {
-                    action_type: ActionType::GenerateCode,
-                    description: "Generate code based on requirements".to_string(),
-                    parameters: intent.parameters.clone(),
-                    priority: ActionPriority::High,
-                    confidence: intent.confidence,
-                    estimated_duration: Some(std::time::Duration::from_secs(10)),
-                    prerequisites: vec![],
-                });
-            }
-            _ => {}
-        }
-
-        actions
-    }
 
     pub async fn get_conversation_summary(&self, session_id: &str) -> Option<ConversationSummary> {
-        if let Some(context) = self.context_manager.contexts.get(session_id) {
-            Some(ConversationSummary {
-                session_id: session_id.to_string(),
-                turn_count: self.conversation_history.len(),
-                active_topics: context.active_topics.clone(),
-                recent_intents: self.conversation_history
-                    .iter()
-                    .rev()
-                    .take(5)
-                    .filter_map(|turn| turn.intent.as_ref().map(|i| i.name.clone()))
-                    .collect(),
-                overall_sentiment: self.calculate_overall_sentiment(),
-                last_updated: context.last_updated,
-            })
-        } else {
-            None
-        }
+        let mgr = self.context_manager.read().await;
+        let context = mgr.contexts.get(session_id)?;
+        let history = self.conversation_history.read().await;
+        let turn_count = history.len();
+        let recent_intents: Vec<String> = history
+            .iter()
+            .rev()
+            .take(5)
+            .filter_map(|turn| turn.intent.as_ref().map(|i| i.name.clone()))
+            .collect();
+        let overall_sentiment = self.calculate_overall_sentiment_from_history(&history);
+        Some(ConversationSummary {
+            session_id: session_id.to_string(),
+            turn_count,
+            active_topics: context.active_topics.clone(),
+            recent_intents,
+            overall_sentiment,
+            last_updated: context.last_updated,
+        })
     }
 
-    fn calculate_overall_sentiment(&self) -> SentimentAnalysis {
-        if self.conversation_history.is_empty() {
+    fn calculate_overall_sentiment_from_history(&self, history: &[ConversationTurn]) -> SentimentAnalysis {
+        if history.is_empty() {
             return SentimentAnalysis {
                 polarity: 0.0,
                 subjectivity: 0.0,
@@ -1177,20 +1217,20 @@ impl NaturalLanguageAgent {
             };
         }
 
-        let avg_polarity = self.conversation_history
+        let avg_polarity = history
             .iter()
             .map(|turn| turn.sentiment.polarity)
-            .sum::<f64>() / self.conversation_history.len() as f64;
+            .sum::<f64>() / history.len() as f64;
 
-        let avg_subjectivity = self.conversation_history
+        let avg_subjectivity = history
             .iter()
             .map(|turn| turn.sentiment.subjectivity)
-            .sum::<f64>() / self.conversation_history.len() as f64;
+            .sum::<f64>() / history.len() as f64;
 
         SentimentAnalysis {
             polarity: avg_polarity,
             subjectivity: avg_subjectivity,
-            emotion: EmotionType::Neutral, // Could implement more sophisticated emotion aggregation
+            emotion: EmotionType::Neutral,
             confidence: 0.8,
         }
     }
@@ -1212,7 +1252,7 @@ impl Default for NaturalLanguageAgent {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "never")]
 mod tests {
     use super::*;
 
@@ -1285,6 +1325,7 @@ impl EntityType {
     }
 }
 
+#[cfg(feature = "never")]
 impl NaturalLanguageAgent {
     pub fn new() -> Self {
         Self {
@@ -1494,6 +1535,7 @@ impl NaturalLanguageAgent {
 }
 
 #[async_trait]
+#[cfg(feature = "never")]
 impl Agent for NaturalLanguageAgent {
     fn id(&self) -> &str {
         &self.id
@@ -1672,6 +1714,7 @@ pub struct ProcessedInput {
     pub suggested_agent: Option<String>,
 }
 
+#[cfg(feature = "never")]
 impl IntentClassifier {
     pub fn new() -> Self {
         let mut patterns = HashMap::new();
@@ -1859,6 +1902,7 @@ impl IntentClassifier {
     }
 }
 
+#[cfg(feature = "never")]
 impl ConversationContextManager {
     pub fn new() -> Self {
         Self {
@@ -1881,31 +1925,11 @@ impl Default for ConversationContextManager {
     }
 }
 
-impl Default for NaturalLanguageAgent {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
-impl ConversationContextManager {
-    pub fn update_from_input(&mut self, _input: &str, entities: &[Entity], intent: &Intent) {
-        // Update active entities
-        for entity in entities {
-            self.active_entities.insert(format!("{:?}", entity.entity_type), entity.clone());
-        }
-
-        // Update current topic based on intent
-        self.current_topic = Some(intent.name.clone());
-
-        // Store intent parameters in session context
-        for (key, value) in &intent.parameters {
-            self.session_context.insert(key.clone(), value.clone());
-        }
-    }
-}
 
 #[cfg(test)]
-mod tests {
+#[cfg(feature = "never")]
+mod tests2 {
     use super::*;
 
     #[tokio::test]

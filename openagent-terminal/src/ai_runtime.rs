@@ -2,6 +2,7 @@
 //! 
 //! This module provides the core AI runtime functionality for OpenAgent Terminal,
 //! including AI provider management, streaming responses, and UI state management.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,7 +11,7 @@ use anyhow::{Result, anyhow, Context};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
-use crate::event::{Event, EventType};
+use crate::event::Event;
 
 // HTTP client for providers
 use reqwest::Client;
@@ -36,6 +37,10 @@ impl AgentManager {
     }
 }
 
+impl Default for AgentManager {
+    fn default() -> Self { Self::new() }
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentRequest {
     pub prompt: String,
@@ -49,19 +54,14 @@ pub struct AgentResponse {
 }
 
 /// AI provider types supported by the runtime
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum AiProvider {
+    #[default]
     Ollama,
     OpenAI,
     Anthropic,
     OpenRouter,
     Custom(String),
-}
-
-impl Default for AiProvider {
-    fn default() -> Self {
-        AiProvider::Ollama
-    }
 }
 
 /// Configuration for AI providers
@@ -671,7 +671,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .providers
             .get(&prov)
             .cloned()
-            .unwrap_or_else(|| AiProviderConfig::default());
+            .unwrap_or_else(AiProviderConfig::default);
         let http = self.http.clone();
         // Handle custom providers by using the registry (non-static dispatch)
         match prov.clone() {
@@ -723,7 +723,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .providers
             .get(&prov)
             .cloned()
-            .unwrap_or_else(|| AiProviderConfig::default());
+            .unwrap_or_else(AiProviderConfig::default);
         let http = self.http.clone();
         match prov.clone() {
             AiProvider::Custom(name) => {
@@ -807,7 +807,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .providers
             .get(&prov)
             .cloned()
-            .unwrap_or_else(|| AiProviderConfig::default());
+            .unwrap_or_else(AiProviderConfig::default);
         let http = self.http.clone();
         match prov.clone() {
             AiProvider::Custom(name) => {
@@ -861,7 +861,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .providers
             .get(&prov)
             .cloned()
-            .unwrap_or_else(|| AiProviderConfig::default());
+            .unwrap_or_else(AiProviderConfig::default);
         let http = self.http.clone();
         tokio::spawn(async move {
             if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {
@@ -897,7 +897,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
             .providers
             .get(&prov)
             .cloned()
-            .unwrap_or_else(|| AiProviderConfig::default());
+            .unwrap_or_else(AiProviderConfig::default);
         let http = self.http.clone();
         match prov.clone() {
             AiProvider::Custom(name) => {
@@ -1032,7 +1032,7 @@ let creds = crate::config::ai_providers::ProviderCredentials::from_config(provid
                         .providers
                         .get(&prov)
                         .cloned()
-                        .unwrap_or_else(|| AiProviderConfig::default());
+                        .unwrap_or_else(AiProviderConfig::default);
                     let http = self.http.clone();
                     tokio::spawn(async move {
                         if let Err(e) = AiRuntime::provider_chat_stream_owned(http, prov, cfg, prompt, proxy.clone(), window_id).await {

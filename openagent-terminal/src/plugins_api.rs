@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 /// Plugin error types
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum PluginError {
     #[error("Plugin not found: {0}")]
     NotFound(String),
@@ -157,7 +157,7 @@ pub struct CommandOutput {
 pub enum PluginEvent {
     Startup,
     Shutdown,
-    CommandExecuted(CommandContext, CommandOutput),
+    CommandExecuted(Box<CommandContext>, CommandOutput),
     ConfigurationChanged(HashMap<String, serde_json::Value>),
     ThemeChanged(String),
     Custom(String, serde_json::Value),
@@ -165,6 +165,7 @@ pub enum PluginEvent {
 
 /// Plugin event message structure for communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct PluginEventMessage {
     pub event_type: String,
     pub data: serde_json::Value,
@@ -173,6 +174,7 @@ pub struct PluginEventMessage {
 
 /// Log levels for plugin logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum LogLevel {
     Debug,
     Info,
@@ -216,7 +218,7 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Scan plugin directories for available plugins
+    /// Scan plugin directories for available plugins (manifests only)
     pub async fn scan_plugins(&self) -> Result<Vec<PluginManifest>> {
         let mut manifests = Vec::new();
         
@@ -239,6 +241,28 @@ impl PluginHost {
         }
         
         Ok(manifests)
+    }
+
+    /// Scan plugin directories and return (manifest, path) pairs
+    pub async fn scan_plugins_with_paths(&self) -> Result<Vec<(PluginManifest, PathBuf)>> {
+        let mut pairs = Vec::new();
+        for dir in &self.plugin_directories {
+            let mut entries = tokio::fs::read_dir(dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                if entry.path().is_dir() {
+                    let manifest_path = entry.path().join("plugin.json");
+                    if manifest_path.exists() {
+                        match self.load_manifest(&manifest_path).await {
+                            Ok(manifest) => pairs.push((manifest, entry.path())),
+                            Err(e) => {
+                                eprintln!("Failed to load plugin manifest at {:?}: {}", manifest_path, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(pairs)
     }
 
     /// Load a plugin manifest from file
@@ -399,7 +423,7 @@ impl PluginHost {
     }
 
     /// Set up filesystem access permissions
-    async fn setup_filesystem_access(&self, sandbox_dir: &Path, paths: &[PathBuf], write_access: bool) -> Result<()> {
+    async fn setup_filesystem_access(&self, sandbox_dir: &Path, paths: &[PathBuf], _write_access: bool) -> Result<()> {
         for path in paths {
             // Create symbolic links or bind mounts as appropriate
             let link_path = sandbox_dir.join(
@@ -427,32 +451,32 @@ impl PluginHost {
     }
 
     /// Initialize command-type plugin
-    async fn initialize_command_plugin(&self, instance: &mut PluginInstance) -> Result<()> {
+    async fn initialize_command_plugin(&self, _instance: &mut PluginInstance) -> Result<()> {
         // Set up command handlers
         // In production, this would set up IPC channels or WebAssembly runtime
         Ok(())
     }
 
     /// Initialize UI-type plugin
-    async fn initialize_ui_plugin(&self, instance: &mut PluginInstance) -> Result<()> {
+    async fn initialize_ui_plugin(&self, _instance: &mut PluginInstance) -> Result<()> {
         // Set up UI extension points
         Ok(())
     }
 
     /// Initialize AI-type plugin
-    async fn initialize_ai_plugin(&self, instance: &mut PluginInstance) -> Result<()> {
+    async fn initialize_ai_plugin(&self, _instance: &mut PluginInstance) -> Result<()> {
         // Set up AI integration points
         Ok(())
     }
 
     /// Initialize generic plugin
-    async fn initialize_generic_plugin(&self, instance: &mut PluginInstance) -> Result<()> {
+    async fn initialize_generic_plugin(&self, _instance: &mut PluginInstance) -> Result<()> {
         // Basic plugin initialization
         Ok(())
     }
 
     /// Verify plugin signature
-    async fn verify_plugin_signature(&self, plugin_path: &Path, manifest: &PluginManifest) -> Result<()> {
+    async fn verify_plugin_signature(&self, plugin_path: &Path, _manifest: &PluginManifest) -> Result<()> {
         // In production, this would verify cryptographic signatures
         // For now, we'll do basic validation
         
@@ -466,28 +490,36 @@ impl PluginHost {
 
     /// Unload a plugin
     pub async fn unload_plugin(&self, plugin_id: &str) -> Result<()> {
-        let mut plugins = self.plugins.write().unwrap();
-        
-        if let Some(mut instance) = plugins.remove(plugin_id) {
-            // Send shutdown event
-            let _ = self.event_tx.send(PluginEvent::Shutdown);
-            
-            // Clean up plugin resources
-            instance.state = PluginState::Stopped;
-            
-            // Clean up sandbox if enabled
-            if self.sandbox_enabled {
-                let sandbox_dir = self.get_plugin_sandbox_dir(plugin_id);
-                if sandbox_dir.exists() {
-                    tokio::fs::remove_dir_all(&sandbox_dir).await
-                        .context("Failed to clean up plugin sandbox")?;
-                }
+        // Remove the instance under the lock, then drop the lock before any await
+let (removed, sandbox_dir_opt) = {
+            let mut plugins = self.plugins.write().unwrap();
+            if let Some(mut instance) = plugins.remove(plugin_id) {
+                // Prepare sandbox dir path if cleanup needed
+                let sandbox_dir_opt = if self.sandbox_enabled {
+                    Some(self.get_plugin_sandbox_dir(plugin_id))
+                } else {
+                    None
+                };
+                // Send shutdown event and mark stopped
+                let _ = self.event_tx.send(PluginEvent::Shutdown);
+                instance.state = PluginState::Stopped;
+                (Some(instance), sandbox_dir_opt)
+            } else {
+                (None, None)
             }
-            
-            Ok(())
-        } else {
-            Err(PluginError::NotFound(plugin_id.to_string()).into())
+        };
+        if removed.is_none() {
+            return Err(PluginError::NotFound(plugin_id.to_string()).into());
         }
+        // Perform async cleanup outside of the write lock
+        if let Some(sandbox_dir) = sandbox_dir_opt {
+            if sandbox_dir.exists() {
+                tokio::fs::remove_dir_all(&sandbox_dir)
+                    .await
+                    .context("Failed to clean up plugin sandbox")?;
+            }
+        }
+        Ok(())
     }
 
     /// Execute a plugin command
@@ -529,18 +561,18 @@ impl PluginHost {
         }
         
         // Send event
-        let _ = self.event_tx.send(PluginEvent::CommandExecuted(context, output.clone()));
+let _ = self.event_tx.send(PluginEvent::CommandExecuted(Box::new(context), output.clone()));
         
         Ok(output)
     }
 
     /// Execute command in plugin sandbox
-    async fn execute_command_in_sandbox(
+async fn execute_command_in_sandbox(
         &self,
         instance: &PluginInstance,
         command: &str,
         args: Vec<String>,
-        context: CommandContext,
+        _context: CommandContext,
     ) -> Result<CommandOutput> {
         // For demonstration, return mock output
         // In production, this would execute in proper sandbox
@@ -580,7 +612,7 @@ impl PluginHost {
     }
 
     /// Install plugin from URL
-    async fn install_plugin_from_url(&self, url: &str) -> Result<String> {
+    async fn install_plugin_from_url(&self, _url: &str) -> Result<String> {
         // Download and extract plugin
         // This is a simplified version
         Err(PluginError::ExecutionFailed("URL installation not implemented in demo".to_string()).into())
@@ -603,7 +635,9 @@ impl PluginHost {
 /// Plugin manager for coordinating the plugin system
 pub struct PluginManager {
     host: PluginHost,
+    #[allow(dead_code)]
     auto_update_enabled: bool,
+    #[allow(dead_code)]
     update_check_interval: std::time::Duration,
 }
 
@@ -662,6 +696,25 @@ impl PluginManager {
     /// Get mutable reference to the plugin host
     pub fn host_mut(&mut self) -> &mut PluginHost {
         &mut self.host
+    }
+}
+
+impl PluginManager {
+    /// Load a plugin given its directory path (containing plugin.json). Returns the plugin id.
+    pub async fn load_plugin_from_path<P: AsRef<Path>>(&self, path: P) -> Result<String> {
+        let path = path.as_ref();
+        if !path.is_dir() {
+            anyhow::bail!("Plugin path must be a directory containing plugin.json");
+        }
+        let manifest_path = path.join("plugin.json");
+        if !manifest_path.exists() {
+            anyhow::bail!("plugin.json not found in {:?}", path);
+        }
+        // Reuse host manifest loader via temporary host clone path: use scan-like parser
+        let manifest = self.host.load_manifest(&manifest_path).await?;
+        let id = manifest.id.clone();
+        self.host.load_plugin(manifest, path.to_path_buf()).await?;
+        Ok(id)
     }
 }
 

@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -26,20 +25,15 @@ impl std::fmt::Display for BlockId {
 }
 
 /// Shell type for command execution
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ShellType {
+    #[default]
     Bash,
     Zsh,
     Fish,
     PowerShell,
     Nushell,
     Custom(String),
-}
-
-impl Default for ShellType {
-    fn default() -> Self {
-        ShellType::Bash
-    }
 }
 
 impl ShellType {
@@ -344,8 +338,8 @@ mod database {
                     Ok(mut block) => {
                         // Load tags
                         let mut stmt = conn.prepare("SELECT tag FROM block_tags WHERE block_id = ?1")?;
-                        let tag_iter = stmt.query_map([block_id.0 as i64], |row| {
-                            Ok(row.get::<_, String>(0)?)
+let tag_iter = stmt.query_map([block_id.0 as i64], |row| {
+                            row.get::<_, String>(0)
                         })?;
                         
                         for tag in tag_iter {
@@ -582,6 +576,7 @@ pub struct BlockManager {
     database: Arc<RwLock<database::BlockDatabase>>,
     
     /// Root directory for relative path resolution
+    #[allow(dead_code)]
     root: PathBuf,
     
     /// Cache for frequently accessed blocks

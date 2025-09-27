@@ -9,8 +9,9 @@ use regex::Regex;
 use anyhow::{Result, Context};
 
 /// Risk levels for security assessment
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
 pub enum RiskLevel {
+    #[default]
     Safe,
     Low,
     Medium,
@@ -30,11 +31,6 @@ impl std::fmt::Display for RiskLevel {
     }
 }
 
-impl Default for RiskLevel {
-    fn default() -> Self {
-        RiskLevel::Safe
-    }
-}
 
 /// Risk factors contributing to the overall assessment
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,8 +114,7 @@ impl SecurityPolicy {
 
     /// Create a conservative policy that blocks more operations
     pub fn preset_conservative() -> Self {
-        let mut policy = Self::default();
-        policy.block_critical = true;
+        let mut policy = Self { block_critical: true, ..Self::default() };
         policy.require_confirmation.insert(RiskLevel::Low, true);
         policy
     }
@@ -134,9 +129,7 @@ impl SecurityPolicy {
 
     /// Create a disabled policy (all commands pass through)
     pub fn preset_disabled() -> Self {
-        let mut policy = Self::default();
-        policy.enabled = false;
-        policy
+        Self { enabled: false, ..Self::default() }
     }
 }
 
@@ -265,7 +258,7 @@ impl SecurityLens {
         }
 
         // Check if command is whitelisted
-        let cmd_parts: Vec<&str> = command.trim().split_whitespace().collect();
+        let cmd_parts: Vec<&str> = command.split_whitespace().collect();
         if let Some(first_cmd) = cmd_parts.first() {
             if self.policy.whitelisted_commands.contains(&first_cmd.to_string()) {
                 return CommandRisk::default();
@@ -466,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_safe_commands() {
-        let lens = SecurityLens::new(SecurityPolicy::default());
+        let _lens = SecurityLens::new(SecurityPolicy::default());
         
         let safe_commands = vec!["ls", "pwd", "whoami", "date", "echo hello"];
         for cmd in safe_commands {

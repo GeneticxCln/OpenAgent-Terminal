@@ -10,6 +10,7 @@ use std::path::Path;
 
 /// Storage error types
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum StorageError {
     #[error("Database error: {0}")]
     Database(#[from] anyhow::Error),
@@ -25,6 +26,13 @@ pub enum StorageError {
 
 /// Result type for storage operations
 pub type StorageResult<T> = std::result::Result<T, StorageError>;
+
+impl From<sqlx::Error> for StorageError {
+    fn from(e: sqlx::Error) -> Self {
+        // Wrap sqlx errors into the generic Database(anyhow::Error) variant
+        StorageError::Database(anyhow::anyhow!(e))
+    }
+}
 
 /// Main storage abstraction for OpenAgent Terminal
 #[derive(Debug)]

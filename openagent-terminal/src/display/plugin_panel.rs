@@ -36,13 +36,16 @@ impl PluginPanelState {
     pub fn new() -> Self {
         Self { active: false, query: String::new(), results: Vec::new(), selected: 0 }
     }
+    #[allow(dead_code)]
     pub fn open(&mut self) {
         self.active = true;
         self.selected = 0;
     }
+    #[cfg(feature = "plugins-ui")]
     pub fn close(&mut self) {
         self.active = false;
     }
+    #[cfg(feature = "plugins-ui")]
     pub fn move_selection(&mut self, delta: isize) {
         if self.results.is_empty() {
             self.selected = 0;

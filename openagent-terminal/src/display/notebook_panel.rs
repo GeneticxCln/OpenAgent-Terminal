@@ -1,4 +1,5 @@
 // Production-ready Notebooks panel system
+#![allow(dead_code)]
 // Supports Jupyter-style notebooks with cells, execution, and persistence
 
 use serde::{Deserialize, Serialize};
@@ -222,14 +223,16 @@ impl NotebookPanelState {
         self.focus = FocusArea::Cells;
     }
 
-    pub fn add_cell(&mut self, cell_type: CellType) -> String {
+pub fn add_cell(&mut self, cell_type: CellType) -> String {
         let cell_id = Uuid::new_v4().to_string();
         let idx = self.cells.len();
         
-        let mut cell = NotebookCellItem::default();
-        cell.id = cell_id.clone();
-        cell.idx = idx;
-        cell.cell_type = cell_type;
+        let cell = NotebookCellItem {
+            id: cell_id.clone(),
+            idx,
+            cell_type,
+            ..NotebookCellItem::default()
+        };
         
         self.cells.push(cell);
         self.selected_cell = idx;

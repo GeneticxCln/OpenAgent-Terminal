@@ -95,7 +95,7 @@ fn bench_text_processing(c: &mut Criterion) {
 fn bench_command_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("command_parsing");
     
-    let test_commands = vec![
+    let test_commands = [
         "ls -la /home/user/documents",
         "git commit -m 'Add new feature' --author='John Doe <john@example.com>'",
         "cargo build --release --features=\"full ai wgpu\"",

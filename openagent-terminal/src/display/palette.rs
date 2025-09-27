@@ -13,7 +13,7 @@ pub enum PaletteEntry {
         #[allow(dead_code)]
         exit: Option<i32>,
     },
-    #[cfg(feature = "plugins")]
+    #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
     PluginCommand {
         plugin: String,
         command: String,
@@ -97,6 +97,7 @@ impl PaletteState {
     }
 
     /// Populate with curated workflow templates grouped by category
+    #[allow(dead_code)]
     pub fn open_workflows_catalog(&mut self) {
         let mut items = Vec::new();
         let catalog = vec![
@@ -239,11 +240,11 @@ impl PaletteState {
                     (PaletteEntry::Action(_), "action") => {}
                     (PaletteEntry::Workflow(_), "workflow") => {}
                     (PaletteEntry::File(_), "file") => {}
-                    #[cfg(feature = "plugins")]
+                    #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                     (PaletteEntry::PluginCommand { .. }, "plugin") => {}
-                    #[cfg(not(feature = "plugins"))]
+                    #[cfg(not(all(feature = "plugins", feature = "plugins-ui")))]
                     _ => {}
-                    #[cfg(feature = "plugins")]
+                    #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                     _ => {}
                 }
             }
@@ -898,7 +899,7 @@ impl Display {
                         PaletteEntry::Workflow(_) => uv_for_slot(1),
                         PaletteEntry::File(_) => uv_for_slot(2),
                         PaletteEntry::Command { .. } => uv_for_slot(0),
-                        #[cfg(feature = "plugins")]
+                        #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                         PaletteEntry::PluginCommand { .. } => uv_for_slot(8),
                         PaletteEntry::Action(a) => {
                             use BindingAction as BA;
@@ -1113,7 +1114,7 @@ impl Display {
                         PaletteEntry::Workflow(_) => " [⚡ Workflow]",
                         PaletteEntry::File(_) => " [📄 File]",
                         PaletteEntry::Command { .. } => " [› Command]",
-                        #[cfg(feature = "plugins")]
+                        #[cfg(all(feature = "plugins", feature = "plugins-ui"))]
                         PaletteEntry::PluginCommand { .. } => " [🔌 Plugin]",
                     };
                     if col_cursor < row_start_col + content_max_cols - chip.width() {

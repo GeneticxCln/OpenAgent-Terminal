@@ -3,11 +3,12 @@
 //! This module provides context from the terminal environment to AI agents,
 //! including current working directory, recent commands, file contents, and
 //! other contextual information that helps AI provide better assistance.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// Context information extracted from terminal environment
@@ -104,7 +105,7 @@ pub struct AiContextParams {
 }
 
 /// PTY-specific AI context used by the terminal
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PtyAiContext {
     /// Terminal context information
     pub terminal_context: TerminalContext,
@@ -114,17 +115,6 @@ pub struct PtyAiContext {
     pub last_output: Option<String>,
     /// Error context if available
     pub error_context: Option<String>,
-}
-
-impl Default for PtyAiContext {
-    fn default() -> Self {
-        Self {
-            terminal_context: TerminalContext::default(),
-            current_input: None,
-            last_output: None,
-            error_context: None,
-        }
-    }
 }
 
 impl Default for TerminalContext {
@@ -180,11 +170,8 @@ impl ContextProvider {
 
     /// Extract complete terminal context
     pub fn extract_context(&self) -> Result<TerminalContext> {
-        let mut context = TerminalContext::default();
-        
-        // Get working directory
-        context.working_directory = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/"));
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+        let mut context = TerminalContext { working_directory: cwd, ..TerminalContext::default() };
         
         // Extract git information
         self.extract_git_info(&mut context);
@@ -617,8 +604,7 @@ mod tests {
         std::fs::write(&cargo_toml, "[package]\nname = \"test\"\nversion = \"0.1.0\"\n").unwrap();
         
         let provider = ContextProvider::new();
-        let mut context = TerminalContext::default();
-        context.working_directory = temp_dir.path().to_path_buf();
+        let mut context = TerminalContext { working_directory: temp_dir.path().to_path_buf(), ..TerminalContext::default() };
         
         provider.detect_project_info(&mut context);
         
@@ -630,9 +616,11 @@ mod tests {
 
     #[test]
     fn test_context_to_ai_params() {
-        let mut context = TerminalContext::default();
-        context.working_directory = PathBuf::from("/test/project");
-        context.git_branch = Some("main".to_string());
+        let context = TerminalContext { 
+            working_directory: PathBuf::from("/test/project"), 
+            git_branch: Some("main".to_string()), 
+            ..TerminalContext::default() 
+        };
         
         let params = context_to_ai_params(&Some(context));
         assert_eq!(params.working_directory, "/test/project");

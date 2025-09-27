@@ -115,9 +115,9 @@ impl super::Display {
         // - Quoted paths: "./My F", './My F'
         if !cur_token.is_empty() {
             let (path_prefix, quoted) = normalize_path_token(cur_token);
-            if path_prefix.is_some() {
-                let (base_dir, partial) = resolve_base_and_partial(path_prefix.unwrap(), cwd.clone());
-                if let Some(base) = base_dir {
+                if let Some(pp) = path_prefix {
+                    let (base_dir, partial) = resolve_base_and_partial(pp, cwd.clone());
+                    if let Some(base) = base_dir {
                     if let Ok(rd) = std::fs::read_dir(&base) {
                         let show_hidden = partial.starts_with('.') || partial.is_empty();
                         for entry in rd.flatten() {
@@ -139,7 +139,7 @@ impl super::Display {
                             }
                             let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
                             // Reconstruct suggestion label using original token form
-                            let mut label = reconstruct_completion_label(cur_token, &base, &file_name, is_dir);
+                            let label = reconstruct_completion_label(cur_token, &file_name, is_dir);
                             // If token was quoted, preserve quote style in label only for spaces; editor may handle quoting
                             if quoted {
                                 // leave as-is; drawing side is pure label
@@ -991,7 +991,7 @@ fn expand_simple_env(input: &str) -> String {
     out
 }
 
-fn reconstruct_completion_label(original_token: &str, base: &PathBuf, file_name: &str, is_dir: bool) -> String {
+fn reconstruct_completion_label(original_token: &str, file_name: &str, is_dir: bool) -> String {
     // Determine if original token was absolute or had path separators
     let quoted = (original_token.starts_with('"') && original_token.ends_with('"')) || (original_token.starts_with('\'') && original_token.ends_with('\''));
     let raw = if quoted { &original_token[1..original_token.len().saturating_sub(1)] } else { original_token };

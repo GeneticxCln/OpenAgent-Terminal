@@ -1,7 +1,7 @@
 #![allow(clippy::pedantic)]
 
 use openagent_terminal as crate_root;
-use crate_root::workspace::split_manager::{PaneRect, SplitAxis, SplitChild, SplitLayout};
+use crate_root::workspace::split_manager::{PaneRect, SplitAxis, SplitLayout};
 
 fn container() -> PaneRect {
     // x, y, w, h in pixels
@@ -65,7 +65,6 @@ fn ratio_at_path_matches_expected() {
     // Path to the inner vertical split ratio: [Left]
     // get_ratio_at_path_internal is private; ratio_at_path on the child is covered by below approach
     // Hit test near left-half to fetch a path, or reconstruct the path explicitly
-    let path = vec![SplitChild::Left];
     // Use internal recursion by calling ratio_at_path on a manual traversal using pattern matching
     if let SplitLayout::Horizontal { left, .. } = &layout {
         if let SplitLayout::Vertical { ratio, .. } = left.as_ref() {

@@ -2,11 +2,12 @@ use sqlx::SqlitePool;
 use sqlx::{Pool, Row, Sqlite};
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct PluginStorage {
     pool: SqlitePool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "plugins"))]
 mod tests {
     use super::*;
     use crate::storage::Storage;
@@ -72,6 +73,7 @@ mod tests {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct QuotaConfig {
     pub max_total_bytes: Option<i64>,
     pub max_value_bytes: Option<i64>,
@@ -79,6 +81,7 @@ pub struct QuotaConfig {
     pub max_docs: Option<i64>,
 }
 
+#[allow(dead_code)]
 impl PluginStorage {
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }

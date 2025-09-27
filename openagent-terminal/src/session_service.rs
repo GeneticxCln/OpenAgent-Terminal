@@ -7,20 +7,20 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use tokio::sync::{broadcast, RwLock};
-use tokio::time::{interval, Instant};
-use tracing::{info, warn, debug, error};
+use tokio::time::interval;
+use tracing::{info, debug, error};
 use serde::Serialize;
 
 use crate::session_persistence::{
     SessionManager, SessionId, SessionState, PersistedCommand, PersistedConversation,
     UserPreferences, WorkspaceState, PersistenceConfig
 };
-use crate::blocks_v2::{BlockRecord, BlockId, ShellType};
+use crate::blocks_v2::{BlockRecord, BlockId};
 use crate::conversation_management::{
-    ConversationManager, ConversationId, ConversationMessage, MessageType
+    ConversationManager, ConversationId, ConversationMessage
 };
 use crate::ai_context_provider::PtyAiContext;
 
@@ -277,7 +277,7 @@ impl SessionService {
         execution_result: &CommandExecutionResult,
     ) -> Result<()> {
         let command = PersistedCommand {
-            id: Some(block_record.id.clone()),
+            id: Some(block_record.id),
             command: block_record.command.clone(),
             output: execution_result.output.clone(),
             error_output: execution_result.error_output.clone(),
@@ -295,7 +295,7 @@ working_directory: block_record.directory.clone(),
         if let Some(session) = self.get_current_session().await {
             let _ = self.event_sender.send(SessionEvent::CommandAdded {
                 session_id: session.session_id,
-                command_id: Some(block_record.id.clone()),
+                command_id: Some(block_record.id),
                 command: block_record.command.clone(),
             });
         }
@@ -387,7 +387,7 @@ working_directory: block_record.directory.clone(),
     
     /// List all available sessions
     pub async fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
-        Ok(self.session_manager.list_sessions().await?)
+        self.session_manager.list_sessions().await
     }
     
     /// Delete a session
@@ -557,8 +557,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use crate::blocks_v2::BlockId;
-    use uuid::Uuid;
     
+    use crate::blocks_v2::ShellType;
+
     #[tokio::test]
     async fn test_session_service_lifecycle() {
         let temp_dir = TempDir::new().unwrap();
