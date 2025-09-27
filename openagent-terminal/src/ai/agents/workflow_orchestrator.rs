@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use super::blitzy_project_context::BlitzyProjectContextAgent;
 use super::conversation_manager::ConversationManager;
+use super::natural_language::ConversationRole;
 use super::*;
 
 /// Advanced workflow orchestration system for multi-agent coordination
@@ -703,6 +704,12 @@ impl WorkflowOrchestrator {
                 WorkflowStepType::Command => {
                     self.execute_command_step(&step.request_template, &inputs).await
                 }
+                WorkflowStepType::Wait => {
+                    self.execute_wait_step(&step, &inputs).await
+                }
+                WorkflowStepType::Custom(_) => {
+                    self.execute_custom_step(&step, &inputs).await
+                }
                 _ => Err(anyhow!("Step type not implemented: {:?}", step.step_type)),
             };
 
@@ -777,6 +784,89 @@ impl WorkflowOrchestrator {
             next_actions: Vec::new(),
             metadata: HashMap::new(),
         })
+    }
+
+    /// Execute a wait/sleep step
+    async fn execute_wait_step(
+        &self,
+        step: &WorkflowStep,
+        inputs: &HashMap<String, serde_json::Value>,
+    ) -> Result<AgentResponse> {
+        let payload = self.interpolate_template(&step.request_template, inputs)?;
+        let mut waited_ms: u64 = 0;
+        if let Some(ms) = payload.get("ms").and_then(|v| v.as_u64()) {
+            waited_ms = ms;
+        } else if let Some(secs) = payload.get("seconds").and_then(|v| v.as_u64()) {
+            waited_ms = secs.saturating_mul(1000);
+        } else if let Some(secs) = payload.get("secs").and_then(|v| v.as_u64()) {
+            waited_ms = secs.saturating_mul(1000);
+        }
+        if waited_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(waited_ms)).await;
+        }
+        Ok(AgentResponse {
+            request_id: Uuid::new_v4(),
+            agent_id: "system".to_string(),
+            success: true,
+            payload: serde_json::json!({ "waited_ms": waited_ms }),
+            artifacts: Vec::new(),
+            next_actions: Vec::new(),
+            metadata: HashMap::new(),
+        })
+    }
+
+    /// Execute a custom workflow step
+    async fn execute_custom_step(
+        &self,
+        step: &WorkflowStep,
+        inputs: &HashMap<String, serde_json::Value>,
+    ) -> Result<AgentResponse> {
+        match &step.step_type {
+            WorkflowStepType::Custom(kind) if kind == "ConversationUpdate" => {
+                let payload = self.interpolate_template(&step.request_template, inputs)?;
+                let session_id_str = payload
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow!("ConversationUpdate requires 'session_id'"))?;
+                let session_id = Uuid::parse_str(session_id_str)
+                    .map_err(|e| anyhow!("Invalid session_id: {}", e))?;
+
+                let analysis = payload.get("analysis_results");
+                let generated = payload.get("generated_code");
+                let mut content = String::from("Workflow update:\n");
+                if let Some(a) = analysis {
+                    content.push_str("\nAnalysis Results:\n");
+                    content.push_str(&a.to_string());
+                    content.push('\n');
+                }
+                if let Some(g) = generated {
+                    content.push_str("\nGenerated Code:\n");
+                    content.push_str(&g.to_string());
+                    content.push('\n');
+                }
+
+                if let Some(cm) = &self.conversation_manager {
+                    cm.add_turn(session_id, ConversationRole::System, content, None, Vec::new())
+                        .await?;
+                } else {
+                    return Err(anyhow!("Conversation manager not available"));
+                }
+
+                Ok(AgentResponse {
+                    request_id: Uuid::new_v4(),
+                    agent_id: "system".to_string(),
+                    success: true,
+                    payload: serde_json::json!({ "conversation_update": true }),
+                    artifacts: Vec::new(),
+                    next_actions: Vec::new(),
+                    metadata: HashMap::new(),
+                })
+            }
+            WorkflowStepType::Custom(kind) => {
+                Err(anyhow!("Unsupported custom step type: {}", kind))
+            }
+            _ => Err(anyhow!("Invalid invocation of execute_custom_step")),
+        }
     }
 
     /// Build agent request from template and inputs

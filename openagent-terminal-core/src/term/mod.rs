@@ -1512,7 +1512,9 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn substitute(&mut self) {
-        trace!("[unimplemented] Substitute");
+        // C0 SUB (0x1A): Replace with Unicode replacement character to indicate invalid input.
+        trace!("Substitute");
+        self.input('\u{FFFD}');
     }
 
     /// Run LF/NL.

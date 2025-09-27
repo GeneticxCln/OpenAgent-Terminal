@@ -1193,7 +1193,35 @@ let resp = http.post(url).bearer_auth(key).json(&req).send().await?;
                 let data: Resp = resp.json().await.context("Ollama JSON error")?;
                 Ok(data.message.map(|m| m.content).unwrap_or_default())
             }
-            AiProvider::Custom(_) => Err(anyhow!("Custom provider not implemented")),
+            AiProvider::Custom(_) => {
+                // Generic OpenAI-compatible fallback for custom providers
+                #[derive(Serialize)] struct Msg<'a>{role:&'a str, content:&'a str}
+                #[derive(Serialize)] struct Req<'a>{model:&'a str, messages:Vec<Msg<'a>>, #[allow(dead_code)] temperature: Option<f32>}
+                #[derive(Deserialize)] struct Resp{choices:Vec<Choice>}
+                #[derive(Deserialize)] struct Choice{message: OM}
+                #[derive(Deserialize)] struct OM{content:String}
+                let base = cfg
+                    .base_url
+                    .clone()
+                    .ok_or_else(|| anyhow!("Custom provider requires base_url in config"))?;
+                let url = format!("{}/chat/completions", base.trim_end_matches('/'));
+                let req = Req{
+                    model:&cfg.model,
+                    messages: vec![
+                        Msg{role:"system", content:"You are an expert terminal assistant."},
+                        Msg{role:"user", content:&user_prompt}
+                    ],
+                    temperature: cfg.temperature,
+                };
+                let mut request = http.post(url).json(&req);
+                if let Some(key) = cfg.api_key.clone() {
+                    request = request.bearer_auth(key);
+                }
+                let resp = request.send().await?;
+                if !resp.status().is_success(){ return Err(anyhow!("Custom provider {}", resp.text().await.unwrap_or_default())); }
+                let data: Resp = resp.json().await.context("Custom provider JSON error")?;
+                Ok(data.choices.into_iter().next().map(|c| c.message.content).unwrap_or_default())
+            },
         }
     }
 

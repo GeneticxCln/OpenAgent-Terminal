@@ -113,7 +113,10 @@ impl RenderLine {
             Flags::STRIKEOUT => {
                 (metrics.strikeout_position, metrics.strikeout_thickness, RectKind::Normal)
             }
-            _ => unimplemented!("Invalid flag for cell line drawing specified"),
+            _ => {
+                // Ignore non-line-drawing flags gracefully.
+                return;
+            },
         };
 
         let mut rect =
