@@ -2,6 +2,10 @@
 // Specialized AI agent for generating high-quality code from natural language descriptions
 
 use anyhow::{anyhow, Result};
+// Create a simple AiProvider trait since ai_demo is not available
+pub trait AiProvider {
+    fn name(&self) -> &str;
+}
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -209,9 +213,11 @@ impl CodeGenerationAgent {
             }
         }
 
+        let ai_request = AgentRequest {
+            request_type: AgentRequestType::CodeGeneration,
             scratch_text: format!("{}\n\n{}", system_prompt, user_prompt),
             working_directory: Some(context.current_directory.clone()),
-            shell_kind: Some(detect_shell_kind(context)),
+            shell_kind: Some(Self::detect_shell_kind(context)),
             context: vec![
                 ("mode".to_string(), "code_generation".to_string()),
                 ("language".to_string(), request.language.clone().unwrap_or("rust".to_string())),
@@ -347,15 +353,15 @@ impl CodeGenerationAgent {
             _ => format!("# Run tests for {}", language),
         }
     }
-}
 
-#[async_trait]
-fn detect_shell_kind(context: &AgentContext) -> String {
-    if let Some(shell) = context.environment_vars.get("SHELL") {
-        let name = std::path::Path::new(shell).file_name().and_then(|s| s.to_str()).unwrap_or(shell);
-        return name.to_string();
+    /// Detect shell kind from AgentContext environment variables, fallback to bash
+    fn detect_shell_kind(context: &AgentContext) -> String {
+        if let Some(shell) = context.environment_vars.get("SHELL") {
+            let name = std::path::Path::new(shell).file_name().and_then(|s| s.to_str()).unwrap_or(shell);
+            return name.to_string();
+        }
+        "bash".to_string()
     }
-    "bash".to_string()
 }
 
 impl Agent for CodeGenerationAgent {

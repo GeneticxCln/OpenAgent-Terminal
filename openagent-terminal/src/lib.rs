@@ -73,6 +73,7 @@ pub mod workspace;
 
 // Essential modules for core functionality
 pub mod blocks_v2;
+pub mod notebooks;
 pub mod security_lens;
 pub mod session_persistence;
 pub mod session_service;

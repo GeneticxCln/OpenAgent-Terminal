@@ -73,6 +73,12 @@ use serde_json::json;
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
 
+#[cfg(feature = "notebooks")]
+use crate::notebooks::{NotebookListItem, NotebookCellItem};
+
+#[cfg(feature = "plugins")]
+use crate::plugins_api::{PluginEvent, PluginEventMessage};
+
 #[cfg(test)]
 pub(crate) fn collect_block_output_from_grid(
     grid: &grid::Grid<openagent_terminal_core::term::cell::Cell>,
@@ -2420,7 +2426,7 @@ EventType::WorkflowsProgressUpdate {
                         let rt = components.runtime.clone();
                         rt.spawn(async move {
                             use serde_json::json;
-let evt = PluginEvent {
+let evt = PluginEventMessage {
                                 event_type: "command".into(),
                                 data: json!({ "name": cmd_name, "args": [] }),
                                 timestamp: std::time::SystemTime::now()
@@ -8139,7 +8145,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                         let cwd = std::env::current_dir()
                                             .ok()
                                             .map(|p| p.to_string_lossy().to_string());
-                                        let evt = PluginEvent {
+                                        let evt = PluginEventMessage {
                                             event_type: "pre_command".into(),
                                             data: json!({
                                                 "cmd": cmd,
@@ -8153,7 +8159,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                                     }
                                     CoreCommandBlockEvent::CommandEnd { exit, cwd } => {
                                         // Post-command hook
-                                        let evt = PluginEvent {
+                                        let evt = PluginEventMessage {
                                             event_type: "post_command".into(),
                                             data: json!({
                                                 "exit_code": exit,
@@ -8168,7 +8174,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
 
                                         // Directory change notification if provided by shell integration
                                         if let Some(new_cwd) = cwd.clone() {
-                                            let evt_dir = PluginEvent {
+                                            let evt_dir = PluginEventMessage {
                                                 event_type: "directory_change".into(),
                                                 data: json!({ "cwd": new_cwd }),
                                                 timestamp: ts,

@@ -94,6 +94,10 @@ futures-util = { workspace = true }
 # Web functionality for plugins
 axum = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true }
+# Database functionality
+sqlx = { workspace = true, optional = true }
+# Tokio utilities
+tokio-util = { workspace = true, optional = true }
 
 
 [build-dependencies]
@@ -167,9 +171,9 @@ renderer-wgpu = ["wgpu"]
 completions = []
 ai = ["dep:reqwest"]
 workflow = ["dep:serde_yaml"]
-blocks = ["dep:rusqlite", "dep:uuid"]
+blocks = ["dep:rusqlite", "dep:uuid", "dep:sqlx", "dep:tokio-util"]
 security = ["dep:sha2"]
-plugins = ["dep:uuid", "dep:axum", "dep:hyper"]
+plugins = ["dep:uuid", "dep:axum", "dep:hyper", "dep:sqlx", "dep:tokio-util"]
 notebooks = ["dep:uuid"]
 ide = []
 

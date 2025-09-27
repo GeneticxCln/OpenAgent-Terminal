@@ -13,11 +13,16 @@ use tracing::{debug, error, info, warn};
 #[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockManager, CreateBlockParams};
 #[cfg(feature = "plugins")]
-use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
+use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy, PluginError, CommandOutput};
+
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
-#[cfg(feature = "plugins")]
-pub(crate) use crate::plugins_api::{CommandOutput, PluginError};
+
+// Fallback types when harfbuzz is not available
+#[cfg(not(feature = "harfbuzz"))]
+pub struct HarfBuzzShaper;
+#[cfg(not(feature = "harfbuzz"))]
+pub struct ShapingConfig;
 
 /// Component initialization configuration
 #[allow(dead_code)]
@@ -780,15 +785,7 @@ pub(crate) async fn initialize_plugin_manager(
         .context("Failed to create plugin manager")?;
     manager.set_enforce_signatures(enforce_signatures);
 
-    manager.configure_signature_policy(SignaturePolicy {
-        require_signatures_for_all,
-        require_system: path_require_system,
-        require_user: path_require_user,
-        require_project: path_require_project,
-        system_dir: Some(PathBuf::from("/usr/share/openagent-terminal/plugins")),
-        user_dir: dirs::config_dir().map(|d| d.join("openagent-terminal").join("plugins")),
-        project_dir: std::env::current_dir().ok().map(|d| d.join("plugins")),
-    });
+    manager.configure_signature_policy(SignaturePolicy::Required);
 
     // Discover and load plugins
     match manager.discover_plugins().await {
@@ -810,6 +807,19 @@ pub(crate) async fn initialize_plugin_manager(
 }
 
 /// Terminal plugin host implementation
+/// Plugin host trait for providing services to plugins
+pub trait PluginHostTrait: Send + Sync {
+    fn log(&self, level: LogLevel, message: &str);
+    fn get_storage_dir(&self) -> PathBuf;
+    fn execute_command(&self, command: &str, args: &[String]) -> Result<CommandOutput>;
+    fn read_file(&self, path: &str) -> Result<Vec<u8>, PluginError>;
+    fn write_file(&self, path: &str, data: &[u8]) -> Result<(), PluginError>;
+    fn store_data_for(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), PluginError>;
+    fn retrieve_data_for(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, PluginError>;
+    fn store_document_for(&self, plugin_id: &str, namespace: &str, key: &str, doc: serde_json::Value) -> Result<(), PluginError>;
+    fn retrieve_document_for(&self, plugin_id: &str, namespace: &str, key: &str) -> Result<Option<serde_json::Value>, PluginError>;
+}
+
 #[cfg(feature = "blocks")]
 struct TerminalPluginHost {
     storage_dir: PathBuf,
@@ -823,7 +833,7 @@ impl TerminalPluginHost {
 }
 
 #[cfg(feature = "blocks")]
-impl PluginHost for TerminalPluginHost {
+impl PluginHostTrait for TerminalPluginHost {
     fn log(&self, level: LogLevel, message: &str) {
         match level {
             LogLevel::Debug => debug!("[Plugin] {}", message),

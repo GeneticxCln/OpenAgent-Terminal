@@ -318,7 +318,7 @@ impl EntityExtractor {
         // File path patterns
         let file_patterns = vec![
             Regex::new(r"(/[^/\s]*)+\/?").unwrap(),
-            Regex::new(r"[a-zA-Z]:\\(?:[^\\/:*?\"<>|\r\n]+\\)*[^\\/:*?\"<>|\r\n]*").unwrap(),
+            Regex::new(r"[a-zA-Z]:\\(?:[^\\/:*?<>|\r\n]+\\)*[^\\/:*?<>|\r\n]*").unwrap(),
             Regex::new(r"~\/[^\s]*").unwrap(),
             Regex::new(r"\./[^\s]*").unwrap(),
         ];
@@ -906,13 +906,12 @@ impl Agent for NaturalLanguageAgent {
         Ok(())
     }
 
-    async fn process(&mut self, request: AgentRequest) -> Result<AgentResponse> {
+    async fn handle_request(&self, request: AgentRequest) -> Result<AgentResponse> {
         if !self.is_initialized {
             return Err(anyhow!("Agent not initialized"));
         }
 
-        let session_id = request.context.get("session_id")
-            .and_then(|v| v.as_str())
+        let session_id = request.metadata.get("session_id")
             .unwrap_or("default")
             .to_string();
 
@@ -982,15 +981,16 @@ impl Agent for NaturalLanguageAgent {
             metadata,
             artifacts: vec![],
             suggested_actions,
-            status: AgentStatus::Success,
         })
     }
 
-    async fn get_status(&self) -> AgentStatus {
-        if self.is_initialized {
-            AgentStatus::Ready
-        } else {
-            AgentStatus::NotInitialized
+    async fn status(&self) -> AgentStatus {
+        AgentStatus {
+            is_healthy: self.is_initialized,
+            is_busy: false,
+            last_activity: chrono::Utc::now(),
+            current_task: None,
+            error_message: if self.is_initialized { None } else { Some("Agent not initialized".to_string()) },
         }
     }
 
@@ -1271,74 +1271,18 @@ mod tests {
         assert!(negative.polarity < 0.0);
     }
 }
-}
 
-/// Extracted entities from user input
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Entity {
-    pub entity_type: EntityType,
-    pub value: String,
-    pub confidence: f64,
-    pub span: (usize, usize), // start and end positions in text
-}
-
-/// Types of entities that can be extracted
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum EntityType {
-    // File system
-    FilePath,
-    DirectoryPath,
-    FileName,
-    FileExtension,
-
-    // Programming
-    Language,
-    Framework,
-    Library,
-    Variable,
-    Function,
-    Class,
-
-    // Commands and tools
-    Command,
-    Flag,
-    Argument,
-
-    // Git
-    Branch,
-    Commit,
-    Tag,
-    Remote,
-
-    // General
-    Number,
-    Date,
-    Time,
-    URL,
-    Email,
-
-    Custom(String),
-}
-
-/// Intent classifier for understanding user requests
-pub struct IntentClassifier {
-    patterns: HashMap<String, Vec<IntentPattern>>,
-}
-
-/// Pattern for matching intents
-#[derive(Debug, Clone)]
-pub struct IntentPattern {
-    pub keywords: Vec<String>,
-    pub required_entities: Vec<EntityType>,
-    pub weight: f64,
-    pub target_agent: Option<String>,
-}
-
-/// Manages conversation context and memory
-pub struct ConversationContextManager {
-    current_topic: Option<String>,
-    active_entities: HashMap<String, Entity>,
-    session_context: HashMap<String, String>,
+/// Extended entity types helper functions
+impl EntityType {
+    /// Check if entity type is related to file system
+    pub fn is_file_system(&self) -> bool {
+        matches!(self, EntityType::FilePath | EntityType::Command | EntityType::Parameter)
+    }
+    
+    /// Check if entity type is related to programming
+    pub fn is_programming(&self) -> bool {
+        matches!(self, EntityType::Command | EntityType::Value)
+    }
 }
 
 impl NaturalLanguageAgent {
@@ -1352,15 +1296,7 @@ impl NaturalLanguageAgent {
             is_initialized: false,
         }
     }
-}
 
-impl Default for NaturalLanguageAgent {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl NaturalLanguageAgent {
     /// Detect shell kind from AgentContext environment variables, fallback to bash
     fn detect_shell_kind(context: &AgentContext) -> String {
         if let Some(shell) = context.environment_vars.get("SHELL") {
@@ -1940,6 +1876,12 @@ impl Default for IntentClassifier {
 }
 
 impl Default for ConversationContextManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for NaturalLanguageAgent {
     fn default() -> Self {
         Self::new()
     }

@@ -568,6 +568,49 @@ pub enum ConfigAction {
 }
 
 #[derive(Args, Debug)]
+pub struct PrefsSessionArgs {
+    #[command(subcommand)]
+    pub action: PrefsAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PrefsAction {
+    /// Show current preferences
+    Show,
+    /// Set preference value
+    Set {
+        /// Preference key
+        key: String,
+        /// Preference value
+        value: String,
+    },
+    /// Get preference value
+    Get {
+        /// Preference key
+        key: String,
+    },
+    /// Reset preferences to defaults
+    Reset {
+        /// Force reset without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Export preferences to file
+    Export {
+        /// Output file path
+        output: PathBuf,
+    },
+    /// Import preferences from file
+    Import {
+        /// Input file path
+        input: PathBuf,
+        /// Merge with existing preferences
+        #[arg(short, long)]
+        merge: bool,
+    },
+}
+
+#[derive(Args, Debug)]
 pub struct BackupSessionArgs {
     #[command(subcommand)]
     pub action: BackupAction,
@@ -1412,8 +1455,11 @@ mod tests {
         }
     }
 }
+
+#[derive(Subcommand, Debug)]
+pub enum SessionCommands {
     /// Create a new session
-    New(NewSessionArgs),
+    New(CreateSessionArgs),
     
     /// List all sessions
     List(ListSessionArgs),
@@ -1449,369 +1495,6 @@ mod tests {
     Watch(WatchSessionArgs),
 }
 
-#[derive(Args, Debug)]
-pub struct NewSessionArgs {
-    /// Session title/description
-    #[arg(short, long)]
-    pub title: Option<String>,
-    
-    /// Set as current session immediately
-    #[arg(short, long, default_value = "true")]
-    pub activate: bool,
-    
-    /// Copy settings from existing session
-    #[arg(long)]
-    pub copy_from: Option<String>,
-}
-
-#[derive(Args, Debug)]
-pub struct ListSessionArgs {
-    /// Show only active sessions
-    #[arg(short, long)]
-    pub active_only: bool,
-    
-    /// Limit number of results
-    #[arg(short = 'n', long, default_value = "20")]
-    pub limit: usize,
-    
-    /// Sort by (created, modified, commands, conversations)
-    #[arg(short, long, default_value = "modified")]
-    pub sort: SessionSortOption,
-    
-    /// Filter by minimum age (e.g., "1d", "2h", "30m")
-    #[arg(long)]
-    pub min_age: Option<String>,
-    
-    /// Filter by maximum age
-    #[arg(long)]
-    pub max_age: Option<String>,
-}
-
-#[derive(Args, Debug)]
-pub struct ShowSessionArgs {
-    /// Session ID or partial ID
-    pub session_id: String,
-    
-    /// Show command history
-    #[arg(long)]
-    pub show_commands: bool,
-    
-    /// Show conversation history
-    #[arg(long)]
-    pub show_conversations: bool,
-    
-    /// Show preferences
-    #[arg(long)]
-    pub show_preferences: bool,
-    
-    /// Show workspace state
-    #[arg(long)]
-    pub show_workspace: bool,
-    
-    /// Number of recent commands to show
-    #[arg(long, default_value = "10")]
-    pub recent_commands: usize,
-}
-
-#[derive(Args, Debug)]
-pub struct RestoreSessionArgs {
-    /// Session ID or partial ID
-    pub session_id: String,
-    
-    /// Don't restore command history
-    #[arg(long)]
-    pub no_commands: bool,
-    
-    /// Don't restore conversations
-    #[arg(long)]
-    pub no_conversations: bool,
-    
-    /// Don't restore preferences
-    #[arg(long)]
-    pub no_preferences: bool,
-    
-    /// Don't restore workspace
-    #[arg(long)]
-    pub no_workspace: bool,
-    
-    /// Restore environment variables
-    #[arg(long)]
-    pub restore_environment: bool,
-    
-    /// Maximum age of data to restore (e.g., "7d", "1h")
-    #[arg(long)]
-    pub max_age: Option<String>,
-    
-    /// Create a new session instead of replacing current
-    #[arg(long)]
-    pub as_new_session: bool,
-}
-
-#[derive(Args, Debug)]
-pub struct DeleteSessionArgs {
-    /// Session IDs or partial IDs
-    pub session_ids: Vec<String>,
-    
-    /// Force deletion without confirmation
-    #[arg(short, long)]
-    pub force: bool,
-    
-    /// Delete all sessions older than specified age
-    #[arg(long)]
-    pub older_than: Option<String>,
-}
-
-#[derive(Args, Debug)]
-pub struct ExportSessionArgs {
-    /// Session ID or partial ID
-    pub session_id: String,
-    
-    /// Output file path
-    #[arg(short, long)]
-    pub output: PathBuf,
-    
-    /// Include sensitive data in export
-    #[arg(long)]
-    pub include_sensitive: bool,
-    
-    /// Compression format (none, gzip, zip)
-    #[arg(long, default_value = "gzip")]
-    pub compression: CompressionFormat,
-    
-    /// Include command history
-    #[arg(long, default_value = "true")]
-    pub include_commands: bool,
-    
-    /// Include conversations
-    #[arg(long, default_value = "true")]
-    pub include_conversations: bool,
-}
-
-#[derive(Args, Debug)]
-pub struct ImportSessionArgs {
-    /// Import file path
-    pub file: PathBuf,
-    
-    /// Generate new session ID
-    #[arg(long, default_value = "true")]
-    pub new_id: bool,
-    
-    /// Set as current session
-    #[arg(long)]
-    pub activate: bool,
-    
-    /// Override existing session with same ID
-    #[arg(long)]
-    pub force: bool,
-}
-
-#[derive(Args, Debug)]
-pub struct CleanupSessionArgs {
-    /// Delete sessions older than (e.g., "30d", "1w")
-    #[arg(short, long, default_value = "30d")]
-    pub older_than: String,
-    
-    /// Keep at least this many recent sessions
-    #[arg(short, long, default_value = "5")]
-    pub keep_recent: usize,
-    
-    /// Dry run - show what would be deleted
-    #[arg(long)]
-    pub dry_run: bool,
-    
-    /// Force cleanup without confirmation
-    #[arg(short, long)]
-    pub force: bool,
-}
-
-#[derive(Args, Debug)]
-pub struct StatsSessionArgs {
-    /// Show detailed statistics
-    #[arg(short, long)]
-    pub detailed: bool,
-    
-    /// Show statistics for specific session
-    #[arg(long)]
-    pub session_id: Option<String>,
-    
-    /// Time range for statistics (e.g., "7d", "1m")
-    #[arg(long)]
-    pub time_range: Option<String>,
-}
-
-#[derive(Args, Debug)]
-pub struct ConfigSessionArgs {
-    #[command(subcommand)]
-    pub command: ConfigCommand,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum ConfigCommand {
-    /// Show current configuration
-    Show,
-    
-    /// Set configuration value
-    Set {
-        /// Configuration key
-        key: String,
-        /// Configuration value
-        value: String,
-    },
-    
-    /// Get configuration value
-    Get {
-        /// Configuration key
-        key: String,
-    },
-    
-    /// Reset configuration to defaults
-    Reset {
-        /// Force reset without confirmation
-        #[arg(short, long)]
-        force: bool,
-    },
-    
-    /// Edit configuration file
-    Edit,
-}
-
-#[derive(Args, Debug)]
-pub struct PrefsSessionArgs {
-    #[command(subcommand)]
-    pub command: PrefsCommand,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum PrefsCommand {
-    /// Show current preferences
-    Show,
-    
-    /// Set preference value
-    Set {
-        /// Preference key
-        key: String,
-        /// Preference value
-        value: String,
-    },
-    
-    /// Get preference value
-    Get {
-        /// Preference key
-        key: String,
-    },
-    
-    /// Reset preferences to defaults
-    Reset {
-        /// Force reset without confirmation
-        #[arg(short, long)]
-        force: bool,
-    },
-    
-    /// Export preferences
-    Export {
-        /// Output file
-        output: PathBuf,
-    },
-    
-    /// Import preferences
-    Import {
-        /// Input file
-        input: PathBuf,
-        /// Merge with existing preferences
-        #[arg(long)]
-        merge: bool,
-    },
-}
-
-#[derive(Args, Debug)]
-pub struct WatchSessionArgs {
-    /// Events to watch (all, saves, commands, conversations)
-    #[arg(short, long, default_values = &["all"])]
-    pub events: Vec<String>,
-    
-    /// Follow mode - continue watching new events
-    #[arg(short, long)]
-    pub follow: bool,
-    
-    /// Show timestamps
-    #[arg(short, long)]
-    pub timestamps: bool,
-    
-    /// JSON output format
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum OutputFormat {
-    Table,
-    Json,
-    Yaml,
-    Csv,
-}
-
-impl std::str::FromStr for OutputFormat {
-    type Err = String;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "table" => Ok(OutputFormat::Table),
-            "json" => Ok(OutputFormat::Json),
-            "yaml" => Ok(OutputFormat::Yaml),
-            "csv" => Ok(OutputFormat::Csv),
-            _ => Err(format!("Invalid output format: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SessionSortOption {
-    Created,
-    Modified,
-    Commands,
-    Conversations,
-    Name,
-}
-
-impl std::str::FromStr for SessionSortOption {
-    type Err = String;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "created" => Ok(SessionSortOption::Created),
-            "modified" => Ok(SessionSortOption::Modified),
-            "commands" => Ok(SessionSortOption::Commands),
-            "conversations" => Ok(SessionSortOption::Conversations),
-            "name" => Ok(SessionSortOption::Name),
-            _ => Err(format!("Invalid sort option: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CompressionFormat {
-    None,
-    Gzip,
-    Zip,
-}
-
-impl std::str::FromStr for CompressionFormat {
-    type Err = String;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "none" => Ok(CompressionFormat::None),
-            "gzip" => Ok(CompressionFormat::Gzip),
-            "zip" => Ok(CompressionFormat::Zip),
-            _ => Err(format!("Invalid compression format: {}", s)),
-        }
-    }
-}
-
-/// Session CLI handler
 pub struct SessionCliHandler {
     session_service: SessionService,
 }
@@ -1839,7 +1522,7 @@ impl SessionCliHandler {
         }
     }
     
-    async fn handle_new_session(&self, args: &NewSessionArgs, cli: &SessionCli) -> Result<()> {
+    async fn handle_new_session(&self, args: &CreateSessionArgs, cli: &SessionCli) -> Result<()> {
         let context = PtyAiContext::default(); // Would be populated from current environment
         
         info!("Creating new session...");
@@ -2027,20 +1710,20 @@ impl SessionCliHandler {
     }
     
     async fn handle_config(&self, args: &ConfigSessionArgs, cli: &SessionCli) -> Result<()> {
-        match &args.command {
-            ConfigCommand::Show => {
+        match &args.action {
+            ConfigAction::Show => {
                 println!("Configuration management not yet implemented");
             }
-            ConfigCommand::Set { key, value } => {
+            ConfigAction::Set { key, value } => {
                 println!("Setting config {} = {}", key, value);
             }
-            ConfigCommand::Get { key } => {
+            ConfigAction::Get { key } => {
                 println!("Getting config {}", key);
             }
-            ConfigCommand::Reset { force: _ } => {
+            ConfigAction::Reset { force: _ } => {
                 println!("Resetting configuration");
             }
-            ConfigCommand::Edit => {
+            ConfigAction::Edit => {
                 println!("Opening configuration editor");
             }
         }
@@ -2049,15 +1732,15 @@ impl SessionCliHandler {
     }
     
     async fn handle_preferences(&self, args: &PrefsSessionArgs, cli: &SessionCli) -> Result<()> {
-        match &args.command {
-            PrefsCommand::Show => {
+        match &args.action {
+            PrefsAction::Show => {
                 if let Some(session) = self.session_service.get_current_session().await {
                     self.output_result(&session.preferences, &cli.output_format)?;
                 } else {
                     println!("No active session");
                 }
             }
-            PrefsCommand::Set { key, value } => {
+            PrefsAction::Set { key, value } => {
                 let key_owned = key.clone();
                 let value_owned = value.clone();
                 self.session_service.update_preferences(move |prefs| {
@@ -2065,19 +1748,19 @@ impl SessionCliHandler {
                     println!("Setting preference {} = {}", key_owned, value_owned);
                 }).await?;
             }
-            PrefsCommand::Get { key } => {
+            PrefsAction::Get { key } => {
                 println!("Getting preference {}", key);
             }
-            PrefsCommand::Reset { force: _ } => {
+            PrefsAction::Reset { force: _ } => {
                 self.session_service.update_preferences(|prefs| {
                     *prefs = UserPreferences::default();
                 }).await?;
                 println!("Preferences reset to defaults");
             }
-            PrefsCommand::Export { output } => {
+            PrefsAction::Export { output } => {
                 println!("Exporting preferences to {}", output.display());
             }
-            PrefsCommand::Import { input, merge: _ } => {
+            PrefsAction::Import { input, merge: _ } => {
                 println!("Importing preferences from {}", input.display());
             }
         }
@@ -2205,6 +1888,13 @@ struct ListSessionOutput {
 struct DeleteSessionOutput {
     deleted_count: usize,
     session_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, ValueEnum, Serialize)]
+pub enum CompressionFormat {
+    None,
+    Gzip,
+    Zstd,
 }
 
 #[derive(Debug, Serialize)]

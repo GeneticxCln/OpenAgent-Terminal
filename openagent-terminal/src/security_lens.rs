@@ -333,7 +333,7 @@ impl SecurityLens {
                     severity: RiskLevel::High,
                     pattern: regex.as_str().to_string(),
                 });
-                if risk.level as u8 < RiskLevel::High as u8 {
+                if (risk.level as u8) < (RiskLevel::High as u8) {
                     risk.level = RiskLevel::High;
                 }
             }
@@ -347,7 +347,7 @@ impl SecurityLens {
                     severity: RiskLevel::Medium,
                     pattern: regex.as_str().to_string(),
                 });
-                if risk.level as u8 < RiskLevel::Medium as u8 {
+                if (risk.level as u8) < (RiskLevel::Medium as u8) {
                     risk.level = RiskLevel::Medium;
                 }
             }
@@ -361,7 +361,7 @@ impl SecurityLens {
                     severity: RiskLevel::Low,
                     pattern: regex.as_str().to_string(),
                 });
-                if risk.level as u8 < RiskLevel::Low as u8 {
+                if (risk.level as u8) < (RiskLevel::Low as u8) {
                     risk.level = RiskLevel::Low;
                 }
             }

@@ -163,6 +163,14 @@ pub enum PluginEvent {
     Custom(String, serde_json::Value),
 }
 
+/// Plugin event message structure for communication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginEventMessage {
+    pub event_type: String,
+    pub data: serde_json::Value,
+    pub timestamp: std::time::Duration,
+}
+
 /// Log levels for plugin logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LogLevel {

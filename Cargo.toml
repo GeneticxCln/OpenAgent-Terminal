@@ -99,6 +99,7 @@ regex = "1.11.2"    # Updated regex version
 chrono = { version = "0.4.42", features = ["std", "serde"] }
 
 # Core dependencies (always needed)
+uuid = { version = "1.11", features = ["v4", "serde"] }
 toml = "0.9.7"
 toml_edit = "0.23.2"
 anyhow = "1.0"
@@ -119,6 +120,7 @@ urlencoding = "2.1"
 
 # Async runtime
 tokio = { version = "1.47.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
 async-trait = "0.1"
 
 # Rendering - WGPU

@@ -14,11 +14,16 @@ impl GridCell for usize {
     }
 
     fn flags(&self) -> &Flags {
-        unimplemented!();
+        // For test purposes, return empty flags
+        static EMPTY_FLAGS: Flags = Flags::empty();
+        &EMPTY_FLAGS
     }
 
     fn flags_mut(&mut self) -> &mut Flags {
-        unimplemented!();
+        // For test purposes, return empty flags
+        // Note: This is a test-only implementation
+        static mut EMPTY_FLAGS: Flags = Flags::empty();
+        unsafe { &mut EMPTY_FLAGS }
     }
 }
 
